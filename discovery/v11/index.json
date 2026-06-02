@@ -1,0 +1,115 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact_bundle": "artcard:01KT30NA1DQVPS9S5DSJT8HF5V",
+    "env": "rec:01KT30NA1DE8BFHM15RDX3XGTN",
+    "persona": "rec:01KT30NA1D1ZPPM2ND1CF09FTF",
+    "telemetry": "telcard:01KT30NA1ENRBVC1P31GZPZDPV"
+  },
+  "kernel_id": "kernel:828b3c83c16e1c1d",
+  "records": [
+    {
+      "id": "rec:01KT30NA1D1ZPPM2ND1CF09FTF",
+      "kind": "persona",
+      "path": "discovery/v11/records/rec:01KT30NA1D1ZPPM2ND1CF09FTF.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1DE8BFHM15RDX3XGTN",
+      "kind": "env",
+      "path": "discovery/v11/records/rec:01KT30NA1DE8BFHM15RDX3XGTN.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "artcard:01KT30NA1DQVPS9S5DSJT8HF5V",
+      "kind": "artifact_bundle",
+      "path": "discovery/v11/records/artcard:01KT30NA1DQVPS9S5DSJT8HF5V.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1DF6Z2VM42XR9ANGJ6",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1DF6Z2VM42XR9ANGJ6.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1D54WW26DZQQG169EM",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1D54WW26DZQQG169EM.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1DN83QS5RJ8TPPXVPR",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1DN83QS5RJ8TPPXVPR.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1D619A3QRPNHS98B07",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1D619A3QRPNHS98B07.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1DEFKG84E5AXFAG1WR",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1DEFKG84E5AXFAG1WR.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1EJE4BT3KA7ZG5200K",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1EJE4BT3KA7ZG5200K.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1E0ERW1JDYANR1GQES",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1E0ERW1JDYANR1GQES.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1EWV1J9X9SFDRMAEWR",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1EWV1J9X9SFDRMAEWR.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT30NA1ESJQ6082ZWWJMTJST",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT30NA1ESJQ6082ZWWJMTJST.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "telcard:01KT30NA1ENRBVC1P31GZPZDPV",
+      "kind": "telemetry",
+      "path": "discovery/v11/records/telcard:01KT30NA1ENRBVC1P31GZPZDPV.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "Design a DC to AC circuit and produce a ready-to-order PCB manufacturing package.",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TXVE1YE18BM78Y26VV",
+      "asserted_fields": {},
+      "content_hash": "sha256:8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "binary",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 752,
+      "version": 1
+    },
+    "signature_hex": "41d6f7fd0d28fad0c662cebf4234dfc1c4f8ff44cd8c104c47d86581e9cdc644e01a3402c2650ec4efce5156934301abb36a4feecc4b2f5d2bd9e0c4c5944a0a",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba",
+  "content_ref": "top_silkscreen.gbr",
+  "content_store_path": "store/blobs/sha256/8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba",
+  "file_digest": "sha256:8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba",
+  "package_path": "artifacts/package/top_silkscreen.gbr",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 752,
+  "title": "top_silkscreen.gbr"
+}

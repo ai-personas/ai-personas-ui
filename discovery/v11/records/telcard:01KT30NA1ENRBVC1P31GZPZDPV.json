@@ -1,0 +1,44 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT30NA1CFBEFJW6JRCY202H8",
+    "schema": "access-policy/1",
+    "signature_hex": "e826632c131f14df0f73d2011609743bf8a20356a74394e92bd8ff9523416e0795c3222027e38647c775b799001d752da37551b304a29f8093ae1597acd0340f",
+    "subject_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "subject_kind": "telemetry"
+  },
+  "discovery_kind": "telemetry",
+  "kind": "telemetry",
+  "record": {
+    "access_policy_ref": "acl:01KT30NA1CFBEFJW6JRCY202H8",
+    "capability_summary": [
+      "lifecycle_transitions",
+      "otel_spans",
+      "presence"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "consent-gated activity/presence feed",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "telemetry/snapshot.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "telemetry:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "record_id": "telcard:01KT30NA1ENRBVC1P31GZPZDPV",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "1ab2a121c466de8cc4884b18b36b9fca6df47781a4602c4b96e7281da8029feced1ff31c767b37af484385d88f1d43d64e7ba7632dd99100f9b57091ea95d205",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

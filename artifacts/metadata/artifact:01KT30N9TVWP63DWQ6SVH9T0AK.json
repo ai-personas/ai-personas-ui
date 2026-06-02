@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TVWP63DWQ6SVH9T0AK",
+      "asserted_fields": {},
+      "content_hash": "sha256:0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "binary",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 486,
+      "version": 1
+    },
+    "signature_hex": "37fd05cd793d4eb339a58ff85f0554b8d0e87641e2964f056f06b3b38b3811e5164ec6c45fbe82356ca885d5b2566394a76138d186026b88991d7b4156f28e0e",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9",
+  "content_ref": "bottom_soldermask.gbr",
+  "content_store_path": "store/blobs/sha256/0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9",
+  "file_digest": "sha256:0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9",
+  "package_path": "artifacts/package/bottom_soldermask.gbr",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 486,
+  "title": "bottom_soldermask.gbr"
+}

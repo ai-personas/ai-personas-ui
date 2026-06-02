@@ -1,0 +1,112 @@
+{
+  "annotations": {
+    "org.personaos.dag.cid": "cidv1-sha256-e45a9e3b646d3b47aaa635745cd7c03d820ee5828b0289a01e49db62831eb9f4",
+    "org.personaos.environment.id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "org.personaos.policy.id": "share:01KT30JKDCWM06FCJWKPYN955F",
+    "org.personaos.project.id": "env:01KT30JKD42Q5AP9KB738HA89X"
+  },
+  "artifactType": "application/vnd.personaos.artifact-bundle.v1+json",
+  "config": {
+    "annotations": {
+      "org.opencontainers.image.title": "12V\u2192120V inverter board",
+      "org.personaos.bundle.id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ"
+    },
+    "digest": "sha256:5f264a4fc01a6e5afae8de4cd5705ae69497dd865138ccba6a8c7db644718d3d",
+    "mediaType": "application/vnd.personaos.artifact-bundle.config.v1+json",
+    "size": 2413
+  },
+  "layers": [
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "bom.csv",
+        "org.personaos.artifact.id": "artifact:01KT30N9TVEVQSPV0R6HZCZ0B7",
+        "org.personaos.cid": "cidv1-sha256-5f8883ff3debb3c2d910aefae371d1024573bc0ffc0a90756df9d472a49b2d68"
+      },
+      "digest": "sha256:5f8883ff3debb3c2d910aefae371d1024573bc0ffc0a90756df9d472a49b2d68",
+      "mediaType": "application/vnd.personaos.bom.v1",
+      "size": 1000
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "bottom_copper.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TVJQXPCBSY6PG13H29",
+        "org.personaos.cid": "cidv1-sha256-33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97"
+      },
+      "digest": "sha256:33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 421
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "bottom_soldermask.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TVWP63DWQ6SVH9T0AK",
+        "org.personaos.cid": "cidv1-sha256-0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9"
+      },
+      "digest": "sha256:0e290b4455a0417301eb0404bfb6b6c5ce38879d8c995c4a9b958a774e3382a9",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 486
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "drill.drl",
+        "org.personaos.artifact.id": "artifact:01KT30N9TWXGHZBQJ4CR2FYVZJ",
+        "org.personaos.cid": "cidv1-sha256-30b3d6b8e6f8d375f891e4ba3ee56c812a1ea6e8875ee4af0249a93f595f2a9d"
+      },
+      "digest": "sha256:30b3d6b8e6f8d375f891e4ba3ee56c812a1ea6e8875ee4af0249a93f595f2a9d",
+      "mediaType": "application/vnd.personaos.drill.v1",
+      "size": 259
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "edge_cuts.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TW4Y3DYJXFN6XXD0J7",
+        "org.personaos.cid": "cidv1-sha256-b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65"
+      },
+      "digest": "sha256:b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 197
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "fab-order.json",
+        "org.personaos.artifact.id": "artifact:01KT30N9TWVXPMRF6WCRS73JY2",
+        "org.personaos.cid": "cidv1-sha256-eef6bb0a5021f50880703bc897de9dc7a2b1a65f6a1b1e6a8589a49d4c8b95cb"
+      },
+      "digest": "sha256:eef6bb0a5021f50880703bc897de9dc7a2b1a65f6a1b1e6a8589a49d4c8b95cb",
+      "mediaType": "application/vnd.personaos.fab_manifest.v1",
+      "size": 2171
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "top_copper.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TW7VZG07ZYK4NS25FV",
+        "org.personaos.cid": "cidv1-sha256-e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e"
+      },
+      "digest": "sha256:e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 1307
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "top_silkscreen.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TXVE1YE18BM78Y26VV",
+        "org.personaos.cid": "cidv1-sha256-8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba"
+      },
+      "digest": "sha256:8d6c132b00381d604e13cdc7bfa4211449d9c89f02ca62f13b0dac8e849b87ba",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 752
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "top_soldermask.gbr",
+        "org.personaos.artifact.id": "artifact:01KT30N9TXTMR9G4TC4J4M2C51",
+        "org.personaos.cid": "cidv1-sha256-46aff88eb98959991080d3b4ebd96f5d29fab4f113e2f13fad02d4f24d30693c"
+      },
+      "digest": "sha256:46aff88eb98959991080d3b4ebd96f5d29fab4f113e2f13fad02d4f24d30693c",
+      "mediaType": "application/vnd.personaos.binary.v1",
+      "size": 483
+    }
+  ],
+  "schemaVersion": 2,
+  "signature_hex": "b49a651adcd18e6e10ec07eba426147565e447848e588955e3866ab50617ccd7e653b4b7f005b92fd09ba4809b1e68364b4effc4667715aada88c8fec10bd405"
+}

@@ -1,0 +1,169 @@
+{
+  "agent_cards": [
+    {
+      "card": {
+        "capabilities": [
+          "artifact_bundle_distribution",
+          "dc_to_ac_design"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [],
+        "host_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "id": "card:01KT30N9ZXMATDCSS71BCZF8R0",
+        "interfaces": [],
+        "name": "Sparky",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "agent-card/1",
+        "security_schemes": [
+          "Ed25519"
+        ],
+        "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "skills": [
+          "manufacturing_package_validation",
+          "pcb_package_generation"
+        ],
+        "version": "1"
+      },
+      "id": "card:01KT30N9ZXMATDCSS71BCZF8R0",
+      "path": ".well-known/agent-cards/card:01KT30N9ZXMATDCSS71BCZF8R0",
+      "persona_public_key_hex": "475e94572877e1a7d1a28f8b51a01fbf397526ea1d422222e23b48cb76860234",
+      "schema": "agent-card/1",
+      "signature_hex": "3bb79f5251b354484c6dce66016c061b2cef973a76408d2d8bb1fc760fa3999d0d0f568bc300c8772ff1c5bc7fcb72bf55e23365f2edaa77073c1192c380fe06",
+      "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM"
+    }
+  ],
+  "domain_context_cards": [
+    {
+      "card": {
+        "artifact_kinds": [
+          "binary",
+          "bom",
+          "drill",
+          "fab_manifest"
+        ],
+        "curator_persona_ids": [
+          "01HZ9V5K6T2Y7BQXA3N0F8E2WM"
+        ],
+        "description": "emerged from task: Design a DC to AC circuit and produce a ready-to-order PCB manufacturing package.",
+        "domain_id": "domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+        "domain_kind": "emergent",
+        "hazard_axes": [
+          "dual_use_civilian",
+          "fatality_risk"
+        ],
+        "host_kernel_id": "kernel:828b3c83c16e1c1d",
+        "id": "domcard:01KT30N9ZZ683J6JDQM7WQ1P17",
+        "name": "Electrical Engineering",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "domain-context-card/1",
+        "signing_key_id": "kernel-master",
+        "trust_stage": "emergent",
+        "version": "1",
+        "visibility_tier": "federation"
+      },
+      "id": "domcard:01KT30N9ZZ683J6JDQM7WQ1P17",
+      "schema": "domain-context-card/1",
+      "signature_hex": "3adfdf79e66c704fbf7ec1007eb5eadedd81b91e5dcc013cbec8c51eddb1db4499881839db3367984033b15888b707f18a07d54b0dc9a72d04e9708d67552e0b",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "env_cards": [
+    {
+      "card": {
+        "artifact_bundle_refs": [
+          "bundle:01KT30JKDBJ57DKPX3JHP54SAJ"
+        ],
+        "default_domain_context_ref": "domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+        "environment_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+        "host_kernel_id": "kernel:828b3c83c16e1c1d",
+        "id": "envcard:01KT30N9ZZ8CPPY96KHFW587EN",
+        "name": "DC-AC inverter design workspace",
+        "rule_refs": [
+          "envrule:01KT30JKD7RN2DSJK2JBZVHMST",
+          "envrule:01KT30JKD7A8M4J6NRCBJD9ZF2"
+        ],
+        "schema": "env-card/1",
+        "sharing_policy_ref": "share:01KT30JKDCWM06FCJWKPYN955F",
+        "signing_key_id": "kernel-master",
+        "type": "project_workspace",
+        "visibility_tier": "federation"
+      },
+      "id": "envcard:01KT30N9ZZ8CPPY96KHFW587EN",
+      "schema": "env-card/1",
+      "signature_hex": "f7e002e69eec976c4b18ad98604e5eacae0cd375fb33f6202396610a1f19d13a10c53bc91dc992c409872e46c5dd0eff1293699458804ed72e9c8ef643513701",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "kernel_id": "kernel:828b3c83c16e1c1d",
+  "persona_cards": [
+    {
+      "card": {
+        "accepted_roles": [
+          "designer",
+          "fab_reviewer",
+          "falsifier"
+        ],
+        "advertised_interests": [
+          "dc_to_ac_design",
+          "pcb_manufacturing",
+          "power_electronics"
+        ],
+        "archetype": "",
+        "can_lead_cohorts": false,
+        "charter_hash": "sha256:a0117d6e2b68952c798b1608d852d3e80f72985720c72b58636b40a6b47781db",
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [
+          "Electrical Engineering"
+        ],
+        "expires_at": "2026-06-02T02:55:05.854000+00:00",
+        "name": "Sparky",
+        "persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "primary_disposition": "",
+        "reputation_score": 0.8,
+        "schema": "persona-card/3",
+        "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "soul_version": 1,
+        "visibility": "federation",
+        "voice_hash": "sha256:f50cae9c4d0840da45ee387818a0c0c5e56a8e54fb915c998d140ce0f438a615"
+      },
+      "path": ".well-known/personas/01HZ9V5K6T2Y7BQXA3N0F8E2WM.json",
+      "persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "schema": "persona-card/3",
+      "signature_hex": "0127a8d44011414884b2d78ea0edf1eec12da928b903c92d1984f33afa5fa0d358b6b90dd39bfc2eeed0058725b7f09c32ea107fc18cc5751b10d59bca51950e",
+      "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "ttl_seconds": 3600
+    }
+  ],
+  "project_cards": [
+    {
+      "card": {
+        "domain_refs": [
+          "domain:01KT30JKCSC8XKXXC23RBR1ZSY"
+        ],
+        "host_kernel_id": "kernel:828b3c83c16e1c1d",
+        "id": "projcard:01KT30N9ZZJYHBF69377WVTMYX",
+        "member_persona_ids": [
+          "01HZ9V5K6T2Y7BQXA3N0F8E2WM"
+        ],
+        "name": "DC-AC inverter",
+        "open_role_kinds": [
+          "fab_reviewer"
+        ],
+        "project_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+        "project_kind": "project_workspace",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "project-card/1",
+        "signing_key_id": "kernel-master",
+        "status": "active",
+        "summary": "Ready-to-order DC-to-AC inverter PCB package",
+        "version": "1",
+        "visibility_tier": "federation"
+      },
+      "id": "projcard:01KT30N9ZZJYHBF69377WVTMYX",
+      "schema": "project-card/1",
+      "signature_hex": "1cf434c765761288a01d7ea04cdfefcca600736775b47ae694243075cbcd99e9b08515e11c0972e234d616c1cf0079650b654f5281f839a60e1e1e2285b2ff09",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "schema": "personaos-card-catalog/1"
+}

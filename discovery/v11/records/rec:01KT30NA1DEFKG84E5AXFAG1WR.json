@@ -1,0 +1,50 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "schema": "access-policy/1",
+    "signature_hex": "8d4b5c25209a4454dd1631c355367bdb012f932c1ddb83bd29fbf5c9ebe80ee051bbdf6803249a9f28f78e4929e5069c3fe318b96b874ddebf6eb49106a5170c",
+    "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "record": {
+    "access_policy_ref": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "capability_summary": [
+      "binary"
+    ],
+    "content_hash": "sha256:b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+    "content_locator_ref": "",
+    "description": "binary artifact in bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "edge_cuts.gbr",
+    "record_id": "rec:01KT30NA1DEFKG84E5AXFAG1WR",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "7d17504ad4254d06f4e84c8d372d1eeff18b336b5520cb06f550b0c3811016c126337523603b09908185acf9e251737eaf3fb2d5537c4e702f32c2a102d2ea0b",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

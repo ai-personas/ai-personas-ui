@@ -1,0 +1,36 @@
+{
+  "agent_cards": [
+    {
+      "card": {
+        "capabilities": [
+          "artifact_bundle_distribution",
+          "dc_to_ac_design"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [],
+        "host_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "id": "card:01KT30N9ZXMATDCSS71BCZF8R0",
+        "interfaces": [],
+        "name": "Sparky",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "agent-card/1",
+        "security_schemes": [
+          "Ed25519"
+        ],
+        "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "skills": [
+          "manufacturing_package_validation",
+          "pcb_package_generation"
+        ],
+        "version": "1"
+      },
+      "id": "card:01KT30N9ZXMATDCSS71BCZF8R0",
+      "path": ".well-known/agent-cards/card:01KT30N9ZXMATDCSS71BCZF8R0",
+      "schema": "agent-card/1",
+      "signature_hex": "3bb79f5251b354484c6dce66016c061b2cef973a76408d2d8bb1fc760fa3999d0d0f568bc300c8772ff1c5bc7fcb72bf55e23365f2edaa77073c1192c380fe06",
+      "signing_key_id": "persona:01HZ9V5K6T2Y7BQXA3N0F8E2WM"
+    }
+  ],
+  "kernel_id": "kernel:828b3c83c16e1c1d",
+  "path": ".well-known/agent-cards.json"
+}

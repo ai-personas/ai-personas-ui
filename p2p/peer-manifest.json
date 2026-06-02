@@ -1,0 +1,56 @@
+{
+  "bootstrap_paths": {
+    "activity": "activity/latest.json",
+    "cards": "discovery/cards.json",
+    "content_dag": "store/ipld-dag.json",
+    "keys": ".well-known/personaos-keys.json",
+    "registry": "registry/personaos-registry.json",
+    "run_index": ".well-known/personaos-run-index.json",
+    "telemetry_snapshot": "telemetry/snapshot.json"
+  },
+  "discoverable": {
+    "agent_cards": 1,
+    "artifact_bundles": 1,
+    "artifacts": 9,
+    "domain_context_cards": 1,
+    "env_cards": 1,
+    "environments": 1,
+    "persona_cards": 1,
+    "personas": 1,
+    "project_cards": 1
+  },
+  "generated_at": "2026-06-02T01:59:10.706000+00:00",
+  "handles": {
+    "bundle_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "domain_id": "domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+    "environment_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "project_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "sharing_policy_id": "share:01KT30JKDCWM06FCJWKPYN955F"
+  },
+  "kernel_id": "kernel:828b3c83c16e1c1d",
+  "peer_to_peer": {
+    "card_gossip_source": "discovery/cards.json",
+    "content_addressed_store": "store/ipld-dag.json",
+    "model": "static-seed-plus-signed-card-gossip",
+    "oci_artifact_manifest": "distribution/oci-artifact-manifest.json",
+    "seed_role": "bootstrap"
+  },
+  "root": {
+    "bundle_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "oci_manifest_cid": "cidv1-sha256-3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "oci_manifest_digest": "sha256:3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "oci_manifest_store_path": "store/blobs/sha256/3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "root_cid": "cidv1-sha256-e45a9e3b646d3b47aaa635745cd7c03d820ee5828b0289a01e49db62831eb9f4"
+  },
+  "schema": "personaos-peer-discovery-manifest/1",
+  "task": "Design a DC to AC circuit and produce a ready-to-order PCB manufacturing package.",
+  "telemetry": {
+    "lineage_events": 83,
+    "otel_spans": 89,
+    "snapshot": "telemetry/snapshot.json",
+    "spans": "telemetry/spans.json",
+    "summary": "telemetry/summary.json"
+  },
+  "ttl_seconds": 3600
+}

@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TVEVQSPV0R6HZCZ0B7",
+      "asserted_fields": {},
+      "content_hash": "sha256:a52f1479006373f9e15d15d975245fe19faeaf3c422e24cf4b19edae7d6adf94",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "bom",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 988,
+      "version": 1
+    },
+    "signature_hex": "537c208961177da4d3ef448a979a7dcaf6dca0f72374afc954dfd11e9c4c4ece1c667882c9573bad78c68bbc6bc8294caedaa9cb630205527fc60c3f2f478004",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-5f8883ff3debb3c2d910aefae371d1024573bc0ffc0a90756df9d472a49b2d68",
+  "content_ref": "bom.csv",
+  "content_store_path": "store/blobs/sha256/5f8883ff3debb3c2d910aefae371d1024573bc0ffc0a90756df9d472a49b2d68",
+  "file_digest": "sha256:5f8883ff3debb3c2d910aefae371d1024573bc0ffc0a90756df9d472a49b2d68",
+  "package_path": "artifacts/package/bom.csv",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 1000,
+  "title": "bom.csv"
+}

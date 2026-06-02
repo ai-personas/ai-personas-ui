@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-06-02T01:55:05.857000+00:00",
+  "model": "two-tier-local-catalog",
+  "packages": [
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.persona.01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "digest": "sha256:6afa8f5775446dadcb3a9ccc8bd93b7faf040f23b5123ed41049ca63f61f68ce",
+      "kind": "persona",
+      "name": "ai-personas.demo.dc-ac.persona.01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "path": "personas/01HZ9V5K6T2Y7BQXA3N0F8E2WM.json",
+      "schema": "persona-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.persona-card.01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "digest": "sha256:fcfe4bc1a0544aa6621021cb4ef11e1cb13b84613438e044f2e65120473b275b",
+      "kind": "persona_card",
+      "name": "ai-personas.demo.dc-ac.persona-card.01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+      "path": ".well-known/personas/01HZ9V5K6T2Y7BQXA3N0F8E2WM.json",
+      "schema": "persona-card/3"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.env.env:01KT30JKD42Q5AP9KB738HA89X",
+      "digest": "sha256:d2432d81ee1c51dcbfeab57e8d515eb7dfac37ec4ea2521566e03e645202fa29",
+      "kind": "environment",
+      "name": "ai-personas.demo.dc-ac.env.env:01KT30JKD42Q5AP9KB738HA89X",
+      "path": "environments/env:01KT30JKD42Q5AP9KB738HA89X.json",
+      "schema": "environment-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.domain.domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+      "digest": "sha256:cb8fa1a958d7bc599840f4e911b8cff0e49a1d9f133f3529bbf82008e9375f74",
+      "kind": "domain",
+      "name": "ai-personas.demo.dc-ac.domain.domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+      "path": "domains/domain:01KT30JKCSC8XKXXC23RBR1ZSY.json",
+      "schema": "domain-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.project.env:01KT30JKD42Q5AP9KB738HA89X",
+      "digest": "sha256:5082a3b1704500447fb15f9d7ec601b448e0ee7f438cc5b3638f32d4f06a43f1",
+      "kind": "project",
+      "name": "ai-personas.demo.dc-ac.project.env:01KT30JKD42Q5AP9KB738HA89X",
+      "path": "projects/env:01KT30JKD42Q5AP9KB738HA89X.json",
+      "schema": "project-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.bundle.bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+      "digest": "sha256:7283868340da46cd88a58c8684a1381fca5a6506f3621f3f56bc5ce24c64ca95",
+      "kind": "artifact_bundle",
+      "name": "ai-personas.demo.dc-ac.bundle.bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+      "path": "bundles/bundle:01KT30JKDBJ57DKPX3JHP54SAJ.json",
+      "schema": "artifact-bundle-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.policy.share:01KT30JKDCWM06FCJWKPYN955F",
+      "digest": "sha256:90bb5d275154b552d121e131292c692a665b37b079a9bd19746a08fa78fd9fb7",
+      "kind": "sharing_policy",
+      "name": "ai-personas.demo.dc-ac.policy.share:01KT30JKDCWM06FCJWKPYN955F",
+      "path": "policies/share:01KT30JKDCWM06FCJWKPYN955F.json",
+      "schema": "artifact-sharing-policy-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.distribution.oci",
+      "digest": "sha256:3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+      "kind": "oci_manifest",
+      "name": "ai-personas.demo.dc-ac.distribution.oci",
+      "path": "distribution/oci-artifact-manifest.json",
+      "schema": "oci-artifact-manifest/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.store.dag",
+      "digest": "sha256:cef237bd949c6e60b5d5327b897c0a9dcbc24123d4f76e12a5879d190e320614",
+      "kind": "ipld_dag",
+      "name": "ai-personas.demo.dc-ac.store.dag",
+      "path": "store/ipld-dag.json",
+      "schema": "artifact-bundle-dag/1"
+    }
+  ],
+  "root": {
+    "bundle_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "oci_manifest_cid": "cidv1-sha256-3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "oci_manifest_digest": "sha256:3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "oci_manifest_store_path": "store/blobs/sha256/3f82597bd929a950a7f5106f8f8dcd12b298e38fa0bd6275733dfccfdb3eba36",
+    "root_cid": "cidv1-sha256-e45a9e3b646d3b47aaa635745cd7c03d820ee5828b0289a01e49db62831eb9f4"
+  },
+  "schema": "personaos-registry-catalog/1"
+}

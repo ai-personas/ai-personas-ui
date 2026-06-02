@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TW4Y3DYJXFN6XXD0J7",
+      "asserted_fields": {},
+      "content_hash": "sha256:b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "binary",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 197,
+      "version": 1
+    },
+    "signature_hex": "01a6bd93de50c4305ec95427d6aa9ce27e600fd65fc0401341be566681cff18e8b5c8b79a4717cbea4c8237227823ad4c45ab9ae9cbb64e1b600443a0e894a0a",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+  "content_ref": "edge_cuts.gbr",
+  "content_store_path": "store/blobs/sha256/b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+  "file_digest": "sha256:b1f7dc9b8cab350a2b3e4b58b91bdf67ad492cbb2c3ae87c79cfa4bd874f8b65",
+  "package_path": "artifacts/package/edge_cuts.gbr",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 197,
+  "title": "edge_cuts.gbr"
+}

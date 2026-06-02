@@ -1,0 +1,38 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT30NA1CS9R4ST9NZMXHZM3W",
+    "schema": "access-policy/1",
+    "signature_hex": "bc53935c23fd789835897ae415846a838b4f0eacc4df982aca73637cabe83a75af6d921624a97f441be08e2984c6b2acf720ee922dcc066fdb8f8982acd7170f",
+    "subject_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "subject_kind": "env"
+  },
+  "discovery_kind": "env",
+  "kind": "env",
+  "record": {
+    "access_policy_ref": "acl:01KT30NA1CS9R4ST9NZMXHZM3W",
+    "capability_summary": [
+      "Electrical Engineering",
+      "project_workspace"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "project_workspace for the DC-to-AC inverter design",
+    "did": "did:personaos:env:01KT30JKD42Q5AP9KB738HA89X",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "env",
+    "label": "DC-AC inverter design workspace",
+    "record_id": "rec:01KT30NA1DE8BFHM15RDX3XGTN",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "0943842a92a920dde0baf2fc65d49928013ee56df92461f9258e7c8e8902f0f84e912a591a35c792232999acda7117c6546c8ded8c01369dad47f0630f0edb0f",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

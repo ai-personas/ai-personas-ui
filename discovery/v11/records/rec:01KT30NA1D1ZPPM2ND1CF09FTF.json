@@ -1,0 +1,43 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT30NA1CMN2ZF81JVK19HYVS",
+    "schema": "access-policy/1",
+    "signature_hex": "bec9ddb4e219fab36672c0610ed1498dec0c13e688179d29849bf4b083a4b23fe1fea122b080c4202658d4eba4c80a5eb4d09726a42f6fe7b266a76b6225e707",
+    "subject_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "subject_kind": "persona"
+  },
+  "discovery_kind": "persona",
+  "kind": "persona",
+  "record": {
+    "access_policy_ref": "acl:01KT30NA1CMN2ZF81JVK19HYVS",
+    "capability_summary": [
+      "dc_to_ac_design",
+      "pcb_package_generation"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "DC-to-AC designer persona (Electrical Engineering)",
+    "did": "did:personaos:01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": ".well-known/personas/01HZ9V5K6T2Y7BQXA3N0F8E2WM.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "persona",
+    "label": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "record_id": "rec:01KT30NA1D1ZPPM2ND1CF09FTF",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "bbff7937334a2f478e15a5cd1eb206c90d41e763f3b6e1b62b4ea2ed9e0d2ecec9431e72f79bc73b69ad73683c2c1cb3d6bc777f011f8b2227ca0c6fa049bf0a",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

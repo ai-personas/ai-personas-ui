@@ -1,0 +1,25 @@
+{
+  "card": {
+    "artifact_bundle_refs": [
+      "bundle:01KT30JKDBJ57DKPX3JHP54SAJ"
+    ],
+    "default_domain_context_ref": "domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+    "environment_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "host_kernel_id": "kernel:828b3c83c16e1c1d",
+    "id": "envcard:01KT30N9ZZ8CPPY96KHFW587EN",
+    "name": "DC-AC inverter design workspace",
+    "rule_refs": [
+      "envrule:01KT30JKD7RN2DSJK2JBZVHMST",
+      "envrule:01KT30JKD7A8M4J6NRCBJD9ZF2"
+    ],
+    "schema": "env-card/1",
+    "sharing_policy_ref": "share:01KT30JKDCWM06FCJWKPYN955F",
+    "signing_key_id": "kernel-master",
+    "type": "project_workspace",
+    "visibility_tier": "federation"
+  },
+  "id": "envcard:01KT30N9ZZ8CPPY96KHFW587EN",
+  "schema": "env-card/1",
+  "signature_hex": "f7e002e69eec976c4b18ad98604e5eacae0cd375fb33f6202396610a1f19d13a10c53bc91dc992c409872e46c5dd0eff1293699458804ed72e9c8ef643513701",
+  "signing_key_id": "kernel-master"
+}

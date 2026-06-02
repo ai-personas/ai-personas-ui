@@ -1,0 +1,29 @@
+{
+  "card": {
+    "domain_refs": [
+      "domain:01KT30JKCSC8XKXXC23RBR1ZSY"
+    ],
+    "host_kernel_id": "kernel:828b3c83c16e1c1d",
+    "id": "projcard:01KT30N9ZZJYHBF69377WVTMYX",
+    "member_persona_ids": [
+      "01HZ9V5K6T2Y7BQXA3N0F8E2WM"
+    ],
+    "name": "DC-AC inverter",
+    "open_role_kinds": [
+      "fab_reviewer"
+    ],
+    "project_id": "env:01KT30JKD42Q5AP9KB738HA89X",
+    "project_kind": "project_workspace",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "project-card/1",
+    "signing_key_id": "kernel-master",
+    "status": "active",
+    "summary": "Ready-to-order DC-to-AC inverter PCB package",
+    "version": "1",
+    "visibility_tier": "federation"
+  },
+  "id": "projcard:01KT30N9ZZJYHBF69377WVTMYX",
+  "schema": "project-card/1",
+  "signature_hex": "1cf434c765761288a01d7ea04cdfefcca600736775b47ae694243075cbcd99e9b08515e11c0972e234d616c1cf0079650b654f5281f839a60e1e1e2285b2ff09",
+  "signing_key_id": "kernel-master"
+}

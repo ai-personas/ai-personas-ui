@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TW7VZG07ZYK4NS25FV",
+      "asserted_fields": {},
+      "content_hash": "sha256:e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "binary",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 1307,
+      "version": 1
+    },
+    "signature_hex": "155196f884715b29bfe06df2190be4aa1fd65997e563d0bc6c78a828883e62779e22067fcae92a4e9ef7adba6742fe06e0232d64985dadffe155923e5f4ed203",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e",
+  "content_ref": "top_copper.gbr",
+  "content_store_path": "store/blobs/sha256/e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e",
+  "file_digest": "sha256:e8f3519d770bbb3c8bace5046f01d84e83352b85fc73304ae6ce37cc8e91122e",
+  "package_path": "artifacts/package/top_copper.gbr",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 1307,
+  "title": "top_copper.gbr"
+}

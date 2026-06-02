@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT30N9TVJQXPCBSY6PG13H29",
+      "asserted_fields": {},
+      "content_hash": "sha256:33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "binary",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 421,
+      "version": 1
+    },
+    "signature_hex": "6992bed0cc0f3b718d867fd9a286e36a6b149b30f0a92c635f8fb3a98df6428750e9e32ba7e0d3717b44491bbf3f38dc7553db635cec42bea0d1e6b3c60fa303",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97",
+  "content_ref": "bottom_copper.gbr",
+  "content_store_path": "store/blobs/sha256/33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97",
+  "file_digest": "sha256:33ac5917e5110a1e99bbdc4dfda1eb1f1d7812c2c27bf197751b3f0b9634ce97",
+  "package_path": "artifacts/package/bottom_copper.gbr",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 421,
+  "title": "bottom_copper.gbr"
+}
