@@ -90,6 +90,7 @@ table.watch{width:100%;border-collapse:collapse;font-size:12.5px}
 /* footer + log */
 footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#06090e;border-top:1px solid var(--line2);color:var(--mut);font-size:11px}
 .link{background:none;border:none;color:var(--int);cursor:pointer;text-decoration:underline;font-size:11px}
+.p2p-stat{color:var(--intr);margin-left:auto;font-size:11px}
 .logmodal{position:fixed;inset:0;background:rgba(2,5,9,.7);display:none;align-items:center;justify-content:center;z-index:20}
 .logmodal.open{display:flex}
 .logcard{width:min(760px,92vw);max-height:80vh;background:var(--panel);border:1px solid var(--line2);border-radius:8px;display:flex;flex-direction:column}

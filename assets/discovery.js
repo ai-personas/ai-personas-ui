@@ -51,7 +51,9 @@ async function discoverFrom(base,plane){
     const doc=await fetchJson(join(base,p.record_url)); if(!doc?.record){ continue; }
     const ok=await verifyRecord(doc,keys); const r=doc.record;
     log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${ok?'OK':'FAIL'}`,ok);
-    if(ok) found.push({...r,_kernel:boot.kernel_id||'',_url:join(base,p.record_url),_access:doc.access_policy||{},_links:doc.links||{},_base:base,_plane:plane});
+    if(ok) found.push({...r,_kernel:boot.kernel_id||'',_url:join(base,p.record_url),_access:doc.access_policy||{},_links:doc.links||{},_base:base,_plane:plane,
+      _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,public_key_hex:keys[doc.signing_key_id]||'',
+            kernel_id:boot.kernel_id||'',base:base,links:doc.links||{},access_policy:doc.access_policy||{}}});
   }
   return {boot,found};
 }
@@ -64,7 +66,7 @@ function upsert(r){
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
-    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',
+    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
 function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
@@ -466,9 +468,43 @@ function wire(){
   document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeLog(); closeDetail(); } });
 }
 
+// ---------- real P2P transport: a js-libp2p node in the browser ----------
+// WebRTC + circuit-relay + Kademlia DHT + gossipsub. The HTTP federation above seeds it
+// (and is the fallback); over libp2p the page gossips its signed records and verifies any
+// it receives. Reaching other machines needs a relay/bootstrap peer (browsers can't accept
+// inbound / multicast) — add one with ?relay=<multiaddr>.
+let P2P=null;
+function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
+  el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
+async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
+  if(doc.public_key_hex){ try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){} }
+  log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
+  const r=doc.record, id=r.record_id||r.card_id;
+  if(ok && id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:doc.base||'',_doc:doc});
+    if(P2P) P2P.announce(doc); classifyMap(); buildRows(); buildTicker(); renderStats(); }
+}
+async function initP2P(){
+  const params=new URLSearchParams(location.search);
+  const root=await fetchJson('.well-known/personaos-discovery.json')||{};
+  const list=[...(root.bootstrap_peers||[]),...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
+  log('p2p','starting libp2p node — WebRTC + Kademlia DHT + gossipsub…');
+  try{
+    const mod=await import('./p2p-libp2p.js');
+    P2P=await mod.startP2P({ bootstrapList:list,
+      onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
+      onRecord:onGossipRecord });
+    updateP2PStatus();
+    for(const id of S.order){ const r=S.recs.get(id); if(r._doc) P2P.announce(r._doc); }   // gossip our records to the mesh
+    log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
+      : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
+  }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
+    const el=$('#p2p'); if(el) el.textContent='P2P · http-federation'; }
+}
+
 (async ()=>{
   wire();
   await discover();
+  initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{ discover().then(buildRows).catch(()=>{}); }, 15000);
   requestAnimationFrame(tick);

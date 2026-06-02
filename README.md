@@ -1,88 +1,78 @@
-# ai-personas-ui — PersonaOS discovery portal
+# ai-personas-ui — discover & explore PersonaOS personas across the global network
 
-A **static front-end that discovers PersonaOS entities at runtime** — personas, environments,
-artifacts and telemetry — across the **internet** (`.well-known` + gossip + Kademlia DHT) and
-**intranet** (mDNS) planes, under one access-level model (`discover < read < write < admin`).
+A static web portal to **discover and explore PersonaOS personas** — and their environments,
+domains, projects, artifacts, and telemetry — **across the global network, purely by P2P
+discovery**. There is no central index and no server to trust: the page bootstraps the
+discovery planes, resolves every record itself, and **cryptographically verifies each one
+(Ed25519) in your browser** before showing it. Whatever kernels are published to the network
+appear here; nothing is hard-coded.
 
-It is **generic**: it renders whatever any kernel publishes, not a fixed dataset. Point it at
-another kernel with `?peer=https://host` and it discovers + verifies that kernel's records too.
+## P2P discovery — how it finds things (no central server)
 
-## It discovers — it does not display a dump
+Discovery is **signed + content-addressed**, not server-dependent (09_PROTOCOLS §3G/§3H). For
+every node it knows or is told about, the page:
 
-The page is **not** handed a finished list. In your browser it:
+1. **bootstraps** from that node's `.well-known/personaos-discovery.json`;
+2. does a **Kademlia-DHT-style provider lookup** (`discovery/providers.json`) — a list of opaque
+   `key → record` pointers, *not* the data;
+3. **resolves each record and verifies its Ed25519 signature** against the owning kernel's
+   published key (in-browser, via vendored [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)).
+   An unsigned or forged record is dropped.
 
-1. **Bootstraps** from `/.well-known/personaos-discovery.json` (kernel id, keys URL, DHT
-   provider-index URL, planes).
-2. **DHT lookup** — fetches `discovery/providers.json`, a Kademlia-style index of opaque
-   `key → record_url` pointers (no record content).
-3. **Resolves + verifies each record live** — for every pointer it fetches the signed record
-   and **verifies its Ed25519 signature in-browser** (vendored [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519),
-   over WebCrypto SHA-512) against the kernel's published key. Unsigned/forged records are
-   dropped. Only then is the record shown.
-4. **Intranet plane** — probes configured LAN peer URLs (`?peer=…` or the in-page field): the
-   browser equivalent of mDNS. (True multicast mDNS / libp2p Kademlia run in the native
-   runtime; the static profile verifies over HTTP(S) — see `09_PROTOCOLS §3H.3`.)
+Planes (09_PROTOCOLS §3G.2): **internet** = `.well-known` + gossip + Kademlia DHT; **intranet** =
+mDNS. Records are access-gated (`discover < read < write < admin`) — private records never
+enumerate, and the page only ever sees a signed locator, never anyone's bytes or credentials.
 
-A live **discovery log** shows every step (bootstrap → DHT → resolve → verify), so it is
-visibly a runtime process. Access-gating is honoured: only `federation`/`public` records have
-provider entries (tighter tiers never leave the origin); artifact bodies and the telemetry feed
-stay `read`-gated to the owner/grantees even though the records are discoverable.
+**Real libp2p P2P in the browser.** The page also boots an actual **js-libp2p** node
+(`assets/p2p-libp2p.js`: WebRTC + circuit-relay + **Kademlia DHT** + **gossipsub**). It gossips
+its signed records on the `personaos/discovery/v1` topic and verifies any it receives, and runs
+the DHT for content routing — the HTTP federation above seeds it and is the fallback. You can
+watch it in the discovery log (peer id, peers, gossip) and the footer P2P status.
+
+**The portal is generic + federated.** The root `.well-known/personaos-discovery.json` lists the
+kernels currently reachable as `federated_kernels`; add any other kernel with
+`?peer=https://its-host` (or by federating its directory) and it is discovered and verified the
+exact same way. Point it at a new PersonaOS node and that node's personas appear.
+
+**Honest transport note (§3H.3).** The libp2p node is real and runs in your browser, but a
+browser can't accept inbound connections or multicast, so to actually **reach other machines** it
+needs a **relay / bootstrap peer** to dial through — add one with `?relay=<multiaddr>`. Without a
+relay the node still runs (DHT + gossip) but finds no external peers, and the page shows whatever
+the HTTP federation seeds. This is the "commons" the design names (§3H.3) rather than pretends
+away — but the *discover-and-verify* guarantee is identical either way, because trust comes from
+the Ed25519 signature, not the host or the transport.
+
+## Explore
+
+Click any discovered record for deep, verified detail:
+
+- **persona** → full profile (archetype, disposition, reputation, accepted roles, interests,
+  domain curatorships, memory) + the codex models / body it ran;
+- **environment** → its **member personas** and the **models available** to them, charter norms,
+  rules;
+- **domain** → the emergent domain: safety class, hazard, trust ladder, required tools, safety
+  extensions;
+- **project / bundle** → the J7 model cascade, verifier cascade + 8-source safety floor, OCI/IPLD
+  distribution (CIDs), any fabricated physical asset, and an **in-browser artifact viewer**;
+- **telemetry** → a consent-gated activity/presence feed; the live tape streams signed OTel spans.
+
+A real-time terminal UI (ticker, ticking watchlist, streaming event tape) makes the live network
+legible; filters by plane / kind / text; pause / replay.
 
 ## Run locally
 
 ```bash
-cd ai-personas-ui && python3 -m http.server 8099
-# open http://localhost:8099  — watch the discovery log resolve + verify each record
-```
-
-Discover a second kernel: `http://localhost:8099/?peer=https://that-kernels-site`.
-
-## What this contains — a multi-kernel ecosystem
-
-A signed discovery surface from **seven independent PersonaOS kernels** (served as nodes under
-`k/<run>/`, each like a different machine), produced by running a **variety of real tasks**
-through PersonaOS with **codex models** (gpt-5.5 / gpt-5.4 / gpt-5.4-mini / gpt-5.3-codex-spark,
-with model fallback). Each task drove the full pipeline — recognise → **emergent domain** →
-codex body writes a self-validating program → **real sandbox verification** → artifacts →
-co-signed, shipped bundle → OCI/IPLD distribution (+ a fabricated board for the hardware one).
-
-| Persona | Emergent domain | Deliverable |
-|---|---|---|
-| Sparky | Electrical Engineering *(safety-critical)* | DC→AC inverter PCB package (gerbers, BOM, drill) + fabricated board |
-| Ada | Software Engineering | merge sort + proof report |
-| Boson | Software Engineering | CSV↔JSON converter + round-trip test |
-| Mira | computational mathematics | prime sieve + verification |
-| Quill | computational physics | damped-oscillator simulation |
-| Volt | Software Engineering | JSON-schema validator |
-| Cipher | Software Engineering Documentation | rate-limiting technical brief |
-
-Each kernel publishes Ed25519-signed `DiscoverableRecord`s for its **persona, environment,
-domain, project, artifact bundle + files, and telemetry feed** — **77 records total**, every
-one resolved and verified in your browser. Click any record for deep detail: env → its
-personas + the codex models it ran; persona → full profile; bundle → the J7 model cascade,
-verifier cascade + 8-source safety floor, OCI/IPLD distribution, and an in-browser artifact
-viewer. The root `.well-known/personaos-discovery.json` lists the kernels as
-`federated_kernels`; add more with `?peer=https://host`.
-
-## Regenerate
-
-`tools/` contains the generators (`discovery_page.py` builds this portal; `discovery_v11.py`
-projects + signs the records). They run against a PersonaOS run directory:
-
-```python
-from discovery_page import export_discovery_portal
-export_discovery_portal("runs/dc_to_ac_design/<run>", "ai-personas-ui")
+git clone https://github.com/ai-personas/ai-personas-ui.git
+cd ai-personas-ui && python3 -m http.server 8099   # open http://localhost:8099
 ```
 
 ## Layout
 
 ```
-index.html                     # the runtime discovery portal
-assets/discovery.js            # bootstrap → DHT lookup → resolve → in-browser Ed25519 verify
-assets/noble-ed25519.js        # vendored verifier (MIT)
-.well-known/personaos-discovery.json   # discovery bootstrap
-.well-known/personaos-keys.json        # kernel public keys (verification)
-discovery/providers.json       # DHT provider index (key → pointer)
-discovery/v11/records/*.json   # the signed DiscoverableRecords (resolved at runtime)
-telemetry/ artifacts/ store/ … # the resolvable run surface
+index.html                                 # the discovery portal (terminal UI)
+assets/discovery.js                        # bootstrap → DHT lookup → resolve → in-browser Ed25519 verify
+assets/noble-ed25519.js                    # vendored verifier (MIT)
+.well-known/personaos-discovery.json       # root bootstrap → federated_kernels
+k/<node>/…                                  # each discoverable kernel node (its own .well-known + records + deep docs)
+tools/discovery_page.py, discovery_v11.py  # the generators (publish a node / aggregate the network)
 ```
