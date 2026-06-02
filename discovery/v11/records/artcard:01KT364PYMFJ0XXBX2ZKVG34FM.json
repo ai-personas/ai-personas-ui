@@ -17,34 +17,41 @@
     "cross_tenant_agreement_ref": null,
     "outward_tier": "federation",
     "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
-    "policy_id": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "policy_id": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "schema": "access-policy/1",
-    "signature_hex": "8d4b5c25209a4454dd1631c355367bdb012f932c1ddb83bd29fbf5c9ebe80ee051bbdf6803249a9f28f78e4929e5069c3fe318b96b874ddebf6eb49106a5170c",
+    "signature_hex": "1eec87a9ce17624842b6bbcd575ac455fd1a58094539a72735f06c2892f09ff8f6006d8940a4f2e710f9be8cf758ae66c6a5f99753cbf79794795f6f35a9cd03",
     "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
     "subject_kind": "artifact"
   },
-  "discovery_kind": "artifact",
+  "discovery_kind": "artifact_bundle",
   "kind": "artifact",
+  "links": {
+    "bundle": "bundles/bundle:01KT30JKDBJ57DKPX3JHP54SAJ.json",
+    "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ"
+  },
   "record": {
-    "access_policy_ref": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "access_policy_ref": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "capability_summary": [
-      "drill"
+      "binary",
+      "bom",
+      "drill",
+      "fab_manifest"
     ],
-    "content_hash": "sha256:30b3d6b8e6f8d375f891e4ba3ee56c812a1ea6e8875ee4af0249a93f595f2a9d",
+    "content_hash": "sha256:a52f1479006373f9e15d15d975245fe19faeaf3c422e24cf4b19edae7d6adf94",
     "content_locator_ref": "",
-    "description": "drill artifact in bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "description": "Ready-to-order PCB package (9 files)",
     "did": "",
     "expires_at": "",
     "interfaces": [],
     "kind": "artifact",
-    "label": "drill.drl",
-    "record_id": "rec:01KT30NA1D619A3QRPNHS98B07",
+    "label": "DC-AC inverter board",
+    "record_id": "artcard:01KT364PYMFJ0XXBX2ZKVG34FM",
     "schema": "discoverable-record/1",
     "signing_key_id": "kernel-master",
     "visibility_tier": "federation"
   },
   "schema": "discoverable-record/1",
-  "signature_hex": "d33ece1ba32a14eec0f56f31c28fd627c88fd58e695a89685bd87520621249c7d30aa493129b96a8d4db6b8970b83306a4a35d6b04fcb49fdb6878519bb37d05",
+  "signature_hex": "23a5bd84a07fa93a8c6d5a96d36c67bf0e1c6ab67c09625ea838137a74d5f366885e64bd22d90200b2b9c46059a0f71f9167a2becd7bbf349f668d45c70c290f",
   "signing_key_id": "kernel-master",
   "visibility_tier": "federation"
 }

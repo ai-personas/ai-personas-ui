@@ -26,7 +26,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{} };
+  map:{}, views:[], curBase:'' };
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -51,7 +51,7 @@ async function discoverFrom(base,plane){
     const doc=await fetchJson(join(base,p.record_url)); if(!doc?.record){ continue; }
     const ok=await verifyRecord(doc,keys); const r=doc.record;
     log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${ok?'OK':'FAIL'}`,ok);
-    if(ok) found.push({...r,_kernel:boot.kernel_id||'',_url:join(base,p.record_url),_access:doc.access_policy||{},_plane:plane});
+    if(ok) found.push({...r,_kernel:boot.kernel_id||'',_url:join(base,p.record_url),_access:doc.access_policy||{},_links:doc.links||{},_base:base,_plane:plane});
   }
   return {boot,found};
 }
@@ -64,7 +64,7 @@ function upsert(r){
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
-    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,
+    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
 function classifyMap(){ // map a telemetry scope -> a record id so rows tick
@@ -140,24 +140,109 @@ function replay(){
   for(const id of S.order){ const r=S.recs.get(id); r.events=0; r.lastT=0; r.spark=new Array(SPARK_N).fill(0); r.rate=0; r._dirty=true; }
   const fm=$('#feedmode'); fm.textContent='REPLAY'; fm.classList.remove('live'); refreshTicker();
 }
-function openDetail(id){
-  const r=S.recs.get(id); if(!r) return; const a=r._access||{}; const grants=a.access_grants||[];
-  const planes=r.planes.map((p)=>p==='internet'?'Internet · DHT':'Intranet · mDNS').join(', ');
-  const anchor=r.content_hash?('sha256 '+r.content_hash.replace('sha256:','').slice(0,18)+'…')
-    :(r.content_locator_ref?('locator '+r.content_locator_ref):'— (metadata only, no body)');
-  const rows=[['Kind',KIND_LABEL[r.kind]||r.kind],['Visibility tier',r.visibility_tier],['Planes',planes],
-    ['DID',r.did],['Publishing kernel',r._kernel||'—'],['Signature','✓ Ed25519 verified in-browser'],
-    ['Body anchor',anchor],['Events (this run)',r.events],['Rate EV/s',r.rate.toFixed(2)],['Last event',relTime(r.lastT)]]
-    .map(([l,v])=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${esc(v)}</span></div>`).join('');
-  const caps=(r.capability_summary||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>';
-  const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join('')
-    :'<div class="grant"><span>owner only (no outward read grant)</span><span></span></div>';
-  $('#detail-title').innerHTML=`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`;
-  $('#detailbody').innerHTML=rows+`<h4>Capability summary</h4><div class="caps">${caps}</div>`
-    +`<h4>Access policy · outward ${esc(a.outward_tier||r.visibility_tier)}</h4>${gh}`
-    +`<h4>Resolve (runtime-verified)</h4><div class="row"><a href="${esc(r._url)}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
-  $('#detailwrap').classList.add('open');
+// ---------- rich, navigable detail drawer (resolves deep docs) ----------
+const dcache=new Map();
+async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
+  if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v); return v; }
+async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
+const kv=(l,v)=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${v}</span></div>`;
+const H=(t)=>`<h4>${esc(t)}</h4>`;
+const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
+const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(txt)}</a>`;
+const findRecByDid=(pid)=>S.order.find((id)=>{ const r=S.recs.get(id); return r.did==='did:personaos:'+pid||r.did===pid; });
+const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind==='artifact' && r._links && r._links.bundle; });
+const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
+
+async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
+  S.curBase=base; const prof=await dfetch(base,L.profile), exp=await dfetch(base,L.export);
+  const c=(prof&&prof.card)||{}, mc=(exp&&exp.memory_counts)||{};
+  let html=kv('Persona id',S0(r.did))+kv('Name',S0(c.name||r.label))+kv('Archetype',S0(c.archetype))
+    +kv('Disposition',S0(c.primary_disposition))+kv('Reputation',S0(c.reputation_score))
+    +kv('Can lead cohorts',S0(c.can_lead_cohorts))+kv('Soul version',S0(c.soul_version))
+    +kv('Visibility',S0(c.visibility||r.visibility_tier))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  if(c.description) html+=H('Description')+`<div class="desc2">${esc(c.description)}</div>`;
+  html+=H('Accepted roles')+chipsOf(c.accepted_roles)+H('Interests')+chipsOf(c.advertised_interests)+H('Domain curatorships')+chipsOf(c.domain_curatorships);
+  if(mc.entries!==undefined) html+=H('Memory')+kv('Entries',S0(mc.entries))+kv('Episodic',S0(mc.episodic))+kv('Semantic',S0(mc.semantic))+kv('Reflective',S0(mc.reflective));
+  const eid=envRecId(), bid=bundleRecId(); let nav='';
+  if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
+  if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
+  if(nav) html+=H('Related')+nav;
+  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.profile))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(c.name||r.label)}`, html};
 }
+async function envView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
+  const d=await dfetch(base,L.export)||{}; const env=d.environment||{}, mr=d.model_registry||{};
+  const caps=mr.capabilities||[], active=(d.discovered_models||{}).active_model_id, members=d.members||[];
+  const norms=((d.charter||{}).payload||{}).charter_text||[], rules=d.rules||[];
+  let html=kv('Environment',esc(env.environment_id||r.did))+kv('Type',esc(env.type||'—'))
+    +kv('Status',`<span class="ok">${esc(env.status||'—')}</span>`)+kv('Visibility',esc(env.visibility_tier||r.visibility_tier))
+    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  html+=H(`Personas · members (${members.length})`)+(members.map((pid)=>{ const rid=findRecByDid(pid);
+    return `<div class="grant">${rid?recLink(rid,pid):esc(pid)}<span class="l2">member</span></div>`; }).join('')||'<span class="l2">—</span>');
+  html+=H(`Models available (${caps.length})`)+(caps.map((cp)=>`<div class="grant"><span>${esc(cp.model_id)}${cp.model_id===active?' <span class="ok">● active</span>':''}</span>`
+    +`<span class="l2">${esc(cp.backend||'')} · ${esc(cp.provider||'')}</span></div>`).join('')||'<span class="l2">—</span>');
+  if(norms.length) html+=H('Charter norms')+norms.map((n)=>`<div class="desc2">• ${esc(n)}</div>`).join('');
+  if(rules.length) html+=H(`Env rules (${rules.length})`)+rules.map((ru)=>{ const p=ru.payload||ru; return `<div class="desc2">• ${esc(p.rule_name||p.description||'rule')}</div>`; }).join('');
+  if(L.bundle) html+=H('Deliverable')+`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">artifact bundle →</a></div>`;
+  return {title:`<span class="kind k-env">ENV</span> ${esc(env.name||r.label)}`, html};
+}
+async function bundleView(base,url){ S.curBase=base; const d=await dfetch(base,url);
+  if(!d) return {title:'bundle', html:'<div class="l2">unavailable</div>'};
+  const b=(d.bundle&&d.bundle.payload)||d.bundle||{}, arts=d.artifacts||[];
+  let html=kv('Bundle',esc(b.bundle_id||''))+kv('Kind',esc(b.bundle_kind||'—'))
+    +kv('State',`<span class="ok">${esc(b.state||'—')}</span>`)+kv('Version',esc(b.version||'—'))
+    +kv('Owning env',esc(b.owning_env_id||'—'))+kv('Co-signers',esc(Object.keys(d.co_signatures||{}).join(', ')||'—'));
+  const vinv=(d.verifier_invocations||[]).map((v)=>`${v.tier}:${v.passed?'✓':'✗'}`).join('  ');
+  if(vinv) html+=H('Verifier cascade')+`<div class="desc2">${esc(vinv)}</div>`;
+  html+=H(`Artifacts (${arts.length}) — click to view`)+arts.map((a)=>`<div class="grant">`
+    +`<a href="#" data-act="file" data-path="${esc(a.package_path)}" data-title="${esc(a.title)}" data-kind="${esc(a.media_kind)}">${esc(a.title)}</a>`
+    +`<span class="l2">${esc(a.media_kind)} · ${esc(a.size_bytes)}B</span></div>`).join('');
+  return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(b.bundle_id||'')}`, html};
+}
+async function fileView(base,path,title,kind){ S.curBase=base;
+  const txt=await fetchText(join(base,path)); const isJson=/\.json$/i.test(path||'');
+  let body=txt||''; if(isJson){ try{ body=JSON.stringify(JSON.parse(txt),null,2); }catch(e){} }
+  const trunc=body.length>20000;
+  let html=kv('File',esc(title))+kv('Media kind',esc(kind||'—'))+kv('Bytes',esc((txt||'').length))
+    +H('Content'+(trunc?' (first 20 KB)':''))+`<pre class="filview">${esc(body.slice(0,20000))}</pre>`
+    +`<div class="row"><a href="${esc(join(base,path))}" target="_blank" rel="noopener" download>download / open raw →</a></div>`;
+  return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html};
+}
+async function telemetryView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base; const s=await dfetch(base,L.summary)||{};
+  const ec=Object.entries(s.lineage_event_counts||{}).sort((a,b)=>b[1]-a[1]).slice(0,14);
+  let html=kv('Feed',esc(r.label))+kv('OTel spans',esc(s.otel_spans||0))+kv('Lineage events',esc(s.lineage_events||0))
+    +kv('Scopes',esc(s.lineage_scopes||0))+kv('Access','consent-gated (read+ &amp; ConsentLedger pin)')+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  html+=H('Event kinds')+(ec.map(([k,v])=>`<div class="grant"><span>${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('')||'<span class="l2">—</span>');
+  if(L.snapshot) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.snapshot))}" target="_blank" rel="noopener">telemetry snapshot →</a></div>`;
+  return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`, html};
+}
+async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]; S.curBase=r._base||'';
+  const anchor=r.content_hash?('sha256 '+r.content_hash.replace('sha256:','').slice(0,18)+'…'):'— (metadata only)';
+  let html=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))+kv('DID',esc(r.did))
+    +kv('Kernel',esc(r._kernel||'—'))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>')+kv('Body anchor',esc(anchor))
+    +kv('Events (this run)',esc(r.events));
+  const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
+  html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
+    +H('Source')+`<div class="row"><a href="${esc(r._url)}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
+  return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
+}
+async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
+  const L=r._links||{};
+  if(r.kind==='persona') return personaView(r);
+  if(r.kind==='env') return envView(r);
+  if(r.kind==='telemetry') return telemetryView(r);
+  if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle);
+  if(r.kind==='artifact' && L.content) return fileView(r._base||'',L.content,r.label,L.media_kind);
+  return genericView(r);
+}
+async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
+  $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
+  let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
+  $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
+  $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
+}
+function pushView(fn){ S.views.push(fn); renderTop(); }
+function openDetail(id){ S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
 
 let lastBucket=0;
 function tick(now){
@@ -284,8 +369,15 @@ function wire(){
   $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
     try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
     localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(buildRows); });
-  // click any record row → detail drawer (signed record, access policy, verification, resolve link)
+  // click any record row → detail drawer (deep-resolves env members, persona profile, artifacts)
   $('#rows').addEventListener('click',(e)=>{ const tr=e.target.closest('tr'); if(!tr||!tr.id) return; openDetail(tr.id.replace(/^r-/,'')); });
+  // in-drawer navigation: follow links to other records / bundles / artifact files
+  $('#detailbody').addEventListener('click',(e)=>{ const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
+    const act=a.dataset.act, base=S.curBase||'';
+    if(act==='rec') pushView(()=>viewFor(a.dataset.id));
+    else if(act==='file') pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind));
+    else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url)); });
+  $('#detailback').addEventListener('click',()=>{ S.views.pop(); renderTop(); });
   const closeLog=()=>$('#logmodal').classList.remove('open');
   const closeDetail=()=>$('#detailwrap').classList.remove('open');
   $('#logbtn').addEventListener('click',()=>$('#logmodal').classList.add('open'));

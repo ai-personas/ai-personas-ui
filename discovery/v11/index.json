@@ -1,101 +1,101 @@
 {
   "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
   "handles": {
-    "artifact_bundle": "artcard:01KT30NA1DQVPS9S5DSJT8HF5V",
-    "env": "rec:01KT30NA1DE8BFHM15RDX3XGTN",
-    "persona": "rec:01KT30NA1D1ZPPM2ND1CF09FTF",
-    "telemetry": "telcard:01KT30NA1ENRBVC1P31GZPZDPV"
+    "artifact_bundle": "artcard:01KT364PYMFJ0XXBX2ZKVG34FM",
+    "env": "rec:01KT364PYMYN785GJV97GY8342",
+    "persona": "rec:01KT364PYMMDNZ47W5GYXKGGHW",
+    "telemetry": "telcard:01KT364PYMZ35GHN8YC2XDFF20"
   },
   "kernel_id": "kernel:828b3c83c16e1c1d",
   "records": [
     {
-      "id": "rec:01KT30NA1D1ZPPM2ND1CF09FTF",
+      "id": "rec:01KT364PYMMDNZ47W5GYXKGGHW",
       "kind": "persona",
-      "path": "discovery/v11/records/rec:01KT30NA1D1ZPPM2ND1CF09FTF.json",
+      "path": "discovery/v11/records/rec:01KT364PYMMDNZ47W5GYXKGGHW.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1DE8BFHM15RDX3XGTN",
+      "id": "rec:01KT364PYMYN785GJV97GY8342",
       "kind": "env",
-      "path": "discovery/v11/records/rec:01KT30NA1DE8BFHM15RDX3XGTN.json",
+      "path": "discovery/v11/records/rec:01KT364PYMYN785GJV97GY8342.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "artcard:01KT30NA1DQVPS9S5DSJT8HF5V",
+      "id": "artcard:01KT364PYMFJ0XXBX2ZKVG34FM",
       "kind": "artifact_bundle",
-      "path": "discovery/v11/records/artcard:01KT30NA1DQVPS9S5DSJT8HF5V.json",
+      "path": "discovery/v11/records/artcard:01KT364PYMFJ0XXBX2ZKVG34FM.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1DF6Z2VM42XR9ANGJ6",
+      "id": "rec:01KT364PYMHDWJJG5J10Y0Z61W",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1DF6Z2VM42XR9ANGJ6.json",
+      "path": "discovery/v11/records/rec:01KT364PYMHDWJJG5J10Y0Z61W.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1D54WW26DZQQG169EM",
+      "id": "rec:01KT364PYM8P47XDXXV3GWTNB5",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1D54WW26DZQQG169EM.json",
+      "path": "discovery/v11/records/rec:01KT364PYM8P47XDXXV3GWTNB5.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1DN83QS5RJ8TPPXVPR",
+      "id": "rec:01KT364PYM3W4Y37PKYYV7MJ7P",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1DN83QS5RJ8TPPXVPR.json",
+      "path": "discovery/v11/records/rec:01KT364PYM3W4Y37PKYYV7MJ7P.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1D619A3QRPNHS98B07",
+      "id": "rec:01KT364PYMG67TWGV3FZ9ZS1MS",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1D619A3QRPNHS98B07.json",
+      "path": "discovery/v11/records/rec:01KT364PYMG67TWGV3FZ9ZS1MS.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1DEFKG84E5AXFAG1WR",
+      "id": "rec:01KT364PYMP2X8RR66YXFB5G7Q",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1DEFKG84E5AXFAG1WR.json",
+      "path": "discovery/v11/records/rec:01KT364PYMP2X8RR66YXFB5G7Q.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1EJE4BT3KA7ZG5200K",
+      "id": "rec:01KT364PYMPRVZXQYC7FNJ97P7",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1EJE4BT3KA7ZG5200K.json",
+      "path": "discovery/v11/records/rec:01KT364PYMPRVZXQYC7FNJ97P7.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1E0ERW1JDYANR1GQES",
+      "id": "rec:01KT364PYM409K5S3GB2SJXD4Y",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1E0ERW1JDYANR1GQES.json",
+      "path": "discovery/v11/records/rec:01KT364PYM409K5S3GB2SJXD4Y.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1EWV1J9X9SFDRMAEWR",
+      "id": "rec:01KT364PYMB1V1B3PFRV03FRPX",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1EWV1J9X9SFDRMAEWR.json",
+      "path": "discovery/v11/records/rec:01KT364PYMB1V1B3PFRV03FRPX.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "rec:01KT30NA1ESJQ6082ZWWJMTJST",
+      "id": "rec:01KT364PYMNVMDWBJTP4ETYMH4",
       "kind": "artifact",
-      "path": "discovery/v11/records/rec:01KT30NA1ESJQ6082ZWWJMTJST.json",
+      "path": "discovery/v11/records/rec:01KT364PYMNVMDWBJTP4ETYMH4.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     },
     {
-      "id": "telcard:01KT30NA1ENRBVC1P31GZPZDPV",
+      "id": "telcard:01KT364PYMZ35GHN8YC2XDFF20",
       "kind": "telemetry",
-      "path": "discovery/v11/records/telcard:01KT30NA1ENRBVC1P31GZPZDPV.json",
+      "path": "discovery/v11/records/telcard:01KT364PYMZ35GHN8YC2XDFF20.json",
       "schema": "discoverable-record/1",
       "visibility_tier": "federation"
     }

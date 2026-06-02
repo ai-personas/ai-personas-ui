@@ -110,5 +110,8 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .drawer-body h4{margin:14px 0 6px;color:var(--amber);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase}
 .drawer-body .caps{display:flex;flex-wrap:wrap;gap:5px}
 .cap{background:#0b121b;border:1px solid var(--line2);border-radius:4px;padding:1px 7px;font-size:11px;color:var(--dim)}
-.grant{display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line)}
-.drawer-body a{color:var(--int)}
+.grant{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line)}
+.drawer-body a{color:var(--int)} .drawer-head>span{display:flex;gap:12px;align-items:center}
+.drawer-body .desc2{color:var(--ink);font-size:12px;line-height:1.5;padding:2px 0}
+.drawer-body .filview{background:#070b10;border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-size:11px;
+  line-height:1.45;color:var(--ink);max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:4px 0}

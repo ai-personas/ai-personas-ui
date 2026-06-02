@@ -17,16 +17,22 @@
     "cross_tenant_agreement_ref": null,
     "outward_tier": "federation",
     "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
-    "policy_id": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "policy_id": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "schema": "access-policy/1",
-    "signature_hex": "8d4b5c25209a4454dd1631c355367bdb012f932c1ddb83bd29fbf5c9ebe80ee051bbdf6803249a9f28f78e4929e5069c3fe318b96b874ddebf6eb49106a5170c",
+    "signature_hex": "1eec87a9ce17624842b6bbcd575ac455fd1a58094539a72735f06c2892f09ff8f6006d8940a4f2e710f9be8cf758ae66c6a5f99753cbf79794795f6f35a9cd03",
     "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
     "subject_kind": "artifact"
   },
   "discovery_kind": "artifact",
   "kind": "artifact",
+  "links": {
+    "content": "artifacts/package/top_soldermask.gbr",
+    "content_hash": "sha256:46aff88eb98959991080d3b4ebd96f5d29fab4f113e2f13fad02d4f24d30693c",
+    "media_kind": "binary",
+    "metadata": "artifacts/metadata/artifact:01KT30N9TXTMR9G4TC4J4M2C51.json"
+  },
   "record": {
-    "access_policy_ref": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "access_policy_ref": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "capability_summary": [
       "binary"
     ],
@@ -38,13 +44,13 @@
     "interfaces": [],
     "kind": "artifact",
     "label": "top_soldermask.gbr",
-    "record_id": "rec:01KT30NA1ESJQ6082ZWWJMTJST",
+    "record_id": "rec:01KT364PYMNVMDWBJTP4ETYMH4",
     "schema": "discoverable-record/1",
     "signing_key_id": "kernel-master",
     "visibility_tier": "federation"
   },
   "schema": "discoverable-record/1",
-  "signature_hex": "54c953128e6ac01e5eeb4d57e4afd89815976063dcc5ab2e772aac7d617128e7866f1dd5333adfe0337c5ffacd5c0d2e6dd273e779f2a082f6b18856d9d5170d",
+  "signature_hex": "ee6d6e483e4deedeb1976b6d3bd53878b630ace8749a621edef4e0c35ea96ad684fe7e82bdf9ebfa257a590cb164c053b577e7b3365b73d3082b224c3119e20c",
   "signing_key_id": "kernel-master",
   "visibility_tier": "federation"
 }

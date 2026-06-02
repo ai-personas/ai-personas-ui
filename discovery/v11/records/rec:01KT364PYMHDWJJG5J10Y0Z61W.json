@@ -17,34 +17,40 @@
     "cross_tenant_agreement_ref": null,
     "outward_tier": "federation",
     "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
-    "policy_id": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "policy_id": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "schema": "access-policy/1",
-    "signature_hex": "8d4b5c25209a4454dd1631c355367bdb012f932c1ddb83bd29fbf5c9ebe80ee051bbdf6803249a9f28f78e4929e5069c3fe318b96b874ddebf6eb49106a5170c",
+    "signature_hex": "1eec87a9ce17624842b6bbcd575ac455fd1a58094539a72735f06c2892f09ff8f6006d8940a4f2e710f9be8cf758ae66c6a5f99753cbf79794795f6f35a9cd03",
     "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
     "subject_kind": "artifact"
   },
   "discovery_kind": "artifact",
   "kind": "artifact",
+  "links": {
+    "content": "artifacts/package/bom.csv",
+    "content_hash": "sha256:a52f1479006373f9e15d15d975245fe19faeaf3c422e24cf4b19edae7d6adf94",
+    "media_kind": "bom",
+    "metadata": "artifacts/metadata/artifact:01KT30N9TVEVQSPV0R6HZCZ0B7.json"
+  },
   "record": {
-    "access_policy_ref": "acl:01KT30NA1C8X4V6CA6EXKR20G0",
+    "access_policy_ref": "acl:01KT364PYMJPHASVE4R92MG8W9",
     "capability_summary": [
-      "fab_manifest"
+      "bom"
     ],
-    "content_hash": "sha256:eef6bb0a5021f50880703bc897de9dc7a2b1a65f6a1b1e6a8589a49d4c8b95cb",
+    "content_hash": "sha256:a52f1479006373f9e15d15d975245fe19faeaf3c422e24cf4b19edae7d6adf94",
     "content_locator_ref": "",
-    "description": "fab_manifest artifact in bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "description": "bom artifact in bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
     "did": "",
     "expires_at": "",
     "interfaces": [],
     "kind": "artifact",
-    "label": "fab-order.json",
-    "record_id": "rec:01KT30NA1EJE4BT3KA7ZG5200K",
+    "label": "bom.csv",
+    "record_id": "rec:01KT364PYMHDWJJG5J10Y0Z61W",
     "schema": "discoverable-record/1",
     "signing_key_id": "kernel-master",
     "visibility_tier": "federation"
   },
   "schema": "discoverable-record/1",
-  "signature_hex": "cb5be6dc4960b891d9a9dace58925b04dc6ba8c1ce663e9d0e09964dce9dd2ba39dcef165900067b3ca174e2c68b62ea3d0dffbb946b1984f3b4f2cd87c44707",
+  "signature_hex": "0511e23bad0f918f0758b0cfdedac86ea873e7cbc7ef631c16a1b5d687d16815dfe4d83a09e3505ca4b01fb084fa6695afddc47d7fefe4fe87a10ff9c547bb0b",
   "signing_key_id": "kernel-master",
   "visibility_tier": "federation"
 }
