@@ -1,0 +1,31 @@
+{
+  "card": {
+    "capabilities": [
+      "artifact_bundle_distribution",
+      "dc_to_ac_design"
+    ],
+    "description": "A careful power-electronics design helper.",
+    "domain_curatorships": [],
+    "host_persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "id": "card:01KT37FTACEF4370KDEW6QAPB6",
+    "interfaces": [],
+    "name": "Quill",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "agent-card/1",
+    "security_schemes": [
+      "Ed25519"
+    ],
+    "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "skills": [
+      "manufacturing_package_validation",
+      "pcb_package_generation"
+    ],
+    "version": "1"
+  },
+  "id": "card:01KT37FTACEF4370KDEW6QAPB6",
+  "path": ".well-known/agent-cards/card:01KT37FTACEF4370KDEW6QAPB6",
+  "persona_public_key_hex": "a081f3ee379eed67d8327ba9ef549dbf9046858fd9fa89a4c96581b7edded919",
+  "schema": "agent-card/1",
+  "signature_hex": "f6beaa32b7b2674776819c8e884d51fca712ed0882b58da8c36363aea76108858d475a5e586e14e8426f561e308b06cac2207be2f425b33dc790cc948002ea0c",
+  "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+}

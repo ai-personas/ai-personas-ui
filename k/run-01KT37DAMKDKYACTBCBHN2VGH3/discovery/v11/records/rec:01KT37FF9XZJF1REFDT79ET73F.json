@@ -1,0 +1,49 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "policy_id": "acl:01KT37FF9XPBFRQADGH17FYZYC",
+    "schema": "access-policy/1",
+    "signature_hex": "58d67b47340ffa71db942570bcc9287df6b560562a1aae14f2b30802b11893eec070f5456ec68401366319201d9a34190ed224d742c592c654f2b7f302685f0c",
+    "subject_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "subject_kind": "persona"
+  },
+  "discovery_kind": "persona",
+  "kind": "persona",
+  "links": {
+    "env": "environments/env:01KT37DS9SFA2FN8701V2XVH60.json",
+    "export": "personas/persona:01KT37DAQ2MPHQJK9CA0JF556W.json",
+    "profile": ".well-known/personas/persona:01KT37DAQ2MPHQJK9CA0JF556W.json",
+    "subject_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FF9XPBFRQADGH17FYZYC",
+    "capability_summary": [
+      "dc_to_ac_design",
+      "pcb_package_generation"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "DC-to-AC designer persona (Software Engineering)",
+    "did": "did:personaos:persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": ".well-known/personas/persona:01KT37DAQ2MPHQJK9CA0JF556W.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "persona",
+    "label": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "record_id": "rec:01KT37FF9XZJF1REFDT79ET73F",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "5230f356966c24084e6eaef252473a77eb43978cac6e75f0b7b1d76d4fca282dd490d90a7125425d3091897dac5badfdcdecda4296e1229c346cd2a3e337f00f",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

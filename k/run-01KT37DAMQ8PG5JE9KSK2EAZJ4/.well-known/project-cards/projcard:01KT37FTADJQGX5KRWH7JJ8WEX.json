@@ -1,0 +1,29 @@
+{
+  "card": {
+    "domain_refs": [
+      "domain:01KT37DWG4N1NESMS5PQA5EP0V"
+    ],
+    "host_kernel_id": "kernel:97c03b3ed2bd0100",
+    "id": "projcard:01KT37FTADJQGX5KRWH7JJ8WEX",
+    "member_persona_ids": [
+      "persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+    ],
+    "name": "Simulate a damped harmonic oscillator for 80 ste",
+    "open_role_kinds": [
+      "fab_reviewer"
+    ],
+    "project_id": "env:01KT37DWGAC0697WSTNXWHQNCQ",
+    "project_kind": "project_workspace",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "project-card/1",
+    "signing_key_id": "kernel-master",
+    "status": "active",
+    "summary": "Ready-to-order DC-to-AC inverter PCB package",
+    "version": "1",
+    "visibility_tier": "federation"
+  },
+  "id": "projcard:01KT37FTADJQGX5KRWH7JJ8WEX",
+  "schema": "project-card/1",
+  "signature_hex": "4fc0347b5f9f96babbb2d1d3d91de9685ec16d7b57afa6193c3fe9cd211478a4686a79ab5e073c1d8197c46cb0dfca640b58c95c18d66211d52ecbc65133c903",
+  "signing_key_id": "kernel-master"
+}

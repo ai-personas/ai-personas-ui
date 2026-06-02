@@ -1,0 +1,32 @@
+{
+  "card": {
+    "artifact_kinds": [
+      "code",
+      "dataset",
+      "json"
+    ],
+    "curator_persona_ids": [
+      "persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+    ],
+    "description": "emerged from task: Simulate a damped harmonic oscillator for 80 steps, emit a small CSV time series + a summary JSON (pe",
+    "domain_id": "domain:01KT37DWG4N1NESMS5PQA5EP0V",
+    "domain_kind": "emergent",
+    "hazard_axes": [
+      "digital_only",
+      "none"
+    ],
+    "host_kernel_id": "kernel:97c03b3ed2bd0100",
+    "id": "domcard:01KT37FTAD07VWHECGZC1QYEEC",
+    "name": "computational physics",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "domain-context-card/1",
+    "signing_key_id": "kernel-master",
+    "trust_stage": "emergent",
+    "version": "1",
+    "visibility_tier": "federation"
+  },
+  "id": "domcard:01KT37FTAD07VWHECGZC1QYEEC",
+  "schema": "domain-context-card/1",
+  "signature_hex": "74a61f6d04ea54fbbd5e8d2b3ebca466c85b7225cf4521dffddecbedb86052fef6c87fb3f70b9f853367d7fb0bd5f56d19b2cc40d0daa39622450759c69afa01",
+  "signing_key_id": "kernel-master"
+}

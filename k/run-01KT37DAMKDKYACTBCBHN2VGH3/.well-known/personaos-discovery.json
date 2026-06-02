@@ -1,0 +1,28 @@
+{
+  "access_model": [
+    "discover",
+    "r",
+    "rw",
+    "admin"
+  ],
+  "kernel_id": "kernel:1db6c0dba277ebff",
+  "keys_url": ".well-known/personaos-keys.json",
+  "planes": {
+    "internet": {
+      "transports": [
+        ".well-known",
+        "gossip",
+        "kademlia_dht"
+      ]
+    },
+    "intranet": {
+      "note": "browser probes peer URLs; native runtime does multicast mDNS",
+      "transports": [
+        "mdns"
+      ]
+    }
+  },
+  "providers_url": "discovery/providers.json",
+  "schema": "personaos-discovery-bootstrap/1",
+  "telemetry_url": "telemetry/spans.json"
+}

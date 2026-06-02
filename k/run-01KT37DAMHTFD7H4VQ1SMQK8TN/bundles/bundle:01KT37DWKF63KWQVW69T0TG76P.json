@@ -1,0 +1,229 @@
+{
+  "artifacts": [
+    {
+      "artifact_content_hash": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "artifact_id": "artifact:01KT37EXR93TT4JQ30J42MCZZF",
+      "cid": "cidv1-sha256-d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "file_digest": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "media_kind": "document",
+      "metadata_path": "artifacts/metadata/artifact:01KT37EXR93TT4JQ30J42MCZZF.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/brief.md",
+      "size_bytes": 1366,
+      "store_path": "store/blobs/sha256/d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "title": "brief.md"
+    },
+    {
+      "artifact_content_hash": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "artifact_id": "artifact:01KT37EXR9QGJZYB7YZP6HSH82",
+      "cid": "cidv1-sha256-9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "file_digest": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "media_kind": "json",
+      "metadata_path": "artifacts/metadata/artifact:01KT37EXR9QGJZYB7YZP6HSH82.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/metadata.json",
+      "size_bytes": 497,
+      "store_path": "store/blobs/sha256/9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "title": "metadata.json"
+    }
+  ],
+  "bundle": {
+    "payload": {
+      "artifacts": [
+        "artifact:01KT37EXR93TT4JQ30J42MCZZF",
+        "artifact:01KT37EXR9QGJZYB7YZP6HSH82"
+      ],
+      "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+      "bundle_kind": "task_deliverable",
+      "discharges_obligations": [],
+      "forked_from_bundle_id": null,
+      "owning_env_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "primary_artifact_id": null,
+      "project_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "related_domain_items": {},
+      "related_open_problems": [],
+      "schema": "artifact-bundle/1",
+      "sharing_policy_ref": "share:01KT37DWKF9TCFW2PK5VWX1ZSM",
+      "shipment_contract": {
+        "artifact_quality_rules": [],
+        "declared_by_persona_id": "persona:01KT37DAR0EQJW349HKN53MZ9Y",
+        "rationale": "body-emitted files are the declared evidence",
+        "required_artifact_patterns": [
+          "brief.md",
+          "metadata.json"
+        ],
+        "required_check_markers": [],
+        "schema": "shipment-contract/1",
+        "verification_strategy": "execute the body-emitted validation program and require its emitted deliverable"
+      },
+      "state": "shipped",
+      "version": 5
+    },
+    "signature_hex": "f84cb6f8fa2ba0df93a44bdf42b1d728b3a188137f48d6edcd363fc4b6295d55d28ae120ec9ef949f68ffef2ce8a00744a1614b7612f713ab9606f9cb01aa00b",
+    "signing_key_id": ""
+  },
+  "co_signatures": {
+    "persona:01KT37DAR0EQJW349HKN53MZ9Y": "5dfa5fded2a8d1f35881950787b70e1f1ca2ebea3a341e6d9fa5dc05cfcc069a417c8cb3734a8bd03c558809cd0488297b7f9f75013f180af97a069bcae04602"
+  },
+  "schema": "artifact-bundle-run-export/1",
+  "verifier_evidence": [
+    {
+      "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+      "command_or_api_fingerprint": "schema-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37EXR93TT4JQ30J42MCZZF": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+        "artifact:01KT37EXR9QGJZYB7YZP6HSH82": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd"
+      },
+      "input_bundle_hash": "sha256:ad9ad336d9451cb28a5279b53d3366c5c571dca74a7631a9b07807ff2ff10083",
+      "invocation_id": "verifyev:01KT37EXTPDXTS4JBT97FH875J",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "payload present and well-formed",
+      "raw_output_hash": "sha256:b6f45bda8a2101397c3509c275d92e15212e052638795047c5aa20958e852631",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "f25d783c9e44f700b99720e4166b97ddcbd71bffb94054bc4b21d6f7e34affe816d4715fa561de4021e20859881f77387dd632d505ea0b5d4eb186f227d72e08",
+      "stage_id": "schema-default",
+      "stage_kind": "schema",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+      "command_or_api_fingerprint": "sandbox-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37EXR93TT4JQ30J42MCZZF": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+        "artifact:01KT37EXR9QGJZYB7YZP6HSH82": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd"
+      },
+      "input_bundle_hash": "sha256:ad9ad336d9451cb28a5279b53d3366c5c571dca74a7631a9b07807ff2ff10083",
+      "invocation_id": "verifyev:01KT37EXTPE92NVGPAQC799AD7",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "executed in sandbox: ran to completion",
+      "raw_output_hash": "sha256:50f2a557c920126bd7c171be69697559be7a5cd113a9255a6bd39d61f1e1f808",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": "kernel-verifier-sandbox",
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "bb297dbcc8a2c30f87fb893b084889ce46ef7ec0e0cddcac4f1757d6b3a782c8d05adb533b1109b0ac94342093e82c0bed9cb099f74bc60cc66b5df6741d4c07",
+      "stage_id": "sandbox-default",
+      "stage_kind": "sandbox",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+      "command_or_api_fingerprint": "invariant-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37EXR93TT4JQ30J42MCZZF": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+        "artifact:01KT37EXR9QGJZYB7YZP6HSH82": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd"
+      },
+      "input_bundle_hash": "sha256:ad9ad336d9451cb28a5279b53d3366c5c571dca74a7631a9b07807ff2ff10083",
+      "invocation_id": "verifyev:01KT37EXTQ3T6Y2DQ0P5ZZZVAN",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "output within declared invariants",
+      "raw_output_hash": "sha256:0152666ee693075d5f0a25265cd48642205904a2e3e29135483b0d43c1af0a7c",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "3a630f571de5807d7376ef94912eb3c8c4b5084e99a40fa167b28effa3d8ca5c1b1b0b79dc6afdae0f4e5386cf15c35cab909b90bc8829e4d1302b6e4e370b00",
+      "stage_id": "invariant-default",
+      "stage_kind": "invariant",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+      "command_or_api_fingerprint": "policy-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37EXR93TT4JQ30J42MCZZF": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+        "artifact:01KT37EXR9QGJZYB7YZP6HSH82": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd"
+      },
+      "input_bundle_hash": "sha256:ad9ad336d9451cb28a5279b53d3366c5c571dca74a7631a9b07807ff2ff10083",
+      "invocation_id": "verifyev:01KT37EXTQVJY1X2711GMNZQRQ",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "policy checks clear",
+      "raw_output_hash": "sha256:4093d321dbd99d13bee9161868cb22a607e1b85dd1ef6229ad807e59ab79133d",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "50bb16ae8ff44cc678a3fbd044aa4fe131e1a575384b1e74b761088ed155b62c5a3b4c3d6de7bfc0f25987af76fd861e130c8c6f590b02b38dc268075770d20b",
+      "stage_id": "policy-default",
+      "stage_kind": "policy",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    }
+  ],
+  "verifier_invocations": [
+    {
+      "detail": "payload present and well-formed",
+      "evidence_ref": "verifyev:01KT37EXTPDXTS4JBT97FH875J",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "schema-default",
+      "tier": "schema"
+    },
+    {
+      "detail": "executed in sandbox: ran to completion",
+      "evidence_ref": "verifyev:01KT37EXTPE92NVGPAQC799AD7",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "sandbox-default",
+      "tier": "sandbox"
+    },
+    {
+      "detail": "output within declared invariants",
+      "evidence_ref": "verifyev:01KT37EXTQ3T6Y2DQ0P5ZZZVAN",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "invariant-default",
+      "tier": "invariant"
+    },
+    {
+      "detail": "policy checks clear",
+      "evidence_ref": "verifyev:01KT37EXTQVJY1X2711GMNZQRQ",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "policy-default",
+      "tier": "policy"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "artifact": "rate-limiting-brief",
+  "brief_sha256": "d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+  "created_unix": 1780372436,
+  "files": [
+    "brief.md",
+    "metadata.json"
+  ],
+  "format": "markdown+json",
+  "validation": {
+    "checks": [
+      "required files exist",
+      "files are utf-8 text",
+      "files are under size limit",
+      "markdown contains comparison table",
+      "metadata hash matches brief.md"
+    ],
+    "max_file_size_bytes": 65536
+  }
+}

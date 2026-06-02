@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37EXR93TT4JQ30J42MCZZF",
+      "asserted_fields": {},
+      "content_hash": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "document",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 1366,
+      "version": 1
+    },
+    "signature_hex": "96f85e459b079c285d8767a3ad14b7b5bfe4c74c93e67e92039e114178aaac175b3ddc88e1cdd9ca15b776096ef7a32caf59e75ef21324acefa724e5fa742f0d",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+  "content_ref": "brief.md",
+  "content_store_path": "store/blobs/sha256/d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+  "file_digest": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+  "package_path": "artifacts/package/brief.md",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 1366,
+  "title": "brief.md"
+}

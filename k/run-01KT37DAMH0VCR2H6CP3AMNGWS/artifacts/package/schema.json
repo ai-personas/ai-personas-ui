@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "active": {
+      "type": "boolean"
+    },
+    "age": {
+      "type": "integer"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "age",
+    "active"
+  ]
+}

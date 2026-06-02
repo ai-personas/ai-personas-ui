@@ -1,0 +1,79 @@
+{
+  "distribution": {
+    "artifact_type": "application/vnd.personaos.artifact-bundle.v1+json",
+    "manifest_cid": "cidv1-sha256-16a7a784456c1797a4cac7ec2b3b95730f75471679cfdfdac2fabc4caf90ed21",
+    "manifest_digest": "sha256:16a7a784456c1797a4cac7ec2b3b95730f75471679cfdfdac2fabc4caf90ed21",
+    "oci_manifest": "distribution/oci-artifact-manifest.json"
+  },
+  "generated_at": "2026-06-02T03:51:10.009000+00:00",
+  "handles": {
+    "bundle_id": "bundle:01KT378P12E8Y1P95QZJSV2QQP",
+    "domain_id": "domain:01KT378P0QJ2PY3662MW11JD86",
+    "environment_id": "env:01KT378P0W1MVM1FY3XB76A6HR",
+    "persona_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+    "project_id": "env:01KT378P0W1MVM1FY3XB76A6HR",
+    "sharing_policy_id": "share:01KT378P12JEY04ZY6YMDVF9Z8"
+  },
+  "kernel_id": "kernel:3633dc2dd8cc4d35",
+  "registry": {
+    "catalog": "registry/personaos-registry.json",
+    "digest": "sha256:4e3321078885a5115f3fc586eba4f293bb9aa9802d4e6f4b357cd2f3926a9309"
+  },
+  "schema": "personaos-discovery-index/1",
+  "storage": {
+    "artifacts": [
+      {
+        "artifact_content_hash": "sha256:fdd555488b4ec67c35945eb4a20957d693dc7aa405c726f7883cc3a2c5a983ce",
+        "artifact_id": "artifact:01KT379TS1P6JCPPATSTHJMDNK",
+        "cid": "cidv1-sha256-fdd555488b4ec67c35945eb4a20957d693dc7aa405c726f7883cc3a2c5a983ce",
+        "file_digest": "sha256:fdd555488b4ec67c35945eb4a20957d693dc7aa405c726f7883cc3a2c5a983ce",
+        "media_kind": "json",
+        "metadata_path": "artifacts/metadata/artifact:01KT379TS1P6JCPPATSTHJMDNK.json",
+        "mime_type": "application/octet-stream",
+        "package_path": "artifacts/package/manifest.json",
+        "size_bytes": 286,
+        "store_path": "store/blobs/sha256/fdd555488b4ec67c35945eb4a20957d693dc7aa405c726f7883cc3a2c5a983ce",
+        "title": "manifest.json"
+      },
+      {
+        "artifact_content_hash": "sha256:5be9cad2b187dd0a887d2ce65f40248e2501fd70d7815c9fc7a5539b00f8ee45",
+        "artifact_id": "artifact:01KT379TS2TC95KZ0NC5EEQCYY",
+        "cid": "cidv1-sha256-5be9cad2b187dd0a887d2ce65f40248e2501fd70d7815c9fc7a5539b00f8ee45",
+        "file_digest": "sha256:5be9cad2b187dd0a887d2ce65f40248e2501fd70d7815c9fc7a5539b00f8ee45",
+        "media_kind": "code",
+        "metadata_path": "artifacts/metadata/artifact:01KT379TS2TC95KZ0NC5EEQCYY.json",
+        "mime_type": "application/octet-stream",
+        "package_path": "artifacts/package/merge_sort.py",
+        "size_bytes": 579,
+        "store_path": "store/blobs/sha256/5be9cad2b187dd0a887d2ce65f40248e2501fd70d7815c9fc7a5539b00f8ee45",
+        "title": "merge_sort.py"
+      },
+      {
+        "artifact_content_hash": "sha256:20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+        "artifact_id": "artifact:01KT379TS23W846KTD3EKTCMMQ",
+        "cid": "cidv1-sha256-20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+        "file_digest": "sha256:20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+        "media_kind": "json",
+        "metadata_path": "artifacts/metadata/artifact:01KT379TS23W846KTD3EKTCMMQ.json",
+        "mime_type": "application/octet-stream",
+        "package_path": "artifacts/package/report.json",
+        "size_bytes": 139,
+        "store_path": "store/blobs/sha256/20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+        "title": "report.json"
+      }
+    ],
+    "bundle_dag": "store/ipld-dag.json",
+    "content_addressed_root": "store",
+    "root_cid": "cidv1-sha256-ac4079a163dba45b9c0157d2c2aae3c5c86d59a1cc96641d9ebed9c01feb4f32"
+  },
+  "task": "Implement merge sort, emit the algorithm code + a small JSON report proving it sorts 50 random arrays of length 20 correctly (store only counts + the sorted check), and self-validate.",
+  "well_known": {
+    "agent_card": ".well-known/agent-cards/card:01KT379TXK0MHYB323K8ZF3DAJ",
+    "agent_cards": ".well-known/agent-cards.json",
+    "domain_card": ".well-known/domain-context-cards/domcard:01KT379TXPWHX1FJ69YH6SYAFE.json",
+    "env_card": ".well-known/env-cards/envcard:01KT379TXP68891Z8DXP69P439.json",
+    "keys": ".well-known/personaos-keys.json",
+    "persona_card": ".well-known/personas/persona:01KT3784JF3VXJ08AE139ENMDX.json",
+    "project_card": ".well-known/project-cards/projcard:01KT379TXPG6A22K72S3CDCXY8.json"
+  }
+}

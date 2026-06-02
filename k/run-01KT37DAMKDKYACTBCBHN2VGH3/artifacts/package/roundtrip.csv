@@ -1,0 +1,11 @@
+id,name,category,quantity,unit_price,active
+1,Buck controller,ic,12,2.85,true
+2,Gate driver,ic,8,1.60,true
+3,Power MOSFET,semiconductor,20,0.95,true
+4,Schottky diode,semiconductor,15,0.42,true
+5,Ferrite core,magnetics,6,3.70,true
+6,Copper winding,magnetics,10,1.15,true
+7,Current shunt,resistor,25,0.18,true
+8,Ceramic capacitor,capacitor,40,0.09,true
+9,Output inductor,magnetics,5,4.25,true
+10,Prototype note,documentation,1,0.00,false

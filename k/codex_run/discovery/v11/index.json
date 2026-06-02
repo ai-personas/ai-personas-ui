@@ -1,0 +1,129 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact_bundle": "artcard:01KT37DWCDK892YYAY634VFM9W",
+    "env": "rec:01KT37DWCCHVN20QSPD07Y1X5P",
+    "persona": "rec:01KT37DWCCN5WX41RFGENRK9DW",
+    "telemetry": "telcard:01KT37DWCD1NWAPEK46HCGGF8K"
+  },
+  "kernel_id": "kernel:828b3c83c16e1c1d",
+  "records": [
+    {
+      "id": "rec:01KT37DWCCN5WX41RFGENRK9DW",
+      "kind": "persona",
+      "path": "discovery/v11/records/rec:01KT37DWCCN5WX41RFGENRK9DW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCCHVN20QSPD07Y1X5P",
+      "kind": "env",
+      "path": "discovery/v11/records/rec:01KT37DWCCHVN20QSPD07Y1X5P.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "artcard:01KT37DWCDK892YYAY634VFM9W",
+      "kind": "artifact_bundle",
+      "path": "discovery/v11/records/artcard:01KT37DWCDK892YYAY634VFM9W.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDCHVT6ER3YF8R2KD4",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDCHVT6ER3YF8R2KD4.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDYBKE9R05PW2GAZZD",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDYBKE9R05PW2GAZZD.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDG4HEH6FJZSFT0AB8",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDG4HEH6FJZSFT0AB8.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDB3X99SQRCCVSC0QC",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDB3X99SQRCCVSC0QC.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDW623Y91J59HFV6KT",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDW623Y91J59HFV6KT.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDGSDB3SH9BP83W45T",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDGSDB3SH9BP83W45T.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDM0ZDT0YZ2VBHDSV4",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDM0ZDT0YZ2VBHDSV4.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCD93KE2JE4YH9R52PG",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCD93KE2JE4YH9R52PG.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDYDV46JQE8F76A8TG",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37DWCDYDV46JQE8F76A8TG.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "telcard:01KT37DWCD1NWAPEK46HCGGF8K",
+      "kind": "telemetry",
+      "path": "discovery/v11/records/telcard:01KT37DWCD1NWAPEK46HCGGF8K.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDP6X043BV8VR8E7P0",
+      "kind": "domain",
+      "path": "discovery/v11/records/rec:01KT37DWCDP6X043BV8VR8E7P0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37DWCDXP6WP9MMSH13GH1G",
+      "kind": "project",
+      "path": "discovery/v11/records/rec:01KT37DWCDXP6WP9MMSH13GH1G.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "Design a DC to AC circuit and produce a ready-to-order PCB manufacturing package.",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

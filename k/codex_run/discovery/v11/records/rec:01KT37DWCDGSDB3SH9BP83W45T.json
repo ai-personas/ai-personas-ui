@@ -1,0 +1,56 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT37DWCC6Q6CNT3H269HMWG0",
+    "schema": "access-policy/1",
+    "signature_hex": "fd380447fa2d98c9e69f6e30adbe342fea2cf690dd00fb553b31104e2fffbac950f2dfc58357e502ab6aa55f723f215eedafd99f34b9dd7b9e16e26dc4dcc406",
+    "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "content": "artifacts/package/fab-order.json",
+    "content_hash": "sha256:eef6bb0a5021f50880703bc897de9dc7a2b1a65f6a1b1e6a8589a49d4c8b95cb",
+    "media_kind": "fab_manifest",
+    "metadata": "artifacts/metadata/artifact:01KT30N9TWVXPMRF6WCRS73JY2.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37DWCC6Q6CNT3H269HMWG0",
+    "capability_summary": [
+      "fab_manifest"
+    ],
+    "content_hash": "sha256:eef6bb0a5021f50880703bc897de9dc7a2b1a65f6a1b1e6a8589a49d4c8b95cb",
+    "content_locator_ref": "",
+    "description": "fab_manifest artifact in bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "fab-order.json",
+    "record_id": "rec:01KT37DWCDGSDB3SH9BP83W45T",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "b7ad4173fd070417b79f7315bb55e988fc8187ad8bd45272a887893963c1710d1ce9a15fdca6ec01d2a80305ba4aaa9e68380e8c37f00466acccac84afa06608",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

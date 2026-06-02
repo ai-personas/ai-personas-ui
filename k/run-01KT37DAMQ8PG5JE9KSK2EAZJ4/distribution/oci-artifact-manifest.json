@@ -1,0 +1,72 @@
+{
+  "annotations": {
+    "org.personaos.dag.cid": "cidv1-sha256-6caf1fa21749ff6a1cb48a8de0e5400c7283436f1081d49455a1a9fe0ca66c93",
+    "org.personaos.environment.id": "env:01KT37DWGAC0697WSTNXWHQNCQ",
+    "org.personaos.policy.id": "share:01KT37DWGHDDB33QBN9EW3MVXJ",
+    "org.personaos.project.id": "env:01KT37DWGAC0697WSTNXWHQNCQ"
+  },
+  "artifactType": "application/vnd.personaos.artifact-bundle.v1+json",
+  "config": {
+    "annotations": {
+      "org.opencontainers.image.title": "Simulate a damped harmonic oscillator for 80 steps, emit a small",
+      "org.personaos.bundle.id": "bundle:01KT37DWGHZ8XGEMM9YYCZS939"
+    },
+    "digest": "sha256:428a28440906ec112776357319fd862e5e1a384e70fea5e37fe1901943ba736e",
+    "mediaType": "application/vnd.personaos.artifact-bundle.config.v1+json",
+    "size": 2075
+  },
+  "layers": [
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "manifest.json",
+        "org.personaos.artifact.id": "artifact:01KT37FT77QE5M68PQNYFRQ6H1",
+        "org.personaos.cid": "cidv1-sha256-1144d35c181cecb2e2dc74956fd780a4d2c6c666298b6b1f3b56549f04dc7548"
+      },
+      "digest": "sha256:1144d35c181cecb2e2dc74956fd780a4d2c6c666298b6b1f3b56549f04dc7548",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 633
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "model.py",
+        "org.personaos.artifact.id": "artifact:01KT37FT77QKQD7G5N3W6FSB80",
+        "org.personaos.cid": "cidv1-sha256-57481228ddc4a8117f89bbf0dc03113c6cdffae9340b5524649cbbb8f30cd68f"
+      },
+      "digest": "sha256:57481228ddc4a8117f89bbf0dc03113c6cdffae9340b5524649cbbb8f30cd68f",
+      "mediaType": "application/vnd.personaos.code.v1",
+      "size": 689
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "summary.json",
+        "org.personaos.artifact.id": "artifact:01KT37FT77GA5VBAGP5NYWCR0R",
+        "org.personaos.cid": "cidv1-sha256-55d5f511263c0f0bfba9781357ffe3fdaa20d522813bc6767d6e2b9aa374c61c"
+      },
+      "digest": "sha256:55d5f511263c0f0bfba9781357ffe3fdaa20d522813bc6767d6e2b9aa374c61c",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 424
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "time_series.csv",
+        "org.personaos.artifact.id": "artifact:01KT37FT7881VR6JEBFNF4RD89",
+        "org.personaos.cid": "cidv1-sha256-93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489"
+      },
+      "digest": "sha256:93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489",
+      "mediaType": "application/vnd.personaos.dataset.v1",
+      "size": 4911
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "validation.json",
+        "org.personaos.artifact.id": "artifact:01KT37FT78B4RB2MTRSTVJMZ1E",
+        "org.personaos.cid": "cidv1-sha256-1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe"
+      },
+      "digest": "sha256:1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 152
+    }
+  ],
+  "schemaVersion": 2,
+  "signature_hex": "1831b27ef898a39bf7413fdf17a56dd738d7e724cf8efa8f88f6b90905cf9a6372845451aed32c0a323f5d60972dbaabef6f0f120935f9038630c8e937c00a0f"
+}

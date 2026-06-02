@@ -1,0 +1,309 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "artifact:01KT37EXR93TT4JQ30J42MCZZF",
+      "content_hash": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "media_kind": "document",
+      "title": "brief.md"
+    },
+    {
+      "artifact_id": "artifact:01KT37EXR9QGJZYB7YZP6HSH82",
+      "content_hash": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "media_kind": "json",
+      "title": "metadata.json"
+    }
+  ],
+  "body": {
+    "accepted": true,
+    "attempts": [
+      {
+        "accepted": true,
+        "model_id": "gpt-5.5",
+        "program_chars": 5148,
+        "status": "verified"
+      }
+    ],
+    "envelope_verifies": true,
+    "pathway": "verifier_accept",
+    "program_chars": 5148,
+    "safety_sources": [
+      "universal_harm",
+      "persona_charter",
+      "domain_safety",
+      "external_tool_required",
+      "novelty_check",
+      "env_charter"
+    ],
+    "status": "verified",
+    "task_class": "convergent",
+    "verified_by_model": "gpt-5.5"
+  },
+  "bundle": {
+    "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+    "sharing_policy_ref": "share:01KT37DWKF9TCFW2PK5VWX1ZSM"
+  },
+  "bundle_verification": {
+    "invocations": [
+      [
+        "schema",
+        true
+      ],
+      [
+        "sandbox",
+        true
+      ],
+      [
+        "invariant",
+        true
+      ],
+      [
+        "policy",
+        true
+      ]
+    ],
+    "passed": true
+  },
+  "continuity": {
+    "experience_tasks_before": 0,
+    "loaded_memory_entries": 0
+  },
+  "domain": {
+    "domain_id": "domain:01KT37DWK89XM2NR46XS4CXKSQ",
+    "harm": "digital_only",
+    "kinds": [
+      "markdown_technical_brief",
+      "comparison_table",
+      "metadata_json",
+      "file_structure_validation_report"
+    ],
+    "name": "Software Engineering Documentation",
+    "safety_critical": false,
+    "stage": "emergent",
+    "tools": [
+      "Markdown authoring",
+      "JSON generation",
+      "filesystem write/check utilities",
+      "schema or structural validation"
+    ]
+  },
+  "environment": {
+    "environment_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+    "rules": [
+      "envrule:01KT37DWKC3T0W9NFB061AE5A8",
+      "envrule:01KT37DWKC6VFWSTPYAP1GW0N3"
+    ],
+    "status": "active",
+    "type": "project_workspace",
+    "visibility_tier": "federation"
+  },
+  "generated_at": "2026-06-02T03:53:56.890000+00:00",
+  "memory": {
+    "available_entries": 0,
+    "current_run_memory": {
+      "entry_count": 1,
+      "reflective_created": "",
+      "semantic_created": "",
+      "written": "memory:bundle:01KT37DWKF63KWQVW69T0TG76P"
+    },
+    "retrieved_for_task": []
+  },
+  "models": {
+    "active_model_id": "gpt-5.5",
+    "available": [
+      {
+        "active": true,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.5",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.5",
+        "provider": "openai",
+        "selection_name": "gpt-5.5"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4",
+        "provider": "openai",
+        "selection_name": "gpt-5.4"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4-Mini",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4-mini",
+        "provider": "openai",
+        "selection_name": "gpt-5.4-mini"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.3-Codex-Spark",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "high",
+          "service_tiers": [],
+          "supported_in_api": false,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.3-codex-spark",
+        "provider": "openai",
+        "selection_name": "gpt-5.3-codex-spark"
+      }
+    ]
+  },
+  "outputs": {
+    "content_store": "store",
+    "discovery_index": "discovery/index.json",
+    "oci_manifest": "distribution/oci-artifact-manifest.json",
+    "package_dir": "artifacts/package",
+    "registry": "registry/personaos-registry.json",
+    "telemetry_snapshot": "telemetry/snapshot.json",
+    "telemetry_spans": "telemetry/spans.json",
+    "telemetry_summary": "telemetry/summary.json",
+    "v11_discovery_index": "discovery/v11/index.json",
+    "v11_discovery_verification": "discovery/v11/verification.json",
+    "well_known": ".well-known"
+  },
+  "package": {
+    "dir": "/tmp/claude-1000/personaos-sandbox-wrhzrly1/rate_limit_brief_t8ajt19l",
+    "files": [
+      "brief.md",
+      "metadata.json"
+    ]
+  },
+  "project": {
+    "env_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+    "project_id": "env:01KT37DWKB14D0XYQ2R3SVK65D"
+  },
+  "ready_to_order": {
+    "artifacts": 2,
+    "co_signers": [
+      "persona:01KT37DAR0EQJW349HKN53MZ9Y"
+    ],
+    "locked": true,
+    "state": "shipped"
+  },
+  "real_execution": {
+    "ok": true,
+    "returncode": 0,
+    "stderr": "PACKAGE_DIR=/tmp/claude-1000/personaos-sandbox-wrhzrly1/rate_limit_brief_t8ajt19l",
+    "stdout": "TASK_VERIFIED",
+    "timed_out": false
+  },
+  "recognition": [
+    "A_empty_domain_context",
+    "B_no_matching_skill"
+  ],
+  "safety_extension": "Ensure generated content stays at a conceptual engineering level, avoids operational abuse guidance, and validates outputs without modifying unrelated files.",
+  "task": "Generate a concise Markdown technical brief comparing token-bucket vs leaky-bucket rate limiting (with a small table), emit brief.md + a metadata JSON, and self-validate the file structure.",
+  "v11_discovery": {
+    "directory": "runs/ecosystem/run-01KT37DAMHTFD7H4VQ1SMQK8TN/discovery/v11/directory.json",
+    "index": "runs/ecosystem/run-01KT37DAMHTFD7H4VQ1SMQK8TN/discovery/v11/index.json",
+    "passed": true,
+    "probes": {
+      "federated_peer": {
+        "can_discover_telemetry": true,
+        "can_read_artifact_body": false,
+        "dht_count": 8,
+        "mdns_count": 8
+      },
+      "owner": {
+        "can_discover_telemetry": true,
+        "can_read_artifact_body": true,
+        "dht_count": 8,
+        "mdns_count": 8
+      },
+      "public_stranger": {
+        "can_discover_telemetry": false,
+        "can_read_artifact_body": false,
+        "dht_count": 0,
+        "mdns_count": 0
+      }
+    },
+    "providers": "runs/ecosystem/run-01KT37DAMHTFD7H4VQ1SMQK8TN/discovery/v11/providers.json",
+    "records_bridged_to_dht": 8,
+    "records_published": 8,
+    "verification": "runs/ecosystem/run-01KT37DAMHTFD7H4VQ1SMQK8TN/discovery/v11/verification.json"
+  }
+}

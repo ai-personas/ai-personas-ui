@@ -1,0 +1,49 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+    "policy_id": "acl:01KT37FJZQK18AVVHYN6D8P1RG",
+    "schema": "access-policy/1",
+    "signature_hex": "1e4937c314cb7cadf5f5183a9d20b527d406a4c935e13a96ad7f0541410d08458d424bf14532d2ae6c91c118cc4c219cb7059822558b1bb79bf45c200c5ba006",
+    "subject_id": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+    "subject_kind": "persona"
+  },
+  "discovery_kind": "persona",
+  "kind": "persona",
+  "links": {
+    "env": "environments/env:01KT37DXA7B7RC5RYRCNB1ZFCF.json",
+    "export": "personas/persona:01KT37DAPZWN9DB2J4QY91K8WF.json",
+    "profile": ".well-known/personas/persona:01KT37DAPZWN9DB2J4QY91K8WF.json",
+    "subject_id": "persona:01KT37DAPZWN9DB2J4QY91K8WF"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FJZQK18AVVHYN6D8P1RG",
+    "capability_summary": [
+      "dc_to_ac_design",
+      "pcb_package_generation"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "DC-to-AC designer persona (Software Engineering)",
+    "did": "did:personaos:persona:01KT37DAPZWN9DB2J4QY91K8WF",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": ".well-known/personas/persona:01KT37DAPZWN9DB2J4QY91K8WF.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "persona",
+    "label": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+    "record_id": "rec:01KT37FJZRSE77C4P6MFVRKA9K",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "bded48d70d7ad86a9678f9f2479ef97fde34d6cf98e048cea13556b25fa1aeeefd702a0fc45649994c7c413405bf60b4a64af478271a1afa37f90fc4b59f5e04",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

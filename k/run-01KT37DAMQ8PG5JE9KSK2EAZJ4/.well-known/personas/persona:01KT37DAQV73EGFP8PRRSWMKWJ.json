@@ -1,0 +1,37 @@
+{
+  "card": {
+    "accepted_roles": [
+      "designer",
+      "fab_reviewer",
+      "falsifier"
+    ],
+    "advertised_interests": [
+      "dc_to_ac_design",
+      "pcb_manufacturing",
+      "power_electronics"
+    ],
+    "archetype": "",
+    "can_lead_cohorts": false,
+    "charter_hash": "sha256:a0117d6e2b68952c798b1608d852d3e80f72985720c72b58636b40a6b47781db",
+    "description": "A careful power-electronics design helper.",
+    "domain_curatorships": [
+      "computational physics"
+    ],
+    "expires_at": "2026-06-02T04:54:25.996000+00:00",
+    "name": "Quill",
+    "persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "primary_disposition": "",
+    "reputation_score": 0.8,
+    "schema": "persona-card/3",
+    "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "soul_version": 1,
+    "visibility": "federation",
+    "voice_hash": "sha256:a1d70a1309725c2434c5ad694bc553aea811caca379953d6c8a7da8be9f8a1f0"
+  },
+  "path": ".well-known/personas/persona:01KT37DAQV73EGFP8PRRSWMKWJ.json",
+  "persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+  "schema": "persona-card/3",
+  "signature_hex": "c72a47c1a9aedfc26df0e10134705be9ce7f9a14d30f8a97b351ad429c1ae93e96a9c4b661869a330c9cd61ee85a516e97a1761baaa91813043a04f8a738c708",
+  "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+  "ttl_seconds": 3600
+}

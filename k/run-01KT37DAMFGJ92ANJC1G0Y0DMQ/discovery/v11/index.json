@@ -1,0 +1,94 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact_bundle": "artcard:01KT37FAR34294XX28VFWJY5TE",
+    "env": "rec:01KT37FAR3MNMJY6BN3AQ24VD9",
+    "persona": "rec:01KT37FAR31WV0M1RB9RVAE1AQ",
+    "telemetry": "telcard:01KT37FAR4BD5JRKSNGKER6C5Y"
+  },
+  "kernel_id": "kernel:d90ebd4fa960da8d",
+  "records": [
+    {
+      "id": "rec:01KT37FAR31WV0M1RB9RVAE1AQ",
+      "kind": "persona",
+      "path": "discovery/v11/records/rec:01KT37FAR31WV0M1RB9RVAE1AQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR3MNMJY6BN3AQ24VD9",
+      "kind": "env",
+      "path": "discovery/v11/records/rec:01KT37FAR3MNMJY6BN3AQ24VD9.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "artcard:01KT37FAR34294XX28VFWJY5TE",
+      "kind": "artifact_bundle",
+      "path": "discovery/v11/records/artcard:01KT37FAR34294XX28VFWJY5TE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR3N3QP4G3VE1J98THE",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FAR3N3QP4G3VE1J98THE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR45P4W1N5ZF08W6HN2",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FAR45P4W1N5ZF08W6HN2.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR44GM8DD4NTYN5SBFA",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FAR44GM8DD4NTYN5SBFA.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR415SK1M1PQSRKW4VX",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FAR415SK1M1PQSRKW4VX.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "telcard:01KT37FAR4BD5JRKSNGKER6C5Y",
+      "kind": "telemetry",
+      "path": "discovery/v11/records/telcard:01KT37FAR4BD5JRKSNGKER6C5Y.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR46XY5M75D16H64055",
+      "kind": "domain",
+      "path": "discovery/v11/records/rec:01KT37FAR46XY5M75D16H64055.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FAR4HAK5JBRVR4SGA1RQ",
+      "kind": "project",
+      "path": "discovery/v11/records/rec:01KT37FAR4HAK5JBRVR4SGA1RQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short verification report, and self-validate primality.",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

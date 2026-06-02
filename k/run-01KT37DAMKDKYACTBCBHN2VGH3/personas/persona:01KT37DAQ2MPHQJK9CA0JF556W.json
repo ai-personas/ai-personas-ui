@@ -1,0 +1,250 @@
+{
+  "did": "did:personaos:persona:01KT37DAQ2MPHQJK9CA0JF556W",
+  "knowledge": {
+    "memory": {
+      "entries": [
+        {
+          "citations": 1,
+          "created_at": "2026-06-02T03:54:14.676000+00:00",
+          "entry_id": "memory:bundle:01KT37DS9ZXA6YGHTTW3CE0252",
+          "importance": 0.95,
+          "keywords": [
+            "01kt37ds9sfa2fn8701v2xvh60",
+            "01kt37ds9zxa6yghttw3ce0252",
+            "ac",
+            "and",
+            "bom",
+            "bundle",
+            "code",
+            "completed",
+            "converter",
+            "csv",
+            "dc",
+            "emit",
+            "env",
+            "environment",
+            "equality",
+            "files",
+            "for",
+            "gerber",
+            "input",
+            "inverter",
+            "json",
+            "manifest",
+            "orderable",
+            "output",
+            "package",
+            "passed",
+            "pcb",
+            "report",
+            "round",
+            "roundtrip",
+            "rows",
+            "run",
+            "self",
+            "shipped",
+            "small",
+            "task",
+            "the",
+            "trip",
+            "validate",
+            "validation",
+            "write"
+          ],
+          "knowledge_ref_id": "",
+          "memory_type": "episodic",
+          "principal_attribution_id": "",
+          "provenance": 1.0,
+          "schema": "memory-entry/1",
+          "scope": {
+            "domain": "domain:01KT37DS9MZPXRGEBGWZ7Q9YT6",
+            "env": "env:01KT37DS9SFA2FN8701V2XVH60",
+            "federation": null,
+            "persona": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+            "project": "env:01KT37DS9SFA2FN8701V2XVH60",
+            "public": false,
+            "relationship": null,
+            "task": "Write a CSV-to-JSON converter, emit the converter code + a small input.csv (10 rows) + output.json, and self-validate the round-trip equality.",
+            "transfer_domain": false,
+            "transfer_env": false,
+            "transfer_persona": false,
+            "transfer_project": false,
+            "transfer_relationship": false
+          },
+          "tenant_id": "",
+          "text": "Completed DC-to-AC inverter run for task 'Write a CSV-to-JSON converter, emit the converter code + a small input.csv (10 rows) + output.json, and self-validate the round-trip equality.': shipped bundle bundle:01KT37DS9ZXA6YGHTTW3CE0252 in environment env:01KT37DS9SFA2FN8701V2XVH60; validation passed; orderable package files: converter.py, input.csv, manifest.json, output.json, roundtrip.csv, validation_report.json.",
+          "tier": "RECENT",
+          "visibility": ""
+        }
+      ],
+      "schema": "memory-store/1"
+    },
+    "persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "schema": "knowledge-store/1"
+  },
+  "memory": {
+    "entries": [
+      {
+        "citations": 1,
+        "created_at": "2026-06-02T03:54:14.676000+00:00",
+        "entry_id": "memory:bundle:01KT37DS9ZXA6YGHTTW3CE0252",
+        "importance": 0.95,
+        "keywords": [
+          "01kt37ds9sfa2fn8701v2xvh60",
+          "01kt37ds9zxa6yghttw3ce0252",
+          "ac",
+          "and",
+          "bom",
+          "bundle",
+          "code",
+          "completed",
+          "converter",
+          "csv",
+          "dc",
+          "emit",
+          "env",
+          "environment",
+          "equality",
+          "files",
+          "for",
+          "gerber",
+          "input",
+          "inverter",
+          "json",
+          "manifest",
+          "orderable",
+          "output",
+          "package",
+          "passed",
+          "pcb",
+          "report",
+          "round",
+          "roundtrip",
+          "rows",
+          "run",
+          "self",
+          "shipped",
+          "small",
+          "task",
+          "the",
+          "trip",
+          "validate",
+          "validation",
+          "write"
+        ],
+        "knowledge_ref_id": "",
+        "memory_type": "episodic",
+        "principal_attribution_id": "",
+        "provenance": 1.0,
+        "schema": "memory-entry/1",
+        "scope": {
+          "domain": "domain:01KT37DS9MZPXRGEBGWZ7Q9YT6",
+          "env": "env:01KT37DS9SFA2FN8701V2XVH60",
+          "federation": null,
+          "persona": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+          "project": "env:01KT37DS9SFA2FN8701V2XVH60",
+          "public": false,
+          "relationship": null,
+          "task": "Write a CSV-to-JSON converter, emit the converter code + a small input.csv (10 rows) + output.json, and self-validate the round-trip equality.",
+          "transfer_domain": false,
+          "transfer_env": false,
+          "transfer_persona": false,
+          "transfer_project": false,
+          "transfer_relationship": false
+        },
+        "tenant_id": "",
+        "text": "Completed DC-to-AC inverter run for task 'Write a CSV-to-JSON converter, emit the converter code + a small input.csv (10 rows) + output.json, and self-validate the round-trip equality.': shipped bundle bundle:01KT37DS9ZXA6YGHTTW3CE0252 in environment env:01KT37DS9SFA2FN8701V2XVH60; validation passed; orderable package files: converter.py, input.csv, manifest.json, output.json, roundtrip.csv, validation_report.json.",
+        "tier": "RECENT",
+        "visibility": ""
+      }
+    ],
+    "schema": "memory-store/1"
+  },
+  "memory_counts": {
+    "entries": 1,
+    "episodic": 1,
+    "reflective": 0,
+    "semantic": 0
+  },
+  "persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+  "public_key_hex": "68399d24f3951ef27cc1aae81177c892620a546df73873362988e33b8639c4ad",
+  "schema": "persona-run-export/1",
+  "soul": {
+    "payload": {
+      "allowed_tools": [
+        "calc",
+        "search",
+        "spice_sim"
+      ],
+      "description": "A careful power-electronics design helper.",
+      "frontmatter": {
+        "allowed_tools": [
+          "calc",
+          "search",
+          "spice_sim"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "name": "Boson",
+        "persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+        "principles": [
+          "be honest about uncertainty",
+          "show your working"
+        ],
+        "schema": "soul/4",
+        "soul_version": 1
+      },
+      "name": "Boson",
+      "persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+      "schema": "soul/4",
+      "sections": {
+        "How I think": "Methodically. I decompose a problem, state my assumptions, compute, and then\nsanity-check the result against physical limits before I report it.",
+        "My contract with the kernel": "I obey the safety floor at all times. I never attempt to mutate my own identity;\nonly the kernel may sign changes to my SOUL. Every action I take is recorded in\nthe lineage.",
+        "What I will not do": "- give medical dosing advice\n- give legally binding financial advice\n- make clinical diagnoses",
+        "Who I am": "I am Sparky, a careful engineering helper specialising in power electronics. I\nhelp engineers reason about converters, magnetics, and control loops. I am\npatient, precise, and I admit when I do not know something."
+      },
+      "soul_version": 1
+    },
+    "signature_hex": "371eccd607e461cb2a5a1995ef27993cac2c022201eb51be9a06de93169e7ec4b0bab7b0c63555fb9d54a55f933b439f942a23c4c3c349f2691ccf5c661c3c07",
+    "signing_key_id": "persona:persona:01KT37DAQ2MPHQJK9CA0JF556W"
+  },
+  "soul_state": {
+    "active_goals": [],
+    "born_at": "",
+    "current_state": {},
+    "evolution_log": [
+      {
+        "from_state": "SEEDED",
+        "kind": "LIFECYCLE_ACTIVATED",
+        "parent_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "signed_by": "8673c71fe9f70c246ac4ba1a7ad0738bf8746ee9c40d3869698e1d1ac086bb16706353295c0266ba59946e19014f3d9319c4de7448dae13c7754e8de20ff1d02",
+        "signing_key_id": "persona:persona:01KT37DAQ2MPHQJK9CA0JF556W",
+        "soul_version": 1,
+        "to_state": "ACTIVE",
+        "ts": "2026-06-02T03:53:04.483000+00:00"
+      },
+      {
+        "env_id": "env:01KT37DS9SFA2FN8701V2XVH60",
+        "experience_tasks": 1,
+        "kind": "EXPERIENCE_TASK_RECORDED",
+        "parent_hash": "sha256:016c81a293a80673249771bb142d36bb45e5c13b8d5c976a0c2abff1ed4523e5",
+        "previous_experience_tasks": 0,
+        "signed_by": "35fe2caf44ee8b422246b58a8d3c44693b9fc5af8be6d6a6530399909b7d1471d6fd0db51f18c74d283f6a687300216200287b1dcdbf0ece21fe87983caf0000",
+        "signing_key_id": "persona:persona:01KT37DAQ2MPHQJK9CA0JF556W",
+        "soul_version": 1,
+        "task_class": "convergent",
+        "task_id": "task:01KT37DSA35FXCM3Z0GGXNQ0T4",
+        "ts": "2026-06-02T03:53:19.431000+00:00"
+      }
+    ],
+    "experience_tasks": 1,
+    "experiential_floor": 0.0,
+    "fertility": 0,
+    "fitness": 0.0,
+    "lifecycle_state": "ACTIVE",
+    "mode_proficiencies": {},
+    "persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "relationships": {},
+    "schema": "soul-state/6",
+    "soul_version": 1
+  }
+}

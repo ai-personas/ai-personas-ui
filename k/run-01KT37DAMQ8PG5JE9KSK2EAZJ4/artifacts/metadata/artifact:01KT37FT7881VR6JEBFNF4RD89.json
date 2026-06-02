@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FT7881VR6JEBFNF4RD89",
+      "asserted_fields": {},
+      "content_hash": "sha256:3a1cf7e652420a9cf541a4e73ccd7d17f472489f440f6529f55873bb9ee3d04e",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "dataset",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 4830,
+      "version": 1
+    },
+    "signature_hex": "24d2dd8d386fda79d33b6f677d6a882733a6cbcabe676f7ad5306862d4e4af17ecdcb50ae4e40708704eb9a32e67b3a6fcebeccb3cfc0a539e57d772aaa8bd0b",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489",
+  "content_ref": "time_series.csv",
+  "content_store_path": "store/blobs/sha256/93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489",
+  "file_digest": "sha256:93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489",
+  "package_path": "artifacts/package/time_series.csv",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 4911,
+  "title": "time_series.csv"
+}

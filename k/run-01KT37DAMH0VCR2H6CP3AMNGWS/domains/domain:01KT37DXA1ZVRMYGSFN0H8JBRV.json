@@ -1,0 +1,50 @@
+{
+  "domain": {
+    "payload": {
+      "corpus_evolution_mode": "stable",
+      "credential_directories": [],
+      "custody_tier": "kms",
+      "default_notation": {},
+      "domain_id": "domain:01KT37DXA1ZVRMYGSFN0H8JBRV",
+      "information_hazard_class": "none",
+      "knowledge_refs": [],
+      "maintainer": "emergent",
+      "name": "Software Engineering",
+      "origin": "emergent",
+      "parent_domain_id": null,
+      "physical_harm_class": "digital_only",
+      "safety_critical": true,
+      "schema": "domain-context/2",
+      "seed_acceptance_pathways": [],
+      "seed_charters": [],
+      "seed_skills": [],
+      "seed_tactics": [],
+      "session_budget_profile": "reasoning_heavy",
+      "signing_key_id": "kernel-master",
+      "spawned_from_probe_id": null,
+      "stage": "emergent",
+      "standards_refs": [],
+      "tools_recommended": [],
+      "tools_required": [
+        "programming language runtime",
+        "JSON parser/serializer",
+        "basic test runner or assertion mechanism",
+        "type-check helper functions"
+      ],
+      "trust_score": 0.3,
+      "version": 2
+    },
+    "signature_hex": "0856f7f62573b0d59a63912c8892dc64ed2697c7d13f83cf1639b0747910f9a3ab33fe4ab968c6e7d5db30c2ca0988653eb740a258776aede1a52ad942ea9a04",
+    "signing_key_id": "kernel-master"
+  },
+  "safety_extensions": [
+    "SafetyExtension(schema='safety-extension/1', extension_id='safext:01KT37DXA6N9AFAF3XMBBZW35M', domain_id='domain:01KT37DXA1ZVRMYGSFN0H8JBRV', description='Keep the validator intentionally scoped to required-key and primitive type checks, avoid claiming full JSON Schema compliance, and report unsupported schema features explicitly if encountered.', forbidden_action_kinds=(), forbidden_topics=(), stage='standardised', safety_critical=True)"
+  ],
+  "schema": "domain-run-export/1",
+  "tools_required": [
+    "programming language runtime",
+    "JSON parser/serializer",
+    "basic test runner or assertion mechanism",
+    "type-check helper functions"
+  ]
+}

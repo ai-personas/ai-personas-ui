@@ -1,0 +1,32 @@
+{
+  "policy": {
+    "payload": {
+      "access_grants": [
+        {
+          "access_level": "rw",
+          "grantee_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+          "grantee_kind": "persona",
+          "schema": "access-grant/1"
+        },
+        {
+          "access_level": "rw",
+          "grantee_id": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+          "grantee_kind": "env",
+          "schema": "access-grant/1"
+        }
+      ],
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "bundle_scope": "bundle_specific",
+      "cross_tenant_agreement_ref": "reviewer-bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "intra_composition_inheritance": "inherit_to_children",
+      "outward_tier": "tenant",
+      "owning_env_id": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "policy_id": "share:01KT37DXBKQC515DTTZCPH5DGG",
+      "schema": "artifact-share/1",
+      "version": 1
+    },
+    "signature_hex": "0363b4f7ab37448101b7df0041c1ad87dc0739ae082e749339244f7a291e48b96f077e70176e664f21a7747d1b3b96fad6ed2a7344b5c964f3af6aa326106f09",
+    "signing_key_id": ""
+  },
+  "schema": "artifact-sharing-policy-run-export/1"
+}

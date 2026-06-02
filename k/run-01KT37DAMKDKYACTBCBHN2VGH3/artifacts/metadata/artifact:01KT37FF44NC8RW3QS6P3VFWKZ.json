@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FF44NC8RW3QS6P3VFWKZ",
+      "asserted_fields": {},
+      "content_hash": "sha256:b1307e2ed05afa483dba8320fb019064523669c7d6ad72f627613f264f2dd0a2",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "dataset",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 436,
+      "version": 1
+    },
+    "signature_hex": "f55ee863937d3bb7b159b9189c1e10cea9a5d4d1250231832ba249999b96ab60f209b85de41bc293b51418241c9bfca7f3fdc0499fc00f608bce1a7fe1d0e703",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+  "content_ref": "roundtrip.csv",
+  "content_store_path": "store/blobs/sha256/2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+  "file_digest": "sha256:2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+  "package_path": "artifacts/package/roundtrip.csv",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 447,
+  "title": "roundtrip.csv"
+}

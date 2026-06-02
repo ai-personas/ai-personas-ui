@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FAJAQGDJH2V4TMZQFF1P",
+      "asserted_fields": {},
+      "content_hash": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "code",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 805,
+      "version": 1
+    },
+    "signature_hex": "ee6da377226f3798c0300d1dd3ea096c4e63027456af26dcbc873d229d2562fde3b6803e0c564fb77490804215b3107171914fd20b82800dac245c8eb69bf10c",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+  "content_ref": "sieve_algorithm.py",
+  "content_store_path": "store/blobs/sha256/8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+  "file_digest": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+  "package_path": "artifacts/package/sieve_algorithm.py",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 805,
+  "title": "sieve_algorithm.py"
+}

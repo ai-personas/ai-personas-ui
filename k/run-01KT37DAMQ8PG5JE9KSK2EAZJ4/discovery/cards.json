@@ -1,0 +1,168 @@
+{
+  "agent_cards": [
+    {
+      "card": {
+        "capabilities": [
+          "artifact_bundle_distribution",
+          "dc_to_ac_design"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [],
+        "host_persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+        "id": "card:01KT37FTACEF4370KDEW6QAPB6",
+        "interfaces": [],
+        "name": "Quill",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "agent-card/1",
+        "security_schemes": [
+          "Ed25519"
+        ],
+        "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+        "skills": [
+          "manufacturing_package_validation",
+          "pcb_package_generation"
+        ],
+        "version": "1"
+      },
+      "id": "card:01KT37FTACEF4370KDEW6QAPB6",
+      "path": ".well-known/agent-cards/card:01KT37FTACEF4370KDEW6QAPB6",
+      "persona_public_key_hex": "a081f3ee379eed67d8327ba9ef549dbf9046858fd9fa89a4c96581b7edded919",
+      "schema": "agent-card/1",
+      "signature_hex": "f6beaa32b7b2674776819c8e884d51fca712ed0882b58da8c36363aea76108858d475a5e586e14e8426f561e308b06cac2207be2f425b33dc790cc948002ea0c",
+      "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+    }
+  ],
+  "domain_context_cards": [
+    {
+      "card": {
+        "artifact_kinds": [
+          "code",
+          "dataset",
+          "json"
+        ],
+        "curator_persona_ids": [
+          "persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+        ],
+        "description": "emerged from task: Simulate a damped harmonic oscillator for 80 steps, emit a small CSV time series + a summary JSON (pe",
+        "domain_id": "domain:01KT37DWG4N1NESMS5PQA5EP0V",
+        "domain_kind": "emergent",
+        "hazard_axes": [
+          "digital_only",
+          "none"
+        ],
+        "host_kernel_id": "kernel:97c03b3ed2bd0100",
+        "id": "domcard:01KT37FTAD07VWHECGZC1QYEEC",
+        "name": "computational physics",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "domain-context-card/1",
+        "signing_key_id": "kernel-master",
+        "trust_stage": "emergent",
+        "version": "1",
+        "visibility_tier": "federation"
+      },
+      "id": "domcard:01KT37FTAD07VWHECGZC1QYEEC",
+      "schema": "domain-context-card/1",
+      "signature_hex": "74a61f6d04ea54fbbd5e8d2b3ebca466c85b7225cf4521dffddecbedb86052fef6c87fb3f70b9f853367d7fb0bd5f56d19b2cc40d0daa39622450759c69afa01",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "env_cards": [
+    {
+      "card": {
+        "artifact_bundle_refs": [
+          "bundle:01KT37DWGHZ8XGEMM9YYCZS939"
+        ],
+        "default_domain_context_ref": "domain:01KT37DWG4N1NESMS5PQA5EP0V",
+        "environment_id": "env:01KT37DWGAC0697WSTNXWHQNCQ",
+        "host_kernel_id": "kernel:97c03b3ed2bd0100",
+        "id": "envcard:01KT37FTAEM38F65NG8KA7VF14",
+        "name": "DC-AC inverter design workspace",
+        "rule_refs": [
+          "envrule:01KT37DWGC0SHV8FFQHJ9HQ004",
+          "envrule:01KT37DWGCMA4V9CMX2ZCRSBJ2"
+        ],
+        "schema": "env-card/1",
+        "sharing_policy_ref": "share:01KT37DWGHDDB33QBN9EW3MVXJ",
+        "signing_key_id": "kernel-master",
+        "type": "project_workspace",
+        "visibility_tier": "federation"
+      },
+      "id": "envcard:01KT37FTAEM38F65NG8KA7VF14",
+      "schema": "env-card/1",
+      "signature_hex": "75856b6b35ec841ed33ad655c9bcd6469f159a0b655be1fac287eb17b3acaf2ea44649a37692e71f2fba872605bd628cc4dcbb9b8246a80d86c47b4714a58206",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "kernel_id": "kernel:97c03b3ed2bd0100",
+  "persona_cards": [
+    {
+      "card": {
+        "accepted_roles": [
+          "designer",
+          "fab_reviewer",
+          "falsifier"
+        ],
+        "advertised_interests": [
+          "dc_to_ac_design",
+          "pcb_manufacturing",
+          "power_electronics"
+        ],
+        "archetype": "",
+        "can_lead_cohorts": false,
+        "charter_hash": "sha256:a0117d6e2b68952c798b1608d852d3e80f72985720c72b58636b40a6b47781db",
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [
+          "computational physics"
+        ],
+        "expires_at": "2026-06-02T04:54:25.996000+00:00",
+        "name": "Quill",
+        "persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+        "primary_disposition": "",
+        "reputation_score": 0.8,
+        "schema": "persona-card/3",
+        "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+        "soul_version": 1,
+        "visibility": "federation",
+        "voice_hash": "sha256:a1d70a1309725c2434c5ad694bc553aea811caca379953d6c8a7da8be9f8a1f0"
+      },
+      "path": ".well-known/personas/persona:01KT37DAQV73EGFP8PRRSWMKWJ.json",
+      "persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+      "schema": "persona-card/3",
+      "signature_hex": "c72a47c1a9aedfc26df0e10134705be9ce7f9a14d30f8a97b351ad429c1ae93e96a9c4b661869a330c9cd61ee85a516e97a1761baaa91813043a04f8a738c708",
+      "signing_key_id": "persona:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+      "ttl_seconds": 3600
+    }
+  ],
+  "project_cards": [
+    {
+      "card": {
+        "domain_refs": [
+          "domain:01KT37DWG4N1NESMS5PQA5EP0V"
+        ],
+        "host_kernel_id": "kernel:97c03b3ed2bd0100",
+        "id": "projcard:01KT37FTADJQGX5KRWH7JJ8WEX",
+        "member_persona_ids": [
+          "persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+        ],
+        "name": "Simulate a damped harmonic oscillator for 80 ste",
+        "open_role_kinds": [
+          "fab_reviewer"
+        ],
+        "project_id": "env:01KT37DWGAC0697WSTNXWHQNCQ",
+        "project_kind": "project_workspace",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "project-card/1",
+        "signing_key_id": "kernel-master",
+        "status": "active",
+        "summary": "Ready-to-order DC-to-AC inverter PCB package",
+        "version": "1",
+        "visibility_tier": "federation"
+      },
+      "id": "projcard:01KT37FTADJQGX5KRWH7JJ8WEX",
+      "schema": "project-card/1",
+      "signature_hex": "4fc0347b5f9f96babbb2d1d3d91de9685ec16d7b57afa6193c3fe9cd211478a4686a79ab5e073c1d8197c46cb0dfca640b58c95c18d66211d52ecbc65133c903",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "schema": "personaos-card-catalog/1"
+}

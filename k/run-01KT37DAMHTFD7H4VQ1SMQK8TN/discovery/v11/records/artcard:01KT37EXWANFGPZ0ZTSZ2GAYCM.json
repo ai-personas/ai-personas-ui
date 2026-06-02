@@ -1,0 +1,59 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "persona:01KT37DAR0EQJW349HKN53MZ9Y",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAR0EQJW349HKN53MZ9Y",
+    "policy_id": "acl:01KT37EXW9A4V8E8CY3GPRT4CZ",
+    "schema": "access-policy/1",
+    "signature_hex": "90628257bd765bb624eaa9fe61c6a7e524eb5623360b1f2b1a569a1be465b1cd0fd71adb42be4cc88b00a49be9a1c12c955af299212b890c3c8b1991bcd80e00",
+    "subject_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact_bundle",
+  "kind": "artifact",
+  "links": {
+    "bundle": "bundles/bundle:01KT37DWKF63KWQVW69T0TG76P.json",
+    "dag": "store/ipld-dag.json",
+    "oci": "distribution/oci-artifact-manifest.json",
+    "registry": "registry/personaos-registry.json",
+    "run": "run.json",
+    "subject_id": "bundle:01KT37DWKF63KWQVW69T0TG76P"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37EXW9A4V8E8CY3GPRT4CZ",
+    "capability_summary": [
+      "document",
+      "json"
+    ],
+    "content_hash": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+    "content_locator_ref": "",
+    "description": "Ready-to-order PCB package (2 files)",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "Generate a concise Markdown technical brief comparing token-buck",
+    "record_id": "artcard:01KT37EXWANFGPZ0ZTSZ2GAYCM",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "ea2c593f7d03f9fc8db23661c248e4eb7ef0a15f926da49f31694cba80beb477ba98ba4915139f674fc4c09103d35a87575d5e0cb18c4d71a3ca18c2f749d50c",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

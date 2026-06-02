@@ -1,0 +1,16 @@
+{
+  "headers": [
+    "id",
+    "name",
+    "category",
+    "quantity",
+    "unit_price",
+    "active"
+  ],
+  "input_sha256": "2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+  "output_sha256": "9476e94f24635b67664e2b175362d197ce9069441996fd927978f9efe6f6a435",
+  "round_trip_equal": true,
+  "roundtrip_sha256": "2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+  "row_count": 10,
+  "status": "verified"
+}

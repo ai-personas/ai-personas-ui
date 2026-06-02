@@ -1,0 +1,101 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact_bundle": "artcard:01KT37FTBGEQQKEEVZYK00480N",
+    "env": "rec:01KT37FTBG2EKBEPG338H2MXS1",
+    "persona": "rec:01KT37FTBG91PBVDQJF1R3A93H",
+    "telemetry": "telcard:01KT37FTBHSSQKE9X9FVY8NHR1"
+  },
+  "kernel_id": "kernel:97c03b3ed2bd0100",
+  "records": [
+    {
+      "id": "rec:01KT37FTBG91PBVDQJF1R3A93H",
+      "kind": "persona",
+      "path": "discovery/v11/records/rec:01KT37FTBG91PBVDQJF1R3A93H.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBG2EKBEPG338H2MXS1",
+      "kind": "env",
+      "path": "discovery/v11/records/rec:01KT37FTBG2EKBEPG338H2MXS1.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "artcard:01KT37FTBGEQQKEEVZYK00480N",
+      "kind": "artifact_bundle",
+      "path": "discovery/v11/records/artcard:01KT37FTBGEQQKEEVZYK00480N.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBGS5EC1FF048P2G10W",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FTBGS5EC1FF048P2G10W.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBGF46CJMXCG1EN08JQ",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FTBGF46CJMXCG1EN08JQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBHRHXZRP9G18XXNJVQ",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FTBHRHXZRP9G18XXNJVQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBHFHFYPY3SJJKHGBD6",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FTBHFHFYPY3SJJKHGBD6.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBHMJE3KFHAWHTCHBQ7",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT37FTBHMJE3KFHAWHTCHBQ7.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "telcard:01KT37FTBHSSQKE9X9FVY8NHR1",
+      "kind": "telemetry",
+      "path": "discovery/v11/records/telcard:01KT37FTBHSSQKE9X9FVY8NHR1.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBHS9A3GC3ZABWK3PGD",
+      "kind": "domain",
+      "path": "discovery/v11/records/rec:01KT37FTBHS9A3GC3ZABWK3PGD.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT37FTBH3PE9TD5DQS5TY2CJ",
+      "kind": "project",
+      "path": "discovery/v11/records/rec:01KT37FTBH3PE9TD5DQS5TY2CJ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "Simulate a damped harmonic oscillator for 80 steps, emit a small CSV time series + a summary JSON (period, decay rate) + the model code, and self-validate that energy decays.",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

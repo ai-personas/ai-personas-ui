@@ -1,0 +1,349 @@
+{
+  "charter": {
+    "payload": {
+      "charter_text": [
+        "Personas may draft and validate candidate ready-to-order PCB manufacturing packages inside this workspace.",
+        "Draft design generation is allowed before shipment, sharing, bridge, or external-attestation records exist.",
+        "Distribution, fabrication, and safety-for-use claims are lifecycle outcomes checked after verifier evidence and bundle records exist."
+      ],
+      "composition_order": [
+        "universal_harm_floor",
+        "operator_policy",
+        "env_charter",
+        "persona_charter",
+        "project_charter",
+        "user_boundary"
+      ],
+      "env_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "hash": "sha256:ade3398eab94439f823c5c68e46d5528af853a7b8d4ed205ff4f588f73ddda47",
+      "parent_charter_hash": null,
+      "rule_refs": [
+        "envrule:01KT37DWKC3T0W9NFB061AE5A8",
+        "envrule:01KT37DWKC6VFWSTPYAP1GW0N3"
+      ],
+      "schema": "env-charter/1",
+      "signing_key_id": "kernel-master",
+      "version": 1
+    },
+    "signature_hex": "5ebc93df5a83efd415f8f9d1ad74aa3db4f2c53a19e15ef3442aa3d609a8781f58f4d0590596292a44a4d39cf471a7d6d1dc4218e9a5e1d5089172dbcc2ec407",
+    "signing_key_id": "kernel-master"
+  },
+  "discovered_models": {
+    "active_model_id": "gpt-5.5",
+    "available": [
+      {
+        "active": true,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.5",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.5",
+        "provider": "openai",
+        "selection_name": "gpt-5.5"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4",
+        "provider": "openai",
+        "selection_name": "gpt-5.4"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4-Mini",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4-mini",
+        "provider": "openai",
+        "selection_name": "gpt-5.4-mini"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.3-Codex-Spark",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "high",
+          "service_tiers": [],
+          "supported_in_api": false,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.3-codex-spark",
+        "provider": "openai",
+        "selection_name": "gpt-5.3-codex-spark"
+      }
+    ]
+  },
+  "environment": {
+    "charter_hash": "sha256:ade3398eab94439f823c5c68e46d5528af853a7b8d4ed205ff4f588f73ddda47",
+    "env_rules": [
+      "envrule:01KT37DWKC3T0W9NFB061AE5A8",
+      "envrule:01KT37DWKC6VFWSTPYAP1GW0N3"
+    ],
+    "environment_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+    "name": "DC-AC inverter design workspace",
+    "schema": "env-instance/1",
+    "status": "active",
+    "type": "project_workspace",
+    "visibility_tier": "federation"
+  },
+  "members": [
+    "persona:01KT37DAR0EQJW349HKN53MZ9Y"
+  ],
+  "model_registry": {
+    "capabilities": [
+      {
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "context_window": null,
+        "cost_per_1k_tokens": 0.0,
+        "cost_per_call": 0.0,
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "model_id": "gpt-5.5",
+        "operator_cosign_required": false,
+        "privilege_tier": 0,
+        "provider": "openai",
+        "required_roles": [],
+        "required_standing": 0.0,
+        "schema": "env-model-capability/1"
+      },
+      {
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "context_window": null,
+        "cost_per_1k_tokens": 0.0,
+        "cost_per_call": 0.001,
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "model_id": "gpt-5.4",
+        "operator_cosign_required": false,
+        "privilege_tier": 0,
+        "provider": "openai",
+        "required_roles": [],
+        "required_standing": 0.0,
+        "schema": "env-model-capability/1"
+      },
+      {
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "context_window": null,
+        "cost_per_1k_tokens": 0.0,
+        "cost_per_call": 0.001,
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "model_id": "gpt-5.4-mini",
+        "operator_cosign_required": false,
+        "privilege_tier": 0,
+        "provider": "openai",
+        "required_roles": [],
+        "required_standing": 0.0,
+        "schema": "env-model-capability/1"
+      },
+      {
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "context_window": null,
+        "cost_per_1k_tokens": 0.0,
+        "cost_per_call": 0.001,
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "model_id": "gpt-5.3-codex-spark",
+        "operator_cosign_required": false,
+        "privilege_tier": 0,
+        "provider": "openai",
+        "required_roles": [],
+        "required_standing": 0.0,
+        "schema": "env-model-capability/1"
+      }
+    ],
+    "environment_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+    "grants": [],
+    "schema": "env-model-registry/1"
+  },
+  "rules": [
+    {
+      "last_evidence_refs": [
+        "verifyev:01KT37EXKD6F0JTWV4VMHGGE7Z"
+      ],
+      "payload": {
+        "authored_via": "env_formation_proposal",
+        "authoring_ref": "persona:01KT37DAR0EQJW349HKN53MZ9Y",
+        "cascade_locked": false,
+        "cascade_position": null,
+        "claim_pattern": null,
+        "co_signing_personas": [
+          "persona:01KT37DAR0EQJW349HKN53MZ9Y"
+        ],
+        "contract_bundle_id": null,
+        "description": "Any emitted manufacturing package must be backed by executable validation evidence.",
+        "enforced_at": [
+          "output_emission",
+          "mutation_propose"
+        ],
+        "env_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+        "failure_action": "refuse_action",
+        "hazard_axes": {},
+        "inherited_from_parent_env_id": null,
+        "operator_approval": null,
+        "operator_approval_signed_by": null,
+        "parent_rule_hash": null,
+        "rule_hash": "sha256:51da0d1a11c511547f44564802f85553d03cc58bcace7ad107b6206b08b32e05",
+        "rule_id": "envrule:01KT37DWKC3T0W9NFB061AE5A8",
+        "rule_kind": "rule_engine",
+        "rule_name": "buildable-orderable-validator",
+        "safety_critical": false,
+        "sandboxed_tool_artifact_id": null,
+        "schema": "env-rule/1",
+        "stage": "accepted",
+        "timing": "both",
+        "verifier_recipe_id": "execute design-validation program",
+        "version": 1
+      },
+      "signature_hex": "574bcbaeac0c33195ff6b929c1bd2225316641a88077c604b27e9dcba5328055e9bfcaf1e599b834de4ade2c793be5884404164f49914c73a2eec5351f35db06"
+    },
+    {
+      "last_evidence_refs": [
+        "verifyev:01KT37EXKES4PE4WJTTZW9AMWH"
+      ],
+      "payload": {
+        "authored_via": "env_formation_proposal",
+        "authoring_ref": "persona:01KT37DAR0EQJW349HKN53MZ9Y",
+        "cascade_locked": false,
+        "cascade_position": null,
+        "claim_pattern": null,
+        "co_signing_personas": [
+          "persona:01KT37DAR0EQJW349HKN53MZ9Y"
+        ],
+        "contract_bundle_id": null,
+        "description": "A ready-to-order claim requires an explicit shipment contract and artifact bundle.",
+        "enforced_at": [
+          "output_emission"
+        ],
+        "env_id": "env:01KT37DWKB14D0XYQ2R3SVK65D",
+        "failure_action": "refuse_action",
+        "hazard_axes": {},
+        "inherited_from_parent_env_id": null,
+        "operator_approval": null,
+        "operator_approval_signed_by": null,
+        "parent_rule_hash": null,
+        "rule_hash": "sha256:4e1318c537b6cd040b9465c3b33648c28c79df0edac65e7907f7b7ee3ba08025",
+        "rule_id": "envrule:01KT37DWKC6VFWSTPYAP1GW0N3",
+        "rule_kind": "contract",
+        "rule_name": "shipment-contract-required",
+        "safety_critical": false,
+        "sandboxed_tool_artifact_id": null,
+        "schema": "env-rule/1",
+        "stage": "accepted",
+        "timing": "after_action",
+        "verifier_recipe_id": "shipment-contract-and-bundle-lock",
+        "version": 1
+      },
+      "signature_hex": "721b3d8760f743cc75e383b699fcf0b9e6390d3d6d85663b0d7499fdc38b192ea84a19f98915d6ab893d1e44eb6c77c6e2136c0f2f1947a658d106a53aa8130f"
+    }
+  ],
+  "schema": "environment-run-export/1"
+}

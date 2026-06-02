@@ -1,0 +1,56 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+    "policy_id": "acl:01KT379TYQA420FA4CZ4469XS1",
+    "schema": "access-policy/1",
+    "signature_hex": "c106eba86ea39b8d824c44a06b3fa9a05886eea800f22eabbe1864d22f1ef80ce1b9eab5c029e2cb90e908db959836e3ec154b5809732a6a31ac6ec38181240c",
+    "subject_id": "bundle:01KT378P12E8Y1P95QZJSV2QQP",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "content": "artifacts/package/report.json",
+    "content_hash": "sha256:20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+    "media_kind": "json",
+    "metadata": "artifacts/metadata/artifact:01KT379TS23W846KTD3EKTCMMQ.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT379TYQA420FA4CZ4469XS1",
+    "capability_summary": [
+      "json"
+    ],
+    "content_hash": "sha256:20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+    "content_locator_ref": "",
+    "description": "json artifact in bundle:01KT378P12E8Y1P95QZJSV2QQP",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "report.json",
+    "record_id": "rec:01KT379TYRZ2HXAXJYVPPR8M04",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "3f6910e1dc8f84c8e0875dffe278cf1cfa019bbb0109e063ab14e21ca63315a762b1e1b187810f9fbb141fbc15aa22a37bd06e1f5b3b5983031bfa2d555e8b0d",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

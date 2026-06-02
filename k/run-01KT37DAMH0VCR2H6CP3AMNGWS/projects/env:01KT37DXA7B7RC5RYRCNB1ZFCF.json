@@ -1,0 +1,19 @@
+{
+  "bundles": [
+    "bundle:01KT37DXADV55GDY8BJV9PKF7T"
+  ],
+  "domain_context_ref": "domain:01KT37DXA1ZVRMYGSFN0H8JBRV",
+  "project": {
+    "payload": {
+      "env_id": "env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "name": "Build a tiny JSON-schema validator (required key",
+      "project_id": "env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "schema": "project/2",
+      "signing_key_id": "kernel-master",
+      "status": "active"
+    },
+    "signature_hex": "66ce589c501051450e1db331b8bd78ee887df4ea9d28978500b32bd62e5f7b72c3013a3530ea0167cb3c0bef5e996652d93334de95b81826e5fc71ca4bda590d",
+    "signing_key_id": "kernel-master"
+  },
+  "schema": "project-run-export/1"
+}

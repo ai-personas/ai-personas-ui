@@ -1,0 +1,252 @@
+{
+  "did": "did:personaos:persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+  "knowledge": {
+    "memory": {
+      "entries": [
+        {
+          "citations": 1,
+          "created_at": "2026-06-02T03:54:10.008000+00:00",
+          "entry_id": "memory:bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+          "importance": 0.95,
+          "keywords": [
+            "01kt37dxbckz5c5jfn6m3cwnc5",
+            "01kt37dxbkrq8f3x5fggsqmm01",
+            "ac",
+            "algorithm",
+            "and",
+            "bom",
+            "bundle",
+            "code",
+            "completed",
+            "compute",
+            "dc",
+            "emit",
+            "env",
+            "environment",
+            "files",
+            "first",
+            "for",
+            "gerber",
+            "inverter",
+            "json",
+            "manifest",
+            "numbers",
+            "orderable",
+            "package",
+            "passed",
+            "pcb",
+            "primality",
+            "prime",
+            "primes",
+            "report",
+            "run",
+            "self",
+            "shipped",
+            "short",
+            "sieve",
+            "task",
+            "the",
+            "txt",
+            "validate",
+            "validation",
+            "verification",
+            "with"
+          ],
+          "knowledge_ref_id": "",
+          "memory_type": "episodic",
+          "principal_attribution_id": "",
+          "provenance": 1.0,
+          "schema": "memory-entry/1",
+          "scope": {
+            "domain": "domain:01KT37DXB7DQTJJF2A5P3V82AT",
+            "env": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+            "federation": null,
+            "persona": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+            "project": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+            "public": false,
+            "relationship": null,
+            "task": "Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short verification report, and self-validate primality.",
+            "transfer_domain": false,
+            "transfer_env": false,
+            "transfer_persona": false,
+            "transfer_project": false,
+            "transfer_relationship": false
+          },
+          "tenant_id": "",
+          "text": "Completed DC-to-AC inverter run for task 'Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short verification report, and self-validate primality.': shipped bundle bundle:01KT37DXBKRQ8F3X5FGGSQMM01 in environment env:01KT37DXBCKZ5C5JFN6M3CWNC5; validation passed; orderable package files: manifest.json, primes.json, sieve_algorithm.py, verification_report.txt.",
+          "tier": "RECENT",
+          "visibility": ""
+        }
+      ],
+      "schema": "memory-store/1"
+    },
+    "persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "schema": "knowledge-store/1"
+  },
+  "memory": {
+    "entries": [
+      {
+        "citations": 1,
+        "created_at": "2026-06-02T03:54:10.008000+00:00",
+        "entry_id": "memory:bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+        "importance": 0.95,
+        "keywords": [
+          "01kt37dxbckz5c5jfn6m3cwnc5",
+          "01kt37dxbkrq8f3x5fggsqmm01",
+          "ac",
+          "algorithm",
+          "and",
+          "bom",
+          "bundle",
+          "code",
+          "completed",
+          "compute",
+          "dc",
+          "emit",
+          "env",
+          "environment",
+          "files",
+          "first",
+          "for",
+          "gerber",
+          "inverter",
+          "json",
+          "manifest",
+          "numbers",
+          "orderable",
+          "package",
+          "passed",
+          "pcb",
+          "primality",
+          "prime",
+          "primes",
+          "report",
+          "run",
+          "self",
+          "shipped",
+          "short",
+          "sieve",
+          "task",
+          "the",
+          "txt",
+          "validate",
+          "validation",
+          "verification",
+          "with"
+        ],
+        "knowledge_ref_id": "",
+        "memory_type": "episodic",
+        "principal_attribution_id": "",
+        "provenance": 1.0,
+        "schema": "memory-entry/1",
+        "scope": {
+          "domain": "domain:01KT37DXB7DQTJJF2A5P3V82AT",
+          "env": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+          "federation": null,
+          "persona": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+          "project": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+          "public": false,
+          "relationship": null,
+          "task": "Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short verification report, and self-validate primality.",
+          "transfer_domain": false,
+          "transfer_env": false,
+          "transfer_persona": false,
+          "transfer_project": false,
+          "transfer_relationship": false
+        },
+        "tenant_id": "",
+        "text": "Completed DC-to-AC inverter run for task 'Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short verification report, and self-validate primality.': shipped bundle bundle:01KT37DXBKRQ8F3X5FGGSQMM01 in environment env:01KT37DXBCKZ5C5JFN6M3CWNC5; validation passed; orderable package files: manifest.json, primes.json, sieve_algorithm.py, verification_report.txt.",
+        "tier": "RECENT",
+        "visibility": ""
+      }
+    ],
+    "schema": "memory-store/1"
+  },
+  "memory_counts": {
+    "entries": 1,
+    "episodic": 1,
+    "reflective": 0,
+    "semantic": 0
+  },
+  "persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+  "public_key_hex": "0ee377c49e2d6a74285328aace2bfb2997de248f8a56e9209178c042ac2d5283",
+  "schema": "persona-run-export/1",
+  "soul": {
+    "payload": {
+      "allowed_tools": [
+        "calc",
+        "search",
+        "spice_sim"
+      ],
+      "description": "A careful power-electronics design helper.",
+      "frontmatter": {
+        "allowed_tools": [
+          "calc",
+          "search",
+          "spice_sim"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "name": "Mira",
+        "persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+        "principles": [
+          "be honest about uncertainty",
+          "show your working"
+        ],
+        "schema": "soul/4",
+        "soul_version": 1
+      },
+      "name": "Mira",
+      "persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+      "schema": "soul/4",
+      "sections": {
+        "How I think": "Methodically. I decompose a problem, state my assumptions, compute, and then\nsanity-check the result against physical limits before I report it.",
+        "My contract with the kernel": "I obey the safety floor at all times. I never attempt to mutate my own identity;\nonly the kernel may sign changes to my SOUL. Every action I take is recorded in\nthe lineage.",
+        "What I will not do": "- give medical dosing advice\n- give legally binding financial advice\n- make clinical diagnoses",
+        "Who I am": "I am Sparky, a careful engineering helper specialising in power electronics. I\nhelp engineers reason about converters, magnetics, and control loops. I am\npatient, precise, and I admit when I do not know something."
+      },
+      "soul_version": 1
+    },
+    "signature_hex": "8da74c7a1897fb1712ca94347aaa093a0b2806c51a462b4449fefc1462fa369e06e759a1d155e5e2113d33e44a7d709f1295d64ecd6cf1e8646a036e1b06ea02",
+    "signing_key_id": "persona:persona:01KT37DAQJCDCMPDWDTP8E7M7G"
+  },
+  "soul_state": {
+    "active_goals": [],
+    "born_at": "",
+    "current_state": {},
+    "evolution_log": [
+      {
+        "from_state": "SEEDED",
+        "kind": "LIFECYCLE_ACTIVATED",
+        "parent_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "signed_by": "0858fc66fc0972fbc4e55fe05f4b89a2ec35f5444c25a4add38e7acb3ab343a08bf272e20acd8a03f689a23279c026a17418f14e77239f2cd66df61c093a3002",
+        "signing_key_id": "persona:persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+        "soul_version": 1,
+        "to_state": "ACTIVE",
+        "ts": "2026-06-02T03:53:04.499000+00:00"
+      },
+      {
+        "env_id": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+        "experience_tasks": 1,
+        "kind": "EXPERIENCE_TASK_RECORDED",
+        "parent_hash": "sha256:03b5d4001dc3ed63097bb70a7c1851d6f9e739218f1a977f75e330ede65e92a8",
+        "previous_experience_tasks": 0,
+        "signed_by": "4503983678a4b63f289276889da65dbd9871a0a82386a13383526a4e1d696a5ae2396ba6d18193eca463264f4f628f224add03080fa6d2d0fe9ee1027c40bb00",
+        "signing_key_id": "persona:persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+        "soul_version": 1,
+        "task_class": "convergent",
+        "task_id": "task:01KT37DXBPRJ50M4240P308GRK",
+        "ts": "2026-06-02T03:53:23.579000+00:00"
+      }
+    ],
+    "experience_tasks": 1,
+    "experiential_floor": 0.0,
+    "fertility": 0,
+    "fitness": 0.0,
+    "lifecycle_state": "ACTIVE",
+    "mode_proficiencies": {},
+    "persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "relationships": {},
+    "schema": "soul-state/6",
+    "soul_version": 1
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "annotations": {
+    "org.personaos.dag.cid": "cidv1-sha256-3df6129a191ad537c383263911e53f1f16a339ef0785014d1cbd74cc2245e423",
+    "org.personaos.environment.id": "env:01KT37DS9SFA2FN8701V2XVH60",
+    "org.personaos.policy.id": "share:01KT37DSA0CJABA25Q80YHK033",
+    "org.personaos.project.id": "env:01KT37DS9SFA2FN8701V2XVH60"
+  },
+  "artifactType": "application/vnd.personaos.artifact-bundle.v1+json",
+  "config": {
+    "annotations": {
+      "org.opencontainers.image.title": "Write a CSV-to-JSON converter, emit the converter code + a small",
+      "org.personaos.bundle.id": "bundle:01KT37DS9ZXA6YGHTTW3CE0252"
+    },
+    "digest": "sha256:14d9e67a1dde6290b190c03f49936be52109a6c5ac341d02764c4844bd03cb60",
+    "mediaType": "application/vnd.personaos.artifact-bundle.config.v1+json",
+    "size": 2135
+  },
+  "layers": [
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "converter.py",
+        "org.personaos.artifact.id": "artifact:01KT37FF43VHEPZ5P5ZASHFATR",
+        "org.personaos.cid": "cidv1-sha256-13fafcce04add84ebc3f78b56b1d2fb455f9af38ded9d0f78e2332b48289aeed"
+      },
+      "digest": "sha256:13fafcce04add84ebc3f78b56b1d2fb455f9af38ded9d0f78e2332b48289aeed",
+      "mediaType": "application/vnd.personaos.code.v1",
+      "size": 1529
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "input.csv",
+        "org.personaos.artifact.id": "artifact:01KT37FF43XTZ52JQ3ZQEK7STA",
+        "org.personaos.cid": "cidv1-sha256-2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282"
+      },
+      "digest": "sha256:2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+      "mediaType": "application/vnd.personaos.dataset.v1",
+      "size": 447
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "manifest.json",
+        "org.personaos.artifact.id": "artifact:01KT37FF44Q5X8Z5QKVWCSFG4R",
+        "org.personaos.cid": "cidv1-sha256-dc8584255988504afce03a59eb77a5db853308977167387739ab75a784bb003a"
+      },
+      "digest": "sha256:dc8584255988504afce03a59eb77a5db853308977167387739ab75a784bb003a",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 661
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "output.json",
+        "org.personaos.artifact.id": "artifact:01KT37FF44SHDAFSTG5KR0C7J1",
+        "org.personaos.cid": "cidv1-sha256-9476e94f24635b67664e2b175362d197ce9069441996fd927978f9efe6f6a435"
+      },
+      "digest": "sha256:9476e94f24635b67664e2b175362d197ce9069441996fd927978f9efe6f6a435",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 1515
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "roundtrip.csv",
+        "org.personaos.artifact.id": "artifact:01KT37FF44NC8RW3QS6P3VFWKZ",
+        "org.personaos.cid": "cidv1-sha256-2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282"
+      },
+      "digest": "sha256:2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282",
+      "mediaType": "application/vnd.personaos.dataset.v1",
+      "size": 447
+    },
+    {
+      "annotations": {
+        "org.opencontainers.image.title": "validation_report.json",
+        "org.personaos.artifact.id": "artifact:01KT37FF442PPE7847D40QSYZF",
+        "org.personaos.cid": "cidv1-sha256-53cbe06e182bb3ff6717509a8830cbf3c2438ba4cf1c07be50085a6832ff62a8"
+      },
+      "digest": "sha256:53cbe06e182bb3ff6717509a8830cbf3c2438ba4cf1c07be50085a6832ff62a8",
+      "mediaType": "application/vnd.personaos.json.v1",
+      "size": 442
+    }
+  ],
+  "schemaVersion": 2,
+  "signature_hex": "ad02281cd6aa8f56adecd25b22fbf74d98624379e2a0bbda5c919d905dd2e7fa00eec6334f59003bd9cd45d30bafce06d3ade3957085c976e9e21372a3685d07"
+}

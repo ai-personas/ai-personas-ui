@@ -26,7 +26,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{}, views:[], curBase:'' };
+  map:{}, mapByKernel:{}, telLoaded:new Set(), views:[], curBase:'' };
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -67,24 +67,29 @@ function upsert(r){
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
-function classifyMap(){ // map a telemetry scope -> a record id so rows tick
-  const byKind={}; for(const id of S.order){ const k=S.recs.get(id).kind; (byKind[k]=byKind[k]||[]).push(id); }
-  const first=(k)=>(byKind[k]||[])[0];
-  const bundle=(byKind.artifact||[]).find((id)=>/board|bundle|package/i.test(S.recs.get(id).label))||first('artifact');
-  S.map={persona:first('persona'),env:first('env'),domain:first('persona'),task:first('persona'),
-    answer:first('persona'),project:first('env'),bundle,artifact:bundle,telemetry:first('telemetry')};
-  S.telemetryId=first('telemetry');
+function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
+  S.mapByKernel={}; const byKK={};
+  for(const id of S.order){ const r=S.recs.get(id); const kk=byKK[r._kernel]=byKK[r._kernel]||{}; (kk[r.kind]=kk[r.kind]||[]).push(id); }
+  for(const kid in byKK){ const bk=byKK[kid], first=(k)=>(bk[k]||[])[0];
+    const bundle=(bk.artifact||[]).find((id)=>S.recs.get(id)._links&&S.recs.get(id)._links.bundle)||first('artifact');
+    S.mapByKernel[kid]={persona:first('persona'),env:first('env'),domain:first('domain')||first('persona'),
+      task:first('persona'),answer:first('persona'),project:first('project')||first('env'),
+      bundle,artifact:bundle,telemetry:first('telemetry')}; }
 }
 async function discover(){
-  $('#log').innerHTML=''; $('#status').textContent='resolving + verifying records…';
-  const internet=await discoverFrom('','internet'); internet.found.forEach(upsert);
-  const peers=peerList();
-  for(const b of peers){ const r=await discoverFrom(b,'intranet'); r.found.forEach(upsert); }
-  classifyMap();
-  if(!S.events.length) await loadTelemetry('');
-  buildRows(); buildTicker(); renderStats();
-  $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified from `
-    +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + DHT) + intranet (mDNS) · access-gated`;
+  $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
+  const root=await fetchJson('.well-known/personaos-discovery.json')||{};
+  const bases=[]; if(root.providers_url) bases.push('');           // single-run: this origin is a kernel
+  for(const fk of (root.federated_kernels||[])) bases.push(fk);    // ecosystem: many kernel nodes
+  if(!bases.length) bases.push('');
+  S.telLoaded=S.telLoaded||new Set();
+  for(const b of [...new Set([...bases, ...peerList()])]){
+    const res=await discoverFrom(b,'internet'); res.found.forEach(upsert);
+    if(res.boot && !S.telLoaded.has(b)){ await loadTelemetry(b); S.telLoaded.add(b); }   // aggregate each kernel's tape
+  }
+  classifyMap(); buildRows(); buildTicker(); renderStats();
+  $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
+    +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`;
 }
 
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
@@ -93,17 +98,19 @@ async function loadTelemetry(base){
   const url=boot?.telemetry_url||'telemetry/spans.json';
   const spans=await fetchJson(join(base,url));
   if(!Array.isArray(spans)||!spans.length){ return; }
+  const kid=boot.kernel_id||base;
   const evs=spans.map((s)=>{ const a=s.attributes||{};
-    return { t:Date.parse(s.ended_at||s.started_at||'')||0, scope:String(a['personaos.lineage.scope']||(s.name||'').split('.').pop()||'other'),
+    return { t:Date.parse(s.ended_at||s.started_at||'')||0, kernel:kid,
+      scope:String(a['personaos.lineage.scope']||(s.name||'').split('.').pop()||'other'),
       kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'), trace:String(a['personaos.trace_id']||s.span_id||''),
       signed:a['personaos.lineage.signed']!==false, ms:Number(a['personaos.lineage.append_ms']||0) }; })
-    .filter((e)=>e.kind).sort((a,b)=>a.t-b.t);
-  // normalise inter-event gaps to a lively but real cadence
-  let prev=evs[0]?.t||0;
-  evs.forEach((e)=>{ let g=e.t-prev; prev=e.t; e.gap=Math.max(90,Math.min(900,g||300)); });
-  if(evs.length) evs[0].gap=0;
-  S.events=evs;
-  log('telemetry',`loaded ${evs.length} signed OTel spans for the live tape`);
+    .filter((e)=>e.kind);
+  // aggregate across kernels, re-sort by time, normalise inter-event gaps to a lively cadence
+  S.events=(S.events||[]).concat(evs).sort((a,b)=>a.t-b.t);
+  let prev=S.events[0]?.t||0;
+  S.events.forEach((e)=>{ const g=e.t-prev; prev=e.t; e.gap=Math.max(90,Math.min(900,g||300)); });
+  if(S.events.length) S.events[0].gap=0;
+  log('telemetry',`+${evs.length} signed OTel spans (${S.events.length} total) for the live tape`);
 }
 
 /* ---------- tick engine ---------- */
@@ -119,11 +126,11 @@ function emitOne(){
     +`<span class="sg">${e.signed?'✓':''}</span>`;
   tape.insertBefore(li,tape.firstChild);
   while(tape.children.length>180) tape.removeChild(tape.lastChild);
-  // counters: the scope's record + the telemetry-feed record (counts every event)
+  // counters: the event's kernel-scope record + that kernel's telemetry-feed record
   S.evCount++; S.epsWin.push(performance.now());
-  const rid=S.map[e.scope];
+  const km=S.mapByKernel[e.kernel]||{}; const rid=km[e.scope];
   if(rid) bump(rid,e.t);
-  if(S.telemetryId && S.telemetryId!==rid) bump(S.telemetryId,e.t);
+  if(km.telemetry && km.telemetry!==rid) bump(km.telemetry,e.t);
 }
 function bump(id,t){
   const r=S.recs.get(id); if(!r) return;
@@ -183,10 +190,14 @@ async function envView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base
     +`<span class="l2">${esc(cp.backend||'')} · ${esc(cp.provider||'')}</span></div>`).join('')||'<span class="l2">—</span>');
   if(norms.length) html+=H('Charter norms')+norms.map((n)=>`<div class="desc2">• ${esc(n)}</div>`).join('');
   if(rules.length) html+=H(`Env rules (${rules.length})`)+rules.map((ru)=>{ const p=ru.payload||ru; return `<div class="desc2">• ${esc(p.rule_name||p.description||'rule')}</div>`; }).join('');
-  if(L.bundle) html+=H('Deliverable')+`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">artifact bundle →</a></div>`;
+  const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
+  if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
+  if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
+  if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
+  if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-env">ENV</span> ${esc(env.name||r.label)}`, html};
 }
-async function bundleView(base,url){ S.curBase=base; const d=await dfetch(base,url);
+async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
   if(!d) return {title:'bundle', html:'<div class="l2">unavailable</div>'};
   const b=(d.bundle&&d.bundle.payload)||d.bundle||{}, arts=d.artifacts||[];
   let html=kv('Bundle',esc(b.bundle_id||''))+kv('Kind',esc(b.bundle_kind||'—'))
@@ -197,6 +208,11 @@ async function bundleView(base,url){ S.curBase=base; const d=await dfetch(base,u
   html+=H(`Artifacts (${arts.length}) — click to view`)+arts.map((a)=>`<div class="grant">`
     +`<a href="#" data-act="file" data-path="${esc(a.package_path)}" data-title="${esc(a.title)}" data-kind="${esc(a.media_kind)}">${esc(a.title)}</a>`
     +`<span class="l2">${esc(a.media_kind)} · ${esc(a.size_bytes)}B</span></div>`).join('');
+  if(L && L.run){ html+=H('Provenance')
+    +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · codex model cascade →</a></div>`
+    +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
+    +`<div class="row"><a href="#" data-act="physical" data-url="${esc(L.run)}">Physical asset →</a></div>`;
+    if(L.oci) html+=`<div class="row"><a href="#" data-act="dist" data-oci="${esc(L.oci)}" data-dag="${esc(L.dag||'')}" data-reg="${esc(L.registry||'')}">Distribution · OCI + IPLD →</a></div>`; }
   return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(b.bundle_id||'')}`, html};
 }
 async function fileView(base,path,title,kind){ S.curBase=base;
@@ -226,12 +242,70 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
     +H('Source')+`<div class="row"><a href="${esc(r._url)}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
   return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
 }
+const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
+async function domainView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
+  const d=await dfetch(base,L.export)||{}; const dm=(d.domain&&d.domain.payload)||d.domain||{};
+  const rj=await dfetch(base,L.run||'run.json')||{}; const dd=rj.domain||{};
+  let html=kv('Domain',esc(dm.domain_id||r.did))+kv('Origin',esc(dm.origin||'emergent'))+kv('Stage',esc(dm.stage||'—'))
+    +kv('Trust score',esc(dm.trust_score??'—'))+kv('Safety critical',dm.safety_critical?'<span class="no">● yes</span>':'no')
+    +kv('Physical harm',esc(dm.physical_harm_class||'—'))+kv('Info hazard',esc(dm.information_hazard_class||'—'))
+    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  const sx=(d.safety_extensions||[]).map(String); if(sx.length){ const m=/description='([^']+)'/.exec(sx[0]);
+    html+=H('Safety extension')+`<div class="desc2">${esc((m?m[1]:sx[0]).slice(0,420))}</div>`; }
+  if((dd.kinds||[]).length) html+=H(`Emergent kinds (${dd.kinds.length})`)+chipsOf(dd.kinds.slice(0,18));
+  const tools=dm.tools_required||dd.tools||[]; if(tools.length) html+=H(`Tools required (${tools.length})`)+chipsOf(tools.slice(0,18));
+  if((dm.standards_refs||[]).length) html+=H('Standards')+chipsOf(dm.standards_refs);
+  if(rj.recognition) html+=H('Recognition → emergence')+chipsOf(rj.recognition);
+  const eid=kernelRec(r._kernel,'env'); if(eid) html+=H('Used by')+`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(dm.name||r.label)}`, html};
+}
+async function projectView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
+  const d=await dfetch(base,L.export)||{}; const p=(d.project&&d.project.payload)||d.project||{};
+  let html=kv('Project',esc(p.project_id||r.did))+kv('Name',esc(p.name||r.label))+kv('Status',`<span class="ok">${esc(p.status||'—')}</span>`)
+    +kv('Environment',esc(p.env_id||'—'))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  let nav=''; const eid=kernelRec(r._kernel,'env'), did=kernelRec(r._kernel,'domain');
+  if(eid) nav+=`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
+  if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
+  if(nav) html+=H('Related')+nav;
+  return {title:`<span class="kind k-project">PROJECT</span> ${esc(p.name||r.label)}`, html};
+}
+async function bodyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const b=rj.body||{}, ex=rj.real_execution||{};
+  let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
+    +kv('Accepted',b.accepted?'<span class="ok">✓ verified</span>':'<span class="no">✗</span>')
+    +kv('Verified by model',`<span class="ok">${esc(b.verified_by_model||'—')}</span>`)+kv('Program',esc((b.program_chars||0)+' chars'));
+  const at=b.attempts||[]; if(at.length) html+=H('Codex model cascade')+at.map((a)=>`<div class="grant"><span>${a.accepted?'✓':'✗'} ${esc(a.model_id)}</span><span class="l2">${esc(a.status)} · ${esc(a.program_chars)} ch</span></div>`).join('');
+  html+=H('Real sandbox execution')+kv('Result',ex.ok?'<span class="ok">ok</span>':'<span class="no">failed</span>')+kv('Return code',esc(ex.returncode))+kv('stdout',`<code>${esc(ex.stdout||'')}</code>`);
+  html+=H(`Safety floor sources (${(b.safety_sources||[]).length} of 8)`)+chipsOf(b.safety_sources);
+  return {title:`<span class="kind k-persona">BODY · J7</span> codex run`, html};
+}
+async function verifyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
+  let html=kv('Bundle verified',bv.passed?'<span class="ok">✓ passed</span>':'<span class="no">✗</span>')
+    +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
+  html+=H('Verifier cascade')+(bv.invocations||[]).map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="ok">${v[1]?'✓':'✗'}</span></div>`).join('');
+  const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Env-rule evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">• ${esc(e.rule_name||e.rule_id||'rule')} — ${e.passed===false?'✗':'✓ signed'}</div>`).join('');
+  return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`, html};
+}
+async function distributionView(base,L){ S.curBase=base; const oci=await dfetch(base,L.oci)||{}, dag=await dfetch(base,L.dag)||{}, reg=await dfetch(base,L.registry)||{};
+  let html=kv('OCI artifactType',esc(oci.artifactType||'—'))+kv('OCI layers',esc((oci.layers||[]).length))
+    +kv('IPLD root CID',esc(((dag.root_cid||'')+'').slice(0,32)||'—'))+kv('Addressing','SHA-256 · CIDv1 · content-addressed');
+  const pk=reg.packages||[]; if(pk.length) html+=H(`Registry DIDs (${pk.length})`)+pk.map((p)=>`<div class="grant"><span>${esc(p.kind)}</span><span class="l2">${esc((p.did||'').slice(0,34))}…</span></div>`).join('');
+  return {title:`<span class="kind k-artifact">DISTRIBUTION</span> OCI + IPLD`, html};
+}
+async function physicalView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const p=rj.physical_board;
+  if(!p) return {title:'<span class="kind k-artifact">PHYSICAL</span>', html:'<div class="l2">No physical asset for this task (digital deliverable).</div>'};
+  const html=kv('MHBB tier',esc(p.mhbb_tier))+kv('Asset kind',esc(p.asset_kind))+kv('State',`<span class="ok">${esc(p.asset_state)}</span>`)
+    +kv('As-built ref',esc(p.as_built_ref))+kv('Fabricator',esc(p.fab))+H('External attestation')+`<div class="desc2">${esc(p.attestation)}</div>`;
+  return {title:`<span class="kind k-artifact">PHYSICAL BOARD</span>`, html};
+}
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
   const L=r._links||{};
   if(r.kind==='persona') return personaView(r);
   if(r.kind==='env') return envView(r);
+  if(r.kind==='domain') return domainView(r);
+  if(r.kind==='project') return projectView(r);
   if(r.kind==='telemetry') return telemetryView(r);
-  if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle);
+  if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle,L);
   if(r.kind==='artifact' && L.content) return fileView(r._base||'',L.content,r.label,L.media_kind);
   return genericView(r);
 }
@@ -376,7 +450,11 @@ function wire(){
     const act=a.dataset.act, base=S.curBase||'';
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='file') pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind));
-    else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url)); });
+    else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url));
+    else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
+    else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));
+    else if(act==='physical') pushView(()=>physicalView(base,a.dataset.url));
+    else if(act==='dist') pushView(()=>distributionView(base,{oci:a.dataset.oci,dag:a.dataset.dag,registry:a.dataset.reg})); });
   $('#detailback').addEventListener('click',()=>{ S.views.pop(); renderTop(); });
   const closeLog=()=>$('#logmodal').classList.remove('open');
   const closeDetail=()=>$('#detailwrap').classList.remove('open');

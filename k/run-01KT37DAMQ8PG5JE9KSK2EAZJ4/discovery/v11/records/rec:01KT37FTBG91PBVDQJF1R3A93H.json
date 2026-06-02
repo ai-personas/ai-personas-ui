@@ -1,0 +1,49 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "policy_id": "acl:01KT37FTBFXD35PQ702CMQ85CP",
+    "schema": "access-policy/1",
+    "signature_hex": "f31a452469b2ba9606c67e3ea12e4725f3c2069122b1e0634a6597ac812f873f8fcdb290dcab914620ee2d60c1defd896b37010e3aaddf5ade3e3268b2a16100",
+    "subject_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "subject_kind": "persona"
+  },
+  "discovery_kind": "persona",
+  "kind": "persona",
+  "links": {
+    "env": "environments/env:01KT37DWGAC0697WSTNXWHQNCQ.json",
+    "export": "personas/persona:01KT37DAQV73EGFP8PRRSWMKWJ.json",
+    "profile": ".well-known/personas/persona:01KT37DAQV73EGFP8PRRSWMKWJ.json",
+    "subject_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FTBFXD35PQ702CMQ85CP",
+    "capability_summary": [
+      "dc_to_ac_design",
+      "pcb_package_generation"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "DC-to-AC designer persona (computational physics)",
+    "did": "did:personaos:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": ".well-known/personas/persona:01KT37DAQV73EGFP8PRRSWMKWJ.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "persona",
+    "label": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "record_id": "rec:01KT37FTBG91PBVDQJF1R3A93H",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "80d896d168e16f3c9e1a4be9c976789072e24a3d27d3150e2b681f59db6e1fcff0f1b2483b3dc16c045c8b48dce99ce315f382b03198a30702a6717c931be306",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

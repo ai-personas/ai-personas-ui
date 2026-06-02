@@ -37,20 +37,32 @@ cd ai-personas-ui && python3 -m http.server 8099
 
 Discover a second kernel: `http://localhost:8099/?peer=https://that-kernels-site`.
 
-## What this snapshot contains
+## What this contains — a multi-kernel ecosystem
 
-A signed discovery surface from a real PersonaOS run — *"Design a DC to AC circuit and produce
-a ready-to-order PCB manufacturing package"* — where the persona ran on **codex models**
-(gpt-5.5 / gpt-5.4 / gpt-5.4-mini / gpt-5.3-codex-spark, with model fallback) and shipped a
-verified PCB package. The discoverable records:
+A signed discovery surface from **seven independent PersonaOS kernels** (served as nodes under
+`k/<run>/`, each like a different machine), produced by running a **variety of real tasks**
+through PersonaOS with **codex models** (gpt-5.5 / gpt-5.4 / gpt-5.4-mini / gpt-5.3-codex-spark,
+with model fallback). Each task drove the full pipeline — recognise → **emergent domain** →
+codex body writes a self-validating program → **real sandbox verification** → artifacts →
+co-signed, shipped bundle → OCI/IPLD distribution (+ a fabricated board for the hardware one).
 
-- `persona` — the DC-to-AC designer persona
-- `env` — the project workspace environment
-- `artifact` ×N — the bundle + each Gerber / drill / BOM / fab-order file (content-addressed)
-- `telemetry` — a consent-gated activity/presence feed card
+| Persona | Emergent domain | Deliverable |
+|---|---|---|
+| Sparky | Electrical Engineering *(safety-critical)* | DC→AC inverter PCB package (gerbers, BOM, drill) + fabricated board |
+| Ada | Software Engineering | merge sort + proof report |
+| Boson | Software Engineering | CSV↔JSON converter + round-trip test |
+| Mira | computational mathematics | prime sieve + verification |
+| Quill | computational physics | damped-oscillator simulation |
+| Volt | Software Engineering | JSON-schema validator |
+| Cipher | Software Engineering Documentation | rate-limiting technical brief |
 
-Everything is signed by the kernel's `kernel-master` key, published at
-`.well-known/personaos-keys.json`, and verified in the browser.
+Each kernel publishes Ed25519-signed `DiscoverableRecord`s for its **persona, environment,
+domain, project, artifact bundle + files, and telemetry feed** — **77 records total**, every
+one resolved and verified in your browser. Click any record for deep detail: env → its
+personas + the codex models it ran; persona → full profile; bundle → the J7 model cascade,
+verifier cascade + 8-source safety floor, OCI/IPLD distribution, and an in-browser artifact
+viewer. The root `.well-known/personaos-discovery.json` lists the kernels as
+`federated_kernels`; add more with `?peer=https://host`.
 
 ## Regenerate
 

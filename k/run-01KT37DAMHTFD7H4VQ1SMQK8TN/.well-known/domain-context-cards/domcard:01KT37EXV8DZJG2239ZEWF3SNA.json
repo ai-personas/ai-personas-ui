@@ -1,0 +1,31 @@
+{
+  "card": {
+    "artifact_kinds": [
+      "document",
+      "json"
+    ],
+    "curator_persona_ids": [
+      "persona:01KT37DAR0EQJW349HKN53MZ9Y"
+    ],
+    "description": "emerged from task: Generate a concise Markdown technical brief comparing token-bucket vs leaky-bucket rate limiting (wit",
+    "domain_id": "domain:01KT37DWK89XM2NR46XS4CXKSQ",
+    "domain_kind": "emergent",
+    "hazard_axes": [
+      "digital_only",
+      "none"
+    ],
+    "host_kernel_id": "kernel:296586db91a9569a",
+    "id": "domcard:01KT37EXV8DZJG2239ZEWF3SNA",
+    "name": "Software Engineering Documentation",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "domain-context-card/1",
+    "signing_key_id": "kernel-master",
+    "trust_stage": "emergent",
+    "version": "1",
+    "visibility_tier": "federation"
+  },
+  "id": "domcard:01KT37EXV8DZJG2239ZEWF3SNA",
+  "schema": "domain-context-card/1",
+  "signature_hex": "49612fbb47eaf6f0927e39b17b8f2797694ea26f9025d6a39b9553f659eec1e65eaaffa90cc1cc5de795b98523ce1be64a855282824052360ba1ee02fa122204",
+  "signing_key_id": "kernel-master"
+}

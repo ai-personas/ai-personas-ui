@@ -1,0 +1,37 @@
+{
+  "card": {
+    "accepted_roles": [
+      "designer",
+      "fab_reviewer",
+      "falsifier"
+    ],
+    "advertised_interests": [
+      "dc_to_ac_design",
+      "pcb_manufacturing",
+      "power_electronics"
+    ],
+    "archetype": "",
+    "can_lead_cohorts": false,
+    "charter_hash": "sha256:a0117d6e2b68952c798b1608d852d3e80f72985720c72b58636b40a6b47781db",
+    "description": "A careful power-electronics design helper.",
+    "domain_curatorships": [
+      "Software Engineering"
+    ],
+    "expires_at": "2026-06-02T04:51:10.003000+00:00",
+    "name": "Ada",
+    "persona_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+    "primary_disposition": "",
+    "reputation_score": 0.8,
+    "schema": "persona-card/3",
+    "signing_key_id": "persona:persona:01KT3784JF3VXJ08AE139ENMDX",
+    "soul_version": 1,
+    "visibility": "federation",
+    "voice_hash": "sha256:633d993b38340f5137d16805ff2d475662ae54bb31695816d4dd85679100bdba"
+  },
+  "path": ".well-known/personas/persona:01KT3784JF3VXJ08AE139ENMDX.json",
+  "persona_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+  "schema": "persona-card/3",
+  "signature_hex": "f905a6c6fccdb7cbd9afe381e0a4b299308e64caf375c080005913ded5a4871841bd6ae3e2e707ed421be35b4ce9abf221477e8995e3aff5728c55a4ad2d4608",
+  "signing_key_id": "persona:persona:01KT3784JF3VXJ08AE139ENMDX",
+  "ttl_seconds": 3600
+}

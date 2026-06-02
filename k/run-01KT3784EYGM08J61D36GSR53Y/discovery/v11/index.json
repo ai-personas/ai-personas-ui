@@ -1,0 +1,87 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact_bundle": "artcard:01KT379TYRDJ20XC8WFKS56E57",
+    "env": "rec:01KT379TYR50B7TJ0KCGBYQTY8",
+    "persona": "rec:01KT379TYR6B1XBTF48G920C0E",
+    "telemetry": "telcard:01KT379TYSFWATG6ZACAXN36NY"
+  },
+  "kernel_id": "kernel:3633dc2dd8cc4d35",
+  "records": [
+    {
+      "id": "rec:01KT379TYR6B1XBTF48G920C0E",
+      "kind": "persona",
+      "path": "discovery/v11/records/rec:01KT379TYR6B1XBTF48G920C0E.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYR50B7TJ0KCGBYQTY8",
+      "kind": "env",
+      "path": "discovery/v11/records/rec:01KT379TYR50B7TJ0KCGBYQTY8.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "artcard:01KT379TYRDJ20XC8WFKS56E57",
+      "kind": "artifact_bundle",
+      "path": "discovery/v11/records/artcard:01KT379TYRDJ20XC8WFKS56E57.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYRGSKZ36QVE20GCRAT",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT379TYRGSKZ36QVE20GCRAT.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYR5F9F6DWZZ0S7AZFW",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT379TYR5F9F6DWZZ0S7AZFW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYRZ2HXAXJYVPPR8M04",
+      "kind": "artifact",
+      "path": "discovery/v11/records/rec:01KT379TYRZ2HXAXJYVPPR8M04.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "telcard:01KT379TYSFWATG6ZACAXN36NY",
+      "kind": "telemetry",
+      "path": "discovery/v11/records/telcard:01KT379TYSFWATG6ZACAXN36NY.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYSDEBR1B0JXH22SH80",
+      "kind": "domain",
+      "path": "discovery/v11/records/rec:01KT379TYSDEBR1B0JXH22SH80.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    },
+    {
+      "id": "rec:01KT379TYS598WZKSVXYF817V2",
+      "kind": "project",
+      "path": "discovery/v11/records/rec:01KT379TYS598WZKSVXYF817V2.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "Implement merge sort, emit the algorithm code + a small JSON report proving it sorts 50 random arrays of length 20 correctly (store only counts + the sorted check), and self-validate.",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

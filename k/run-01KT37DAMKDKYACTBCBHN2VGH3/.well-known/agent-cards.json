@@ -1,0 +1,36 @@
+{
+  "agent_cards": [
+    {
+      "card": {
+        "capabilities": [
+          "artifact_bundle_distribution",
+          "dc_to_ac_design"
+        ],
+        "description": "A careful power-electronics design helper.",
+        "domain_curatorships": [],
+        "host_persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+        "id": "card:01KT37FF8SEQAG5ZS2S493CSTB",
+        "interfaces": [],
+        "name": "Boson",
+        "provider": "ai-personas dc-to-ac demo",
+        "schema": "agent-card/1",
+        "security_schemes": [
+          "Ed25519"
+        ],
+        "signing_key_id": "persona:persona:01KT37DAQ2MPHQJK9CA0JF556W",
+        "skills": [
+          "manufacturing_package_validation",
+          "pcb_package_generation"
+        ],
+        "version": "1"
+      },
+      "id": "card:01KT37FF8SEQAG5ZS2S493CSTB",
+      "path": ".well-known/agent-cards/card:01KT37FF8SEQAG5ZS2S493CSTB",
+      "schema": "agent-card/1",
+      "signature_hex": "877944abbfeb599cfaf490bd92b07cbe4740234bf4006d13771a6e287113469374dc1ad4aca95d21a7348e7accd17b43232b7af8abb069a429096deedbf3d709",
+      "signing_key_id": "persona:persona:01KT37DAQ2MPHQJK9CA0JF556W"
+    }
+  ],
+  "kernel_id": "kernel:1db6c0dba277ebff",
+  "path": ".well-known/agent-cards.json"
+}

@@ -1,0 +1,24 @@
+{
+  "artifacts": [
+    {
+      "path": "converter.py",
+      "sha256": "13fafcce04add84ebc3f78b56b1d2fb455f9af38ded9d0f78e2332b48289aeed"
+    },
+    {
+      "path": "input.csv",
+      "sha256": "2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282"
+    },
+    {
+      "path": "output.json",
+      "sha256": "9476e94f24635b67664e2b175362d197ce9069441996fd927978f9efe6f6a435"
+    },
+    {
+      "path": "roundtrip.csv",
+      "sha256": "2815592c2c526ee2393d78871721da760cf521497872286da8fff971774eb282"
+    },
+    {
+      "path": "validation_report.json",
+      "sha256": "53cbe06e182bb3ff6717509a8830cbf3c2438ba4cf1c07be50085a6832ff62a8"
+    }
+  ]
+}

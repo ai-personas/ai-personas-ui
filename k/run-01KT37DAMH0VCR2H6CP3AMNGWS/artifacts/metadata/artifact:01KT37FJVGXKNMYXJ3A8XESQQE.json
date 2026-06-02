@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FJVGXKNMYXJ3A8XESQQE",
+      "asserted_fields": {},
+      "content_hash": "sha256:ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "code",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 1755,
+      "version": 1
+    },
+    "signature_hex": "e9b178ec251980fde2c8b3ca1fd39c4daaa5a5148c61d8d4237e3125cd8c32810b31554828e3f52daa4c94516f038c084ff8b681ce0b9be292267daf57292603",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5",
+  "content_ref": "tiny_validator.py",
+  "content_store_path": "store/blobs/sha256/ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5",
+  "file_digest": "sha256:ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5",
+  "package_path": "artifacts/package/tiny_validator.py",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 1755,
+  "title": "tiny_validator.py"
+}

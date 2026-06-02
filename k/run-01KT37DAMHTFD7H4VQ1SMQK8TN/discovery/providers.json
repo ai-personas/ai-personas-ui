@@ -1,0 +1,56 @@
+{
+  "kernel_id": "kernel:296586db91a9569a",
+  "keys_url": ".well-known/personaos-keys.json",
+  "provider_count": 8,
+  "providers": [
+    {
+      "did": "did:personaos:persona:01KT37DAR0EQJW349HKN53MZ9Y",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "did:personaos:persona:01KT37DAR0EQJW349HKN53MZ9Y",
+      "record_url": "discovery/v11/records/rec:01KT37EXWAG48QVBE2X7W4GBT4.json"
+    },
+    {
+      "did": "did:personaos:env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "did:personaos:env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "record_url": "discovery/v11/records/rec:01KT37EXWAZVJR1YR2A619DQ9Q.json"
+    },
+    {
+      "did": "did:personaos:artcard:01KT37EXWANFGPZ0ZTSZ2GAYCM",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "record_url": "discovery/v11/records/artcard:01KT37EXWANFGPZ0ZTSZ2GAYCM.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37EXWAXXR0JBW455QFMFYQ",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "record_url": "discovery/v11/records/rec:01KT37EXWAXXR0JBW455QFMFYQ.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37EXWAB2DVZT8AJPGJWE26",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "record_url": "discovery/v11/records/rec:01KT37EXWAB2DVZT8AJPGJWE26.json"
+    },
+    {
+      "did": "did:personaos:telcard:01KT37EXWB71H7E8QSF4AXN9J6",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "did:personaos:telcard:01KT37EXWB71H7E8QSF4AXN9J6",
+      "record_url": "discovery/v11/records/telcard:01KT37EXWB71H7E8QSF4AXN9J6.json"
+    },
+    {
+      "did": "did:personaos:domain:01KT37DWK89XM2NR46XS4CXKSQ",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "did:personaos:domain:01KT37DWK89XM2NR46XS4CXKSQ",
+      "record_url": "discovery/v11/records/rec:01KT37EXWBK2KFS243420XCH5G.json"
+    },
+    {
+      "did": "did:personaos:env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "host_kernel_id": "kernel:296586db91a9569a",
+      "key": "did:personaos:env:01KT37DWKB14D0XYQ2R3SVK65D",
+      "record_url": "discovery/v11/records/rec:01KT37EXWB30KDCYAP7GYW6TPK.json"
+    }
+  ],
+  "schema": "dht-provider-index/1"
+}

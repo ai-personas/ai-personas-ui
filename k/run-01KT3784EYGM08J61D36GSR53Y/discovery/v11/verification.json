@@ -1,0 +1,41 @@
+{
+  "all_record_signatures_valid": true,
+  "checks": {
+    "all_signatures_valid": true,
+    "artifact_body_owner_only": true,
+    "federated_peer_discovers_all_federation_records": true,
+    "owner_discovers_all_on_mdns": true,
+    "public_stranger_enumerates_nothing": true,
+    "telemetry_card_discoverable_to_peer": true
+  },
+  "kernel_id": "kernel:3633dc2dd8cc4d35",
+  "passed": true,
+  "planes": {
+    "internet_dht": true,
+    "intranet_mdns": true
+  },
+  "probes": {
+    "federated_peer": {
+      "can_discover_telemetry": true,
+      "can_read_artifact_body": false,
+      "dht_count": 9,
+      "mdns_count": 9
+    },
+    "owner": {
+      "can_discover_telemetry": true,
+      "can_read_artifact_body": true,
+      "dht_count": 9,
+      "mdns_count": 9
+    },
+    "public_stranger": {
+      "can_discover_telemetry": false,
+      "can_read_artifact_body": false,
+      "dht_count": 0,
+      "mdns_count": 0
+    }
+  },
+  "records_bridged_to_dht": 9,
+  "records_published": 9,
+  "schema": "personaos-v11-discovery-verification/1",
+  "task": "Implement merge sort, emit the algorithm code + a small JSON report proving it sorts 50 random arrays of length 20 correctly (store only counts + the sorted check), and self-validate."
+}

@@ -1,0 +1,49 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "policy_id": "acl:01KT37FAR2S6C2452Q0PTAN7V9",
+    "schema": "access-policy/1",
+    "signature_hex": "751e8b8846219a4432268b7f703036e44f71b9ded37c8e89262653676e6b0f116d2d1ea500d4b7321e042cf074179a85eac73a72f2972f3a4951b09768c79304",
+    "subject_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "subject_kind": "persona"
+  },
+  "discovery_kind": "persona",
+  "kind": "persona",
+  "links": {
+    "env": "environments/env:01KT37DXBCKZ5C5JFN6M3CWNC5.json",
+    "export": "personas/persona:01KT37DAQJCDCMPDWDTP8E7M7G.json",
+    "profile": ".well-known/personas/persona:01KT37DAQJCDCMPDWDTP8E7M7G.json",
+    "subject_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FAR2S6C2452Q0PTAN7V9",
+    "capability_summary": [
+      "dc_to_ac_design",
+      "pcb_package_generation"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "DC-to-AC designer persona (computational mathematics)",
+    "did": "did:personaos:persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": ".well-known/personas/persona:01KT37DAQJCDCMPDWDTP8E7M7G.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "persona",
+    "label": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "record_id": "rec:01KT37FAR31WV0M1RB9RVAE1AQ",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "66da90f2637515aaedb919c2ea4b68335711344127bc703d2d6772056ae07aba6cffae179f8884f65d48a6fdc5a63033f717b3a4cbc223a06f45206bd2b9d209",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

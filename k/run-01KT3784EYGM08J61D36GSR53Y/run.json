@@ -1,0 +1,315 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "artifact:01KT379TS1P6JCPPATSTHJMDNK",
+      "content_hash": "sha256:fdd555488b4ec67c35945eb4a20957d693dc7aa405c726f7883cc3a2c5a983ce",
+      "media_kind": "json",
+      "title": "manifest.json"
+    },
+    {
+      "artifact_id": "artifact:01KT379TS2TC95KZ0NC5EEQCYY",
+      "content_hash": "sha256:5be9cad2b187dd0a887d2ce65f40248e2501fd70d7815c9fc7a5539b00f8ee45",
+      "media_kind": "code",
+      "title": "merge_sort.py"
+    },
+    {
+      "artifact_id": "artifact:01KT379TS23W846KTD3EKTCMMQ",
+      "content_hash": "sha256:20c2628cc904532d6455ef3f5cfaa3351065da1b3a143c40d22a9bf45b82b13f",
+      "media_kind": "json",
+      "title": "report.json"
+    }
+  ],
+  "body": {
+    "accepted": true,
+    "attempts": [
+      {
+        "accepted": true,
+        "model_id": "gpt-5.5",
+        "program_chars": 4914,
+        "status": "verified"
+      }
+    ],
+    "envelope_verifies": true,
+    "pathway": "verifier_accept",
+    "program_chars": 4914,
+    "safety_sources": [
+      "universal_harm",
+      "persona_charter",
+      "domain_safety",
+      "external_tool_required",
+      "novelty_check",
+      "env_charter"
+    ],
+    "status": "verified",
+    "task_class": "convergent",
+    "verified_by_model": "gpt-5.5"
+  },
+  "bundle": {
+    "bundle_id": "bundle:01KT378P12E8Y1P95QZJSV2QQP",
+    "sharing_policy_ref": "share:01KT378P12JEY04ZY6YMDVF9Z8"
+  },
+  "bundle_verification": {
+    "invocations": [
+      [
+        "schema",
+        true
+      ],
+      [
+        "sandbox",
+        true
+      ],
+      [
+        "invariant",
+        true
+      ],
+      [
+        "policy",
+        true
+      ]
+    ],
+    "passed": true
+  },
+  "continuity": {
+    "experience_tasks_before": 0,
+    "loaded_memory_entries": 0
+  },
+  "domain": {
+    "domain_id": "domain:01KT378P0QJ2PY3662MW11JD86",
+    "harm": "digital_only",
+    "kinds": [
+      "source_code",
+      "json_validation_report",
+      "test_summary"
+    ],
+    "name": "Software Engineering",
+    "safety_critical": false,
+    "stage": "emergent",
+    "tools": [
+      "programming_language_runtime",
+      "random_test_generator",
+      "json_serializer",
+      "unit_or_self_validation_runner"
+    ]
+  },
+  "environment": {
+    "environment_id": "env:01KT378P0W1MVM1FY3XB76A6HR",
+    "rules": [
+      "envrule:01KT378P0XB7QE3HRPDK2GAJ9G",
+      "envrule:01KT378P0YZK88WNEJ78CK4F2E"
+    ],
+    "status": "active",
+    "type": "project_workspace",
+    "visibility_tier": "federation"
+  },
+  "generated_at": "2026-06-02T03:51:10.057000+00:00",
+  "memory": {
+    "available_entries": 0,
+    "current_run_memory": {
+      "entry_count": 1,
+      "reflective_created": "",
+      "semantic_created": "",
+      "written": "memory:bundle:01KT378P12E8Y1P95QZJSV2QQP"
+    },
+    "retrieved_for_task": []
+  },
+  "models": {
+    "active_model_id": "gpt-5.5",
+    "available": [
+      {
+        "active": true,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.5",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.5",
+        "provider": "openai",
+        "selection_name": "gpt-5.5"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [
+            "priority"
+          ],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4",
+        "provider": "openai",
+        "selection_name": "gpt-5.4"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.4-Mini",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "medium",
+          "service_tiers": [],
+          "supported_in_api": true,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.4-mini",
+        "provider": "openai",
+        "selection_name": "gpt-5.4-mini"
+      },
+      {
+        "active": false,
+        "backend": "codex_cli",
+        "body_id": "codex_exec",
+        "capability_tags": [
+          "general",
+          "coding",
+          "hardware_design",
+          "manufacturing_package"
+        ],
+        "display_name": "GPT-5.3-Codex-Spark",
+        "fallback_group": "dc-to-ac-design",
+        "health_state": "available",
+        "metadata": {
+          "default_reasoning_level": "high",
+          "service_tiers": [],
+          "supported_in_api": false,
+          "supported_reasoning_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "visibility": "list"
+        },
+        "model_id": "gpt-5.3-codex-spark",
+        "provider": "openai",
+        "selection_name": "gpt-5.3-codex-spark"
+      }
+    ]
+  },
+  "outputs": {
+    "content_store": "store",
+    "discovery_index": "discovery/index.json",
+    "oci_manifest": "distribution/oci-artifact-manifest.json",
+    "package_dir": "artifacts/package",
+    "registry": "registry/personaos-registry.json",
+    "telemetry_snapshot": "telemetry/snapshot.json",
+    "telemetry_spans": "telemetry/spans.json",
+    "telemetry_summary": "telemetry/summary.json",
+    "v11_discovery_index": "discovery/v11/index.json",
+    "v11_discovery_verification": "discovery/v11/verification.json",
+    "well_known": ".well-known"
+  },
+  "package": {
+    "dir": "/tmp/claude-1000/personaos-sandbox-cmps3lkn/merge_sort_package_e7ikg3r2",
+    "files": [
+      "manifest.json",
+      "merge_sort.py",
+      "report.json"
+    ]
+  },
+  "project": {
+    "env_id": "env:01KT378P0W1MVM1FY3XB76A6HR",
+    "project_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+  },
+  "ready_to_order": {
+    "artifacts": 3,
+    "co_signers": [
+      "persona:01KT3784JF3VXJ08AE139ENMDX"
+    ],
+    "locked": true,
+    "state": "shipped"
+  },
+  "real_execution": {
+    "ok": true,
+    "returncode": 0,
+    "stderr": "PACKAGE_DIR=/tmp/claude-1000/personaos-sandbox-cmps3lkn/merge_sort_package_e7ikg3r2",
+    "stdout": "TASK_VERIFIED",
+    "timed_out": false
+  },
+  "recognition": [
+    "A_empty_domain_context",
+    "B_no_matching_skill"
+  ],
+  "safety_extension": "Constrain generated artifacts to deterministic, local algorithm validation with no external side effects, no storage of full random arrays, and no use beyond benign correctness testing.",
+  "task": "Implement merge sort, emit the algorithm code + a small JSON report proving it sorts 50 random arrays of length 20 correctly (store only counts + the sorted check), and self-validate.",
+  "v11_discovery": {
+    "directory": "runs/ecosystem/run-01KT3784EYGM08J61D36GSR53Y/discovery/v11/directory.json",
+    "index": "runs/ecosystem/run-01KT3784EYGM08J61D36GSR53Y/discovery/v11/index.json",
+    "passed": true,
+    "probes": {
+      "federated_peer": {
+        "can_discover_telemetry": true,
+        "can_read_artifact_body": false,
+        "dht_count": 9,
+        "mdns_count": 9
+      },
+      "owner": {
+        "can_discover_telemetry": true,
+        "can_read_artifact_body": true,
+        "dht_count": 9,
+        "mdns_count": 9
+      },
+      "public_stranger": {
+        "can_discover_telemetry": false,
+        "can_read_artifact_body": false,
+        "dht_count": 0,
+        "mdns_count": 0
+      }
+    },
+    "providers": "runs/ecosystem/run-01KT3784EYGM08J61D36GSR53Y/discovery/v11/providers.json",
+    "records_bridged_to_dht": 9,
+    "records_published": 9,
+    "verification": "runs/ecosystem/run-01KT3784EYGM08J61D36GSR53Y/discovery/v11/verification.json"
+  }
+}

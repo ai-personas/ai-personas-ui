@@ -1,0 +1,343 @@
+{
+  "access_model": [
+    "discover",
+    "r",
+    "rw",
+    "admin"
+  ],
+  "counts_by_kind": {
+    "artifact": 6,
+    "domain": 1,
+    "env": 1,
+    "persona": 1,
+    "project": 1,
+    "telemetry": 1
+  },
+  "kernel_id": "kernel:97c03b3ed2bd0100",
+  "kernels": [
+    {
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "keys": ".well-known/personaos-keys.json"
+    }
+  ],
+  "planes": {
+    "internet": {
+      "transports": [
+        ".well-known",
+        "gossip",
+        "kademlia_dht"
+      ]
+    },
+    "intranet": {
+      "transports": [
+        "mdns"
+      ]
+    }
+  },
+  "record_count": 11,
+  "records": [
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "dc_to_ac_design",
+        "pcb_package_generation"
+      ],
+      "description": "DC-to-AC designer persona (computational physics)",
+      "did": "did:personaos:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+      "id": "rec:01KT37FTBG91PBVDQJF1R3A93H",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "persona",
+      "label": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBG91PBVDQJF1R3A93H.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "project_workspace",
+        "computational physics"
+      ],
+      "description": "project_workspace for the DC-to-AC inverter design",
+      "did": "did:personaos:env:01KT37DWGAC0697WSTNXWHQNCQ",
+      "id": "rec:01KT37FTBG2EKBEPG338H2MXS1",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "env",
+      "label": "DC-AC inverter design workspace",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBG2EKBEPG338H2MXS1.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "code",
+        "dataset",
+        "json"
+      ],
+      "description": "Ready-to-order PCB package (5 files)",
+      "did": "did:personaos:artcard:01KT37FTBGEQQKEEVZYK00480N",
+      "id": "artcard:01KT37FTBGEQQKEEVZYK00480N",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "Simulate a damped harmonic oscillator for 80 steps, emit a small",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/artcard:01KT37FTBGEQQKEEVZYK00480N.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DWGHZ8XGEMM9YYCZS939",
+      "did": "did:personaos:rec:01KT37FTBGS5EC1FF048P2G10W",
+      "id": "rec:01KT37FTBGS5EC1FF048P2G10W",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "manifest.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBGS5EC1FF048P2G10W.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "code"
+      ],
+      "description": "code artifact in bundle:01KT37DWGHZ8XGEMM9YYCZS939",
+      "did": "did:personaos:rec:01KT37FTBGF46CJMXCG1EN08JQ",
+      "id": "rec:01KT37FTBGF46CJMXCG1EN08JQ",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "model.py",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBGF46CJMXCG1EN08JQ.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DWGHZ8XGEMM9YYCZS939",
+      "did": "did:personaos:rec:01KT37FTBHRHXZRP9G18XXNJVQ",
+      "id": "rec:01KT37FTBHRHXZRP9G18XXNJVQ",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "summary.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBHRHXZRP9G18XXNJVQ.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "dataset"
+      ],
+      "description": "dataset artifact in bundle:01KT37DWGHZ8XGEMM9YYCZS939",
+      "did": "did:personaos:rec:01KT37FTBHFHFYPY3SJJKHGBD6",
+      "id": "rec:01KT37FTBHFHFYPY3SJJKHGBD6",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "time_series.csv",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBHFHFYPY3SJJKHGBD6.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DWGHZ8XGEMM9YYCZS939",
+      "did": "did:personaos:rec:01KT37FTBHMJE3KFHAWHTCHBQ7",
+      "id": "rec:01KT37FTBHMJE3KFHAWHTCHBQ7",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "artifact",
+      "label": "validation.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBHMJE3KFHAWHTCHBQ7.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "otel_spans",
+        "presence",
+        "lifecycle_transitions"
+      ],
+      "description": "consent-gated activity/presence feed",
+      "did": "did:personaos:telcard:01KT37FTBHSSQKE9X9FVY8NHR1",
+      "id": "telcard:01KT37FTBHSSQKE9X9FVY8NHR1",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "telemetry",
+      "label": "telemetry:persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/telcard:01KT37FTBHSSQKE9X9FVY8NHR1.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "emergent_domain",
+        "computational physics",
+        "safety_critical"
+      ],
+      "description": "emergent domain (digital_only)",
+      "did": "did:personaos:domain:01KT37DWG4N1NESMS5PQA5EP0V",
+      "id": "rec:01KT37FTBHS9A3GC3ZABWK3PGD",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "domain",
+      "label": "computational physics",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBHS9A3GC3ZABWK3PGD.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "project_workspace",
+        "computational physics"
+      ],
+      "description": "multi-session work container",
+      "did": "did:personaos:env:01KT37DWGAC0697WSTNXWHQNCQ",
+      "id": "rec:01KT37FTBH3PE9TD5DQS5TY2CJ",
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "kind": "project",
+      "label": "Simulate a damped harmonic oscillator for 80 ste",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FTBH3PE9TD5DQS5TY2CJ.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "discovery-directory/1",
+  "visibility_tiers": [
+    "persona_only",
+    "project_only",
+    "tenant",
+    "federation",
+    "public"
+  ]
+}

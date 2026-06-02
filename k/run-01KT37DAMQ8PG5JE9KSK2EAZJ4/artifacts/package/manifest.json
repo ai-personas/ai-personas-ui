@@ -1,0 +1,22 @@
+{
+  "artifact_count": 4,
+  "files": {
+    "model.py": {
+      "bytes": 689,
+      "sha256": "57481228ddc4a8117f89bbf0dc03113c6cdffae9340b5524649cbbb8f30cd68f"
+    },
+    "summary.json": {
+      "bytes": 424,
+      "sha256": "55d5f511263c0f0bfba9781357ffe3fdaa20d522813bc6767d6e2b9aa374c61c"
+    },
+    "time_series.csv": {
+      "bytes": 4911,
+      "sha256": "93fef0d0c884ba5a567b11207e55657481fc74d2964b63e01854d0d1e568c489"
+    },
+    "validation.json": {
+      "bytes": 152,
+      "sha256": "1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe"
+    }
+  },
+  "package": "candidate_verifier_ready_damped_oscillator"
+}

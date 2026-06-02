@@ -1,0 +1,80 @@
+{
+  "kernel_id": "kernel:39a21d405f3abc9d",
+  "keys_url": ".well-known/personaos-keys.json",
+  "provider_count": 12,
+  "providers": [
+    {
+      "did": "did:personaos:persona:01KT37DAPZWN9DB2J4QY91K8WF",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "did:personaos:persona:01KT37DAPZWN9DB2J4QY91K8WF",
+      "record_url": "discovery/v11/records/rec:01KT37FJZRSE77C4P6MFVRKA9K.json"
+    },
+    {
+      "did": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "record_url": "discovery/v11/records/rec:01KT37FJZR3HQXSSZMMTV4YY4E.json"
+    },
+    {
+      "did": "did:personaos:artcard:01KT37FJZRDKB9ZEMKS7XZYVSD",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:f1c664115a6d03531f925b0074e5d7deae07ee3dcc4e0050f1a1ecf9ee07b669",
+      "record_url": "discovery/v11/records/artcard:01KT37FJZRDKB9ZEMKS7XZYVSD.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZR9XMVXMW8WA5NDAB7",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:f1c664115a6d03531f925b0074e5d7deae07ee3dcc4e0050f1a1ecf9ee07b669",
+      "record_url": "discovery/v11/records/rec:01KT37FJZR9XMVXMW8WA5NDAB7.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZSF9Z6ZQMJVGA9473T",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:f87910adf94243607a47a23afb77ad3048328fa0c5d1db711c6c0f3f9be96e61",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSF9Z6ZQMJVGA9473T.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZSETDRZC859212FXV0",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSETDRZC859212FXV0.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZSDX3BBYFFGC7ZH726",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:4135eba4ce3b4d41aa7c17d2c9a6045c2cd0205685e8ce8533b5becfefc828f0",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSDX3BBYFFGC7ZH726.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZSG4T7ZJ06VSMH7E7B",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:18cf4a197e1b51a68857576bd75b75e79fccfeac585a453524155f9fec9a983c",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSG4T7ZJ06VSMH7E7B.json"
+    },
+    {
+      "did": "did:personaos:rec:01KT37FJZSD8EQD6PBHSK43JW8",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "sha256:ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSD8EQD6PBHSK43JW8.json"
+    },
+    {
+      "did": "did:personaos:telcard:01KT37FJZS8D8FV2Q61WCTG52M",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "did:personaos:telcard:01KT37FJZS8D8FV2Q61WCTG52M",
+      "record_url": "discovery/v11/records/telcard:01KT37FJZS8D8FV2Q61WCTG52M.json"
+    },
+    {
+      "did": "did:personaos:domain:01KT37DXA1ZVRMYGSFN0H8JBRV",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "did:personaos:domain:01KT37DXA1ZVRMYGSFN0H8JBRV",
+      "record_url": "discovery/v11/records/rec:01KT37FJZS1QQM9JD3CGZ77MQS.json"
+    },
+    {
+      "did": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "host_kernel_id": "kernel:39a21d405f3abc9d",
+      "key": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "record_url": "discovery/v11/records/rec:01KT37FJZSZJH26YQD8NFSYKA5.json"
+    }
+  ],
+  "schema": "dht-provider-index/1"
+}

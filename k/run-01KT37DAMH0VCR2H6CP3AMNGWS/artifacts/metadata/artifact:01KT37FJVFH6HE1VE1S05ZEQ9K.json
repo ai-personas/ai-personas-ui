@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FJVFH6HE1VE1S05ZEQ9K",
+      "asserted_fields": {},
+      "content_hash": "sha256:502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "json",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 51,
+      "version": 1
+    },
+    "signature_hex": "5fbd8f7c30deaa8aa10de4ebac9b9ec4cef10bd395e40fa1679350a256991947f7ce34d9653d8af486d749071c6b0a71a20afeba1ca0af2f63153a28fb7b980c",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837",
+  "content_ref": "passing_example.json",
+  "content_store_path": "store/blobs/sha256/502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837",
+  "file_digest": "sha256:502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837",
+  "package_path": "artifacts/package/passing_example.json",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 51,
+  "title": "passing_example.json"
+}

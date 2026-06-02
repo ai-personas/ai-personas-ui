@@ -1,0 +1,30 @@
+{
+  "bundle_id": "bundle:01KT37DWKF63KWQVW69T0TG76P",
+  "config": {
+    "cid": "cidv1-sha256-746f700e4ea46e5f4ce638b5e679d40d377c714c4352efe7548a62d2210d56bb",
+    "digest": "sha256:746f700e4ea46e5f4ce638b5e679d40d377c714c4352efe7548a62d2210d56bb",
+    "store_path": "store/blobs/sha256/746f700e4ea46e5f4ce638b5e679d40d377c714c4352efe7548a62d2210d56bb"
+  },
+  "content_store_path": "store/blobs/sha256/2686dff1a3afa29df2cc068b8427569358aede918df9d89777d63276101f615f",
+  "links": [
+    {
+      "artifact_id": "artifact:01KT37EXR93TT4JQ30J42MCZZF",
+      "cid": "cidv1-sha256-d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "digest": "sha256:d1650cdc3bed2a752ca24364db36b54d9814f044093e61ccedcaca0a681bf1cd",
+      "media_kind": "document",
+      "name": "brief.md",
+      "size_bytes": 1366
+    },
+    {
+      "artifact_id": "artifact:01KT37EXR9QGJZYB7YZP6HSH82",
+      "cid": "cidv1-sha256-9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "digest": "sha256:9000b1f7f650c627357ab5a422aeb4d5d895bd8cdcf9ccaac32055e3012c3edd",
+      "media_kind": "json",
+      "name": "metadata.json",
+      "size_bytes": 497
+    }
+  ],
+  "root_cid": "cidv1-sha256-2686dff1a3afa29df2cc068b8427569358aede918df9d89777d63276101f615f",
+  "root_digest": "sha256:2686dff1a3afa29df2cc068b8427569358aede918df9d89777d63276101f615f",
+  "schema": "artifact-bundle-dag/1"
+}

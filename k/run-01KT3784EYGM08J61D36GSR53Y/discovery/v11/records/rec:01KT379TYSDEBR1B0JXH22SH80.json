@@ -1,0 +1,45 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+    "policy_id": "acl:01KT379TYR2CSWDFC4Y073RJNM",
+    "schema": "access-policy/1",
+    "signature_hex": "ac3590ae9f6842f566724ae8e206ed720c1cebe456139a7fdfe16b15b49a4f4c341a37e23b492a9877162db750159d04f744f71f6cebcacfde618ac2fd475405",
+    "subject_id": "domain:01KT378P0QJ2PY3662MW11JD86",
+    "subject_kind": "domain"
+  },
+  "discovery_kind": "domain",
+  "kind": "domain",
+  "links": {
+    "env": "environments/env:01KT378P0W1MVM1FY3XB76A6HR.json",
+    "export": "domains/domain:01KT378P0QJ2PY3662MW11JD86.json",
+    "run": "run.json",
+    "subject_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT379TYR2CSWDFC4Y073RJNM",
+    "capability_summary": [
+      "Software Engineering",
+      "emergent_domain",
+      "safety_critical"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "emergent domain (digital_only)",
+    "did": "did:personaos:domain:01KT378P0QJ2PY3662MW11JD86",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "domain",
+    "label": "Software Engineering",
+    "record_id": "rec:01KT379TYSDEBR1B0JXH22SH80",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "d6f9c9830ce98480a1f87ad3bfc21a3e7860588a3dbe5a5c8a27f3b96450a7867f76c5c6b1108c8c4159b58024bb01274f35e24749f6c5a0939736a9568ba20f",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

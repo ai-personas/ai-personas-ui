@@ -1,0 +1,49 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "policy_id": "acl:01KT37FAR3GHJA856DGCW20EY4",
+    "schema": "access-policy/1",
+    "signature_hex": "a7843dac4151018416326968306a591d462c0d06873a7352fd8e3702f84f12b067a5a9c0afebe1e297859e6642048de18873a129480357a3c75dd588f113fb05",
+    "subject_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "subject_kind": "telemetry"
+  },
+  "discovery_kind": "telemetry",
+  "kind": "telemetry",
+  "links": {
+    "snapshot": "telemetry/snapshot.json",
+    "subject_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "summary": "telemetry/summary.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FAR3GHJA856DGCW20EY4",
+    "capability_summary": [
+      "lifecycle_transitions",
+      "otel_spans",
+      "presence"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "consent-gated activity/presence feed",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "telemetry/snapshot.json",
+        "kind": "A2A"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "telemetry:persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "record_id": "telcard:01KT37FAR4BD5JRKSNGKER6C5Y",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "ade664ad785417197fe734728dd7c6c59130d6880abcc2152fc8e5fe18997d3d55b8e46799abc8848c412a11a9302715101c14fdc42f355e140a77106c382c0b",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

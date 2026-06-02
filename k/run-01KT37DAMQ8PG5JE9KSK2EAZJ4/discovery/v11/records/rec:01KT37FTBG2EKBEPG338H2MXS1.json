@@ -1,0 +1,44 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "policy_id": "acl:01KT37FTBFPJKZSRDC7R5PJA0G",
+    "schema": "access-policy/1",
+    "signature_hex": "d0e1c32c27bae8dff1f5732785ca0040623360cb3931c4ecd5be7697bb5b8a75e7e08a0908d95fb15c8f98a09dd4dedad1e48ceaf98a9696890aac6f6621aa0a",
+    "subject_id": "env:01KT37DWGAC0697WSTNXWHQNCQ",
+    "subject_kind": "env"
+  },
+  "discovery_kind": "env",
+  "kind": "env",
+  "links": {
+    "bundle": "bundles/bundle:01KT37DWGHZ8XGEMM9YYCZS939.json",
+    "export": "environments/env:01KT37DWGAC0697WSTNXWHQNCQ.json",
+    "project": "projects/env:01KT37DWGAC0697WSTNXWHQNCQ.json",
+    "subject_id": "env:01KT37DWGAC0697WSTNXWHQNCQ"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FTBFPJKZSRDC7R5PJA0G",
+    "capability_summary": [
+      "computational physics",
+      "project_workspace"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "project_workspace for the DC-to-AC inverter design",
+    "did": "did:personaos:env:01KT37DWGAC0697WSTNXWHQNCQ",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "env",
+    "label": "DC-AC inverter design workspace",
+    "record_id": "rec:01KT37FTBG2EKBEPG338H2MXS1",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "0f89679e895e3e95317368b0c2a877aec299af17e9b2e4c8f4f86b111c91d54eca5fe48ad34d03b71b3dd52ac90160454886013700ec9d09d85964f61e451a07",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

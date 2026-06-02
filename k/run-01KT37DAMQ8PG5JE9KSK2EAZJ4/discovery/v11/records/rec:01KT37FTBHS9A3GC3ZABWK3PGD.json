@@ -1,0 +1,45 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQV73EGFP8PRRSWMKWJ",
+    "policy_id": "acl:01KT37FTBG2MP9FRG4GMGMW0NV",
+    "schema": "access-policy/1",
+    "signature_hex": "5e6d472f63612427d5d3979a7ba05dfaec549b58337c261045d40619a92e836e49a7434975d85b51802e046a7257f9619a6b76ad1944a2e7407060839fed8b00",
+    "subject_id": "domain:01KT37DWG4N1NESMS5PQA5EP0V",
+    "subject_kind": "domain"
+  },
+  "discovery_kind": "domain",
+  "kind": "domain",
+  "links": {
+    "env": "environments/env:01KT37DWGAC0697WSTNXWHQNCQ.json",
+    "export": "domains/domain:01KT37DWG4N1NESMS5PQA5EP0V.json",
+    "run": "run.json",
+    "subject_id": "domain:01KT37DWG4N1NESMS5PQA5EP0V"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FTBG2MP9FRG4GMGMW0NV",
+    "capability_summary": [
+      "computational physics",
+      "emergent_domain",
+      "safety_critical"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "emergent domain (digital_only)",
+    "did": "did:personaos:domain:01KT37DWG4N1NESMS5PQA5EP0V",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "domain",
+    "label": "computational physics",
+    "record_id": "rec:01KT37FTBHS9A3GC3ZABWK3PGD",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "14d93aeff0a426028aac62bdae360ae3c205d416293ed3a19735e12ad09316f517ab879142524ed17133c9fe3e64a4796aa1ca9b5b0201a6a9e8f97abfeeee0a",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

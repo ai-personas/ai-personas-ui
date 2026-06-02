@@ -5,9 +5,54 @@
     "rw",
     "admin"
   ],
-  "generated_at": "2026-06-02T03:31:45.105000+00:00",
-  "kernel_id": "kernel:828b3c83c16e1c1d",
-  "keys_url": ".well-known/personaos-keys.json",
+  "federated_kernels": [
+    "k/codex_run",
+    "k/run-01KT3784EYGM08J61D36GSR53Y",
+    "k/run-01KT37DAMFGJ92ANJC1G0Y0DMQ",
+    "k/run-01KT37DAMH0VCR2H6CP3AMNGWS",
+    "k/run-01KT37DAMHTFD7H4VQ1SMQK8TN",
+    "k/run-01KT37DAMKDKYACTBCBHN2VGH3",
+    "k/run-01KT37DAMQ8PG5JE9KSK2EAZJ4"
+  ],
+  "generated_at": "2026-06-02T03:55:54.299000+00:00",
+  "kernel_id": "",
+  "kernels": [
+    {
+      "kernel_id": "kernel:828b3c83c16e1c1d",
+      "node": "k/codex_run",
+      "run": "codex_run"
+    },
+    {
+      "kernel_id": "kernel:3633dc2dd8cc4d35",
+      "node": "k/run-01KT3784EYGM08J61D36GSR53Y",
+      "run": "run-01KT3784EYGM08J61D36GSR53Y"
+    },
+    {
+      "kernel_id": "kernel:d90ebd4fa960da8d",
+      "node": "k/run-01KT37DAMFGJ92ANJC1G0Y0DMQ",
+      "run": "run-01KT37DAMFGJ92ANJC1G0Y0DMQ"
+    },
+    {
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "node": "k/run-01KT37DAMH0VCR2H6CP3AMNGWS",
+      "run": "run-01KT37DAMH0VCR2H6CP3AMNGWS"
+    },
+    {
+      "kernel_id": "kernel:296586db91a9569a",
+      "node": "k/run-01KT37DAMHTFD7H4VQ1SMQK8TN",
+      "run": "run-01KT37DAMHTFD7H4VQ1SMQK8TN"
+    },
+    {
+      "kernel_id": "kernel:1db6c0dba277ebff",
+      "node": "k/run-01KT37DAMKDKYACTBCBHN2VGH3",
+      "run": "run-01KT37DAMKDKYACTBCBHN2VGH3"
+    },
+    {
+      "kernel_id": "kernel:97c03b3ed2bd0100",
+      "node": "k/run-01KT37DAMQ8PG5JE9KSK2EAZJ4",
+      "run": "run-01KT37DAMQ8PG5JE9KSK2EAZJ4"
+    }
+  ],
   "planes": {
     "internet": {
       "transports": [
@@ -23,7 +68,5 @@
       ]
     }
   },
-  "providers_url": "discovery/providers.json",
-  "schema": "personaos-discovery-bootstrap/1",
-  "telemetry_url": "telemetry/spans.json"
+  "schema": "personaos-discovery-bootstrap/1"
 }

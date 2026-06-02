@@ -1,0 +1,267 @@
+{
+  "artifacts": [
+    {
+      "artifact_content_hash": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+      "artifact_id": "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW",
+      "cid": "cidv1-sha256-ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+      "file_digest": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+      "media_kind": "json",
+      "metadata_path": "artifacts/metadata/artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/manifest.json",
+      "size_bytes": 705,
+      "store_path": "store/blobs/sha256/ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+      "title": "manifest.json"
+    },
+    {
+      "artifact_content_hash": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+      "artifact_id": "artifact:01KT37FAJABKFRXHZX1X9C8SA9",
+      "cid": "cidv1-sha256-c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+      "file_digest": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+      "media_kind": "json",
+      "metadata_path": "artifacts/metadata/artifact:01KT37FAJABKFRXHZX1X9C8SA9.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/primes.json",
+      "size_bytes": 451,
+      "store_path": "store/blobs/sha256/c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+      "title": "primes.json"
+    },
+    {
+      "artifact_content_hash": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+      "artifact_id": "artifact:01KT37FAJAQGDJH2V4TMZQFF1P",
+      "cid": "cidv1-sha256-8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+      "file_digest": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+      "media_kind": "code",
+      "metadata_path": "artifacts/metadata/artifact:01KT37FAJAQGDJH2V4TMZQFF1P.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/sieve_algorithm.py",
+      "size_bytes": 805,
+      "store_path": "store/blobs/sha256/8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796",
+      "title": "sieve_algorithm.py"
+    },
+    {
+      "artifact_content_hash": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+      "artifact_id": "artifact:01KT37FAJA6P4FVN89NC4WGHJM",
+      "cid": "cidv1-sha256-1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+      "file_digest": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+      "media_kind": "text",
+      "metadata_path": "artifacts/metadata/artifact:01KT37FAJA6P4FVN89NC4WGHJM.json",
+      "mime_type": "application/octet-stream",
+      "package_path": "artifacts/package/verification_report.txt",
+      "size_bytes": 437,
+      "store_path": "store/blobs/sha256/1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+      "title": "verification_report.txt"
+    }
+  ],
+  "bundle": {
+    "payload": {
+      "artifacts": [
+        "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW",
+        "artifact:01KT37FAJABKFRXHZX1X9C8SA9",
+        "artifact:01KT37FAJAQGDJH2V4TMZQFF1P",
+        "artifact:01KT37FAJA6P4FVN89NC4WGHJM"
+      ],
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "bundle_kind": "task_deliverable",
+      "discharges_obligations": [],
+      "forked_from_bundle_id": null,
+      "owning_env_id": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "primary_artifact_id": null,
+      "project_id": "env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "related_domain_items": {},
+      "related_open_problems": [],
+      "schema": "artifact-bundle/1",
+      "sharing_policy_ref": "share:01KT37DXBKQC515DTTZCPH5DGG",
+      "shipment_contract": {
+        "artifact_quality_rules": [],
+        "declared_by_persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+        "rationale": "body-emitted files are the declared evidence",
+        "required_artifact_patterns": [
+          "manifest.json",
+          "primes.json",
+          "sieve_algorithm.py",
+          "verification_report.txt"
+        ],
+        "required_check_markers": [],
+        "schema": "shipment-contract/1",
+        "verification_strategy": "execute the body-emitted validation program and require its emitted deliverable"
+      },
+      "state": "shipped",
+      "version": 5
+    },
+    "signature_hex": "72443c9bf46479e8654c243dfbce6fa16a8689173a26a6425eebfbcd0d9d27948131a1002aafbf6e2cb9af26d47125a546376f051edc8a00f95729ca33cb3a0f",
+    "signing_key_id": ""
+  },
+  "co_signatures": {
+    "persona:01KT37DAQJCDCMPDWDTP8E7M7G": "aa318ff031a6d49aaee60ef9c93758e837c25ffa9ce0012451651a6198f9082b85cefd02c0d82a247b05ea45c98c626b0555b951e664e393d1992edd54a3570f"
+  },
+  "schema": "artifact-bundle-run-export/1",
+  "verifier_evidence": [
+    {
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "command_or_api_fingerprint": "schema-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+        "artifact:01KT37FAJA6P4FVN89NC4WGHJM": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+        "artifact:01KT37FAJABKFRXHZX1X9C8SA9": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+        "artifact:01KT37FAJAQGDJH2V4TMZQFF1P": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796"
+      },
+      "input_bundle_hash": "sha256:c88197c0fcd2a8607dee1a97c0539fcb2c14415ead8f6f3dffc044fac39ae535",
+      "invocation_id": "verifyev:01KT37FAPBMFGXGNCZ6Z31BHZJ",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "payload present and well-formed",
+      "raw_output_hash": "sha256:b6f45bda8a2101397c3509c275d92e15212e052638795047c5aa20958e852631",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "00eb1c6b44049aa28643976a685768a783465725d7ec49d0cba3e6867a66a7c1756289aa3ed47a24c75fd7de100a7efda9b4901c89e5205f3897912140b79a08",
+      "stage_id": "schema-default",
+      "stage_kind": "schema",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "command_or_api_fingerprint": "sandbox-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+        "artifact:01KT37FAJA6P4FVN89NC4WGHJM": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+        "artifact:01KT37FAJABKFRXHZX1X9C8SA9": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+        "artifact:01KT37FAJAQGDJH2V4TMZQFF1P": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796"
+      },
+      "input_bundle_hash": "sha256:c88197c0fcd2a8607dee1a97c0539fcb2c14415ead8f6f3dffc044fac39ae535",
+      "invocation_id": "verifyev:01KT37FAPC5SM6G0Y1AKFFKQ0B",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "executed in sandbox: ran to completion",
+      "raw_output_hash": "sha256:50f2a557c920126bd7c171be69697559be7a5cd113a9255a6bd39d61f1e1f808",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": "kernel-verifier-sandbox",
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "74a0cca1c1475a8a948f9e25c0a8f98b3fd05cfb26cfedc70a05831a92a7498336f12fa7334eaeff146b356509a792eed61ddebf7090060baa6dc457e628e608",
+      "stage_id": "sandbox-default",
+      "stage_kind": "sandbox",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "command_or_api_fingerprint": "invariant-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+        "artifact:01KT37FAJA6P4FVN89NC4WGHJM": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+        "artifact:01KT37FAJABKFRXHZX1X9C8SA9": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+        "artifact:01KT37FAJAQGDJH2V4TMZQFF1P": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796"
+      },
+      "input_bundle_hash": "sha256:c88197c0fcd2a8607dee1a97c0539fcb2c14415ead8f6f3dffc044fac39ae535",
+      "invocation_id": "verifyev:01KT37FAPCH1TAJ21HWRTVHESW",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "output within declared invariants",
+      "raw_output_hash": "sha256:0152666ee693075d5f0a25265cd48642205904a2e3e29135483b0d43c1af0a7c",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "8a925c4b1f3cd44ee3dd669f2a99f605b19bfbebc94e69c28dcb731542aadbbcbf0575ee41ef709ee9ae1e4ad41b972bf690343774b6c3f16b92d41436dbe607",
+      "stage_id": "invariant-default",
+      "stage_kind": "invariant",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    },
+    {
+      "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "command_or_api_fingerprint": "policy-default:1",
+      "execution_surface_kind": "kernel_verifier",
+      "exit_status_kind": "success",
+      "failure_kind": null,
+      "input_artifact_hashes": {
+        "artifact:01KT37FAJ9Y9Z3F8QMXM9E6ACW": "sha256:ecbf45cf98b6a3c2af8aa65172d845d5cea83c7aafabaf00c91637320413ff83",
+        "artifact:01KT37FAJA6P4FVN89NC4WGHJM": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+        "artifact:01KT37FAJABKFRXHZX1X9C8SA9": "sha256:c0f47b02d1d56f5af37473e0e14916878f5b9ec9891896364f1084f60c46382d",
+        "artifact:01KT37FAJAQGDJH2V4TMZQFF1P": "sha256:8724981d64103a436bc2e91aa35187a48bc141b6cb230375f6693db376820796"
+      },
+      "input_bundle_hash": "sha256:c88197c0fcd2a8607dee1a97c0539fcb2c14415ead8f6f3dffc044fac39ae535",
+      "invocation_id": "verifyev:01KT37FAPDQ1J62M5MC05M5JEY",
+      "panel_verdict_ref": null,
+      "parsed_verdict": "pass",
+      "peer_review_ref": null,
+      "rationale_ref": "policy checks clear",
+      "raw_output_hash": "sha256:4093d321dbd99d13bee9161868cb22a607e1b85dd1ef6229ad807e59ab79133d",
+      "raw_output_ref": null,
+      "required_tool_id": null,
+      "sandbox_ref": null,
+      "schema": "verifier-invocation-evidence/1",
+      "signature_hex": "cd9ab08377a94941f252c33a131e577f881ba94f92e26e181f4007ab94c88b89877e393b6fc3f3f93fd154cad5fed66358c8ff6af6b244789bcb2ad9dee5b801",
+      "stage_id": "policy-default",
+      "stage_kind": "policy",
+      "stage_version": 1,
+      "tool_invocation_ref": null,
+      "tool_version_ref": null,
+      "verifier_recipe_id": "execute design-validation program",
+      "verifier_recipe_version": 1
+    }
+  ],
+  "verifier_invocations": [
+    {
+      "detail": "payload present and well-formed",
+      "evidence_ref": "verifyev:01KT37FAPBMFGXGNCZ6Z31BHZJ",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "schema-default",
+      "tier": "schema"
+    },
+    {
+      "detail": "executed in sandbox: ran to completion",
+      "evidence_ref": "verifyev:01KT37FAPC5SM6G0Y1AKFFKQ0B",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "sandbox-default",
+      "tier": "sandbox"
+    },
+    {
+      "detail": "output within declared invariants",
+      "evidence_ref": "verifyev:01KT37FAPCH1TAJ21HWRTVHESW",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "invariant-default",
+      "tier": "invariant"
+    },
+    {
+      "detail": "policy checks clear",
+      "evidence_ref": "verifyev:01KT37FAPDQ1J62M5MC05M5JEY",
+      "passed": true,
+      "recipe": "execute design-validation program",
+      "schema": "verifier-invocation/1",
+      "stage_id": "policy-default",
+      "tier": "policy"
+    }
+  ]
+}

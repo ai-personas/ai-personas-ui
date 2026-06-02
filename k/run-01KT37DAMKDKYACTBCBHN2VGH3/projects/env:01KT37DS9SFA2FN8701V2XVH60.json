@@ -1,0 +1,19 @@
+{
+  "bundles": [
+    "bundle:01KT37DS9ZXA6YGHTTW3CE0252"
+  ],
+  "domain_context_ref": "domain:01KT37DS9MZPXRGEBGWZ7Q9YT6",
+  "project": {
+    "payload": {
+      "env_id": "env:01KT37DS9SFA2FN8701V2XVH60",
+      "name": "Write a CSV-to-JSON converter, emit the converte",
+      "project_id": "env:01KT37DS9SFA2FN8701V2XVH60",
+      "schema": "project/2",
+      "signing_key_id": "kernel-master",
+      "status": "active"
+    },
+    "signature_hex": "60542df2bad0d0b637e66039bcddefbd1800efc7e49986c1d1fe71d75092ec5968db044d316c846fe62a7e7950f7fab7c79398af64b297f048e6fbfac1443606",
+    "signing_key_id": "kernel-master"
+  },
+  "schema": "project-run-export/1"
+}

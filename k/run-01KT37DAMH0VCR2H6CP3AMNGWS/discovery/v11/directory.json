@@ -1,0 +1,368 @@
+{
+  "access_model": [
+    "discover",
+    "r",
+    "rw",
+    "admin"
+  ],
+  "counts_by_kind": {
+    "artifact": 7,
+    "domain": 1,
+    "env": 1,
+    "persona": 1,
+    "project": 1,
+    "telemetry": 1
+  },
+  "kernel_id": "kernel:39a21d405f3abc9d",
+  "kernels": [
+    {
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "keys": ".well-known/personaos-keys.json"
+    }
+  ],
+  "planes": {
+    "internet": {
+      "transports": [
+        ".well-known",
+        "gossip",
+        "kademlia_dht"
+      ]
+    },
+    "intranet": {
+      "transports": [
+        "mdns"
+      ]
+    }
+  },
+  "record_count": 12,
+  "records": [
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "dc_to_ac_design",
+        "pcb_package_generation"
+      ],
+      "description": "DC-to-AC designer persona (Software Engineering)",
+      "did": "did:personaos:persona:01KT37DAPZWN9DB2J4QY91K8WF",
+      "id": "rec:01KT37FJZRSE77C4P6MFVRKA9K",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "persona",
+      "label": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZRSE77C4P6MFVRKA9K.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "project_workspace",
+        "Software Engineering"
+      ],
+      "description": "project_workspace for the DC-to-AC inverter design",
+      "did": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "id": "rec:01KT37FJZR3HQXSSZMMTV4YY4E",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "env",
+      "label": "DC-AC inverter design workspace",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZR3HQXSSZMMTV4YY4E.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "code",
+        "json"
+      ],
+      "description": "Ready-to-order PCB package (6 files)",
+      "did": "did:personaos:artcard:01KT37FJZRDKB9ZEMKS7XZYVSD",
+      "id": "artcard:01KT37FJZRDKB9ZEMKS7XZYVSD",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "Build a tiny JSON-schema validator (required keys + types), emit",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/artcard:01KT37FJZRDKB9ZEMKS7XZYVSD.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZR9XMVXMW8WA5NDAB7",
+      "id": "rec:01KT37FJZR9XMVXMW8WA5NDAB7",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "failing_example.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZR9XMVXMW8WA5NDAB7.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZSF9Z6ZQMJVGA9473T",
+      "id": "rec:01KT37FJZSF9Z6ZQMJVGA9473T",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "manifest.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSF9Z6ZQMJVGA9473T.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZSETDRZC859212FXV0",
+      "id": "rec:01KT37FJZSETDRZC859212FXV0",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "passing_example.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSETDRZC859212FXV0.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZSDX3BBYFFGC7ZH726",
+      "id": "rec:01KT37FJZSDX3BBYFFGC7ZH726",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "results.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSDX3BBYFFGC7ZH726.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "json"
+      ],
+      "description": "json artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZSG4T7ZJ06VSMH7E7B",
+      "id": "rec:01KT37FJZSG4T7ZJ06VSMH7E7B",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "schema.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSG4T7ZJ06VSMH7E7B.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "code"
+      ],
+      "description": "code artifact in bundle:01KT37DXADV55GDY8BJV9PKF7T",
+      "did": "did:personaos:rec:01KT37FJZSD8EQD6PBHSK43JW8",
+      "id": "rec:01KT37FJZSD8EQD6PBHSK43JW8",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "artifact",
+      "label": "tiny_validator.py",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSD8EQD6PBHSK43JW8.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "otel_spans",
+        "presence",
+        "lifecycle_transitions"
+      ],
+      "description": "consent-gated activity/presence feed",
+      "did": "did:personaos:telcard:01KT37FJZS8D8FV2Q61WCTG52M",
+      "id": "telcard:01KT37FJZS8D8FV2Q61WCTG52M",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "telemetry",
+      "label": "telemetry:persona:01KT37DAPZWN9DB2J4QY91K8WF",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/telcard:01KT37FJZS8D8FV2Q61WCTG52M.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "emergent_domain",
+        "Software Engineering",
+        "safety_critical"
+      ],
+      "description": "emergent domain (digital_only)",
+      "did": "did:personaos:domain:01KT37DXA1ZVRMYGSFN0H8JBRV",
+      "id": "rec:01KT37FJZS1QQM9JD3CGZ77MQS",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "domain",
+      "label": "Software Engineering",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZS1QQM9JD3CGZ77MQS.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": false
+      },
+      "capability_summary": [
+        "project_workspace",
+        "Software Engineering"
+      ],
+      "description": "multi-session work container",
+      "did": "did:personaos:env:01KT37DXA7B7RC5RYRCNB1ZFCF",
+      "id": "rec:01KT37FJZSZJH26YQD8NFSYKA5",
+      "kernel_id": "kernel:39a21d405f3abc9d",
+      "kind": "project",
+      "label": "Build a tiny JSON-schema validator (required key",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KT37FJZSZJH26YQD8NFSYKA5.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "federation"
+    }
+  ],
+  "schema": "discovery-directory/1",
+  "visibility_tiers": [
+    "persona_only",
+    "project_only",
+    "tenant",
+    "federation",
+    "public"
+  ]
+}

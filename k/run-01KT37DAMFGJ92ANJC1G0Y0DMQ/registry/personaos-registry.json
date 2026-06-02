@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-06-02T03:54:10.018000+00:00",
+  "model": "two-tier-local-catalog",
+  "packages": [
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.persona.persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+      "digest": "sha256:e50c180dc3cab65821c07817cee24bc98ef6cdf3dc860202e89af2bfa1a665ee",
+      "kind": "persona",
+      "name": "ai-personas.demo.dc-ac.persona.persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+      "path": "personas/persona:01KT37DAQJCDCMPDWDTP8E7M7G.json",
+      "schema": "persona-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.persona-card.persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+      "digest": "sha256:f9b9809a35ccda1bfb9c0082c554e424286d4729024067bb46a780954eabe420",
+      "kind": "persona_card",
+      "name": "ai-personas.demo.dc-ac.persona-card.persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+      "path": ".well-known/personas/persona:01KT37DAQJCDCMPDWDTP8E7M7G.json",
+      "schema": "persona-card/3"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.env.env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "digest": "sha256:77d25bce48c96b9e113ed085c0655ff9601f270528b4aef56d6f32c96d4060d0",
+      "kind": "environment",
+      "name": "ai-personas.demo.dc-ac.env.env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "path": "environments/env:01KT37DXBCKZ5C5JFN6M3CWNC5.json",
+      "schema": "environment-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.domain.domain:01KT37DXB7DQTJJF2A5P3V82AT",
+      "digest": "sha256:3622a0c47538073c73eba224bd9e9d62244c99e2bf26226b2fe589f64d8083ea",
+      "kind": "domain",
+      "name": "ai-personas.demo.dc-ac.domain.domain:01KT37DXB7DQTJJF2A5P3V82AT",
+      "path": "domains/domain:01KT37DXB7DQTJJF2A5P3V82AT.json",
+      "schema": "domain-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.project.env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "digest": "sha256:bbc2d40b67319fa5f1a180e991dbbb1fd51abd7b00223d46052ae7339dbf8854",
+      "kind": "project",
+      "name": "ai-personas.demo.dc-ac.project.env:01KT37DXBCKZ5C5JFN6M3CWNC5",
+      "path": "projects/env:01KT37DXBCKZ5C5JFN6M3CWNC5.json",
+      "schema": "project-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.bundle.bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "digest": "sha256:248c213b252006da4a475c1e3c9a10ba7a918b520770da4263bad8c158137111",
+      "kind": "artifact_bundle",
+      "name": "ai-personas.demo.dc-ac.bundle.bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+      "path": "bundles/bundle:01KT37DXBKRQ8F3X5FGGSQMM01.json",
+      "schema": "artifact-bundle-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.policy.share:01KT37DXBKQC515DTTZCPH5DGG",
+      "digest": "sha256:2e0bffe4cc4fcdb618461526828da79598cedfcd0558aa8f8b2853feaeeaf792",
+      "kind": "sharing_policy",
+      "name": "ai-personas.demo.dc-ac.policy.share:01KT37DXBKQC515DTTZCPH5DGG",
+      "path": "policies/share:01KT37DXBKQC515DTTZCPH5DGG.json",
+      "schema": "artifact-sharing-policy-run-export/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.distribution.oci",
+      "digest": "sha256:a4777d410dd2acf030320bd4fa56bbfc3e43cf9565a0f89c1e887b181154ae38",
+      "kind": "oci_manifest",
+      "name": "ai-personas.demo.dc-ac.distribution.oci",
+      "path": "distribution/oci-artifact-manifest.json",
+      "schema": "oci-artifact-manifest/1"
+    },
+    {
+      "did": "did:personaos:ai-personas.demo.dc-ac.store.dag",
+      "digest": "sha256:7998964d40b0367e54fb544cb914e0bb0662fd75b092475bf749908c05e1d761",
+      "kind": "ipld_dag",
+      "name": "ai-personas.demo.dc-ac.store.dag",
+      "path": "store/ipld-dag.json",
+      "schema": "artifact-bundle-dag/1"
+    }
+  ],
+  "root": {
+    "bundle_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+    "oci_manifest_cid": "cidv1-sha256-a4777d410dd2acf030320bd4fa56bbfc3e43cf9565a0f89c1e887b181154ae38",
+    "oci_manifest_digest": "sha256:a4777d410dd2acf030320bd4fa56bbfc3e43cf9565a0f89c1e887b181154ae38",
+    "oci_manifest_store_path": "store/blobs/sha256/a4777d410dd2acf030320bd4fa56bbfc3e43cf9565a0f89c1e887b181154ae38",
+    "root_cid": "cidv1-sha256-31c531bfdd76a419603906e7c56c3c3f00aa527c1d71eed489ec928e195577d5"
+  },
+  "schema": "personaos-registry-catalog/1"
+}

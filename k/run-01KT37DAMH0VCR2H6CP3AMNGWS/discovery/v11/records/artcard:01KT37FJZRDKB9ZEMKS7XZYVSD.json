@@ -1,0 +1,59 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAPZWN9DB2J4QY91K8WF",
+    "policy_id": "acl:01KT37FJZRR9M605S2TW635SF6",
+    "schema": "access-policy/1",
+    "signature_hex": "4c7d897f6be317e6538dce7304f98d9ebde96008b0d3fafae814ef600e50a89b4b5ee43643cc0f5ae4069669a8eda13df8f50c464b4d7c8fdb61a1ec13ac0a0a",
+    "subject_id": "bundle:01KT37DXADV55GDY8BJV9PKF7T",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact_bundle",
+  "kind": "artifact",
+  "links": {
+    "bundle": "bundles/bundle:01KT37DXADV55GDY8BJV9PKF7T.json",
+    "dag": "store/ipld-dag.json",
+    "oci": "distribution/oci-artifact-manifest.json",
+    "registry": "registry/personaos-registry.json",
+    "run": "run.json",
+    "subject_id": "bundle:01KT37DXADV55GDY8BJV9PKF7T"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FJZRR9M605S2TW635SF6",
+    "capability_summary": [
+      "code",
+      "json"
+    ],
+    "content_hash": "sha256:f1c664115a6d03531f925b0074e5d7deae07ee3dcc4e0050f1a1ecf9ee07b669",
+    "content_locator_ref": "",
+    "description": "Ready-to-order PCB package (6 files)",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "Build a tiny JSON-schema validator (required keys + types), emit",
+    "record_id": "artcard:01KT37FJZRDKB9ZEMKS7XZYVSD",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "1bd210ae52e8b46e13d8d0ad1a75aa62d64ab24ee68f6fcd07ce4cf3fab824d218056789361e5596e71d2c2e5add89c406686461a92136ed929277373756ea06",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

@@ -1,0 +1,29 @@
+{
+  "artifact": {
+    "payload": {
+      "artifact_id": "artifact:01KT37FT78B4RB2MTRSTVJMZ1E",
+      "asserted_fields": {},
+      "content_hash": "sha256:1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe",
+      "content_kind": "stored",
+      "contributors": [],
+      "media_kind": "json",
+      "parent_version_artifact_id": null,
+      "rendered_by_tool": null,
+      "rendered_view_ref": null,
+      "role_in_bundle": "supporting",
+      "schema": "artifact/1",
+      "size_bytes": 152,
+      "version": 1
+    },
+    "signature_hex": "006cf650be5e59c2236f96fcdc3d852f111cfd48c060ebd80b098e23d9aefef0d977399191e198220a24242e97df6c52fe47b26d6eb1571fc7efd21224174c01",
+    "signing_key_id": ""
+  },
+  "cid": "cidv1-sha256-1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe",
+  "content_ref": "validation.json",
+  "content_store_path": "store/blobs/sha256/1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe",
+  "file_digest": "sha256:1c06b9bd8b9850e46aaae79e1ae75bbc3a8778103e74166e7d4bb67d007f86fe",
+  "package_path": "artifacts/package/validation.json",
+  "schema": "artifact-run-export/1",
+  "size_bytes": 152,
+  "title": "validation.json"
+}

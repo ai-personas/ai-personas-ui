@@ -1,0 +1,61 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT37DWCC6Q6CNT3H269HMWG0",
+    "schema": "access-policy/1",
+    "signature_hex": "fd380447fa2d98c9e69f6e30adbe342fea2cf690dd00fb553b31104e2fffbac950f2dfc58357e502ab6aa55f723f215eedafd99f34b9dd7b9e16e26dc4dcc406",
+    "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact_bundle",
+  "kind": "artifact",
+  "links": {
+    "bundle": "bundles/bundle:01KT30JKDBJ57DKPX3JHP54SAJ.json",
+    "dag": "store/ipld-dag.json",
+    "oci": "distribution/oci-artifact-manifest.json",
+    "registry": "registry/personaos-registry.json",
+    "run": "run.json",
+    "subject_id": "bundle:01KT30JKDBJ57DKPX3JHP54SAJ"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37DWCC6Q6CNT3H269HMWG0",
+    "capability_summary": [
+      "binary",
+      "bom",
+      "drill",
+      "fab_manifest"
+    ],
+    "content_hash": "sha256:a52f1479006373f9e15d15d975245fe19faeaf3c422e24cf4b19edae7d6adf94",
+    "content_locator_ref": "",
+    "description": "Ready-to-order PCB package (9 files)",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "DC-AC inverter board",
+    "record_id": "artcard:01KT37DWCDK892YYAY634VFM9W",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "901e64ce8b49eb11b995c23d07b8da65a35550a9344c947781158674c27dbe499b78ee1da535c42c12f8fbb3deac4d2dde82f22b9c85507dcd283093384d4f06",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

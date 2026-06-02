@@ -1,0 +1,56 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "rw",
+        "grantee_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+        "grantee_kind": "persona",
+        "schema": "access-grant/1"
+      },
+      {
+        "access_level": "r",
+        "grantee_id": "fab",
+        "grantee_kind": "principal",
+        "schema": "access-grant/1"
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQJCDCMPDWDTP8E7M7G",
+    "policy_id": "acl:01KT37FAR3EH3JJ4AHQ4YD88G0",
+    "schema": "access-policy/1",
+    "signature_hex": "054921fb21ce9a858f1f3dfd9d26cad013372eede166e876e8dc7d7bddafd61a2b3cd716c8f4f9a590d38386982c4bb9242d61158bde1f18621bbd0c2c083a0c",
+    "subject_id": "bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "content": "artifacts/package/verification_report.txt",
+    "content_hash": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+    "media_kind": "text",
+    "metadata": "artifacts/metadata/artifact:01KT37FAJA6P4FVN89NC4WGHJM.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FAR3EH3JJ4AHQ4YD88G0",
+    "capability_summary": [
+      "text"
+    ],
+    "content_hash": "sha256:1a012d9cf0c65db8b1f6c3b93b5183399311e15d2218811106ce934108dbe4e5",
+    "content_locator_ref": "",
+    "description": "text artifact in bundle:01KT37DXBKRQ8F3X5FGGSQMM01",
+    "did": "",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "artifact",
+    "label": "verification_report.txt",
+    "record_id": "rec:01KT37FAR415SK1M1PQSRKW4VX",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "6fc2b5811693999bfb0b31b12b0ac02e4ddccec7bb4cc7eb72b2facc6e2ffa326d86659d44dbaf8e819cece98c58911a4a05c99d6551a9d243b661a032480704",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

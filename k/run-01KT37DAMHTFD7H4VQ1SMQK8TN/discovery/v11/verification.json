@@ -1,0 +1,41 @@
+{
+  "all_record_signatures_valid": true,
+  "checks": {
+    "all_signatures_valid": true,
+    "artifact_body_owner_only": true,
+    "federated_peer_discovers_all_federation_records": true,
+    "owner_discovers_all_on_mdns": true,
+    "public_stranger_enumerates_nothing": true,
+    "telemetry_card_discoverable_to_peer": true
+  },
+  "kernel_id": "kernel:296586db91a9569a",
+  "passed": true,
+  "planes": {
+    "internet_dht": true,
+    "intranet_mdns": true
+  },
+  "probes": {
+    "federated_peer": {
+      "can_discover_telemetry": true,
+      "can_read_artifact_body": false,
+      "dht_count": 8,
+      "mdns_count": 8
+    },
+    "owner": {
+      "can_discover_telemetry": true,
+      "can_read_artifact_body": true,
+      "dht_count": 8,
+      "mdns_count": 8
+    },
+    "public_stranger": {
+      "can_discover_telemetry": false,
+      "can_read_artifact_body": false,
+      "dht_count": 0,
+      "mdns_count": 0
+    }
+  },
+  "records_bridged_to_dht": 8,
+  "records_published": 8,
+  "schema": "personaos-v11-discovery-verification/1",
+  "task": "Generate a concise Markdown technical brief comparing token-bucket vs leaky-bucket rate limiting (with a small table), emit brief.md + a metadata JSON, and self-validate the file structure."
+}

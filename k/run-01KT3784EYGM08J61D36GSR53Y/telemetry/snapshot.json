@@ -1,0 +1,1087 @@
+{
+  "schema": "personaos-telemetry-snapshot/1",
+  "spans": [
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1531,
+        "personaos.lineage.event_kind": "DOMAIN_FORMED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.216443+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "b6dfd1ee5c90b59c",
+      "started_at": "2026-06-02T03:50:32.216412+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.187,
+        "personaos.lineage.event_kind": "DOMAIN_PROBE_OPENED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.216961+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "95cb710de0d86b2b",
+      "started_at": "2026-06-02T03:50:32.216945+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1738,
+        "personaos.lineage.event_kind": "DOMAIN_UNKNOWN_DETECTED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.217252+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "9a66c3d5611e8bad",
+      "started_at": "2026-06-02T03:50:32.217238+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1813,
+        "personaos.lineage.event_kind": "PERCEPTION_RECORDED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.217535+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "243d5b250ff821d8",
+      "started_at": "2026-06-02T03:50:32.217522+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1746,
+        "personaos.lineage.event_kind": "ABDUCTION_RECORDED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.217812+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "4555f04f3c1a10ed",
+      "started_at": "2026-06-02T03:50:32.217800+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1712,
+        "personaos.lineage.event_kind": "KIND_PROPOSED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.218120+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "f81961e9db0a6323",
+      "started_at": "2026-06-02T03:50:32.218107+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.153,
+        "personaos.lineage.event_kind": "KIND_PROPOSED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.218400+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "3ff0b19713f21b0d",
+      "started_at": "2026-06-02T03:50:32.218387+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1489,
+        "personaos.lineage.event_kind": "KIND_PROPOSED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.218668+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "79d4b3358921926d",
+      "started_at": "2026-06-02T03:50:32.218656+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.163,
+        "personaos.lineage.event_kind": "TOOL_DISCOVERED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.218933+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "c92d3dd99a4a56c7",
+      "started_at": "2026-06-02T03:50:32.218921+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1527,
+        "personaos.lineage.event_kind": "TOOL_DISCOVERED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.219184+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "cc73f4fe45714d6c",
+      "started_at": "2026-06-02T03:50:32.219173+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1549,
+        "personaos.lineage.event_kind": "TOOL_DISCOVERED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.219435+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "01315cd808d57b16",
+      "started_at": "2026-06-02T03:50:32.219424+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1561,
+        "personaos.lineage.event_kind": "TOOL_DISCOVERED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.219691+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "3ac8ee7789f9c36d",
+      "started_at": "2026-06-02T03:50:32.219679+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1572,
+        "personaos.lineage.event_kind": "SAFETY_EXTENSION_IMPORTED",
+        "personaos.lineage.scope": "domain",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+      },
+      "ended_at": "2026-06-02T03:50:32.219997+00:00",
+      "name": "personaos.lineage.domain",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "c07d3fff463fce11",
+      "started_at": "2026-06-02T03:50:32.219986+00:00",
+      "status": "ok",
+      "trace_id": "domain:01KT378P0QJ2PY3662MW11JD86"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1214,
+        "personaos.lineage.event_kind": "ENV_CREATED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.220581+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "ef4ba4ad418d5352",
+      "started_at": "2026-06-02T03:50:32.220568+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1591,
+        "personaos.lineage.event_kind": "ENV_STATUS_CHANGED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.220850+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "2f8427d82d24058d",
+      "started_at": "2026-06-02T03:50:32.220838+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1626,
+        "personaos.lineage.event_kind": "MEMBER_JOINED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.221204+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "a0868b5daf230290",
+      "started_at": "2026-06-02T03:50:32.221192+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.174,
+        "personaos.lineage.event_kind": "ATTENTION_ALLOCATED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.221479+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "7a80f0c1f3c33ccf",
+      "started_at": "2026-06-02T03:50:32.221467+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1654,
+        "personaos.lineage.event_kind": "ATTENTION_NEAR_BUDGET",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.221885+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "2f200c81bc169f11",
+      "started_at": "2026-06-02T03:50:32.221872+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.161,
+        "personaos.lineage.event_kind": "env_rule_proposed",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.222657+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "398ea3b72fe6dfac",
+      "started_at": "2026-06-02T03:50:32.222646+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1612,
+        "personaos.lineage.event_kind": "env_rule_trial_entered",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.223032+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "2418bc494b2f24c9",
+      "started_at": "2026-06-02T03:50:32.223020+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1533,
+        "personaos.lineage.event_kind": "env_rule_approved",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.223394+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "a442e5ec8c645f60",
+      "started_at": "2026-06-02T03:50:32.223383+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1581,
+        "personaos.lineage.event_kind": "env_rule_proposed",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.223910+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "4cd39161de256a2b",
+      "started_at": "2026-06-02T03:50:32.223898+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.156,
+        "personaos.lineage.event_kind": "env_rule_trial_entered",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.224268+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "faa99f5ae06a013a",
+      "started_at": "2026-06-02T03:50:32.224257+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1515,
+        "personaos.lineage.event_kind": "env_rule_approved",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.224624+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "86ed55f74b76f4b7",
+      "started_at": "2026-06-02T03:50:32.224613+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.269,
+        "personaos.lineage.event_kind": "MODEL_CAPABILITY_DECLARED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.225018+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "68eefb006d0a0416",
+      "started_at": "2026-06-02T03:50:32.225007+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1773,
+        "personaos.lineage.event_kind": "MODEL_CAPABILITY_DECLARED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.225312+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "317e59737f553088",
+      "started_at": "2026-06-02T03:50:32.225300+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1752,
+        "personaos.lineage.event_kind": "MODEL_CAPABILITY_DECLARED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.225601+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "ce65eef15f787182",
+      "started_at": "2026-06-02T03:50:32.225589+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1662,
+        "personaos.lineage.event_kind": "MODEL_CAPABILITY_DECLARED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.225872+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "31ed7765b3c6db79",
+      "started_at": "2026-06-02T03:50:32.225861+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2182,
+        "personaos.lineage.event_kind": "PROJECT_CREATED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.226472+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "08f89e8d9c522da7",
+      "started_at": "2026-06-02T03:50:32.226460+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1535,
+        "personaos.lineage.event_kind": "BUNDLE_CREATED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.226851+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "f5cc773b69a526a0",
+      "started_at": "2026-06-02T03:50:32.226840+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1699,
+        "personaos.lineage.event_kind": "artifact_sharing_policy_created",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:50:32.227349+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "803d47387186e1ec",
+      "started_at": "2026-06-02T03:50:32.227328+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.persona.id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+        "personaos.task.class": "convergent",
+        "personaos.task.pathway": "verifier_accept",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:32.229779+00:00",
+      "name": "personaos.task.classify",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "e6385c37e8a41b4c",
+      "started_at": "2026-06-02T03:50:32.229765+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.157,
+        "personaos.lineage.event_kind": "TASK_CLASSIFIED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:32.230060+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "12e6f239564622b7",
+      "started_at": "2026-06-02T03:50:32.230047+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.envelope.id": "env:01KT378P16Y8BMAPF944KSQBZV",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:32.231865+00:00",
+      "name": "personaos.kernel.envelope_mint",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "08b8b1d3ebd7c17c",
+      "started_at": "2026-06-02T03:50:32.231852+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2819,
+        "personaos.lineage.event_kind": "ENVELOPE_MINTED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:32.232277+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "a3c2b6c825d1b445",
+      "started_at": "2026-06-02T03:50:32.232264+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2415,
+        "personaos.lineage.event_kind": "EXPERIENCE_TASK_RECORDED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:32.232748+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "81de35a1b1a46628",
+      "started_at": "2026-06-02T03:50:32.232736+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.safety.decision": "allow",
+        "personaos.safety.sources": "universal_harm,persona_charter,domain_safety,external_tool_required,novelty_check,env_charter",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:42.947754+00:00",
+      "name": "personaos.kernel.safety_check",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "a0b05a405c922672",
+      "started_at": "2026-06-02T03:50:42.947731+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.3137,
+        "personaos.lineage.event_kind": "SAFETY_CHECKED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:50:42.948203+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "82e330b55f8de95b",
+      "started_at": "2026-06-02T03:50:42.948190+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.kernel.dispatch_task_ms": 26750.922,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.699321+00:00",
+      "name": "personaos.kernel.dispatch_task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "353c19424b99f588",
+      "started_at": "2026-06-02T03:51:09.699300+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1917,
+        "personaos.lineage.event_kind": "env_rule_evaluated",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.700108+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "221561630d405948",
+      "started_at": "2026-06-02T03:51:09.700094+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1609,
+        "personaos.lineage.event_kind": "env_rule_evaluated",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.700662+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "81f7bfc6b260484c",
+      "started_at": "2026-06-02T03:51:09.700650+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1753,
+        "personaos.lineage.event_kind": "CANDIDATE_PRODUCED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.persona.action": "CANDIDATE_PRODUCED",
+        "personaos.persona.id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.700953+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "d8ddb6cac9abbd9a",
+      "started_at": "2026-06-02T03:51:09.700940+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.kernel.signing_ms": 0.232,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.778396+00:00",
+      "name": "personaos.kernel.signing",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "dd853cc8c7196b4d",
+      "started_at": "2026-06-02T03:51:09.778348+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2552,
+        "personaos.lineage.event_kind": "VERIFIER_VERDICT",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.778819+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "8f45cf645ad79dd8",
+      "started_at": "2026-06-02T03:51:09.778804+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1711,
+        "personaos.lineage.event_kind": "VERIFIER_VERDICT",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.779100+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "004f5e8bfc6c82d6",
+      "started_at": "2026-06-02T03:51:09.779083+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1642,
+        "personaos.lineage.event_kind": "VERIFIER_VERDICT",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.779367+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "991baee34fc3fed9",
+      "started_at": "2026-06-02T03:51:09.779355+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1697,
+        "personaos.lineage.event_kind": "VERIFIER_VERDICT",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.779634+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "38cb4465012e2bb1",
+      "started_at": "2026-06-02T03:51:09.779622+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.task.accepted": true,
+        "personaos.task.status": "verified",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.779718+00:00",
+      "name": "personaos.task.acceptance",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "8616723197d729da",
+      "started_at": "2026-06-02T03:51:09.779708+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2797,
+        "personaos.lineage.event_kind": "ANSWER_EVALUATED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.780100+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "1d08840a40c375be",
+      "started_at": "2026-06-02T03:51:09.780088+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.236,
+        "personaos.lineage.event_kind": "TASK_ACCEPTED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.780440+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "0af6d6af9fba8464",
+      "started_at": "2026-06-02T03:51:09.780429+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1753,
+        "personaos.lineage.event_kind": "TASK_COMPLETED",
+        "personaos.lineage.scope": "task",
+        "personaos.lineage.signed": true,
+        "personaos.persona.action": "TASK_COMPLETED",
+        "personaos.persona.id": "persona:01KT3784JF3VXJ08AE139ENMDX",
+        "personaos.trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+      },
+      "ended_at": "2026-06-02T03:51:09.780725+00:00",
+      "name": "personaos.lineage.task",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "3f4b0619f33c8a8f",
+      "started_at": "2026-06-02T03:51:09.780711+00:00",
+      "status": "ok",
+      "trace_id": "task:01KT378P15HNCA91SB3HJWH6Z5"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.3288,
+        "personaos.lineage.event_kind": "SHIPMENT_CONTRACT_DECLARED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.857421+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "9d9761bd20ecf4f8",
+      "started_at": "2026-06-02T03:51:09.857375+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.2236,
+        "personaos.lineage.event_kind": "VERIFIER_INVOKED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.987354+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "248675398f4411f2",
+      "started_at": "2026-06-02T03:51:09.987313+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1641,
+        "personaos.lineage.event_kind": "VERIFIER_INVOKED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.987885+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "1f8436015d8bef94",
+      "started_at": "2026-06-02T03:51:09.987871+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1632,
+        "personaos.lineage.event_kind": "VERIFIER_INVOKED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.988347+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "cc0660a6dc10ce15",
+      "started_at": "2026-06-02T03:51:09.988333+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.156,
+        "personaos.lineage.event_kind": "VERIFIER_INVOKED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.988795+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "3c215b4cf85e0068",
+      "started_at": "2026-06-02T03:51:09.988782+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1658,
+        "personaos.lineage.event_kind": "BUNDLE_ADVANCED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.989278+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "68ea23a93bd64ed9",
+      "started_at": "2026-06-02T03:51:09.989266+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1625,
+        "personaos.lineage.event_kind": "BUNDLE_ADVANCED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.990538+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "0dbf4cf08f9111a3",
+      "started_at": "2026-06-02T03:51:09.990525+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1565,
+        "personaos.lineage.event_kind": "BUNDLE_ADVANCED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.991708+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "42102466397821d3",
+      "started_at": "2026-06-02T03:51:09.991695+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1627,
+        "personaos.lineage.event_kind": "BUNDLE_ADVANCED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.992722+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "acf108df4db59d49",
+      "started_at": "2026-06-02T03:51:09.992709+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    },
+    {
+      "attributes": {
+        "personaos.lineage.append_ms": 0.1624,
+        "personaos.lineage.event_kind": "BUNDLE_COSIGNED",
+        "personaos.lineage.scope": "environment",
+        "personaos.lineage.signed": true,
+        "personaos.trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+      },
+      "ended_at": "2026-06-02T03:51:09.993118+00:00",
+      "name": "personaos.lineage.environment",
+      "parent_span_id": null,
+      "schema": "personaos-telemetry-span/1",
+      "span_id": "44ef23010fc8a1e6",
+      "started_at": "2026-06-02T03:51:09.993106+00:00",
+      "status": "ok",
+      "trace_id": "env:01KT378P0W1MVM1FY3XB76A6HR"
+    }
+  ],
+  "summary": {
+    "lineage_event_counts": {
+      "ABDUCTION_RECORDED": 1,
+      "ANSWER_EVALUATED": 1,
+      "ATTENTION_ALLOCATED": 1,
+      "ATTENTION_NEAR_BUDGET": 1,
+      "BUNDLE_ADVANCED": 4,
+      "BUNDLE_COSIGNED": 1,
+      "BUNDLE_CREATED": 1,
+      "CANDIDATE_PRODUCED": 1,
+      "DOMAIN_FORMED": 1,
+      "DOMAIN_PROBE_OPENED": 1,
+      "DOMAIN_UNKNOWN_DETECTED": 1,
+      "ENVELOPE_MINTED": 1,
+      "ENV_CREATED": 1,
+      "ENV_STATUS_CHANGED": 1,
+      "EXPERIENCE_TASK_RECORDED": 1,
+      "KIND_PROPOSED": 3,
+      "MEMBER_JOINED": 1,
+      "MODEL_CAPABILITY_DECLARED": 4,
+      "PERCEPTION_RECORDED": 1,
+      "PROJECT_CREATED": 1,
+      "SAFETY_CHECKED": 1,
+      "SAFETY_EXTENSION_IMPORTED": 1,
+      "SHIPMENT_CONTRACT_DECLARED": 1,
+      "TASK_ACCEPTED": 1,
+      "TASK_CLASSIFIED": 1,
+      "TASK_COMPLETED": 1,
+      "TOOL_DISCOVERED": 4,
+      "VERIFIER_INVOKED": 4,
+      "VERIFIER_VERDICT": 4,
+      "artifact_sharing_policy_created": 1,
+      "env_rule_approved": 2,
+      "env_rule_evaluated": 2,
+      "env_rule_proposed": 2,
+      "env_rule_trial_entered": 2
+    },
+    "lineage_events": 55,
+    "lineage_scopes": 3,
+    "lineage_scopes_verified": 3,
+    "lineage_spans": 55,
+    "otel_spans": 61,
+    "schema": "personaos-telemetry-summary/1",
+    "span_counts": {
+      "personaos.kernel.dispatch_task": 1,
+      "personaos.kernel.envelope_mint": 1,
+      "personaos.kernel.safety_check": 1,
+      "personaos.kernel.signing": 1,
+      "personaos.lineage.domain": 13,
+      "personaos.lineage.environment": 30,
+      "personaos.lineage.task": 12,
+      "personaos.task.acceptance": 1,
+      "personaos.task.classify": 1
+    }
+  }
+}

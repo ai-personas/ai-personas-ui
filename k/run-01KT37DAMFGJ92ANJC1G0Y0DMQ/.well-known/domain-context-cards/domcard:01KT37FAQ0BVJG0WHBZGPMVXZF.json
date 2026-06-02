@@ -1,0 +1,32 @@
+{
+  "card": {
+    "artifact_kinds": [
+      "code",
+      "json",
+      "text"
+    ],
+    "curator_persona_ids": [
+      "persona:01KT37DAQJCDCMPDWDTP8E7M7G"
+    ],
+    "description": "emerged from task: Compute the first 40 prime numbers with a sieve, emit primes.json + the algorithm code + a short veri",
+    "domain_id": "domain:01KT37DXB7DQTJJF2A5P3V82AT",
+    "domain_kind": "emergent",
+    "hazard_axes": [
+      "digital_only",
+      "none"
+    ],
+    "host_kernel_id": "kernel:d90ebd4fa960da8d",
+    "id": "domcard:01KT37FAQ0BVJG0WHBZGPMVXZF",
+    "name": "computational mathematics",
+    "provider": "ai-personas dc-to-ac demo",
+    "schema": "domain-context-card/1",
+    "signing_key_id": "kernel-master",
+    "trust_stage": "emergent",
+    "version": "1",
+    "visibility_tier": "federation"
+  },
+  "id": "domcard:01KT37FAQ0BVJG0WHBZGPMVXZF",
+  "schema": "domain-context-card/1",
+  "signature_hex": "9da1ebfde38309c7b5d1ced77259d4861174f9221a2319162fd46d1fb0ebd7aa1c7e79d11f815fb3a633d2d77dac2d70b138627f8b06248a4c8cf75f383d8d0f",
+  "signing_key_id": "kernel-master"
+}

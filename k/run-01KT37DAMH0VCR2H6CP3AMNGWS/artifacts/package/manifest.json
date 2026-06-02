@@ -1,0 +1,30 @@
+{
+  "constraints": {
+    "per_file_limit_bytes_exclusive": 65536,
+    "stdlib_only": true,
+    "subprocesses_spawned": 0
+  },
+  "files": {
+    "failing_example.json": {
+      "bytes": 49,
+      "sha256": "f1c664115a6d03531f925b0074e5d7deae07ee3dcc4e0050f1a1ecf9ee07b669"
+    },
+    "passing_example.json": {
+      "bytes": 51,
+      "sha256": "502a57173bec528f8f6e30e997da8f1e6e94d57fcb4a5b053530bfdf6bc7b837"
+    },
+    "results.json": {
+      "bytes": 500,
+      "sha256": "4135eba4ce3b4d41aa7c17d2c9a6045c2cd0205685e8ce8533b5becfefc828f0"
+    },
+    "schema.json": {
+      "bytes": 217,
+      "sha256": "18cf4a197e1b51a68857576bd75b75e79fccfeac585a453524155f9fec9a983c"
+    },
+    "tiny_validator.py": {
+      "bytes": 1755,
+      "sha256": "ef61bd90ef078c8ea8a50cfd3ca9c0d2835cc63b3d1498a0bc1ced2eab75f6c5"
+    }
+  },
+  "package_kind": "candidate_deliverable"
+}

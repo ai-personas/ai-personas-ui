@@ -1,0 +1,45 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "persona:01KT37DAQ2MPHQJK9CA0JF556W",
+    "policy_id": "acl:01KT37FF9X4PE161QK568E0QT1",
+    "schema": "access-policy/1",
+    "signature_hex": "1c2ee8993c4e3f6c511a8d123c25a2070dc1989e013781819ccec5bf3d5a8117588594055c331e764089127ff4bbc4e8e36a251b5c05787624636caa8987120e",
+    "subject_id": "env:01KT37DS9SFA2FN8701V2XVH60",
+    "subject_kind": "project"
+  },
+  "discovery_kind": "project",
+  "kind": "project",
+  "links": {
+    "bundle": "bundles/bundle:01KT37DS9ZXA6YGHTTW3CE0252.json",
+    "env": "environments/env:01KT37DS9SFA2FN8701V2XVH60.json",
+    "export": "projects/env:01KT37DS9SFA2FN8701V2XVH60.json",
+    "run": "run.json",
+    "subject_id": "env:01KT37DS9SFA2FN8701V2XVH60"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37FF9X4PE161QK568E0QT1",
+    "capability_summary": [
+      "Software Engineering",
+      "project_workspace"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "multi-session work container",
+    "did": "did:personaos:env:01KT37DS9SFA2FN8701V2XVH60",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "project",
+    "label": "Write a CSV-to-JSON converter, emit the converte",
+    "record_id": "rec:01KT37FF9Z02P2YECMBP9ERH74",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "27d59f182c60fe9a6773ef7a7d38c4cc781b368d8338dbe1988cd4c389e8d01fba952c3d218955f54d987d16b0c710b965749367021fbe0f98642abd56f4fa0c",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}

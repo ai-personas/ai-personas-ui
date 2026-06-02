@@ -1,0 +1,50 @@
+{
+  "domain": {
+    "payload": {
+      "corpus_evolution_mode": "stable",
+      "credential_directories": [],
+      "custody_tier": "kms",
+      "default_notation": {},
+      "domain_id": "domain:01KT37DWK89XM2NR46XS4CXKSQ",
+      "information_hazard_class": "none",
+      "knowledge_refs": [],
+      "maintainer": "emergent",
+      "name": "Software Engineering Documentation",
+      "origin": "emergent",
+      "parent_domain_id": null,
+      "physical_harm_class": "digital_only",
+      "safety_critical": true,
+      "schema": "domain-context/2",
+      "seed_acceptance_pathways": [],
+      "seed_charters": [],
+      "seed_skills": [],
+      "seed_tactics": [],
+      "session_budget_profile": "reasoning_heavy",
+      "signing_key_id": "kernel-master",
+      "spawned_from_probe_id": null,
+      "stage": "emergent",
+      "standards_refs": [],
+      "tools_recommended": [],
+      "tools_required": [
+        "Markdown authoring",
+        "JSON generation",
+        "filesystem write/check utilities",
+        "schema or structural validation"
+      ],
+      "trust_score": 0.3,
+      "version": 2
+    },
+    "signature_hex": "e07914694cccb327219ef178b11ecde2c70aeb419eb029cd5529e029e60adaddfbf398dd91ebb751769bb2651fa6fda84578c6fb73c7d5b6eb5c5a16726ec70e",
+    "signing_key_id": "kernel-master"
+  },
+  "safety_extensions": [
+    "SafetyExtension(schema='safety-extension/1', extension_id='safext:01KT37DWKB112RCTEHQVBEQRB2', domain_id='domain:01KT37DWK89XM2NR46XS4CXKSQ', description='Ensure generated content stays at a conceptual engineering level, avoids operational abuse guidance, and validates outputs without modifying unrelated files.', forbidden_action_kinds=(), forbidden_topics=(), stage='standardised', safety_critical=True)"
+  ],
+  "schema": "domain-run-export/1",
+  "tools_required": [
+    "Markdown authoring",
+    "JSON generation",
+    "filesystem write/check utilities",
+    "schema or structural validation"
+  ]
+}

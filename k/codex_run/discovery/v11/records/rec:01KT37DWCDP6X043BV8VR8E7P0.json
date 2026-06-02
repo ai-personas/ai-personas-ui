@@ -1,0 +1,45 @@
+{
+  "access_policy": {
+    "access_grants": [],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "federation",
+    "owner_persona_id": "01HZ9V5K6T2Y7BQXA3N0F8E2WM",
+    "policy_id": "acl:01KT37DWCCYKPZQFK0ENQ11605",
+    "schema": "access-policy/1",
+    "signature_hex": "f21997b638828260d103927fdf8c30f25b5158cc7dd710c9948505f0ad0fcc95babbbb7b02d111e5940f0761b2443ad74063a80bf2027a4fd7cb994df00e3508",
+    "subject_id": "domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+    "subject_kind": "domain"
+  },
+  "discovery_kind": "domain",
+  "kind": "domain",
+  "links": {
+    "env": "environments/env:01KT30JKD42Q5AP9KB738HA89X.json",
+    "export": "domains/domain:01KT30JKCSC8XKXXC23RBR1ZSY.json",
+    "run": "run.json",
+    "subject_id": "domain:01KT30JKCSC8XKXXC23RBR1ZSY"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KT37DWCCYKPZQFK0ENQ11605",
+    "capability_summary": [
+      "Electrical Engineering",
+      "emergent_domain",
+      "safety_critical"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "emergent domain (fatality_risk)",
+    "did": "did:personaos:domain:01KT30JKCSC8XKXXC23RBR1ZSY",
+    "expires_at": "",
+    "interfaces": [],
+    "kind": "domain",
+    "label": "Electrical Engineering",
+    "record_id": "rec:01KT37DWCDP6X043BV8VR8E7P0",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "federation"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "c4c74bd9c4c295ccd6fa026f7cfd8d5f4552fe6f2b0f14ba84561a2cc5b800f98d0fe8a6c6848af0725a4b3d2d751f8f8db51c6e750546692dae2a8a8072b809",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "federation"
+}
