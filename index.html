@@ -7,56 +7,74 @@
   <link rel="stylesheet" href="assets/discovery.css">
 </head>
 <body>
-  <header class="hero">
-    <p class="eyebrow">PersonaOS &middot; runtime decentralised discovery</p>
-    <h1>PersonaOS Discovery</h1>
-    <p class="lede">This page <strong>discovers at runtime</strong>: it bootstraps from
-      <code>.well-known</code>, does a <span class="plane internet">Kademlia DHT</span>
-      provider lookup, then <strong>resolves and cryptographically verifies every record live
-      in your browser</strong> (Ed25519) before showing it &mdash; across the internet
-      (<code>.well-known</code> + gossip + DHT) and intranet
-      (<span class="plane intranet">mDNS</span>) planes, access-gated
-      <code>discover &lt; read &lt; write &lt; admin</code>.</p>
-    <div class="stats" id="stats"></div>
-    <div class="peerbar">
-      <input id="peer" type="url" placeholder="Discover another kernel: https://host (or ?peer=)" aria-label="Peer URL">
-      <button id="addpeer">Discover peer</button>
-      <button id="rescan">Re-run discovery</button>
+  <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="livedot" id="livedot"></span>
+      <span class="mark">PersonaOS</span><span class="exch">DISCOVERY&nbsp;EXCHANGE</span>
+      <span class="tag">runtime-resolved · Ed25519-verified · internet (DHT) + intranet (mDNS)</span>
     </div>
+    <div class="board-stats" id="stats"></div>
   </header>
 
-  <main>
-    <section class="controls">
-      <input type="search" id="q" placeholder="Filter discovered records&hellip;" aria-label="Filter">
-      <div class="chips" id="plane-filter" role="group" aria-label="Plane">
-        <button data-plane="all" class="chip on">All planes</button>
-        <button data-plane="internet" class="chip">Internet (DHT)</button>
-        <button data-plane="intranet" class="chip">Intranet (mDNS)</button>
-      </div>
-      <div class="chips" id="kind-filter" role="group" aria-label="Kind"></div>
-    </section>
-
-    <div class="split">
-      <section class="results" id="results" aria-live="polite"></section>
-      <aside class="logwrap">
-        <h2>Discovery log <span class="muted" id="logcount"></span></h2>
-        <ol class="log" id="log"></ol>
-      </aside>
+  <div class="controls">
+    <input id="q" type="search" placeholder="filter symbol / kind / DID / kernel…" aria-label="filter">
+    <div class="chips" id="plane-filter" role="group" aria-label="plane">
+      <button data-plane="all" class="chip on">ALL</button>
+      <button data-plane="internet" class="chip">INTERNET·DHT</button>
+      <button data-plane="intranet" class="chip">INTRANET·mDNS</button>
     </div>
+    <div class="chips" id="kind-filter"></div>
+    <span class="grow"></span>
+    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
+    <button id="addpeer" class="btn">＋ PEER</button>
+    <button id="pause" class="btn">⏸ PAUSE</button>
+  </div>
 
-    <section class="federate">
-      <h2>How this discovers (not a directory dump)</h2>
-      <p>Records are <b>not</b> listed inline. The browser fetches a DHT provider index of
-        opaque <code>key &rarr; record_url</code> pointers, then resolves each record and
-        <b>verifies its Ed25519 signature against the kernel's published key</b> before trust.
-        A failed signature is dropped. Add a peer kernel's URL above and it is discovered and
-        verified the same way &mdash; this portal is generic for any PersonaOS kernel.
-        True multicast mDNS / libp2p Kademlia run in the native runtime; the browser profile
-        verifies over HTTP(S) (<a href="https://github.com/ai-personas">09_PROTOCOLS &sect;3H.3</a>).</p>
+  <main class="grid">
+    <section class="board">
+      <table class="watch">
+        <thead>
+          <tr>
+            <th data-sort="label" class="l">SYMBOL</th>
+            <th data-sort="kind">KIND</th>
+            <th data-sort="tier">TIER</th>
+            <th>NET</th>
+            <th title="signature verified in-browser">✓</th>
+            <th data-sort="events" class="r num">EVENTS</th>
+            <th data-sort="rate" class="r num">EV/s</th>
+            <th class="r">LAST</th>
+            <th>ACTIVITY</th>
+            <th>STATUS</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
     </section>
+
+    <aside class="tape">
+      <div class="tape-head">
+        <span>EVENT&nbsp;TAPE</span>
+        <span class="replay" id="feedmode">REPLAY</span>
+        <span class="eps" id="eps">0 ev/s</span>
+      </div>
+      <ol class="tape-body" id="tape"></ol>
+    </aside>
   </main>
 
-  <footer><span id="status">starting discovery&hellip;</span></footer>
+  <footer>
+    <span id="status">booting discovery…</span>
+    <button id="logbtn" class="link">discovery log</button>
+  </footer>
+
+  <div class="logmodal" id="logmodal" hidden>
+    <div class="logcard">
+      <div class="logcard-head"><b>Discovery log</b> <button id="logclose" class="link">close</button></div>
+      <ol class="log" id="log"></ol>
+    </div>
+  </div>
+
   <script type="module" src="assets/discovery.js"></script>
 </body>
 </html>
