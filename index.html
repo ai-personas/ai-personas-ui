@@ -30,6 +30,7 @@
     <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
     <button id="addpeer" class="btn">＋ PEER</button>
     <button id="pause" class="btn">⏸ PAUSE</button>
+    <button id="replay" class="btn">↻ REPLAY</button>
   </div>
 
   <main class="grid">
@@ -70,8 +71,15 @@
 
   <div class="logmodal" id="logmodal">
     <div class="logcard">
-      <div class="logcard-head"><b>Discovery log</b> <button id="logclose" class="link">close</button></div>
+      <div class="logcard-head"><b>Discovery log</b> <button id="logclose" class="link">close ✕</button></div>
       <ol class="log" id="log"></ol>
+    </div>
+  </div>
+
+  <div class="drawer-wrap" id="detailwrap">
+    <div class="drawer">
+      <div class="drawer-head"><b id="detail-title">—</b><button id="detailclose" class="link">close ✕</button></div>
+      <div class="drawer-body" id="detailbody"></div>
     </div>
   </div>
 

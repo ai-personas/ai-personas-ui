@@ -51,6 +51,7 @@ table.watch{width:100%;border-collapse:collapse;font-size:12.5px}
   text-align:left;padding:7px 10px;font-weight:600;font-size:10.5px;letter-spacing:.6px;cursor:pointer;z-index:2}
 .watch th.r,.watch td.r{text-align:right} .watch th.num,.watch td.num{font-variant-numeric:tabular-nums}
 .watch tbody td{padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.watch tbody tr{cursor:pointer}
 .watch tbody tr:hover{background:#0e1722}
 .sym{color:#fff;font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
 .did{color:var(--mut);font-size:10px}
@@ -96,3 +97,18 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .log{list-style:none;margin:0;padding:8px 14px;overflow:auto;font-size:11.5px;line-height:1.6}
 .log li{display:flex;gap:8px} .log .tag2{color:var(--amber);min-width:72px;text-transform:uppercase;font-size:10px}
 .log .ok{color:var(--up)} .log .bad{color:var(--down)}
+/* detail drawer (row click) */
+.drawer-wrap{position:fixed;inset:0;background:rgba(2,5,9,.5);display:none;z-index:25}
+.drawer-wrap.open{display:block}
+.drawer{position:absolute;right:0;top:0;height:100%;width:min(440px,94vw);background:var(--panel);
+  border-left:1px solid var(--line2);display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(0,0,0,.45)}
+.drawer-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line2)}
+.drawer-head b{font-weight:600;display:flex;align-items:center;gap:8px}
+.drawer-body{overflow:auto;padding:12px 16px;font-size:12.5px;line-height:1.5}
+.drawer-body .row{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)}
+.drawer-body .l2{color:var(--mut)} .drawer-body .v2{color:var(--ink);text-align:right;overflow-wrap:anywhere;max-width:64%}
+.drawer-body h4{margin:14px 0 6px;color:var(--amber);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase}
+.drawer-body .caps{display:flex;flex-wrap:wrap;gap:5px}
+.cap{background:#0b121b;border:1px solid var(--line2);border-radius:4px;padding:1px 7px;font-size:11px;color:var(--dim)}
+.grant{display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line)}
+.drawer-body a{color:var(--int)}

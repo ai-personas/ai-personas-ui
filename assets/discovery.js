@@ -64,7 +64,8 @@ function upsert(r){
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
-    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url});
+    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,
+    capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
 function classifyMap(){ // map a telemetry scope -> a record id so rows tick
   const byKind={}; for(const id of S.order){ const k=S.recs.get(id).kind; (byKind[k]=byKind[k]||[]).push(id); }
@@ -132,16 +133,43 @@ function rollBuckets(){ for(const id of S.order){ const r=S.recs.get(id);
   const recent=r.spark.slice(-6).reduce((a,b)=>a+b,0); r.rate=recent/(6*BUCKET_MS/1000);
   r.spark.push(0); if(r.spark.length>SPARK_N) r.spark.shift(); r._dirty=true; } }
 
+// Replay the captured run from the start: reset counters to 0 so they climb back to the
+// SAME real totals (never inflated beyond the actual run). Discovery is untouched.
+function replay(){
+  S.rIdx=0; S.replayDone=false; S.lastEmit=0; S.evCount=0; S.epsWin=[]; $('#tape').innerHTML='';
+  for(const id of S.order){ const r=S.recs.get(id); r.events=0; r.lastT=0; r.spark=new Array(SPARK_N).fill(0); r.rate=0; r._dirty=true; }
+  const fm=$('#feedmode'); fm.textContent='REPLAY'; fm.classList.remove('live'); refreshTicker();
+}
+function openDetail(id){
+  const r=S.recs.get(id); if(!r) return; const a=r._access||{}; const grants=a.access_grants||[];
+  const planes=r.planes.map((p)=>p==='internet'?'Internet · DHT':'Intranet · mDNS').join(', ');
+  const anchor=r.content_hash?('sha256 '+r.content_hash.replace('sha256:','').slice(0,18)+'…')
+    :(r.content_locator_ref?('locator '+r.content_locator_ref):'— (metadata only, no body)');
+  const rows=[['Kind',KIND_LABEL[r.kind]||r.kind],['Visibility tier',r.visibility_tier],['Planes',planes],
+    ['DID',r.did],['Publishing kernel',r._kernel||'—'],['Signature','✓ Ed25519 verified in-browser'],
+    ['Body anchor',anchor],['Events (this run)',r.events],['Rate EV/s',r.rate.toFixed(2)],['Last event',relTime(r.lastT)]]
+    .map(([l,v])=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${esc(v)}</span></div>`).join('');
+  const caps=(r.capability_summary||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>';
+  const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join('')
+    :'<div class="grant"><span>owner only (no outward read grant)</span><span></span></div>';
+  $('#detail-title').innerHTML=`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`;
+  $('#detailbody').innerHTML=rows+`<h4>Capability summary</h4><div class="caps">${caps}</div>`
+    +`<h4>Access policy · outward ${esc(a.outward_tier||r.visibility_tier)}</h4>${gh}`
+    +`<h4>Resolve (runtime-verified)</h4><div class="row"><a href="${esc(r._url)}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
+  $('#detailwrap').classList.add('open');
+}
+
 let lastBucket=0;
 function tick(now){
-  if(!S.paused && S.events.length){
+  if(!S.paused && !S.replayDone && S.events.length){
     if(!S.lastEmit) S.lastEmit=now;
     let guard=0;
     while(guard++<50){
       const e=S.events[S.rIdx];
       if(now-S.lastEmit < e.gap) break;
       S.lastEmit=now; emitOne(); S.rIdx++;
-      if(S.rIdx>=S.events.length){ S.rIdx=0; S.lastEmit=now+700; break; } // loop with a brief pause
+      if(S.rIdx>=S.events.length){ // play the captured run ONCE → counters now equal the REAL totals
+        S.replayDone=true; const fm=$('#feedmode'); fm.textContent='REPLAY · done'; fm.classList.remove('live'); break; }
     }
   }
   if(now-lastBucket>BUCKET_MS){ lastBucket=now; rollBuckets(); refreshTicker(); }
@@ -252,14 +280,20 @@ function wire(){
     const k=th.dataset.sort; if(S.sort===k) S.dir*=-1; else { S.sort=k; S.dir=(k==='label'||k==='kind'||k==='tier')?1:-1; } buildRows(); }));
   $('#pause').addEventListener('click',()=>{ S.paused=!S.paused; $('#pause').textContent=S.paused?'▶ RESUME':'⏸ PAUSE';
     $('#livedot').style.background=S.paused?'var(--mut)':'var(--up)'; });
+  $('#replay').addEventListener('click',replay);
   $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
     try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
     localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(buildRows); });
+  // click any record row → detail drawer (signed record, access policy, verification, resolve link)
+  $('#rows').addEventListener('click',(e)=>{ const tr=e.target.closest('tr'); if(!tr||!tr.id) return; openDetail(tr.id.replace(/^r-/,'')); });
   const closeLog=()=>$('#logmodal').classList.remove('open');
+  const closeDetail=()=>$('#detailwrap').classList.remove('open');
   $('#logbtn').addEventListener('click',()=>$('#logmodal').classList.add('open'));
   $('#logclose').addEventListener('click',closeLog);
   $('#logmodal').addEventListener('click',(e)=>{ if(e.target.id==='logmodal') closeLog(); });
-  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeLog(); });
+  $('#detailclose').addEventListener('click',closeDetail);
+  $('#detailwrap').addEventListener('click',(e)=>{ if(e.target.id==='detailwrap') closeDetail(); });
+  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeLog(); closeDetail(); } });
 }
 
 (async ()=>{
