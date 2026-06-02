@@ -1,0 +1,12 @@
+# PersonaOS discovery peer list — one node URL per line.
+#
+# At boot the portal fetches this file, then for every URL below it bootstraps
+# that node's `.well-known/personaos-discovery.json`, runs the Kademlia-style
+# provider lookup, resolves each record and **Ed25519-verifies it in-browser**
+# (exactly like adding `?peer=<url>` or the "＋ PEER" button). Blank lines and
+# lines starting with `#` are ignored. Trust is the signature, not the host —
+# so a node reached through a relay/tunnel is verified the same as any other.
+#
+# Live PersonaOS node (persona "Nova", kernel:54277a1efc7d0f2a) exposed via a
+# Cloudflare quick-tunnel:
+https://interact-send-room-cohen.trycloudflare.com

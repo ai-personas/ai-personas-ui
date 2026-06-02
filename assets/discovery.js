@@ -57,8 +57,20 @@ async function discoverFrom(base,plane){
   }
   return {boot,found};
 }
+// Peers come from three sources, merged + de-duped: the ?peer= query params, the
+// "＋ PEER" localStorage list, and the published peers.txt file (fetched at boot).
+let TXT_PEERS=[];
+async function loadPeersTxt(){
+  // peers.txt — one node URL per line; '#' comments + blank lines ignored. Each
+  // listed node is bootstrapped + resolved + Ed25519-verified exactly like ?peer=.
+  const t=await fetchText('peers.txt');
+  TXT_PEERS = t ? t.split(/\r?\n/).map((s)=>s.trim()).filter((s)=>s && !s.startsWith('#')) : [];
+  if(TXT_PEERS.length) log('peers.txt',`${TXT_PEERS.length} peer(s): ${TXT_PEERS.join(', ').slice(0,90)}`);
+  else log('peers.txt','none listed');
+  return TXT_PEERS;
+}
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
-  try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} return [...new Set([...p,...s])]; }
+  try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} return [...new Set([...p,...s,...TXT_PEERS])]; }
 
 function upsert(r){
   const id=r.record_id||r.card_id; if(!id) return;
@@ -80,6 +92,7 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
 }
 async function discover(){
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
+  await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
   const root=await fetchJson('.well-known/personaos-discovery.json')||{};
   const bases=[]; if(root.providers_url) bases.push('');           // single-run: this origin is a kernel
   for(const fk of (root.federated_kernels||[])) bases.push(fk);    // ecosystem: many kernel nodes
