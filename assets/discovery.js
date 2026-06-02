@@ -255,9 +255,11 @@ function wire(){
   $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
     try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
     localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(buildRows); });
-  $('#logbtn').addEventListener('click',()=>$('#logmodal').hidden=false);
-  $('#logclose').addEventListener('click',()=>$('#logmodal').hidden=true);
-  $('#logmodal').addEventListener('click',(e)=>{ if(e.target.id==='logmodal') $('#logmodal').hidden=true; });
+  const closeLog=()=>$('#logmodal').classList.remove('open');
+  $('#logbtn').addEventListener('click',()=>$('#logmodal').classList.add('open'));
+  $('#logclose').addEventListener('click',closeLog);
+  $('#logmodal').addEventListener('click',(e)=>{ if(e.target.id==='logmodal') closeLog(); });
+  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeLog(); });
 }
 
 (async ()=>{
