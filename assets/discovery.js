@@ -5,7 +5,7 @@ const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>'
 const enc=new TextEncoder();
 const hexToBytes=(h)=>Uint8Array.from((h||'').match(/.{1,2}/g)?.map((b)=>parseInt(b,16))||[]);
 const pad=(n,w=2)=>String(n).padStart(w,'0');
-const KIND_LABEL={persona:'PERSONA',env:'ENV',project:'PROJECT',domain:'DOMAIN',artifact:'ARTIFACT',telemetry:'TELEMETRY',knowledge:'KNOWLEDGE',skill:'SKILL',tool:'TOOL'};
+const KIND_LABEL={persona:'PERSONA',env:'ENV',project:'PROJECT',domain:'DOMAIN',artifact:'ARTIFACT',telemetry:'TELEMETRY',knowledge:'KNOWLEDGE',skill:'SKILL',tool:'TOOL',mission:'MISSION'};
 const SPARK_N=32, BUCKET_MS=650;
 
 // canonical bytes == personaos canonical_bytes (sorted keys, compact, UTF-8)
@@ -88,7 +88,7 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
     const bundle=(bk.artifact||[]).find((id)=>S.recs.get(id)._links&&S.recs.get(id)._links.bundle)||first('artifact');
     S.mapByKernel[kid]={persona:first('persona'),env:first('env'),domain:first('domain')||first('persona'),
       task:first('persona'),answer:first('persona'),project:first('project')||first('env'),
-      bundle,artifact:bundle,telemetry:first('telemetry')}; }
+      bundle,artifact:bundle,telemetry:first('telemetry'),mission:first('mission')}; }
 }
 async function discover(){
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
@@ -127,6 +127,7 @@ async function loadTelemetry(base){
   if(S.events.length) S.events[0].gap=0;
   log('telemetry',`+${evs.length} signed OTel spans (${S.events.length} total) for the live tape`);
 }
+
 
 /* ---------- tick engine ---------- */
 function emitOne(){
@@ -313,8 +314,48 @@ async function physicalView(base,runUrl){ S.curBase=base; const rj=await dfetch(
     +kv('As-built ref',esc(p.as_built_ref))+kv('Fabricator',esc(p.fab))+H('External attestation')+`<div class="desc2">${esc(p.attestation)}</div>`;
   return {title:`<span class="kind k-artifact">PHYSICAL BOARD</span>`, html};
 }
+async function missionView(r){
+  // The ADR-0071 refinement trajectory is a DISCOVERED, Ed25519-verified Design-
+  // History-File artifact; resolve its content (the trajectory JSON) the same way
+  // any artifact body is resolved over P2P — no client-side injection.
+  const L=r._links||{}; let ref={};
+  try{ ref=JSON.parse(await fetchText(join(r._base||'', L.content))||'{}'); }catch(e){ ref={}; }
+  const S0=(v)=>esc((v===''||v==null)?'—':v);
+  const targets=ref.objective_targets||[]; const traj=ref.trajectory||[]; const tr=ref.tranches||[];
+  const fin=ref.final_objective||{};
+  let html=H('ADR-0071 ContinuousRefinementMission — anytime, budget-scaled, convergence-bounded');
+  html+=kv('Task',S0(ref.task))+kv('Backend',S0(ref.backend))
+    +kv('State',`<span class="ok">${S0(ref.final_state)}</span>`)
+    +kv('Status',`<span class="ok">${S0(ref.final_status)}</span>`)
+    +kv('Converged',ref.converged?'<span class="ok">yes — nothing left to improve</span>':'no (auto-reopen-eligible)')
+    +kv('Best-so-far',S0(ref.best_so_far_ref)+' · score '+(ref.best_so_far_score!=null?Number(ref.best_so_far_score).toFixed(4):'—'));
+  // MissionObjective vector: baseline → current, per target.
+  html+=H('MissionObjective (signed measurable targets)');
+  html+=targets.map((t)=>{ const cur=fin[t.name]; const dir=t.direction==='minimize'?'↓':'↑';
+    return `<div class="grant"><span>${esc(t.name)} ${dir} <span class="l2">(${esc(t.outcome_kind)})</span></span>`
+      +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
+  // Budget tranches — "resume with more budget → measurably better best-so-far".
+  html+=H('Budget tranches — resume with more budget → higher best-so-far');
+  html+=tr.map((x)=>`<div class="grant"><span>tranche ${esc(x.tranche)} · budget ${esc(x.budget_candidates)} cand · ${esc(x.rounds_this_tranche)} rounds</span>`
+    +`<span class="l2">score <b>${Number(x.score_before).toFixed(3)} → <span class="ok">${Number(x.score_after).toFixed(3)}</span></b> · [${esc(x.status)}]</span></div>`).join('');
+  // Best-so-far climb (round trajectory) with marginal value.
+  html+=H('Refinement trajectory (best-so-far never regresses)');
+  html+='<div class="tape-mini">'+traj.map((r2)=>{ const blk=(r2.blocked_targets||[]).length?` <span class="down">blocked:${esc((r2.blocked_targets||[]).join(','))}</span>`:'';
+    return `<div class="row2"><span>r${esc(r2.round)}</span><span>score <b>${Number(r2.best_score).toFixed(4)}</b></span>`
+      +`<span class="${r2.marginal_value>=0?'ok':'down'}">Δ${Number(r2.marginal_value).toFixed(4)}</span>`
+      +`<span class="l2">${esc(r2.candidates_explored)} cand${blk}</span></div>`; }).join('')+'</div>';
+  // Budget→emergence (genesis of specialists / sub-envs under ReplicationBound).
+  const em=(ref.emergence||[]).filter((e)=>e.event==='budget_to_emergence_genesis');
+  if(em.length){ html+=H('Budget → emergence (16_POP §4A factor 7)');
+    html+=em.map((e)=>{ const g=e.genesis||{};
+      return `<div class="grant"><span>genesis: <b class="ok">${esc(g.niche)}</b> · sub-env ${esc((e.sub_env||{}).kind)}</span>`
+        +`<span class="l2">pressure ${esc(e.pressure_score)} (admissible ${e.pressure_admissible?'✓':'✗'}) · ReplicationBound ceiling ${esc(g.replication_bound_population_ceiling)}</span></div>`; }).join(''); }
+  if(ref.manufacturability_ceiling) html+=H('Manufacturability ceiling (honest)')+`<div class="l2">${esc(ref.manufacturability_ceiling)}</div>`;
+  return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html};
+}
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
   const L=r._links||{};
+  if(r.kind==='artifact' && L.media_kind==='design_history') return missionView(r);
   if(r.kind==='persona') return personaView(r);
   if(r.kind==='env') return envView(r);
   if(r.kind==='domain') return domainView(r);

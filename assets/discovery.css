@@ -58,7 +58,11 @@ table.watch{width:100%;border-collapse:collapse;font-size:12.5px}
 .kind{font-size:10px;font-weight:700;letter-spacing:.4px;padding:1px 6px;border-radius:3px;color:#04121f}
 .k-persona{background:var(--purple)} .k-env{background:var(--intr)} .k-artifact{background:var(--amber)}
 .k-telemetry{background:var(--pink)} .k-knowledge{background:var(--int)} .k-skill{background:var(--up)} .k-tool{background:var(--mut)}
-.k-project{background:#5b8def} .k-domain{background:#2bbf8a}
+.k-project{background:#5b8def} .k-domain{background:#2bbf8a} .k-mission{background:#f0a030}
+/* ADR-0071 refinement mission detail view */
+.tape-mini{font:11px ui-monospace,monospace;margin:4px 0 8px}
+.tape-mini .row2{display:flex;gap:10px;justify-content:space-between;padding:2px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+.tape-mini .row2 b{color:var(--ink)} .tape-mini .down{color:var(--down)}
 .tier{color:var(--dim);font-size:11px}
 .net .n{display:inline-block;font-size:10px;padding:0 4px;border-radius:3px;margin-right:3px;border:1px solid var(--line2)}
 .net .i{color:var(--int);border-color:#1d4a73} .net .m{color:var(--intr);border-color:#155}
