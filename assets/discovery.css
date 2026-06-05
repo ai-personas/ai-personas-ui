@@ -120,3 +120,11 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .drawer-body .desc2{color:var(--ink);font-size:12px;line-height:1.5;padding:2px 0}
 .drawer-body .filview{background:#070b10;border:1px solid var(--line2);border-radius:6px;padding:8px 10px;font-size:11px;
   line-height:1.45;color:var(--ink);max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:4px 0}
+/* deliverable-bundle artifact tree */
+.atree{font-size:11.5px;margin:2px 0}
+.atree .tnode{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid var(--line)}
+.atree .tdir>a{color:var(--amber);text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.atree .tdir>a:hover{text-decoration:underline}
+.atree .ttog{display:inline-block;width:10px;color:var(--dim);font-size:9px}
+.atree .tfile>a{color:var(--int)}
+.atree .tgated{color:var(--mut)}

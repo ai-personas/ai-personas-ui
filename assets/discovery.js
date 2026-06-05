@@ -26,7 +26,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{}, mapByKernel:{}, telLoaded:new Set(), views:[], curBase:'' };
+  map:{}, mapByKernel:{}, telLoaded:new Set(), views:[], curBase:'', bundleDirs:new Set(), bundleDirsOpen:new Set() };
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -228,6 +228,46 @@ async function envView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-env">ENV</span> ${esc(env.name||r.label)}`, html};
 }
+// ---------- deliverable-bundle artifact TREE ----------
+// Bundle-export artifacts carry their package-relative path in `title` (e.g. cad/board.step,
+// docs/assembly.md) — '/' separators are preserved. The on-disk body lives at
+// artifacts/package/<title>; gating is keyed on body_published (origin_gated stub when false).
+// Group entries by path segments into a nested dir/file tree; flat packages (no '/') collapse
+// to a single-level tree with all files at the root.
+function buildArtifactTree(arts){
+  const root={dirs:new Map(), files:[]};
+  for(const a of (arts||[])){
+    const path=String(a.title||a.artifact_id||''); const parts=path.split('/').filter(Boolean);
+    let node=root;
+    for(let i=0;i<parts.length-1;i++){ const seg=parts[i];
+      if(!node.dirs.has(seg)) node.dirs.set(seg,{dirs:new Map(), files:[]});
+      node=node.dirs.get(seg); }
+    node.files.push({art:a, name:parts.length?parts[parts.length-1]:path, path}); }
+  return root;
+}
+// collapsed dir paths remembered in-page (default expanded for depth ≤ 2)
+function dirCollapsed(key,depth){ if(S.bundleDirs.has(key)) return true; if(S.bundleDirsOpen.has(key)) return false; return depth>=2; }
+function renderArtifactNode(node,prefix,depth){
+  let h='';
+  for(const [seg,child] of [...node.dirs.entries()].sort((a,b)=>a[0].localeCompare(b[0]))){
+    const key=prefix?prefix+'/'+seg:seg; const collapsed=dirCollapsed(key,depth);
+    const n=(child.files.length)+child.dirs.size;
+    h+=`<div class="tnode tdir" style="padding-left:${depth*14}px"><a href="#" data-act="tdir" data-key="${esc(key)}" data-collapsed="${collapsed?1:0}">`
+      +`<span class="ttog">${collapsed?'▸':'▾'}</span> ${esc(seg)}/</a><span class="l2">${n}</span></div>`;
+    if(!collapsed) h+=`<div class="tkids">${renderArtifactNode(child,key,depth+1)}</div>`; }
+  for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
+    const a=f.art, published=a.body_published!==false;
+    const body=published
+      ? `<a href="#" data-act="file" data-path="${esc('artifacts/package/'+f.path)}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}">${esc(f.name)}</a>`
+      : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
+    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}</span></div>`; }
+  return h;
+}
+function renderArtifactTree(arts){
+  if(!S.bundleDirs) S.bundleDirs=new Set(); if(!S.bundleDirsOpen) S.bundleDirsOpen=new Set();
+  if(!(arts||[]).length) return '<div class="l2">— no artifacts —</div>';
+  return `<div class="atree">${renderArtifactNode(buildArtifactTree(arts),'',0)}</div>`;
+}
 async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
   if(!d) return {title:'bundle', html:'<div class="l2">unavailable</div>'};
   const b=(d.bundle&&d.bundle.payload)||d.bundle||{}, arts=d.artifacts||[];
@@ -236,9 +276,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     +kv('Owning env',esc(b.owning_env_id||'—'))+kv('Co-signers',esc(Object.keys(d.co_signatures||{}).join(', ')||'—'));
   const vinv=(d.verifier_invocations||[]).map((v)=>`${v.tier}:${v.passed?'✓':'✗'}`).join('  ');
   if(vinv) html+=H('Verifier cascade')+`<div class="desc2">${esc(vinv)}</div>`;
-  html+=H(`Artifacts (${arts.length}) — click to view`)+arts.map((a)=>`<div class="grant">`
-    +`<a href="#" data-act="file" data-path="${esc(a.package_path)}" data-title="${esc(a.title)}" data-kind="${esc(a.media_kind)}">${esc(a.title)}</a>`
-    +`<span class="l2">${esc(a.media_kind)} · ${esc(a.size_bytes)}B</span></div>`).join('');
+  html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts);
   if(L && L.run){ html+=H('Provenance')
     +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · codex model cascade →</a></div>`
     +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
@@ -519,6 +557,12 @@ function wire(){
   // in-drawer navigation: follow links to other records / bundles / artifact files
   $('#detailbody').addEventListener('click',(e)=>{ const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
     const act=a.dataset.act, base=S.curBase||'';
+    if(act==='tdir'){ const key=a.dataset.key, wasCollapsed=a.dataset.collapsed==='1';
+      if(!S.bundleDirs)S.bundleDirs=new Set(); if(!S.bundleDirsOpen)S.bundleDirsOpen=new Set();
+      // flip the effective state regardless of depth-default; explicit sets win over the default
+      if(wasCollapsed){ S.bundleDirs.delete(key); S.bundleDirsOpen.add(key); }
+      else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
+      const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='file') pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind));
     else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url));
