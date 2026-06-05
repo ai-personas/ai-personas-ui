@@ -96,6 +96,7 @@ async function discover(){
   const root=await fetchJson('.well-known/personaos-discovery.json')||{};
   const bases=[]; if(root.providers_url) bases.push('');           // single-run: this origin is a kernel
   for(const fk of (root.federated_kernels||[])) bases.push(fk);    // ecosystem: many kernel nodes
+  for(const rp of (root.peers||[])) bases.push(rp);                // node-served origin carries its --peers here
   if(!bases.length) bases.push('');
   S.telLoaded=S.telLoaded||new Set();
   for(const b of [...new Set([...bases, ...peerList()])]){

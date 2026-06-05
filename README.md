@@ -7,6 +7,30 @@ discovery planes, resolves every record itself, and **cryptographically verifies
 (Ed25519) in your browser** before showing it. Whatever kernels are published to the network
 appear here; nothing is hard-coded.
 
+## Realtime discovery — the page ships **no** data
+
+This repository is a **pure shell**: `index.html`, `assets/`, `peers.txt`, `robots.txt`. It
+contains **no run data at all** — every persona, environment, project, artifact, telemetry span
+and refinement mission you see is **discovered at runtime, in your browser**, from *live* nodes.
+On boot the JS reads its peer list from three merged sources and resolves + Ed25519-verifies
+each node's records:
+
+- **`peers.txt`** — a published phonebook of node URLs (one per line; `#` comments ignored);
+- **`?peer=<url>`** — a node URL passed in the query string;
+- **the `＋ PEER` button** — adds a node URL (persisted in `localStorage`).
+
+A node that *serves* this shell itself also advertises its own `--peers` in the origin
+`.well-known/personaos-discovery.json`, which the page merges in too. The page then **re-polls
+every 15 s** — genuinely re-resolving and re-verifying — so newly born personas tick in live.
+Nothing is ever baked into the repo; if no node is reachable the page simply shows nothing.
+
+**Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
+IP** (browsers block mixed content). So on an **intranet**, open the **node-served** UI directly
+at `http://<node-host>:8799/` — the node serves this same shell over plain HTTP, same-origin, so
+realtime discovery works without any tunnel. For the **internet**, expose the node behind an
+**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and list that URL in `peers.txt` or pass
+it with `?peer=`. Either way trust is the **Ed25519 signature on each record, not the host**.
+
 ## P2P discovery — how it finds things (no central server)
 
 Discovery is **signed + content-addressed**, not server-dependent (09_PROTOCOLS §3G/§3H). For
@@ -69,10 +93,13 @@ cd ai-personas-ui && python3 -m http.server 8099   # open http://localhost:8099
 ## Layout
 
 ```
-index.html                                 # the discovery portal (terminal UI)
-assets/discovery.js                        # bootstrap → DHT lookup → resolve → in-browser Ed25519 verify
+index.html                                 # the discovery portal (terminal UI) — pure shell, no data
+assets/discovery.js                        # boot → peers.txt → resolve → in-browser Ed25519 verify → 15s re-poll
 assets/noble-ed25519.js                    # vendored verifier (MIT)
-.well-known/personaos-discovery.json       # root bootstrap → federated_kernels
-k/<node>/…                                  # each discoverable kernel node (its own .well-known + records + deep docs)
-tools/discovery_page.py, discovery_v11.py  # the generators (publish a node / aggregate the network)
+assets/p2p-libp2p.js                       # real js-libp2p node (WebRTC + relay + Kademlia DHT + gossipsub)
+peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
+tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a node); NOT needed at runtime
 ```
+
+There is **no `k/` and no `.well-known/` in this repo** — those are *run* surfaces served by a
+live node, never baked into the published page. The page discovers them from peers at runtime.

@@ -1,6 +1,0 @@
-Verification report
-Task: compute the first 40 prime numbers with a sieve.
-Algorithm: Sieve of Eratosthenes with a doubled search limit until enough primes are found.
-Self-validation: every emitted value passed independent trial-division primality checks.
-Sequence checks: count=40, first=2, last=173, sum=3087, strictly increasing, unique.
-Artifact checks: JSON parsed, algorithm code compiled, manifest parsed, file sizes below 64 KB.

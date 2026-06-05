@@ -1,3 +1,8 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# Published page is a pure shell — run data is discovered at runtime from live
+# peers; never bake data. These are run surfaces served by a live node, not the repo.
+/k/
+/.well-known/
