@@ -183,6 +183,13 @@ const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
   if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v); return v; }
 async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
+// Binary-safe fetch for images / PDFs / 3D meshes — returns {blob,size,type} or null.
+// Binaries are detected by extension BEFORE this is called so fetchText is never run on them.
+async function fetchBlob(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null;
+  const b=await r.blob(); return {blob:b,size:b.size,type:b.type}; }catch(e){ return null; } }
+const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
+  if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
+const extOf=(p)=>{ const m=/\.([a-z0-9_]+)$/i.exec(String(p||'')); return m?m[1].toLowerCase():''; };
 const kv=(l,v)=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${v}</span></div>`;
 const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
@@ -258,7 +265,7 @@ function renderArtifactNode(node,prefix,depth){
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc('artifacts/package/'+f.path)}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}">${esc(f.name)}</a>`
+      ? `<a href="#" data-act="file" data-path="${esc('artifacts/package/'+f.path)}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size??a.bytes??'')}">${esc(f.name)}</a>`
       : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
     h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}</span></div>`; }
   return h;
@@ -284,14 +291,291 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     if(L.oci) html+=`<div class="row"><a href="#" data-act="dist" data-oci="${esc(L.oci)}" data-dag="${esc(L.dag||'')}" data-reg="${esc(L.registry||'')}">Distribution · OCI + IPLD →</a></div>`; }
   return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(b.bundle_id||'')}`, html};
 }
-async function fileView(base,path,title,kind){ S.curBase=base;
-  const txt=await fetchText(join(base,path)); const isJson=/\.json$/i.test(path||'');
-  let body=txt||''; if(isJson){ try{ body=JSON.stringify(JSON.parse(txt),null,2); }catch(e){} }
+/* ====================================================================
+   MEDIA-AWARE ARTIFACT RENDERING
+   --------------------------------------------------------------------
+   Renderer is selected by file EXTENSION (primary) then media_kind
+   (fallback). Each heavy library is LAZY-LOADED via dynamic import()
+   from a pinned CDN, ONLY the first time a file of that kind is opened,
+   behind a cached module promise. Every import is wrapped so a CDN
+   failure (offline / intranet node-served page) degrades to the plain
+   <pre> renderer — never a broken pane.
+   SECURITY: artifact bodies are REMOTE PEER content. Markdown is
+   sanitised with DOMPurify; tables / code / descriptors are built with
+   createElement + textContent (never innerHTML of raw content); SVG and
+   images are rendered as blob: <img> (never inline innerHTML). No eval.
+   ==================================================================== */
+
+// Pinned CDN modules. esm.sh / jsdelivr +esm both serve ES modules with
+// their own deps bundled. Each entry lists fallbacks tried in order.
+const CDN={
+  marked:   ['https://esm.sh/marked@12.0.2','https://cdn.jsdelivr.net/npm/marked@12.0.2/+esm'],
+  dompurify:['https://esm.sh/dompurify@3.1.6','https://cdn.jsdelivr.net/npm/dompurify@3.1.6/+esm'],
+  papaparse:['https://esm.sh/papaparse@5.4.1','https://cdn.jsdelivr.net/npm/papaparse@5.4.1/+esm'],
+  hljs:     ['https://esm.sh/highlight.js@11.10.0/lib/core','https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core/+esm'],
+  three:    ['https://esm.sh/three@0.160.0','https://cdn.jsdelivr.net/npm/three@0.160.0/+esm'],
+  orbit:    ['https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js/+esm'],
+  stl:      ['https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/STLLoader.js/+esm'],
+  obj:      ['https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js/+esm'],
+  gltf:     ['https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js/+esm'],
+};
+// Per-key cached module promise. lazyLib(key) resolves the module once;
+// on every listed URL failing it REJECTS so the caller falls back to <pre>.
+const LIBS=new Map();
+function lazyLib(key){
+  if(LIBS.has(key)) return LIBS.get(key);
+  const urls=(CDN[key]||[]).slice();
+  const p=(async()=>{ let lastErr;
+    for(const u of urls){ try{ return await import(/* @vite-ignore */ u); }catch(e){ lastErr=e; } }
+    throw lastErr||new Error('no CDN url for '+key); })();
+  p.catch(()=>LIBS.delete(key));   // allow a later retry if the first attempt failed
+  LIBS.set(key,p); return p;
+}
+
+// Highlight.js language packs are lazy too (one import per language, cached).
+const HLJS_LANGS={ python:'python', py:'python', js:'javascript', javascript:'javascript',
+  ts:'typescript', typescript:'typescript', sh:'bash', bash:'bash', json:'json',
+  yaml:'yaml', yml:'yaml', toml:'ini', ini:'ini', spice:'plaintext', cir:'plaintext',
+  net:'plaintext', xml:'xml', html:'xml', css:'css' };
+async function loadHljs(lang){
+  const core=(await lazyLib('hljs')).default;
+  const name=HLJS_LANGS[lang]||'plaintext';
+  if(name!=='plaintext' && !core.getLanguage(name)){
+    const urls=[`https://esm.sh/highlight.js@11.10.0/lib/languages/${name}`,
+                `https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/${name}/+esm`];
+    for(const u of urls){ try{ const m=await import(/* @vite-ignore */ u); core.registerLanguage(name,m.default); break; }catch(e){} }
+  }
+  return {core,name};
+}
+
+// EXTENSION → renderer id. Drives both binary-detection and dispatch.
+const EXT_RENDERER={
+  md:'markdown', markdown:'markdown',
+  csv:'csv',
+  png:'image', jpg:'image', jpeg:'image', gif:'image', webp:'image', svg:'image',
+  py:'code', js:'code', ts:'code', sh:'code', json:'code', yaml:'code', yml:'code',
+  toml:'code', spice:'code', cir:'code', net:'code', ini:'code', xml:'code', cfg:'code',
+  stl:'model3d', '3mf':'model3d', obj:'model3d', gltf:'model3d', glb:'model3d',
+  step:'descriptor', stp:'descriptor', kicad_pcb:'descriptor', kicad_sch:'descriptor',
+  pdf:'pdf',
+};
+// media_kind → renderer id (fallback when extension is unknown/absent).
+const KIND_RENDERER={ md:'markdown', markdown:'markdown', csv:'csv', image:'image',
+  png:'image', svg:'image', json:'code', code:'code', source:'code', yaml:'code',
+  model:'model3d', cad:'model3d', mesh:'model3d', step:'descriptor', pdf:'pdf' };
+// Renderers that consume binary bytes (blob), not text. Text fetch is skipped.
+const BINARY_RENDERERS=new Set(['image','model3d','pdf']);
+const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','svg']);
+const TEXTY_DESCRIPTOR_EXT=new Set(['step','stp','kicad_pcb','kicad_sch']);
+
+function pickRenderer(title,kind){
+  const ext=extOf(title);
+  if(ext && EXT_RENDERER[ext]) return {id:EXT_RENDERER[ext],ext};
+  const k=String(kind||'').toLowerCase();
+  if(KIND_RENDERER[k]) return {id:KIND_RENDERER[k],ext};
+  return {id:'plain',ext};
+}
+
+// Track blob: URLs allocated for the current view so they're revoked on change.
+function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
+  onViewCleanup(()=>URL.revokeObjectURL(u)); return u; }
+
+// Small helper: build an element with optional class/text (textContent — safe).
+function el(tag,cls,text){ const e=document.createElement(tag);
+  if(cls) e.className=cls; if(text!=null) e.textContent=String(text); return e; }
+function loadingNode(label){ const d=el('div','fv-loading'); d.textContent=label||'loading renderer…'; return d; }
+function plainPre(text,note){ const wrap=document.createElement('div');
+  if(note) wrap.appendChild(el('div','fv-note',note));
+  const pre=el('pre','filview'); pre.textContent=String(text??''); wrap.appendChild(pre); return wrap; }
+
+/* ---------- individual renderers (each fills `host`, may throw → fallback) ---------- */
+async function renderMarkdown(host,ctx){
+  host.appendChild(loadingNode('loading markdown renderer…'));
+  const [markedMod,puriMod]=await Promise.all([lazyLib('marked'),lazyLib('dompurify')]);
+  const marked=markedMod.marked||markedMod.default||markedMod;
+  const DOMPurify=puriMod.default||puriMod;
+  const raw=typeof marked.parse==='function'?marked.parse(ctx.text||'',{breaks:true}):marked(ctx.text||'');
+  // sanitise EVERY rendered byte; forbid script/style and event handlers.
+  const clean=DOMPurify.sanitize(raw,{FORBID_TAGS:['style','script','iframe','form','object','embed'],
+    FORBID_ATTR:['style','onerror','onload','onclick'],ADD_ATTR:['target','rel']});
+  host.innerHTML='';
+  const md=el('div','fv-md'); md.innerHTML=clean;   // clean is DOMPurify output
+  md.querySelectorAll('a[href]').forEach((a)=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+  host.appendChild(md);
+}
+async function renderCsv(host,ctx){
+  host.appendChild(loadingNode('loading CSV parser…'));
+  const Papa=(await lazyLib('papaparse')).default;
+  const out=Papa.parse((ctx.text||'').trim(),{skipEmptyLines:true});
+  const rows=out.data||[]; const N=500; const shown=rows.slice(0,N);
+  host.innerHTML='';
+  if(rows.length>N) host.appendChild(el('div','fv-note',`showing ${N} of ${rows.length} rows`));
+  const tbl=el('table','fv-table'); const head=shown[0]||[];
+  const thead=el('thead'); const htr=el('tr');
+  head.forEach((c)=>htr.appendChild(el('th',null,c)));   // textContent — safe
+  thead.appendChild(htr); tbl.appendChild(thead);
+  const tb=el('tbody');
+  for(let i=1;i<shown.length;i++){ const tr=el('tr');
+    (shown[i]||[]).forEach((c)=>tr.appendChild(el('td',null,c))); tb.appendChild(tr); }
+  tbl.appendChild(tb);
+  const scroll=el('div','fv-tablewrap'); scroll.appendChild(tbl); host.appendChild(scroll);
+}
+async function renderImage(host,ctx){
+  const fb=await fetchBlob(ctx.url);
+  if(!fb) throw new Error('image fetch failed');
+  ctx.realSize=fb.size;
+  const url=mkBlobURL(fb.blob);
+  host.innerHTML='';
+  const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
+  img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
+  host.appendChild(img);
+}
+async function renderCode(host,ctx){
+  let body=ctx.text||'';
+  const isJson=ctx.ext==='json'||String(ctx.kind||'').toLowerCase()==='json';
+  if(isJson){
+    if((ctx.realSize??body.length)>200*1024){ host.appendChild(plainPre(body,'json > 200 KB — plain text (perf)')); return; }
+    try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){}
+  }
+  host.appendChild(loadingNode('loading syntax highlighter…'));
+  const {core,name}=await loadHljs(isJson?'json':ctx.ext);
+  let out; try{ out=core.highlight(body,{language:name,ignoreIllegals:true}); }
+  catch(e){ out=null; }
+  host.innerHTML='';
+  const pre=el('pre','filview fv-code'); const code=document.createElement('code');
+  if(out && out.value){ code.innerHTML=out.value; }   // hljs output is HTML-escaped tokens
+  else { code.textContent=body; }                     // fallback: textContent (safe)
+  pre.appendChild(code); host.appendChild(pre);
+}
+async function renderModel3d(host,ctx){
+  host.appendChild(loadingNode('loading 3D viewer…'));
+  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('mesh fetch failed');
+  ctx.realSize=fb.size;
+  const ext=ctx.ext;
+  const THREE=(await lazyLib('three'));
+  const {OrbitControls}=await lazyLib('orbit');
+  host.innerHTML='';
+  const canvasWrap=el('div','fv-3d');
+  host.appendChild(canvasWrap);
+  const w=canvasWrap.clientWidth||380, h=260;
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setSize(w,h); renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  canvasWrap.appendChild(renderer.domElement);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(45,w/h,0.01,5000);
+  scene.add(new THREE.AmbientLight(0xffffff,0.7));
+  const dir=new THREE.DirectionalLight(0xffffff,0.8); dir.position.set(1,1,1); scene.add(dir);
+  const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
+  const mat=new THREE.MeshStandardMaterial({color:0x9fb4c8,metalness:0.1,roughness:0.8});
+  const buf=await fb.blob.arrayBuffer();
+  let object;
+  if(ext==='stl'){ const {STLLoader}=await lazyLib('stl');
+    const geo=new STLLoader().parse(buf); geo.computeVertexNormals(); object=new THREE.Mesh(geo,mat); }
+  else if(ext==='obj'){ const {OBJLoader}=await lazyLib('obj');
+    object=new OBJLoader().parse(new TextDecoder().decode(buf)); }
+  else if(ext==='gltf'||ext==='glb'){ const {GLTFLoader}=await lazyLib('gltf');
+    const g=await new Promise((res,rej)=>new GLTFLoader().parse(buf,'',res,rej)); object=g.scene; }
+  else { throw new Error('no in-browser loader for .'+ext); }  // .3mf → fallback descriptor
+  scene.add(object);
+  // auto-fit camera to the object's bounding sphere
+  const box=new THREE.Box3().setFromObject(object); const sph=box.getBoundingSphere(new THREE.Sphere());
+  const c=sph.center, rad=sph.radius||1; object.position.sub(c);
+  camera.position.set(0,0,rad*2.6); camera.near=rad/100; camera.far=rad*100; camera.updateProjectionMatrix();
+  controls.target.set(0,0,0); controls.update();
+  let alive=true;
+  (function loop(){ if(!alive)return; controls.update(); renderer.render(scene,camera); requestAnimationFrame(loop); })();
+  // dispose ALL GPU resources on view change
+  onViewCleanup(()=>{ alive=false; controls.dispose();
+    scene.traverse((o)=>{ if(o.geometry)o.geometry.dispose(); if(o.material){ const ms=Array.isArray(o.material)?o.material:[o.material]; ms.forEach((m)=>m.dispose()); } });
+    renderer.dispose(); if(renderer.forceContextLoss)renderer.forceContextLoss(); });
+}
+async function renderDescriptor(host,ctx){
+  // .step / .kicad_* etc: no in-browser renderer → honest descriptor card,
+  // download link, + a plain-text head preview if the body is texty.
+  host.innerHTML='';
+  const card=el('div','fv-card');
+  card.appendChild(el('div','fv-cardhd',`No in-browser viewer for .${ctx.ext||ctx.kind||'?'} — descriptor only`));
+  const add=(l,v)=>{ const r=el('div','row'); r.appendChild(el('span','l2',l));
+    r.appendChild(el('span','v2',v)); card.appendChild(r); };
+  add('Kind',ctx.kind||ctx.ext||'—');
+  add('Size',fmtBytes(ctx.realSize));
+  add('Content hash',ctx.contentHash||'—');
+  host.appendChild(card);
+  const dl=el('div','row'); const a=document.createElement('a');
+  a.href=ctx.url; a.target='_blank'; a.rel='noopener'; a.setAttribute('download',''); a.textContent='download →';
+  dl.appendChild(a); host.appendChild(dl);
+  if(TEXTY_DESCRIPTOR_EXT.has(ctx.ext)){
+    const txt=await fetchText(ctx.url);
+    if(txt && /[\x09\x0a\x0d\x20-\x7e]/.test(txt.slice(0,200))){
+      host.appendChild(el('div','fv-note','head preview (first 4 KB)'));
+      const pre=el('pre','filview'); pre.textContent=txt.slice(0,4096); host.appendChild(pre);
+    }
+  }
+}
+async function renderPdf(host,ctx){
+  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('pdf fetch failed');
+  ctx.realSize=fb.size; const url=mkBlobURL(fb.blob);
+  host.innerHTML='';
+  const obj=document.createElement('iframe'); obj.className='fv-pdf'; obj.src=url; obj.title=ctx.title;
+  host.appendChild(obj);
+}
+async function renderPlain(host,ctx){
+  let body=ctx.text;
+  if(body==null){ // forced-plain view of a binary kind → best-effort text decode
+    host.appendChild(loadingNode('loading…')); body=await fetchText(ctx.url); host.innerHTML='';
+    if(body==null){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; } }
+  if(ctx.ext==='json'){ try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){} }
   const trunc=body.length>20000;
-  let html=kv('File',esc(title))+kv('Media kind',esc(kind||'—'))+kv('Bytes',esc((txt||'').length))
-    +H('Content'+(trunc?' (first 20 KB)':''))+`<pre class="filview">${esc(body.slice(0,20000))}</pre>`
-    +`<div class="row"><a href="${esc(join(base,path))}" target="_blank" rel="noopener" download>download / open raw →</a></div>`;
-  return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html};
+  host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
+}
+const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage, code:renderCode,
+  model3d:renderModel3d, descriptor:renderDescriptor, pdf:renderPdf, plain:renderPlain };
+
+// fileView builds the header synchronously, then mounts the chosen renderer
+// asynchronously into #fv-body, with a graceful <pre> fallback on any failure.
+async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
+  const pick=pickRenderer(title,kind);
+  const url=join(base,path);
+  const isBinary=BINARY_RENDERERS.has(pick.id);
+  const forcedPlain=opts.raw===true;
+  const rendId=forcedPlain?'plain':pick.id;
+  // text bodies fetched here; binaries deferred to their renderer (blob).
+  let text=null, realSize=null;
+  if(!isBinary || forcedPlain){
+    // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
+    if(!isBinary){ text=await fetchText(url); realSize=text?text.length:null; }
+  }
+  const ctx={ base, path, url, title, kind, ext:pick.ext, text, realSize,
+    contentHash:opts.contentHash||null };
+  const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
+  const rawTog=forcedPlain
+    ? `<a href="#" data-act="fv-rich" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">rich view ←</a>`
+    : (rendId!=='plain'
+        ? `<a href="#" data-act="fv-raw" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">raw text</a>`
+        : '<span class="l2">raw</span>');
+  let html=kv('File',esc(title))
+    +kv('Media kind',`${esc(kind||pick.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
+    +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
+    +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
+    +`<a href="${esc(url)}" target="_blank" rel="noopener" download>download / open raw →</a></span></div>`
+    +`<div id="fv-body" class="fv-body"></div>`;
+  const mount=async(root)=>{
+    const host=root.querySelector('#fv-body'); if(!host) return;
+    const r=RENDERERS[rendId]||renderPlain;
+    try{ await r(host,ctx);
+      // size discovered during a binary fetch → reflect it in the header
+      if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
+    }catch(e){
+      // GRACEFUL FALLBACK: CDN import failed / parse error → plain <pre>, never broken.
+      host.innerHTML='';
+      host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
+      let body=ctx.text;
+      if(body==null){ body=isBinary?null:await fetchText(url); }
+      if(body==null && isBinary){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; }
+      host.appendChild(plainPre(String(body??'').slice(0,20000)));
+    }
+  };
+  return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
 }
 async function telemetryView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base; const s=await dfetch(base,L.summary)||{};
   const ec=Object.entries(s.lineage_event_counts||{}).sort((a,b)=>b[1]-a[1]).slice(0,14);
@@ -418,11 +702,20 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
   if(r.kind==='artifact' && L.content) return fileView(r._base||'',L.content,r.label,L.media_kind);
   return genericView(r);
 }
+// Any renderer that allocates per-view resources (blob: URLs, a three.js scene,
+// timers) registers a teardown here; renderTop() runs every pending teardown before
+// it paints the next view so nothing leaks across navigation.
+function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
+  for(const fn of cbs){ try{ fn(); }catch(e){} } }
+function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
+  runViewCleanups();
   $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
   $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
+  // optional async post-mount step (media renderers paint into a container here)
+  if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} }
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
 function openDetail(id){ S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
@@ -564,7 +857,12 @@ function wire(){
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
-    else if(act==='file') pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind));
+    else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null};
+      pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,o)); }
+    else if(act==='fv-raw'){ // swap the CURRENT file view to forced plain text (re-render in place)
+      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true}); renderTop(); }
+    else if(act==='fv-rich'){ // swap back to the rich media renderer
+      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{}); renderTop(); }
     else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url));
     else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
     else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));

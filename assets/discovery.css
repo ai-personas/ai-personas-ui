@@ -128,3 +128,52 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .atree .ttog{display:inline-block;width:10px;color:var(--dim);font-size:9px}
 .atree .tfile>a{color:var(--int)}
 .atree .tgated{color:var(--mut)}
+/* ---------- media-aware file renderer ---------- */
+.fv-rid{color:var(--mut);font-size:10px}
+.fv-body{margin:8px 0 4px}
+.fv-loading{color:var(--amber);font-size:11px;padding:10px 2px;letter-spacing:.4px}
+.fv-loading:before{content:'◴ '}
+.fv-note{color:var(--mut);font-size:10.5px;margin:4px 0 6px;letter-spacing:.3px}
+/* markdown */
+.fv-md{color:var(--ink);font-size:12.5px;line-height:1.55;background:#070b10;border:1px solid var(--line2);
+  border-radius:6px;padding:10px 12px;max-height:480px;overflow:auto}
+.fv-md h1,.fv-md h2,.fv-md h3,.fv-md h4{color:var(--amber);margin:12px 0 5px;line-height:1.3}
+.fv-md h1{font-size:15px} .fv-md h2{font-size:13.5px} .fv-md h3{font-size:12.5px} .fv-md h4{font-size:11.5px}
+.fv-md p{margin:5px 0} .fv-md a{color:var(--int)} .fv-md ul,.fv-md ol{margin:4px 0 4px 18px;padding:0}
+.fv-md code{background:#0b121b;border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px;color:var(--intr)}
+.fv-md pre{background:#0b121b;border:1px solid var(--line2);border-radius:5px;padding:8px 10px;overflow:auto;font-size:11px}
+.fv-md pre code{background:none;border:none;padding:0}
+.fv-md blockquote{border-left:2px solid var(--line2);margin:6px 0;padding:2px 0 2px 10px;color:var(--dim)}
+.fv-md table{border-collapse:collapse;margin:6px 0;font-size:11.5px}
+.fv-md th,.fv-md td{border:1px solid var(--line2);padding:3px 8px;text-align:left}
+.fv-md hr{border:none;border-top:1px solid var(--line2);margin:10px 0}
+.fv-md img{max-width:100%;height:auto}
+/* csv table */
+.fv-tablewrap{max-height:440px;overflow:auto;border:1px solid var(--line2);border-radius:6px;background:#070b10}
+.fv-table{border-collapse:collapse;font-size:11px;width:100%}
+.fv-table th{position:sticky;top:0;background:#0b1118;color:var(--mut);text-align:left;padding:5px 9px;
+  border-bottom:1px solid var(--line2);font-weight:600;white-space:nowrap}
+.fv-table td{padding:4px 9px;border-bottom:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.fv-table tbody tr:hover{background:#0e1722}
+/* image */
+.fv-img{display:block;max-width:100%;max-height:460px;object-fit:contain;margin:0 auto;
+  background:#06090e;border:1px solid var(--line2);border-radius:6px}
+/* code / syntax highlight (dark, self-contained — no external hljs theme) */
+.fv-code{max-height:480px}
+.fv-code .hljs-keyword,.fv-code .hljs-selector-tag,.fv-code .hljs-built_in{color:var(--purple)}
+.fv-code .hljs-string,.fv-code .hljs-attr{color:var(--up)}
+.fv-code .hljs-number,.fv-code .hljs-literal{color:var(--amber)}
+.fv-code .hljs-comment{color:var(--mut);font-style:italic}
+.fv-code .hljs-title,.fv-code .hljs-function .hljs-title,.fv-code .hljs-section{color:var(--int)}
+.fv-code .hljs-attribute,.fv-code .hljs-name,.fv-code .hljs-tag{color:var(--intr)}
+.fv-code .hljs-meta,.fv-code .hljs-symbol{color:var(--pink)}
+/* 3d / cad */
+.fv-3d{width:100%;height:260px;background:#06090e;border:1px solid var(--line2);border-radius:6px;overflow:hidden;cursor:grab}
+.fv-3d:active{cursor:grabbing}
+.fv-3d canvas{display:block}
+/* descriptor card (no in-browser viewer) */
+.fv-card{background:#070b10;border:1px solid var(--line2);border-radius:6px;padding:10px 12px;margin:4px 0}
+.fv-cardhd{color:var(--amber);font-size:11px;margin-bottom:6px;letter-spacing:.4px}
+.fv-card .row{border-bottom:1px solid var(--line)}
+/* pdf */
+.fv-pdf{width:100%;height:480px;border:1px solid var(--line2);border-radius:6px;background:#06090e}
