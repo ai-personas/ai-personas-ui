@@ -90,16 +90,30 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
       task:first('persona'),answer:first('persona'),project:first('project')||first('env'),
       bundle,artifact:bundle,telemetry:first('telemetry'),mission:first('mission')}; }
 }
+async function resolveKernelBases(seeds){
+  // Every seed (this origin, peers.txt, ?peer, ＋PEER) is resolved the SAME way:
+  // its bootstrap may BE a kernel (providers_url), LIST kernels (federated_kernels —
+  // a multi-run node), and NAME further peers (one hop). Previously only the page's
+  // own origin was expanded, so a multi-run peer node yielded zero records.
+  const visited=new Set(), kernels=[]; const queue=seeds.map((s)=>({b:s,depth:0}));
+  while(queue.length){
+    const {b,depth}=queue.shift(); const key=b||'@origin';
+    if(visited.has(key)) continue; visited.add(key);
+    const boot=await fetchJson(join(b,'.well-known/personaos-discovery.json'));
+    if(!boot){ if(b) kernels.push(b); continue; }          // dead peer → discoverFrom logs it
+    const fks=boot.federated_kernels||[];
+    if(boot.providers_url||!fks.length) kernels.push(b);   // the base itself is a kernel (or legacy single-run)
+    for(const fk of fks) kernels.push(join(b,fk));         // multi-run node → per-kernel bases
+    if(depth<1) for(const rp of (boot.peers||[])) queue.push({b:rp,depth:depth+1});
+  }
+  return [...new Set(kernels)];
+}
 async function discover(){
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
   await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
-  const root=await fetchJson('.well-known/personaos-discovery.json')||{};
-  const bases=[]; if(root.providers_url) bases.push('');           // single-run: this origin is a kernel
-  for(const fk of (root.federated_kernels||[])) bases.push(fk);    // ecosystem: many kernel nodes
-  for(const rp of (root.peers||[])) bases.push(rp);                // node-served origin carries its --peers here
-  if(!bases.length) bases.push('');
+  const seeds=[...new Set(['', ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
-  for(const b of [...new Set([...bases, ...peerList()])]){
+  for(const b of await resolveKernelBases(seeds)){
     const res=await discoverFrom(b,'internet'); res.found.forEach(upsert);
     if(res.boot && !S.telLoaded.has(b)){ await loadTelemetry(b); S.telLoaded.add(b); }   // aggregate each kernel's tape
   }
