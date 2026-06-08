@@ -20,13 +20,16 @@ async function verifyRecord(doc,keys){
   try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(pk)); }
   catch(e){ return false; }
 }
-const join=(b,r)=>!b?r:b.replace(/\/$/,'')+'/'+r.replace(/^\//,'');
+const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
+const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
+const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
 async function fetchJson(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.json(); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{}, mapByKernel:{}, telLoaded:new Set(), views:[], curBase:'', bundleDirs:new Set(), bundleDirsOpen:new Set() };
+  map:{}, mapByKernel:{}, telLoaded:new Set(), keys:new Map(), boots:new Map(), streams:new Map(),
+  p2pBootstraps:new Set(), views:[], curBase:'', bundleDirs:new Set(), bundleDirsOpen:new Set() };
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -35,25 +38,50 @@ function log(tag,msg,ok){ const li=document.createElement('li');
   $('#log').appendChild(li); }
 
 /* ---------- discovery (runtime resolve + in-browser verify) ---------- */
+function collectP2PBootstraps(boot){
+  for(const v of [...(boot?.bootstrap_peers||[]),...(boot?.relay_peers||[]),
+    ...((boot?.reachability_profile||{}).bootstrap_peers||[]),
+    ...((boot?.reachability_profile||{}).relay_peers||[])]){
+    if(v) S.p2pBootstraps.add(v);
+  }
+}
+async function keysFor(base,boot){
+  const key=base||'@origin';
+  if(S.keys.has(key)) return S.keys.get(key);
+  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'));
+  const keys={}; (keysDoc?.keys||[]).forEach((k)=>keys[k.key_id]=k.public_key_hex);
+  S.keys.set(key,keys);
+  return keys;
+}
+async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
+  if(!doc?.record) return {ok:false,row:null};
+  const ok=await verifyRecord(doc,keys);
+  if(!ok) return {ok:false,row:null};
+  const r=doc.record, k=doc.host_kernel_id||boot?.kernel_id||'', b=doc.base||base||'';
+  return {ok:true,row:{...r,_kernel:k,_url:recordUrl?join(base,recordUrl):(doc._url||''),_access:doc.access_policy||{},
+    _links:doc.links||{},_base:b,_plane:plane,
+    _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
+          public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
+          base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
+}
 async function discoverFrom(base,plane){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
   const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
   if(!boot){ log('bootstrap',`no endpoint at ${where}`,false); return {boot:null,found:[]}; }
+  S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   if(boot.kernel_id) S.kernels.add(boot.kernel_id);
-  const keysDoc=await fetchJson(join(base,boot.keys_url||'.well-known/personaos-keys.json'));
-  const keys={}; (keysDoc?.keys||[]).forEach((k)=>keys[k.key_id]=k.public_key_hex);
+  const keys=await keysFor(base,boot);
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'));
   const providers=prov?.providers||[];
-  log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)`);
+  log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
   const found=[];
   for(const p of providers){
     const doc=await fetchJson(join(base,p.record_url)); if(!doc?.record){ continue; }
-    const ok=await verifyRecord(doc,keys); const r=doc.record;
-    log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${ok?'OK':'FAIL'}`,ok);
-    if(ok) found.push({...r,_kernel:boot.kernel_id||'',_url:join(base,p.record_url),_access:doc.access_policy||{},_links:doc.links||{},_base:base,_plane:plane,
-      _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,public_key_hex:keys[doc.signing_key_id]||'',
-            kernel_id:boot.kernel_id||'',base:base,links:doc.links||{},access_policy:doc.access_policy||{}}});
+    const out=await verifiedRecordFromDoc(doc,keys,boot,base,plane,p.record_url);
+    const r=doc.record;
+    log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${out.ok?'OK':'FAIL'}`,out.ok);
+    if(out.ok) found.push(out.row);
   }
   return {boot,found};
 }
@@ -101,10 +129,17 @@ async function resolveKernelBases(seeds){
     if(visited.has(key)) continue; visited.add(key);
     const boot=await fetchJson(join(b,'.well-known/personaos-discovery.json'));
     if(!boot){ if(b) kernels.push(b); continue; }          // dead peer → discoverFrom logs it
+    S.boots.set(b||'@origin',boot); collectP2PBootstraps(boot);
     const fks=boot.federated_kernels||[];
-    if(boot.providers_url||!fks.length) kernels.push(b);   // the base itself is a kernel (or legacy single-run)
-    for(const fk of fks) kernels.push(join(b,fk));         // multi-run node → per-kernel bases
-    if(depth<1) for(const rp of (boot.peers||[])) queue.push({b:rp,depth:depth+1});
+    if(boot.providers_are_aggregate){ kernels.push(b); }   // public node aggregate: do not expand private runs
+    else {
+      if(boot.providers_url||!fks.length) kernels.push(b); // the base itself is a kernel (or legacy single-run)
+      for(const fk of fks) kernels.push(join(b,fk));       // multi-run node → per-kernel bases
+    }
+    if(depth<1){
+      const httpBoots=[...(boot.peers||[]),...(boot.bootstrap_peers||[])].filter(isHttp);
+      for(const rp of httpBoots) queue.push({b:rp,depth:depth+1});
+    }
   }
   return [...new Set(kernels)];
 }
@@ -115,6 +150,7 @@ async function discover(){
   S.telLoaded=S.telLoaded||new Set();
   for(const b of await resolveKernelBases(seeds)){
     const res=await discoverFrom(b,'internet'); res.found.forEach(upsert);
+    if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot && !S.telLoaded.has(b)){ await loadTelemetry(b); S.telLoaded.add(b); }   // aggregate each kernel's tape
   }
   classifyMap(); buildRows(); buildTicker(); renderStats();
@@ -122,11 +158,56 @@ async function discover(){
     +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`;
 }
 
+function appendTelemetryEvent(payload,base,boot,reason){
+  const tel=payload?.telemetry||payload||{};
+  const t=Date.parse(tel.generated_at||payload?.generated_at||'')||Date.now();
+  const kid=(tel.node&&tel.node.node_id)||boot?.kernel_id||base||'live';
+  const ev={t,kernel:kid,scope:'telemetry',kind:String(reason||tel.reason||payload?.reason||'LIVE_TELEMETRY'),
+    trace:String(tel.schema||payload?.schema||'live'),signed:true,ms:0,gap:0};
+  S.events=(S.events||[]).concat([ev]).sort((a,b)=>a.t-b.t);
+  if(S.events.length===1) S.events[0].gap=0;
+  const fm=$('#feedmode'); if(fm){ fm.textContent='LIVE'; fm.classList.add('live'); }
+  const dot=$('#livedot'); if(dot) dot.style.background='var(--up)';
+}
+function connectDiscoveryStream(base,boot){
+  if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
+  const url=join(base,boot.discovery_stream_url);
+  if(S.streams.has(url)) return;
+  const es=new EventSource(url);
+  S.streams.set(url,es);
+  es.addEventListener('open',()=>log('stream',`${url} connected`,true));
+  es.addEventListener('hello',(ev)=>{
+    try{ const d=JSON.parse(ev.data||'{}'); if(d.node_id) S.kernels.add(d.node_id); }catch(e){}
+  });
+  es.addEventListener('discovery_snapshot',async (ev)=>{
+    try{
+      const snap=JSON.parse(ev.data||'{}'), keys=await keysFor(base,boot);
+      let added=0;
+      for(const p of (snap.providers?.providers||[])){
+        const doc=await fetchJson(join(base,p.record_url));
+        const out=await verifiedRecordFromDoc(doc,keys,boot,base,'internet',p.record_url);
+        if(out.ok){ upsert(out.row); added++; }
+      }
+      if(added){ classifyMap(); buildRows(); buildTicker(); renderStats(); }
+    }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
+  });
+  es.addEventListener('telemetry_update',(ev)=>{
+    try{ appendTelemetryEvent(JSON.parse(ev.data||'{}'),base,boot,'LIVE_TELEMETRY'); }
+    catch(e){ return; }
+  });
+  es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
+}
+
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
 async function loadTelemetry(base){
   const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
-  const url=boot?.telemetry_url||'telemetry/spans.json';
+  const url=boot?.live_telemetry_url||boot?.telemetry_url||'telemetry/spans.json';
   const spans=await fetchJson(join(base,url));
+  if(spans && !Array.isArray(spans)){
+    appendTelemetryEvent(spans,base,boot,spans.reason||'LIVE_TELEMETRY');
+    log('telemetry','live node telemetry snapshot loaded');
+    return;
+  }
   if(!Array.isArray(spans)||!spans.length){ return; }
   const kid=boot.kernel_id||base;
   const evs=spans.map((s)=>{ const a=s.attributes||{};
@@ -888,6 +969,7 @@ let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
 async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
+  if(doc.record.visibility_tier!=='public') return;
   if(doc.public_key_hex){ try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){} }
   log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
   const r=doc.record, id=r.record_id||r.card_id;
@@ -897,7 +979,8 @@ async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
 async function initP2P(){
   const params=new URLSearchParams(location.search);
   const root=await fetchJson('.well-known/personaos-discovery.json')||{};
-  const list=[...(root.bootstrap_peers||[]),...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
+  collectP2PBootstraps(root);
+  const list=[...S.p2pBootstraps,...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
   log('p2p','starting libp2p node — WebRTC + Kademlia DHT + gossipsub…');
   try{
     const mod=await import('./p2p-libp2p.js');
@@ -905,7 +988,8 @@ async function initP2P(){
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
     updateP2PStatus();
-    for(const id of S.order){ const r=S.recs.get(id); if(r._doc) P2P.announce(r._doc); }   // gossip our records to the mesh
+    for(const id of S.order){ const r=S.recs.get(id);
+      if(r._doc&&r._doc.record?.visibility_tier==='public') P2P.announce(r._doc); }   // gossip public records to the mesh
     log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
       : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
