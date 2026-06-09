@@ -303,6 +303,17 @@ function replay(){
 const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
   if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v); return v; }
+// Node /status cache — 8s TTL so active runs stay reasonably fresh without hammering
+const statusCache=new Map();
+async function fetchNodeStatus(base){
+  const key=base||'@origin'; const hit=statusCache.get(key);
+  if(hit&&(Date.now()-hit.ts)<8000) return hit.v;
+  const v=await fetchJson(join(base,'status'));
+  if(v) statusCache.set(key,{v,ts:Date.now()}); return v||null;
+}
+function personaIdFromDid(did){
+  const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
+  return (did||'').replace('did:personaos:',''); }
 async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
 // Binary-safe fetch for images / PDFs / 3D meshes — returns {blob,size,type} or null.
 // Binaries are detected by extension BEFORE this is called so fetchText is never run on them.
@@ -320,41 +331,85 @@ const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind
 const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
 
 async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
-  S.curBase=base; const prof=await dfetch(base,L.profile), exp=await dfetch(base,L.export);
-  const c=(prof&&prof.card)||{}, mc=(exp&&exp.memory_counts)||{};
-  let html=kv('Persona id',S0(r.did))+kv('Name',S0(c.name||r.label))+kv('Archetype',S0(c.archetype))
-    +kv('Disposition',S0(c.primary_disposition))+kv('Reputation',S0(c.reputation_score))
-    +kv('Can lead cohorts',S0(c.can_lead_cohorts))+kv('Soul version',S0(c.soul_version))
-    +kv('Visibility',S0(c.visibility||r.visibility_tier))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  if(c.description) html+=H('Description')+`<div class="desc2">${esc(c.description)}</div>`;
-  html+=H('Accepted roles')+chipsOf(c.accepted_roles)+H('Interests')+chipsOf(c.advertised_interests)+H('Domain curatorships')+chipsOf(c.domain_curatorships);
-  if(mc.entries!==undefined) html+=H('Memory')+kv('Entries',S0(mc.entries))+kv('Episodic',S0(mc.episodic))+kv('Semantic',S0(mc.semantic))+kv('Reflective',S0(mc.reflective));
+  S.curBase=base;
+  // profile/export endpoints are not yet implemented — use live /status instead
+  const ns=await fetchNodeStatus(base)||{};
+  const pid=personaIdFromDid(r.did);
+  const ps=(ns.personas||[]).find((p)=>p.persona_id===pid||p.persona_id===r.did||(pid&&(p.persona_id||'').endsWith(pid)))||{};
+  const mi=ns.model_independence===true;
+  const fitness=ps.fitness!=null?ps.fitness.toFixed(2):'—';
+  const expTasks=ps.experience_tasks??'—';
+  const state=ps.lifecycle_state||'—';
+  const role=ps.role||'—';
+  const modelId=ps.model||ps.assigned_model||ps.model_id||'—';
+  let html=kv('Persona id',S0(r.did))
+    +kv('Role',`<span class="cap">${esc(role)}</span>`)
+    +kv('Lifecycle state',state==='ACTIVE'?`<span class="ok">● ACTIVE</span>`:`<span class="dim">${esc(state)}</span>`)
+    +kv('Fitness',fitness==='—'?'—':`<span class="${parseFloat(fitness)>=0?'ok':'no'}">${esc(fitness)}</span>`)
+    +kv('Experience tasks',S0(expTasks))
+    +kv('Model',S0(modelId))
+    +kv('Multi-family PoLL',mi?'<span class="ok">✓ yes</span>':'<span class="no">✗ no — single family</span>')
+    +kv('Visibility',S0(r.visibility_tier))
+    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  // Show sibling personas from /status for context
+  if((ns.personas||[]).length>1){
+    html+=H('All personas in run');
+    html+=(ns.personas||[]).map((p)=>{
+      const f=p.fitness!=null?p.fitness.toFixed(2):'—';
+      const active=p.lifecycle_state==='ACTIVE';
+      const me=p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid));
+      return `<div class="grant"><span>${me?'<b>':''}${esc(p.role||p.persona_id)}${me?'</b>':''}</span>`
+        +`<span class="l2">fitness <span class="${parseFloat(f)>=0?'ok':'no'}">${esc(f)}</span>`
+        +` · tasks ${esc(p.experience_tasks??0)}`
+        +` · <span class="${active?'ok':'dim'}">${esc(p.lifecycle_state||'—')}</span></span></div>`;
+    }).join('');
+  }
   const eid=envRecId(), bid=bundleRecId(); let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.profile))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
-  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(c.name||r.label)}`, html};
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(role==='—'?r.label:role)}`, html};
 }
 async function envView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
-  const d=await dfetch(base,L.export)||{}; const env=d.environment||{}, mr=d.model_registry||{};
-  const caps=mr.capabilities||[], active=(d.discovered_models||{}).active_model_id, members=d.members||[];
-  const norms=((d.charter||{}).payload||{}).charter_text||[], rules=d.rules||[];
-  let html=kv('Environment',esc(env.environment_id||r.did))+kv('Type',esc(env.type||'—'))
-    +kv('Status',`<span class="ok">${esc(env.status||'—')}</span>`)+kv('Visibility',esc(env.visibility_tier||r.visibility_tier))
+  // export endpoint not implemented — pull everything from live /status
+  const ns=await fetchNodeStatus(base)||{};
+  const pop=ns.population||{};
+  const personas=ns.personas||[];
+  const mi=ns.model_independence===true;
+  const pfmm=ns.poll_family_minimum_met===true;
+  const activeRun=ns.active_run||ns.current_run||'—';
+  const genesisTriggered=!!(ns.genesis_triggered||ns.genesis_fired);
+  const currentRound=ns.current_round||ns.round||'—';
+  let html=kv('Environment',esc(r.did||r.label))
+    +kv('Visibility',esc(r.visibility_tier))
+    +kv('Population',`${pop.current??personas.length} / ${pop.ceiling??'—'}`)
+    +kv('Genesis triggered',genesisTriggered?'<span class="ok">yes</span>':'<span class="dim">no</span>')
+    +kv('Active run',esc(activeRun))
+    +kv('Current round',esc(currentRound))
+    +kv('Multi-family PoLL',pfmm?'<span class="ok">✓ met</span>':'<span class="no">✗ single-family — PoLL degraded</span>')
+    +kv('Model independence',mi?'<span class="ok">✓ yes</span>':'<span class="no">✗ no</span>')
     +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  html+=H(`Personas · members (${members.length})`)+(members.map((pid)=>{ const rid=findRecByDid(pid);
-    return `<div class="grant">${rid?recLink(rid,pid):esc(pid)}<span class="l2">member</span></div>`; }).join('')||'<span class="l2">—</span>');
-  html+=H(`Models available (${caps.length})`)+(caps.map((cp)=>`<div class="grant"><span>${esc(cp.model_id)}${cp.model_id===active?' <span class="ok">● active</span>':''}</span>`
-    +`<span class="l2">${esc(cp.backend||'')} · ${esc(cp.provider||'')}</span></div>`).join('')||'<span class="l2">—</span>');
-  if(norms.length) html+=H('Charter norms')+norms.map((n)=>`<div class="desc2">• ${esc(n)}</div>`).join('');
-  if(rules.length) html+=H(`Env rules (${rules.length})`)+rules.map((ru)=>{ const p=ru.payload||ru; return `<div class="desc2">• ${esc(p.rule_name||p.description||'rule')}</div>`; }).join('');
+  if(personas.length){
+    html+=H(`Personas (${personas.length})`);
+    html+=personas.map((p)=>{
+      const fit=p.fitness!=null?p.fitness.toFixed(2):'—';
+      const active=p.lifecycle_state==='ACTIVE';
+      const rid=findRecByDid(p.persona_id)||findRecByDid('did:personaos:'+p.persona_id);
+      const label=rid?recLink(rid,p.role||p.persona_id):esc(p.role||p.persona_id);
+      return `<div class="grant">${label}<span class="l2">`
+        +`fitness <span class="${parseFloat(fit)>=0?'ok':'no'}">${esc(fit)}</span>`
+        +` · tasks ${esc(p.experience_tasks??0)}`
+        +` · <span class="${active?'ok':'dim'}">${esc(p.lifecycle_state||'—')}</span>`
+        +`</span></div>`;
+    }).join('');
+  }
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
   if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
-  return {title:`<span class="kind k-env">ENV</span> ${esc(env.name||r.label)}`, html};
+  return {title:`<span class="kind k-env">ENV</span> ${esc(r.label)}`, html};
 }
 // ---------- deliverable-bundle artifact TREE ----------
 // Bundle-export artifacts carry their package-relative path in `title` (e.g. cad/board.step,
@@ -698,11 +753,36 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
 }
-async function telemetryView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base; const s=await dfetch(base,L.summary)||{};
-  const ec=Object.entries(s.lineage_event_counts||{}).sort((a,b)=>b[1]-a[1]).slice(0,14);
-  let html=kv('Feed',esc(r.label))+kv('OTel spans',esc(s.otel_spans||0))+kv('Lineage events',esc(s.lineage_events||0))
-    +kv('Scopes',esc(s.lineage_scopes||0))+kv('Access','consent-gated (read+ &amp; ConsentLedger pin)')+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  html+=H('Event kinds')+(ec.map(([k,v])=>`<div class="grant"><span>${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('')||'<span class="l2">—</span>');
+async function telemetryView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
+  // summary endpoint not implemented — use /status + telemetry/live/latest.json
+  const ns=await fetchNodeStatus(base)||{};
+  const tel=await fetchJson(join(base,'telemetry/live/latest.json'))||{};
+  const events=tel.events||tel.ring||[];
+  const activeRun=ns.active_run||ns.current_run||'—';
+  const currentRound=ns.current_round||ns.round||'—';
+  // tally event purposes / kinds from the ring buffer
+  const purposeCounts={};
+  for(const e of events){ const p=e.purpose||e.event_type||e.kind||e.event||'other'; purposeCounts[p]=(purposeCounts[p]||0)+1; }
+  const topPurposes=Object.entries(purposeCounts).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const modelEvents=events.filter((e)=>(e.event||e.event_type||'').includes('MODEL')||(e.purpose||'').includes('model'));
+  let html=kv('Feed',esc(r.label))
+    +kv('Active run',esc(activeRun))
+    +kv('Current round',esc(currentRound))
+    +kv('Ring buffer events',esc(events.length))
+    +kv('Model call events',esc(modelEvents.length))
+    +kv('Access','consent-gated (read+ &amp; ConsentLedger pin)')
+    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+  if(topPurposes.length){
+    html+=H('Event purposes (ring)');
+    html+=topPurposes.map(([k,v])=>`<div class="grant"><span>${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
+  } else {
+    html+=H('Event purposes')+`<span class="l2">ring empty — node idle or not yet streaming</span>`;
+  }
+  const recentModel=modelEvents.slice(-6).reverse();
+  if(recentModel.length){
+    html+=H('Recent model calls');
+    html+=recentModel.map((e)=>`<div class="grant"><span class="l2">${esc(e.event||e.event_type||'')}</span><span>${esc(e.model||e.model_id||'—')}</span></div>`).join('');
+  }
   if(L.snapshot) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.snapshot))}" target="_blank" rel="noopener">telemetry snapshot →</a></div>`;
   return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`, html};
 }
@@ -921,11 +1001,15 @@ function setStat(el,label,val){ const v=$(el);
 function renderStats(){
   const box=$('#stats');
   if(!box.dataset.built){ box.dataset.built='1';
-    box.innerHTML=['personas','records','kernels','events','evs','verified','clock'].map((k)=>
-      `<div class="stat" id="st-${k}"><div class="v">0</div><div class="k">${k==='evs'?'ev/s':k==='clock'?'utc':k}</div></div>`).join(''); }
+    box.innerHTML=['personas','pop','records','kernels','events','evs','verified','clock'].map((k)=>
+      `<div class="stat" id="st-${k}"><div class="v">${k==='pop'?'—/—':'0'}</div><div class="k">${k==='evs'?'ev/s':k==='clock'?'utc':k==='pop'?'pop':k}</div></div>`).join(''); }
   let personas=0,verified=0; for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona')personas++; verified++; }
   const eps=S.epsWin.length;
+  // non-blocking: pull population from any cached /status hit
+  let pop='—/—';
+  for(const [,hit] of statusCache){ if(hit&&hit.v&&hit.v.population){ const p=hit.v.population; pop=`${p.current??'?'}/${p.ceiling??'?'}`; break; } }
   setStat('#st-personas','personas',personas);
+  setStat('#st-pop','pop',pop);
   setStat('#st-records','records',S.recs.size);
   setStat('#st-kernels','kernels',S.kernels.size||1);
   setStat('#st-events','events',S.evCount.toLocaleString());
