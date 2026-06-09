@@ -13,7 +13,7 @@
 #
 # Live PersonaOS node (kernel:dea359c0e1cc67d5) exposed via a Cloudflare
 # quick-tunnel:
-https://critics-johnny-proper-northern.trycloudflare.com
+https://talked-chair-memphis-constitution.trycloudflare.com
 #
 # A visitor's OWN local node, if they happen to run one. Harmless when absent —
 # the fetch just fails and discovery moves on. On an intranet, open the

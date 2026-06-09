@@ -28,8 +28,9 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{}, mapByKernel:{}, telLoaded:new Set(), keys:new Map(), boots:new Map(), streams:new Map(),
-  p2pBootstraps:new Set(), views:[], curBase:'', bundleDirs:new Set(), bundleDirsOpen:new Set() };
+  map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), boots:new Map(),
+  streams:new Map(), p2pBootstraps:new Set(), views:[], curBase:'',
+  bundleDirs:new Set(), bundleDirsOpen:new Set() };
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -151,7 +152,7 @@ async function discover(){
   for(const b of await resolveKernelBases(seeds)){
     const res=await discoverFrom(b,'internet'); res.found.forEach(upsert);
     if(res.boot) connectDiscoveryStream(b,res.boot);
-    if(res.boot && !S.telLoaded.has(b)){ await loadTelemetry(b); S.telLoaded.add(b); }   // aggregate each kernel's tape
+    if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
   classifyMap(); buildRows(); buildTicker(); renderStats();
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
@@ -201,27 +202,66 @@ function connectDiscoveryStream(base,boot){
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
 async function loadTelemetry(base){
   const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
-  const url=boot?.live_telemetry_url||boot?.telemetry_url||'telemetry/spans.json';
-  const spans=await fetchJson(join(base,url));
-  if(spans && !Array.isArray(spans)){
-    appendTelemetryEvent(spans,base,boot,spans.reason||'LIVE_TELEMETRY');
-    log('telemetry','live node telemetry snapshot loaded');
-    return;
-  }
-  if(!Array.isArray(spans)||!spans.length){ return; }
+  if(!boot) return;
   const kid=boot.kernel_id||base;
-  const evs=spans.map((s)=>{ const a=s.attributes||{};
-    return { t:Date.parse(s.ended_at||s.started_at||'')||0, kernel:kid,
-      scope:String(a['personaos.lineage.scope']||(s.name||'').split('.').pop()||'other'),
-      kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'), trace:String(a['personaos.trace_id']||s.span_id||''),
-      signed:a['personaos.lineage.signed']!==false, ms:Number(a['personaos.lineage.append_ms']||0) }; })
-    .filter((e)=>e.kind);
+  let added=0;
+  const pushEvent=(e)=>{
+    const key=e.key||`${e.kernel}|${e.trace}|${e.kind}|${e.t}`;
+    if(S.eventKeys.has(key)) return;
+    S.eventKeys.add(key);
+    delete e.key;
+    S.events.push(e);
+    added++;
+  };
+  const ingestSpans=(spans)=>{
+    if(!Array.isArray(spans)||!spans.length) return;
+    spans.forEach((s)=>{
+      const a=s.attributes||{};
+      const t=Date.parse(s.ended_at||s.started_at||'')||0;
+      pushEvent({
+        key:`span|${kid}|${s.span_id||''}|${a['personaos.trace_id']||''}|${s.name||''}|${t}`,
+        t, kernel:kid,
+        scope:String(a['personaos.lineage.scope']||(s.name||'').split('.').pop()||'other'),
+        kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'), trace:String(a['personaos.trace_id']||s.span_id||''),
+        signed:a['personaos.lineage.signed']!==false, ms:Number(a['personaos.lineage.append_ms']||0)
+      });
+    });
+  };
+  const ingestLive=(live)=>{
+    const modelEvents=live?.kernel?.model_events||[];
+    if(!Array.isArray(modelEvents)||!modelEvents.length) return;
+    const baseT=Date.parse(live.generated_at||'')||Date.now();
+    modelEvents.forEach((m,i)=>{
+      const purpose=String(m.requested_purpose||m.purpose||'model');
+      pushEvent({
+        key:`live|${kid}|${i}|${m.kind||''}|${m.model_id||''}|${purpose}|${m.role||''}|${m.reason||''}`,
+        t:baseT-((modelEvents.length-i)*220), kernel:kid,
+        scope:'telemetry',
+        kind:String(m.kind||'MODEL_EVENT'),
+        trace:String(m.reason||purpose||m.model_id||'live'),
+        signed:false, ms:0,
+      });
+    });
+  };
+  const spansUrls=[];
+  if(boot.telemetry_url) spansUrls.push(boot.telemetry_url);
+  if(boot.telemetry_spans_url) spansUrls.push(boot.telemetry_spans_url);
+  if(!boot.live_telemetry_url) spansUrls.push('telemetry/spans.json');
+  for(const url of [...new Set(spansUrls)]){
+    const spans=await fetchJson(join(base,url));
+    ingestSpans(spans);
+  }
+  if(boot.live_telemetry_url){
+    const live=await fetchJson(join(base,boot.live_telemetry_url));
+    ingestLive(live);
+  }
+  if(!added){ return; }
   // aggregate across kernels, re-sort by time, normalise inter-event gaps to a lively cadence
-  S.events=(S.events||[]).concat(evs).sort((a,b)=>a.t-b.t);
+  S.events=(S.events||[]).sort((a,b)=>a.t-b.t);
   let prev=S.events[0]?.t||0;
   S.events.forEach((e)=>{ const g=e.t-prev; prev=e.t; e.gap=Math.max(90,Math.min(900,g||300)); });
   if(S.events.length) S.events[0].gap=0;
-  log('telemetry',`+${evs.length} signed OTel spans (${S.events.length} total) for the live tape`);
+  log('telemetry',`+${added} telemetry event(s) (${S.events.length} total) for the live tape`);
 }
 
 
