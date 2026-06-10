@@ -12,10 +12,12 @@
 # (harmless); add a live node with `?peer=<url>` or the "＋ PEER" button.
 #
 # Live PersonaOS node (kernel:dea359c0e1cc67d5) exposed via a Cloudflare
-# quick-tunnel:
-https://talked-chair-memphis-constitution.trycloudflare.com
+# quick-tunnel — running the 10W dc-to-ac manufacture-ready mission with
+# cross-family PoLL attestation (codex producers, claude verifier):
+https://freely-textile-data-encourage.trycloudflare.com
 #
 # A visitor's OWN local node, if they happen to run one. Harmless when absent —
 # the fetch just fails and discovery moves on. On an intranet, open the
-# node-served UI directly at http://localhost:8799/ to avoid mixed-content.
+# node-served UI directly at the node's own port to avoid mixed-content.
 http://localhost:8799
+http://localhost:8805

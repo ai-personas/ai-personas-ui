@@ -177,3 +177,15 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .fv-card .row{border-bottom:1px solid var(--line)}
 /* pdf */
 .fv-pdf{width:100%;height:480px;border:1px solid var(--line2);border-radius:6px;background:#06090e}
+
+
+/* global kernel strip — every kernel seen via HTTP federation, gossip or the
+   libp2p mesh, with a freshness dot (seen <45s ago = live). */
+.globalbar{display:flex;align-items:center;gap:10px;padding:4px 14px;border-bottom:1px solid var(--line,#1d2530);
+  font-size:11px;overflow-x:auto;white-space:nowrap}
+.globalbar-label{color:var(--dim,#5c6b7a);letter-spacing:.12em;font-weight:600}
+.globalbar-list{display:inline-flex;gap:14px}
+.gk{display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.gk .dot{width:7px;height:7px;border-radius:50%;background:#3a4654;display:inline-block}
+.gk .dot.live{background:#2ecc71;box-shadow:0 0 6px #2ecc71}
+.gk .n.k{background:#28435c;color:#9fc6ee}

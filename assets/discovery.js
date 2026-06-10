@@ -84,7 +84,52 @@ async function discoverFrom(base,plane){
     log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${out.ok?'OK':'FAIL'}`,out.ok);
     if(out.ok) found.push(out.row);
   }
+  // GLOBAL P2P PLANE: a node running the libp2p bridge serves the verified
+  // records it RECEIVED over gossipsub (discovery/p2p/received.json) — records
+  // from kernels anywhere on the mesh, re-verified here against each record's
+  // embedded key before joining the board (NET = P2P).
+  const p2pDoc=await fetchJson(join(base,'discovery/p2p/received.json'));
+  for(const doc of (p2pDoc?.records||[])){
+    if(!doc?.record || doc.record.visibility_tier!=='public') continue;
+    let ok=false;
+    try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){}
+    if(!ok) continue;
+    const k=doc.host_kernel_id||doc.kernel_id||'p2p';
+    S.kernels.add(k); noteKernel(k,'p2p',doc.base||'');
+    found.push({...doc.record,_kernel:k,_url:'',_access:doc.access_policy||{},
+      _links:doc.links||{},_base:doc.base||'',_plane:'internet',_net:'p2p',_doc:doc});
+  }
+  // HTTP gossip cache: cards a peer pushed at this node (§3B). Cards marked
+  // unverified by the receiving node are listed but never trusted with links.
+  const gossip=await fetchJson(join(base,'gossip/cache'));
+  for(const id in (gossip?.cards||gossip||{})){
+    const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
+    const k=card._originating_kernel||'gossip';
+    if(card.kind||card.record_id){ S.kernels.add(k); noteKernel(k,'gossip',''); }
+  }
+  if(boot.kernel_id) noteKernel(boot.kernel_id,'http',base||location.origin);
   return {boot,found};
+}
+
+// ---------- global kernel tracker (the "across the globe" strip) ----------
+function noteKernel(kernelId,via,base){
+  if(!kernelId) return;
+  const g=S.globalKernels=(S.globalKernels||new Map());
+  const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),lastSeen:0};
+  cur.via.add(via); if(base) cur.bases.add(base); cur.lastSeen=Date.now();
+  g.set(kernelId,cur);
+}
+function renderGlobalKernels(){
+  const el=$('#globalKernels'); if(!el) return;
+  const g=S.globalKernels||new Map();
+  if(!g.size){ el.innerHTML='<span class="dim">no kernels discovered yet</span>'; return; }
+  const now=Date.now();
+  el.innerHTML=[...g.entries()].map(([kid,info])=>{
+    const fresh=(now-info.lastSeen)<45000;
+    const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'?'m':'k'}">${v.toUpperCase()}</span>`).join('');
+    return `<span class="gk ${fresh?'ok':'dim'}" title="${esc([...info.bases].join(' '))}">`
+      +`<span class="dot ${fresh?'live':''}"></span>${esc(kid.replace(/^kernel:/,'').slice(0,12))} ${via}</span>`;
+  }).join(' ');
 }
 // Peers come from three sources, merged + de-duped: the ?peer= query params, the
 // "＋ PEER" localStorage list, and the published peers.txt file (fetched at boot).
@@ -107,7 +152,8 @@ function upsert(r){
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
-    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,
+    planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
+
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
 function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
@@ -154,7 +200,7 @@ async function discover(){
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
-  classifyMap(); buildRows(); buildTicker(); renderStats();
+  classifyMap(); buildRows(); buildTicker(); renderStats(); renderGlobalKernels();
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
     +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`;
 }
@@ -949,7 +995,8 @@ function relTime(t){ if(!t) return '—'; const s=(Date.now()-t)/1000;
   if(s<60) return s.toFixed(0)+'s'; if(s<3600) return (s/60).toFixed(0)+'m'; return (s/3600).toFixed(0)+'h'; }
 
 function rowHTML(r){
-  const net=r.planes.map((p)=>p==='internet'?'<span class="n i">DHT</span>':'<span class="n m">mDNS</span>').join('');
+  const net=(r._net==='p2p'?'<span class="n i">P2P</span>':'')
+    +r.planes.map((p)=>p==='internet'?'<span class="n i">DHT</span>':'<span class="n m">mDNS</span>').join('');
   const live=r.rate>0.05;
   return `<td class="l"><span class="sym" title="${esc(r.did)}">${esc(r.label)}</span><div class="did">${esc((r.did||'').slice(0,30))} · ${esc((r._kernel||'').slice(0,16))}</div></td>`
     +`<td><span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span></td>`
