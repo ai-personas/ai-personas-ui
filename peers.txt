@@ -12,9 +12,10 @@
 # (harmless); add a live node with `?peer=<url>` or the "＋ PEER" button.
 #
 # Live PersonaOS node (kernel:dea359c0e1cc67d5) exposed via a Cloudflare
-# quick-tunnel — running the 10W dc-to-ac manufacture-ready mission with
-# cross-family PoLL attestation (codex producers, claude verifier):
-https://freely-textile-data-encourage.trycloudflare.com
+# quick-tunnel — running the tempconv library mission with the audit5/6/7
+# design-alignment fixes (operator bearer-token authority, signed bridging,
+# live cognitive modes, sandbox auto-install):
+https://aurora-barriers-bring-usually.trycloudflare.com
 #
 # A visitor's OWN local node, if they happen to run one. Harmless when absent —
 # the fetch just fails and discovery moves on. On an intranet, open the

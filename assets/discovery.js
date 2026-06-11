@@ -84,7 +84,9 @@ async function discoverFrom(base,plane){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
   const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
-  if(!boot){ log('bootstrap',`no endpoint at ${where}`,false); return {boot:null,found:[]}; }
+  S.peerHealth=(S.peerHealth||new Map());
+  if(!boot){ log('bootstrap',`no endpoint at ${where}`,false);
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   if(boot.kernel_id) S.kernels.add(boot.kernel_id);
   const keys=await keysFor(base,boot);
@@ -123,6 +125,7 @@ async function discoverFrom(base,plane){
     if(card.kind||card.record_id){ S.kernels.add(k); noteKernel(k,'gossip',''); }
   }
   if(boot.kernel_id) noteKernel(boot.kernel_id,'http',base||location.origin);
+  S.peerHealth.set(where,{ok:true,records:found.length,kernel:boot.kernel_id||'',t:Date.now()});
   return {boot,found};
 }
 
@@ -216,8 +219,46 @@ async function discover(){
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
   classifyMap(); buildRows(); buildTicker(); renderStats(); renderGlobalKernels();
+  renderEmptyState();
+  const when=new Date();
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
-    +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`;
+    +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
+    +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
+}
+
+// ---------- empty state: never a silent blank board ----------
+function renderEmptyState(){
+  const el=$('#emptystate'); if(!el) return;
+  const table=document.querySelector('.watch');
+  if(S.recs.size){ el.hidden=true; if(table) table.style.display=''; return; }
+  if(table) table.style.display='none';
+  const ph=S.peerHealth||new Map();
+  const rows=[...ph.entries()].map(([base,h])=>
+    `<div class="grant"><span class="${h.ok?'ok':'no'}">${h.ok?'●':'○'} ${esc(base)}</span>`
+    +`<span class="l2">${h.ok?`reachable · ${h.records} public record(s)`:'unreachable'}</span></div>`).join('')
+    ||'<div class="l2">no peers attempted yet</div>';
+  const httpsPage=location.protocol==='https:';
+  el.innerHTML=`<div class="empty-card">
+    <h3>No live PersonaOS records discovered yet</h3>
+    <div class="desc2">This page ships <b>no data</b> — everything you see is discovered at
+    runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
+    no reachable node is currently publishing public records.</div>
+    <h4>Peers tried</h4>${rows}
+    <h4>Get live data</h4>
+    <div class="desc2">
+    1 · Run a node: <code>python -m personaos.node --budget 8 --public-discovery</code><br>
+    ${httpsPage?`2 · This page is <b>https://</b> — browsers block fetches to a plain-http
+    LAN/localhost node (mixed content). Either open the <b>node-served UI</b> at
+    <code>http://&lt;node-host&gt;:&lt;port&gt;/</code> (same shell, same-origin), or expose the
+    node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
+    and add the tunnel URL with <b>＋ PEER</b>.`:`2 · Add your node's URL with <b>＋ PEER</b>
+    (or <code>?peer=&lt;url&gt;</code>).`}<br>
+    3 · The board re-polls every 15 s — records appear the moment a node responds.<br>
+    4 · Your own node? Click <b>🔑 OPERATOR</b>, paste its token
+    (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
+    personas, live telemetry.</div>
+  </div>`;
+  el.hidden=false;
 }
 
 function appendTelemetryEvent(payload,base,boot,reason){
