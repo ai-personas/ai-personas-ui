@@ -83,6 +83,29 @@ Click any discovered record for deep, verified detail:
 A real-time terminal UI (ticker, ticking watchlist, streaming event tape) makes the live network
 legible; filters by plane / kind / text; pause / replay.
 
+## Operator console — drive your own node from the portal
+
+Anonymous visitors see each node's **public discovery projection only**: the public status
+card, the operator-opted public aggregate, and the linked surface docs of records the
+operator explicitly promoted public. Run state, personas, telemetry and the raw run tree are
+**read-gated** (09_PROTOCOLS §3G.3 — `discover < read`).
+
+Authority is a **bearer token, never network position** (not even loopback). Each node mints
+a per-install token at boot (printed on the console; stored at `runs/…/_operator/token`).
+Click **🔑 OPERATOR**, save `node base URL + token`, and the portal unlocks for that node:
+
+- **full node status** — personas, runs, paused missions, budget, lineage durability;
+- **⚡ ASK** — submit a task as the owner (`POST /task`); **💰 FUND** — grant budget to resume
+  a paused mission (`POST /budget`); **⏹ STOP** — halt a running mission as a signed operator
+  intervention (`POST /stop`);
+- run drill-down — live run state, artifact lists, per-objective **evidence basis**;
+- the SSE stream and every fetch to that node carry the token (`Authorization: Bearer …`,
+  `?token=` for `EventSource`).
+
+Tokens are kept in `localStorage` in **your** browser only. A page without a token can never
+mint authority — cross-origin browser requests to someone's node get the public projection
+and signed refusals, by design (audit5 A5-01/A5-08).
+
 ## Run locally
 
 ```bash

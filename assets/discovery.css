@@ -189,3 +189,13 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .gk .dot{width:7px;height:7px;border-radius:50%;background:#3a4654;display:inline-block}
 .gk .dot.live{background:#2ecc71;box-shadow:0 0 6px #2ecc71}
 .gk .n.k{background:#28435c;color:#9fc6ee}
+/* operator console (bearer-token authority) */
+#opbtn.on{border-color:var(--up);color:var(--up)}
+.opform{display:flex;flex-direction:column;gap:7px;margin:6px 0}
+.opform input,.opform textarea{background:#070b10;border:1px solid var(--line2);border-radius:5px;
+  color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 8px;width:100%;box-sizing:border-box}
+.opform textarea{resize:vertical;min-height:54px}
+.oprow{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.oprow input{width:auto;flex:1;min-width:110px}
+.opout{background:#070b10;border:1px solid var(--line2);border-radius:5px;color:var(--dim);
+  font-size:10.5px;padding:7px 9px;white-space:pre-wrap;max-height:220px;overflow:auto;margin:6px 0 0}

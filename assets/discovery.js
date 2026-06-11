@@ -23,7 +23,22 @@ async function verifyRecord(doc,keys){
 const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
-async function fetchJson(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.json(); }catch(e){ return null; } }
+/* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
+   The node mints a per-install token (printed at boot, stored under runs/.../_operator/token).
+   Saved per node base in localStorage; every fetch to that base carries it, unlocking owner
+   intake (/task /budget /stop), full /status, /runs, /personas and the gated static tree.
+   Anonymous viewers keep working — they see each node's public discovery projection only. */
+function opTokens(){ try{ return JSON.parse(localStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; } }
+function opSaveTokens(m){ localStorage.setItem('personaos_operator',JSON.stringify(m)); updateOpBadge(); }
+const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
+function tokenFor(u){ const m=opTokens(); const abs=isAbs(u)?u:join(location.origin,u);
+  let best='',tok=''; for(const k in m){ if(abs.startsWith(k)&&k.length>best.length){ best=k; tok=m[k]; } }
+  return tok; }
+function authHeaders(u){ const t=tokenFor(u); return t?{'Authorization':'Bearer '+t}:{}; }
+function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
+  const n=Object.keys(opTokens()).length; b.classList.toggle('on',n>0);
+  b.textContent=n>0?`🔑 OPERATOR · ${n}`:'🔑 OPERATOR'; }
+async function fetchJson(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null; return await r.json(); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
@@ -220,7 +235,9 @@ function connectDiscoveryStream(base,boot){
   if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
   if(S.streams.has(url)) return;
-  const es=new EventSource(url);
+  // EventSource cannot set headers — the operator token rides ?token= instead.
+  const tok=tokenFor(url); const esUrl=tok?url+(url.includes('?')?'&':'?')+'token='+encodeURIComponent(tok):url;
+  const es=new EventSource(esUrl);
   S.streams.set(url,es);
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
   es.addEventListener('hello',(ev)=>{
@@ -360,10 +377,10 @@ async function fetchNodeStatus(base){
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
   return (did||'').replace('did:personaos:',''); }
-async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
+async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
 // Binary-safe fetch for images / PDFs / 3D meshes — returns {blob,size,type} or null.
 // Binaries are detected by extension BEFORE this is called so fetchText is never run on them.
-async function fetchBlob(u){ try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok)return null;
+async function fetchBlob(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null;
   const b=await r.blob(); return {blob:b,size:b.size,type:b.type}; }catch(e){ return null; } }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -937,6 +954,85 @@ async function missionView(r){
   if(ref.manufacturability_ceiling) html+=H('Manufacturability ceiling (honest)')+`<div class="l2">${esc(ref.manufacturability_ceiling)}</div>`;
   return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html};
 }
+/* ---------- operator console views ---------- */
+async function opPost(base,path,body){ const u=join(base,path);
+  try{ const r=await fetch(u,{method:'POST',
+      headers:{'Content-Type':'application/json',...authHeaders(u)},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({})); return {status:r.status,body:d}; }
+  catch(e){ return {status:0,body:{error:String(e&&e.message||e)}}; } }
+
+async function operatorView(){
+  const m=opTokens(); const bases=Object.keys(m);
+  let html=H('Operator authority — a bearer token, never network position')
+    +`<div class="desc2">Each node mints a per-install token (printed at boot; stored at `
+    +`<code>runs/…/_operator/token</code>). Paste it here to unlock that node's owner intake `
+    +`(ASK / FUND / STOP), full status, runs, personas and the read-gated run tree. Without a `
+    +`token this page shows each node's public discovery projection only — by design.</div>`;
+  html+=H('Add a node')+`<div class="opform">`
+    +`<input id="op-base" type="url" placeholder="node base URL, e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}">`
+    +`<input id="op-token" type="password" placeholder="operator token">`
+    +`<button class="btn" data-act="op-save">SAVE</button></div>`;
+  html+=H(`Operator nodes (${bases.length})`);
+  for(const b of bases){ html+=`<div class="grant"><span>${esc(b)}</span>`
+    +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a> · `
+    +`<a href="#" data-act="op-del" data-base="${esc(b)}">forget ✕</a></span></div>`; }
+  if(!bases.length) html+=`<div class="l2">no operator tokens saved — this browser is an anonymous public viewer</div>`;
+  return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
+}
+
+async function operatorNodeView(b){
+  const st=await fetchJson(join(b,'status'))||{};
+  const pub=st.schema==='personaos-node-status-public/1';
+  const S0=(v)=>esc((v===''||v==null)?'—':v);
+  let html='';
+  if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Re-save the token in the operator console.</div>`;
+  html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
+    +kv('Lineage',st.lineage_durable?'<span class="ok">durable ✓</span>':(pub?'—':'<span class="no">in-memory only</span>'))
+    +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
+    +kv('Artifact tier',S0(st.artifact_tier))
+    +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
+  const personas=st.personas||[];
+  if(personas.length) html+=H(`Personas (${personas.length})`)+personas.map((p)=>
+    `<div class="grant"><span>${esc(p.name||p.persona_id)}</span>`
+    +`<span class="l2">${esc(p.lifecycle_state||'')} · ${esc(p.experience_tasks??0)} task(s) · fit ${esc(p.fitness??'—')}</span></div>`).join('');
+  const runs=st.runs||[];
+  if(runs.length) html+=H(`Runs (${runs.length})`)+runs.slice(-12).reverse().map((r)=>{
+    const id=typeof r==='string'?r:(r.run||r.run_id||'');
+    return `<div class="grant"><span><a href="#" data-act="op-run" data-base="${esc(b)}" data-run="${esc(id)}">${esc(id)}</a></span>`
+      +`<span class="l2">${esc(typeof r==='object'?(r.status||''):'')}</span></div>`; }).join('');
+  const paused=st.paused_missions||[];
+  if(paused.length) html+=H(`Paused missions (${paused.length}) — fund to resume`)+paused.map((p)=>
+    `<div class="grant"><span>${esc(p.run||p.run_id||'')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
+  html+=H('Ask the node — owner intake')
+    +`<div class="opform"><textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea>`
+    +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget (optional)">`
+    +`<button class="btn" data-act="op-ask" data-base="${esc(b)}">⚡ ASK</button>`
+    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}">💰 FUND</button>`
+    +`<input id="op-run-target" placeholder="run id (stop / fund target, optional)">`
+    +`<button class="btn" data-act="op-stop" data-base="${esc(b)}">⏹ STOP</button></div>`
+    +`<pre id="op-out" class="opout"></pre></div>`;
+  return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
+}
+
+async function operatorRunView(b,run){
+  const st=await fetchJson(join(b,'runs/'+encodeURIComponent(run)))||{};
+  const arts=await fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts'))||{};
+  const S0=(v)=>esc((v===''||v==null)?'—':v);
+  const rs=st.run_state||{};
+  let html=kv('Run',S0(run))+kv('Status',`<span class="${rs.status==='running'?'ok':''}">${S0(rs.status)}</span>`)
+    +kv('Task',S0((rs.task||'').slice(0,160)));
+  const dh=st.design_history; if(dh&&dh.final_status) html+=kv('Final',S0(dh.final_status))
+    +kv('Best score',S0(dh.best_so_far_score!=null?Number(dh.best_so_far_score).toFixed(4):null));
+  const files=arts.package_files||arts.files||[];
+  if(files.length) html+=H(`Artifacts (${files.length})`)+files.slice(0,80).map((f)=>
+    `<div class="grant"><span>${esc(typeof f==='string'?f:(f.path||f.title||''))}</span>`
+    +`<span class="l2">${esc(typeof f==='object'?(f.size??''):'')}</span></div>`).join('');
+  const ev=st.objective_evidence||(dh&&dh.objective_evidence);
+  if(ev) html+=H('Objective evidence basis')+Object.entries(ev).map(([n,e2])=>
+    `<div class="grant"><span>${esc(n)}</span><span class="l2">${esc((e2||{}).evidence_strength||'—')}</span></div>`).join('');
+  return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
+}
+
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
   const L=r._links||{};
   if(r.kind==='artifact' && L.media_kind==='design_history') return missionView(r);
@@ -1097,6 +1193,9 @@ function wire(){
   $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
     try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
     localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(buildRows); });
+  $('#opbtn').addEventListener('click',()=>{ S.views=[()=>operatorView()];
+    $('#detailwrap').classList.add('open'); renderTop(); });
+  updateOpBadge();
   // click any record row → detail drawer (deep-resolves env members, persona profile, artifacts)
   $('#rows').addEventListener('click',(e)=>{ const tr=e.target.closest('tr'); if(!tr||!tr.id) return; openDetail(tr.id.replace(/^r-/,'')); });
   // in-drawer navigation: follow links to other records / bundles / artifact files
@@ -1108,6 +1207,23 @@ function wire(){
       if(wasCollapsed){ S.bundleDirs.delete(key); S.bundleDirsOpen.add(key); }
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
+    if(act==='op-save'){ const nb=opBaseKey($('#op-base').value.trim()), tv=$('#op-token').value.trim();
+      if(nb&&tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); } return; }
+    if(act==='op-del'){ const m2=opTokens(); delete m2[a.dataset.base]; opSaveTokens(m2);
+      S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
+    if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
+    if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
+    if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
+      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); };
+      if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; return; }
+        const body={text}; const bd=+($('#op-budget')?.value||0); if(bd>0) body.budget=bd;
+        if(out) out.textContent='submitting…'; opPost(b2,'task',body).then(show); }
+      else if(act==='op-fund'){ const bd=+($('#op-budget')?.value||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; return; }
+        const body={budget:bd}; const run=($('#op-run-target')?.value||'').trim(); if(run) body.run=run;
+        if(out) out.textContent='funding…'; opPost(b2,'budget',body).then(show); }
+      else { const body={}; const run=($('#op-run-target')?.value||'').trim(); if(run) body.run=run;
+        if(out) out.textContent='stopping…'; opPost(b2,'stop',body).then(show); }
+      return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null};
       pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,o)); }
