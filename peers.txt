@@ -1,24 +1,18 @@
 # PersonaOS discovery peer list — one node URL per line.
 #
 # At boot the portal fetches this file, then for every URL below it bootstraps
-# that node's `.well-known/personaos-discovery.json`, runs the Kademlia-style
-# provider lookup, resolves each record and **Ed25519-verifies it in-browser**
-# (exactly like adding `?peer=<url>` or the "＋ PEER" button). Blank lines and
-# lines starting with `#` are ignored. Trust is the Ed25519 signature, not the
-# host — a node reached through a relay/tunnel is verified the same as any other.
+# that node's .well-known/personaos-discovery.json, runs the provider lookup,
+# resolves each record and Ed25519-verifies it in-browser. Blank lines and
+# lines starting with '#' are ignored. Trust is the signature, not the host.
 #
-# NOTE: Cloudflare quick-tunnels are ephemeral — the URL below rotates whenever
-# the node restarts. If it is dead, the page simply discovers nothing from it
-# (harmless); add a live node with `?peer=<url>` or the "＋ PEER" button.
+# NOTE: Cloudflare quick-tunnel URLs ROTATE whenever the node restarts. If the
+# one below is dead, add a live node with ?peer=<url> or the "+ PEER" button.
 #
-# Live PersonaOS node (kernel:dea359c0e1cc67d5) exposed via a Cloudflare
-# quick-tunnel — running the tempconv library mission with the audit5/6/7
-# design-alignment fixes (operator bearer-token authority, signed bridging,
-# live cognitive modes, sandbox auto-install):
-https://aurora-barriers-bring-usually.trycloudflare.com
+# Live PersonaOS node (kernel:dea359c0e1cc67d5) on the current design-alignment
+# build (operator bearer-token authority, signed bridging, live cognitive modes,
+# sandbox auto-install, deliverable↔pathway coherence, design-derived UI):
+https://arena-quilt-sister-those.trycloudflare.com
 #
-# A visitor's OWN local node, if they happen to run one. Harmless when absent —
-# the fetch just fails and discovery moves on. On an intranet, open the
-# node-served UI directly at the node's own port to avoid mixed-content.
-http://localhost:8799
-http://localhost:8805
+# A visitor's OWN local node, if they run one (harmless when absent).
+http://localhost:8765
+http://localhost:8908
