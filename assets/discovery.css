@@ -206,3 +206,21 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 .empty-card h4{margin:14px 0 6px;color:var(--amber);font-size:11px;letter-spacing:.5px;text-transform:uppercase}
 .empty-card code{background:#070b10;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;font-size:11px}
 .empty-card .desc2{line-height:1.65}
+/* ---- design-derived UI: trust/access ladder, tier pills, evidence ---- */
+.ladder{display:flex;align-items:center;gap:3px;margin:4px 0 8px;flex-wrap:wrap}
+.ladder .rung{font-size:9.5px;letter-spacing:.4px;padding:2px 7px;border-radius:3px;
+  background:#0b1118;border:1px solid var(--line2);color:var(--mut);text-transform:uppercase}
+.ladder .rung.on{background:#10241a;border-color:var(--up);color:var(--up)}
+.ladder .arr{color:var(--mut);font-size:11px}
+.tier-pill{font-size:9.5px;letter-spacing:.4px;padding:2px 7px;border-radius:3px;
+  border:1px solid var(--line2);text-transform:uppercase}
+.t-public{background:#10241a;border-color:var(--up);color:var(--up)}
+.t-federation{background:#0e1b27;border-color:var(--int);color:var(--int)}
+.t-tenant,.t-project_only{background:#1a160b;border-color:var(--amber);color:var(--amber)}
+.t-persona_only{background:#1f1113;border-color:var(--down);color:var(--down)}
+.amber{color:var(--amber)}
+.stat.auth-read .v{color:var(--up)}
+.stat#st-auth .v{color:var(--amber);text-transform:uppercase;font-size:12px;letter-spacing:.4px}
+code{background:#070b10;border:1px solid var(--line);border-radius:3px;padding:1px 5px;font-size:10.5px;color:var(--ink)}
+.row2{display:flex;gap:10px;font-size:11px;padding:2px 0;border-bottom:1px solid var(--line)}
+.row2 span:first-child{color:var(--mut);min-width:34px}

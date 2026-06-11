@@ -431,89 +431,118 @@ const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
 const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(txt)}</a>`;
 const findRecByDid=(pid)=>S.order.find((id)=>{ const r=S.recs.get(id); return r.did==='did:personaos:'+pid||r.did===pid; });
+
+// ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
+// trust surface: Ed25519 verification + the discover<read<write<admin ladder).
+// Every detail view renders this so the viewer always sees WHY a record is
+// trusted and WHAT access tier it sits at. Bound to the record's _doc/_access.
+const ACCESS_RANK={discover:0,r:1,read:1,rw:2,write:2,admin:3};
+const TIER_RANK={persona_only:0,project_only:1,tenant:2,federation:3,public:4};
+function _ladderBar(level){
+  const lv=String(level||'discover').toLowerCase().replace('read','r').replace('write','rw');
+  const rungs=[['discover','discover'],['r','read'],['rw','write'],['admin','admin']];
+  const have=ACCESS_RANK[lv]??0;
+  return `<div class="ladder">`+rungs.map(([k,lbl],i)=>
+    `<span class="rung ${i<=have?'on':''}" title="${esc(lbl)}">${esc(lbl)}</span>`).join('<span class="arr">›</span>')+`</div>`;
+}
+function trustPanel(r){
+  const doc=r._doc||{}, a=r._access||doc.access_policy||{};
+  const keyId=doc.signing_key_id||'—';
+  const keyHex=(doc.public_key_hex||'').slice(0,18);
+  const tier=a.outward_tier||r.visibility_tier||'persona_only';
+  const grants=a.access_grants||[];
+  const anchor=r.content_hash?('sha256 '+String(r.content_hash).replace('sha256:','').slice(0,20)+'…')
+    :(r.content_locator_ref?('locator '+esc(String(r.content_locator_ref).slice(0,24))):'— (discover-level metadata only)');
+  let html=H('Trust · Ed25519')
+    +kv('Verified in browser','<span class="ok">✓ signature checked here</span>')
+    +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}…</span>`:''}`)
+    +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
+  html+=H('Access · '+esc(tier))+_ladderBar(r._effective_level||'discover')
+    +kv('Visibility tier',`<span class="tier-pill t-${esc(tier)}">${esc(tier)}</span>`)
+    +kv('Min to discover','discover')+kv('Min to read','read (operator token / owner)');
+  if(r.promoted_from_tier) html+=kv('Bridged from',`<span class="amber">${esc(r.promoted_from_tier)} → public</span>`
+    +(r.bridge_policy_ref?` <span class="l2">${esc(r.bridge_policy_ref)}</span>`:''));
+  html+=kv('Body',esc(anchor));
+  if(grants.length) html+=H(`Grants (${grants.length})`)+grants.slice(0,8).map((g)=>
+    `<div class="grant"><span>${esc(g.grantee_kind||'?')}:${esc((g.grantee_id||'*').slice(0,18))}</span>`
+    +`<span class="ok">${esc(g.access_level||'discover')}</span></div>`).join('');
+  return html;
+}
 const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind==='artifact' && r._links && r._links.bundle; });
 const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
 
 async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
   S.curBase=base;
-  // profile/export endpoints are not yet implemented — use live /status instead
-  const ns=await fetchNodeStatus(base)||{};
-  const pid=personaIdFromDid(r.did);
-  const ps=(ns.personas||[]).find((p)=>p.persona_id===pid||p.persona_id===r.did||(pid&&(p.persona_id||'').endsWith(pid)))||{};
-  const mi=ns.model_independence===true;
-  const fitness=ps.fitness!=null?ps.fitness.toFixed(2):'—';
-  const expTasks=ps.experience_tasks??'—';
+  // PersonaCard public projection (02_PERSONA): bind the SERVED profile doc
+  // (links.profile → personas/<id>.json). PER-04: the public card shows
+  // reputation_score [0,1] — never raw operator fitness (that lives only in
+  // the token-gated operator console). /status is a fallback for liveness.
+  const prof=(L.profile?await dfetch(base,L.profile):null)||{};
+  const ns=prof.persona_id?{}:(await fetchNodeStatus(base)||{});
+  const pid=prof.persona_id||personaIdFromDid(r.did);
+  const ps=prof.persona_id?prof:((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
+  const role=ps.role||(ps.membership||{}).role||'—';
   const state=ps.lifecycle_state||'—';
-  const role=ps.role||'—';
-  const modelId=ps.model||ps.assigned_model||ps.model_id||'—';
-  let html=kv('Persona id',S0(r.did))
+  const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
+  let html=kv('Persona id',S0(pid||r.did))
+    +kv('Name',S0(ps.name||r.label))
     +kv('Role',`<span class="cap">${esc(role)}</span>`)
-    +kv('Lifecycle state',state==='ACTIVE'?`<span class="ok">● ACTIVE</span>`:`<span class="dim">${esc(state)}</span>`)
-    +kv('Fitness',fitness==='—'?'—':`<span class="${parseFloat(fitness)>=0?'ok':'no'}">${esc(fitness)}</span>`)
-    +kv('Experience tasks',S0(expTasks))
-    +kv('Model',S0(modelId))
-    +kv('Multi-family PoLL',mi?'<span class="ok">✓ yes</span>':'<span class="no">✗ no — single family</span>')
-    +kv('Visibility',S0(r.visibility_tier))
-    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  // Show sibling personas from /status for context
-  if((ns.personas||[]).length>1){
-    html+=H('All personas in run');
-    html+=(ns.personas||[]).map((p)=>{
-      const f=p.fitness!=null?p.fitness.toFixed(2):'—';
-      const active=p.lifecycle_state==='ACTIVE';
-      const me=p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid));
-      return `<div class="grant"><span>${me?'<b>':''}${esc(p.role||p.persona_id)}${me?'</b>':''}</span>`
-        +`<span class="l2">fitness <span class="${parseFloat(f)>=0?'ok':'no'}">${esc(f)}</span>`
-        +` · tasks ${esc(p.experience_tasks??0)}`
-        +` · <span class="${active?'ok':'dim'}">${esc(p.lifecycle_state||'—')}</span></span></div>`;
-    }).join('');
-  }
+    +kv('Lifecycle',state==='ACTIVE'?`<span class="ok">● ACTIVE</span>`:`<span class="dim">${esc(state)}</span>`)
+    +kv('Reputation',rep==='—'?'—':`<span class="ok">${esc(rep)}</span> <span class="l2">role-relative [0,1]</span>`)
+    +kv('Archetype',S0(ps.archetype))
+    +kv('Disposition',S0(ps.primary_disposition))
+    +kv('Experience tasks',S0(ps.experience_tasks))
+    +kv('Soul version',S0(ps.soul_version))
+    +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
+  if(ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
+  if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
+  if((ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
+  html+=trustPanel(r);
   const eid=envRecId(), bid=bundleRecId(); let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.profile))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
-  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(role==='—'?r.label:role)}`, html};
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(ps.name||r.label)}`, html};
 }
-async function envView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
-  // export endpoint not implemented — pull everything from live /status
-  const ns=await fetchNodeStatus(base)||{};
-  const pop=ns.population||{};
-  const personas=ns.personas||[];
-  const mi=ns.model_independence===true;
-  const pfmm=ns.poll_family_minimum_met===true;
-  const activeRun=ns.active_run||ns.current_run||'—';
-  const genesisTriggered=!!(ns.genesis_triggered||ns.genesis_fired);
-  const currentRound=ns.current_round||ns.round||'—';
-  let html=kv('Environment',esc(r.did||r.label))
-    +kv('Visibility',esc(r.visibility_tier))
-    +kv('Population',`${pop.current??personas.length} / ${pop.ceiling??'—'}`)
-    +kv('Genesis triggered',genesisTriggered?'<span class="ok">yes</span>':'<span class="dim">no</span>')
-    +kv('Active run',esc(activeRun))
-    +kv('Current round',esc(currentRound))
-    +kv('Multi-family PoLL',pfmm?'<span class="ok">✓ met</span>':'<span class="no">✗ single-family — PoLL degraded</span>')
-    +kv('Model independence',mi?'<span class="ok">✓ yes</span>':'<span class="no">✗ no</span>')
-    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  if(personas.length){
-    html+=H(`Personas (${personas.length})`);
-    html+=personas.map((p)=>{
-      const fit=p.fitness!=null?p.fitness.toFixed(2):'—';
-      const active=p.lifecycle_state==='ACTIVE';
-      const rid=findRecByDid(p.persona_id)||findRecByDid('did:personaos:'+p.persona_id);
-      const label=rid?recLink(rid,p.role||p.persona_id):esc(p.role||p.persona_id);
-      return `<div class="grant">${label}<span class="l2">`
-        +`fitness <span class="${parseFloat(fit)>=0?'ok':'no'}">${esc(fit)}</span>`
-        +` · tasks ${esc(p.experience_tasks??0)}`
-        +` · <span class="${active?'ok':'dim'}">${esc(p.lifecycle_state||'—')}</span>`
-        +`</span></div>`;
+async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+  // EnvironmentInstance export (05_ENVIRONMENT): bind the SERVED env doc
+  // (environments/<id>.json) — env_type, status, members, lineage_digest,
+  // rule_count. /status is only a liveness fallback when no export link exists.
+  const d=(L.export?await dfetch(base,L.export):null)||{};
+  const ns=d.environment_id?{}:(await fetchNodeStatus(base)||{});
+  const members=d.members||[];
+  const ld=d.lineage_digest||{};
+  let html=kv('Environment',S0(d.environment_id||r.did||r.label))
+    +kv('Name',S0(d.name||r.label))
+    +kv('Type',`<span class="cap">${esc(d.env_type||'—')}</span>`)
+    +kv('Status',d.status==='active'?'<span class="ok">● active</span>':`<span class="dim">${esc(d.status||'—')}</span>`)
+    +kv('Members',S0(members.length||(ns.personas||[]).length))
+    +kv('Env rules',S0(d.rule_count))
+    +kv('Lineage events',S0(ld.event_count));
+  if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
+  const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
+  if(roster.length){
+    html+=H(`Members (${roster.length})`);
+    html+=roster.map((m)=>{
+      const rid=findRecByDid(m.persona_id)||findRecByDid('did:personaos:'+m.persona_id);
+      const label=rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id);
+      const active=m.active!==false;
+      return `<div class="grant">${label}<span class="l2"><span class="${active?'ok':'dim'}">${active?'active':'departed'}</span></span></div>`;
     }).join('');
   }
+  if(ld.kind_counts && Object.keys(ld.kind_counts).length){
+    html+=H('Lineage digest (event-kind counts; J9 federation shape)');
+    html+=Object.entries(ld.kind_counts).slice(0,12).map(([k,v])=>
+      `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
+  }
+  html+=trustPanel(r);
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
   if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
-  return {title:`<span class="kind k-env">ENV</span> ${esc(r.label)}`, html};
+  return {title:`<span class="kind k-env">ENV</span> ${esc(d.name||r.label)}`, html};
 }
 // ---------- deliverable-bundle artifact TREE ----------
 // Bundle-export artifacts carry their package-relative path in `title` (e.g. cad/board.step,
@@ -557,19 +586,50 @@ function renderArtifactTree(arts){
 }
 async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
   if(!d) return {title:'bundle', html:'<div class="l2">unavailable</div>'};
-  const b=(d.bundle&&d.bundle.payload)||d.bundle||{}, arts=d.artifacts||[];
-  let html=kv('Bundle',esc(b.bundle_id||''))+kv('Kind',esc(b.bundle_kind||'—'))
-    +kv('State',`<span class="ok">${esc(b.state||'—')}</span>`)+kv('Version',esc(b.version||'—'))
-    +kv('Owning env',esc(b.owning_env_id||'—'))+kv('Co-signers',esc(Object.keys(d.co_signatures||{}).join(', ')||'—'));
-  const vinv=(d.verifier_invocations||[]).map((v)=>`${v.tier}:${v.passed?'✓':'✗'}`).join('  ');
-  if(vinv) html+=H('Verifier cascade')+`<div class="desc2">${esc(vinv)}</div>`;
+  // personaos-bundle-export/2 is a DIRECT document (07_ARTIFACTS §7): bundle_id,
+  // bundle_kind, state, contributors, verifier_evidence[], co_signatures{},
+  // accepted_at/shipped_at, artifacts[] with role_in_bundle. Verifier evidence
+  // is MANDATORY for verified/accepted — surface it as the proof, not a one-liner.
+  const S0=(v)=>esc((v===''||v==null)?'—':v);
+  const arts=d.artifacts||[], ev=d.verifier_evidence||[], rv=d.review_verdicts||[];
+  const cosigners=Object.keys(d.co_signatures||{});
+  const st=String(d.state||'—');
+  const stClass=(st==='shipped'||st==='accepted')?'ok':(st==='rejected'?'no':'amber');
+  let html=kv('Bundle',`<code>${esc(d.bundle_id||'')}</code>`)
+    +kv('Kind',`<span class="cap">${esc(d.bundle_kind||'task_deliverable')}</span>`)
+    +kv('State',`<span class="${stClass}">● ${esc(st)}</span>`)+kv('Version',S0(d.version))
+    +kv('Outward tier',`<span class="tier-pill t-${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}">${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}</span>`)
+    +(d.accepted_at?kv('Accepted at',S0(d.accepted_at)):'')
+    +(d.shipped_at?kv('Shipped at',S0(d.shipped_at)):'')
+    +kv('Contributors',S0((d.contributors||[]).join(', ')))
+    +kv('Co-signatures',cosigners.length?`<span class="ok">${esc(cosigners.length)} signer(s)</span>`:'<span class="no">none</span>');
+  // Verifier evidence — the hash-bound, signed proof each artifact check ran.
+  if(ev.length){
+    html+=H(`Verifier evidence (${ev.length}) — executed checks, hash-bound`);
+    html+=ev.slice(0,12).map((e)=>{
+      const ok=(e.exit_status_kind==='success')||(e.parsed_verdict==='pass');
+      const nr=e.parsed_verdict==='not_run';
+      const cls=nr?'amber':(ok?'ok':'no');
+      const mark=nr?'∅ not_run':(ok?'✓ pass':'✗ fail');
+      return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'check')}</span>`
+        +`<span class="${cls}">${mark}</span></div>`;
+    }).join('');
+  } else {
+    html+=H('Verifier evidence')+`<div class="l2">— none recorded (below verified) —</div>`;
+  }
+  if(rv.length){
+    html+=H(`Review verdicts (${rv.length})`);
+    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_persona_id||v.reviewer||'reviewer')}</span>`
+      +`<span class="${String(v.verdict||'').includes('accept')?'ok':'no'}">${esc(v.verdict||'—')}</span></div>`
+      +(v.rationale?`<div class="desc2">${esc(String(v.rationale).slice(0,240))}</div>`:'')).join('');
+  }
   html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts);
   if(L && L.run){ html+=H('Provenance')
-    +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · codex model cascade →</a></div>`
+    +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · model cascade →</a></div>`
     +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
     +`<div class="row"><a href="#" data-act="physical" data-url="${esc(L.run)}">Physical asset →</a></div>`;
     if(L.oci) html+=`<div class="row"><a href="#" data-act="dist" data-oci="${esc(L.oci)}" data-dag="${esc(L.dag||'')}" data-reg="${esc(L.registry||'')}">Distribution · OCI + IPLD →</a></div>`; }
-  return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(b.bundle_id||'')}`, html};
+  return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(d.bundle_id||'')}`, html};
 }
 /* ====================================================================
    MEDIA-AWARE ARTIFACT RENDERING
@@ -857,37 +917,37 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
 }
-async function telemetryView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
-  // summary endpoint not implemented — use /status + telemetry/live/latest.json
-  const ns=await fetchNodeStatus(base)||{};
-  const tel=await fetchJson(join(base,'telemetry/live/latest.json'))||{};
-  const events=tel.events||tel.ring||[];
-  const activeRun=ns.active_run||ns.current_run||'—';
-  const currentRound=ns.current_round||ns.round||'—';
-  // tally event purposes / kinds from the ring buffer
-  const purposeCounts={};
-  for(const e of events){ const p=e.purpose||e.event_type||e.kind||e.event||'other'; purposeCounts[p]=(purposeCounts[p]||0)+1; }
-  const topPurposes=Object.entries(purposeCounts).sort((a,b)=>b[1]-a[1]).slice(0,12);
-  const modelEvents=events.filter((e)=>(e.event||e.event_type||'').includes('MODEL')||(e.purpose||'').includes('model'));
-  let html=kv('Feed',esc(r.label))
-    +kv('Active run',esc(activeRun))
-    +kv('Current round',esc(currentRound))
-    +kv('Ring buffer events',esc(events.length))
-    +kv('Model call events',esc(modelEvents.length))
-    +kv('Access','consent-gated (read+ &amp; ConsentLedger pin)')
-    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  if(topPurposes.length){
-    html+=H('Event purposes (ring)');
-    html+=topPurposes.map(([k,v])=>`<div class="grant"><span>${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
-  } else {
-    html+=H('Event purposes')+`<span class="l2">ring empty — node idle or not yet streaming</span>`;
+async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+  // 01_KERNEL §8/§11: live telemetry nests OTel/lineage under `kernel`
+  // (model_events, spans, summary, lineage_durable) and persona evolution
+  // summaries under `personas`. Bind those — NOT the old tel.events/tel.ring.
+  const tel=await fetchJson(join(base,L.snapshot||'telemetry/live/latest.json'))||{};
+  const k=tel.kernel||{}, personas=tel.personas||[], modelEvents=k.model_events||[];
+  const selected=modelEvents.filter((e)=>e.kind==='MODEL_SELECTED');
+  const byPurpose={};
+  for(const e of selected){ const pp=e.requested_purpose||e.role||'other'; byPurpose[pp]=(byPurpose[pp]||0)+1; }
+  let html=kv('Feed',S0(r.label))
+    +kv('Reason',S0(tel.reason))
+    +kv('Lineage durable',k.lineage_durable?'<span class="ok">✓ durable</span>':'<span class="no">in-memory only</span>')
+    +kv('Signed spans',S0((k.spans||[]).length))
+    +kv('Model-selection events',S0(selected.length))
+    +kv('Access','consent-gated · read+ (operator) or public-telemetry opt-in');
+  if(Object.keys(byPurpose).length){
+    html+=H('Model selection by purpose');
+    html+=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([kk,v])=>
+      `<div class="grant"><span class="l2">${esc(kk)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
-  const recentModel=modelEvents.slice(-6).reverse();
-  if(recentModel.length){
-    html+=H('Recent model calls');
-    html+=recentModel.map((e)=>`<div class="grant"><span class="l2">${esc(e.event||e.event_type||'')}</span><span>${esc(e.model||e.model_id||'—')}</span></div>`).join('');
+  const recent=selected.slice(-8).reverse();
+  if(recent.length){
+    html+=H('Recent model selections');
+    html+=recent.map((e)=>`<div class="grant"><span class="l2">${esc(e.requested_purpose||e.role||'')}</span>`
+      +`<span>${esc(e.model_id||'—')}</span></div>`).join('');
   }
-  if(L.snapshot) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.snapshot))}" target="_blank" rel="noopener">telemetry snapshot →</a></div>`;
+  if(personas.length){
+    html+=H(`Persona evolution (${personas.length})`);
+    html+=personas.slice(0,8).map((p)=>`<div class="grant"><span class="l2">${esc(p.role||p.persona_id||'')}</span>`
+      +`<span class="l2">tasks ${esc(p.experience_tasks??0)} · tactics ${esc(p.cohort_visible_tactic_count??p.generic_tactic_count??0)} · lessons ${esc(p.lesson_count??0)}</span></div>`).join('');
+  }
   return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`, html};
 }
 async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]; S.curBase=r._base||'';
@@ -901,32 +961,40 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
   return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
-async function domainView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
-  const d=await dfetch(base,L.export)||{}; const dm=(d.domain&&d.domain.payload)||d.domain||{};
-  const rj=await dfetch(base,L.run||'run.json')||{}; const dd=rj.domain||{};
-  let html=kv('Domain',esc(dm.domain_id||r.did))+kv('Origin',esc(dm.origin||'emergent'))+kv('Stage',esc(dm.stage||'—'))
-    +kv('Trust score',esc(dm.trust_score??'—'))+kv('Safety critical',dm.safety_critical?'<span class="no">● yes</span>':'no')
-    +kv('Physical harm',esc(dm.physical_harm_class||'—'))+kv('Info hazard',esc(dm.information_hazard_class||'—'))
-    +kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
-  const sx=(d.safety_extensions||[]).map(String); if(sx.length){ const m=/description='([^']+)'/.exec(sx[0]);
-    html+=H('Safety extension')+`<div class="desc2">${esc((m?m[1]:sx[0]).slice(0,420))}</div>`; }
-  if((dd.kinds||[]).length) html+=H(`Emergent kinds (${dd.kinds.length})`)+chipsOf(dd.kinds.slice(0,18));
-  const tools=dm.tools_required||dd.tools||[]; if(tools.length) html+=H(`Tools required (${tools.length})`)+chipsOf(tools.slice(0,18));
-  if((dm.standards_refs||[]).length) html+=H('Standards')+chipsOf(dm.standards_refs);
-  if(rj.recognition) html+=H('Recognition → emergence')+chipsOf(rj.recognition);
+async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+  // DomainContext export (06_DOMAIN): the served domain doc is a DIRECT document
+  // (domains/<id>.json: domain_id, name, stage, safety_critical, physical_harm_class).
+  const d=(L.export?await dfetch(base,L.export):null)||{};
+  let html=kv('Domain',S0(d.domain_id||r.did))
+    +kv('Name',S0(d.name||r.label))
+    +kv('Stage',`<span class="cap">${esc(d.stage||'emergent')}</span>`)
+    +kv('Safety critical',d.safety_critical?'<span class="no">● yes</span>':'<span class="dim">no</span>')
+    +kv('Physical harm class',d.physical_harm_class?`<span class="no">${esc(d.physical_harm_class)}</span>`:'—')
+    +(d.information_hazard_class?kv('Info hazard',esc(d.information_hazard_class)):'')
+    +(d.trust_score!=null?kv('Trust score',esc(d.trust_score)):'');
+  html+=trustPanel(r);
   const eid=kernelRec(r._kernel,'env'); if(eid) html+=H('Used by')+`<div class="row">${recLink(eid,'Environment →')}</div>`;
-  return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(dm.name||r.label)}`, html};
+  return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(d.name||r.label)}`, html};
 }
-async function projectView(r){ const base=r._base||'',L=r._links||{}; S.curBase=base;
-  const d=await dfetch(base,L.export)||{}; const p=(d.project&&d.project.payload)||d.project||{};
-  let html=kv('Project',esc(p.project_id||r.did))+kv('Name',esc(p.name||r.label))+kv('Status',`<span class="ok">${esc(p.status||'—')}</span>`)
-    +kv('Environment',esc(p.env_id||'—'))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>');
+async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+  // Project export (04_PROJECT): direct document (projects/<id>.json: project_id,
+  // name, environment_id, members, domain_context_ref, bundle_id).
+  const d=(L.export?await dfetch(base,L.export):null)||{};
+  const members=d.members||[];
+  let html=kv('Project',S0(d.project_id||r.did))+kv('Name',S0(d.name||r.label))
+    +kv('Workspace env',S0(d.environment_id))+kv('Members',S0(members.length||'—'))
+    +(d.bundle_id?kv('Deliverable bundle',`<code>${esc(d.bundle_id)}</code>`):'');
+  if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
+    const rid=findRecByDid(m.persona_id)||findRecByDid('did:personaos:'+m.persona_id);
+    return `<div class="grant">${rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id)}<span class="l2">${esc(m.role||'')}</span></div>`;
+  }).join('');
+  html+=trustPanel(r);
   let nav=''; const eid=kernelRec(r._kernel,'env'), did=kernelRec(r._kernel,'domain');
   if(eid) nav+=`<div class="row">${recLink(eid,'Environment →')}</div>`;
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
-  return {title:`<span class="kind k-project">PROJECT</span> ${esc(p.name||r.label)}`, html};
+  return {title:`<span class="kind k-project">PROJECT</span> ${esc(d.name||r.label)}`, html};
 }
 async function bodyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
@@ -1060,17 +1128,46 @@ async function operatorRunView(b,run){
   const arts=await fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts'))||{};
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
-  let html=kv('Run',S0(run))+kv('Status',`<span class="${rs.status==='running'?'ok':''}">${S0(rs.status)}</span>`)
-    +kv('Task',S0((rs.task||'').slice(0,160)));
-  const dh=st.design_history; if(dh&&dh.final_status) html+=kv('Final',S0(dh.final_status))
-    +kv('Best score',S0(dh.best_so_far_score!=null?Number(dh.best_so_far_score).toFixed(4):null));
-  const files=arts.package_files||arts.files||[];
-  if(files.length) html+=H(`Artifacts (${files.length})`)+files.slice(0,80).map((f)=>
-    `<div class="grant"><span>${esc(typeof f==='string'?f:(f.path||f.title||''))}</span>`
-    +`<span class="l2">${esc(typeof f==='object'?(f.size??''):'')}</span></div>`).join('');
-  const ev=st.objective_evidence||(dh&&dh.objective_evidence);
-  if(ev) html+=H('Objective evidence basis')+Object.entries(ev).map(([n,e2])=>
-    `<div class="grant"><span>${esc(n)}</span><span class="l2">${esc((e2||{}).evidence_strength||'—')}</span></div>`).join('');
+  const stt=String(rs.status||'—');
+  const stClass=(stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no');
+  let html=kv('Run',`<code>${esc(run)}</code>`)
+    +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
+    +kv('Accepted',rs.accepted?'<span class="ok">✓ yes</span>':'<span class="no">no</span>')
+    +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
+    +kv('Task',S0((rs.task||'').slice(0,200)));
+  // GAP #3: surface the ContinuousRefinementMission trajectory from the served
+  // design_history (best-so-far never regresses; budget tranches; marginal value).
+  const dh=st.design_history||rs.refinement_mission||{};
+  if(dh && (dh.final_status||dh.trajectory)){
+    html+=H('Mission trajectory (ADR-0071 — best-so-far)')
+      +kv('Final state',S0(dh.final_state||dh.final_status))
+      +kv('Converged',dh.converged?'<span class="ok">yes</span>':'<span class="dim">no (reopen-eligible)</span>')
+      +kv('Best score',S0(dh.best_so_far_score!=null?Number(dh.best_so_far_score).toFixed(4):rs.best_score));
+    const traj=dh.trajectory||[];
+    if(traj.length) html+='<div class="tape-mini">'+traj.map((rd)=>
+      `<div class="row2"><span>r${esc(rd.round)}</span><span>score <b>${esc(Number(rd.best_score||0).toFixed(4))}</b></span>`
+      +`<span class="${(rd.marginal_value||0)>=0?'ok':'no'}">Δ${esc(Number(rd.marginal_value||0).toFixed(4))}</span>`
+      +`<span class="l2">${esc(rd.candidates_explored||0)} cand</span></div>`).join('')+'</div>';
+  }
+  // GAP #3: per-objective evidence basis + acceptance.
+  const ev=rs.objective_evidence||dh.objective_evidence;
+  if(ev) html+=H('Objective evidence basis (07_ARTIFACTS §7)')+Object.entries(ev).map(([n,e2])=>{
+    const es=(e2||{}).evidence_strength||'—';
+    const cls=es==='executed'?'ok':(es==='unmeasured'?'no':'amber');
+    return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(es)}</span></div>`;
+  }).join('');
+  const ap=rs.answer_package; if(ap&&ap.schema) html+=H('Signed AnswerPackage (answer/5)')
+    +kv('Status',S0(ap.status))+kv('Bundle ref',S0(ap.artifact_bundle_ref))
+    +kv('Bundle state',S0(ap.artifact_bundle_state))+kv('Signed',ap.signed_by?'<span class="ok">✓</span>':'<span class="no">✗</span>');
+  const files=arts.package||arts.package_files||arts.files||[];
+  if(files.length) html+=H(`Package artifacts (${files.length})`)+files.slice(0,100).map((f)=>{
+    const path=typeof f==='string'?f:(f.path||f.title||'');
+    const name=String(path).split('/').pop();
+    return `<div class="grant"><span class="l2">${esc(name)}</span><span class="l2">${esc(String(path).includes('/')?path.split('/').slice(0,-1).join('/'):'')}</span></div>`;
+  }).join('');
+  const bundles=arts.bundles||[];
+  if(bundles.length) html+=H(`Bundles (${bundles.length})`)+bundles.map((bd)=>
+    `<div class="grant"><span class="l2">${esc(bd.bundle_id||bd.path||'bundle')}</span><span class="${bd.state==='shipped'||bd.state==='accepted'?'ok':'amber'}">${esc(bd.state||'—')}</span></div>`).join('');
   return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
 }
 
@@ -1185,13 +1282,26 @@ function setStat(el,label,val){ const v=$(el);
 function renderStats(){
   const box=$('#stats');
   if(!box.dataset.built){ box.dataset.built='1';
-    box.innerHTML=['personas','pop','records','kernels','events','evs','verified','clock'].map((k)=>
-      `<div class="stat" id="st-${k}"><div class="v">${k==='pop'?'—/—':'0'}</div><div class="k">${k==='evs'?'ev/s':k==='clock'?'utc':k==='pop'?'pop':k}</div></div>`).join(''); }
+    box.innerHTML=['auth','personas','pop','records','kernels','events','evs','verified','clock'].map((k)=>{
+      const lbl={evs:'ev/s',clock:'utc',pop:'pop',auth:'access'}[k]||k;
+      const init=k==='pop'?'—':(k==='auth'?'discover':'0');
+      return `<div class="stat" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
+    }).join(''); }
   let personas=0,verified=0; for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona')personas++; verified++; }
   const eps=S.epsWin.length;
-  // non-blocking: pull population from any cached /status hit
-  let pop='—/—';
-  for(const [,hit] of statusCache){ if(hit&&hit.v&&hit.v.population){ const p=hit.v.population; pop=`${p.current??'?'}/${p.ceiling??'?'}`; break; } }
+  // Population: the served /status.population is an INTEGER (effective size);
+  // genesis_rate_today + max_lineage_depth ride alongside. Accept the integer or
+  // a legacy {current,ceiling} object.
+  let pop='—';
+  for(const [,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
+    const pv=v.population;
+    if(typeof pv==='number'){ pop=String(pv); break; }
+    if(pv&&typeof pv==='object'){ pop=`${pv.current??'?'}/${pv.ceiling??'?'}`; break; }
+    if((v.personas||[]).length){ pop=String(v.personas.length); break; } }
+  // GAP #4: viewer authority — discover (anonymous) vs read (operator token saved).
+  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
+  setStat('#st-auth','access',hasOp?'read':'discover');
+  const authV=$('#st-auth'); if(authV){ authV.classList.toggle('auth-read',hasOp); authV.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
   setStat('#st-personas','personas',personas);
   setStat('#st-pop','pop',pop);
   setStat('#st-records','records',S.recs.size);
