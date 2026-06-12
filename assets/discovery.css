@@ -42,6 +42,33 @@ b{color:#fff}
 .chip.on{background:var(--int);border-color:var(--int);color:#04121f;font-weight:700}
 .btn:hover,.chip:hover{border-color:var(--int)}
 .grow{flex:1}
+/* intro / "what is this" panel */
+.intro{padding:10px 16px;background:#0b121b;border-bottom:1px solid var(--line2);font-size:12px;line-height:1.55;color:var(--ink)}
+.intro p{margin:4px 0;max-width:980px}
+.intro .dim2{color:var(--dim)}
+.intro code{background:#070b10;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;font-size:11px}
+.gloss{display:flex;flex-wrap:wrap;gap:6px 18px;margin:7px 0;color:var(--dim);font-size:11px}
+.gloss b{color:var(--amber);font-weight:700;letter-spacing:.4px}
+/* missions strip */
+.missions{display:flex;align-items:flex-start;gap:10px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.missions[hidden],.intro[hidden]{display:none}
+.mission-cards{display:flex;gap:8px;overflow-x:auto;flex:1;padding-bottom:2px}
+.mcard{min-width:230px;max-width:330px;flex:0 0 auto;background:#0b121b;border:1px solid var(--line2);border-radius:6px;
+  padding:7px 10px;cursor:pointer;font-size:11.5px;line-height:1.45}
+.mcard:hover{border-color:var(--int)}
+.mcard .mtask{color:#fff;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mcard .mmeta{color:var(--dim);font-size:10.5px;display:flex;gap:8px;flex-wrap:wrap;margin-top:3px}
+.mstate{font-size:9.5px;font-weight:700;letter-spacing:.5px;padding:0 5px;border-radius:3px;color:#04121f}
+.ms-running{background:var(--up);animation:vflash 1.6s infinite alternate}
+.ms-paused{background:var(--amber)} .ms-shipped{background:var(--int)} .ms-converged{background:var(--intr)}
+.ms-queued{background:var(--mut)} .ms-stopped{background:var(--down)}
+/* objective evidence badges (honesty surface) */
+.evb{font-size:9.5px;font-weight:700;letter-spacing:.4px;padding:0 5px;border-radius:3px;color:#04121f;cursor:help}
+.ev-attested,.ev-executed_attested{background:var(--up)}
+.ev-executed{background:var(--intr)}
+.ev-executed_unconfirmed,.ev-declared_only{background:var(--down)}
+.ev-unmeasured{background:var(--mut);color:#cdd9e5}
+.viewerr{color:var(--down);font-size:11px;padding:4px 0}
 /* grid */
 .grid{flex:1;display:grid;grid-template-columns:1fr 360px;min-height:0}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.tape{display:none}}

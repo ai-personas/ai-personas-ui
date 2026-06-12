@@ -559,10 +559,73 @@ function renderEnvLive(eid){
   h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env</div>`+_liveFeed(d.models);
   return h;
 }
+// ---- per-entity feed documents (telemetry/personas/<slug>.json etc.) ----
+// The node serves each persona's and each env's OWN redacted-tier live feed
+// (09_PROTOCOLS §4.1 / A-TF2). The drawer prefers that authoritative document;
+// the client-side index over the node-wide aggregate stays as the fallback for
+// older nodes that only publish telemetry/live/latest.json.
+async function fetchEntityFeed(base,rel){
+  const key=(base||'@origin')+'|'+rel;
+  const m=(S.entFeed=S.entFeed||new Map()); const hit=m.get(key);
+  if(hit&&(Date.now()-hit.ts)<4000) return hit.v;
+  const v=await fetchJson(join(base,rel)); m.set(key,{v,ts:Date.now()}); return v;
+}
+function feedModels(doc){ return ((doc&&doc.model_events)||[]).filter((m)=>(m.kind||'')==='MODEL_SELECTED')
+  .map((m)=>({purpose:String(m.requested_purpose||m.role||'model'),model:String(m.model_id||'—'),role:String(m.role||'')})); }
+function renderPersonaFeedDoc(doc){
+  const s=doc.summary||{}; let h='';
+  h+=`<div class="livegrid">`
+    +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness</div></div>`
+    +`</div>`;
+  if(s.evolution_trace_count!=null||s.accepted_trace_count!=null)
+    h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials · cohort ${esc((s.gepa_cohort_id||'—').slice(0,18))}</div>`;
+  h+=`<div class="l2" style="margin:6px 0 3px">Doing now <span class="dim">(own feed · redacted tier)</span></div>`+_liveFeed(feedModels(doc));
+  const sp=doc.spans||[];
+  if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
+    h+=`<div class="l2" style="margin:6px 0 3px">Signed lifecycle/lineage</div>`
+      +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k2,v])=>
+        `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
+  return h;
+}
+function renderEnvFeedDoc(doc){
+  let h=`<div class="livegrid">`
+    +`<div class="lm"><div class="lmv ${String(doc.status)==='active'?'ok':''}">${esc(doc.status||'—')}</div><div class="lmk">status</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(doc.env_type||'—')}</div><div class="lmk">type</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(doc.member_count??(doc.members||[]).length)}</div><div class="lmk">members</div></div>`
+    +`<div class="lm"><div class="lmv">${esc((doc.spans||[]).length)}</div><div class="lmk">events</div></div>`
+    +`</div>`;
+  const sp=doc.spans||[];
+  if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
+    h+=`<div class="l2" style="margin:3px 0">Lineage events (signed · this env)</div>`
+      +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k2,v])=>
+        `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
+  h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
+  return h;
+}
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
-  el.innerHTML=S.drawerLiveKind==='persona'?renderPersonaLive(S.drawerLiveId):renderEnvLive(S.drawerLiveId);
+  const fallback=()=>{ const el2=$('#livesec'); if(!el2) return;
+    el2.innerHTML=S.drawerLiveKind==='persona'?renderPersonaLive(S.drawerLiveId):renderEnvLive(S.drawerLiveId); };
+  if(S.drawerLiveFeed){
+    // capture the target before the async fetch: if the drawer navigated away
+    // meanwhile, a slow response must never paint entity A into entity B's view.
+    const wantFeed=S.drawerLiveFeed, wantId=S.drawerLiveId;
+    fetchEntityFeed(S.drawerLiveBase||'',wantFeed).then((doc)=>{
+      if(S.drawerLiveFeed!==wantFeed||S.drawerLiveId!==wantId) return;
+      const el2=$('#livesec'); if(!el2) return;
+      if(doc&&doc.schema==='personaos-persona-telemetry/1') el2.innerHTML=renderPersonaFeedDoc(doc);
+      else if(doc&&doc.schema==='personaos-env-telemetry/1') el2.innerHTML=renderEnvFeedDoc(doc);
+      else fallback();
+    }).catch(fallback);
+    return;
+  }
+  fallback();
 }
 const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind==='artifact' && r._links && r._links.bundle; });
 const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
@@ -594,9 +657,12 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
   if((ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
   // LIVE per-persona activity — what this persona is doing right now + its
-  // evolving internal state, streamed in place on every telemetry tick.
-  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did;
+  // evolving internal state, streamed in place on every telemetry tick. Prefers
+  // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
+  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveBase=base;
+  S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did)}</div>`;
+  if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   html+=trustPanel(r);
   const eid=envRecId(), bid=bundleRecId(); let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
@@ -637,10 +703,13 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
       `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
   // LIVE per-env activity — signed lineage events + model activity in this env,
-  // streamed in place on every telemetry tick.
+  // streamed in place on every telemetry tick. Prefers the env's OWN feed
+  // document (links.telemetry → telemetry/environments/<slug>.json).
   const envId=d.environment_id||r.did;
-  S.drawerLiveKind='env'; S.drawerLiveId=envId;
+  S.drawerLiveKind='env'; S.drawerLiveId=envId; S.drawerLiveBase=base;
+  S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId)}</div>`;
+  if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   html+=trustPanel(r);
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
@@ -1027,6 +1096,23 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
   // (model_events, spans, summary, lineage_durable) and persona evolution
   // summaries under `personas`. Bind those — NOT the old tel.events/tel.ring.
   const tel=await fetchJson(join(base,L.snapshot||'telemetry/live/latest.json'))||{};
+  // Per-ENTITY feed record (telemetry:<persona>/<env> → its own redacted-tier
+  // document): render the entity's live "inside" view and stream it in place.
+  if(tel.schema==='personaos-persona-telemetry/1'||tel.schema==='personaos-env-telemetry/1'){
+    const isP=tel.schema==='personaos-persona-telemetry/1';
+    S.drawerLiveKind=isP?'persona':'env';
+    S.drawerLiveId=isP?tel.persona_id:tel.environment_id;
+    S.drawerLiveBase=base; S.drawerLiveFeed=L.snapshot||'';
+    let html=kv('Feed',S0(r.label))
+      +kv('Subject',`<span class="cap">${esc(isP?'persona':'environment')}</span> <code>${esc(S.drawerLiveId)}</code>`)
+      +kv('Tier','redacted — span kinds / status / durations / transitions only (A-TF2)')
+      +kv('Generated',S0(tel.generated_at))
+      +kv('Access','consent-gated · content tier needs a read+ grant AND a consent pin (A-TF3)');
+    html+=H(isP?'● Live · inside this persona':'● Live · inside this environment')
+      +`<div id="livesec" class="livesec">${isP?renderPersonaFeedDoc(tel):renderEnvFeedDoc(tel)}</div>`;
+    html+=trustPanel(r);
+    return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`, html};
+  }
   const k=tel.kernel||{}, personas=tel.personas||[], modelEvents=k.model_events||[];
   const selected=modelEvents.filter((e)=>e.kind==='MODEL_SELECTED');
   const byPurpose={};
@@ -1129,44 +1215,69 @@ async function physicalView(base,runUrl){ S.curBase=base; const rj=await dfetch(
     +kv('As-built ref',esc(p.as_built_ref))+kv('Fabricator',esc(p.fab))+H('External attestation')+`<div class="desc2">${esc(p.attestation)}</div>`;
   return {title:`<span class="kind k-artifact">PHYSICAL BOARD</span>`, html};
 }
-async function missionView(r){
-  // The ADR-0071 refinement trajectory is a DISCOVERED, Ed25519-verified Design-
-  // History-File artifact; resolve its content (the trajectory JSON) the same way
-  // any artifact body is resolved over P2P — no client-side injection.
-  const L=r._links||{}; let ref={};
-  try{ ref=JSON.parse(await fetchText(join(r._base||'', L.content))||'{}'); }catch(e){ ref={}; }
+// Evidence badge for the honesty surface: every reported objective value travels with
+// the strength of the evidence that credited it (attested by an independent model /
+// executed in the sandbox / unmeasured = claimed but never evidenced — never scores).
+const EV_TIP={executed_attested:'an executable check ran AND an independent model from a different family confirmed the value',
+  attested:'an independent model confirmed the value is evidenced by the package',
+  executed:'an in-package executable check measured this value in the sandbox',
+  executed_unconfirmed:'a check ran but the independent attestor did not confirm the value — does not score',
+  declared_only:'the author asserted the value with no evidence — does not score',
+  unmeasured:'claimed but never evidenced — does not score, shown honestly'};
+function evBadge(ev){ const s=String((ev&&ev.evidence_strength)||'unmeasured');
+  const extra=ev&&ev.credited_round!=null?` · credited round ${ev.credited_round}`:'';
+  const why=ev&&ev.rationale?` — ${ev.rationale}`:'';
+  return `<span class="evb ev-${esc(s)}" title="${esc((EV_TIP[s]||s)+extra+why)}">${esc(s.replace(/_/g,' ').toUpperCase())}</span>`; }
+function missionDocHTML(ref){
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const targets=ref.objective_targets||[]; const traj=ref.trajectory||[]; const tr=ref.tranches||[];
-  const fin=ref.final_objective||{};
+  const fin=ref.final_objective||{}; const evd=ref.objective_evidence||{};
   let html=H('ADR-0071 ContinuousRefinementMission — anytime, budget-scaled, convergence-bounded');
   html+=kv('Task',S0(ref.task))+kv('Backend',S0(ref.backend))
     +kv('State',`<span class="ok">${S0(ref.final_state)}</span>`)
     +kv('Status',`<span class="ok">${S0(ref.final_status)}</span>`)
     +kv('Converged',ref.converged?'<span class="ok">yes — nothing left to improve</span>':'no (auto-reopen-eligible)')
     +kv('Best-so-far',S0(ref.best_so_far_ref)+' · score '+(ref.best_so_far_score!=null?Number(ref.best_so_far_score).toFixed(4):'—'));
-  // MissionObjective vector: baseline → current, per target.
-  html+=H('MissionObjective (signed measurable targets)');
+  // MissionObjective vector: baseline → current per target, stamped with the EVIDENCE
+  // that credited each value (a number with no admissible evidence reads UNMEASURED).
+  html+=H('Objectives — every value carries its evidence');
   html+=targets.map((t)=>{ const cur=fin[t.name]; const dir=t.direction==='minimize'?'↓':'↑';
-    return `<div class="grant"><span>${esc(t.name)} ${dir} <span class="l2">(${esc(t.outcome_kind)})</span></span>`
+    const ev=evd[t.name];
+    return `<div class="grant"><span>${esc(t.name)} ${dir} ${evBadge(ev)}</span>`
       +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
+  const unmeasured=targets.filter((t)=>String((evd[t.name]||{}).evidence_strength||'unmeasured')==='unmeasured');
+  if(unmeasured.length) html+=`<div class="viewerr">⚠ ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
   // Budget tranches — "resume with more budget → measurably better best-so-far".
-  html+=H('Budget tranches — resume with more budget → higher best-so-far');
-  html+=tr.map((x)=>`<div class="grant"><span>tranche ${esc(x.tranche)} · budget ${esc(x.budget_candidates)} cand · ${esc(x.rounds_this_tranche)} rounds</span>`
-    +`<span class="l2">score <b>${Number(x.score_before).toFixed(3)} → <span class="ok">${Number(x.score_after).toFixed(3)}</span></b> · [${esc(x.status)}]</span></div>`).join('');
-  // Best-so-far climb (round trajectory) with marginal value.
-  html+=H('Refinement trajectory (best-so-far never regresses)');
-  html+='<div class="tape-mini">'+traj.map((r2)=>{ const blk=(r2.blocked_targets||[]).length?` <span class="down">blocked:${esc((r2.blocked_targets||[]).join(','))}</span>`:'';
-    return `<div class="row2"><span>r${esc(r2.round)}</span><span>score <b>${Number(r2.best_score).toFixed(4)}</b></span>`
-      +`<span class="${r2.marginal_value>=0?'ok':'down'}">Δ${Number(r2.marginal_value).toFixed(4)}</span>`
-      +`<span class="l2">${esc(r2.candidates_explored)} cand${blk}</span></div>`; }).join('')+'</div>';
+  if(tr.length){ html+=H('Budget tranches — resume with more budget → higher best-so-far');
+    html+=tr.map((x)=>`<div class="grant"><span>tranche ${esc(x.tranche)} · budget ${esc(x.budget_candidates)} cand · ${esc(x.rounds_this_tranche)} rounds</span>`
+      +`<span class="l2">score <b>${Number(x.score_before).toFixed(3)} → <span class="ok">${Number(x.score_after).toFixed(3)}</span></b> · [${esc(x.status)}]</span></div>`).join(''); }
+  // Best-so-far climb (round trajectory) with marginal value + WHY candidates died.
+  if(traj.length){ html+=H('Refinement trajectory (best-so-far never regresses)');
+    html+='<div class="tape-mini">'+traj.map((r2)=>{ const blk=(r2.blocked_targets||[]).length?` <span class="down">blocked:${esc((r2.blocked_targets||[]).join(','))}</span>`:'';
+      const errs=(r2.candidate_errors||[]).length?` <span class="down" title="${esc((r2.candidate_errors||[]).join(' | ').slice(0,600))}">✗${(r2.candidate_errors||[]).length} died</span>`:'';
+      return `<div class="row2"><span>r${esc(r2.round)}</span><span>score <b>${Number(r2.best_score).toFixed(4)}</b></span>`
+        +`<span class="${r2.marginal_value>=0?'ok':'down'}">Δ${Number(r2.marginal_value).toFixed(4)}</span>`
+        +`<span class="l2">${esc(r2.candidates_explored)} cand${blk}${errs}</span></div>`; }).join('')+'</div>'; }
   // Budget→emergence (genesis of specialists / sub-envs under ReplicationBound).
   const em=(ref.emergence||[]).filter((e)=>e.event==='budget_to_emergence_genesis');
   if(em.length){ html+=H('Budget → emergence (16_POP §4A factor 7)');
     html+=em.map((e)=>{ const g=e.genesis||{};
       return `<div class="grant"><span>genesis: <b class="ok">${esc(g.niche)}</b> · sub-env ${esc((e.sub_env||{}).kind)}</span>`
         +`<span class="l2">pressure ${esc(e.pressure_score)} (admissible ${e.pressure_admissible?'✓':'✗'}) · ReplicationBound ceiling ${esc(g.replication_bound_population_ceiling)}</span></div>`; }).join(''); }
-  if(ref.manufacturability_ceiling) html+=H('Manufacturability ceiling (honest)')+`<div class="l2">${esc(ref.manufacturability_ceiling)}</div>`;
-  return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html};
+  const ceiling=ref.physical_realization_ceiling||ref.manufacturability_ceiling;
+  if(ceiling) html+=H('Physical-realization ceiling (honest)')+`<div class="l2">${esc(ceiling)}</div>`;
+  return html;
+}
+async function missionView(r){
+  // The ADR-0071 refinement trajectory is a DISCOVERED, Ed25519-verified Design-
+  // History-File artifact; resolve its content (the trajectory JSON) the same way
+  // any artifact body is resolved over P2P — no client-side injection.
+  const L=r._links||{}; const url=join(r._base||'', L.content); let ref=null;
+  try{ ref=JSON.parse(await fetchText(url)||'null'); }catch(e){ ref=null; }
+  if(!ref||typeof ref!=='object')
+    return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`,
+      html:`<div class="viewerr">design-history content could not be loaded from ${esc(url)} — the node may be offline or the artifact body gated.</div>`};
+  return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html:missionDocHTML(ref)};
 }
 /* ---------- operator console views ---------- */
 async function opPost(base,path,body){ const u=join(base,path);
@@ -1278,7 +1389,8 @@ async function operatorRunView(b,run){
 
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
   const L=r._links||{};
-  if(r.kind==='artifact' && L.media_kind==='design_history') return missionView(r);
+  if(r.kind==='artifact' && _isMissionDoc(r,L)) return missionView(r);
+  if(r.kind==='mission' && L.content) return missionView(r);
   if(r.kind==='persona') return personaView(r);
   if(r.kind==='env') return envView(r);
   if(r.kind==='domain') return domainView(r);
@@ -1296,7 +1408,7 @@ function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
 function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
-  S.drawerLiveKind=null; S.drawerLiveId=null;   // the view sets these if it streams
+  S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase='';   // the view sets these if it streams
   $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
@@ -1320,7 +1432,7 @@ function tick(now){
         S.replayDone=true; const fm=$('#feedmode'); fm.textContent='REPLAY · done'; fm.classList.remove('live'); break; }
     }
   }
-  if(now-lastBucket>BUCKET_MS){ lastBucket=now; rollBuckets(); refreshTicker(); }
+  if(now-lastBucket>BUCKET_MS){ lastBucket=now; rollBuckets(); refreshTicker(); renderMissions(); }
   S.epsWin=S.epsWin.filter((t)=>now-t<1000);
   paintDirty(); renderStats();
   requestAnimationFrame(tick);
@@ -1339,15 +1451,24 @@ function relTime(t){ if(!t) return '—'; const s=(Date.now()-t)/1000;
 // without opening the drawer. Other kinds fall back to ACTIVE/listed.
 function _rowStatusCell(r){
   const live=r.rate>0.05;
-  if(r.kind==='persona'||r.kind==='env'){
-    const id=_shortId(r.did||r.record_id||r.id);
-    const d=(r.kind==='persona'?S.liveByPersona:S.liveByEnv).get(id);
+  // A telemetry record's SUBJECT rides in its canonical DID
+  // (did:…/telemetry/<subject_id>) — labels may carry a human env NAME, so the
+  // DID is the mapping key and the label suffix is only a fallback.
+  let subjectId;
+  if(r.kind==='telemetry'){
+    const m=/\/telemetry\/(.+)$/.exec(r.did||'');
+    subjectId=_shortId(m?m[1]:(r.label||'').replace(/^(live )?telemetry:/,''));
+  } else subjectId=_shortId(r.did||r.record_id||r.id);
+  if(r.kind==='persona'||r.kind==='env'||r.kind==='telemetry'){
+    const d=(r.kind==='persona'?S.liveByPersona.get(subjectId)
+      :r.kind==='env'?S.liveByEnv.get(subjectId)
+      :(S.liveByPersona.get(subjectId)||S.liveByEnv.get(subjectId)));
     const models=d&&d.models; const last=models&&models[models.length-1];
     if(last){
       const lbl=PURPOSE_LABEL[last.purpose]||last.purpose;
       return `<span class="dot live">●</span><span class="live" title="${esc(last.model)}">${esc(lbl)}</span>`;
     }
-    if(r.kind==='persona'&&d&&d.summary){
+    if(d&&d.summary){
       const st=d.summary.lifecycle_state||'';
       if(st&&st!=='ACTIVE') return `<span class="dot idle">●</span><span class="idle">${esc(st.toLowerCase())}</span>`;
     }
@@ -1400,10 +1521,10 @@ function paintDirty(){
     const st=tr.querySelector('[data-c=status]');
     if(st) st.innerHTML=_rowStatusCell(r);
   }
-  // Persona/env rows stream their live "doing now" cell every tick even when
-  // their event counter did not change (the activity comes from telemetry).
+  // Persona/env/telemetry rows stream their live "doing now" cell every tick even
+  // when their event counter did not change (the activity comes from telemetry).
   for(const id of S.order){ const r=S.recs.get(id);
-    if(!r._tr||(r.kind!=='persona'&&r.kind!=='env')) continue;
+    if(!r._tr||(r.kind!=='persona'&&r.kind!=='env'&&r.kind!=='telemetry')) continue;
     const st=r._tr.querySelector('[data-c=status]'); if(st) st.innerHTML=_rowStatusCell(r); }
 }
 let statCache={};
@@ -1444,6 +1565,55 @@ function renderStats(){
   if(cv) cv.textContent=`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
   $('#eps').textContent=eps+' ev/s';
 }
+/* ---------- missions strip (every task the discovered nodes work on) ---------- */
+// Cards come from two honest sources: (1) discovered mission/design-history
+// records — shipped/refined missions anyone may see; (2) the node's /status —
+// running/paused mission state, which the node only exposes to an operator
+// token (anonymous viewers see the public projection without run state).
+// A mission document is the run's Design-History-File artifact. Media kinds are
+// EMERGENT registry values (a run may classify it structured_data), so match the
+// canonical filename too — the label rides inside the signed record.
+function _isMissionDoc(r,L){ return L.media_kind==='design_history'
+  || /(^|\/)design_history\.json$/i.test(r.label||''); }
+function missionCardList(){
+  const cards=[]; const seen=new Set();
+  for(const id of S.order){ const r=S.recs.get(id); const L=r._links||{};
+    if(r.kind==='mission'||(r.kind==='artifact'&&_isMissionDoc(r,L))){
+      // the PROJECT record from the same kernel carries the human task text
+      const proj=S.order.map((x)=>S.recs.get(x)).find((p)=>p&&p.kind==='project'&&p._kernel===r._kernel);
+      cards.push({key:'rec:'+id,task:(proj&&proj.label)||r.label||'mission',state:'shipped',
+        meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
+  for(const [base,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
+    const busy=String((v.heartbeat||{}).busy||'');
+    for(const run of (v.stoppable_runs||[])){ if(seen.has(run)) continue; seen.add(run);
+      cards.unshift({key:'run:'+run,task:busy||run,state:'running',meta:[run.slice(0,26)],base,run}); }
+    for(const p of (v.paused_missions||[])){
+      const run=String(p.run||p.run_id||p); if(!run||seen.has(run)) continue; seen.add(run);
+      cards.push({key:'pause:'+run,task:String(p.task||run),state:'paused',
+        meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
+  return cards;
+}
+// The strip needs each node's run state (the token-gated part of /status);
+// prefetch statuses for every discovered base so running/paused missions show
+// without first opening a drawer. Anonymous viewers get the public projection
+// (no run state) and the strip stays honest — records only.
+function prefetchNodeStatuses(){
+  for(const key of S.boots.keys()){ const base=key==='@origin'?'':key;
+    fetchNodeStatus(base).then(()=>renderMissions()).catch(()=>{}); }
+}
+function renderMissions(){
+  const box=$('#missions'), wrap=$('#missionCards'); if(!box||!wrap) return;
+  const cards=missionCardList();
+  box.hidden=!cards.length;
+  if(!cards.length) return;
+  const html=cards.slice(0,24).map((c)=>
+    `<div class="mcard"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
+    +`<span class="mtask" title="${esc(c.task)}">${esc(c.task)}</span>`
+    +`<span class="mmeta"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
+    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</span></div>`).join('');
+  if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
+}
+
 // Build the scrolling ticker ONCE per discovery (stable structure → smooth CSS scroll);
 // counts are refreshed in place by refreshTicker() without restarting the animation.
 function buildTicker(){
@@ -1478,6 +1648,20 @@ function wire(){
   $('#opbtn').addEventListener('click',()=>{ S.views=[()=>operatorView()];
     $('#detailwrap').classList.add('open'); renderTop(); });
   updateOpBadge();
+  // "what is this" intro: shown until dismissed once; the ？ button re-toggles it.
+  const hb=$('#helpbtn'), intro=$('#intro');
+  if(hb&&intro){
+    intro.hidden=!!localStorage.getItem('personaos_intro_seen');
+    hb.addEventListener('click',()=>{ intro.hidden=!intro.hidden;
+      localStorage.setItem('personaos_intro_seen','1'); });
+  }
+  // missions strip → open the mission record, or the operator run console when
+  // the card came from a token-gated /status (running/paused mission).
+  const mc=$('#missionCards');
+  if(mc) mc.addEventListener('click',(e)=>{ const c=e.target.closest('.mcard'); if(!c) return;
+    if(c.dataset.mrec){ openDetail(c.dataset.mrec); return; }
+    if(c.dataset.mrun){ S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
+      $('#detailwrap').classList.add('open'); renderTop(); } });
   // click any record row → detail drawer (deep-resolves env members, persona profile, artifacts)
   $('#rows').addEventListener('click',(e)=>{ const tr=e.target.closest('tr'); if(!tr||!tr.id) return; openDetail(tr.id.replace(/^r-/,'')); });
   // in-drawer navigation: follow links to other records / bundles / artifact files
@@ -1568,8 +1752,13 @@ async function initP2P(){
 (async ()=>{
   wire();
   await discover();
+  prefetchNodeStatuses();
+  renderMissions();
   initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
-  setInterval(()=>{ discover().then(()=>{ buildRows(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
+  setInterval(()=>{ discover().then(()=>{ buildRows(); renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
+  // per-entity drawer feed + node run state: re-fetch on the node's live cadence
+  // so the drawer and the missions strip stream without SSE.
+  setInterval(()=>{ try{ refreshLiveSection(); prefetchNodeStatuses(); }catch(e){} }, 5000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
