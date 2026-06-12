@@ -224,3 +224,14 @@ footer{display:flex;align-items:center;gap:12px;padding:6px 14px;background:#060
 code{background:#070b10;border:1px solid var(--line);border-radius:3px;padding:1px 5px;font-size:10.5px;color:var(--ink)}
 .row2{display:flex;gap:10px;font-size:11px;padding:2px 0;border-bottom:1px solid var(--line)}
 .row2 span:first-child{color:var(--mut);min-width:34px}
+/* ---- live per-entity activity (persona/env "what's happening inside") ---- */
+.livesec{background:#080d14;border:1px solid var(--line2);border-radius:6px;padding:9px 11px;margin:2px 0 4px}
+.livegrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:2px 0 6px}
+.livegrid .lm{background:#0b1118;border:1px solid var(--line);border-radius:4px;padding:5px 4px;text-align:center}
+.lmv{font-size:13px;font-weight:600;color:var(--ink)}
+.lmv.ok{color:var(--up)}
+.lmk{font-size:8.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+.livedot2{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--up);margin-right:6px;
+  animation:pulse 1.4s ease-in-out infinite;vertical-align:middle}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+h4{position:relative}

@@ -45,7 +45,49 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), boots:new Map(),
   streams:new Map(), p2pBootstraps:new Set(), views:[], curBase:'',
-  bundleDirs:new Set(), bundleDirsOpen:new Set() };
+  bundleDirs:new Set(), bundleDirsOpen:new Set(),
+  // Live per-entity telemetry index: base → latest live telemetry doc, plus
+  // derived per-persona / per-env activity. Lets each persona + env view show
+  // what is happening INSIDE it right now (model selections, evolution, lineage).
+  liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null };
+
+// Index a live-telemetry doc per-persona and per-env so the detail views can
+// render each entity's OWN activity (model_events carry persona_id +
+// environment_id; spans carry scope + trace_id). Keyed by short persona/env id.
+const _shortId=(s)=>String(s||'').replace(/^did:personaos:[^:]+:/,'').replace(/^(persona|env|kernel):/,'');
+function indexLiveTelemetry(base,live){
+  if(!live||typeof live!=='object') return;
+  S.liveTel.set(base||'@origin',live);
+  const me=(live.kernel&&live.kernel.model_events)||[];
+  const sp=(live.kernel&&live.kernel.spans)||[];
+  const personas=live.personas||[];
+  const t=Date.parse(live.generated_at||'')||Date.now();
+  // model selections → per persona and per env
+  const byP=new Map(), byE=new Map();
+  me.forEach((m,i)=>{
+    if((m.kind||'')!=='MODEL_SELECTED') return;
+    const rec={t:t-((me.length-i)*200), purpose:String(m.requested_purpose||m.purpose||m.role||'model'),
+      model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||'')};
+    const pid=_shortId(m.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(rec); }
+    const eid=_shortId(m.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(rec); }
+  });
+  // lineage spans → per env (scope=environment), per task/domain too
+  const spByE=new Map();
+  sp.forEach((s)=>{ const a=s.attributes||{}; const sc=a['personaos.lineage.scope'];
+    const tid=_shortId(a['personaos.trace_id']);
+    if(sc==='environment'&&tid){ (spByE.get(tid)||spByE.set(tid,[]).get(tid)).push({
+      kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'),
+      signed:a['personaos.lineage.signed']!==false,
+      t:Date.parse(s.ended_at||s.started_at||'')||t }); } });
+  personas.forEach((p)=>{ const pid=_shortId(p.persona_id);
+    const cur=S.liveByPersona.get(pid)||{};
+    S.liveByPersona.set(pid,{...cur,summary:p,models:byP.get(pid)||cur.models||[],generated_at:live.generated_at}); });
+  for(const [pid,models] of byP){ if(!S.liveByPersona.has(pid)) S.liveByPersona.set(pid,{models,generated_at:live.generated_at}); }
+  for(const [eid,models] of byE){ const cur=S.liveByEnv.get(eid)||{};
+    S.liveByEnv.set(eid,{...cur,models,spans:spByE.get(eid)||cur.spans||[],generated_at:live.generated_at}); }
+  for(const [eid,spans] of spByE){ const cur=S.liveByEnv.get(eid)||{};
+    if(!cur.spans) S.liveByEnv.set(eid,{...cur,spans,generated_at:live.generated_at}); }
+}
 
 /* ---------- discovery log ---------- */
 function log(tag,msg,ok){ const li=document.createElement('li');
@@ -297,7 +339,13 @@ function connectDiscoveryStream(base,boot){
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
   es.addEventListener('telemetry_update',(ev)=>{
-    try{ appendTelemetryEvent(JSON.parse(ev.data||'{}'),base,boot,'LIVE_TELEMETRY'); }
+    try{
+      const payload=JSON.parse(ev.data||'{}');
+      const live=payload.telemetry||payload;
+      indexLiveTelemetry(base,live);   // refresh per-persona / per-env activity
+      appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
+      refreshLiveSection();   // stream into an open persona/env drawer, in place
+    }
     catch(e){ return; }
   });
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
@@ -332,6 +380,7 @@ async function loadTelemetry(base){
     });
   };
   const ingestLive=(live)=>{
+    indexLiveTelemetry(base,live);   // per-persona / per-env activity index
     const modelEvents=live?.kernel?.model_events||[];
     if(!Array.isArray(modelEvents)||!modelEvents.length) return;
     const baseT=Date.parse(live.generated_at||'')||Date.now();
@@ -468,6 +517,53 @@ function trustPanel(r){
     +`<span class="ok">${esc(g.access_level||'discover')}</span></div>`).join('');
   return html;
 }
+
+// ---------- live per-entity activity (what is happening INSIDE this persona / env) ----------
+const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate',judge:'judging (PoLL)',
+  safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
+  domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering'};
+function _liveFeed(models){
+  if(!models||!models.length) return '<div class="l2">idle — no model activity in the last telemetry tick</div>';
+  return models.slice(-8).reverse().map((m)=>{
+    const lbl=PURPOSE_LABEL[m.purpose]||m.purpose;
+    return `<div class="grant"><span class="l2"><span class="livedot2"></span>${esc(lbl)}</span>`
+      +`<span><code>${esc(m.model)}</code></span></div>`;
+  }).join('');
+}
+function renderPersonaLive(pid){
+  const d=S.liveByPersona.get(_shortId(pid)); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
+  const s=d.summary||{}; let h='';
+  if(s.lifecycle_state!=null||s.fitness!=null){
+    h+=`<div class="livegrid">`
+      +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness</div></div>`
+      +`</div>`;
+  }
+  h+=`<div class="l2" style="margin:6px 0 3px">Doing now</div>`+_liveFeed(d.models);
+  return h;
+}
+function renderEnvLive(eid){
+  const d=S.liveByEnv.get(_shortId(eid)); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
+  let h='';
+  const sp=d.spans||[];
+  if(sp.length){
+    const counts={}; sp.forEach((s)=>{counts[s.kind]=(counts[s.kind]||0)+1;});
+    h+=`<div class="l2" style="margin:3px 0">Lineage events (signed)</div>`
+      +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>
+        `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
+  }
+  h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env</div>`+_liveFeed(d.models);
+  return h;
+}
+function refreshLiveSection(){
+  if(!S.drawerLiveKind||!S.drawerLiveId) return;
+  const el=$('#livesec'); if(!el) return;
+  el.innerHTML=S.drawerLiveKind==='persona'?renderPersonaLive(S.drawerLiveId):renderEnvLive(S.drawerLiveId);
+}
 const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind==='artifact' && r._links && r._links.bundle; });
 const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
 
@@ -497,6 +593,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
   if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
   if((ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
+  // LIVE per-persona activity — what this persona is doing right now + its
+  // evolving internal state, streamed in place on every telemetry tick.
+  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did;
+  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did)}</div>`;
   html+=trustPanel(r);
   const eid=envRecId(), bid=bundleRecId(); let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
@@ -536,6 +636,11 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     html+=Object.entries(ld.kind_counts).slice(0,12).map(([k,v])=>
       `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
+  // LIVE per-env activity — signed lineage events + model activity in this env,
+  // streamed in place on every telemetry tick.
+  const envId=d.environment_id||r.did;
+  S.drawerLiveKind='env'; S.drawerLiveId=envId;
+  html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId)}</div>`;
   html+=trustPanel(r);
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
@@ -1191,6 +1296,7 @@ function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
 function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
+  S.drawerLiveKind=null; S.drawerLiveId=null;   // the view sets these if it streams
   $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
@@ -1439,6 +1545,6 @@ async function initP2P(){
   await discover();
   initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
-  setInterval(()=>{ discover().then(buildRows).catch(()=>{}); }, 15000);
+  setInterval(()=>{ discover().then(()=>{ buildRows(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
