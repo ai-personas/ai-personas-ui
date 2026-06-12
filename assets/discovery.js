@@ -1334,6 +1334,26 @@ function sparkSVG(arr){ const w=70,h=16,max=Math.max(1,...arr); const step=w/(ar
 function relTime(t){ if(!t) return '—'; const s=(Date.now()-t)/1000;
   if(s<60) return s.toFixed(0)+'s'; if(s<3600) return (s/60).toFixed(0)+'m'; return (s/3600).toFixed(0)+'h'; }
 
+// The live "doing now" cell for a persona/env board row, from the per-entity
+// telemetry index — so the board itself streams what each persona/env is doing
+// without opening the drawer. Other kinds fall back to ACTIVE/listed.
+function _rowStatusCell(r){
+  const live=r.rate>0.05;
+  if(r.kind==='persona'||r.kind==='env'){
+    const id=_shortId(r.did||r.record_id||r.id);
+    const d=(r.kind==='persona'?S.liveByPersona:S.liveByEnv).get(id);
+    const models=d&&d.models; const last=models&&models[models.length-1];
+    if(last){
+      const lbl=PURPOSE_LABEL[last.purpose]||last.purpose;
+      return `<span class="dot live">●</span><span class="live" title="${esc(last.model)}">${esc(lbl)}</span>`;
+    }
+    if(r.kind==='persona'&&d&&d.summary){
+      const st=d.summary.lifecycle_state||'';
+      if(st&&st!=='ACTIVE') return `<span class="dot idle">●</span><span class="idle">${esc(st.toLowerCase())}</span>`;
+    }
+  }
+  return `<span class="dot ${live?'live':'idle'}">●</span>${live?'<span class="live">ACTIVE</span>':'<span class="idle">listed</span>'}`;
+}
 function rowHTML(r){
   const net=(r._net==='p2p'?'<span class="n i">P2P</span>':'')
     +r.planes.map((p)=>p==='internet'?'<span class="n i">DHT</span>':'<span class="n m">mDNS</span>').join('');
@@ -1347,7 +1367,7 @@ function rowHTML(r){
     +`<td class="r num rate" data-c="rate">${r.rate.toFixed(2)}</td>`
     +`<td class="r last" data-c="last">${relTime(r.lastT)}</td>`
     +`<td class="spark" data-c="spark">${sparkSVG(r.spark)}</td>`
-    +`<td class="status" data-c="status"><span class="dot ${live?'live':'idle'}">●</span>${live?'<span class="live">ACTIVE</span>':'<span class="idle">listed</span>'}</td>`;
+    +`<td class="status" data-c="status">${_rowStatusCell(r)}</td>`;
 }
 function visible(){ let ids=S.order.filter((id)=>{ const r=S.recs.get(id);
   if(S.plane!=='all' && !r.planes.includes(S.plane)) return false;
@@ -1377,9 +1397,14 @@ function paintDirty(){
     const rc=tr.querySelector('[data-c=rate]'); if(rc) rc.textContent=r.rate.toFixed(2);
     const lc=tr.querySelector('[data-c=last]'); if(lc) lc.textContent=relTime(r.lastT);
     const sp=tr.querySelector('[data-c=spark]'); if(sp) sp.innerHTML=sparkSVG(r.spark);
-    const st=tr.querySelector('[data-c=status]'); const live=r.rate>0.05;
-    if(st) st.innerHTML=`<span class="dot ${live?'live':'idle'}">●</span>${live?'<span class="live">ACTIVE</span>':'<span class="idle">listed</span>'}`;
+    const st=tr.querySelector('[data-c=status]');
+    if(st) st.innerHTML=_rowStatusCell(r);
   }
+  // Persona/env rows stream their live "doing now" cell every tick even when
+  // their event counter did not change (the activity comes from telemetry).
+  for(const id of S.order){ const r=S.recs.get(id);
+    if(!r._tr||(r.kind!=='persona'&&r.kind!=='env')) continue;
+    const st=r._tr.querySelector('[data-c=status]'); if(st) st.innerHTML=_rowStatusCell(r); }
 }
 let statCache={};
 function setStat(el,label,val){ const v=$(el);
