@@ -204,7 +204,49 @@ async function loadPeersTxt(){
   return TXT_PEERS;
 }
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
-  try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} return [...new Set([...p,...s,...TXT_PEERS])]; }
+  try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
+  return [...new Set([...p,...s,...TXT_PEERS,...(S.ipfsPeers||[])])]; }
+
+/* ---------- IPFS discovery plane (content-addressed rendezvous) ----------
+   Every PersonaOS kernel pins the SAME deterministic rendezvous block
+   ("personaos-discovery-rendezvous/v1") and publishes a SIGNED node card under
+   its IPNS name. The UI enumerates the rendezvous CID's providers via the
+   delegated-routing HTTP API, resolves each provider's /ipns/<peer-id> through
+   public gateways, verifies the card's Ed25519 signature in-browser, and feeds
+   the verified peer URL into the normal discovery plane. Purely additive to
+   ?peer / +PEER / peers.txt / DHT / mDNS / gossipsub — unreachable IPFS infra
+   degrades silently. Override endpoints with ?ipfs_routing= and ?ipfs_gw=. */
+const IPFS_RENDEZVOUS_CID='Qmbnw4HfNbSp9YqpNBGoQqZcBgAbfF3reayr79DWxPqJgQ';
+function ipfsRouting(){ const p=new URLSearchParams(location.search).get('ipfs_routing');
+  return p||'https://delegated-ipfs.dev/routing/v1/providers/'; }
+function ipfsGateways(){ const p=new URLSearchParams(location.search).getAll('ipfs_gw');
+  return p.length?p:['https://ipfs.io','https://dweb.link']; }
+async function discoverViaIPFS(){
+  S.ipfsPeers=S.ipfsPeers||new Set();
+  let provs=[];
+  try{ const r=await fetch(ipfsRouting()+IPFS_RENDEZVOUS_CID,{headers:{Accept:'application/json'},cache:'no-store'});
+    if(!r.ok){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs',`delegated routing HTTP ${r.status} — IPFS plane idle`,false); } return; }
+    const d=await r.json();
+    provs=[...new Set((d.Providers||[]).map((x)=>x.ID||'').filter(Boolean))];
+  }catch(e){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs','delegated routing unreachable — IPFS plane idle',false); } return; }
+  if(provs.length) log('ipfs',`rendezvous providers on the IPFS DHT: ${provs.length}`,true);
+  let added=0;
+  for(const pid of provs.slice(0,16)){
+    for(const gw of ipfsGateways()){
+      let doc=null;
+      try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(!r.ok) continue; doc=await r.json(); }catch(e){ continue; }
+      if(!doc||doc.schema!=='personaos-ipfs-node-card/1'||!doc.card) break;
+      let ok=false;  // in-browser Ed25519 verify against the card's embedded key
+      try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.card)),hexToBytes(doc.public_key_hex)); }catch(e){}
+      log('ipfs',`node card ${pid.slice(0,12)}… ${ok?'verified':'BAD SIGNATURE'}`,ok);
+      const url=ok?String(doc.card.peer_url||''):'';
+      if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
+      break;
+    }
+  }
+  if(added){ log('ipfs',`+${added} kernel(s) discovered via IPFS — re-discovering`,true);
+    discover().then(()=>{ buildRows(); renderMissions(); }).catch(()=>{}); }
+}
 
 function upsert(r){
   const id=r.record_id||r.card_id; if(!id) return;
@@ -1336,6 +1378,36 @@ async function operatorNodeView(b){
     +`<input id="op-run-target" placeholder="run id (stop / fund target, optional)">`
     +`<button class="btn" data-act="op-stop" data-base="${esc(b)}">⏹ STOP</button></div>`
     +`<pre id="op-out" class="opout"></pre></div>`;
+  // Owner-class creation: environments form via the full §12c/§15 ceremony;
+  // personas are OPERATOR-seeded souls (personas still never self-author).
+  html+=H('Create — environment / persona (owner authority)')
+    +`<div class="opform"><div class="oprow">`
+    +`<input id="op-env-name" placeholder="new environment name">`
+    +`<input id="op-env-desc" placeholder="purpose / charter line (optional)">`
+    +`<button class="btn" data-act="op-newenv" data-base="${esc(b)}">🏗 NEW ENV</button></div>`
+    +`<div class="oprow">`
+    +`<input id="op-p-name" placeholder="new persona name">`
+    +`<input id="op-p-role" placeholder="role (default member)">`
+    +`<input id="op-p-desc" placeholder="description (optional)">`
+    +`<button class="btn" data-act="op-newpersona" data-base="${esc(b)}">🧬 NEW PERSONA</button></div></div>`;
+  // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
+  // persona-authored, FSM-promoted env tools (invocable below, kernel-mediated).
+  const mcp=await fetchJson(join(b,'mcp/tools'));
+  if(mcp&&mcp.builtins){
+    html+=H('Env MCP tools (kernel-mediated)');
+    html+=`<div class="l2" style="margin:2px 0 4px">built-ins: ${mcp.builtins.map((t)=>esc(t.name)).join(' · ')}</div>`;
+    const authored=mcp.persona_authored||{};
+    const envs=Object.keys(authored);
+    if(envs.length) html+=envs.map((eid)=>authored[eid].map((t)=>
+      `<div class="grant"><span>${esc(t.name)} <span class="l2">${esc(t.description||'')}</span></span>`
+      +`<span class="l2">${esc(eid.slice(0,22))} · by ${esc((t.author_persona_id||'').slice(-8))}</span></div>`).join('')).join('');
+    else html+=`<div class="l2">no persona-authored tools promoted yet — a persona authors one via the ToolArtifact FSM; promotion mounts it here.</div>`;
+    html+=`<div class="opform"><div class="oprow">`
+      +`<input id="op-mcp-env" placeholder="environment id (optional)">`
+      +`<input id="op-mcp-tool" placeholder="tool name, e.g. sandbox_exec">`
+      +`<input id="op-mcp-args" placeholder='args JSON, e.g. {"code":"print(42)"}'>`
+      +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">🔧 CALL</button></div></div>`;
+  }
   return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
 }
 
@@ -1679,6 +1751,27 @@ function wire(){
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
+    if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
+      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600);
+        // leave the result readable, then refresh the console so the new entity shows
+        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3000); } };
+      if(act==='op-newenv'){ const name=($('#op-env-name')?.value||'').trim();
+        if(!name){ if(out) out.textContent='enter an environment name first'; return; }
+        if(out) out.textContent='forming environment (full §12c ceremony)…';
+        opPost(b2,'env',{name,description:($('#op-env-desc')?.value||'').trim()}).then(show); }
+      else if(act==='op-newpersona'){ const name=($('#op-p-name')?.value||'').trim();
+        if(!name){ if(out) out.textContent='enter a persona name first'; return; }
+        if(out) out.textContent='seeding persona…';
+        opPost(b2,'persona',{name,role:($('#op-p-role')?.value||'').trim()||'member',
+          description:($('#op-p-desc')?.value||'').trim()}).then(show); }
+      else { const tool=($('#op-mcp-tool')?.value||'').trim();
+        if(!tool){ if(out) out.textContent='enter a tool name first'; return; }
+        let args={}; try{ args=JSON.parse(($('#op-mcp-args')?.value||'').trim()||'{}'); }
+        catch(e){ if(out) out.textContent='args must be valid JSON'; return; }
+        if(out) out.textContent='calling (kernel-mediated, sandboxed)…';
+        opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
+          .then((r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); }); }
+      return; }
     if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
       const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); };
       if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; return; }
@@ -1751,6 +1844,10 @@ async function initP2P(){
 
 (async ()=>{
   wire();
+  // The IPFS plane (rendezvous CID → signed IPNS node cards) probes CONCURRENTLY
+  // with HTTP discovery — a slow/dead configured peer must not delay it.
+  discoverViaIPFS().catch(()=>{});
+  setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
   await discover();
   prefetchNodeStatuses();
   renderMissions();
