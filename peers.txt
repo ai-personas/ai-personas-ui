@@ -11,7 +11,7 @@
 # Live PersonaOS node (kernel:dea359c0e1cc67d5) on the current design-alignment
 # build (operator bearer-token authority, signed bridging, live cognitive modes,
 # sandbox auto-install, deliverable↔pathway coherence, design-derived UI):
-https://arena-quilt-sister-those.trycloudflare.com
+https://vanilla-late-insulation-bikini.trycloudflare.com
 #
 # A visitor's OWN local node, if they run one (harmless when absent).
 http://localhost:8765
