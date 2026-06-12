@@ -1489,9 +1489,10 @@ async function operatorNodeView(b){
         `<div class="grant"><span class="amber">${esc(bk.capability||bk.kind||'capability')}</span>`
         +`<span class="l2">${esc(bk.target||'')} ${esc((bk.reason||'').slice(0,90))}</span></div>`).join('');
       return `<div class="grant"><span>${esc(a.run)}</span><span class="l2">${esc((a.task||'').slice(0,60))}</span></div>`+blocks
-        +`<div class="opform"><div class="oprow">`
+        +`<div class="opform">`
         +`<input class="op-att-stmt" data-run="${esc(a.run)}" placeholder="what you provisioned / verified (signed into the run)">`
-        +`<button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">✍ ATTEST</button></div></div>`;
+        +`<textarea class="op-att-smoke" data-run="${esc(a.run)}" rows="2" placeholder="optional SMOKE TEST (Python, runs in the real sandbox; a failing probe REFUSES the attestation; passing output becomes EXECUTED evidence)"></textarea>`
+        +`<div class="oprow"><button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">✍ ATTEST</button></div></div>`;
     }).join('');
   }
   html+=H('Ask the node — owner intake')
@@ -1882,11 +1883,14 @@ function wire(){
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
     if(act==='op-attest'){ const b2=a.dataset.base, run=a.dataset.run, out=$('#op-out');
-      const inp=document.querySelector(`.op-att-stmt[data-run="${(window.CSS&&CSS.escape)?CSS.escape(run):run}"]`);
+      const sel=(window.CSS&&CSS.escape)?CSS.escape(run):run;
+      const inp=document.querySelector(`.op-att-stmt[data-run="${sel}"]`);
+      const smokeEl=document.querySelector(`.op-att-smoke[data-run="${sel}"]`);
       const statement=(inp&&inp.value||'').trim();
+      const smoke_test=(smokeEl&&smokeEl.value||'').trim();
       if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; return; }
-      if(out) out.textContent='signing human attestation…';
-      opPost(b2,'attest',{run,statement}).then((r)=>{
+      if(out) out.textContent=smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…';
+      opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{
         if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1200)
           +(r.status<300?'\n\n→ now FUND the mission to resume with the attested capability.':'');
         if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3500); } });
