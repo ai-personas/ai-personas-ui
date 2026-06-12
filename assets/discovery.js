@@ -136,13 +136,22 @@ async function discoverFrom(base,plane){
   const providers=prov?.providers||[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
   const found=[];
-  for(const p of providers){
-    const doc=await fetchJson(join(base,p.record_url)); if(!doc?.record){ continue; }
-    const out=await verifiedRecordFromDoc(doc,keys,boot,base,plane,p.record_url);
-    const r=doc.record;
-    log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — ${out.ok?'OK':'FAIL'}`,out.ok);
-    if(out.ok) found.push(out.row);
+  // PARALLEL record resolution (batches of 24): a node serving hundreds of
+  // records — or reached over a WAN tunnel — must not cost one round-trip per
+  // record. Ed25519 verification stays per-record after each batch lands.
+  for(let i=0;i<providers.length;i+=24){
+    const batch=providers.slice(i,i+24);
+    const docs=await Promise.all(batch.map((p)=>fetchJson(join(base,p.record_url))
+      .then((doc)=>({p,doc})).catch(()=>({p,doc:null}))));
+    for(const {p,doc} of docs){
+      if(!doc?.record) continue;
+      const out=await verifiedRecordFromDoc(doc,keys,boot,base,plane,p.record_url);
+      if(!out.ok){ const r=doc.record;
+        log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — FAIL`,false); continue; }
+      found.push(out.row);
+    }
   }
+  if(found.length) log('verify',`${found.length}/${providers.length} record(s) Ed25519-verified OK`,true);
   // GLOBAL P2P PLANE: a node running the libp2p bridge serves the verified
   // records it RECEIVED over gossipsub (discovery/p2p/received.json) — records
   // from kernels anywhere on the mesh, re-verified here against each record's
@@ -315,8 +324,12 @@ async function discover(){
   await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
   const seeds=[...new Set(['', ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
-  for(const b of await resolveKernelBases(seeds)){
-    const res=await discoverFrom(b,'internet'); res.found.forEach(upsert);
+  // PARALLEL per-base discovery: a dead/slow peer must not serialize the rest.
+  const bases=await resolveKernelBases(seeds);
+  const results=await Promise.all(bases.map((b)=>
+    discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
+  for(const {b,res} of results){
+    res.found.forEach(upsert);
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
@@ -667,6 +680,78 @@ function renderEnvFeedDoc(doc){
   h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
   return h;
 }
+// ---- 🧠 persona THINKING (02_PERSONA §4/§8-10) ----
+// Operator (token) sees the persona's cognition in ITS OWN WORDS — learned
+// lessons (trigger→action+rationale), evolved EVOLVE-BLOCK tactics with GEPA
+// provenance, mode proficiencies, the signed cognition timeline, and the exact
+// thinking FRAME (SOUL + evolved tactics + retrieved knowledge) it generates
+// under. Anonymous viewers get the A-TF2 redacted tier: transition kinds +
+// proficiency numbers from the persona's own public feed — content never.
+function renderThinking(t){
+  let h='';
+  const mp=t.mode_proficiencies||{};
+  if(Object.keys(mp).length){
+    h+=`<div class="l2" style="margin:2px 0">Cognitive modes (proficiency it earned per mode)</div>`
+      +Object.entries(mp).sort((a,b)=>b[1]-a[1]).map(([m,v])=>
+        `<div class="grant"><span class="l2">${esc(m)}</span><span class="ok">${esc(Number(v).toFixed(2))}</span></div>`).join('');
+  }
+  const lessons=t.lessons||[];
+  if(lessons.length){
+    h+=`<div class="l2" style="margin:6px 0 3px">Lessons it learned — its own words</div>`
+      +lessons.slice(-6).reverse().map((l)=>
+        `<div class="think"><span class="amber">when</span> ${esc(l.trigger||'—')} <span class="amber">→</span> ${esc(l.action||'')}`
+        +(l.rationale?`<div class="l2">${esc(String(l.rationale).slice(0,260))}</div>`:'')
+        +`<div class="l2">confidence ${esc(Number(l.confidence||0).toFixed(2))}</div></div>`).join('');
+  }
+  const tactics=t.tactics||[];
+  if(tactics.length){
+    h+=`<div class="l2" style="margin:6px 0 3px">Evolved tactics (EVOLVE-BLOCK · GEPA-signed)</div>`
+      +tactics.slice(-6).reverse().map((x)=>
+        `<div class="think">${esc(String(x.action||x.trigger||'').slice(0,300))}`
+        +`<div class="l2">${esc(x.source||'manual')} · score ${esc(Number(x.score||0).toFixed(2))} · v${esc(x.version||1)}${x.cohort?' · '+esc(x.cohort):''}</div></div>`).join('');
+  }
+  const facts=t.proven_facts||[];
+  if(facts.length){
+    h+=`<div class="l2" style="margin:6px 0 3px">Shared proven facts it holds</div>`
+      +facts.slice(-4).reverse().map((s)=>`<div class="think l2">${esc(String(s).slice(0,220))}</div>`).join('');
+  }
+  const tl=t.evolution_timeline||[];
+  if(tl.length){
+    h+=`<div class="l2" style="margin:6px 0 3px">Cognition timeline (signed evolution log)</div><div class="tape-mini">`
+      +tl.slice(-10).reverse().map((e)=>
+        `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
+        +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?'✓':e.accepted===false?'✗':''}</span></div>`).join('')+`</div>`;
+  }
+  if(t.thinking_frame)
+    h+=`<details class="frame"><summary class="l2">🧠 thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
+      +`<pre class="opout">${esc(t.thinking_frame)}</pre></details>`;
+  return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
+}
+function renderThinkingRedacted(doc){
+  let h='<div class="l2">public tier shows TRANSITIONS only (A-TF2) — the operator token unlocks lessons, tactics and the thinking frame</div>';
+  const mp=(doc&&doc.summary&&doc.summary.mode_proficiencies)||{};
+  if(Object.keys(mp).length)
+    h+=Object.entries(mp).sort((a,b)=>b[1]-a[1]).map(([m,v])=>
+      `<div class="grant"><span class="l2">${esc(m)}</span><span class="ok">${esc(Number(v).toFixed(2))}</span></div>`).join('');
+  const tl=(doc&&doc.transitions)||[];
+  if(tl.length)
+    h+='<div class="tape-mini">'+tl.slice(-10).reverse().map((e)=>
+      `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
+      +`<span class="l2">${e.accepted===true?'✓':e.accepted===false?'✗':''}</span></div>`).join('')+'</div>';
+  return h;
+}
+async function refreshThinking(){
+  if(!S.drawerThinkPid) return;
+  const el=$('#thinksec'); if(!el) return;
+  const want=S.drawerThinkPid;
+  const t=await fetchJson(join(S.drawerLiveBase||'',`personas/${encodeURIComponent(want)}/thinking`));
+  if(S.drawerThinkPid!==want) return;   // drawer navigated away mid-fetch
+  const el2=$('#thinksec'); if(!el2) return;
+  if(t&&t.schema==='personaos-persona-thinking/1'){ el2.innerHTML=renderThinking(t); return; }
+  const doc=S.drawerLiveFeed?await fetchEntityFeed(S.drawerLiveBase||'',S.drawerLiveFeed):null;
+  if(S.drawerThinkPid!==want) return;
+  const el3=$('#thinksec'); if(el3) el3.innerHTML=renderThinkingRedacted(doc);
+}
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
@@ -723,6 +808,11 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
+  // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
+  // transition timeline for everyone else. Streams on the live cadence.
+  S.drawerThinkPid=pid||_shortId(r.did);
+  html+=H('🧠 Thinking')+`<div id="thinksec" class="livesec"><div class="l2">resolving cognition…</div></div>`;
+  setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   const eid=envRecId(), bid=bundleRecId(); let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
@@ -1514,7 +1604,7 @@ function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
 function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
-  S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase='';   // the view sets these if it streams
+  S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
   $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
@@ -1683,11 +1773,17 @@ function _isMissionDoc(r,L){ return L.media_kind==='design_history'
   || /(^|\/)design_history\.json$/i.test(r.label||''); }
 function missionCardList(){
   const cards=[]; const seen=new Set();
+  const shippedSeen=new Set();
   for(const id of S.order){ const r=S.recs.get(id); const L=r._links||{};
     if(r.kind==='mission'||(r.kind==='artifact'&&_isMissionDoc(r,L))){
-      // the PROJECT record from the same kernel carries the human task text
+      // the PROJECT record from the same kernel carries the human task text;
+      // MANY legs of one mission ship many design-history records — ONE card
+      // per (kernel, task), pointing at the newest record discovered.
       const proj=S.order.map((x)=>S.recs.get(x)).find((p)=>p&&p.kind==='project'&&p._kernel===r._kernel);
-      cards.push({key:'rec:'+id,task:(proj&&proj.label)||r.label||'mission',state:'shipped',
+      const task=(proj&&proj.label)||r.label||'mission';
+      const dedupe=(r._kernel||'')+'::'+task;
+      if(shippedSeen.has(dedupe)) continue; shippedSeen.add(dedupe);
+      cards.push({key:'rec:'+id,task,state:'shipped',
         meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
   for(const [base,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
     const busy=String((v.heartbeat||{}).busy||'');
@@ -1900,6 +1996,6 @@ async function initP2P(){
   setInterval(()=>{ discover().then(()=>{ buildRows(); renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
   // per-entity drawer feed + node run state: re-fetch on the node's live cadence
   // so the drawer and the missions strip stream without SSE.
-  setInterval(()=>{ try{ refreshLiveSection(); prefetchNodeStatuses(); }catch(e){} }, 5000);
+  setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses(); }catch(e){} }, 5000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
