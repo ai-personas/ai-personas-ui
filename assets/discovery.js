@@ -221,28 +221,46 @@ function ipfsRouting(){ const p=new URLSearchParams(location.search).get('ipfs_r
   return p||'https://delegated-ipfs.dev/routing/v1/providers/'; }
 function ipfsGateways(){ const p=new URLSearchParams(location.search).getAll('ipfs_gw');
   return p.length?p:['https://ipfs.io','https://dweb.link']; }
+// An /dns*/<host>/tcp/<port>/https (or tls/http) multiaddr in a provider record
+// names the node's HTTP front door — kernels announce it via kubo
+// Addresses.AppendAnnounce, so the URL rides the DHT provider record itself and
+// NO IPNS resolution is needed for first contact. Transport info only: every
+// record fetched from the URL is still Ed25519-verified before it is trusted.
+function httpsFromMultiaddr(a){
+  const m=/^\/dns[46]?\/([^/]+)\/tcp\/(\d+)\/(?:tls\/http|https?)(?:\/|$)/.exec(String(a||''));
+  if(!m) return '';
+  const port=m[2]==='443'?'':(':'+m[2]);
+  return `https://${m[1]}${port}`;
+}
 async function discoverViaIPFS(){
   S.ipfsPeers=S.ipfsPeers||new Set();
   let provs=[];
   try{ const r=await fetch(ipfsRouting()+IPFS_RENDEZVOUS_CID,{headers:{Accept:'application/json'},cache:'no-store'});
     if(!r.ok){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs',`delegated routing HTTP ${r.status} — IPFS plane idle`,false); } return; }
     const d=await r.json();
-    provs=[...new Set((d.Providers||[]).map((x)=>x.ID||'').filter(Boolean))];
+    provs=(d.Providers||[]).filter((x)=>x&&x.ID);
   }catch(e){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs','delegated routing unreachable — IPFS plane idle',false); } return; }
   if(provs.length) log('ipfs',`rendezvous providers on the IPFS DHT: ${provs.length}`,true);
   let added=0;
-  for(const pid of provs.slice(0,16)){
-    for(const gw of ipfsGateways()){
-      let doc=null;
-      try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(!r.ok) continue; doc=await r.json(); }catch(e){ continue; }
-      if(!doc||doc.schema!=='personaos-ipfs-node-card/1'||!doc.card) break;
-      let ok=false;  // in-browser Ed25519 verify against the card's embedded key
-      try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.card)),hexToBytes(doc.public_key_hex)); }catch(e){}
-      log('ipfs',`node card ${pid.slice(0,12)}… ${ok?'verified':'BAD SIGNATURE'}`,ok);
-      const url=ok?String(doc.card.peer_url||''):'';
-      if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
-      break;
+  for(const p of provs.slice(0,16)){
+    const pid=String(p.ID);
+    // 1) PRIMARY: the provider record's own announced https multiaddr.
+    let url=(p.Addrs||[]).map(httpsFromMultiaddr).find(Boolean)||'';
+    if(url) log('ipfs',`provider ${pid.slice(0,12)}… announces ${url}`,true);
+    // 2) FALLBACK: the signed IPNS node card (when public IPNS resolves).
+    if(!url){
+      for(const gw of ipfsGateways()){
+        let doc=null;
+        try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(!r.ok) continue; doc=await r.json(); }catch(e){ continue; }
+        if(!doc||doc.schema!=='personaos-ipfs-node-card/1'||!doc.card) break;
+        let ok=false;  // in-browser Ed25519 verify against the card's embedded key
+        try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.card)),hexToBytes(doc.public_key_hex)); }catch(e){}
+        log('ipfs',`node card ${pid.slice(0,12)}… ${ok?'verified':'BAD SIGNATURE'}`,ok);
+        if(ok) url=String(doc.card.peer_url||'');
+        break;
+      }
     }
+    if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
   }
   if(added){ log('ipfs',`+${added} kernel(s) discovered via IPFS — re-discovering`,true);
     discover().then(()=>{ buildRows(); renderMissions(); }).catch(()=>{}); }
