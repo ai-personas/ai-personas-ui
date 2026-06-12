@@ -1370,6 +1370,22 @@ async function operatorNodeView(b){
   const paused=st.paused_missions||[];
   if(paused.length) html+=H(`Paused missions (${paused.length}) — fund to resume`)+paused.map((p)=>
     `<div class="grant"><span>${esc(p.run||p.run_id||'')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
+  // A-HB (06_DOMAIN §5.5): missions BLOCKED on a HUMAN — the persona named an
+  // unavailable external capability instead of fabricating a value. The human
+  // attests once (signed bridge evidence); the next resume clears the block.
+  const att=st.attestations_needed||[];
+  if(att.length){
+    html+=H(`⚠ Human attestation needed (${att.length}) — mission honest-blocked`);
+    html+=att.map((a)=>{
+      const blocks=(a.blocks||[]).map((bk)=>
+        `<div class="grant"><span class="amber">${esc(bk.capability||bk.kind||'capability')}</span>`
+        +`<span class="l2">${esc(bk.target||'')} ${esc((bk.reason||'').slice(0,90))}</span></div>`).join('');
+      return `<div class="grant"><span>${esc(a.run)}</span><span class="l2">${esc((a.task||'').slice(0,60))}</span></div>`+blocks
+        +`<div class="opform"><div class="oprow">`
+        +`<input class="op-att-stmt" data-run="${esc(a.run)}" placeholder="what you provisioned / verified (signed into the run)">`
+        +`<button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">✍ ATTEST</button></div></div>`;
+    }).join('');
+  }
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea>`
     +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget (optional)">`
@@ -1751,6 +1767,16 @@ function wire(){
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
+    if(act==='op-attest'){ const b2=a.dataset.base, run=a.dataset.run, out=$('#op-out');
+      const inp=document.querySelector(`.op-att-stmt[data-run="${(window.CSS&&CSS.escape)?CSS.escape(run):run}"]`);
+      const statement=(inp&&inp.value||'').trim();
+      if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; return; }
+      if(out) out.textContent='signing human attestation…';
+      opPost(b2,'attest',{run,statement}).then((r)=>{
+        if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1200)
+          +(r.status<300?'\n\n→ now FUND the mission to resume with the attested capability.':'');
+        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3500); } });
+      return; }
     if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
       const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600);
         // leave the result readable, then refresh the console so the new entity shows
