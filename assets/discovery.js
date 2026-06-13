@@ -87,6 +87,21 @@ function indexLiveTelemetry(base,live){
     S.liveByEnv.set(eid,{...cur,models,spans:spByE.get(eid)||cur.spans||[],generated_at:live.generated_at}); }
   for(const [eid,spans] of spByE){ const cur=S.liveByEnv.get(eid)||{};
     if(!cur.spans) S.liveByEnv.set(eid,{...cur,spans,generated_at:live.generated_at}); }
+  // WHO→WHOM interaction stream (kernel.interactions): actor → affected : kind.
+  // Drives the SYSTEM-view coordination/cross-env graph. Keyed by a stable
+  // signature so re-polls don't duplicate; newest kept (ring of 400).
+  const ix=(live.kernel&&live.kernel.interactions)||[];
+  if(ix.length){
+    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
+    ix.forEach((e,i)=>{
+      const aff=(e.affected||[]).map((a)=>`${a.kind}:${a.id}`).join(',');
+      const key=`${base}|${e.scope_id}|${e.actor_id}|${aff}|${e.kind}|${e.at||i}`;
+      if(S.ixKeys.has(key)) return; S.ixKeys.add(key);
+      S.interactions.push({...e, _base:base, _t:Date.parse(e.at||'')||t, _key:key});
+    });
+    S.interactions.sort((a,b)=>a._t-b._t);
+    if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+  }
 }
 
 /* ---------- discovery log ---------- */
@@ -335,6 +350,7 @@ async function discover(){
   }
   classifyMap(); buildRows(); buildTicker(); renderStats(); renderGlobalKernels();
   renderEmptyState();
+  refreshSystemView();
   const when=new Date();
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
     +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
@@ -632,6 +648,134 @@ function renderEnvLive(eid){
   h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env</div>`+_liveFeed(d.models);
   return h;
 }
+
+/* ===================== ◫ SYSTEM VIEW — the living representation ===================
+   Environments contain their personas; each persona card streams its live
+   request/response (model selections = what it ASKED a model to do) and its
+   cognition; the right rail streams coordination + cross-env interactions
+   (kernel.interactions: actor → affected : kind); artifacts show as deliverables.
+   All from live, signature-verified telemetry — nothing fabricated. */
+const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
+  safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
+  domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify'};
+// event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
+const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
+  'MEMBER_JOINED','ENV_MEMBER_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
+  'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED']);
+const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
+  'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
+const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created','artifact_card_published',
+  'PROVEN_FACT_RECORDED','VERIFIER_VERDICT','TASK_COMPLETED','TASK_ACCEPTED']);
+function _ixClass(kind){ if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(COORD_KINDS.has(kind))return 'coord';
+  if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
+const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
+function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
+
+// one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
+function renderPersonaCard(pid){
+  const sid=_shortId(pid); const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
+  const models=d.models||[]; const last=models[models.length-1];
+  const name=s.name||_nameFor(sid); _PERSONA_NAME.set(sid,name);
+  const role=s.role||(s.gepa_cohort_id?'specialist':'')||'';
+  const state=s.lifecycle_state||'';
+  const doing=last?(PURPOSE_VERB[last.purpose]||last.purpose):'';
+  const live=!!last;
+  const reqresp=models.slice(-4).reverse().map((m)=>
+    `<div class="rr"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
+    +`<span class="rr-a">→ <code>${esc(m.model)}</code></span></div>`).join('')
+    ||'<div class="l2 rr">idle — no model request in the last tick</div>';
+  const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
+  const born=s.gepa_cohort_id&&(s.experience_tasks!=null);
+  return `<div class="pcard${live?' live':''}" data-pcard="${esc(sid)}" title="open ${esc(name)}">`
+    +`<div class="pcard-top"><span class="pc-dot ${live?'on':'off'}"></span>`
+    +`<span class="pc-name">${esc(name)}</span>`
+    +(role?`<span class="pc-role">${esc(role)}</span>`:'')
+    +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
+    +`<div class="pc-doing">${live?`<span class="pulse">●</span> ${esc(doing)} <code>${esc(last.model)}</code>`:'<span class="l2">idle</span>'}</div>`
+    +`<div class="pc-rr">${reqresp}</div>`
+    +`<div class="pc-stats">`
+    +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
+    +(s.tactic_count!=null?`<span title="evolved tactics">🧬 ${esc(s.tactic_count)}</span>`:'')
+    +(s.lesson_count!=null?`<span title="lessons learned">💡 ${esc(s.lesson_count)}</span>`:'')
+    +(s.fitness!=null?`<span title="fitness">✦ ${esc(Number(s.fitness).toFixed(1))}</span>`:'')
+    +(topMode?`<span title="strongest mode">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
+    +`</div></div>`;
+}
+
+async function refreshSystemView(){
+  if(S.view!=='system') return;
+  const host=$('#sysEnvs'); if(!host) return;
+  // structure: each discovered base → its envs (entities index) → members (env feed).
+  const bases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
+  const envBlocks=[];          // {kernel, envId, name, type, status, members[], parent}
+  const assigned=new Set();
+  for(const key of bases){ const base=key==='@origin'?'':key;
+    const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) continue;
+    const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
+    for(const [eid,rel] of Object.entries(ent.environments||{})){
+      const feed=await fetchEntityFeed(base,rel); if(!feed) continue;
+      const members=(feed.members||[]).map(_shortId);
+      members.forEach((m)=>assigned.add(m));
+      envBlocks.push({base,kernel,envId:eid,sid:_shortId(eid),name:feed.name||eid,
+        type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[]});
+    }
+  }
+  // personas known live but not in any env feed → a node-roster lane
+  const orphans=[...S.liveByPersona.keys()].filter((p)=>!assigned.has(p));
+  // refresh the friendly-name map from discovered persona records
+  for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
+    const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(sid,r.label); } }
+  // artifacts per kernel (discovered records)
+  const artByKernel=new Map();
+  for(const id of S.order){ const r=S.recs.get(id);
+    if(r.kind==='artifact'||r.kind==='mission'){ const k=r._kernel||'';
+      (artByKernel.get(k)||artByKernel.set(k,[]).get(k)).push(r); } }
+
+  const laneHTML=(b)=>{
+    const live=(b.spans||[]).length;
+    const cards=b.members.length?b.members.map(renderPersonaCard).join('')
+      :'<div class="l2" style="padding:8px">no members yet</div>';
+    const arts=(artByKernel.get(b.kernel)||[]).slice(0,8);
+    const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>`
+      +arts.map((a)=>`<span class="art-chip" data-artid="${esc(a.id)}" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,22))}</span>`).join('')+`</div>`:'';
+    return `<div class="env-lane" data-envsid="${esc(b.sid)}">`
+      +`<div class="env-head"><span class="env-badge">ENV</span>`
+      +`<span class="env-name" data-envrec="${esc(b.sid)}">${esc(b.name)}</span>`
+      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(b.status||'—')}</span> · ${b.members.length} member(s) · ${esc((b.kernel||'').slice(0,14))}</span></div>`
+      +`<div class="env-personas">${cards}</div>${artRow}</div>`;
+  };
+  let html=envBlocks.map(laneHTML).join('');
+  if(orphans.length){
+    html+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
+      +`<span class="env-meta">personas not currently in a task environment</span></div>`
+      +`<div class="env-personas">${orphans.map(renderPersonaCard).join('')}</div></div>`;
+  }
+  host.innerHTML=html||'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>';
+  renderInteractionStream();
+}
+
+function renderInteractionStream(){
+  const el=$('#sysStream'); if(!el) return;
+  const flt=S.sysFlt||'all';
+  const all=(S.interactions||[]);
+  const rows=all.filter((e)=>{ const c=_ixClass(e.kind);
+    if(flt==='all') return c!=='activity'||COORD_KINDS.has(e.kind)||true;   // all = everything
+    if(flt==='coord') return c==='coord';
+    if(flt==='crossenv') return c==='crossenv';
+    if(flt==='artifact') return c==='artifact';
+    return true; }).slice(-120).reverse();
+  el.innerHTML=rows.map((e)=>{
+    const c=_ixClass(e.kind);
+    const who=e.actor_kind==='persona'?_nameFor(_shortId(e.actor_id)):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
+    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):`${a.kind}:${(a.id||'').slice(0,8)}`);
+    const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
+    return `<li class="ix ix-${c}"><span class="ix-kind">${esc(e.kind)}</span>`
+      +`<span class="ix-from">${esc(who)}</span>${arrow}`
+      +`<span class="ix-scope l2">${esc(e.scope||'')}</span></li>`;
+  }).join('')||'<li class="l2" style="padding:10px">no '+esc(flt==='all'?'':flt+' ')+'interactions streamed yet — fund a mission to see personas coordinate.</li>';
+  const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} signed events`;
+}
+
 // ---- per-entity feed documents (telemetry/personas/<slug>.json etc.) ----
 // The node serves each persona's and each env's OWN redacted-tier live feed
 // (09_PROTOCOLS §4.1 / A-TF2). The drawer prefers that authoritative document;
@@ -1834,7 +1978,31 @@ function renderKindFilter(){ const box=$('#kind-filter'); const kinds=[...new Se
   box.innerHTML=want.map((k)=>`<button data-kind="${esc(k)}" class="chip${k===S.kind?' on':''}">${esc(k==='all'?'ALL':(KIND_LABEL[k]||k))}</button>`).join(''); }
 
 /* ---------- wiring ---------- */
+function setView(v){
+  S.view=v;
+  const sys=$('#systemview'), board=$('#boardgrid');
+  if(sys) sys.hidden=v!=='system';
+  if(board) board.hidden=v!=='board';
+  [...($('#viewmode')?.children||[])].forEach((c)=>c.classList.toggle('on',c.dataset.view===v));
+  if(v==='system') refreshSystemView();
+}
 function wire(){
+  S.view='system';
+  $('#viewmode').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return; setView(b.dataset.view); });
+  $('#sysStreamTabs').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
+    S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); renderInteractionStream(); });
+  $('#sysEnvs').addEventListener('click',(e)=>{
+    // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
+    // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
+    const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard;
+      const rid=S.order.find((id)=>{ const r=S.recs.get(id);
+        return r.kind==='persona'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
+      if(rid) openDetail(rid); return; }
+    const ev=e.target.closest('[data-envrec]'); if(ev){ const sid=ev.dataset.envrec;
+      const rid=S.order.find((id)=>{ const r=S.recs.get(id);
+        return r.kind==='env'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
+      if(rid) openDetail(rid); return; }
+    const ar=e.target.closest('[data-artid]'); if(ar&&S.recs.has(ar.dataset.artid)){ openDetail(ar.dataset.artid); } });
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); buildRows(); });
   $('#plane-filter').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
     S.plane=b.dataset.plane; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); buildRows(); });
@@ -2000,6 +2168,7 @@ async function initP2P(){
   setInterval(()=>{ discover().then(()=>{ buildRows(); renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
   // per-entity drawer feed + node run state: re-fetch on the node's live cadence
   // so the drawer and the missions strip stream without SSE.
-  setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses(); }catch(e){} }, 5000);
+  setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
+    if(S.view==='system') refreshSystemView(); }catch(e){} }, 5000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });

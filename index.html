@@ -47,6 +47,10 @@
     </div>
     <div class="chips" id="kind-filter"></div>
     <span class="grow"></span>
+    <div class="chips" id="viewmode" role="group" aria-label="view">
+      <button data-view="system" class="chip on" title="living system: environments, personas, their request/response and coordination">◫ SYSTEM</button>
+      <button data-view="board" class="chip" title="signed-record discovery board">▤ BOARD</button>
+    </div>
     <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
     <button id="addpeer" class="btn">＋ PEER</button>
     <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑 OPERATOR</button>
@@ -64,7 +68,26 @@
     <div id="missionCards" class="mission-cards"></div>
   </div>
 
-  <main class="grid">
+  <!-- ◫ SYSTEM view: the living representation — environments containing their
+       personas, each persona's live request/response, coordination + cross-env
+       messages, and shipped artifacts. Default surface. -->
+  <section class="systemview" id="systemview">
+    <div class="sys-wrap">
+      <div class="sys-envs" id="sysEnvs"><div class="dim" style="padding:20px">assembling the living system from live telemetry…</div></div>
+      <aside class="sys-stream">
+        <div class="sys-stream-head"><span>COORDINATION&nbsp;&amp;&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
+        <div class="sys-stream-tabs" id="sysStreamTabs">
+          <button data-flt="all" class="chip on">ALL</button>
+          <button data-flt="coord" class="chip">COORDINATION</button>
+          <button data-flt="crossenv" class="chip">CROSS-ENV</button>
+          <button data-flt="artifact" class="chip">ARTIFACTS</button>
+        </div>
+        <ol class="sys-stream-body" id="sysStream"></ol>
+      </aside>
+    </div>
+  </section>
+
+  <main class="grid" id="boardgrid" hidden>
     <section class="board">
       <div id="emptystate" hidden></div>
       <table class="watch">
