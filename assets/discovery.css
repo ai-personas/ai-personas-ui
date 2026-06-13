@@ -322,3 +322,42 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
 .ix-crossenv{border-left-color:var(--pink)} .ix-crossenv .ix-kind{color:var(--pink)}
 .ix-artifact{border-left-color:var(--amber)} .ix-artifact .ix-kind{color:var(--amber)}
 .ix-activity{border-left-color:var(--mut)}
+
+/* ---- system view: main column (graph + lanes) ---- */
+.sys-main{overflow:auto;min-height:0;display:flex;flex-direction:column}
+.sys-graph-wrap{border-bottom:1px solid var(--line2);background:#070b10;padding:6px 10px 2px}
+.sys-graph-head{display:flex;justify-content:space-between;align-items:center;color:var(--mut);font-size:11px;letter-spacing:.6px;font-weight:700;padding:2px 2px 4px}
+#sysGraph{width:100%;height:340px;display:block}
+/* graph edges */
+.ge{stroke-width:1.4} .ge-idle{stroke:#1c2733} .ge-live{stroke:#1d4a73}
+.ge-verify{stroke:var(--purple);stroke-dasharray:4 4;opacity:.5}
+.ge-hot{stroke:var(--up);stroke-width:2.4;animation:gepulse 1s ease-out}
+@keyframes gepulse{0%{stroke:var(--up);opacity:1;stroke-width:3.5}100%{stroke:#1d4a73;opacity:.8;stroke-width:1.6}}
+/* graph nodes */
+.gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--line2);stroke-width:1.5}
+.gnode.role-verifier .gn-c{stroke:var(--intr)} .gnode.role-lead .gn-c{stroke:var(--purple)}
+.gnode.role-integrator .gn-c{stroke:var(--int)} .gnode.role-specialist .gn-c{stroke:var(--amber)}
+.gnode.gn-live .gn-c{fill:#10241a;stroke:var(--up)}
+.gn-ring{fill:none;stroke:var(--up);stroke-width:1;opacity:.4;animation:gnring 1.8s infinite}
+@keyframes gnring{0%{r:24;opacity:.5}100%{r:34;opacity:0}}
+.gnode.gn-hot .gn-c{fill:#16301f;stroke:var(--up);stroke-width:2.5}
+.gn-name{fill:var(--ink);font-size:12px;text-anchor:middle;font-family:var(--mono)}
+.gn-role{fill:#7f93a8;font-size:13px;font-weight:800;text-anchor:middle}
+.gnode.gn-live .gn-role{fill:var(--up)}
+.gn-do{fill:var(--up);font-size:10px;text-anchor:middle;font-family:var(--mono)}
+.ghub .hub-c{fill:#0c1622;stroke:var(--amber);stroke-width:2}
+.ghub .hub-ring{fill:none;stroke:var(--amber);stroke-width:1;opacity:.35;animation:gnring 2.4s infinite}
+.hub-t{fill:var(--amber);font-size:13px;font-weight:800;text-anchor:middle;font-family:var(--mono)}
+.hub-s{fill:var(--dim);font-size:10px;text-anchor:middle;font-family:var(--mono)}
+/* realtime persona card req/response */
+.pcard.role-verifier{border-top:2px solid var(--intr)} .pcard.role-lead{border-top:2px solid var(--purple)}
+.pcard.role-integrator{border-top:2px solid var(--int)} .pcard.role-specialist{border-top:2px solid var(--amber)}
+.pcard.flashcard{animation:cardflash 1s ease-out}
+@keyframes cardflash{0%{box-shadow:0 0 0 2px var(--up) inset}100%{box-shadow:none}}
+.pc-rr-head{display:flex;justify-content:space-between;font-size:9.5px;color:var(--mut);letter-spacing:.4px;
+  text-transform:uppercase;border-top:1px solid var(--line);padding-top:5px;margin-top:2px}
+.rr-count{color:var(--dim)}
+.pc-rr{max-height:128px;overflow:hidden}
+.rr-ok{color:var(--up);font-size:10px}
+.rr-new{animation:rrslide .7s ease-out}
+@keyframes rrslide{0%{background:rgba(33,208,122,.22);transform:translateX(-6px);opacity:.4}100%{background:transparent;transform:none;opacity:1}}

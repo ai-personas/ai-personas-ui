@@ -672,26 +672,43 @@ const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live 
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
+// derive a persona's coordination ROLE from its summary/name (open, emergent —
+// no closed enum): verifier / producer-lead / integrator / specialist / member.
+function _coordRole(sid,s){
+  const n=(_nameFor(sid)+' '+(s.role||'')).toLowerCase();
+  if(n.includes('verif')) return 'verifier';
+  if(n.includes('integrat')) return 'integrator';
+  if(s.gepa_cohort_id&&n.includes('specialist')) return 'specialist';
+  if(n.includes('persona')||s.role==='lead'||(s.fitness||0)>=2) return 'lead';
+  return 'member';
+}
+// per-persona "is fresh" detector for realtime streaming: did its model-event
+// count grow since the last render? (drives the slide-in animation + node pulse)
+function _personaGrew(sid,count){
+  S.pcardSeen=S.pcardSeen||new Map();
+  const prev=S.pcardSeen.get(sid); S.pcardSeen.set(sid,count);
+  return prev!=null && count>prev;
+}
 function renderPersonaCard(pid){
   const sid=_shortId(pid); const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
   const models=d.models||[]; const last=models[models.length-1];
   const name=s.name||_nameFor(sid); _PERSONA_NAME.set(sid,name);
-  const role=s.role||(s.gepa_cohort_id?'specialist':'')||'';
+  const role=_coordRole(sid,s);
   const state=s.lifecycle_state||'';
-  const doing=last?(PURPOSE_VERB[last.purpose]||last.purpose):'';
-  const live=!!last;
-  const reqresp=models.slice(-4).reverse().map((m)=>
-    `<div class="rr"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
-    +`<span class="rr-a">→ <code>${esc(m.model)}</code></span></div>`).join('')
-    ||'<div class="l2 rr">idle — no model request in the last tick</div>';
+  const live=!!last; const grew=_personaGrew(sid,models.length);
+  // realtime request/response feed — newest first; the freshest row animates in.
+  const reqresp=models.slice(-6).reverse().map((m,i)=>
+    `<div class="rr${grew&&i===0?' rr-new':''}"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
+    +`<span class="rr-a">→ <code>${esc(m.model)}</code> <span class="rr-ok">✓</span></span></div>`).join('')
+    ||'<div class="l2 rr">idle — awaiting a model request</div>';
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
-  const born=s.gepa_cohort_id&&(s.experience_tasks!=null);
-  return `<div class="pcard${live?' live':''}" data-pcard="${esc(sid)}" title="open ${esc(name)}">`
+  return `<div class="pcard role-${role}${live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${live?'on':'off'}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
-    +(role?`<span class="pc-role">${esc(role)}</span>`:'')
+    +`<span class="pc-role">${esc(role)}</span>`
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
-    +`<div class="pc-doing">${live?`<span class="pulse">●</span> ${esc(doing)} <code>${esc(last.model)}</code>`:'<span class="l2">idle</span>'}</div>`
+    +`<div class="pc-doing">${live?`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`:'<span class="l2">idle</span>'}</div>`
+    +`<div class="pc-rr-head">request → response <span class="rr-count">${models.length}</span></div>`
     +`<div class="pc-rr">${reqresp}</div>`
     +`<div class="pc-stats">`
     +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
@@ -700,6 +717,55 @@ function renderPersonaCard(pid){
     +(s.fitness!=null?`<span title="fitness">✦ ${esc(Number(s.fitness).toFixed(1))}</span>`:'')
     +(topMode?`<span title="strongest mode">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
     +`</div></div>`;
+}
+
+// ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
+// Honest topology: PersonaOS coordination is KERNEL-MEDIATED (the kernel routes
+// candidate→verify→accept), so the kernel is the hub and personas are spokes;
+// the producer→verifier verify-relationship is drawn directly. Edges/nodes PULSE
+// when a fresh interaction names that persona (from kernel.interactions).
+function _hotPersonas(){
+  const hot=new Set();
+  for(const e of (S.interactions||[]).slice(-10)){
+    if(e.actor_kind==='persona'&&e.actor_id) hot.add(_shortId(e.actor_id));
+    for(const a of (e.affected||[])) if(a.kind==='persona') hot.add(_shortId(a.id));
+  }
+  return hot;
+}
+function renderCoordGraph(persons){
+  const svg=$('#sysGraph'); if(!svg) return;
+  const W=1000,H=520,cx=W/2,cy=H/2;
+  const act=persons.filter((p)=>p.live).length;
+  const hot=_hotPersonas();
+  // position persona nodes on an ellipse around the kernel hub
+  const n=persons.length||1;
+  persons.forEach((p,i)=>{ const ang=(-Math.PI/2)+(i*2*Math.PI/n);
+    p.x=cx+Math.cos(ang)*360; p.y=cy+Math.sin(ang)*190; });
+  const verifier=persons.find((p)=>p.role==='verifier');
+  let edges='';
+  // kernel ↔ persona orchestration spokes
+  persons.forEach((p)=>{ const h=hot.has(p.sid);
+    edges+=`<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(0)}" y2="${p.y.toFixed(0)}" `
+      +`class="ge ${h?'ge-hot':p.live?'ge-live':'ge-idle'}"/>`; });
+  // producer → verifier verify-relationship (the real persona↔persona link)
+  if(verifier) persons.forEach((p)=>{ if(p.sid===verifier.sid) return;
+    edges+=`<line x1="${p.x.toFixed(0)}" y1="${p.y.toFixed(0)}" x2="${verifier.x.toFixed(0)}" y2="${verifier.y.toFixed(0)}" `
+      +`class="ge ge-verify"/>`; });
+  // nodes
+  let nodes='';
+  persons.forEach((p)=>{ const h=hot.has(p.sid);
+    nodes+=`<g class="gnode role-${p.role}${p.live?' gn-live':''}${h?' gn-hot':''}" data-gp="${esc(p.sid)}" transform="translate(${p.x.toFixed(0)},${p.y.toFixed(0)})">`
+      +`<circle r="${h?26:22}" class="gn-c"/>`
+      +(p.live?`<circle r="30" class="gn-ring"/>`:'')
+      +`<text class="gn-name" y="-30">${esc((p.name||'').slice(0,18))}</text>`
+      +`<text class="gn-role" y="4">${esc(p.role[0].toUpperCase())}</text>`
+      +`<text class="gn-do" y="44">${p.live?esc(p.doing.slice(0,22)):''}</text></g>`; });
+  // kernel hub
+  const hub=`<g class="ghub" transform="translate(${cx},${cy})">`
+    +`<circle r="40" class="hub-c"/><circle r="48" class="hub-ring"/>`
+    +`<text class="hub-t" y="-2">KERNEL</text>`
+    +`<text class="hub-s" y="14">${act} active</text></g>`;
+  svg.innerHTML=edges+hub+nodes;
 }
 
 async function refreshSystemView(){
@@ -732,7 +798,6 @@ async function refreshSystemView(){
       (artByKernel.get(k)||artByKernel.set(k,[]).get(k)).push(r); } }
 
   const laneHTML=(b)=>{
-    const live=(b.spans||[]).length;
     const cards=b.members.length?b.members.map(renderPersonaCard).join('')
       :'<div class="l2" style="padding:8px">no members yet</div>';
     const arts=(artByKernel.get(b.kernel)||[]).slice(0,8);
@@ -751,6 +816,13 @@ async function refreshSystemView(){
       +`<div class="env-personas">${orphans.map(renderPersonaCard).join('')}</div></div>`;
   }
   host.innerHTML=html||'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>';
+  // build the graph node set from ACTIVE-env members + any live orphan personas
+  const graphIds=[...new Set([...envBlocks.flatMap((b)=>b.members),...orphans.filter((o)=>(S.liveByPersona.get(o)||{}).models)])];
+  const persons=graphIds.map((sid)=>{ const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
+    const models=d.models||[]; const last=models[models.length-1];
+    return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:!!last,
+      doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; }).slice(0,14);
+  renderCoordGraph(persons);
   renderInteractionStream();
 }
 
@@ -2003,6 +2075,10 @@ function wire(){
         return r.kind==='env'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
       if(rid) openDetail(rid); return; }
     const ar=e.target.closest('[data-artid]'); if(ar&&S.recs.has(ar.dataset.artid)){ openDetail(ar.dataset.artid); } });
+  // graph node click → open that persona's drawer
+  const g=$('#sysGraph'); if(g) g.addEventListener('click',(e)=>{ const node=e.target.closest('[data-gp]'); if(!node) return;
+    const sid=node.dataset.gp; const rid=S.order.find((id)=>{ const r=S.recs.get(id);
+      return r.kind==='persona'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); }); if(rid) openDetail(rid); });
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); buildRows(); });
   $('#plane-filter').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
     S.plane=b.dataset.plane; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); buildRows(); });

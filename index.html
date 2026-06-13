@@ -73,7 +73,13 @@
        messages, and shipped artifacts. Default surface. -->
   <section class="systemview" id="systemview">
     <div class="sys-wrap">
-      <div class="sys-envs" id="sysEnvs"><div class="dim" style="padding:20px">assembling the living system from live telemetry…</div></div>
+      <div class="sys-main">
+        <div class="sys-graph-wrap">
+          <div class="sys-graph-head"><span>COORDINATION&nbsp;GRAPH</span><span class="dim" id="sysGraphCap">live — the kernel orchestrates; edges pulse as work flows</span></div>
+          <svg id="sysGraph" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+        <div class="sys-envs" id="sysEnvs"><div class="dim" style="padding:20px">assembling the living system from live telemetry…</div></div>
+      </div>
       <aside class="sys-stream">
         <div class="sys-stream-head"><span>COORDINATION&nbsp;&amp;&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
         <div class="sys-stream-tabs" id="sysStreamTabs">
