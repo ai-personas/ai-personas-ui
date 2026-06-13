@@ -78,10 +78,12 @@ Click any discovered record for deep, verified detail:
   extensions;
 - **project / bundle** → the J7 model cascade, verifier cascade + 8-source safety floor, OCI/IPLD
   distribution (CIDs), any fabricated physical asset, and an **in-browser artifact viewer**;
-- **telemetry** → a consent-gated activity/presence feed; the live tape streams signed OTel spans.
+- **telemetry** → a consent-gated activity/presence feed of signed OTel spans + kernel interactions.
 
-A real-time terminal UI (ticker, ticking watchlist, streaming event tape) makes the live network
-legible; filters by plane / kind / text; pause / replay.
+A real-time **LIVING NETWORK** UI makes the personas legible: living persona cards stream each
+persona's request→response and cognition; a coordination constellation (kernel core + persona nodes)
+fires as messages flow; a who→whom coordination feed threads each task's produce→verify→ship; and a
+heartbeat-driven system vital keeps the page alive. Everything is Ed25519-verified in your browser.
 
 ## Operator console — drive your own node from the portal
 

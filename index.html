@@ -3,127 +3,82 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PersonaOS Ecosystem</title>
+  <title>PersonaOS · Living Network</title>
   <link rel="stylesheet" href="assets/discovery.css">
 </head>
 <body>
-  <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="livedot" id="livedot"></span>
-      <span class="mark">PersonaOS</span><span class="exch">DISCOVERY&nbsp;EXCHANGE</span>
-      <span class="tag" title="every record below is resolved at runtime from live nodes and Ed25519-signature-verified in your browser — nothing here is baked into the page">live board of autonomous AI engineering teams — verified in your browser</span>
-      <button id="helpbtn" class="btn" title="what am I looking at?">？ what is this</button>
-    </div>
-    <div class="board-stats" id="stats"></div>
+  <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
+       Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
+  <header class="vitals">
+    <span class="livedot" id="livedot" title="live — driven by the node heartbeat"></span>
+    <span class="brandmark"><b class="mark">PersonaOS</b><span class="vsub">LIVING&nbsp;NETWORK</span></span>
+    <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
+    <span class="verify-badge" id="verifybadge" title="every record on this page is resolved from a live node and Ed25519-signature-verified in YOUR browser — nothing here is baked into the page">✓ VERIFIED IN&nbsp;BROWSER</span>
+    <span class="vcounts" id="stats"></span>
+    <span class="grow"></span>
+    <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter">
+    <button id="helpbtn" class="btn" title="what am I looking at?">？</button>
+    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
+    <button id="addpeer" class="btn">＋&nbsp;PEER</button>
+    <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑&nbsp;OPERATOR</button>
   </header>
 
   <div class="intro" id="intro" hidden>
     <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
     (“design a manufacture-ready 10&nbsp;W DC→AC inverter”) and refine a real, verified deliverable
     round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
-    This page discovers those teams from live nodes and verifies every record's Ed25519 signature in your browser.</p>
+    This page is a <b>live, signature-verified window</b> into those personas at work: it discovers them from
+    live nodes and verifies every record's Ed25519 signature in your browser.</p>
     <div class="gloss">
-      <span><b>MISSION</b> a task being refined; best-so-far never regresses</span>
-      <span><b>PERSONA</b> one AI team member (founder, verifier, born specialists)</span>
-      <span><b>ENV</b> the team's shared workspace</span>
-      <span><b>DOMAIN</b> the field of work the team recognised emergently</span>
-      <span><b>ARTIFACT</b> a shipped, hash-bound deliverable file or bundle</span>
-      <span><b>TELEMETRY</b> a persona's / env's / node's live activity feed</span>
-      <span><b>ATTESTED</b> value confirmed by an independent model from a different family</span>
-      <span><b>UNMEASURED</b> claimed but not evidenced — never scores, shown honestly</span>
+      <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
+      <span><b>ENV</b> the shared workspace a team of personas performs in</span>
+      <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
+      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
+      <span><b>VERIFIED</b> Ed25519-checked in your browser — trust is signature, not host</span>
+      <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
     </div>
     <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8805</code>
     then add <code>?peer=http://localhost:8805</code> to this page's URL or use ＋PEER.</p>
   </div>
 
-  <div class="controls">
-    <input id="q" type="search" placeholder="filter symbol / kind / DID / kernel…" aria-label="filter">
-    <div class="chips" id="plane-filter" role="group" aria-label="plane">
-      <button data-plane="all" class="chip on">ALL</button>
-      <button data-plane="internet" class="chip">INTERNET·DHT</button>
-      <button data-plane="intranet" class="chip">INTRANET·mDNS</button>
-    </div>
-    <div class="chips" id="kind-filter"></div>
-    <span class="grow"></span>
-    <div class="chips" id="viewmode" role="group" aria-label="view">
-      <button data-view="system" class="chip on" title="living system: environments, personas, their request/response and coordination">◫ SYSTEM</button>
-      <button data-view="board" class="chip" title="signed-record discovery board">▤ BOARD</button>
-    </div>
-    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
-    <button id="addpeer" class="btn">＋ PEER</button>
-    <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑 OPERATOR</button>
-    <button id="pause" class="btn">⏸ PAUSE</button>
-    <button id="replay" class="btn">↻ REPLAY</button>
-  </div>
-
   <div class="globalbar">
-    <span class="globalbar-label" title="every PersonaOS kernel this page has discovered, and how it was reached (HTTP, P2P gossipsub, gossip cards)">GLOBAL&nbsp;KERNELS</span>
+    <span class="globalbar-label" title="every PersonaOS kernel this page has discovered, and how it was reached (HTTP, P2P gossipsub, gossip cards)">NODES</span>
     <span id="globalKernels" class="globalbar-list"><span class="dim">resolving…</span></span>
   </div>
 
   <div class="missions" id="missions" hidden>
-    <span class="globalbar-label" title="every task the discovered nodes are working on, paused on, or have shipped — click a card for the full mission record">MISSIONS</span>
+    <span class="globalbar-label" title="every task the discovered personas are working on, paused on, or have shipped — click a card for the full mission record">MISSIONS</span>
     <div id="missionCards" class="mission-cards"></div>
   </div>
 
-  <!-- ◫ SYSTEM view: the living representation — environments containing their
-       personas, each persona's live request/response, coordination + cross-env
-       messages, and shipped artifacts. Default surface. -->
-  <section class="systemview" id="systemview">
-    <div class="sys-wrap">
-      <div class="sys-main">
-        <div class="sys-graph-wrap">
-          <div class="sys-graph-head"><span>COORDINATION&nbsp;GRAPH</span><span class="dim" id="sysGraphCap">live — the kernel orchestrates; edges pulse as work flows</span></div>
-          <svg id="sysGraph" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet"></svg>
-        </div>
-        <div class="sys-envs" id="sysEnvs"><div class="dim" style="padding:20px">assembling the living system from live telemetry…</div></div>
-      </div>
-      <aside class="sys-stream">
-        <div class="sys-stream-head"><span>COORDINATION&nbsp;&amp;&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
-        <div class="sys-stream-tabs" id="sysStreamTabs">
-          <button data-flt="all" class="chip on">ALL</button>
-          <button data-flt="coord" class="chip">COORDINATION</button>
-          <button data-flt="crossenv" class="chip">CROSS-ENV</button>
-          <button data-flt="artifact" class="chip">ARTIFACTS</button>
-        </div>
-        <ol class="sys-stream-body" id="sysStream"></ol>
-      </aside>
+  <!-- R1 · CONSTELLATION RAIL — supporting minimap of the node: the kernel core
+       beats on the heartbeat; persona nodes breathe when live; an edge fires a
+       traveling pulse when a coordination message names that persona. -->
+  <section class="constellation" id="constellation">
+    <div class="con-head">
+      <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
+      <span class="dim" id="sysGraphCap">the kernel orchestrates · edges fire as messages flow between personas</span>
+      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation">▾</button>
     </div>
+    <svg id="sysGraph" viewBox="0 0 1000 200" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
 
-  <main class="grid" id="boardgrid" hidden>
-    <section class="board">
-      <div id="emptystate" hidden></div>
-      <table class="watch">
-        <thead>
-          <tr>
-            <th data-sort="label" class="l" title="the record's human label">SYMBOL</th>
-            <th data-sort="kind" title="what kind of record this is — persona, environment, domain, artifact, mission, telemetry">KIND</th>
-            <th data-sort="tier" title="visibility tier the publishing node granted: public / federation / private">TIER</th>
-            <th title="how the record reached this page: DHT (.well-known + providers), mDNS (intranet), P2P (gossipsub mesh)">NET</th>
-            <th title="Ed25519 signature verified in your browser against the kernel's published key">✓</th>
-            <th data-sort="events" class="r num" title="telemetry events attributed to this record">EVENTS</th>
-            <th data-sort="rate" class="r num" title="events per second right now">EV/s</th>
-            <th class="r" title="time since the last event">LAST</th>
-            <th title="event-rate sparkline">ACTIVITY</th>
-            <th title="live 'doing now' streamed from each persona's / env's own telemetry feed">STATUS</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </section>
-
-    <aside class="tape">
-      <div class="tape-head">
-        <span>EVENT&nbsp;TAPE</span>
-        <span class="replay" id="feedmode">REPLAY</span>
-        <span class="eps" id="eps">0 ev/s</span>
+  <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
+  <section class="stage-wrap">
+    <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">assembling the living network from live telemetry…</div></div>
+    <aside class="coordfeed">
+      <div class="cf-head"><span>COORDINATION&nbsp;FEED</span><span class="dim" id="sysStreamRate"></span></div>
+      <div class="cf-tabs" id="sysStreamTabs">
+        <button data-flt="all" class="chip on">ALL</button>
+        <button data-flt="coord" class="chip">COORD</button>
+        <button data-flt="verify" class="chip">VERIFY</button>
+        <button data-flt="artifact" class="chip">SHIP</button>
+        <button data-flt="crossenv" class="chip">CROSS-ENV</button>
       </div>
-      <ol class="tape-body" id="tape"></ol>
+      <ol class="cf-body" id="sysStream"></ol>
+      <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link" id="cfUnfollow">show all ✕</button></div>
     </aside>
-  </main>
+  </section>
 
   <footer>
     <span id="status">booting discovery…</span>

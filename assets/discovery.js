@@ -49,7 +49,16 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // Live per-entity telemetry index: base → latest live telemetry doc, plus
   // derived per-persona / per-env activity. Lets each persona + env view show
   // what is happening INSIDE it right now (model selections, evolution, lineage).
-  liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null };
+  liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null,
+  // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
+  // persistent constellation node positions/elements, env count, persona-follow.
+  heartbeat:null, vitalSpikes:[], nodePos:new Map(), gnodes:new Map(), envCount:0,
+  follow:null, sysFlt:'all' };
+
+// honour the viewer's motion preference: freeze the ambient/firing animations
+// (canvas trace, traveling pulses, breathe/heartbeat) while keeping all STATE —
+// counters, colours, fresh-classes, feed rows — fully live.
+const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Index a live-telemetry doc per-persona and per-env so the detail views can
 // render each entity's OWN activity (model_events carry persona_id +
@@ -58,6 +67,10 @@ const _shortId=(s)=>String(s||'').replace(/^did:personaos:[^:]+:/,'').replace(/^
 function indexLiveTelemetry(base,live){
   if(!live||typeof live!=='object') return;
   S.liveTel.set(base||'@origin',live);
+  // the always-on baseline pulse: node.heartbeat is present + running on every
+  // node sample, so the page is alive the instant it loads even when both event
+  // streams are momentarily quiet — and it NEVER fakes activity.
+  if(live.node&&live.node.heartbeat) S.heartbeat=live.node.heartbeat;
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
   const personas=live.personas||[];
@@ -87,20 +100,59 @@ function indexLiveTelemetry(base,live){
     S.liveByEnv.set(eid,{...cur,models,spans:spByE.get(eid)||cur.spans||[],generated_at:live.generated_at}); }
   for(const [eid,spans] of spByE){ const cur=S.liveByEnv.get(eid)||{};
     if(!cur.spans) S.liveByEnv.set(eid,{...cur,spans,generated_at:live.generated_at}); }
+  // VITAL SPIKES from model_events growth: a persona just asked a model to do
+  // something. Honest — fires only when a persona's req/resp count GREW since
+  // last poll (a static snapshot spikes once on cold load, then rests).
+  S.modelCount=S.modelCount||new Map();
+  for(const [pid,models] of byP){
+    const prev=S.modelCount.get(pid); const now2=models.length;
+    if(prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
+      for(let k=0;k<g;k++) _pushSpike('produce');
+      setTimeout(()=>_fireEdge(pid,'produce'),60); }   // the persona just asked a model → its edge fires
+    S.modelCount.set(pid,now2);
+  }
   // WHO→WHOM interaction stream (kernel.interactions): actor → affected : kind.
-  // Drives the SYSTEM-view coordination/cross-env graph. Keyed by a stable
-  // signature so re-polls don't duplicate; newest kept (ring of 400).
+  // Drives the coordination feed + constellation. Keyed by a stable signature so
+  // re-polls don't duplicate; newest kept (ring of 400). On the FIRST load we
+  // seed the ring WITHOUT spiking the vital or firing edges (the 400-ring spans
+  // hours — stale events must not animate); only genuinely-new keys fire after.
   const ix=(live.kernel&&live.kernel.interactions)||[];
   if(ix.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
+    const cold=!S.ixColdLoaded; let fired=0; const fresh=[];
     ix.forEach((e,i)=>{
       const aff=(e.affected||[]).map((a)=>`${a.kind}:${a.id}`).join(',');
       const key=`${base}|${e.scope_id}|${e.actor_id}|${aff}|${e.kind}|${e.at||i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key);
-      S.interactions.push({...e, _base:base, _t:Date.parse(e.at||'')||t, _key:key});
+      const rec={...e, _base:base, _t:Date.parse(e.at||'')||t, _key:key};
+      S.interactions.push(rec); fresh.push(rec);
     });
     S.interactions.sort((a,b)=>a._t-b._t);
     if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+    // bound the dedup/seen sets to the live ring so a long-running page doesn't
+    // leak (the node never re-sends an evicted event, so this can't re-fire one).
+    const liveKeys=new Set(S.interactions.map((e)=>e._key)); S.ixKeys=liveKeys;
+    if(S.ixSeen) for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
+    // index recent coordination acts PER PERSONA (actor + affected) so a persona
+    // card can stream its activity in live state A (interactions, no model_events).
+    const _ixSids=(e)=>[e.actor_kind==='persona'?_shortId(e.actor_id):null,
+      ...(e.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id))].filter(Boolean);
+    S.ixByPersona=new Map();
+    for(const e of S.interactions) for(const sid of _ixSids(e)){
+      const arr=S.ixByPersona.get(sid)||S.ixByPersona.set(sid,[]).get(sid); arr.push({kind:e.kind,_t:e._t}); }
+    for(const [,arr] of S.ixByPersona) if(arr.length>12) arr.splice(0,arr.length-12);
+    if(!cold){
+      S.ixCountBySid=S.ixCountBySid||new Map();
+      for(const rec of fresh){
+        // monotonic per-persona act tally → drives the card flash on genuine growth
+        for(const sid of _ixSids(rec)) S.ixCountBySid.set(sid,(S.ixCountBySid.get(sid)||0)+1);
+        if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
+        _pushSpike(_ixClass(rec.kind)); fired++;
+        const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500);
+        _ixSids(rec).forEach((sid)=>setTimeout(()=>_fireEdge(sid,cls),d));
+      }
+    }
+    S.ixColdLoaded=true;
   }
 }
 
@@ -287,7 +339,7 @@ async function discoverViaIPFS(){
     if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
   }
   if(added){ log('ipfs',`+${added} kernel(s) discovered via IPFS — re-discovering`,true);
-    discover().then(()=>{ buildRows(); renderMissions(); }).catch(()=>{}); }
+    discover().then(()=>{ renderMissions(); }).catch(()=>{}); }
 }
 
 function upsert(r){
@@ -348,8 +400,7 @@ async function discover(){
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
-  classifyMap(); buildRows(); buildTicker(); renderStats(); renderGlobalKernels();
-  renderEmptyState();
+  classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
   const when=new Date();
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
@@ -357,22 +408,20 @@ async function discover(){
     +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
 }
 
-// ---------- empty state: never a silent blank board ----------
-function renderEmptyState(){
-  const el=$('#emptystate'); if(!el) return;
-  const table=document.querySelector('.watch');
-  if(S.recs.size){ el.hidden=true; if(table) table.style.display=''; return; }
-  if(table) table.style.display='none';
+// ---------- empty state: never a silent blank network ----------
+// Returns the rich "how to get live data" card HTML; refreshSystemView() paints
+// it into the stage (#sysEnvs) when nothing has been discovered yet.
+function emptyStateHTML(){
   const ph=S.peerHealth||new Map();
   const rows=[...ph.entries()].map(([base,h])=>
     `<div class="grant"><span class="${h.ok?'ok':'no'}">${h.ok?'●':'○'} ${esc(base)}</span>`
     +`<span class="l2">${h.ok?`reachable · ${h.records} public record(s)`:'unreachable'}</span></div>`).join('')
     ||'<div class="l2">no peers attempted yet</div>';
   const httpsPage=location.protocol==='https:';
-  el.innerHTML=`<div class="empty-card">
-    <h3>No live PersonaOS records discovered yet</h3>
-    <div class="desc2">This page ships <b>no data</b> — everything you see is discovered at
-    runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
+  return `<div class="empty-card">
+    <h3>No live PersonaOS personas discovered yet</h3>
+    <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
+    discovered at runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
     no reachable node is currently publishing public records.</div>
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
@@ -384,25 +433,17 @@ function renderEmptyState(){
     node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
     and add the tunnel URL with <b>＋ PEER</b>.`:`2 · Add your node's URL with <b>＋ PEER</b>
     (or <code>?peer=&lt;url&gt;</code>).`}<br>
-    3 · The board re-polls every 15 s — records appear the moment a node responds.<br>
+    3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
     4 · Your own node? Click <b>🔑 OPERATOR</b>, paste its token
     (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
     personas, live telemetry.</div>
   </div>`;
-  el.hidden=false;
 }
 
-function appendTelemetryEvent(payload,base,boot,reason){
-  const tel=payload?.telemetry||payload||{};
-  const t=Date.parse(tel.generated_at||payload?.generated_at||'')||Date.now();
-  const kid=(tel.node&&tel.node.node_id)||boot?.kernel_id||base||'live';
-  const ev={t,kernel:kid,scope:'telemetry',kind:String(reason||tel.reason||payload?.reason||'LIVE_TELEMETRY'),
-    trace:String(tel.schema||payload?.schema||'live'),signed:true,ms:0,gap:0};
-  S.events=(S.events||[]).concat([ev]).sort((a,b)=>a.t-b.t);
-  if(S.events.length===1) S.events[0].gap=0;
-  const fm=$('#feedmode'); if(fm){ fm.textContent='LIVE'; fm.classList.add('live'); }
-  const dot=$('#livedot'); if(dot) dot.style.background='var(--up)';
-}
+// a live telemetry frame arrived (SSE) — the per-entity index + heartbeat were
+// already refreshed by indexLiveTelemetry; the livedot is driven by the real
+// heartbeat in updateVitalsCounters, so there is nothing to force here.
+function appendTelemetryEvent(payload,base,boot,reason){}
 function connectDiscoveryStream(base,boot){
   if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
@@ -424,7 +465,7 @@ function connectDiscoveryStream(base,boot){
         const out=await verifiedRecordFromDoc(doc,keys,boot,base,'internet',p.record_url);
         if(out.ok){ upsert(out.row); added++; }
       }
-      if(added){ classifyMap(); buildRows(); buildTicker(); renderStats(); }
+      if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
   es.addEventListener('telemetry_update',(ev)=>{
@@ -507,40 +548,6 @@ async function loadTelemetry(base){
 }
 
 
-/* ---------- tick engine ---------- */
-function emitOne(){
-  const e=S.events[S.rIdx];
-  // tape row
-  const tape=$('#tape'); const li=document.createElement('li'); li.className='in';
-  const d=new Date(e.t||Date.now());
-  const sc=['domain','env','task','persona','project','answer','bundle','artifact'].includes(e.scope)?e.scope:'other';
-  li.innerHTML=`<span class="t">${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(),3)}</span>`
-    +`<span class="sc sc-${sc}">${esc(e.scope.slice(0,4))}</span>`
-    +`<span class="k" title="${esc(e.trace)}">${esc(e.kind)}</span>`
-    +`<span class="sg">${e.signed?'✓':''}</span>`;
-  tape.insertBefore(li,tape.firstChild);
-  while(tape.children.length>180) tape.removeChild(tape.lastChild);
-  // counters: the event's kernel-scope record + that kernel's telemetry-feed record
-  S.evCount++; S.epsWin.push(performance.now());
-  const km=S.mapByKernel[e.kernel]||{}; const rid=km[e.scope];
-  if(rid) bump(rid,e.t);
-  if(km.telemetry && km.telemetry!==rid) bump(km.telemetry,e.t);
-}
-function bump(id,t){
-  const r=S.recs.get(id); if(!r) return;
-  r.events++; r.lastT=t||Date.now(); r.spark[r.spark.length-1]++; r._dirty=true;
-}
-function rollBuckets(){ for(const id of S.order){ const r=S.recs.get(id);
-  const recent=r.spark.slice(-6).reduce((a,b)=>a+b,0); r.rate=recent/(6*BUCKET_MS/1000);
-  r.spark.push(0); if(r.spark.length>SPARK_N) r.spark.shift(); r._dirty=true; } }
-
-// Replay the captured run from the start: reset counters to 0 so they climb back to the
-// SAME real totals (never inflated beyond the actual run). Discovery is untouched.
-function replay(){
-  S.rIdx=0; S.replayDone=false; S.lastEmit=0; S.evCount=0; S.epsWin=[]; $('#tape').innerHTML='';
-  for(const id of S.order){ const r=S.recs.get(id); r.events=0; r.lastT=0; r.spark=new Array(SPARK_N).fill(0); r.rate=0; r._dirty=true; }
-  const fm=$('#feedmode'); fm.textContent='REPLAY'; fm.classList.remove('live'); refreshTicker();
-}
 // ---------- rich, navigable detail drawer (resolves deep docs) ----------
 const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
@@ -641,7 +648,7 @@ function renderEnvLive(eid){
   const sp=d.spans||[];
   if(sp.length){
     const counts={}; sp.forEach((s)=>{counts[s.kind]=(counts[s.kind]||0)+1;});
-    h+=`<div class="l2" style="margin:3px 0">Lineage events (signed)</div>`
+    h+=`<div class="l2" style="margin:3px 0">Lineage events</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>
         `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
@@ -664,10 +671,28 @@ const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITT
   'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
   'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
+// VERIFY = independent judgement (reinforces trust = signature). Checked before
+// SHIP so a verdict reads as a verify act, not a generic artifact event.
+const VERIFY_KINDS=new Set(['VERIFIER_VERDICT','ANSWER_EVALUATED','SAFETY_CHECKED','TASK_NOT_ACCEPTED','PANEL_VERDICT']);
 const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created','artifact_card_published',
-  'PROVEN_FACT_RECORDED','VERIFIER_VERDICT','TASK_COMPLETED','TASK_ACCEPTED']);
-function _ixClass(kind){ if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(COORD_KINDS.has(kind))return 'coord';
-  if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
+  'PROVEN_FACT_RECORDED','TASK_COMPLETED','TASK_ACCEPTED','answer/5']);
+// a verdict that did NOT accept → render in the rejected colour
+const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED';
+function _ixClass(kind){ if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
+  if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
+// interaction-kind → human verb, so a persona card can stream its recent
+// coordination acts when no model req/resp is flowing (live state A). Anything
+// unmapped falls back to the lower-cased kind — never fabricated.
+const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repaired candidate',
+  VERIFIER_VERDICT:'gave verdict',ANSWER_EVALUATED:'evaluated answer',SAFETY_CHECKED:'safety-checked',
+  TASK_COMPLETED:'completed task',TASK_ACCEPTED:'accepted task',TASK_NOT_ACCEPTED:'rejected answer',
+  TASK_CLASSIFIED:'classified task',MODE_ENTRY:'entered mode',MODE_EXIT:'exited mode',
+  ENVELOPE_MINTED:'minted envelope',EXPERIENCE_TASK_RECORDED:'recorded experience',
+  PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
+  COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
+  MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
+  GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress'};
+const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
 
@@ -695,21 +720,43 @@ function renderPersonaCard(pid){
   const name=s.name||_nameFor(sid); _PERSONA_NAME.set(sid,name);
   const role=_coordRole(sid,s);
   const state=s.lifecycle_state||'';
-  const live=!!last; const grew=_personaGrew(sid,models.length);
-  // realtime request/response feed — newest first; the freshest row animates in.
-  const reqresp=models.slice(-6).reverse().map((m,i)=>
-    `<div class="rr${grew&&i===0?' rr-new':''}"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
-    +`<span class="rr-a">→ <code>${esc(m.model)}</code> <span class="rr-ok">✓</span></span></div>`).join('')
-    ||'<div class="l2 rr">idle — awaiting a model request</div>';
+  // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
+  // recent kernel.interactions naming this persona (so the hero stays alive on a
+  // node that streams coordination but no model_events). Both are real telemetry.
+  const acts=(S.ixByPersona&&S.ixByPersona.get(sid))||[];
+  const recentAct=acts[acts.length-1];
+  const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
+  const hasModels=models.length>0;
+  const live=hasModels||actFresh;
+  // flash on genuine growth of total activity (model reqs + monotonic act tally)
+  const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
+  const grew=_personaGrew(sid,models.length+actTally);
+  let headLabel,streamRows,doingHTML;
+  if(hasModels){
+    headLabel=`request → response <span class="rr-count">${models.length}</span>`;
+    streamRows=models.slice(-6).reverse().map((m,i)=>
+      `<div class="rr${grew&&i===0?' rr-new':''}"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
+      +`<span class="rr-a">→ <code>${esc(m.model)}</code> <span class="rr-ok">✓</span></span></div>`).join('');
+    doingHTML=`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
+  } else if(acts.length){
+    headLabel=`recent coordination <span class="rr-count">${actTally||acts.length}</span>`;
+    streamRows=acts.slice(-6).reverse().map((a,i)=>
+      `<div class="rr${grew&&i===0?' rr-new':''} ix-${_ixClass(a.kind)}"><span class="rr-q">▸ ${esc(_ixVerb(a.kind))}</span></div>`).join('');
+    doingHTML=actFresh?`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`:'<span class="l2">resting</span>';
+  } else {
+    headLabel=`request → response <span class="rr-count">0</span>`;
+    streamRows='<div class="l2 rr">idle — awaiting a model request</div>';
+    doingHTML='<span class="l2">idle</span>';
+  }
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
-  return `<div class="pcard role-${role}${live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" title="open ${esc(name)}">`
+  return `<div class="pcard role-${role}${live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${live?'on':'off'}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
     +`<span class="pc-role">${esc(role)}</span>`
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
-    +`<div class="pc-doing">${live?`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`:'<span class="l2">idle</span>'}</div>`
-    +`<div class="pc-rr-head">request → response <span class="rr-count">${models.length}</span></div>`
-    +`<div class="pc-rr">${reqresp}</div>`
+    +`<div class="pc-doing">${doingHTML}</div>`
+    +`<div class="pc-rr-head">${headLabel}</div>`
+    +`<div class="pc-rr">${streamRows}</div>`
     +`<div class="pc-stats">`
     +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
     +(s.tactic_count!=null?`<span title="evolved tactics">🧬 ${esc(s.tactic_count)}</span>`:'')
@@ -732,44 +779,182 @@ function _hotPersonas(){
   }
   return hot;
 }
+const SVGNS='http://www.w3.org/2000/svg';
+const _svg=(tag,attrs,cls)=>{ const e=document.createElementNS(SVGNS,tag);
+  if(cls) e.setAttribute('class',cls); for(const k in (attrs||{})) e.setAttribute(k,attrs[k]); return e; };
+// CONSTELLATION (supporting minimap): KERNEL core (beats on heartbeat) + persona
+// nodes (breathe live / dim idle) on an ellipse, + producer→verifier verify edges.
+// Rendered with a KEYED enter/update/exit diff (NOT innerHTML=) so in-flight
+// breathing + traveling pulses survive each 5s refresh. The kernel is the honest
+// hub: PersonaOS coordination is kernel-mediated. cx/cy in the wide 1000×200 rail.
 function renderCoordGraph(persons){
   const svg=$('#sysGraph'); if(!svg) return;
-  const W=1000,H=520,cx=W/2,cy=H/2;
-  const act=persons.filter((p)=>p.live).length;
+  const cx=500,cy=100,rx=432,ry=58;
+  // skeleton (created once): edges / axons / core / nodes layers
+  if(!svg._built){ svg._built=true;
+    svg.appendChild(_svg('g',{},'cg-edges'));
+    svg.appendChild(_svg('g',{},'cg-axons'));
+    const core=_svg('g',{transform:`translate(${cx},${cy})`},'core');
+    core.appendChild(_svg('circle',{r:34},'core-ring'));
+    core.appendChild(_svg('circle',{r:28},'core-c'));
+    core.appendChild(_svg('text',{y:-2},'core-t')).textContent='KERNEL';
+    const cs=_svg('text',{y:13},'core-s'); core.appendChild(cs);
+    svg.appendChild(core); svg.appendChild(_svg('g',{},'cg-nodes'));
+    svg._edges=core.parentNode.querySelector('.cg-edges'); svg._axons=svg.querySelector('.cg-axons');
+    svg._core=core; svg._nodes=svg.querySelector('.cg-nodes');
+  }
   const hot=_hotPersonas();
-  // position persona nodes on an ellipse around the kernel hub
   const n=persons.length||1;
   persons.forEach((p,i)=>{ const ang=(-Math.PI/2)+(i*2*Math.PI/n);
-    p.x=cx+Math.cos(ang)*360; p.y=cy+Math.sin(ang)*190; });
+    p.x=+(cx+Math.cos(ang)*rx).toFixed(1); p.y=+(cy+Math.sin(ang)*ry).toFixed(1);
+    S.nodePos.set(p.sid,{x:p.x,y:p.y}); });
   const verifier=persons.find((p)=>p.role==='verifier');
-  let edges='';
-  // kernel ↔ persona orchestration spokes
+  // core: beat cadence from the heartbeat; caption = live/active count
+  const beat=S.heartbeat&&S.heartbeat.interval_s?Math.max(2,+S.heartbeat.interval_s):5;
+  svg._core.style.setProperty('--beat',beat+'s');
+  svg._core.querySelector('.core-s').textContent=`${persons.filter((p)=>p.live).length} live`;
+  // edges (static spokes + verify links) — safe to rebuild (no continuous anim)
+  let e='';
   persons.forEach((p)=>{ const h=hot.has(p.sid);
-    edges+=`<line x1="${cx}" y1="${cy}" x2="${p.x.toFixed(0)}" y2="${p.y.toFixed(0)}" `
-      +`class="ge ${h?'ge-hot':p.live?'ge-live':'ge-idle'}"/>`; });
-  // producer → verifier verify-relationship (the real persona↔persona link)
+    e+=`<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" class="ge ${h?'ge-hot':p.live?'ge-live':'ge-idle'}"/>`; });
   if(verifier) persons.forEach((p)=>{ if(p.sid===verifier.sid) return;
-    edges+=`<line x1="${p.x.toFixed(0)}" y1="${p.y.toFixed(0)}" x2="${verifier.x.toFixed(0)}" y2="${verifier.y.toFixed(0)}" `
-      +`class="ge ge-verify"/>`; });
-  // nodes
-  let nodes='';
-  persons.forEach((p)=>{ const h=hot.has(p.sid);
-    nodes+=`<g class="gnode role-${p.role}${p.live?' gn-live':''}${h?' gn-hot':''}" data-gp="${esc(p.sid)}" transform="translate(${p.x.toFixed(0)},${p.y.toFixed(0)})">`
-      +`<circle r="${h?26:22}" class="gn-c"/>`
-      +(p.live?`<circle r="30" class="gn-ring"/>`:'')
-      +`<text class="gn-name" y="-30">${esc((p.name||'').slice(0,18))}</text>`
-      +`<text class="gn-role" y="4">${esc(p.role[0].toUpperCase())}</text>`
-      +`<text class="gn-do" y="44">${p.live?esc(p.doing.slice(0,22)):''}</text></g>`; });
-  // kernel hub
-  const hub=`<g class="ghub" transform="translate(${cx},${cy})">`
-    +`<circle r="40" class="hub-c"/><circle r="48" class="hub-ring"/>`
-    +`<text class="hub-t" y="-2">KERNEL</text>`
-    +`<text class="hub-s" y="14">${act} active</text></g>`;
-  svg.innerHTML=edges+hub+nodes;
+    e+=`<line x1="${p.x}" y1="${p.y}" x2="${verifier.x}" y2="${verifier.y}" class="ge ge-verify"/>`; });
+  svg._edges.innerHTML=e;
+  // axons (persistent, one per sid kernel→persona) — fired imperatively by _fireEdge
+  const liveSids=new Set(persons.map((p)=>p.sid));
+  persons.forEach((p)=>{ let ax=svg._axons.querySelector(`[data-axon="${cssEsc(p.sid)}"]`);
+    if(!ax){ ax=_svg('line',{},'axon'); ax.setAttribute('data-axon',p.sid);
+      ax.addEventListener('animationend',()=>ax.setAttribute('class','axon')); svg._axons.appendChild(ax); }
+    ax.setAttribute('x1',cx); ax.setAttribute('y1',cy); ax.setAttribute('x2',p.x); ax.setAttribute('y2',p.y); });
+  [...svg._axons.children].forEach((ax)=>{ if(!liveSids.has(ax.getAttribute('data-axon'))) ax.remove(); });
+  // nodes — KEYED upsert so breathing persists; only touch what changed
+  persons.forEach((p)=>{ let g=svg._nodes.querySelector(`[data-gp="${cssEsc(p.sid)}"]`);
+    if(!g){ g=_svg('g',{},''); g.setAttribute('data-gp',p.sid);
+      g.setAttribute('tabindex','0'); g.setAttribute('role','button');   // keyboard-focusable map node
+      g.appendChild(_svg('circle',{r:11},'gn-c'));
+      g.appendChild(_svg('circle',{r:14},'gn-ring'));
+      g.appendChild(_svg('text',{y:-17},'gn-name'));
+      g.appendChild(_svg('text',{y:4},'gn-role'));
+      g.appendChild(_svg('text',{y:25},'gn-do'));
+      svg._nodes.appendChild(g); }
+    const cls=`gnode role-${p.role}${p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}`;
+    if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
+    g.setAttribute('transform',`translate(${p.x},${p.y})`);
+    g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (focus to follow)`);
+    const nm=(p.name||'').slice(0,11); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
+    const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
+    const dn=p.live?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
+  [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
+}
+const cssEsc=(s)=>(window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&');
+
+// fire a traveling pulse along a persona's kernel-edge (and flash its node) —
+// called when a NEW coordination act names that persona (staggered). The axon is
+// a reused element; we restart its one-shot travel by reflow + class re-add.
+function _fireEdge(sid,cls){
+  if(RM) { _flashNode(sid,cls); return; }
+  const svg=$('#sysGraph'); if(!svg||!svg._axons) return;
+  const ax=svg._axons.querySelector(`[data-axon="${cssEsc(sid)}"]`); if(!ax) return;
+  ax.setAttribute('class','axon'); void ax.getBoundingClientRect();
+  ax.setAttribute('class','axon fire'+(cls&&cls!=='coord'?' fire-'+cls:''));
+  _flashNode(sid,cls);
+}
+function _flashNode(sid,cls){
+  const svg=$('#sysGraph'); if(!svg||!svg._nodes) return;
+  const g=svg._nodes.querySelector(`[data-gp="${cssEsc(sid)}"]`); if(!g) return;
+  const base=g.getAttribute('class').replace(/ gn-flash| gn-verdict-\w+/g,'');
+  const verdict=cls==='verify'?' gn-verdict-pass':'';
+  g.setAttribute('class',base+' gn-flash'+verdict);
+  setTimeout(()=>{ g.setAttribute('class',base); },800);
+}
+
+// VITAL-SIGN spike queue: a verified event (model-event growth or a new
+// coordination act) injects a decaying spike, coloured by class. The ECG canvas
+// (drawVital) consumes it. Never enqueued without a real telemetry delta behind it.
+const SPIKE_COL={produce:'#a779e6',coord:'#3aa0ff',verify:'#19c39a',artifact:'#f0a73a',crossenv:'#ff5fa2',activity:'#48586a'};
+function _pushSpike(cls){ S.vitalSpikes.push({a:1,col:SPIKE_COL[cls]||SPIKE_COL.coord}); if(S.vitalSpikes.length>40) S.vitalSpikes.shift(); }
+
+// per-task THREAD hue: a stable colour per scope_id so you can watch one task
+// ripple produce→verify→ship down the feed.
+function _threadHue(scopeId){ let h=0; const s=String(scopeId||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return `hsl(${h%360},58%,60%)`; }
+
+// ---- the system VITAL SIGN (ECG canvas) — always-on heartbeat baseline +
+// one spike per verified event. The page is alive the instant it loads, and the
+// waveform decays to a calm baseline when work rests (never fakes activity). ----
+let _vitalBuf=null, _vitalPhase=0, _lastBeatAt=0;
+function drawVital(){
+  const c=$('#vital'); if(!c) return;
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=c.clientWidth||360, h=c.clientHeight||30;
+  if(c.width!==Math.round(w*dpr)){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); }
+  const N=Math.max(80,Math.round(w));
+  if(!_vitalBuf||_vitalBuf.length!==N){ _vitalBuf=new Array(N).fill(0).map(()=>({v:0,col:'#21d07a'})); }
+  const running=!S.heartbeat||S.heartbeat.running!==false;
+  // advance one sample/frame: baseline heartbeat blip + the strongest queued spike
+  _vitalPhase+=1;
+  let sample=0, col='#21d07a';
+  const beatFrames=Math.max(40,Math.round((S.heartbeat&&S.heartbeat.interval_s||5)*60/3)); // visible blip cadence
+  if(running && !RM && _vitalPhase-_lastBeatAt>=beatFrames){ _lastBeatAt=_vitalPhase; sample=Math.max(sample,.34); }
+  if(S.vitalSpikes.length){ const sp=S.vitalSpikes[S.vitalSpikes.length-1];
+    sample=Math.max(sample,.55+sp.a*.4); col=sp.col; sp.a-=.5; if(sp.a<=0) S.vitalSpikes.pop(); }
+  _vitalBuf.push({v:sample,col}); if(_vitalBuf.length>N) _vitalBuf.shift();
+  // draw
+  const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  const mid=h*.55, amp=h*.42;
+  ctx.lineWidth=1.4; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.strokeStyle='rgba(72,88,106,.5)'; ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke();
+  // waveform
+  ctx.beginPath(); ctx.strokeStyle=running?'#21d07a':'#48586a';
+  for(let i=0;i<_vitalBuf.length;i++){ const x=i*(w/N); const y=mid-_vitalBuf[i].v*amp;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+  ctx.stroke();
+  // leading-edge dot, coloured by the most recent event class
+  const last=_vitalBuf[_vitalBuf.length-1];
+  if(last.v>.1){ ctx.fillStyle=last.col; ctx.beginPath(); ctx.arc((N-1)*(w/N),mid-last.v*amp,2.2,0,7); ctx.fill(); }
+}
+
+// ---- humane VITALS counters (replaces the exchange board-stats cluster) ----
+function updateVitalsCounters(){
+  const box=$('#stats'); if(!box) return;
+  if(!box.dataset.built){ box.dataset.built='1';
+    box.innerHTML=['auth','personas','active','envs','acts','signed'].map((k)=>{
+      const lbl={auth:'access',personas:'personas',active:'streaming',envs:'envs',acts:'acts/min',signed:'verified'}[k];
+      const init=k==='auth'?'discover':'0';
+      return `<div class="stat" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
+    }).join(''); }
+  const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
+    if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
+  let personasN=S.liveByPersona.size;
+  for(const id of S.order){ if(S.recs.get(id).kind==='persona') personasN=Math.max(personasN,1); }
+  const recPersona=S.order.filter((id)=>S.recs.get(id).kind==='persona').length;
+  personasN=Math.max(S.liveByPersona.size,recPersona);
+  const now=Date.now();
+  // STREAMING = personas with live req/resp (model_events) OR a coordination act
+  // in the last 60s — so the headline can't read 0 while the feed is streaming.
+  const streaming=new Set();
+  for(const [psid,pd] of S.liveByPersona) if((pd.models||[]).length>0) streaming.add(psid);
+  if(S.ixByPersona) for(const [psid,arr] of S.ixByPersona) if(arr.some((a)=>now-a._t<60000)) streaming.add(psid);
+  const active=streaming.size;
+  const acts=(S.interactions||[]).filter((e)=>now-e._t<60000).length;
+  // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
+  // unverified live interactions are NOT signed and must never inflate this.
+  const signed=S.recs.size;
+  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
+  setV('#st-auth',hasOp?'read':'discover');
+  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp);
+    authEl.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
+  setV('#st-personas',personasN); setV('#st-active',active); setV('#st-envs',S.envCount);
+  setV('#st-acts',acts); setV('#st-signed',signed.toLocaleString());
+  // verify badge live count
+  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed record(s) Ed25519-verified in your browser`;
+  // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
+  const dot=$('#livedot'); if(dot){ const beating=!!(S.heartbeat&&S.heartbeat.running!==false);
+    dot.classList.toggle('beating',beating);
+    dot.title=beating?'live — node heartbeat running':'no live node heartbeat'; }
 }
 
 async function refreshSystemView(){
-  if(S.view!=='system') return;
   const host=$('#sysEnvs'); if(!host) return;
   // structure: each discovered base → its envs (entities index) → members (env feed).
   const bases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
@@ -786,6 +971,7 @@ async function refreshSystemView(){
         type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[]});
     }
   }
+  S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.keys()].filter((p)=>!assigned.has(p));
   // refresh the friendly-name map from discovered persona records
@@ -802,10 +988,10 @@ async function refreshSystemView(){
       :'<div class="l2" style="padding:8px">no members yet</div>';
     const arts=(artByKernel.get(b.kernel)||[]).slice(0,8);
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>`
-      +arts.map((a)=>`<span class="art-chip" data-artid="${esc(a.id)}" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,22))}</span>`).join('')+`</div>`:'';
-    return `<div class="env-lane" data-envsid="${esc(b.sid)}">`
+      +arts.map((a)=>`<span class="art-chip" data-artid="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,22))}</span>`).join('')+`</div>`:'';
+    return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
-      +`<span class="env-name" data-envrec="${esc(b.sid)}">${esc(b.name)}</span>`
+      +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
       +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(b.status||'—')}</span> · ${b.members.length} member(s) · ${esc((b.kernel||'').slice(0,14))}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
@@ -815,7 +1001,13 @@ async function refreshSystemView(){
       +`<span class="env-meta">personas not currently in a task environment</span></div>`
       +`<div class="env-personas">${orphans.map(renderPersonaCard).join('')}</div></div>`;
   }
-  host.innerHTML=html||'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>';
+  const finalHTML=html||((S.recs.size||S.liveByPersona.size)
+    ?'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>'
+    :emptyStateHTML());
+  // only rewrite when the stage actually changed → unchanged (idle) renders keep
+  // their in-flight breathing/flash animations instead of restarting every 5s.
+  if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
+  _applyFollow();
   // build the graph node set from ACTIVE-env members + any live orphan personas
   const graphIds=[...new Set([...envBlocks.flatMap((b)=>b.members),...orphans.filter((o)=>(S.liveByPersona.get(o)||{}).models)])];
   const persons=graphIds.map((sid)=>{ const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
@@ -824,28 +1016,57 @@ async function refreshSystemView(){
       doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; }).slice(0,14);
   renderCoordGraph(persons);
   renderInteractionStream();
+  updateVitalsCounters();
+  if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
+}
+// per-env accent hue (stable, from the design palette) for the lane border/badge
+const _ENV_HUES=['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2'];
+function _envHue(sid){ let h=0; const s=String(sid||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return _ENV_HUES[h%_ENV_HUES.length]; }
+// persona-follow: dim cards + feed rows that aren't the followed persona
+function _applyFollow(){
+  const f=S.follow;
+  document.querySelectorAll('.pcard').forEach((el)=>el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f));
+  const ff=$('#cfFollow'); if(ff) ff.hidden=!f;
 }
 
+// the live COORDINATION FEED — the heartbeat of who→whom:what. Newest slides in
+// at the top (.fresh); adjacent acts sharing a real scope_id get a per-task
+// THREAD SPINE so you can watch one task ripple produce→verify→ship. The kernel
+// is rendered as the honest mediator — we NEVER draw a persona→persona arrow the
+// data doesn't contain; the only honest persona↔persona link is the scope_id join.
 function renderInteractionStream(){
   const el=$('#sysStream'); if(!el) return;
   const flt=S.sysFlt||'all';
   const all=(S.interactions||[]);
+  S.ixSeen=S.ixSeen||new Set();   // _keys already painted (so only genuinely-new rows .fresh in)
   const rows=all.filter((e)=>{ const c=_ixClass(e.kind);
-    if(flt==='all') return c!=='activity'||COORD_KINDS.has(e.kind)||true;   // all = everything
+    if(flt==='all') return true;
     if(flt==='coord') return c==='coord';
+    if(flt==='verify') return c==='verify';
     if(flt==='crossenv') return c==='crossenv';
     if(flt==='artifact') return c==='artifact';
     return true; }).slice(-120).reverse();
+  const f=S.follow;
+  const matches=(e)=>!f|| (e.actor_kind==='persona'&&_shortId(e.actor_id)===f)
+    || (e.affected||[]).some((a)=>a.kind==='persona'&&_shortId(a.id)===f);
+  let prevScope=null;
   el.innerHTML=rows.map((e)=>{
-    const c=_ixClass(e.kind);
+    const c=_ixClass(e.kind); const fail=_ixFailed(e.kind);
     const who=e.actor_kind==='persona'?_nameFor(_shortId(e.actor_id)):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
     const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):`${a.kind}:${(a.id||'').slice(0,8)}`);
     const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
-    return `<li class="ix ix-${c}"><span class="ix-kind">${esc(e.kind)}</span>`
+    const fresh=!S.ixSeen.has(e._key); if(fresh) S.ixSeen.add(e._key);
+    // thread spine when this row shares a real scope_id with the one above it
+    const sid=e.scope_id&&/[:/]/.test(String(e.scope_id))?String(e.scope_id):null;
+    const threaded=sid&&sid===prevScope; prevScope=sid;
+    const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
+    return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}">`
+      +spine+`<span class="ix-kind">${esc(e.kind)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}`
-      +`<span class="ix-scope l2">${esc(e.scope||'')}</span></li>`;
-  }).join('')||'<li class="l2" style="padding:10px">no '+esc(flt==='all'?'':flt+' ')+'interactions streamed yet — fund a mission to see personas coordinate.</li>';
-  const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} signed events`;
+      +`<span class="ix-scope">${esc(e.scope||'')}</span></li>`;
+  }).join('')||'<li class="l2" style="padding:10px">no '+esc(flt==='all'?'':flt+' ')+'coordination yet — fund a mission to watch personas coordinate.</li>';
+  const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
 }
 
 // ---- per-entity feed documents (telemetry/personas/<slug>.json etc.) ----
@@ -876,7 +1097,7 @@ function renderPersonaFeedDoc(doc){
   h+=`<div class="l2" style="margin:6px 0 3px">Doing now <span class="dim">(own feed · redacted tier)</span></div>`+_liveFeed(feedModels(doc));
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="l2" style="margin:6px 0 3px">Signed lifecycle/lineage</div>`
+    h+=`<div class="l2" style="margin:6px 0 3px">Lifecycle / lineage</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k2,v])=>
         `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
   return h;
@@ -890,7 +1111,7 @@ function renderEnvFeedDoc(doc){
     +`</div>`;
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="l2" style="margin:3px 0">Lineage events (signed · this env)</div>`
+    h+=`<div class="l2" style="margin:3px 0">Lineage events (this env)</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k2,v])=>
         `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
   h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
@@ -1832,152 +2053,17 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
 function pushView(fn){ S.views.push(fn); renderTop(); }
 function openDetail(id){ S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
 
+// ---------- main animation loop ----------
+// One rAF: paint the ECG vital every frame, and refresh the missions strip +
+// vitals counters a few times a second. (The board replay-tape engine is gone —
+// the page is driven by live telemetry deltas, not a replayed event ring.)
 let lastBucket=0;
 function tick(now){
-  if(!S.paused && !S.replayDone && S.events.length){
-    if(!S.lastEmit) S.lastEmit=now;
-    let guard=0;
-    while(guard++<50){
-      const e=S.events[S.rIdx];
-      if(now-S.lastEmit < e.gap) break;
-      S.lastEmit=now; emitOne(); S.rIdx++;
-      if(S.rIdx>=S.events.length){ // play the captured run ONCE → counters now equal the REAL totals
-        S.replayDone=true; const fm=$('#feedmode'); fm.textContent='REPLAY · done'; fm.classList.remove('live'); break; }
-    }
-  }
-  if(now-lastBucket>BUCKET_MS){ lastBucket=now; rollBuckets(); refreshTicker(); renderMissions(); }
-  S.epsWin=S.epsWin.filter((t)=>now-t<1000);
-  paintDirty(); renderStats();
+  drawVital();
+  if(now-lastBucket>900){ lastBucket=now; renderMissions(); updateVitalsCounters(); }
   requestAnimationFrame(tick);
 }
 
-/* ---------- rendering ---------- */
-function sparkSVG(arr){ const w=70,h=16,max=Math.max(1,...arr); const step=w/(arr.length-1);
-  const pts=arr.map((v,i)=>`${(i*step).toFixed(1)},${(h-1-(v/max)*(h-2)).toFixed(1)}`).join(' ');
-  const up=arr[arr.length-1]>=arr[arr.length-2]; const col=up?'var(--up)':'var(--down)';
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${col}" stroke-width="1.2" points="${pts}"/></svg>`; }
-function relTime(t){ if(!t) return '—'; const s=(Date.now()-t)/1000;
-  if(s<60) return s.toFixed(0)+'s'; if(s<3600) return (s/60).toFixed(0)+'m'; return (s/3600).toFixed(0)+'h'; }
-
-// The live "doing now" cell for a persona/env board row, from the per-entity
-// telemetry index — so the board itself streams what each persona/env is doing
-// without opening the drawer. Other kinds fall back to ACTIVE/listed.
-function _rowStatusCell(r){
-  const live=r.rate>0.05;
-  // A telemetry record's SUBJECT rides in its canonical DID
-  // (did:…/telemetry/<subject_id>) — labels may carry a human env NAME, so the
-  // DID is the mapping key and the label suffix is only a fallback.
-  let subjectId;
-  if(r.kind==='telemetry'){
-    const m=/\/telemetry\/(.+)$/.exec(r.did||'');
-    subjectId=_shortId(m?m[1]:(r.label||'').replace(/^(live )?telemetry:/,''));
-  } else subjectId=_shortId(r.did||r.record_id||r.id);
-  if(r.kind==='persona'||r.kind==='env'||r.kind==='telemetry'){
-    const d=(r.kind==='persona'?S.liveByPersona.get(subjectId)
-      :r.kind==='env'?S.liveByEnv.get(subjectId)
-      :(S.liveByPersona.get(subjectId)||S.liveByEnv.get(subjectId)));
-    const models=d&&d.models; const last=models&&models[models.length-1];
-    if(last){
-      const lbl=PURPOSE_LABEL[last.purpose]||last.purpose;
-      return `<span class="dot live">●</span><span class="live" title="${esc(last.model)}">${esc(lbl)}</span>`;
-    }
-    if(d&&d.summary){
-      const st=d.summary.lifecycle_state||'';
-      if(st&&st!=='ACTIVE') return `<span class="dot idle">●</span><span class="idle">${esc(st.toLowerCase())}</span>`;
-    }
-  }
-  return `<span class="dot ${live?'live':'idle'}">●</span>${live?'<span class="live">ACTIVE</span>':'<span class="idle">listed</span>'}`;
-}
-function rowHTML(r){
-  const net=(r._net==='p2p'?'<span class="n i">P2P</span>':'')
-    +r.planes.map((p)=>p==='internet'?'<span class="n i">DHT</span>':'<span class="n m">mDNS</span>').join('');
-  const live=r.rate>0.05;
-  return `<td class="l"><span class="sym" title="${esc(r.did)}">${esc(r.label)}</span><div class="did">${esc((r.did||'').slice(0,30))} · ${esc((r._kernel||'').slice(0,16))}</div></td>`
-    +`<td><span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span></td>`
-    +`<td class="tier">${esc(r.visibility_tier)}</td>`
-    +`<td class="net">${net}</td>`
-    +`<td class="ok">✓</td>`
-    +`<td class="r num events" data-c="events">${r.events}</td>`
-    +`<td class="r num rate" data-c="rate">${r.rate.toFixed(2)}</td>`
-    +`<td class="r last" data-c="last">${relTime(r.lastT)}</td>`
-    +`<td class="spark" data-c="spark">${sparkSVG(r.spark)}</td>`
-    +`<td class="status" data-c="status">${_rowStatusCell(r)}</td>`;
-}
-function visible(){ let ids=S.order.filter((id)=>{ const r=S.recs.get(id);
-  if(S.plane!=='all' && !r.planes.includes(S.plane)) return false;
-  if(S.kind!=='all' && r.kind!==S.kind) return false;
-  if(S.q){ const h=[r.label,r.kind,r.did,r._kernel,r.visibility_tier].join(' ').toLowerCase(); if(!h.includes(S.q)) return false; }
-  return true; });
-  const k=S.sort; ids.sort((a,b)=>{ const ra=S.recs.get(a),rb=S.recs.get(b);
-    if(k==='label'||k==='kind') return S.dir*String(ra[k]).localeCompare(String(rb[k]));
-    if(k==='tier') return S.dir*String(ra.visibility_tier).localeCompare(String(rb.visibility_tier));
-    return S.dir*((ra[k]||0)-(rb[k]||0)); });
-  return ids;
-}
-function buildRows(){
-  const tb=$('#rows'); const ids=visible(); const have=new Set();
-  for(const id of ids){ const r=S.recs.get(id); have.add(id);
-    if(!r._tr){ r._tr=document.createElement('tr'); r._tr.id='r-'+id; r._tr.innerHTML=rowHTML(r); tb.appendChild(r._tr); r._new=false; }
-  }
-  // order + prune
-  ids.forEach((id)=>tb.appendChild(S.recs.get(id)._tr));
-  for(const id of S.order){ const r=S.recs.get(id); if(r._tr && !have.has(id) && r._tr.parentNode) r._tr.remove(); }
-  renderKindFilter();
-}
-function paintDirty(){
-  for(const id of S.order){ const r=S.recs.get(id); if(!r._dirty||!r._tr){ r._dirty=false; continue; } r._dirty=false;
-    const tr=r._tr; const ec=tr.querySelector('[data-c=events]');
-    if(ec && +ec.textContent!==r.events){ ec.textContent=r.events; ec.classList.remove('up'); void ec.offsetWidth; ec.classList.add('up'); }
-    const rc=tr.querySelector('[data-c=rate]'); if(rc) rc.textContent=r.rate.toFixed(2);
-    const lc=tr.querySelector('[data-c=last]'); if(lc) lc.textContent=relTime(r.lastT);
-    const sp=tr.querySelector('[data-c=spark]'); if(sp) sp.innerHTML=sparkSVG(r.spark);
-    const st=tr.querySelector('[data-c=status]');
-    if(st) st.innerHTML=_rowStatusCell(r);
-  }
-  // Persona/env/telemetry rows stream their live "doing now" cell every tick even
-  // when their event counter did not change (the activity comes from telemetry).
-  for(const id of S.order){ const r=S.recs.get(id);
-    if(!r._tr||(r.kind!=='persona'&&r.kind!=='env'&&r.kind!=='telemetry')) continue;
-    const st=r._tr.querySelector('[data-c=status]'); if(st) st.innerHTML=_rowStatusCell(r); }
-}
-let statCache={};
-function setStat(el,label,val){ const v=$(el);
-  if(!v){ return; } if(statCache[el]!==val){ statCache[el]=val; v.querySelector('.v').textContent=val;
-    const node=v.querySelector('.v'); node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); } }
-function renderStats(){
-  const box=$('#stats');
-  if(!box.dataset.built){ box.dataset.built='1';
-    box.innerHTML=['auth','personas','pop','records','kernels','events','evs','verified','clock'].map((k)=>{
-      const lbl={evs:'ev/s',clock:'utc',pop:'pop',auth:'access'}[k]||k;
-      const init=k==='pop'?'—':(k==='auth'?'discover':'0');
-      return `<div class="stat" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
-    }).join(''); }
-  let personas=0,verified=0; for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona')personas++; verified++; }
-  const eps=S.epsWin.length;
-  // Population: the served /status.population is an INTEGER (effective size);
-  // genesis_rate_today + max_lineage_depth ride alongside. Accept the integer or
-  // a legacy {current,ceiling} object.
-  let pop='—';
-  for(const [,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
-    const pv=v.population;
-    if(typeof pv==='number'){ pop=String(pv); break; }
-    if(pv&&typeof pv==='object'){ pop=`${pv.current??'?'}/${pv.ceiling??'?'}`; break; }
-    if((v.personas||[]).length){ pop=String(v.personas.length); break; } }
-  // GAP #4: viewer authority — discover (anonymous) vs read (operator token saved).
-  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  setStat('#st-auth','access',hasOp?'read':'discover');
-  const authV=$('#st-auth'); if(authV){ authV.classList.toggle('auth-read',hasOp); authV.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
-  setStat('#st-personas','personas',personas);
-  setStat('#st-pop','pop',pop);
-  setStat('#st-records','records',S.recs.size);
-  setStat('#st-kernels','kernels',S.kernels.size||1);
-  setStat('#st-events','events',S.evCount.toLocaleString());
-  setStat('#st-evs','evs',eps);
-  setStat('#st-verified','verified',verified);
-  const d=new Date(); const cv=$('#st-clock .v');  // clock updates silently (no per-second flash)
-  if(cv) cv.textContent=`${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-  $('#eps').textContent=eps+' ev/s';
-}
 /* ---------- missions strip (every task the discovered nodes work on) ---------- */
 // Cards come from two honest sources: (1) discovered mission/design-history
 // records — shipped/refined missions anyone may see; (2) the node's /status —
@@ -2026,43 +2112,34 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length) return;
   const html=cards.slice(0,24).map((c)=>
-    `<div class="mcard"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
+    `<div class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
     +`<span class="mtask" title="${esc(c.task)}">${esc(c.task)}</span>`
     +`<span class="mmeta"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
     +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</span></div>`).join('');
   if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
 }
 
-// Build the scrolling ticker ONCE per discovery (stable structure → smooth CSS scroll);
-// counts are refreshed in place by refreshTicker() without restarting the animation.
-function buildTicker(){
-  const item=(r)=>`<span class="tk"><span class="badge">${esc((KIND_LABEL[r.kind]||r.kind).slice(0,3))}</span>`
-    +`<b>${esc((r.label||'').slice(0,18))}</b> <span class="u" data-tkc="${esc(r.id)}">${r.events}</span></span>`;
-  const html=S.order.map((id)=>item(S.recs.get(id))).join('');
-  $('#ticker').innerHTML=html+html;  // duplicated for a seamless -50% scroll loop
-}
-function refreshTicker(){
-  document.querySelectorAll('[data-tkc]').forEach((el)=>{ const r=S.recs.get(el.getAttribute('data-tkc'));
-    if(r){ el.textContent=r.events; el.className=r.rate>0.05?'u':'d'; } });
-}
-function renderKindFilter(){ const box=$('#kind-filter'); const kinds=[...new Set(S.order.map((id)=>S.recs.get(id).kind))].sort();
-  const want=['all',...kinds]; if(box.dataset.k===want.join(',')) return; box.dataset.k=want.join(',');
-  box.innerHTML=want.map((k)=>`<button data-kind="${esc(k)}" class="chip${k===S.kind?' on':''}">${esc(k==='all'?'ALL':(KIND_LABEL[k]||k))}</button>`).join(''); }
-
 /* ---------- wiring ---------- */
-function setView(v){
-  S.view=v;
-  const sys=$('#systemview'), board=$('#boardgrid');
-  if(sys) sys.hidden=v!=='system';
-  if(board) board.hidden=v!=='board';
-  [...($('#viewmode')?.children||[])].forEach((c)=>c.classList.toggle('on',c.dataset.view===v));
-  if(v==='system') refreshSystemView();
+// lightweight stage/feed filter — hides persona cards, env lanes, and feed rows
+// that don't match the query (replaces the board's row filter).
+function _applyFilter(){
+  const q=(S.q||'').trim();
+  document.querySelectorAll('.pcard').forEach((el)=>{ el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none'; });
+  document.querySelectorAll('.env-lane').forEach((lane)=>{
+    const hay=lane.textContent.toLowerCase();
+    lane.style.display=(!q||hay.includes(q))?'':'none'; });
+  document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||li.textContent.toLowerCase().includes(q))?'':'none'; });
 }
 function wire(){
-  S.view='system';
-  $('#viewmode').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return; setView(b.dataset.view); });
+  // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
+  // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
+  document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
+    const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],.mcard'); if(!t) return;
+    e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
+  // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
   $('#sysStreamTabs').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
     S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); renderInteractionStream(); });
+  // stage click: a persona card or env name → open its Ed25519 drawer; deliverable chip → bundle/mission drawer
   $('#sysEnvs').addEventListener('click',(e)=>{
     // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
     // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
@@ -2075,23 +2152,18 @@ function wire(){
         return r.kind==='env'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
       if(rid) openDetail(rid); return; }
     const ar=e.target.closest('[data-artid]'); if(ar&&S.recs.has(ar.dataset.artid)){ openDetail(ar.dataset.artid); } });
-  // graph node click → open that persona's drawer
+  // constellation node click → FOLLOW that persona (focus the stage + feed on it);
+  // click the same node (or "show all") to clear. The full drawer opens from the card.
   const g=$('#sysGraph'); if(g) g.addEventListener('click',(e)=>{ const node=e.target.closest('[data-gp]'); if(!node) return;
-    const sid=node.dataset.gp; const rid=S.order.find((id)=>{ const r=S.recs.get(id);
-      return r.kind==='persona'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); }); if(rid) openDetail(rid); });
-  $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); buildRows(); });
-  $('#plane-filter').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
-    S.plane=b.dataset.plane; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); buildRows(); });
-  $('#kind-filter').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
-    S.kind=b.dataset.kind; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); buildRows(); });
-  document.querySelectorAll('th[data-sort]').forEach((th)=>th.addEventListener('click',()=>{
-    const k=th.dataset.sort; if(S.sort===k) S.dir*=-1; else { S.sort=k; S.dir=(k==='label'||k==='kind'||k==='tier')?1:-1; } buildRows(); }));
-  $('#pause').addEventListener('click',()=>{ S.paused=!S.paused; $('#pause').textContent=S.paused?'▶ RESUME':'⏸ PAUSE';
-    $('#livedot').style.background=S.paused?'var(--mut)':'var(--up)'; });
-  $('#replay').addEventListener('click',replay);
+    const sid=node.dataset.gp; S.follow=(S.follow===sid)?null:sid; _applyFollow(); renderInteractionStream(); });
+  $('#cfUnfollow').addEventListener('click',()=>{ S.follow=null; _applyFollow(); renderInteractionStream(); });
+  // collapse / expand the constellation rail
+  $('#conToggle').addEventListener('click',()=>{ $('#constellation').classList.toggle('collapsed'); });
+  // filter the stage + feed (replaces the board's row filter)
+  $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); _applyFilter(); });
   $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
     try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
-    localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(buildRows); });
+    localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(()=>renderMissions()); });
   $('#opbtn').addEventListener('click',()=>{ S.views=[()=>operatorView()];
     $('#detailwrap').classList.add('open'); renderTop(); });
   updateOpBadge();
@@ -2109,8 +2181,6 @@ function wire(){
     if(c.dataset.mrec){ openDetail(c.dataset.mrec); return; }
     if(c.dataset.mrun){ S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
       $('#detailwrap').classList.add('open'); renderTop(); } });
-  // click any record row → detail drawer (deep-resolves env members, persona profile, artifacts)
-  $('#rows').addEventListener('click',(e)=>{ const tr=e.target.closest('tr'); if(!tr||!tr.id) return; openDetail(tr.id.replace(/^r-/,'')); });
   // in-drawer navigation: follow links to other records / bundles / artifact files
   $('#detailbody').addEventListener('click',(e)=>{ const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
     const act=a.dataset.act, base=S.curBase||'';
@@ -2208,7 +2278,7 @@ async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
   log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
   const r=doc.record, id=r.record_id||r.card_id;
   if(ok && id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:doc.base||'',_doc:doc});
-    if(P2P) P2P.announce(doc); classifyMap(); buildRows(); buildTicker(); renderStats(); }
+    if(P2P) P2P.announce(doc); classifyMap(); updateVitalsCounters(); refreshSystemView(); }
 }
 async function initP2P(){
   const params=new URLSearchParams(location.search);
@@ -2241,10 +2311,10 @@ async function initP2P(){
   renderMissions();
   initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
-  setInterval(()=>{ discover().then(()=>{ buildRows(); renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
-  // per-entity drawer feed + node run state: re-fetch on the node's live cadence
-  // so the drawer and the missions strip stream without SSE.
+  setInterval(()=>{ discover().then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
+  // per-entity drawer feed + node run state + the living network: re-fetch on the
+  // node's live cadence so the stage, constellation and feed stream without SSE.
   setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
-    if(S.view==='system') refreshSystemView(); }catch(e){} }, 5000);
+    refreshSystemView(); }catch(e){} }, 5000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
