@@ -90,7 +90,7 @@ function indexLiveTelemetry(base,live){
     const tid=_shortId(a['personaos.trace_id']);
     if(sc==='environment'&&tid){ (spByE.get(tid)||spByE.set(tid,[]).get(tid)).push({
       kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'),
-      signed:a['personaos.lineage.signed']!==false,
+      signed:a['personaos.lineage.signed']===true,   // fail-CLOSED: only an explicit true counts as signed
       t:Date.parse(s.ended_at||s.started_at||'')||t }); } });
   personas.forEach((p)=>{ const pid=_shortId(p.persona_id);
     const cur=S.liveByPersona.get(pid)||{};
@@ -505,7 +505,7 @@ async function loadTelemetry(base){
         t, kernel:kid,
         scope:String(a['personaos.lineage.scope']||(s.name||'').split('.').pop()||'other'),
         kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'), trace:String(a['personaos.trace_id']||s.span_id||''),
-        signed:a['personaos.lineage.signed']!==false, ms:Number(a['personaos.lineage.append_ms']||0)
+        signed:a['personaos.lineage.signed']===true, ms:Number(a['personaos.lineage.append_ms']||0)
       });
     });
   };
@@ -602,9 +602,14 @@ function trustPanel(r){
     +kv('Verified in browser','<span class="ok">✓ signature checked here</span>')
     +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}…</span>`:''}`)
     +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
+  // drive min-to-discover/read from the record's REAL access policy, not constants
+  const minD=esc(a.min_to_discover||'discover');
+  const minR=a.min_to_read?esc(a.min_to_read)
+    :(a.public_read||tier==='public'?'discover (public read)'
+      :a.federated_read?'read (federation grant)':'read (operator token / owner)');
   html+=H('Access · '+esc(tier))+_ladderBar(r._effective_level||'discover')
     +kv('Visibility tier',`<span class="tier-pill t-${esc(tier)}">${esc(tier)}</span>`)
-    +kv('Min to discover','discover')+kv('Min to read','read (operator token / owner)');
+    +kv('Min to discover',minD)+kv('Min to read',minR);
   if(r.promoted_from_tier) html+=kv('Bridged from',`<span class="amber">${esc(r.promoted_from_tier)} → public</span>`
     +(r.bridge_policy_ref?` <span class="l2">${esc(r.bridge_policy_ref)}</span>`:''));
   html+=kv('Body',esc(anchor));
@@ -629,14 +634,19 @@ function _liveFeed(models){
 function renderPersonaLive(pid){
   const d=S.liveByPersona.get(_shortId(pid)); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
   const s=d.summary||{}; let h='';
-  if(s.lifecycle_state!=null||s.fitness!=null){
+  // PER-04 / 09_PROTOCOLS §4.1: public tiles only (state, tasks, reputation);
+  // operator-tier evolution internals (fitness, tactics, lessons, memory) appear
+  // only when an operator token is held.
+  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
+  if(s.lifecycle_state!=null||s.reputation_score!=null||s.experience_tasks!=null){
     h+=`<div class="livegrid">`
       +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
       +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness</div></div>`
+      +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
+      +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
+        +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
+        +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
+        +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
       +`</div>`;
   }
   h+=`<div class="l2" style="margin:6px 0 3px">Doing now</div>`+_liveFeed(d.models);
@@ -700,11 +710,18 @@ function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,1
 // derive a persona's coordination ROLE from its summary/name (open, emergent —
 // no closed enum): verifier / producer-lead / integrator / specialist / member.
 function _coordRole(sid,s){
-  const n=(_nameFor(sid)+' '+(s.role||'')).toLowerCase();
+  // a COARSE, presentational coordination hint — derived only from honest signals.
+  // The public projection carries no raw role, so we read the persona's declared
+  // role/capability when present and otherwise classify by NAME keywords; we NEVER
+  // use raw operator fitness (PER-04) and never map the word "persona" → lead
+  // (that mislabels founders/operator-created personas).
+  const declared=String(s.role||(s.capability_summary&&s.capability_summary[0])||'').toLowerCase();
+  if(declared==='lead'||declared==='founder'||s.can_lead_cohorts===true) return 'lead';
+  const n=(_nameFor(sid)+' '+declared).toLowerCase();
   if(n.includes('verif')) return 'verifier';
   if(n.includes('integrat')) return 'integrator';
-  if(s.gepa_cohort_id&&n.includes('specialist')) return 'specialist';
-  if(n.includes('persona')||s.role==='lead'||(s.fitness||0)>=2) return 'lead';
+  if(n.includes('specialist')||s.born_specialist===true||declared==='specialist') return 'specialist';
+  if(declared.includes('lead')) return 'lead';
   return 'member';
 }
 // per-persona "is fresh" detector for realtime streaming: did its model-event
@@ -734,12 +751,14 @@ function renderPersonaCard(pid){
   let headLabel,streamRows,doingHTML;
   if(hasModels){
     headLabel=`request → response <span class="rr-count">${models.length}</span>`;
+    // "→ model" shows what the persona asked; no ✓ — these rows are the node's own
+    // telemetry, not browser-verified, so they must not wear a verification mark.
     streamRows=models.slice(-6).reverse().map((m,i)=>
       `<div class="rr${grew&&i===0?' rr-new':''}"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
-      +`<span class="rr-a">→ <code>${esc(m.model)}</code> <span class="rr-ok">✓</span></span></div>`).join('');
+      +`<span class="rr-a">→ <code>${esc(m.model)}</code></span></div>`).join('');
     doingHTML=`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
   } else if(acts.length){
-    headLabel=`recent coordination <span class="rr-count">${actTally||acts.length}</span>`;
+    headLabel=`${actFresh?'recent':'last'} coordination <span class="rr-count">${actTally||acts.length}</span>`;
     streamRows=acts.slice(-6).reverse().map((a,i)=>
       `<div class="rr${grew&&i===0?' rr-new':''} ix-${_ixClass(a.kind)}"><span class="rr-q">▸ ${esc(_ixVerb(a.kind))}</span></div>`).join('');
     doingHTML=actFresh?`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`:'<span class="l2">resting</span>';
@@ -749,6 +768,10 @@ function renderPersonaCard(pid){
     doingHTML='<span class="l2">idle</span>';
   }
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
+  // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
+  // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
+  // — shown only when an operator token is held (and in the 🧠 thinking drawer).
+  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   return `<div class="pcard role-${role}${live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${live?'on':'off'}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
@@ -759,10 +782,10 @@ function renderPersonaCard(pid){
     +`<div class="pc-rr">${streamRows}</div>`
     +`<div class="pc-stats">`
     +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
-    +(s.tactic_count!=null?`<span title="evolved tactics">🧬 ${esc(s.tactic_count)}</span>`:'')
-    +(s.lesson_count!=null?`<span title="lessons learned">💡 ${esc(s.lesson_count)}</span>`:'')
-    +(s.fitness!=null?`<span title="fitness">✦ ${esc(Number(s.fitness).toFixed(1))}</span>`:'')
-    +(topMode?`<span title="strongest mode">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
+    +(s.reputation_score!=null?`<span title="reputation — role-relative [0,1]">✦ ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
+    +(hasOp&&s.tactic_count!=null?`<span title="evolved tactics (operator)">🧬 ${esc(s.tactic_count)}</span>`:'')
+    +(hasOp&&s.lesson_count!=null?`<span title="lessons learned (operator)">💡 ${esc(s.lesson_count)}</span>`:'')
+    +(hasOp&&topMode?`<span title="strongest cognitive mode (operator)">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
     +`</div></div>`;
 }
 
@@ -1084,17 +1107,21 @@ function feedModels(doc){ return ((doc&&doc.model_events)||[]).filter((m)=>(m.ki
   .map((m)=>({purpose:String(m.requested_purpose||m.role||'model'),model:String(m.model_id||'—'),role:String(m.role||'')})); }
 function renderPersonaFeedDoc(doc){
   const s=doc.summary||{}; let h='';
+  // PER-04 / §4.1: public tiles (state, tasks, reputation); operator-tier evolution
+  // internals + GEPA cohort only with an operator token.
+  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   h+=`<div class="livegrid">`
     +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
     +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness</div></div>`
+    +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
+    +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
     +`</div>`;
-  if(s.evolution_trace_count!=null||s.accepted_trace_count!=null)
-    h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials · cohort ${esc((s.gepa_cohort_id||'—').slice(0,18))}</div>`;
-  h+=`<div class="l2" style="margin:6px 0 3px">Doing now <span class="dim">(own feed · redacted tier)</span></div>`+_liveFeed(feedModels(doc));
+  if(hasOp&&(s.evolution_trace_count!=null||s.accepted_trace_count!=null))
+    h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials${s.gepa_cohort_id?' · cohort '+esc(String(s.gepa_cohort_id).slice(0,18)):''}</div>`;
+  h+=`<div class="l2" style="margin:6px 0 3px">Doing now</div>`+_liveFeed(feedModels(doc));
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
     h+=`<div class="l2" style="margin:6px 0 3px">Lifecycle / lineage</div>`
@@ -1721,8 +1748,9 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
     html+=recent.map((e)=>`<div class="grant"><span class="l2">${esc(e.requested_purpose||e.role||'')}</span>`
       +`<span>${esc(e.model_id||'—')}</span></div>`).join('');
   }
-  if(personas.length){
-    html+=H(`Persona evolution (${personas.length})`);
+  // operator-tier evolution internals (tactics/lessons counts) — token only (PER-04 / §4.1)
+  if(personas.length && Object.keys((typeof opTokens==='function'?opTokens():{})).length>0){
+    html+=H(`Persona evolution (${personas.length}) · operator`);
     html+=personas.slice(0,8).map((p)=>`<div class="grant"><span class="l2">${esc(p.role||p.persona_id||'')}</span>`
       +`<span class="l2">tasks ${esc(p.experience_tasks??0)} · tactics ${esc(p.cohort_visible_tactic_count??p.generic_tactic_count??0)} · lessons ${esc(p.lesson_count??0)}</span></div>`).join('');
   }

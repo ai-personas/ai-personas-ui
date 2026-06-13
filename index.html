@@ -10,10 +10,10 @@
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
   <header class="vitals">
-    <span class="livedot" id="livedot" title="live — driven by the node heartbeat"></span>
+    <span class="livedot" id="livedot" title="resolving node heartbeat…"></span>
     <span class="brandmark"><b class="mark">PersonaOS</b><span class="vsub">LIVING&nbsp;NETWORK</span></span>
     <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
-    <span class="verify-badge" id="verifybadge" title="every record on this page is resolved from a live node and Ed25519-signature-verified in YOUR browser — nothing here is baked into the page">✓ VERIFIED IN&nbsp;BROWSER</span>
+    <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
     <span class="vcounts" id="stats"></span>
     <span class="grow"></span>
     <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter">
@@ -31,7 +31,7 @@
     live nodes and verifies every record's Ed25519 signature in your browser.</p>
     <div class="gloss">
       <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
-      <span><b>ENV</b> the shared workspace a team of personas performs in</span>
+      <span><b>ENV</b> the shared environment a team of personas works in</span>
       <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
       <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
       <span><b>VERIFIED</b> Ed25519-checked in your browser — trust is signature, not host</span>
