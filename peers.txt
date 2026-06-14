@@ -1,18 +1,26 @@
-# PersonaOS discovery peer list — one node URL per line.
+# PersonaOS discovery — there are deliberately NO node URLs in this file.
 #
-# At boot the portal fetches this file, then for every URL below it bootstraps
-# that node's .well-known/personaos-discovery.json, runs the provider lookup,
-# resolves each record and Ed25519-verifies it in-browser. Blank lines and
-# lines starting with '#' are ignored. Trust is the signature, not the host.
+# Seeds are discovered DYNAMICALLY, then discovery goes peer-to-peer:
 #
-# NOTE: Cloudflare quick-tunnel URLs ROTATE whenever the node restarts. If the
-# one below is dead, add a live node with ?peer=<url> or the "+ PEER" button.
+#   1. SEED (content-addressed, not a URL): every PersonaOS kernel pins and
+#      provides the same well-known rendezvous block
+#      "personaos-discovery-rendezvous/v1" on the public IPFS DHT. The portal
+#      holds only that block's CID (a content hash, baked into the UI — it names
+#      WHAT to look for, never WHERE). At boot it lists the CID's providers via
+#      delegated routing (https://delegated-ipfs.dev/routing/v1/providers/<cid>),
+#      reads each live node's https front door straight from the provider record
+#      (the /dns4/<host>/tcp/443/tls/http announce multiaddr), or falls back to
+#      the node's signed /ipns/<peer-id> card. Every record is Ed25519-verified
+#      in-browser before the peer URL is trusted — the signature is the trust,
+#      never the host.
 #
-# Live PersonaOS node (kernel:dea359c0e1cc67d5) on the current design-alignment
-# build (operator bearer-token authority, signed bridging, live cognitive modes,
-# sandbox auto-install, deliverable↔pathway coherence, design-derived UI):
-https://individual-lived-clips-radiation.trycloudflare.com
+#   2. PEER-TO-PEER: from any verified seed the portal bootstraps that node's
+#      .well-known/personaos-discovery.json, follows its bootstrap_peers /
+#      reachability profile / gossipsub, and resolves the rest of the mesh.
 #
-# A visitor's OWN local node, if they run one (harmless when absent).
-http://localhost:8765
-http://localhost:8908
+# So nothing here rotates and nothing here goes stale: when a node restarts on a
+# fresh tunnel it re-announces under the same rendezvous CID, and the portal
+# finds it with no edit to this file and no URL committed to any repo.
+#
+# A visitor can still pin a node manually for this session with ?peer=<url> in
+# the page URL or the "＋ PEER" button — that lives in their browser, not here.

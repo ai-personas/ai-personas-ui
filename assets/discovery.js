@@ -287,9 +287,10 @@ function peerList(){ const p=new URLSearchParams(location.search).getAll('peer')
    Every PersonaOS kernel pins the SAME deterministic rendezvous block
    ("personaos-discovery-rendezvous/v1") and publishes a SIGNED node card under
    its IPNS name. The UI enumerates the rendezvous CID's providers via the
-   delegated-routing HTTP API, resolves each provider's /ipns/<peer-id> through
-   public gateways, verifies the card's Ed25519 signature in-browser, and feeds
-   the verified peer URL into the normal discovery plane. Purely additive to
+   delegated-routing HTTP API, resolves each provider's signed node card (via the
+   delegated-routing IPNS record → immutable /ipfs/<card-cid>, falling back to a
+   gateway /ipns/<peer-id>), verifies the card's Ed25519 signature in-browser, and
+   feeds the verified peer URL into the normal discovery plane. Purely additive to
    ?peer / +PEER / peers.txt / DHT / mDNS / gossipsub — unreachable IPFS infra
    degrades silently. Override endpoints with ?ipfs_routing= and ?ipfs_gw=. */
 const IPFS_RENDEZVOUS_CID='Qmbnw4HfNbSp9YqpNBGoQqZcBgAbfF3reayr79DWxPqJgQ';
@@ -308,6 +309,44 @@ function httpsFromMultiaddr(a){
   const port=m[2]==='443'?'':(':'+m[2]);
   return `https://${m[1]}${port}`;
 }
+// --- IPNS node-card resolution -------------------------------------------------
+// Public gateways frequently FAIL to resolve a fresh /ipns/<peer-id> over the DHT
+// (they 404 for many minutes), so the reliable path is the delegated-routing IPNS
+// endpoint: it returns the signed IPNS record fast, we pull the /ipfs/<card-cid>
+// it points at, and fetch that IMMUTABLE card from any gateway (always serveable).
+// The routing endpoint needs the base36 CIDv1 libp2p-key form, so convert the
+// base58 provider id first. Trust = the card's own Ed25519 signature (verified by
+// the caller); the IPNS record is only an unsigned-to-us pointer.
+const _B58A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const _B36A='0123456789abcdefghijklmnopqrstuvwxyz';
+function _baseDecode(str,alpha){ const bytes=[0];
+  for(const ch of str){ const v=alpha.indexOf(ch); if(v<0) return null; let carry=v;
+    for(let j=0;j<bytes.length;j++){ carry+=bytes[j]*alpha.length; bytes[j]=carry&0xff; carry>>=8; }
+    while(carry){ bytes.push(carry&0xff); carry>>=8; } }
+  for(let k=0;k<str.length&&str[k]===alpha[0];k++) bytes.push(0);
+  return bytes.reverse(); }
+function _baseEncode(bytes,alpha){ const digits=[0];
+  for(const b of bytes){ let carry=b;
+    for(let j=0;j<digits.length;j++){ carry+=digits[j]<<8; digits[j]=carry%alpha.length; carry=(carry/alpha.length)|0; }
+    while(carry){ digits.push(carry%alpha.length); carry=(carry/alpha.length)|0; } }
+  let out=''; for(let k=0;k<bytes.length&&bytes[k]===0;k++) out+=alpha[0];
+  for(let q=digits.length-1;q>=0;q--) out+=alpha[digits[q]]; return out; }
+function peerIdToIpnsName(pid){ try{ const mh=_baseDecode(String(pid),_B58A); if(!mh) return '';
+  return 'k'+_baseEncode([0x01,0x72,...mh],_B36A);   // CIDv1 libp2p-key (0x72), multibase 'k'=base36
+}catch(e){ return ''; } }
+function ipnsRoutingBase(){ return ipfsRouting().replace('/providers/','/ipns/'); }
+async function fetchNodeCard(pid){
+  const name=peerIdToIpnsName(pid);
+  if(name){ try{
+    const rr=await fetch(ipnsRoutingBase()+name,{headers:{Accept:'application/vnd.ipfs.ipns-record'},cache:'no-store'});
+    if(rr.ok){ const buf=new Uint8Array(await rr.arrayBuffer());
+      let txt=''; for(let i=0;i<buf.length;i++) txt+=String.fromCharCode(buf[i]);
+      const m=txt.match(/\/ipfs\/(Qm[1-9A-HJ-NP-Za-km-z]{44}|baf[a-z2-7]{20,})/);
+      if(m){ for(const gw of ipfsGateways()){ try{ const cr=await fetch(`${gw}/ipfs/${m[1]}`,{cache:'no-store'}); if(cr.ok) return await cr.json(); }catch(e){} } } }
+  }catch(e){} }
+  for(const gw of ipfsGateways()){ try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){} }
+  return null;
+}
 async function discoverViaIPFS(){
   S.ipfsPeers=S.ipfsPeers||new Set();
   let provs=[];
@@ -323,17 +362,14 @@ async function discoverViaIPFS(){
     // 1) PRIMARY: the provider record's own announced https multiaddr.
     let url=(p.Addrs||[]).map(httpsFromMultiaddr).find(Boolean)||'';
     if(url) log('ipfs',`provider ${pid.slice(0,12)}… announces ${url}`,true);
-    // 2) FALLBACK: the signed IPNS node card (when public IPNS resolves).
+    // 2) RELIABLE: the signed IPNS node card via delegated routing → immutable card.
     if(!url){
-      for(const gw of ipfsGateways()){
-        let doc=null;
-        try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(!r.ok) continue; doc=await r.json(); }catch(e){ continue; }
-        if(!doc||doc.schema!=='personaos-ipfs-node-card/1'||!doc.card) break;
+      const doc=await fetchNodeCard(pid);
+      if(doc&&doc.schema==='personaos-ipfs-node-card/1'&&doc.card){
         let ok=false;  // in-browser Ed25519 verify against the card's embedded key
         try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.card)),hexToBytes(doc.public_key_hex)); }catch(e){}
         log('ipfs',`node card ${pid.slice(0,12)}… ${ok?'verified':'BAD SIGNATURE'}`,ok);
         if(ok) url=String(doc.card.peer_url||'');
-        break;
       }
     }
     if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
