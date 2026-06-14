@@ -1941,13 +1941,19 @@ async function opPost(base,path,body){ const u=join(base,path);
   try{ const r=await fetch(u,{method:'POST',
       headers:{'Content-Type':'application/json',...authHeaders(u)},body:JSON.stringify(body)});
     const d=await r.json().catch(()=>({})); return {status:r.status,body:d}; }
-  catch(e){ return {status:0,body:{error:String(e&&e.message||e)}}; } }
+  catch(e){ let msg=String(e&&e.message||e);
+    if(location.protocol==='https:'&&/^http:\/\//i.test(u))
+      msg+=` — this page is HTTPS and browsers block calls to an HTTP node. Open the node's own console directly at ${opBaseKey(base)}/ (a local node needs no token there).`;
+    return {status:0,body:{error:msg}}; } }
 
 async function operatorView(){
   const m=opTokens();
   // Local (loopback-reachable) nodes are owner-trusted WITHOUT a token, so surface
-  // them in the console automatically alongside any token-saved remote nodes.
-  const localBases=peerList().map(opBaseKey).filter(isLocalBase);
+  // them in the console automatically alongside any token-saved remote nodes. This
+  // INCLUDES the page's own origin when the UI is served by a local node itself
+  // (open http://localhost:<port>/ and its console is right here, no token).
+  const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
+    ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
   const bases=[...new Set([...Object.keys(m),...localBases])];
   let html=H('Operator authority — a bearer token, or a local (loopback) node')
     +`<div class="desc2">Each node mints a per-install token (printed at boot; stored at `
@@ -1970,14 +1976,24 @@ async function operatorView(){
 }
 
 async function operatorNodeView(b){
+  const key=opBaseKey(b);
+  const mixed=location.protocol==='https:'&&/^http:\/\//i.test(key);
   const st=await fetchJson(join(b,'status'))||{};
+  const reached=!!st.schema;
   const pub=st.schema==='personaos-node-status-public/1';
-  const loc=isLocalBase(b), tokd=Object.keys(opTokens()).includes(opBaseKey(b));
+  const loc=isLocalBase(b), tokd=Object.keys(opTokens()).includes(key);
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   let html='';
+  if(!reached){
+    html+=`<div class="desc2"><span class="no">can't reach this node from this page</span>`
+      +(mixed
+        ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's OWN console directly (same-origin, and a local node needs no token): <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
+        :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
+    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
+  }
   if(!pub&&loc&&!tokd) html+=`<div class="desc2"><span class="ok">● local node — operator authority via loopback</span>; no token needed (the node trusts the same-machine connection). Set <code>PERSONAOS_TRUST_LOOPBACK=0</code> on the node to require one.</div>`;
-  else if(pub&&loc) html+=`<div class="desc2"><span class="no">loopback trust off or unreachable</span> — a local node should grant operator access without a token. Check the node is reachable here and not started with <code>PERSONAOS_TRUST_LOOPBACK=0</code>.</div>`;
-  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Re-save the token in the operator console.</div>`;
+  else if(pub&&loc) html+=`<div class="desc2"><span class="no">loopback trust off or proxied</span> — a local node should grant operator access without a token. If you reached it through a tunnel/proxy the token is still required; otherwise check it isn't started with <code>PERSONAOS_TRUST_LOOPBACK=0</code>.</div>`;
+  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Paste this node's token in the operator console (or open its localhost UI, where loopback grants access).</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?'<span class="ok">durable ✓</span>':(pub?'—':'<span class="no">in-memory only</span>'))
     +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
@@ -1999,8 +2015,12 @@ async function operatorNodeView(b){
   // unavailable external capability instead of fabricating a value. The human
   // attests once (signed bridge evidence); the next resume clears the block.
   const att=st.attestations_needed||[];
-  if(att.length){
-    html+=H(`⚠ Human attestation needed (${att.length}) — mission honest-blocked`);
+  html+=H(`Human attestation${att.length?` ⚠ needed (${att.length}) — mission honest-blocked`:''}`);
+  if(!att.length){
+    html+=`<div class="l2">`+(pub
+      ?`operator-only — attestation requests appear here once you have owner access (paste the token, or open the node's localhost UI).`
+      :`✓ no mission is blocked on human attestation right now. When a persona honest-blocks on an external capability it cannot self-provision (a hardware instrument, a credential, a paid API…), it appears here with an <b>✍ ATTEST</b> form.`)+`</div>`;
+  } else {
     html+=att.map((a)=>{
       const blocks=(a.blocks||[]).map((bk)=>
         `<div class="grant"><span class="amber">${esc(bk.capability||bk.kind||'capability')}</span>`
