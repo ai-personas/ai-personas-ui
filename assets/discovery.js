@@ -31,6 +31,12 @@ const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/
 function opTokens(){ try{ return JSON.parse(localStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; } }
 function opSaveTokens(m){ localStorage.setItem('personaos_operator',JSON.stringify(m)); updateOpBadge(); }
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
+// A node reachable on localhost IS the owner's own machine: the node trusts a
+// genuine loopback caller (no tunnel/proxy hop) as operator, so the bearer token
+// is bypassed for it. A tunneled node keeps the public hostname and still needs a
+// token. This only flips operator affordances ON for local nodes — never off.
+const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostname;
+  return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'; }catch(e){ return false; } };
 function tokenFor(u){ const m=opTokens(); const abs=isAbs(u)?u:join(location.origin,u);
   let best='',tok=''; for(const k in m){ if(abs.startsWith(k)&&k.length>best.length){ best=k; tok=m[k]; } }
   return tok; }
@@ -1938,30 +1944,40 @@ async function opPost(base,path,body){ const u=join(base,path);
   catch(e){ return {status:0,body:{error:String(e&&e.message||e)}}; } }
 
 async function operatorView(){
-  const m=opTokens(); const bases=Object.keys(m);
-  let html=H('Operator authority — a bearer token, never network position')
+  const m=opTokens();
+  // Local (loopback-reachable) nodes are owner-trusted WITHOUT a token, so surface
+  // them in the console automatically alongside any token-saved remote nodes.
+  const localBases=peerList().map(opBaseKey).filter(isLocalBase);
+  const bases=[...new Set([...Object.keys(m),...localBases])];
+  let html=H('Operator authority — a bearer token, or a local (loopback) node')
     +`<div class="desc2">Each node mints a per-install token (printed at boot; stored at `
-    +`<code>runs/…/_operator/token</code>). Paste it here to unlock that node's owner intake `
-    +`(ASK / FUND / STOP), full status, runs, personas and the read-gated run tree. Without a `
-    +`token this page shows each node's public discovery projection only — by design.</div>`;
+    +`<code>runs/…/_operator/token</code>). Paste it here to unlock a REMOTE node's owner intake `
+    +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. A node reachable on `
+    +`<code>localhost</code> is your own machine — the node trusts the loopback connection as `
+    +`operator, so <b>no token is needed</b> for it (a tunneled node keeps the public host and `
+    +`still requires the token).</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<input id="op-base" type="url" placeholder="node base URL, e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}">`
     +`<input id="op-token" type="password" placeholder="operator token">`
     +`<button class="btn" data-act="op-save">SAVE</button></div>`;
   html+=H(`Operator nodes (${bases.length})`);
-  for(const b of bases){ html+=`<div class="grant"><span>${esc(b)}</span>`
-    +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a> · `
-    +`<a href="#" data-act="op-del" data-base="${esc(b)}">forget ✕</a></span></div>`; }
-  if(!bases.length) html+=`<div class="l2">no operator tokens saved — this browser is an anonymous public viewer</div>`;
+  for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
+    html+=`<div class="grant"><span>${esc(b)}${loc&&!tokd?' <span class="ok">· local · token bypassed (loopback)</span>':''}</span>`
+    +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
+    +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ✕</a>`:'')+`</span></div>`; }
+  if(!bases.length) html+=`<div class="l2">no operator tokens saved and no local node discovered — this browser is an anonymous public viewer. Run a node locally (it appears here automatically) or paste a remote node's token.</div>`;
   return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
 }
 
 async function operatorNodeView(b){
   const st=await fetchJson(join(b,'status'))||{};
   const pub=st.schema==='personaos-node-status-public/1';
+  const loc=isLocalBase(b), tokd=Object.keys(opTokens()).includes(opBaseKey(b));
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   let html='';
-  if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Re-save the token in the operator console.</div>`;
+  if(!pub&&loc&&!tokd) html+=`<div class="desc2"><span class="ok">● local node — operator authority via loopback</span>; no token needed (the node trusts the same-machine connection). Set <code>PERSONAOS_TRUST_LOOPBACK=0</code> on the node to require one.</div>`;
+  else if(pub&&loc) html+=`<div class="desc2"><span class="no">loopback trust off or unreachable</span> — a local node should grant operator access without a token. Check the node is reachable here and not started with <code>PERSONAOS_TRUST_LOOPBACK=0</code>.</div>`;
+  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Re-save the token in the operator console.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?'<span class="ok">durable ✓</span>':(pub?'—':'<span class="no">in-memory only</span>'))
     +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
