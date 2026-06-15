@@ -287,7 +287,7 @@ async function loadPeersTxt(){
 }
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
   try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  return [...new Set([...p,...s,...TXT_PEERS,...(S.ipfsPeers||[])])]; }
+  return [...new Set([...p,...s,...TXT_PEERS,...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
 
 /* ---------- IPFS discovery plane (content-addressed rendezvous) ----------
    Every PersonaOS kernel pins the SAME deterministic rendezvous block
@@ -387,6 +387,43 @@ async function discoverViaIPFS(){
   S.ipfsPeers=fresh;                       // replace → stale URLs fall away, latest stays
   if(after!==before){ log('ipfs',`IPFS peers refreshed: ${fresh.size} live kernel(s)`,true);
     discover().then(()=>{ renderMissions(); }).catch(()=>{}); }
+}
+
+// ---- LOCAL probe: is a PersonaOS node running on THIS machine? -----------------
+// A node's PUBLIC url (a tunnel) and its localhost url are the same kernel, but
+// localhost is never globally advertised (every visitor's localhost is their own
+// box). So probe a few well-known ports here; self-register any that answer. That
+// node then appears in the OPERATOR console as a LOCAL node — loopback ⇒ NO token.
+// Silent when nothing's running. From an https page: https://localhost works if the
+// node's cert is trusted; http://localhost works in Chromium (localhost is
+// potentially-trustworthy) and just fails quietly elsewhere.
+const LOCAL_PORTS=[8805,8765,8910];
+async function probeBase(base){
+  try{
+    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),2500);
+    const r=await fetch(join(base,'.well-known/personaos-discovery.json'),{signal:ctl.signal,cache:'no-store'});
+    clearTimeout(t);
+    if(!r.ok) return false;
+    const d=await r.json();
+    return !!(d&&typeof d==='object'&&/personaos-discovery/.test(d.schema||''));
+  }catch(e){ return false; }
+}
+async function discoverLocalNode(){
+  S.localPeers=S.localPeers||new Set();
+  const hosts=location.protocol==='https:'
+    ? ['https://localhost','https://127.0.0.1','http://localhost','http://127.0.0.1']
+    : ['http://localhost','http://127.0.0.1'];
+  const found=new Set();
+  await Promise.all(hosts.flatMap((h)=>LOCAL_PORTS.map(async(port)=>{
+    const base=`${h}:${port}`;
+    if(await probeBase(base)) found.add(base);
+  })));
+  const before=[...S.localPeers].sort().join('|'), after=[...found].sort().join('|');
+  S.localPeers=found;                      // rebuild each cycle: a stopped local node drops off
+  if(after!==before){
+    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — operator console works with NO token (loopback)`,true);
+    discover().then(()=>{ renderMissions(); }).catch(()=>{});
+  }
 }
 
 function upsert(r){
@@ -2428,6 +2465,8 @@ async function initP2P(){
   // with HTTP discovery — a slow/dead configured peer must not delay it.
   discoverViaIPFS().catch(()=>{});
   setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
+  discoverLocalNode().catch(()=>{});                                  // is a node running on THIS machine?
+  setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
   await discover();
   prefetchNodeStatuses();
   renderMissions();
