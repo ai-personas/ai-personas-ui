@@ -70,6 +70,21 @@ const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion:
 // render each entity's OWN activity (model_events carry persona_id +
 // environment_id; spans carry scope + trace_id). Keyed by short persona/env id.
 const _shortId=(s)=>String(s||'').replace(/^did:personaos:[^:]+:/,'').replace(/^(persona|env|kernel):/,'');
+// The workspace RUN id (k/run-XXXX) every record carries in its resolved links /
+// url. It is the reliable join between an environment and ITS deliverables: an
+// env record and the artifact bundle + files it produced all share one run path.
+function runOf(r){ if(!r) return null;
+  const cands=[...Object.values(r._links||{}), r._url, r._base];
+  for(const v of cands){ if(typeof v==='string'){ const m=v.match(/k\/run-[0-9A-Za-z]+/); if(m) return m[0]; } }
+  return null; }
+// The bare env ULID — the live entities feed keys envs as `env:<ULID>` (→ ULID
+// via _shortId), but an env RECORD's DID is `…:<kernel>/env/env:<ULID>`, which
+// _shortId leaves long. Match on the ULID so a live lane + its discovered record
+// merge into ONE lane instead of two.
+function _envSid(r){ const sub=(r._links||{}).subject_id;
+  if(sub){ const m=String(sub).match(/([0-9A-HJKMNP-TV-Z]{20,})/i); if(m) return m[1]; }
+  const m2=String(r.did||r.record_id||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
+  return m2?m2[1]:_shortId(r.did||r.record_id||''); }
 function indexLiveTelemetry(base,live){
   if(!live||typeof live!=='object') return;
   S.liveTel.set(base||'@origin',live);
@@ -1082,8 +1097,10 @@ async function refreshSystemView(){
   const host=$('#sysEnvs'); if(!host) return;
   // structure: each discovered base → its envs (entities index) → members (env feed).
   const bases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
-  const envBlocks=[];          // {kernel, envId, name, type, status, members[], parent}
+  const envBlocks=[];          // {kernel, envId, sid, name, type, status, members[], run, recId, live}
   const assigned=new Set();
+  const bySid=new Map();        // sid -> envBlock, so a live feed + its discovered record merge into one lane
+  // (1) LIVE-telemetry environments — rich: members, status, lineage spans.
   for(const key of bases){ const base=key==='@origin'?'':key;
     const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) continue;
     const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
@@ -1091,9 +1108,34 @@ async function refreshSystemView(){
       const feed=await fetchEntityFeed(base,rel); if(!feed) continue;
       const members=(feed.members||[]).map(_shortId);
       members.forEach((m)=>assigned.add(m));
-      envBlocks.push({base,kernel,envId:eid,sid:_shortId(eid),name:feed.name||eid,
-        type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[]});
+      const sid=_shortId(eid);
+      const prev=bySid.get(sid);
+      if(prev){   // SAME env discovered via another base/alias (localhost vs 127.0.0.1
+                  // vs @origin vs ?peer) — merge into the one lane, never duplicate it.
+        if(members.length>prev.members.length){ prev.members=members; prev.spans=feed.spans||prev.spans; }
+        if(!prev.status) prev.status=feed.status||''; if(!prev.type) prev.type=feed.env_type||'';
+        continue; }
+      const b={base,kernel,envId:eid,sid,name:feed.name||eid,
+        type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[],
+        run:null,recId:null,live:true};
+      bySid.set(sid,b); envBlocks.push(b);
     }
+  }
+  // (2) Every DISCOVERED + Ed25519-verified environment record — so EVERY env
+  // shows on the stage (the operator root + federated task workspaces with no
+  // live feed), not only the ones streaming live telemetry this session. A record
+  // that matches a live env enriches that lane (run id for the deliverable join);
+  // one with no live feed becomes its own lane.
+  for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env') continue;
+    const sid=_envSid(r); const run=runOf(r);
+    const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
+    let b=bySid.get(sid);
+    if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
+      if(!b.type&&cap.length) b.type=cap[cap.length-1]; }
+    else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
+        name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
+        run,recId:id,live:false};
+      bySid.set(sid,b); envBlocks.push(b); }
   }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
@@ -1101,22 +1143,29 @@ async function refreshSystemView(){
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
     const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(sid,r.label); } }
-  // artifacts per kernel (discovered records)
-  const artByKernel=new Map();
+  // artifacts joined to their ENVIRONMENT by the workspace run id (not lumped by
+  // kernel) — each lane shows ITS OWN signed deliverables, never another env's.
+  const artByRun=new Map();
   for(const id of S.order){ const r=S.recs.get(id);
-    if(r.kind==='artifact'||r.kind==='mission'){ const k=r._kernel||'';
-      (artByKernel.get(k)||artByKernel.set(k,[]).get(k)).push(r); } }
+    if(r.kind!=='artifact') continue; const run=runOf(r); if(!run) continue;
+    (artByRun.get(run)||artByRun.set(run,[]).get(run)).push(r); }
 
   const laneHTML=(b)=>{
     const cards=b.members.length?b.members.map(renderPersonaCard).join('')
       :'<div class="l2" style="padding:8px">no members yet</div>';
-    const arts=(artByKernel.get(b.kernel)||[]).slice(0,8);
-    const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>`
-      +arts.map((a)=>`<span class="art-chip" data-artid="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,22))}</span>`).join('')+`</div>`:'';
+    const arts=b.run?(artByRun.get(b.run)||[]):[];
+    const bundles=arts.filter((a)=>a._links&&a._links.bundle);
+    const fileCount=arts.filter((a)=>(a._links||{}).content).length;
+    const chips=(bundles.length?bundles:arts).slice(0,6).map((a)=>{
+      const n=(bundles.length&&a._links&&a._links.bundle)?fileCount:0;
+      return `<span class="art-chip" data-artid="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,26))}${n?` · ${n} files`:''}</span>`;
+    }).join('');
+    const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
+    const statusTxt=b.status||(b.live?'—':'discovered');
     return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(b.status||'—')}</span> · ${b.members.length} member(s) · ${esc((b.kernel||'').slice(0,14))}</span></div>`
+      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(statusTxt)}</span> · ${b.members.length} member(s)${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
   let html=envBlocks.map(laneHTML).join('');
@@ -1402,6 +1451,23 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     +kv('Env rules',S0(d.rule_count))
     +kv('Lineage events',S0(ld.event_count));
   if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
+  // Deliverables produced in THIS environment — every signed bundle and every
+  // file, joined to the env by its workspace run id. The whole point of clicking
+  // an environment: see ALL its artifacts. Each row opens the verified body.
+  const _run=runOf(r);
+  const myArts=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&runOf(x)===_run):[];
+  const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
+  const myFiles=myArts.filter((a)=>(a._links||{}).content);
+  if(myArts.length){
+    html+=H(`Deliverables — ${myArts.length} artifact${myArts.length>1?'s':''}`
+      +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
+    for(const bnd of myBundles)
+      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}">▣ ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
+    if(myFiles.length)
+      html+=`<div class="atree">`+myFiles.map((a)=>
+        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.id)}">${esc(a.label||a.record_id||'file')}</a>`
+        +`<span class="l2">${esc(a.media_kind||'')}</span></div>`).join('')+`</div>`;
+  }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
   if(roster.length){
     html+=H(`Members (${roster.length})`);
@@ -1429,7 +1495,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
-  if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
+  if(L.bundle && !myBundles.length) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-env">ENV</span> ${esc(d.name||r.label)}`, html};
 }
