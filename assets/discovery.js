@@ -1127,16 +1127,30 @@ async function refreshSystemView(){
   // that matches a live env enriches that lane (run id for the deliverable join);
   // one with no live feed becomes its own lane.
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env') continue;
-    const sid=_envSid(r); const run=runOf(r);
+    const sid=_envSid(r); const run=runOf(r); const exportRel=(r._links||{}).export;
     const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
     let b=bySid.get(sid);
     if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
-      if(!b.type&&cap.length) b.type=cap[cap.length-1]; }
+      if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel; }
     else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
         name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
-        run,recId:id,live:false};
+        run,recId:id,live:false,exportRel};
       bySid.set(sid,b); envBlocks.push(b); }
   }
+  // (2b) An env whose LIVE feed is absent (a federated env, or any env whose live
+  // telemetry dropped after a node RESTART) still has its signed, durable export doc
+  // (links.export → environments/<id>.json) carrying its full member ROSTER. Pull it
+  // so the personas that worked in the env still SHOW in the env (members + count),
+  // instead of a "no members" lane — the env's people don't vanish on restart.
+  await Promise.all(envBlocks.map(async(b)=>{
+    if(b.members.length || !b.exportRel) return;
+    const ed=await fetchEntityFeed(b.base,b.exportRel); if(!ed||!Array.isArray(ed.members)) return;
+    b.roster=ed.members;
+    b.members=ed.members.map((m)=>_shortId(m.persona_id||m.id||'')).filter(Boolean);
+    b.members.forEach((m)=>assigned.add(m));
+    if(!b.status) b.status=ed.status||'';
+    b.fromExport=true;
+  }));
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.keys()].filter((p)=>!assigned.has(p));
@@ -1162,10 +1176,14 @@ async function refreshSystemView(){
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     const statusTxt=b.status||(b.live?'—':'discovered');
+    // roster pulled from the durable export (no live feed) is HISTORICAL — its members
+    // have departed; mark it so it reads as "who worked here", not "who is here now".
+    const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
+    const memberTxt=b.members.length?` · ${b.members.length} member${b.members.length>1?'s':''}${departed?' (departed)':''}`:'';
     return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(statusTxt)}</span> · ${b.members.length} member(s)${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
+      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
   let html=envBlocks.map(laneHTML).join('');
