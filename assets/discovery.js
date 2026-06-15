@@ -362,7 +362,10 @@ async function discoverViaIPFS(){
     provs=(d.Providers||[]).filter((x)=>x&&x.ID);
   }catch(e){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs','delegated routing unreachable — IPFS plane idle',false); } return; }
   if(provs.length) log('ipfs',`rendezvous providers on the IPFS DHT: ${provs.length}`,true);
-  let added=0;
+  // REBUILD the IPFS peer set from THIS cycle (not accumulate): a node that moved to
+  // a new URL — a rotated tunnel, http→https — drops its stale entry instead of
+  // lingering forever as an "unreachable" peer. The DHT/IPNS is the source of truth.
+  const fresh=new Set();
   for(const p of provs.slice(0,16)){
     const pid=String(p.ID);
     // 1) PRIMARY: the provider record's own announced https multiaddr.
@@ -378,9 +381,11 @@ async function discoverViaIPFS(){
         if(ok) url=String(doc.card.peer_url||'');
       }
     }
-    if(url&&!S.ipfsPeers.has(url)&&!peerList().includes(url)){ S.ipfsPeers.add(url); added++; }
+    if(url) fresh.add(url);
   }
-  if(added){ log('ipfs',`+${added} kernel(s) discovered via IPFS — re-discovering`,true);
+  const before=[...S.ipfsPeers].sort().join('|'), after=[...fresh].sort().join('|');
+  S.ipfsPeers=fresh;                       // replace → stale URLs fall away, latest stays
+  if(after!==before){ log('ipfs',`IPFS peers refreshed: ${fresh.size} live kernel(s)`,true);
     discover().then(()=>{ renderMissions(); }).catch(()=>{}); }
 }
 
@@ -428,6 +433,22 @@ async function resolveKernelBases(seeds){
   }
   return [...new Set(kernels)];
 }
+function pruneDeadManualPeers(){
+  // +PEER seeds live in this browser's localStorage. With IPFS as the live source of
+  // truth, a manually-added node that's now unreachable shouldn't linger and keep
+  // erroring. Drop only entries we ATTEMPTED this cycle and found unreachable —
+  // never untried or reachable ones. (?peer= query seeds and IPFS peers aren't
+  // touched; re-add a node any time with ＋PEER.)
+  let s; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){ return; }
+  if(!Array.isArray(s)||!s.length) return;
+  const ph=S.peerHealth||new Map();
+  const dead=(u)=>{ const h=ph.get(u)||ph.get(opBaseKey(u))||ph.get(opBaseKey(u)+'/'); return !!(h&&h.ok===false); };
+  const keep=s.filter((u)=>!dead(u));
+  if(keep.length!==s.length){
+    localStorage.setItem('personaos_peers',JSON.stringify(keep));
+    log('peers',`removed ${s.length-keep.length} unreachable ＋PEER node(s) from this browser`,false);
+  }
+}
 async function discover(){
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
   await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
@@ -442,6 +463,7 @@ async function discover(){
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
+  pruneDeadManualPeers();                  // drop +PEER seeds that resolved unreachable
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
   const when=new Date();
