@@ -166,7 +166,7 @@ function indexLiveTelemetry(base,live){
       ...(e.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id))].filter(Boolean);
     S.ixByPersona=new Map();
     for(const e of S.interactions) for(const sid of _ixSids(e)){
-      const arr=S.ixByPersona.get(sid)||S.ixByPersona.set(sid,[]).get(sid); arr.push({kind:e.kind,_t:e._t}); }
+      const arr=S.ixByPersona.get(sid)||S.ixByPersona.set(sid,[]).get(sid); arr.push({kind:e.kind,_t:e._t,_cap:e._cap}); }
     for(const [,arr] of S.ixByPersona) if(arr.length>12) arr.splice(0,arr.length-12);
     if(!cold){
       S.ixCountBySid=S.ixCountBySid||new Map();
@@ -954,7 +954,8 @@ function renderPersonaCard(pid){
   // Strictly additive — does NOT touch pc-msgs/pc-glance/pc-stats. The client projection
   // strips payload, so only the verb is available (no capability name / error).
   const toolAct=[...acts].reverse().find((a)=>TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
-  const toolFail=toolAct&&_ixFailed(toolAct.kind);
+  const toolFail=toolAct&&(_ixFailed(toolAct.kind)||(toolAct._cap&&toolAct._cap.ok===false));
+  const toolCap=toolAct&&toolAct._cap?(toolAct._cap.capability||toolAct._cap.tool_name||''):'';
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
   // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
@@ -973,7 +974,7 @@ function renderPersonaCard(pid){
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')
     +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">◎</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
-    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?'⚠':'🔧'} ${esc(_ixVerb(toolAct.kind))}</div>`:'')
+    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?'⚠':'🔧'} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
     +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
         `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
         +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
@@ -1381,7 +1382,7 @@ function renderInteractionStream(){
     || (e.affected||[]).some((a)=>a.kind==='persona'&&_shortId(a.id)===f);
   let prevScope=null;
   el.innerHTML=rows.map((e)=>{
-    const c=_ixClass(e.kind); const fail=_ixFailed(e.kind);
+    const c=_ixClass(e.kind); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
     const who=e.actor_kind==='persona'?_nameFor(_shortId(e.actor_id)):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
     const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):`${a.kind}:${(a.id||'').slice(0,8)}`);
     const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
@@ -1393,10 +1394,13 @@ function renderInteractionStream(){
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
     const verb=_ixVerb(e.kind);
     const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
-    const ttl=e._rationale?` title="${esc(e._rationale)}"`:'';
+    // capability/tool detail from the backend _cap projection: WHICH capability + its error
+    const capDetail=cap&&(cap.capability||cap.tool_name)
+      ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
+    const ttl=e._rationale?` title="${esc(e._rationale)}"`:(cap&&cap.error?` title="${esc(cap.error)}"`:'');
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${esc(verb)}</span>`
-      +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}`
+      +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}`
       +`<span class="ix-scope">${esc(e.scope==='cognition'?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
     // cognition is operator-token-only by design (A-TF2), so an anonymous THINK feed is

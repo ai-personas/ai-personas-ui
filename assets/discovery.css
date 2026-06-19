@@ -306,6 +306,9 @@ b{color:var(--bright)}
 .ix-think{border-left-color:var(--think-col);background:var(--think-bg)} .ix-think .ix-kind{color:var(--think-col)}
 .ix-think .ix-to{color:var(--think-col-hi)}
 .ix-msg{font-size:10px;color:var(--mut);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+/* capability/tool detail (WHICH capability + its error) surfaced from the _cap projection */
+.ix-cap{font-size:9.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.ix-tool.fail .ix-cap{color:var(--down)}
 .ix.fresh{animation:synin .7s ease-out}
 @keyframes synin{0%{transform:translateY(-8px);opacity:.3;background:rgba(58,160,255,.16)}100%{transform:none;opacity:1;background:var(--surface-raised)}}
 /* per-task thread spine: a colored connector tying adjacent same-scope acts */
