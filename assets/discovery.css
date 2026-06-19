@@ -177,8 +177,11 @@ b{color:var(--bright)}
 .art-chip.mint{animation:mint .8s ease-out}
 @keyframes mint{0%{transform:scale(.8);background:rgba(240,167,58,.35)}60%{transform:scale(1.06)}100%{transform:scale(1);background:#1a160b}}
 
-/* living persona card */
-.pcard{flex:1 1 100%;min-width:0;background:linear-gradient(180deg,#0c131d,#0b121b);
+/* living persona card — FLUID auto-pack: each card wants ~270px, grows to fill the row
+   up to ~360px, and wraps. This fills whatever width is available at EVERY viewport
+   (1 per row on phone → as many as fit on desktop/ultrawide) instead of rigid N-up
+   counts that leave some components too wide and others too cramped. */
+.pcard{flex:1 1 270px;min-width:230px;max-width:380px;background:linear-gradient(180deg,#0c131d,#0b121b);
   border:1px solid var(--line2);border-radius:var(--radius-lg);
   padding:clamp(8px,1.6vw,var(--space-3)) var(--space-3);cursor:pointer;
   transition:border-color .2s,box-shadow .2s,opacity .2s,transform .15s}
@@ -445,7 +448,6 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
 /* TABLET (>=640): 2-up cards, constellation appears, feed still stacks */
 @media(min-width:640px){
   .constellation{display:block}
-  .pcard{flex:0 1 calc(50% - 5px);min-width:200px}
   .drawer{width:min(460px,94vw)}
 }
 /* DESKTOP (>=880): feed becomes the right-side panel */
@@ -453,13 +455,11 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .stage-wrap{grid-template-columns:1fr 360px}
   /* keep DOM order so the STAGE stays in the wide 1fr (left) and the feed in the 360px panel (right) */
   .coordfeed{order:2;max-height:none;max-width:360px;border-top:none;border-left:1px solid var(--line2)}
-  .pcard{flex:0 1 calc(33.333% - 7px);min-width:220px}
 }
 /* WIDE (>=1200): roomier feed + 4-up cards */
 @media(min-width:1200px){
   .stage-wrap{grid-template-columns:1fr 400px}
   .coordfeed{max-width:400px}
-  .pcard{flex:0 1 calc(25% - 8px);min-width:240px}
 }
 /* ULTRAWIDE (>=1440): wall-display comfort */
 @media(min-width:1440px){
