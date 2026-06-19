@@ -418,6 +418,21 @@ details.frame{margin:7px 0 2px} details.frame summary{cursor:pointer}
 details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
 .opout{font-family:var(--mono)}
 
+/* ===================== phones / small screens ===================== */
+@media(max-width:640px){
+  .vitals{gap:8px;padding:6px 10px}
+  .vital{display:none}                 /* the ECG is decorative — hide on phones to declutter */
+  #q,#peer{flex:1 1 100%;min-width:0}  /* search + peer inputs each take their own full row */
+  .vcounts{gap:10px;order:5;flex:1 1 100%;justify-content:space-between}
+  .stat{min-width:0}
+  .brandmark{flex:1 1 auto}
+  .drawer{width:100vw}                 /* full-screen detail drawer on phones */
+  .stage{padding:12px}
+  .pcard{flex:1 1 100%;min-width:0}    /* one persona card per row */
+  .constellation{display:none}         /* the minimap needs width; hide on phones */
+  .logcard{width:96vw}
+}
+
 /* ===================== prefers-reduced-motion ===================== */
 @media(prefers-reduced-motion:reduce){
   .livedot.beating,.core-c,.core-ring,.gn-ring,.gnode.gn-live .gn-c,.gnode.gn-running .gn-c,

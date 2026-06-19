@@ -776,11 +776,19 @@ const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate
   safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
   domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering'};
 function _liveFeed(models){
-  if(!models||!models.length) return '<div class="l2">idle — no model activity in the last telemetry tick</div>';
-  return models.slice(-8).reverse().map((m)=>{
-    const lbl=PURPOSE_LABEL[m.purpose]||m.purpose;
-    return `<div class="grant"><span class="l2"><span class="livedot2"></span>${esc(lbl)}</span>`
-      +`<span><code>${esc(m.model)}</code></span></div>`;
+  if(!models||!models.length) return '<div class="l2">idle — no recent model calls</div>';
+  // A persona legitimately produces, repairs AND evolves its own tactics — so SUMMARISE
+  // its recent model calls by PURPOSE with a count (newest purpose first), instead of a
+  // repeating row per call that reads like a glitch ("repairing candidate" ×6 in a row).
+  const byP=new Map(); let i=0;
+  for(const m of models){ const k=m.purpose||'model';
+    const e=byP.get(k)||{n:0,model:m.model,seen:i}; e.n++; e.model=m.model||e.model; e.seen=i++; byP.set(k,e); }
+  const order=[...byP.entries()].sort((a,b)=>b[1].seen-a[1].seen);   // most-recently-used purpose first
+  return order.map(([p,e])=>{
+    const lbl=PURPOSE_LABEL[p]||p;
+    return `<div class="grant"><span class="l2"><span class="livedot2"></span>${esc(lbl)}`
+      +`${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span>`
+      +`<span><code>${esc(e.model)}</code></span></div>`;
   }).join('');
 }
 function renderPersonaLive(pid){
@@ -2582,12 +2590,12 @@ function wire(){
   $('#opbtn').addEventListener('click',()=>{ S.views=[()=>operatorView()];
     $('#detailwrap').classList.add('open'); renderTop(); });
   updateOpBadge();
-  // "what is this" intro: shown until dismissed once; the ？ button re-toggles it.
+  // "what is this" intro + setup instructions: HIDDEN by default (the living network is
+  // the page — instructions don't eat real estate); the ？ button toggles them on demand.
   const hb=$('#helpbtn'), intro=$('#intro');
   if(hb&&intro){
-    intro.hidden=!!localStorage.getItem('personaos_intro_seen');
-    hb.addEventListener('click',()=>{ intro.hidden=!intro.hidden;
-      localStorage.setItem('personaos_intro_seen','1'); });
+    intro.hidden=true;
+    hb.addEventListener('click',()=>{ intro.hidden=!intro.hidden; });
   }
   // missions strip → open the mission record, or the operator run console when
   // the card came from a token-gated /status (running/paused mission).
