@@ -1707,7 +1707,27 @@ function renderArtifactTree(arts){
   return `<div class="atree">${renderArtifactNode(buildArtifactTree(arts),'',0)}</div>`;
 }
 async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
-  if(!d) return {title:'bundle', html:'<div class="l2">unavailable</div>'};
+  if(!d){
+    // An anonymous viewer holds only 'discover': the node publishes that the deliverable
+    // EXISTS (files, hashes, metadata) but gates the BYTES to read+ tier (07_ARTIFACTS §10a).
+    // Render the PUBLIC manifest from the discovered file-card records + how to read the bytes.
+    const run=(String(url||'').match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||'';
+    const files=(S.order||[]).map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='artifact'
+        && !((r._links||{}).bundle) && runOf(r)===run);
+    let mh='<div class="empty-card"><h3>Deliverable — content is read-gated</h3>'
+      +'<p class="desc2">This node publishes that the deliverable <b>exists</b> (file list, hashes, metadata) '
+      +'to anonymous viewers, but serves the actual <b>bytes</b> only at <b>read+</b> tier '
+      +'(07_ARTIFACTS §10a). To open the files: click <b>🔑&nbsp;OPERATOR</b> and paste this node\'s '
+      +'bearer token, or open the page on the node\'s own machine (localhost = operator).</p></div>';
+    if(files.length){
+      mh+=H(`Files (${files.length}) — published manifest`)+files.slice(0,80).map((r)=>{
+        const L2=r._links||{}; const h=String(L2.content_hash||'').replace('sha256:','').slice(0,10);
+        return `<div class="grant"><span class="l2">${esc(r.label||'file')}</span>`
+          +`<span class="tier">${esc(L2.media_kind||'')}${h?` · ${h}…`:''}</span></div>`;
+      }).join('');
+    }
+    return {title:'deliverable (manifest)', html:mh};
+  }
   // personaos-bundle-export/2 is a DIRECT document (07_ARTIFACTS §7): bundle_id,
   // bundle_kind, state, contributors, verifier_evidence[], co_signatures{},
   // accepted_at/shipped_at, artifacts[] with role_in_bundle. Verifier evidence
