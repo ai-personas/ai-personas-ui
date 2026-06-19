@@ -867,6 +867,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
+const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
 // RUNNING NOW vs merely live: a persona is "running now" iff its model/coordination activity
@@ -1045,13 +1046,13 @@ function renderCoordGraph(persons){
       g.appendChild(_svg('text',{y:4},'gn-role'));
       g.appendChild(_svg('text',{y:25},'gn-do'));
       svg._nodes.appendChild(g); }
-    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}`;
+    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}${S.follow===p.sid?' gn-followed':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
     const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
-    const dn=p.live?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
+    const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
 }
 const cssEsc=(s)=>(window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&');
@@ -1263,7 +1264,7 @@ async function refreshSystemView(){
     return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
+      +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records
@@ -1333,6 +1334,10 @@ function _applyFollow(){
   document.querySelectorAll('.pcard').forEach((el)=>{ el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f);
     el.querySelector('.pc-follow')?.setAttribute('aria-pressed',String(el.dataset.pcard===f)); });
   const ff=$('#cfFollow'); if(ff) ff.hidden=!f;
+  // light up the followed node in the constellation too (card/feed-initiated follows
+  // should give the graph the same selected feedback as clicking a node directly).
+  const g=$('#sysGraph'); if(g){ g.classList.toggle('has-follow',!!f);
+    g.querySelectorAll('[data-gp]').forEach((n)=>n.classList.toggle('gn-followed',n.dataset.gp===f)); }
 }
 
 // the live COORDINATION FEED — the heartbeat of who→whom:what. Newest slides in
@@ -1374,9 +1379,26 @@ function renderInteractionStream(){
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}`
-      +`<span class="ix-scope">${esc(e.scope||'')}</span></li>`;
-  }).join('')||('<li class="l2" style="padding:10px">no '+esc({all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',crossenv:'cross-env '}[flt]||(flt+' '))+'activity yet — fund a mission to watch personas coordinate.</li>');
+      +`<span class="ix-scope">${esc(e.scope==='cognition'?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
+  }).join('')||(()=>{
+    // cognition is operator-token-only by design (A-TF2), so an anonymous THINK feed is
+    // always empty — explain that instead of the generic 'fund a mission' line.
+    if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
+      return '<li class="l2" style="padding:10px">persona cognition is operator-only (A-TF2) — add an operator token in the console to watch the THINK stream.</li>';
+    // presence check so the intentional empty-string label (all) survives the lookup
+    const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',crossenv:'cross-env '};
+    const q=(flt in lbl)?lbl[flt]:(flt+' ');
+    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity yet — fund a mission to watch personas coordinate.</li>';
+  })();
   const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
+  // self-filter so an active search query keeps filtering the feed even when this is
+  // called directly (tab-switch / follow toggle / cognition merge), not only via the 5s caller.
+  if(S.q) document.querySelectorAll('#sysStream .ix').forEach((li)=>{ if(!li.textContent.toLowerCase().includes(S.q)) li.style.display='none'; });
+  // prune the 'seen' set to the live ring unconditionally — a node streaming ONLY
+  // cognition/model events never hits the indexLiveTelemetry prune, so ixSeen would
+  // otherwise leak for the page's life.
+  const liveKeys=new Set((S.interactions||[]).map((e)=>e._key));
+  for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
 }
 
 // ---- per-entity feed documents (telemetry/personas/<slug>.json etc.) ----
@@ -1502,7 +1524,7 @@ async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
   const want=S.drawerThinkPid;
-  const t=await fetchJson(join(S.drawerLiveBase||'',`personas/${encodeURIComponent(want)}/thinking`));
+  const t=await fetchJson(join(S.drawerLiveBase||'',`personas/${encodeURIComponent(_shortId(want))}/thinking`));
   if(S.drawerThinkPid!==want) return;   // drawer navigated away mid-fetch
   const el2=$('#thinksec'); if(!el2) return;
   if(t&&t.schema==='personaos-persona-thinking/1'){ el2.innerHTML=renderThinking(t); return; }
@@ -1605,9 +1627,6 @@ function refreshLiveSection(){
   }
   fallback();
 }
-const bundleRecId=()=>S.order.find((id)=>{ const r=S.recs.get(id); return r.kind==='artifact' && r._links && r._links.bundle; });
-const envRecId=()=>S.order.find((id)=>S.recs.get(id).kind==='env');
-
 async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
   S.curBase=base;
   // PersonaCard public projection (02_PERSONA): bind the SERVED profile doc
@@ -1647,7 +1666,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   html+=H('🧠 Thinking')+`<div id="thinksec" class="livesec"><div class="l2">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
-  const eid=envRecId(), bid=bundleRecId(); let nav='';
+  const eid=kernelRec(r._kernel,'env');
+  const bid=S.order.find((id)=>{ const x=S.recs.get(id);
+    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle; });
+  let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
@@ -1676,7 +1698,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const _run=runOf(r);
   const myArts=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&runOf(x)===_run):[];
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
-  const myFiles=myArts.filter((a)=>(a._links||{}).content);
+  const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
   if(myArts.length){
     html+=H(`Deliverables — ${myArts.length} artifact${myArts.length>1?'s':''}`
       +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
@@ -2032,7 +2054,7 @@ async function renderDescriptor(host,ctx){
   const add=(l,v)=>{ const r=el('div','row'); r.appendChild(el('span','l2',l));
     r.appendChild(el('span','v2',v)); card.appendChild(r); };
   add('Kind',ctx.kind||ctx.ext||'—');
-  add('Size',fmtBytes(ctx.realSize));
+  add('Size',fmtBytes(ctx.realSize!=null?ctx.realSize:ctx.size));
   add('Content hash',ctx.contentHash||'—');
   host.appendChild(card);
   const dl=el('div','row'); const a=document.createElement('a');
@@ -2079,7 +2101,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
     if(!isBinary){ text=await fetchText(url); realSize=text?text.length:null; }
   }
-  const ctx={ base, path, url, title, kind, ext:pick.ext, text, realSize,
+  const ctx={ base, path, url, title, kind, ext:pick.ext, text, realSize, size:opts.size,
     contentHash:opts.contentHash||null };
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
   const rawTog=forcedPlain
@@ -2398,11 +2420,11 @@ async function operatorNodeView(b){
   }
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea>`
-    +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget (optional)">`
+    +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget — optional for ASK, required for FUND">`
     +`<button class="btn" data-act="op-ask" data-base="${esc(b)}">⚡ ASK</button>`
     +`<button class="btn" data-act="op-fund" data-base="${esc(b)}">💰 FUND</button>`
     +`<input id="op-run-target" placeholder="run id (stop / fund target, optional)">`
-    +`<button class="btn" data-act="op-stop" data-base="${esc(b)}">⏹ STOP</button></div>`
+    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}">⏹ STOP</button></div>`
     +`<pre id="op-out" class="opout"></pre></div>`;
   // Owner-class creation: environments form via the full §12c/§15 ceremony;
   // personas are OPERATOR-seeded souls (personas still never self-author).
@@ -2444,7 +2466,15 @@ async function operatorRunView(b,run){
   const rs=st.run_state||{};
   const stt=String(rs.status||'—');
   const stClass=(stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no');
-  let html=kv('Run',`<code>${esc(run)}</code>`)
+  // a paused mission card opens this view directly, so give it inline resume/stop
+  // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
+  // console-level #op-run-target, and read #opr-budget when present.
+  let html='<div class="opform"><div class="oprow">'
+    +'<input id="opr-budget" type="number" min="1" placeholder="add budget">'
+    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'">💰 FUND</button>'
+    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'">⏹ STOP</button></div>'
+    +'<pre id="op-out" class="opout"></pre></div>';
+  html+=kv('Run',`<code>${esc(run)}</code>`)
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
     +kv('Accepted',rs.accepted?'<span class="ok">✓ yes</span>':'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
@@ -2726,14 +2756,21 @@ function wire(){
           .then((r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); }); }
       return; }
     if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
-      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); };
+      // ASK/FUND/STOP mutate node state — leave the JSON visible briefly, then re-render
+      // the console so the new run / updated paused list shows (mirrors op-newenv).
+      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600);
+        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3000); } };
+      // a run-scoped control (operatorRunView's inline FUND/STOP) carries the run on the
+      // button; prefer it over the console-level #op-run-target field.
+      const run=(a.dataset.run||$('#op-run-target')?.value||'').trim();
       if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; return; }
         const body={text}; const bd=+($('#op-budget')?.value||0); if(bd>0) body.budget=bd;
         if(out) out.textContent='submitting…'; opPost(b2,'task',body).then(show); }
-      else if(act==='op-fund'){ const bd=+($('#op-budget')?.value||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; return; }
-        const body={budget:bd}; const run=($('#op-run-target')?.value||'').trim(); if(run) body.run=run;
+      else if(act==='op-fund'){ const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; return; }
+        const body={budget:bd}; if(run) body.run=run;
         if(out) out.textContent='funding…'; opPost(b2,'budget',body).then(show); }
-      else { const body={}; const run=($('#op-run-target')?.value||'').trim(); if(run) body.run=run;
+      else { if(!run && !confirm('No run id entered — stop ALL active missions on this node?')) return;
+        const body={}; if(run) body.run=run;
         if(out) out.textContent='stopping…'; opPost(b2,'stop',body).then(show); }
       return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));

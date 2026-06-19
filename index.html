@@ -6,7 +6,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260619q">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260619r">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -61,6 +61,15 @@
     <div class="con-head">
       <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
       <span class="dim" id="sysGraphCap">the kernel orchestrates · edges fire as messages flow between personas</span>
+      <span class="cg-legend" aria-label="constellation legend">
+        <span class="lg"><span class="lg-dot pulse"></span>running (in a model call)</span>
+        <span class="lg"><span class="lg-dot"></span>live</span>
+        <span class="lg"><span class="lg-dot idle"></span>idle</span>
+        <span class="lg"><span class="lg-ring r-lead"></span>lead</span>
+        <span class="lg"><span class="lg-ring r-verifier"></span>verifier</span>
+        <span class="lg"><span class="lg-ring r-integrator"></span>integrator</span>
+        <span class="lg"><span class="lg-ring r-specialist"></span>specialist</span>
+      </span>
       <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="true" aria-controls="sysGraph">▾</button>
     </div>
     <svg id="sysGraph" viewBox="0 0 1000 200" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
@@ -73,7 +82,7 @@
       <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
       <div class="cf-tabs" id="sysStreamTabs">
         <button data-flt="all" class="chip on">ALL</button>
-        <button data-flt="think" class="chip" title="what each persona is asking its model in real time (model request → purpose)">THINK</button>
+        <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
         <button data-flt="coord" class="chip">COORD</button>
         <button data-flt="verify" class="chip">VERIFY</button>
         <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
@@ -104,6 +113,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260619q"></script>
+  <script type="module" src="assets/discovery.js?v=20260619r"></script>
 </body>
 </html>
