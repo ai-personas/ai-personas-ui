@@ -1546,21 +1546,17 @@ async function streamPersonaCognition(){
     for(const id of (S.order||[])){ const r=S.recs.get(id);
       if(r&&r.kind==='persona') sids.add(_shortId(r.did||r.id||'')); }
     const list=[...sids].filter(Boolean).slice(0,24);   // cover specialists/born personas, not just the first few
-    // the /thinking endpoint keys on the FULL persona id, but our sids are SHORT (_shortId).
-    // Resolve each short sid back to its full id (live summary.persona_id, or a discovered
-    // record's DID) so the fetch hits the endpoint instead of 404'ing on the short form.
-    const fullFor=new Map();
-    for(const [pid,d] of (S.liveByPersona||new Map())){
-      const f=d&&d.summary&&d.summary.persona_id; if(f) fullFor.set(pid,String(f)); }
-    for(const id of (S.order||[])){ const r=S.recs.get(id);
-      if(r&&r.kind==='persona'){ const f=r.did||r.id||''; if(f) fullFor.set(_shortId(f),String(f)); } }
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
     for(const sid of list){
       // sticky base first (avoids re-probing every poll), then the candidate API bases
       const order=[...new Set([S.cogBaseFor.get(sid), ...apiBases].filter((b)=>b!==undefined))];
-      let t=null, usedBase=''; const fullId=fullFor.get(sid)||sid;
+      let t=null, usedBase='';
       for(const base of order){
-        const r=await fetchJson(join(base,`personas/${encodeURIComponent(fullId)}/thinking`));
+        // _shortId strips the did:/persona: PREFIX (it is NOT a length truncation), giving the
+        // bare ULID the /thinking endpoint resolves for BOTH founder AND born specialists.
+        // Do NOT use the prefixed persona_id: encodeURIComponent turns its ':' into %3A → 404,
+        // which is exactly why born ('persona:<ulid>') personas stopped streaming.
+        const r=await fetchJson(join(base,`personas/${encodeURIComponent(sid)}/thinking`));
         if(r && r.schema==='personaos-persona-thinking/1'){ t=r; usedBase=base; S.cogBaseFor.set(sid,base); break; }
       }
       if(!t) continue;
