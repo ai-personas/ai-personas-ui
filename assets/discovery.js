@@ -846,10 +846,19 @@ const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cros
 const VERIFY_KINDS=new Set(['VERIFIER_VERDICT','ANSWER_EVALUATED','SAFETY_CHECKED','TASK_NOT_ACCEPTED','PANEL_VERDICT']);
 const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created','artifact_card_published',
   'PROVEN_FACT_RECORDED','TASK_COMPLETED','TASK_ACCEPTED','answer/5']);
-// a verdict that did NOT accept → render in the rejected colour
-const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED';
+// TOOL = a persona reaching for / acquiring / using a capability — the headline
+// "self-extension" story. These have human verbs in IX_VERB but would otherwise
+// fall to the muted 'activity' catch-all, indistinguishable from background noise.
+const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_BLOCKED','EXTERNAL_CAPABILITY_ACQUIRED',
+  'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED']);
+// a verdict that did NOT accept → render in the rejected colour. A persona honestly
+// stuck on self-provisioning (EXTERNAL_CAPABILITY_BLOCKED) reads as fail too. NOTE:
+// the public interaction projection strips payload, so CAPABILITY_PROVISIONED's
+// ok/error fields are NOT in the client stream — only BLOCKED is markable client-side.
+const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED';
 function _ixClass(kind){ if(kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
   if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
+  if(TOOL_KINDS.has(kind))return 'tool';
   if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
 // interaction-kind → human verb, so a persona card can stream its recent
 // coordination acts when no model req/resp is flowing (live state A). Anything
@@ -939,6 +948,13 @@ function renderPersonaCard(pid){
   } else {
     doingHTML='<span class="l2">idle — awaiting a mission</span>';
   }
+  // TOOL chip: the persona's headline self-extension act (provision / acquire / use /
+  // block) within the live window. doingHTML is model-purpose-only when hasModels, so a
+  // persona calling models AND just reaching for a tool would otherwise mask the tool act.
+  // Strictly additive — does NOT touch pc-msgs/pc-glance/pc-stats. The client projection
+  // strips payload, so only the verb is available (no capability name / error).
+  const toolAct=[...acts].reverse().find((a)=>TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
+  const toolFail=toolAct&&_ixFailed(toolAct.kind);
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
   // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
@@ -957,6 +973,7 @@ function renderPersonaCard(pid){
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')
     +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">◎</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
+    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?'⚠':'🔧'} ${esc(_ixVerb(toolAct.kind))}</div>`:'')
     +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
         `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
         +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
@@ -1080,7 +1097,7 @@ function _flashNode(sid,cls){
 // VITAL-SIGN spike queue: a verified event (model-event growth or a new
 // coordination act) injects a decaying spike, coloured by class. The ECG canvas
 // (drawVital) consumes it. Never enqueued without a real telemetry delta behind it.
-const SPIKE_COL={produce:'#a779e6',coord:'#3aa0ff',verify:'#19c39a',artifact:'#f0a73a',crossenv:'#ff5fa2',activity:'#48586a'};
+const SPIKE_COL={produce:'#a779e6',coord:'#3aa0ff',verify:'#19c39a',artifact:'#f0a73a',crossenv:'#ff5fa2',tool:'#a779e6',activity:'#48586a'};
 function _pushSpike(cls){ S.vitalSpikes.push({a:1,col:SPIKE_COL[cls]||SPIKE_COL.coord}); if(S.vitalSpikes.length>40) S.vitalSpikes.shift(); }
 
 // per-task THREAD hue: a stable colour per scope_id so you can watch one task
@@ -1357,6 +1374,7 @@ function renderInteractionStream(){
     if(flt==='verify') return c==='verify';
     if(flt==='crossenv') return c==='crossenv';
     if(flt==='artifact') return c==='artifact';
+    if(flt==='tool') return c==='tool';
     return true; }).slice(-120).reverse();
   const f=S.follow;
   const matches=(e)=>!f|| (e.actor_kind==='persona'&&_shortId(e.actor_id)===f)
@@ -1386,7 +1404,7 @@ function renderInteractionStream(){
     if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
       return '<li class="l2" style="padding:10px">persona cognition is operator-only (A-TF2) — add an operator token in the console to watch the THINK stream.</li>';
     // presence check so the intentional empty-string label (all) survives the lookup
-    const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',crossenv:'cross-env '};
+    const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
     return '<li class="l2" style="padding:10px">no '+esc(q)+'activity yet — fund a mission to watch personas coordinate.</li>';
   })();
@@ -1706,7 +1724,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
       html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}">▣ ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
     if(myFiles.length)
       html+=`<div class="atree">`+myFiles.map((a)=>
-        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.id)}">${esc(a.label||a.record_id||'file')}</a>`
+        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
         +`<span class="l2">${esc(a.media_kind||'')}</span></div>`).join('')+`</div>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );

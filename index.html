@@ -6,7 +6,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260619r">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260619s">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -39,6 +39,7 @@
       <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
       <span><b>VERIFIED</b> Ed25519-checked in your browser — trust is signature, not host</span>
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
+      <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
     <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8805</code>
     then add <code>?peer=http://localhost:8805</code> to this page's URL or use ＋PEER.</p>
@@ -86,6 +87,7 @@
         <button data-flt="coord" class="chip">COORD</button>
         <button data-flt="verify" class="chip">VERIFY</button>
         <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
+        <button data-flt="tool" class="chip" title="a persona reaching for / acquiring / using a tool">TOOLS</button>
         <button data-flt="crossenv" class="chip">CROSS-ENV</button>
       </div>
       <ol class="cf-body" id="sysStream" role="log" aria-live="polite" aria-relevant="additions" aria-label="live persona coordination"></ol>
@@ -113,6 +115,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260619r"></script>
+  <script type="module" src="assets/discovery.js?v=20260619s"></script>
 </body>
 </html>

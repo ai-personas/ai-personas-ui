@@ -257,6 +257,9 @@ b{color:var(--bright)}
 .pc-msg.lesson .pc-msg-g{color:var(--amber)}
 .pc-msg.fresh{animation:rrslide .7s ease-out}
 /* activity glance — a clean grouped summary of what the persona has been doing */
+.pc-tool{font-size:10.5px;color:var(--purple);font-weight:600;margin-bottom:6px;
+  border-left:2px solid var(--purple);padding-left:6px}
+.pc-tool.fail{color:var(--down);border-left-color:var(--down)}
 .pc-glance{display:flex;flex-wrap:wrap;gap:4px 6px;font-size:10px;color:var(--mut);margin-bottom:6px}
 .pc-g{background:var(--surface-raised);border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
 .pc-g b{color:var(--ink);font-weight:700}
@@ -297,6 +300,8 @@ b{color:var(--bright)}
 .ix-artifact{border-left-color:var(--amber)} .ix-artifact .ix-kind{color:var(--amber)}
 .ix-verify{border-left-color:var(--intr)} .ix-verify .ix-kind{color:var(--intr)}
 .ix-verify.fail{border-left-color:var(--down)} .ix-verify.fail .ix-kind{color:var(--down)}
+.ix-tool{border-left-color:var(--purple)} .ix-tool .ix-kind{color:var(--purple)}
+.ix-tool.fail{border-left-color:var(--down)} .ix-tool.fail .ix-kind{color:var(--down)}
 .ix-activity{border-left-color:var(--mut)}
 .ix-think{border-left-color:var(--think-col);background:var(--think-bg)} .ix-think .ix-kind{color:var(--think-col)}
 .ix-think .ix-to{color:var(--think-col-hi)}
