@@ -231,6 +231,10 @@ b{color:var(--bright)}
 .pc-msg-g{color:var(--think-col);margin-right:4px;font-weight:700}
 .pc-msg.lesson .pc-msg-g{color:var(--amber)}
 .pc-msg.fresh{animation:rrslide .7s ease-out}
+/* activity glance — a clean grouped summary of what the persona has been doing */
+.pc-glance{display:flex;flex-wrap:wrap;gap:4px 6px;font-size:10px;color:var(--mut);margin-bottom:6px}
+.pc-g{background:#0b121b;border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
+.pc-g b{color:var(--ink);font-weight:700}
 .pc-doing .pulse{color:var(--up);animation:pulse2 1.3s infinite}
 @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.25}}
 .pc-doing code,.rr-a code{background:#070b10;border:1px solid var(--line2);border-radius:3px;padding:0 4px;font-size:10.5px;color:var(--int)}

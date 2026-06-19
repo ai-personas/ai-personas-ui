@@ -916,7 +916,7 @@ function renderPersonaCard(pid){
   // live persona MESSAGES (cognition): the LLM's own recent outputs + lessons for THIS persona,
   // streamed straight onto the card (newest first) — the same data the THINK feed shows.
   const cogMsgs=(S.interactions||[]).filter((e)=>e.scope==='cognition'&&_shortId(e.actor_id)===sid)
-    .slice(-3).reverse();
+    .slice(-4).reverse();
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   const live=hasModels||actFresh;
@@ -924,24 +924,19 @@ function renderPersonaCard(pid){
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
   const grew=_personaGrew(sid,models.length+actTally);
-  let headLabel,streamRows,doingHTML;
+  // Card content (UX): the useful signal is WHAT it's doing now + WHAT it produced/learned
+  // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
+  let doingHTML, glance='';
   if(hasModels){
-    headLabel=`request → response <span class="rr-count">${models.length}</span>`;
-    // "→ model" shows what the persona asked; no ✓ — these rows are the node's own
-    // telemetry, not browser-verified, so they must not wear a verification mark.
-    streamRows=models.slice(-6).reverse().map((m,i)=>
-      `<div class="rr${grew&&i===0?' rr-new':''}"><span class="rr-q">▸ ${esc(PURPOSE_VERB[m.purpose]||m.purpose)}</span>`
-      +`<span class="rr-a">→ <code>${esc(m.model)}</code></span></div>`).join('');
     doingHTML=`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
-  } else if(acts.length){
-    headLabel=`${actFresh?'recent':'last'} coordination <span class="rr-count">${actTally||acts.length}</span>`;
-    streamRows=acts.slice(-6).reverse().map((a,i)=>
-      `<div class="rr${grew&&i===0?' rr-new':''} ix-${_ixClass(a.kind)}"><span class="rr-q">▸ ${esc(_ixVerb(a.kind))}</span></div>`).join('');
-    doingHTML=actFresh?`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`:'<span class="l2">resting</span>';
+    const byP=new Map();
+    for(const m of models){ const k=m.purpose||'model'; byP.set(k,(byP.get(k)||0)+1); }
+    glance=[...byP.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4)
+      .map(([p,n])=>`<span class="pc-g">${esc(PURPOSE_VERB[p]||p)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
+  } else if(actFresh){
+    doingHTML=`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`;
   } else {
-    headLabel=`request → response <span class="rr-count">0</span>`;
-    streamRows='<div class="l2 rr">idle — no mission assigned</div>';
-    doingHTML='<span class="l2">idle</span>';
+    doingHTML='<span class="l2">idle — awaiting a mission</span>';
   }
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
   // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
@@ -964,8 +959,7 @@ function renderPersonaCard(pid){
         `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
         +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
       +`</div>`:'')
-    +`<div class="pc-rr-head">${headLabel}</div>`
-    +`<div class="pc-rr">${streamRows}</div>`
+    +(glance?`<div class="pc-glance">${glance}</div>`:'')
     +`<div class="pc-stats">`
     +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
     +(s.reputation_score!=null?`<span title="reputation — role-relative [0,1]">✦ ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
