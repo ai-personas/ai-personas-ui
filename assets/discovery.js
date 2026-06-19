@@ -147,7 +147,7 @@ function indexLiveTelemetry(base,live){
     if(prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
       S.lastActiveAt.set(pid,Date.now());   // this persona just asked a model → it is RUNNING NOW
-      setTimeout(()=>_fireEdge(pid,'produce'),60); }   // the persona just asked a model → its edge fires
+      setTimeout(()=>_fireEdge(pid,'produce','out'),60); }   // persona asked a model → outbound spoke pulse
     S.modelCount.set(pid,now2);
   }
   // WHO→WHOM interaction stream (kernel.interactions): actor → affected : kind.
@@ -192,7 +192,32 @@ function indexLiveTelemetry(base,live){
         if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
         _pushSpike(_ixClass(rec.kind)); fired++;
         const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500);
-        _ixSids(rec).forEach((sid)=>setTimeout(()=>_fireEdge(sid,cls),d));
+        // PRIMARY (rare on real data): if a single act names an actor persona AND affected
+        // persona(s), fire the DIRECTIONAL actor→affected chord — that IS the inter-persona message.
+        const from=rec.actor_kind==='persona'?_shortId(rec.actor_id):null;
+        const tos=(rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id)).filter((s)=>s&&s!==from);
+        if(from&&tos.length){
+          setTimeout(()=>{ _flashNode(from,cls); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls); }); },d);
+        } else {
+          // REAL path (telemetry is 100% kernel-mediated): the act touches ONE persona on an
+          // env scope. Resolve the live peer the kernel relays among that scope and fire the
+          // person→person HOP so a routed message visibly travels between two people, with
+          // honest direction — work routed TO a persona is inbound (kernel→X), a persona's
+          // own result is outbound (X→kernel). Fall back to the kernel spoke only when no
+          // graph peer shares the scope.
+          const onEnv=rec.scope==='environment'&&rec.scope_id;
+          const subj=from || (RELAY_KINDS.has(rec.kind)
+            ? (rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id)).find((s)=>S.nodePos.has(s))
+            : null);
+          const outbound=rec.actor_kind==='persona';   // persona reporting back vs kernel routing in
+          const peer=onEnv&&subj?_scopePeer(rec.scope_id,subj):null;
+          if(peer){
+            const a=outbound?subj:peer, b=outbound?peer:subj;   // M is always the source of the dash
+            setTimeout(()=>{ _fireLink(a,b,cls); _flashNode(subj,cls); },d);
+          } else {
+            _ixSids(rec).forEach((sid)=>setTimeout(()=>_fireEdge(sid,cls,outbound?'out':'in'),d));
+          }
+        }
       }
     }
     S.ixColdLoaded=true;
@@ -1003,9 +1028,10 @@ function renderPersonaCard(pid){
 
 // ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
 // Honest topology: PersonaOS coordination is KERNEL-MEDIATED (the kernel routes
-// candidate→verify→accept), so the kernel is the hub and personas are spokes;
-// the producer→verifier verify-relationship is drawn directly. Edges/nodes PULSE
-// when a fresh interaction names that persona (from kernel.interactions).
+// candidate→verify→accept), so the kernel is the hub and personas are spokes; the
+// persona↔persona CHORDS overlay who-coordinates-with-whom, derived from the cohort
+// the kernel relays within one env scope. Edges/nodes PULSE when a fresh interaction
+// names that persona (from kernel.interactions).
 function _hotPersonas(){
   const hot=new Set();
   for(const e of (S.interactions||[]).slice(-10)){
@@ -1014,11 +1040,107 @@ function _hotPersonas(){
   }
   return hot;
 }
+// quadratic control point for a persona↔persona chord, bowed clear of the kernel
+// core at (cx,cy). Default bow = outward along the kernel→midpoint normal so the curve
+// arcs AWAY from the hub. When the two nodes sit opposite at the ellipse waist the
+// midpoint lands on the core and that normal collapses — fall back to the chord's own
+// perpendicular so the chord still arcs clear instead of slicing straight through the core.
+function _chordCtl(ax,ay,bx,by,bow){
+  const cx=500,cy=100, mx=(ax+bx)/2, my=(ay+by)/2;
+  let nx=mx-cx, ny=my-cy; let nl=Math.hypot(nx,ny);
+  if(nl<6){ nx=-(by-ay); ny=(bx-ax); nl=Math.hypot(nx,ny)||1; }   // degenerate → use chord perpendicular
+  nx/=nl; ny/=nl;
+  return {qx:+(mx+nx*bow).toFixed(1), qy:+(my+ny*bow).toFixed(1)};
+}
+// kernel-RELAY acts: the kernel routing coordination AMONG the personas of one
+// environment scope. These carry exactly ONE affected persona (the relay target), so
+// no single act names two personas — but grouped by scope_id they reveal the cohort the
+// kernel is shuttling messages between. This is the honest persona↔persona channel on a
+// 100%-kernel-mediated substrate (verified: real telemetry emits 0 actor→affected pairs).
+const RELAY_KINDS=new Set(['ATTENTION_ALLOCATED','COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','VERIFIER_VERDICT']);
+const _COORD_WINDOW_MS=900000;   // chords reflect CURRENT relay (≈ active-run span), not all-time membership
+// the graph-persona(s) an act puts on a scope: a kernel relay act → its affected persona;
+// a persona's own act on the scope → that actor. Either way, scoped to personas on the graph.
+function _scopePersonas(e,posOf,out){
+  if(RELAY_KINDS.has(e.kind)) for(const af of (e.affected||[])){
+    if(af.kind!=='persona') continue; const b=_shortId(af.id); if(b&&posOf.has(b)) out.add(b); }
+  if(e.actor_kind==='persona'){ const a=_shortId(e.actor_id); if(a&&posOf.has(a)) out.add(a); }
+}
+// the persona MOST-RECENTLY relayed on `scopeId` other than `exceptSid`, restricted to
+// personas that have a rendered graph position — the live peer a kernel-mediated hop should
+// travel TO/FROM, so a routed message visibly moves person→person, not only person→hub.
+// Scans the WHOLE ring newest-first but only env-scope rows, because the recent tail is
+// dominated by model-call rows that carry no env peer; returns null when none shares the scope.
+function _scopePeer(scopeId,exceptSid){
+  if(!scopeId) return null;
+  const onGraph={has:(sid)=>S.nodePos.has(sid)};
+  const all=(S.interactions||[]);
+  for(let i=all.length-1;i>=0;i--){ const e=all[i];
+    if(e.scope!=='environment'||e.scope_id!==scopeId) continue;
+    const ps=new Set(); _scopePersonas(e,onGraph,ps);
+    for(const sid of ps) if(sid!==exceptSid) return sid;
+  }
+  return null;
+}
+// persona↔persona traffic over the recent interaction window — the standing
+// coordination topology (WHO coordinates with WHOM). TWO honest sources, merged:
+//  (1) DIRECT actor→affected acts (one act naming two graph personas) — the strongest
+//      signal, kept as a HIGHER-WEIGHT overlay for the day the node emits them.
+//  (2) CO-RELAY co-membership: kernel-relay acts (ATTENTION/COORDINATION/VERDICT) +
+//      persona acts on the SAME environment scope_id, grouped over the live window — the
+//      distinct graph-personas the kernel is shuttling among one scope are linked
+//      star-through-the-busiest (the most-relayed persona is the hub of its cohort, the
+//      others spoke off it), n = co-relay count. This is the ONLY channel that renders on
+//      real (fully kernel-mediated) telemetry. Pairs are canonical-keyed ("a|b", a<b) so
+//      both directions sum into one chord. O(ring≤400), filtered by scope, once per render.
+function _personaTraffic(posOf){
+  const map=new Map();
+  const bump=(a,b,n,direct)=>{ if(!a||!b||a===b) return;
+    const key=a<b?a+'|'+b:b+'|'+a;
+    const t=map.get(key)||map.set(key,{a:key.slice(0,key.indexOf('|')),b:key.slice(key.indexOf('|')+1),n:0,direct:false}).get(key);
+    t.n+=n; if(direct) t.direct=true; };
+  const now=Date.now();
+  const all=(S.interactions||[]);
+  // (2) co-relay co-membership grouped by environment scope_id. Scan the WHOLE ring for
+  // env-scope rows (the recent tail is all model-call rows that carry no env peer, so a
+  // last-N slice would miss every relay act). The relay BURST happens once at run start, then
+  // the cohort grinds model calls for tens of minutes — so we gate on the SCOPE's own latest
+  // activity (any act on it, incl. the personas' work acts), NOT each relay's age. A cohort
+  // whose env is still producing acts is still coordinating; one gone quiet fades out.
+  const byScope=new Map();    // scope_id -> Map(sid -> relay count)
+  const scopeLast=new Map();  // scope_id -> ts of its most-recent act
+  for(const e of all){
+    if(e.scope!=='environment'||!e.scope_id) continue;
+    const t=e._t||0; if(t>(scopeLast.get(e.scope_id)||0)) scopeLast.set(e.scope_id,t);
+    const ps=new Set(); _scopePersonas(e,posOf,ps); if(!ps.size) continue;
+    const cm=byScope.get(e.scope_id)||byScope.set(e.scope_id,new Map()).get(e.scope_id);
+    for(const sid of ps) cm.set(sid,(cm.get(sid)||0)+1);
+  }
+  for(const [scopeId,cm] of byScope){
+    if((now-(scopeLast.get(scopeId)||0))>_COORD_WINDOW_MS) continue;   // gate: scope still active?
+    const ranked=[...cm.entries()].sort((x,y)=>y[1]-x[1]).map((e)=>e[0]);
+    if(ranked.length<2) continue;
+    const hub=ranked[0];   // busiest persona in the cohort = star centre
+    for(let i=1;i<ranked.length;i++) bump(hub,ranked[i],Math.min(cm.get(hub),cm.get(ranked[i])),false);
+  }
+  // (1) DIRECT actor→affected acts — higher-weight overlay (counts double, marks the channel).
+  // Bounded to the recent tail; these are rare on real data but dominate the chord when present.
+  for(const e of all.slice(-120)){
+    if(e.actor_kind!=='persona') continue;
+    const a=_shortId(e.actor_id); if(!a||!posOf.has(a)) continue;
+    for(const af of (e.affected||[])){
+      if(af.kind!=='persona') continue;
+      const b=_shortId(af.id); if(!b||b===a||!posOf.has(b)) continue;
+      bump(a,b,2,true);
+    }
+  }
+  return map;
+}
 const SVGNS='http://www.w3.org/2000/svg';
 const _svg=(tag,attrs,cls)=>{ const e=document.createElementNS(SVGNS,tag);
   if(cls) e.setAttribute('class',cls); for(const k in (attrs||{})) e.setAttribute(k,attrs[k]); return e; };
 // CONSTELLATION (supporting minimap): KERNEL core (beats on heartbeat) + persona
-// nodes (breathe live / dim idle) on an ellipse, + producer→verifier verify edges.
+// nodes (breathe live / dim idle) on an ellipse, + persona↔persona coordination chords.
 // Rendered with a KEYED enter/update/exit diff (NOT innerHTML=) so in-flight
 // breathing + traveling pulses survive each 5s refresh. The kernel is the honest
 // hub: PersonaOS coordination is kernel-mediated. cx/cy in the wide 1000×200 rail.
@@ -1029,6 +1151,10 @@ function renderCoordGraph(persons,totalPersons){
   // skeleton (created once): edges / axons / core / nodes layers
   if(!svg._built){ svg._built=true;
     svg.appendChild(_svg('g',{},'cg-edges'));
+    const links=_svg('g',{},'cg-links');        // persona↔persona layer (above hub spokes, below the core)
+    links.appendChild(_svg('g',{},'cg-chords'));    // resting chords — rebuilt via innerHTML each render
+    links.appendChild(_svg('g',{},'cg-linkfire'));  // directional fire pulses — PERSISTENT (keyed reuse, survive refresh)
+    svg.appendChild(links);
     svg.appendChild(_svg('g',{},'cg-axons'));
     const core=_svg('g',{transform:`translate(${cx},${cy})`},'core');
     core.appendChild(_svg('circle',{r:34},'core-ring'));
@@ -1036,7 +1162,8 @@ function renderCoordGraph(persons,totalPersons){
     core.appendChild(_svg('text',{y:-2},'core-t')).textContent='KERNEL';
     const cs=_svg('text',{y:13},'core-s'); core.appendChild(cs);
     svg.appendChild(core); svg.appendChild(_svg('g',{},'cg-nodes'));
-    svg._edges=core.parentNode.querySelector('.cg-edges'); svg._axons=svg.querySelector('.cg-axons');
+    svg._edges=svg.querySelector('.cg-edges'); svg._chords=svg.querySelector('.cg-chords');
+    svg._linkfire=svg.querySelector('.cg-linkfire'); svg._axons=svg.querySelector('.cg-axons');
     svg._core=core; svg._nodes=svg.querySelector('.cg-nodes');
   }
   const hot=_hotPersonas();
@@ -1044,7 +1171,6 @@ function renderCoordGraph(persons,totalPersons){
   persons.forEach((p,i)=>{ const ang=(-Math.PI/2)+(i*2*Math.PI/n);
     p.x=+(cx+Math.cos(ang)*rx).toFixed(1); p.y=+(cy+Math.sin(ang)*ry).toFixed(1);
     S.nodePos.set(p.sid,{x:p.x,y:p.y}); });
-  const verifier=persons.find((p)=>p.role==='verifier');
   // core: beat cadence from the heartbeat; caption = live/active count
   const beat=S.heartbeat&&S.heartbeat.interval_s?Math.max(2,+S.heartbeat.interval_s):5;
   svg._core.style.setProperty('--beat',beat+'s');
@@ -1053,13 +1179,32 @@ function renderCoordGraph(persons,totalPersons){
   svg._core.querySelector('.core-s').textContent=
     runningN ? `${runningN} in a model call · ${popN} personas`
              : `${liveN} active · ${popN} personas`;
-  // edges (static spokes + verify links) — safe to rebuild (no continuous anim)
+  // edges (kernel spokes only) — safe to rebuild (no continuous anim). The spoke is
+  // calm (live/idle); recent coordination is now carried by the chord layer + the
+  // directional spoke PULSE, not by highlighting the hub spoke (that overstated the hub).
   let e='';
-  persons.forEach((p)=>{ const h=hot.has(p.sid);
-    e+=`<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" class="ge ${h?'ge-hot':p.live?'ge-live':'ge-idle'}"/>`; });
-  if(verifier) persons.forEach((p)=>{ if(p.sid===verifier.sid) return;
-    e+=`<line x1="${p.x}" y1="${p.y}" x2="${verifier.x}" y2="${verifier.y}" class="ge ge-verify"/>`; });
+  persons.forEach((p)=>{
+    e+=`<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" class="ge ${p.live?'ge-live':'ge-idle'}"/>`; });
   svg._edges.innerHTML=e;
+  // PERSONA↔PERSONA coordination chords — the standing topology of WHO talks to WHOM.
+  // Aggregated from recent interactions (actor persona → affected persona), both on
+  // the graph. Stroke weight + opacity scale with traffic so the busiest channels read
+  // loudest; the curve bows AWAY from the kernel (control point pushed outward from the
+  // chord midpoint) so it never collides with the radial spokes or the central core.
+  const posOf=new Map(persons.map((p)=>[p.sid,p]));
+  const traffic=_personaTraffic(posOf);   // "a|b" -> {a,b,n}  (a<b canonical; n = recent acts over this channel)
+  let lk='';
+  for(const t of traffic.values()){
+    const A=posOf.get(t.a), B=posOf.get(t.b); if(!A||!B) continue;
+    const {qx,qy}=_chordCtl(A.x,A.y,B.x,B.y,18+Math.min(t.n,6)*4);
+    // DIRECT actor→affected channels (a single act named both) read louder than the
+    // co-relay co-membership channels — when the node ever emits them they dominate.
+    const w=((t.direct?1.4:1.1)+Math.min(t.n,8)*0.5).toFixed(2);   // weight by traffic (clamped)
+    const op=((t.direct?0.40:0.30)+Math.min(t.n,8)*0.06).toFixed(2);
+    lk+=`<path d="M${A.x} ${A.y} Q${qx} ${qy} ${B.x} ${B.y}" class="cl${t.direct?' cl-direct':''}" `
+       +`style="stroke-width:${w};opacity:${op}"/>`;
+  }
+  svg._chords.innerHTML=lk;   // resting chords only — fire pulses live in the sibling cg-linkfire layer
   // axons (persistent, one per sid kernel→persona) — fired imperatively by _fireEdge
   const liveSids=new Set(persons.map((p)=>p.sid));
   persons.forEach((p)=>{ let ax=svg._axons.querySelector(`[data-axon="${cssEsc(p.sid)}"]`);
@@ -1085,19 +1230,43 @@ function renderCoordGraph(persons,totalPersons){
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
     const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
+  // drop reused fire-pulse paths whose endpoints left the graph (keeps the persistent
+  // linkfire layer from accumulating orphans referencing positions that no longer exist)
+  [...svg._linkfire.children].forEach((p)=>{ const [f,tt]=(p.getAttribute('data-link')||'').split('>');
+    if(!liveSids.has(f)||!liveSids.has(tt)) p.remove(); });
 }
 const cssEsc=(s)=>(window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&');
 
 // fire a traveling pulse along a persona's kernel-edge (and flash its node) —
 // called when a NEW coordination act names that persona (staggered). The axon is
 // a reused element; we restart its one-shot travel by reflow + class re-add.
-function _fireEdge(sid,cls){
+// dir makes the honest kernel-mediated flow legible: 'out' = persona reporting BACK to the
+// kernel (dash travels persona→core); else (inbound) the kernel routing work TO the persona
+// (dash travels core→persona, the default). Same axon, opposite keyframe — no new geometry.
+function _fireEdge(sid,cls,dir){
   if(RM) { _flashNode(sid,cls); return; }
   const svg=$('#sysGraph'); if(!svg||!svg._axons) return;
   const ax=svg._axons.querySelector(`[data-axon="${cssEsc(sid)}"]`); if(!ax) return;
   ax.setAttribute('class','axon'); void ax.getBoundingClientRect();
-  ax.setAttribute('class','axon fire'+(cls&&cls!=='coord'?' fire-'+cls:''));
+  ax.setAttribute('class','axon fire'+(dir==='out'?' out':'')+(cls&&cls!=='coord'?' fire-'+cls:''));
   _flashNode(sid,cls);
+}
+// fire a DIRECTIONAL traveling pulse along the persona→persona chord (actor→affected),
+// so live coordination shows not just THAT two personas talked but WHICH WAY. Reuses one
+// path per ordered pair in the links layer; the dash travels from→to (M is always the
+// actor) so direction is unambiguous. Geometry matches the resting chord in renderCoordGraph.
+function _fireLink(fromSid,toSid,cls){
+  if(RM) { _flashNode(toSid,cls); return; }   // reduced-motion: flash the target instead of traveling
+  const svg=$('#sysGraph'); if(!svg||!svg._linkfire) return;
+  const A=S.nodePos.get(fromSid), B=S.nodePos.get(toSid); if(!A||!B) return;
+  const {qx,qy}=_chordCtl(A.x,A.y,B.x,B.y,26);
+  const id=fromSid+'>'+toSid;
+  let p=svg._linkfire.querySelector(`[data-link="${cssEsc(id)}"]`);
+  if(!p){ p=_svg('path',{},'cl-fire'); p.setAttribute('data-link',id);
+    p.addEventListener('animationend',()=>p.setAttribute('class','cl-fire')); svg._linkfire.appendChild(p); }
+  p.setAttribute('d',`M${A.x} ${A.y} Q${qx} ${qy} ${B.x} ${B.y}`);
+  p.setAttribute('class','cl-fire'); void p.getBoundingClientRect();
+  p.setAttribute('class','cl-fire fire'+(cls&&cls!=='coord'?' fire-'+cls:''));
 }
 function _flashNode(sid,cls){
   const svg=$('#sysGraph'); if(!svg||!svg._nodes) return;
