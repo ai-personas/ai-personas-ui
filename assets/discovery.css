@@ -20,7 +20,10 @@
   --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
   --radius-sm:4px; --radius-md:6px; --radius-lg:8px;
   --stroke-base:1.5px; --stroke-bold:2px; --stroke-heavy:2.5px;
-  --shadow-drawer:-14px 0 44px rgba(0,0,0,.45); --shadow-card-glow:0 0 22px rgba(33,208,122,.16);
+  --shadow-drawer:-12px 0 32px rgba(0,0,0,.35); --shadow-card-glow:0 0 22px rgba(33,208,122,.16);
+  --shadow-lg:-12px 0 32px rgba(0,0,0,.35); --shadow-md:0 4px 12px rgba(0,0,0,.2); --shadow-sm:0 1px 3px rgba(0,0,0,.15);
+  --idle:#6b7a8a;                 /* calm idle surface for receded personas/nodes */
+  --code-bg:#070b10; --code-text:var(--intr);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -28,7 +31,7 @@ body{margin:0;background:
    radial-gradient(1200px 600px at 78% -8%,rgba(58,160,255,.06),transparent 60%),
    radial-gradient(1000px 520px at 12% 108%,rgba(167,121,230,.06),transparent 60%),
    var(--bg);
-  color:var(--ink);font-family:var(--mono);font-size:13px;
+  color:var(--ink);font-family:var(--mono);font-size:14px;line-height:1.5;
   display:flex;flex-direction:column;overflow:hidden}
 .btn,.link{font-family:var(--mono)}
 b{color:var(--bright)}
@@ -43,9 +46,8 @@ b{color:var(--bright)}
 .livedot.beating{background:var(--up);animation:beatdot 1.6s infinite}
 @keyframes beatdot{0%{box-shadow:0 0 0 0 rgba(33,208,122,.6)}70%{box-shadow:0 0 0 7px rgba(33,208,122,0)}100%{box-shadow:0 0 0 0 rgba(33,208,122,0)}}
 .brandmark{display:flex;align-items:baseline;gap:8px}
-.mark{font-weight:800;letter-spacing:.4px;color:var(--bright);font-size:15px}
-.vsub{font-weight:700;color:var(--int);letter-spacing:2px;font-size:10.5px;
-  text-shadow:0 0 14px rgba(58,160,255,.45)}
+.mark{font-weight:800;letter-spacing:.3px;color:var(--bright);font-size:clamp(14px,1.6vw,16px)}
+.vsub{font-weight:700;color:var(--int);letter-spacing:1.5px;font-size:11px;line-height:1.2}
 .vital{flex:0 1 260px;max-width:300px;height:32px;min-width:120px}
 .verify-badge{color:var(--up);font-size:10px;font-weight:700;letter-spacing:.5px;cursor:default;
   border:1px solid rgba(33,208,122,.32);border-radius:4px;padding:2px 8px;white-space:nowrap;
@@ -97,19 +99,20 @@ b{color:var(--bright)}
 .mcard .mmeta{color:var(--dim);font-size:10.5px;display:flex;gap:8px;flex-wrap:wrap;margin-top:3px}
 .mstate{font-size:9.5px;font-weight:700;letter-spacing:.5px;padding:0 5px;border-radius:3px;color:#04121f}
 .ms-running{background:var(--up);animation:vflash 1.6s infinite alternate}
-.ms-paused{background:var(--amber)} .ms-shipped{background:var(--int)} .ms-converged{background:var(--intr)}
-.ms-queued{background:var(--mut)} .ms-stopped{background:var(--down)}
+.ms-paused{background:#8a5e28;color:var(--off-white)} .ms-shipped{background:var(--int)} .ms-converged{background:var(--intr)}
+.ms-queued{background:#5d6b7a} .ms-stopped{background:var(--down)}
 
 /* ===================== R1 · CONSTELLATION RAIL ===================== */
-.constellation{flex:0 0 auto;background:
+.constellation{flex:0 0 auto;display:none;background:
    radial-gradient(620px 220px at 50% 30%,rgba(240,167,58,.05),transparent 70%),#070b10;
-  border-bottom:1px solid var(--line2);padding:5px 12px 7px;transition:max-height .25s ease}
+  border-bottom:1px solid var(--line2);padding:clamp(4px,1vw,7px) clamp(8px,2vw,12px) clamp(4px,1vw,7px);
+  transition:max-height .25s ease}
 .con-head{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:11px;letter-spacing:.5px;padding:2px 2px 3px}
 .con-title{font-weight:700;color:var(--dim)}
 .con-toggle{margin-left:auto;background:none;border:1px solid var(--line2);color:var(--dim);border-radius:4px;
   cursor:pointer;font-size:11px;padding:0 7px;line-height:18px;transition:transform .25s ease,border-color .2s,color .2s}
 .con-toggle:hover{border-color:var(--int);color:var(--int)}
-#sysGraph{width:100%;height:158px;display:block}
+#sysGraph{width:100%;height:clamp(120px,18vw,180px);display:block}
 .constellation.collapsed #sysGraph{display:none}
 .constellation.collapsed{padding-bottom:4px}
 .constellation.collapsed .con-toggle{transform:rotate(-90deg)}
@@ -154,10 +157,9 @@ b{color:var(--bright)}
 .core-s{fill:var(--dim);font-size:9px;text-anchor:middle;font-family:var(--mono)}
 
 /* ===================== R2 · STAGE + R3 · COORDINATION FEED ===================== */
-.stage-wrap{flex:1;display:grid;grid-template-columns:1fr 400px;min-height:0}
-@media(max-width:1200px){.stage-wrap{grid-template-columns:1fr 360px}}
-@media(max-width:880px){.stage-wrap{grid-template-columns:1fr}.coordfeed{border-left:none;border-top:1px solid var(--line)}}
-.stage{overflow:auto;padding:var(--space-4) var(--space-5);min-height:0}
+/* mobile-first base: single column; the feed stacks below the stage (desktop columns return in the ladder) */
+.stage-wrap{flex:1;display:grid;grid-template-columns:1fr;min-height:0}
+.stage{overflow:auto;padding:clamp(10px,2.5vw,var(--space-5));min-height:0;order:1}
 /* environment stage */
 .env-lane{background:var(--panel);border:1px solid var(--line2);border-radius:var(--radius-lg);margin:0 0 var(--space-4);overflow:hidden;
   border-left:3px solid var(--envhue,var(--intr))}
@@ -176,12 +178,13 @@ b{color:var(--bright)}
 @keyframes mint{0%{transform:scale(.8);background:rgba(240,167,58,.35)}60%{transform:scale(1.06)}100%{transform:scale(1);background:#1a160b}}
 
 /* living persona card */
-.pcard{flex:0 1 268px;min-width:236px;background:linear-gradient(180deg,#0c131d,#0b121b);
-  border:1px solid var(--line2);border-radius:var(--radius-lg);padding:var(--space-2) var(--space-3);cursor:pointer;
-  transition:border-color .2s,box-shadow .2s,opacity .2s}
+.pcard{flex:1 1 100%;min-width:0;background:linear-gradient(180deg,#0c131d,#0b121b);
+  border:1px solid var(--line2);border-radius:var(--radius-lg);
+  padding:clamp(8px,1.6vw,var(--space-3)) var(--space-3);cursor:pointer;
+  transition:border-color .2s,box-shadow .2s,opacity .2s,transform .15s}
 .pcard:hover{border-color:var(--int)}
 /* idle cards recede gently (distinct from .dimmed filter-out) */
-.pcard:not(.live):not(.running){opacity:.78}
+.pcard:not(.live):not(.running){border-color:var(--idle);opacity:.85}
 /* active (recently worked) — a quiet steady accent, no animation */
 .pcard.live{border-color:var(--up2);box-shadow:0 0 0 1px rgba(33,208,122,.14) inset;opacity:1}
 /* RUNNING NOW — the one card that pulses, so it's unmistakable at a glance */
@@ -205,7 +208,7 @@ b{color:var(--bright)}
   border-radius:3px;padding:1px 6px;text-transform:uppercase;animation:pulse2 1.3s infinite}
 .pc-active{font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--up2);text-transform:uppercase}
 .pc-idle{font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--mut);text-transform:uppercase}
-.pc-name{font-weight:700;color:var(--off-white);font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-name{font-weight:700;color:var(--off-white);font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pcard.running .pc-role{filter:brightness(1.15)}
 .pc-role{font-size:9.5px;font-weight:700;letter-spacing:.4px;color:#04121f;background:var(--purple);border-radius:3px;padding:1px 5px;text-transform:uppercase}
 .role-verifier .pc-role{background:var(--intr)} .role-integrator .pc-role{background:var(--int)}
@@ -227,7 +230,8 @@ b{color:var(--bright)}
 .pc-stats span{white-space:nowrap}
 
 /* coordination feed */
-.coordfeed{border-left:1px solid var(--line2);background:#080c12;display:flex;flex-direction:column;min-height:0}
+.coordfeed{background:#080c12;display:flex;flex-direction:column;min-height:0;
+  border-top:1px solid var(--line2);order:2;max-height:50vh}
 .cf-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);
   color:var(--dim);font-size:11px;letter-spacing:.6px;font-weight:700}
 .cf-tabs{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -418,19 +422,52 @@ details.frame{margin:7px 0 2px} details.frame summary{cursor:pointer}
 details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
 .opout{font-family:var(--mono)}
 
-/* ===================== phones / small screens ===================== */
-@media(max-width:640px){
-  .vitals{gap:8px;padding:6px 10px}
-  .vital{display:none}                 /* the ECG is decorative — hide on phones to declutter */
-  #q,#peer{flex:1 1 100%;min-width:0}  /* search + peer inputs each take their own full row */
-  .vcounts{gap:10px;order:5;flex:1 1 100%;justify-content:space-between}
-  .stat{min-width:0}
-  .brandmark{flex:1 1 auto}
-  .drawer{width:100vw}                 /* full-screen detail drawer on phones */
-  .stage{padding:12px}
-  .pcard{flex:1 1 100%;min-width:0}    /* one persona card per row */
-  .constellation{display:none}         /* the minimap needs width; hide on phones */
+/* ===================== RESPONSIVE LADDER (mobile-first) =====================
+   BASE = phone (<=639): single column, feed stacks below the stage, no constellation.
+   Then expand UP: 640 tablet · 880 desktop · 1200 wide · 1440 ultrawide.
+   This is the ONLY place breakpoints live — do not scatter media queries elsewhere. */
+@media(max-width:639px){
+  .vital{display:none}                 /* ECG is decorative — reclaim width */
+  .verify-badge{display:none}          /* trust chrome → desktop only */
+  .vsub{display:none}                  /* keep the mark, drop the subtitle */
+  .vitals{gap:6px;padding:var(--space-2) var(--space-3);min-height:46px}
+  #q,#peer{flex:1 1 100%;min-width:0}  /* each input on its own row */
+  .vcounts{order:5;flex:1 1 100%;justify-content:space-between;gap:10px}
+  .stat{min-width:0;text-align:left}
+  .globalbar{gap:6px;padding:3px 10px}
+  .missions{padding:6px 10px}
+  .mission-cards{scroll-snap-type:x mandatory;scroll-behavior:smooth}
+  .mcard{scroll-snap-align:start;min-width:200px}
+  .drawer{width:100vw}                 /* full-screen detail */
   .logcard{width:96vw}
+  .ix-msg{max-width:120px}
+}
+/* TABLET (>=640): 2-up cards, constellation appears, feed still stacks */
+@media(min-width:640px){
+  .constellation{display:block}
+  .pcard{flex:0 1 calc(50% - 5px);min-width:200px}
+  .drawer{width:min(460px,94vw)}
+}
+/* DESKTOP (>=880): feed becomes the right-side panel */
+@media(min-width:880px){
+  .stage-wrap{grid-template-columns:1fr 360px}
+  /* keep DOM order so the STAGE stays in the wide 1fr (left) and the feed in the 360px panel (right) */
+  .coordfeed{order:2;max-height:none;max-width:360px;border-top:none;border-left:1px solid var(--line2)}
+  .pcard{flex:0 1 calc(33.333% - 7px);min-width:220px}
+}
+/* WIDE (>=1200): roomier feed + 4-up cards */
+@media(min-width:1200px){
+  .stage-wrap{grid-template-columns:1fr 400px}
+  .coordfeed{max-width:400px}
+  .pcard{flex:0 1 calc(25% - 8px);min-width:240px}
+}
+/* ULTRAWIDE (>=1440): wall-display comfort */
+@media(min-width:1440px){
+  .stage-wrap{grid-template-columns:1fr 440px}
+  .coordfeed{max-width:440px}
+  .vitals{gap:18px}
+  .drawer{width:min(540px,96vw)}
+  #sysGraph{height:180px}
 }
 
 /* ===================== prefers-reduced-motion ===================== */
