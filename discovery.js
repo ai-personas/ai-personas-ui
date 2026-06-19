@@ -913,6 +913,10 @@ function renderPersonaCard(pid){
   // node that streams coordination but no model_events). Both are real telemetry.
   const acts=(S.ixByPersona&&S.ixByPersona.get(sid))||[];
   const recentAct=acts[acts.length-1];
+  // live persona MESSAGES (cognition): the LLM's own recent outputs + lessons for THIS persona,
+  // streamed straight onto the card (newest first) — the same data the THINK feed shows.
+  const cogMsgs=(S.interactions||[]).filter((e)=>e.scope==='cognition'&&_shortId(e.actor_id)===sid)
+    .slice(-3).reverse();
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   const live=hasModels||actFresh;
@@ -956,6 +960,10 @@ function renderPersonaCard(pid){
     +statusBadge
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
     +`<div class="pc-doing">${doingHTML}</div>`
+    +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
+        `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
+        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
+      +`</div>`:'')
     +`<div class="pc-rr-head">${headLabel}</div>`
     +`<div class="pc-rr">${streamRows}</div>`
     +`<div class="pc-stats">`

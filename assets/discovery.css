@@ -128,7 +128,7 @@ b{color:var(--bright)}
 .axon.fire-verify{stroke:var(--intr)} .axon.fire-artifact{stroke:var(--amber)} .axon.fire-crossenv{stroke:var(--pink)}
 @keyframes travel{0%{stroke-dashoffset:613;opacity:.95}100%{stroke-dashoffset:0;opacity:0}}
 /* graph nodes */
-.gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--line2);stroke-width:var(--stroke-base);transform-box:fill-box;transform-origin:center}
+.gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--idle);stroke-width:var(--stroke-base);transform-box:fill-box;transform-origin:center}
 .gnode.role-verifier .gn-c{stroke:var(--intr)} .gnode.role-lead .gn-c{stroke:var(--purple)}
 .gnode.role-integrator .gn-c{stroke:var(--int)} .gnode.role-specialist .gn-c{stroke:var(--amber)}
 /* active (recently worked) — CALM: filled, no animation, so it never competes for attention */
@@ -146,7 +146,7 @@ b{color:var(--bright)}
 .gn-verdict-pass .gn-c{stroke:var(--intr)!important} .gn-verdict-fail .gn-c{stroke:var(--down)!important}
 .gn-name{fill:var(--ink);font-size:12px;text-anchor:middle;font-family:var(--mono)}
 .gnode.gn-live .gn-name,.gnode.gn-running .gn-name{fill:var(--off-white)}
-.gn-role{fill:#7f93a8;font-size:11px;font-weight:800;text-anchor:middle}
+.gn-role{fill:#8fa8ba;font-size:11px;font-weight:800;text-anchor:middle}
 .gnode.gn-live .gn-role,.gnode.gn-running .gn-role{fill:var(--up)}
 .gn-do{fill:var(--up);font-size:9px;text-anchor:middle;font-family:var(--mono)}
 .core-c{fill:#0c1622;stroke:var(--amber);stroke-width:2;transform-box:fill-box;transform-origin:center;
@@ -221,6 +221,16 @@ b{color:var(--bright)}
 .role-specialist .pc-role{background:var(--amber)} .role-member .pc-role{background:var(--mut);color:#cdd9e5}
 .pc-state{font-size:10px;color:var(--amber)}
 .pc-doing{font-size:11.5px;color:var(--ink);margin-bottom:6px;min-height:16px}
+/* live persona MESSAGES streamed onto the card (LLM outputs + lessons) */
+.pc-msgs{display:flex;flex-direction:column;gap:3px;margin-bottom:6px}
+.pc-msg{font-size:11px;line-height:1.4;color:var(--dim);background:var(--think-bg);
+  border-left:2px solid var(--line2);border-radius:3px;padding:3px 7px;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.pc-msg.out{border-left-color:var(--think-col)}
+.pc-msg.lesson{border-left-color:var(--amber);color:var(--ink)}
+.pc-msg-g{color:var(--think-col);margin-right:4px;font-weight:700}
+.pc-msg.lesson .pc-msg-g{color:var(--amber)}
+.pc-msg.fresh{animation:rrslide .7s ease-out}
 .pc-doing .pulse{color:var(--up);animation:pulse2 1.3s infinite}
 @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.25}}
 .pc-doing code,.rr-a code{background:#070b10;border:1px solid var(--line2);border-radius:3px;padding:0 4px;font-size:10.5px;color:var(--int)}
@@ -248,7 +258,7 @@ b{color:var(--bright)}
 /* one coordination act (who → whom : kind), with a per-task thread spine */
 .ix{position:relative;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;padding:4px 8px 4px 11px;border-radius:5px;margin-bottom:3px;
   font-size:11px;line-height:1.5;border-left:2px solid var(--line2);background:#0b121b}
-.ix.dimmed{opacity:.26}
+.ix.dimmed{opacity:.4}
 .ix-kind{font-size:9.5px;font-weight:700;letter-spacing:.3px;color:var(--dim)}
 .ix-from{color:var(--bright);font-weight:600} .ix-arrow{color:var(--mut)} .ix-to{color:var(--intr)}
 .ix-scope{margin-left:auto;font-size:9.5px;color:var(--mut)}
