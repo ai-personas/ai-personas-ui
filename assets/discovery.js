@@ -95,7 +95,19 @@ function indexLiveTelemetry(base,live){
   // the always-on baseline pulse: node.heartbeat is present + running on every
   // node sample, so the page is alive the instant it loads even when both event
   // streams are momentarily quiet — and it NEVER fakes activity.
-  if(live.node&&live.node.heartbeat) S.heartbeat=live.node.heartbeat;
+  // heartbeat is a per-base map OR'd into the single S.heartbeat the three readers use
+  // (livedot, drawVital, constellation beat): with multiple nodes, processed sequentially,
+  // a last-writer-wins overwrite let a later idle node clobber an earlier running one and
+  // read the whole page as idle. running = ANY node running; interval = min over running.
+  if(live.node&&live.node.heartbeat){
+    (S.heartbeatByBase=S.heartbeatByBase||new Map()).set(base||'@origin',live.node.heartbeat);
+    let anyRunning=false, minIv=null;
+    for(const hb of S.heartbeatByBase.values()){
+      const r=hb&&hb.running!==false; if(r){ anyRunning=true;
+        const iv=+(hb&&hb.interval_s); if(iv>0) minIv=(minIv==null?iv:Math.min(minIv,iv)); } }
+    // when nothing is running, keep the last reported interval so the cadence is stable
+    S.heartbeat={running:anyRunning,interval_s:(minIv!=null?minIv:(S.heartbeat&&S.heartbeat.interval_s)||live.node.heartbeat.interval_s)};
+  }
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
   const personas=live.personas||[];
@@ -1010,8 +1022,9 @@ const _svg=(tag,attrs,cls)=>{ const e=document.createElementNS(SVGNS,tag);
 // Rendered with a KEYED enter/update/exit diff (NOT innerHTML=) so in-flight
 // breathing + traveling pulses survive each 5s refresh. The kernel is the honest
 // hub: PersonaOS coordination is kernel-mediated. cx/cy in the wide 1000×200 rail.
-function renderCoordGraph(persons){
+function renderCoordGraph(persons,totalPersons){
   const svg=$('#sysGraph'); if(!svg) return;
+  const popN=(totalPersons!=null?totalPersons:persons.length);
   const cx=500,cy=100,rx=432,ry=58;
   // skeleton (created once): edges / axons / core / nodes layers
   if(!svg._built){ svg._built=true;
@@ -1038,8 +1051,8 @@ function renderCoordGraph(persons){
   const runningN=persons.filter((p)=>p.running).length;
   const liveN=persons.filter((p)=>p.live).length;
   svg._core.querySelector('.core-s').textContent=
-    runningN ? `${runningN} in a model call · ${persons.length} personas`
-             : `${liveN} active · ${persons.length} personas`;
+    runningN ? `${runningN} in a model call · ${popN} personas`
+             : `${liveN} active · ${popN} personas`;
   // edges (static spokes + verify links) — safe to rebuild (no continuous anim)
   let e='';
   persons.forEach((p)=>{ const h=hot.has(p.sid);
@@ -1262,6 +1275,10 @@ async function refreshSystemView(){
     // raw `content` link — count any of them so the bundle chip shows a real file count.
     const fileCount=arts.filter((a)=>{ const L=a._links||{};
       return L.content||L.content_stub||L.content_hash; }).length;
+    // env-meta file count EXCLUDES the bundle wrapper (its own content_hash) so the
+    // headline agrees with the deliverable chip's "N files" instead of overcounting.
+    const metaFiles=arts.filter((a)=>{ const L=a._links||{};
+      return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
     const chips=(bundles.length?bundles:arts).slice(0,6).map((a)=>{
       const n=(bundles.length&&a._links&&a._links.bundle)?fileCount:0;
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
@@ -1282,7 +1299,7 @@ async function refreshSystemView(){
     return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
+      +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records
@@ -1336,8 +1353,11 @@ async function refreshSystemView(){
     const models=d.models||[]; const last=models[models.length-1];
     return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:!!last,
       running:_runningNow(sid),
-      doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; }).slice(0,14);
-  renderCoordGraph(persons);
+      doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; });
+  // graph renders at most 14 nodes, but the caption must report the TRUE population
+  // (matching #st-personas), not the rendered cap.
+  const totalPersons=persons.length;
+  renderCoordGraph(persons.slice(0,14),totalPersons);
   renderInteractionStream();
   updateVitalsCounters();
   if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
@@ -2345,6 +2365,15 @@ async function missionView(r){
   return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html:missionDocHTML(ref)};
 }
 /* ---------- operator console views ---------- */
+// Render an opPost result into the #op-out pane with legible hints for the two most
+// common operator failures (bad/missing token; unreachable node), then the raw JSON.
+function showOpResult(out,r,suffix){
+  let hint='';
+  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget ✕ then re-paste), or open the node\'s localhost UI where loopback grants access.\n\n';
+  else if(r.status===0) hint='could not reach the node'+((r.body&&r.body.error)?' — '+String(r.body.error).slice(0,200):'')+'\n\n';
+  const head=r.status===0?'HTTP 0 (no response)':`HTTP ${r.status}`;
+  out.textContent=hint+head+'\n'+JSON.stringify(r.body,null,1).slice(0,1600)+(suffix||'');
+}
 async function opPost(base,path,body){ const u=join(base,path);
   try{ const r=await fetch(u,{method:'POST',
       headers:{'Content-Type':'application/json',...authHeaders(u)},body:JSON.stringify(body)});
@@ -2443,11 +2472,11 @@ async function operatorNodeView(b){
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea>`
     +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget — optional for ASK, required for FUND">`
-    +`<button class="btn" data-act="op-ask" data-base="${esc(b)}">⚡ ASK</button>`
-    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}">💰 FUND</button>`
+    +`<button class="btn" data-act="op-ask" data-base="${esc(b)}" title="start a new mission from the task above (budget optional)">⚡ ASK</button>`
+    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run — resumes a paused mission (needs a run id target, or it funds the node intake)">💰 FUND</button>`
     +`<input id="op-run-target" placeholder="run id (stop / fund target, optional)">`
-    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}">⏹ STOP</button></div>`
-    +`<pre id="op-out" class="opout"></pre></div>`;
+    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">⏹ STOP</button></div>`
+    +`<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>`;
   // Owner-class creation: environments form via the full §12c/§15 ceremony;
   // personas are OPERATOR-seeded souls (personas still never self-author).
   html+=H('Create — environment / persona (owner authority)')
@@ -2493,9 +2522,9 @@ async function operatorRunView(b,run){
   // console-level #op-run-target, and read #opr-budget when present.
   let html='<div class="opform"><div class="oprow">'
     +'<input id="opr-budget" type="number" min="1" placeholder="add budget">'
-    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'">💰 FUND</button>'
-    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'">⏹ STOP</button></div>'
-    +'<pre id="op-out" class="opout"></pre></div>';
+    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">💰 FUND</button>'
+    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">⏹ STOP</button></div>'
+    +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>';
   html+=kv('Run',`<code>${esc(run)}</code>`)
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
     +kv('Accepted',rs.accepted?'<span class="ok">✓ yes</span>':'<span class="no">no</span>')
@@ -2605,7 +2634,12 @@ function missionCardList(){
       if(shippedSeen.has(dedupe)) continue; shippedSeen.add(dedupe);
       cards.push({key:'rec:'+id,task,state:'shipped',
         meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
+  // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
+  // on success, so a vanished node's last 'run-X RUNNING' would otherwise linger here as
+  // a phantom card forever. Drop entries older than ~4 poll windows of the 8s serve-TTL.
+  const fresh=Date.now()-32000;
   for(const [base,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
+    if(!(hit.ts>fresh)) continue;
     const busy=String((v.heartbeat||{}).busy||'');
     for(const run of (v.stoppable_runs||[])){ if(seen.has(run)) continue; seen.add(run);
       cards.unshift({key:'run:'+run,task:busy||run,state:'running',meta:[run.slice(0,26)],base,run}); }
@@ -2744,28 +2778,35 @@ function wire(){
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
     if(act==='op-attest'){ const b2=a.dataset.base, run=a.dataset.run, out=$('#op-out');
+      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
       const sel=(window.CSS&&CSS.escape)?CSS.escape(run):run;
       const inp=document.querySelector(`.op-att-stmt[data-run="${sel}"]`);
       const smokeEl=document.querySelector(`.op-att-smoke[data-run="${sel}"]`);
       const statement=(inp&&inp.value||'').trim();
       const smoke_test=(smokeEl&&smokeEl.value||'').trim();
       if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; return; }
+      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
       if(out) out.textContent=smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…';
-      opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{
-        if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1200)
-          +(r.status<300?'\n\n→ now FUND the mission to resume with the attested capability.':'');
-        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3500); } });
+      opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{ done();
+        if(out){ showOpResult(out,r,r.status<300?'\n\n→ now FUND the mission to resume with the attested capability.':''); out.scrollIntoView({block:'nearest'}); }
+        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
+          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3500); } });
       return; }
     if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
-      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600);
+      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
+      const show=(r)=>{ done();
+        if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
         // leave the result readable, then refresh the console so the new entity shows
-        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3000); } };
+        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
+          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
       if(act==='op-newenv'){ const name=($('#op-env-name')?.value||'').trim();
         if(!name){ if(out) out.textContent='enter an environment name first'; return; }
+        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
         if(out) out.textContent='forming environment (full §12c ceremony)…';
         opPost(b2,'env',{name,description:($('#op-env-desc')?.value||'').trim()}).then(show); }
       else if(act==='op-newpersona'){ const name=($('#op-p-name')?.value||'').trim();
         if(!name){ if(out) out.textContent='enter a persona name first'; return; }
+        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
         if(out) out.textContent='seeding persona…';
         opPost(b2,'persona',{name,role:($('#op-p-role')?.value||'').trim()||'member',
           description:($('#op-p-desc')?.value||'').trim()}).then(show); }
@@ -2773,25 +2814,33 @@ function wire(){
         if(!tool){ if(out) out.textContent='enter a tool name first'; return; }
         let args={}; try{ args=JSON.parse(($('#op-mcp-args')?.value||'').trim()||'{}'); }
         catch(e){ if(out) out.textContent='args must be valid JSON'; return; }
+        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
         if(out) out.textContent='calling (kernel-mediated, sandboxed)…';
         opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
-          .then((r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600); }); }
+          .then((r)=>{ done(); if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); } }); }
       return; }
     if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
-      // ASK/FUND/STOP mutate node state — leave the JSON visible briefly, then re-render
-      // the console so the new run / updated paused list shows (mirrors op-newenv).
-      const show=(r)=>{ if(out) out.textContent=`HTTP ${r.status}\n`+JSON.stringify(r.body,null,1).slice(0,1600);
-        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2); setTimeout(renderTop,3000); } };
       // a run-scoped control (operatorRunView's inline FUND/STOP) carries the run on the
       // button; prefer it over the console-level #op-run-target field.
       const run=(a.dataset.run||$('#op-run-target')?.value||'').trim();
-      if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; return; }
+      // when the button is run-scoped, re-render the SAME run (so a phone stays on the
+      // run it just funded/halted and re-fetches THAT run's status), not the parent node.
+      const isRunScoped=!!a.dataset.run;
+      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
+      // ASK/FUND/STOP mutate node state — leave the JSON visible briefly, then re-render
+      // the console so the new run / updated paused list shows (mirrors op-newenv).
+      const show=(r)=>{ done();
+        if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
+        if(r.status<300){ S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
+          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
+      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
+      if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; done(); return; }
         const body={text}; const bd=+($('#op-budget')?.value||0); if(bd>0) body.budget=bd;
         if(out) out.textContent='submitting…'; opPost(b2,'task',body).then(show); }
-      else if(act==='op-fund'){ const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; return; }
+      else if(act==='op-fund'){ const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; done(); return; }
         const body={budget:bd}; if(run) body.run=run;
         if(out) out.textContent='funding…'; opPost(b2,'budget',body).then(show); }
-      else { if(!run && !confirm('No run id entered — stop ALL active missions on this node?')) return;
+      else { if(!run && !confirm('No run id entered — stop ALL active missions on this node?')){ done(); return; }
         const body={}; if(run) body.run=run;
         if(out) out.textContent='stopping…'; opPost(b2,'stop',body).then(show); }
       return; }

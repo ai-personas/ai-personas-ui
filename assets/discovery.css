@@ -76,6 +76,7 @@ b{color:var(--bright)}
   padding:5px 9px;font-size:11px;cursor:pointer;letter-spacing:.4px}
 .chip.on{background:var(--int);border-color:var(--int);color:var(--ink-on-accent);font-weight:700}
 .btn:hover,.chip:hover{border-color:var(--int)}
+.btn[disabled]{opacity:.5;cursor:progress}
 .btn-stop{border-color:var(--down);color:var(--down)}
 #opbtn.on{border-color:var(--up);color:var(--up)}
 
@@ -118,7 +119,7 @@ b{color:var(--bright)}
    radial-gradient(620px 220px at 50% 30%,rgba(240,167,58,.05),transparent 70%),var(--surface-inset);
   border-bottom:1px solid var(--line2);padding:clamp(4px,1vw,7px) clamp(8px,2vw,12px) clamp(4px,1vw,7px);
   transition:max-height .25s ease}
-.con-head{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:11px;letter-spacing:.5px;padding:2px 2px 3px}
+.con-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;color:var(--mut);font-size:11px;letter-spacing:.5px;padding:2px 2px 3px}
 .con-title{font-weight:700;color:var(--dim)}
 .cg-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--mut);align-items:center}
 .cg-legend .lg{display:inline-flex;align-items:center;gap:4px}
@@ -294,7 +295,7 @@ b{color:var(--bright)}
 .ix-kind{font-size:9.5px;font-weight:700;letter-spacing:.3px;color:var(--dim)}
 .ix-from{color:var(--bright);font-weight:600} .ix-arrow{color:var(--mut)} .ix-to{color:var(--intr)}
 .ix-scope{margin-left:auto;font-size:9.5px;color:var(--mut)}
-.ix-time{font-size:9px;color:var(--mut);margin-left:auto}
+.ix-time{font-size:9px;color:var(--mut)}
 .ix-coord{border-left-color:var(--int)} .ix-coord .ix-kind{color:var(--int)}
 .ix-crossenv{border-left-color:var(--pink)} .ix-crossenv .ix-kind{color:var(--pink)}
 .ix-artifact{border-left-color:var(--amber)} .ix-artifact .ix-kind{color:var(--amber)}
