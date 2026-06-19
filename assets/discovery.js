@@ -951,9 +951,10 @@ function renderPersonaCard(pid){
   return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
-    +`<span class="pc-role">${esc(role)}</span>`
+    +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
     +statusBadge
-    +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
+    +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')
+    +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">◎</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
     +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
         `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
@@ -1047,7 +1048,7 @@ function renderCoordGraph(persons){
     const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
-    g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (focus to follow)`);
+    g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
     const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
     const dn=p.live?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
@@ -1158,7 +1159,8 @@ function updateVitalsCounters(){
   // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
   const dot=$('#livedot'); if(dot){ const beating=!!(S.heartbeat&&S.heartbeat.running!==false);
     dot.classList.toggle('beating',beating);
-    dot.title=beating?'live — node heartbeat running':'no live node heartbeat'; }
+    dot.title=beating?'live — node heartbeat running':'no live node heartbeat';
+    dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
 async function refreshSystemView(){
@@ -1250,17 +1252,47 @@ async function refreshSystemView(){
       return `<span class="art-chip" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
-    const statusTxt=b.status||(b.live?'—':'discovered');
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
     // have departed; mark it so it reads as "who worked here", not "who is here now".
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
-    const memberTxt=b.members.length?` · ${b.members.length} member${b.members.length>1?'s':''}${departed?' (departed)':''}`:'';
+    // a fully-departed env is not "active" anymore — read it as archived (muted),
+    // never the strongest positive green that says "people working here now".
+    const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
+    const statusOk=(b.status==='active' && !departed);
+    const memberTxt=b.members.length?` · ${b.members.length} member${b.members.length>1?'s':''}`:'';
     return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${b.status==='active'?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
+      +`<span class="env-meta">${esc(b.type||'env')} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${arts.length?` · ${arts.length} artifact${arts.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
+  // (3) DE-DUPE lanes that are the SAME mission discovered as several env records
+  // (e.g. 'Power electronics task workspace' ×2 + 'power_electronics…' + 'electrical_engineering…').
+  // bySid keys on exact sid, so these become N full lanes with an identical roster +
+  // deliverable. Group by (kernel + normalized task) — mirroring missionCardList()'s
+  // (kernel::task) dedupe — and keep ONE survivor per group (prefer live, then a
+  // lane that bears a deliverable, then the one with the most members).
+  const _normTask=(s)=>String(s||'').toLowerCase().trim().replace(/\s+(task\s+)?workspace$/,'').trim();
+  const _dgroups=new Map();
+  for(const b of envBlocks){ const k=(b.kernel||'')+'::'+_normTask(b.name);
+    (_dgroups.get(k)||_dgroups.set(k,[]).get(k)).push(b); }
+  const _kept=[];
+  for(const grp of _dgroups.values()){
+    if(grp.length===1){ _kept.push(grp[0]); continue; }
+    const survivor=grp.slice().sort((a,b)=>{
+      const sc=(x)=>(x.live?4:0)+((x.run&&artByRun.has(x.run))?2:0)+Math.min(1,x.members.length?1:0);
+      const d=sc(b)-sc(a); return d!==0?d:(b.members.length-a.members.length);
+    })[0];
+    _kept.push(survivor);
+  }
+  // (4) SORT lanes by activity so the hero slot is a running/deliverable-bearing env,
+  // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
+  const _score=(b)=> (b.members.some((m)=>_runningNow(m))?4:0)
+    + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
+    + ((b.run&&artByRun.has(b.run))?1:0);
+  _kept.sort((a,b)=>_score(b)-_score(a));
+  envBlocks.length=0; envBlocks.push(..._kept);
+  S.envCount=envBlocks.length;
   let html=envBlocks.map(laneHTML).join('');
   if(orphans.length){
     html+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
@@ -1293,7 +1325,8 @@ function _envHue(sid){ let h=0; const s=String(sid||''); for(let i=0;i<s.length;
 // persona-follow: dim cards + feed rows that aren't the followed persona
 function _applyFollow(){
   const f=S.follow;
-  document.querySelectorAll('.pcard').forEach((el)=>el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f));
+  document.querySelectorAll('.pcard').forEach((el)=>{ el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f);
+    el.querySelector('.pc-follow')?.setAttribute('aria-pressed',String(el.dataset.pcard===f)); });
   const ff=$('#cfFollow'); if(ff) ff.hidden=!f;
 }
 
@@ -1337,7 +1370,7 @@ function renderInteractionStream(){
       +spine+`<span class="ix-kind">${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}`
       +`<span class="ix-scope">${esc(e.scope||'')}</span></li>`;
-  }).join('')||'<li class="l2" style="padding:10px">no '+esc(flt==='all'?'':flt+' ')+'coordination yet — fund a mission to watch personas coordinate.</li>';
+  }).join('')||('<li class="l2" style="padding:10px">no '+esc({all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',crossenv:'cross-env '}[flt]||(flt+' '))+'activity yet — fund a mission to watch personas coordinate.</li>');
   const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
 }
 
@@ -2473,7 +2506,8 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} }
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
-function openDetail(id){ S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
+function openDetail(id){ S._topIsOp=false; S._lastFocus=document.activeElement;
+  S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); }
 
 // ---------- main animation loop ----------
 // One rAF: paint the ECG vital every frame, and refresh the missions strip +
@@ -2563,9 +2597,17 @@ function wire(){
     S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); renderInteractionStream(); });
   // stage click: a persona card or env name → open its Ed25519 drawer; deliverable chip → bundle/mission drawer
   $('#sysEnvs').addEventListener('click',(e)=>{
+    // follow toggle: the card's ◎ button focuses the stage+feed on ONE persona
+    // (the only follow trigger reachable at every breakpoint). Stop here so the
+    // click doesn't also open the drawer.
+    const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=fb.dataset.follow;
+      S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
     // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
     // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
     const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard;
+      // clicking a card that is dimmed-out under follow opens its drawer — clear the
+      // follow first so the just-inspected card isn't left greyed (looks disabled).
+      if(S.follow&&S.follow!==sid){ S.follow=null; _applyFollow(); renderInteractionStream(); }
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
         return r.kind==='persona'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
       if(rid) openDetail(rid); return; }
@@ -2583,13 +2625,29 @@ function wire(){
     const sid=node.dataset.gp; S.follow=(S.follow===sid)?null:sid; _applyFollow(); renderInteractionStream(); });
   $('#cfUnfollow').addEventListener('click',()=>{ S.follow=null; _applyFollow(); renderInteractionStream(); });
   // collapse / expand the constellation rail
-  $('#conToggle').addEventListener('click',()=>{ $('#constellation').classList.toggle('collapsed'); });
+  $('#conToggle').addEventListener('click',(e)=>{ $('#constellation').classList.toggle('collapsed');
+    e.currentTarget.setAttribute('aria-expanded',String(!$('#constellation').classList.contains('collapsed'))); });
   // filter the stage + feed (replaces the board's row filter)
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); _applyFilter(); });
-  $('#addpeer').addEventListener('click',()=>{ const v=$('#peer').value.trim(); if(!v)return; let s=[];
-    try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
-    localStorage.setItem('personaos_peers',JSON.stringify(s)); discover().then(()=>renderMissions()); });
-  $('#opbtn').addEventListener('click',()=>{ S.views=[()=>operatorView()];
+  $('#addpeer').addEventListener('click',()=>{ let v=$('#peer').value.trim(); if(!v)return;
+    // the input is type=url but there's no <form>, so native validation never runs —
+    // normalise a bare host ('localhost:8805') to an absolute https URL before storing.
+    if(!/^https?:\/\//i.test(v)) v='https://'+v;
+    let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
+    localStorage.setItem('personaos_peers',JSON.stringify(s)); $('#peer').value='';
+    discover().then(()=>{ renderMissions();
+      const ph=S.peerHealth||new Map();
+      const h=ph.get(v)||ph.get(opBaseKey(v))||ph.get(opBaseKey(v)+'/');
+      log('peer', h&&h.ok?('reachable ✓ '+v):('no node at '+v), !!(h&&h.ok)); }); });
+  // Enter in the peer field submits (no <form> wraps it)
+  $('#peer').addEventListener('keydown',(e)=>{ if(e.key==='Enter') $('#addpeer').click(); });
+  // OPERATOR is a TOGGLE: a second click closes the console it opened. We tag the
+  // drawer with S._topIsOp; opening any other drawer (openDetail) or closing the
+  // drawer clears the flag, so the toggle reflects true open-ness.
+  $('#opbtn').addEventListener('click',()=>{
+    const open=$('#detailwrap').classList.contains('open');
+    if(open && S._topIsOp){ $('#detailwrap').classList.remove('open'); S._topIsOp=false; return; }
+    S.views=[()=>operatorView()]; S._topIsOp=true;
     $('#detailwrap').classList.add('open'); renderTop(); });
   updateOpBadge();
   // "what is this" intro + setup instructions: HIDDEN by default (the living network is
@@ -2597,7 +2655,10 @@ function wire(){
   const hb=$('#helpbtn'), intro=$('#intro');
   if(hb&&intro){
     intro.hidden=true;
-    hb.addEventListener('click',()=>{ intro.hidden=!intro.hidden; });
+    hb.addEventListener('click',()=>{ intro.hidden=!intro.hidden;
+      hb.setAttribute('aria-expanded',String(!intro.hidden)); });
+    $('#introclose')?.addEventListener('click',()=>{ intro.hidden=true;
+      hb.setAttribute('aria-expanded','false'); });
   }
   // missions strip → open the mission record, or the operator run console when
   // the card came from a token-gated /status (running/paused mission).
@@ -2679,9 +2740,14 @@ function wire(){
     else if(act==='physical') pushView(()=>physicalView(base,a.dataset.url));
     else if(act==='dist') pushView(()=>distributionView(base,{oci:a.dataset.oci,dag:a.dataset.dag,registry:a.dataset.reg})); });
   $('#detailback').addEventListener('click',()=>{ S.views.pop(); renderTop(); });
-  const closeLog=()=>$('#logmodal').classList.remove('open');
-  const closeDetail=()=>$('#detailwrap').classList.remove('open');
-  $('#logbtn').addEventListener('click',()=>$('#logmodal').classList.add('open'));
+  // dialog focus management: save the trigger, move focus into the panel on open,
+  // restore it on close (a11y — overlays are role=dialog aria-modal).
+  const closeLog=()=>{ $('#logmodal').classList.remove('open');
+    if(S._lastFocusLog){ try{ S._lastFocusLog.focus(); }catch(e){} S._lastFocusLog=null; } };
+  const closeDetail=()=>{ $('#detailwrap').classList.remove('open'); S._topIsOp=false;
+    if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
+  $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
+    $('#logmodal').classList.add('open'); $('.logcard')?.focus(); });
   $('#logclose').addEventListener('click',closeLog);
   $('#logmodal').addEventListener('click',(e)=>{ if(e.target.id==='logmodal') closeLog(); });
   $('#detailclose').addEventListener('click',closeDetail);

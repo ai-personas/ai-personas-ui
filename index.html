@@ -6,7 +6,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260619n">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260619o">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -19,13 +19,14 @@
     <span class="vcounts" id="stats"></span>
     <span class="grow"></span>
     <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter">
-    <button id="helpbtn" class="btn" title="what am I looking at?">？</button>
     <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
+    <button id="helpbtn" class="btn" title="what am I looking at?" aria-expanded="false" aria-controls="intro">？</button>
     <button id="addpeer" class="btn">＋&nbsp;PEER</button>
     <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑&nbsp;OPERATOR</button>
   </header>
 
   <div class="intro" id="intro" hidden>
+    <button class="link" id="introclose" style="float:right">close ✕</button>
     <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
     (“design a manufacture-ready 10&nbsp;W DC→AC inverter”) and refine a real, verified deliverable
     round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
@@ -60,13 +61,13 @@
     <div class="con-head">
       <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
       <span class="dim" id="sysGraphCap">the kernel orchestrates · edges fire as messages flow between personas</span>
-      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation">▾</button>
+      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="true" aria-controls="sysGraph">▾</button>
     </div>
     <svg id="sysGraph" viewBox="0 0 1000 200" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
 
   <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
-  <section class="stage-wrap">
+  <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
     <aside class="coordfeed">
       <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
@@ -78,10 +79,10 @@
         <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
         <button data-flt="crossenv" class="chip">CROSS-ENV</button>
       </div>
-      <ol class="cf-body" id="sysStream"></ol>
+      <ol class="cf-body" id="sysStream" role="log" aria-live="polite" aria-relevant="additions" aria-label="live persona coordination"></ol>
       <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link" id="cfUnfollow">show all ✕</button></div>
     </aside>
-  </section>
+  </main>
 
   <footer>
     <span id="status">booting discovery…</span>
@@ -90,19 +91,19 @@
   </footer>
 
   <div class="logmodal" id="logmodal">
-    <div class="logcard">
-      <div class="logcard-head"><b>Discovery log</b> <button id="logclose" class="link">close ✕</button></div>
+    <div class="logcard" role="dialog" aria-modal="true" aria-labelledby="logtitle" tabindex="-1">
+      <div class="logcard-head"><b id="logtitle">Discovery log</b> <button id="logclose" class="link">close ✕</button></div>
       <ol class="log" id="log"></ol>
     </div>
   </div>
 
   <div class="drawer-wrap" id="detailwrap">
-    <div class="drawer">
+    <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
       <div class="drawer-head"><b id="detail-title">—</b><span><button id="detailback" class="link" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span></div>
       <div class="drawer-body" id="detailbody"></div>
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260619n"></script>
+  <script type="module" src="assets/discovery.js?v=20260619o"></script>
 </body>
 </html>
