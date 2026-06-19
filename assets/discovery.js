@@ -1291,7 +1291,12 @@ async function refreshSystemView(){
     + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
     + ((b.run&&artByRun.has(b.run))?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
-  envBlocks.length=0; envBlocks.push(..._kept);
+  // HIDE empty infrastructure lanes — e.g. the node's operator/governance ROOT, which owns
+  // no personas (every task workspace is composed as its child). An env with no members AND
+  // no shipped deliverables is plumbing, not a workspace; showing it as an "awaiting members"
+  // lane only clutters the personas-at-work view. Fall back to all only if hiding empties the stage.
+  const _visible=_kept.filter((b)=>b.members.length>0 || (b.run&&artByRun.has(b.run)));
+  envBlocks.length=0; envBlocks.push(...((_visible.length||orphans.length)?_visible:_kept));
   S.envCount=envBlocks.length;
   let html=envBlocks.map(laneHTML).join('');
   if(orphans.length){
@@ -1541,13 +1546,21 @@ async function streamPersonaCognition(){
     for(const id of (S.order||[])){ const r=S.recs.get(id);
       if(r&&r.kind==='persona') sids.add(_shortId(r.did||r.id||'')); }
     const list=[...sids].filter(Boolean).slice(0,24);   // cover specialists/born personas, not just the first few
+    // the /thinking endpoint keys on the FULL persona id, but our sids are SHORT (_shortId).
+    // Resolve each short sid back to its full id (live summary.persona_id, or a discovered
+    // record's DID) so the fetch hits the endpoint instead of 404'ing on the short form.
+    const fullFor=new Map();
+    for(const [pid,d] of (S.liveByPersona||new Map())){
+      const f=d&&d.summary&&d.summary.persona_id; if(f) fullFor.set(pid,String(f)); }
+    for(const id of (S.order||[])){ const r=S.recs.get(id);
+      if(r&&r.kind==='persona'){ const f=r.did||r.id||''; if(f) fullFor.set(_shortId(f),String(f)); } }
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
     for(const sid of list){
       // sticky base first (avoids re-probing every poll), then the candidate API bases
       const order=[...new Set([S.cogBaseFor.get(sid), ...apiBases].filter((b)=>b!==undefined))];
-      let t=null, usedBase='';
+      let t=null, usedBase=''; const fullId=fullFor.get(sid)||sid;
       for(const base of order){
-        const r=await fetchJson(join(base,`personas/${encodeURIComponent(sid)}/thinking`));
+        const r=await fetchJson(join(base,`personas/${encodeURIComponent(fullId)}/thinking`));
         if(r && r.schema==='personaos-persona-thinking/1'){ t=r; usedBase=base; S.cogBaseFor.set(sid,base); break; }
       }
       if(!t) continue;
