@@ -928,7 +928,7 @@ function renderPersonaCard(pid){
     doingHTML=actFresh?`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`:'<span class="l2">resting</span>';
   } else {
     headLabel=`request → response <span class="rr-count">0</span>`;
-    streamRows='<div class="l2 rr">idle — awaiting a model request</div>';
+    streamRows='<div class="l2 rr">idle — no mission assigned</div>';
     doingHTML='<span class="l2">idle</span>';
   }
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
@@ -1038,7 +1038,7 @@ function renderCoordGraph(persons){
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (focus to follow)`);
-    const nm=(p.name||'').slice(0,11); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
+    const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
     const dn=p.live?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
@@ -1224,7 +1224,7 @@ async function refreshSystemView(){
 
   const laneHTML=(b)=>{
     const cards=b.members.length?b.members.map(renderPersonaCard).join('')
-      :'<div class="l2" style="padding:8px">no members yet</div>';
+      :'<div class="l2" style="padding:8px">awaiting members</div>';
     const arts=b.run?(artByRun.get(b.run)||[]):[];
     const bundles=arts.filter((a)=>a._links&&a._links.bundle);
     // file cards carry content_stub/content_hash (the public projection), not always a
@@ -1236,7 +1236,8 @@ async function refreshSystemView(){
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
       // (records have no .id field), or the click handler's S.recs.has() always misses.
       const aid=a.record_id||a.card_id||a.id||'';
-      return `<span class="art-chip" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc((a.label||'artifact').slice(0,26))}${n?` · ${n} files`:''}</span>`;
+      const _al=a.label||'artifact';
+      return `<span class="art-chip" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     const statusTxt=b.status||(b.live?'—':'discovered');

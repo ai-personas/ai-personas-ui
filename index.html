@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260619e">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260619f">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -43,7 +43,7 @@
 
   <div class="globalbar">
     <span class="globalbar-label" title="every PersonaOS kernel this page has discovered, and how it was reached (HTTP, P2P gossipsub, gossip cards)">NODES</span>
-    <span id="globalKernels" class="globalbar-list"><span class="dim">resolving…</span></span>
+    <span id="globalKernels" class="globalbar-list"><span class="dim">discovering kernels…</span></span>
   </div>
 
   <div class="missions" id="missions" hidden>
@@ -65,7 +65,7 @@
 
   <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
   <section class="stage-wrap">
-    <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">assembling the living network from live telemetry…</div></div>
+    <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
     <aside class="coordfeed">
       <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
       <div class="cf-tabs" id="sysStreamTabs">
@@ -73,7 +73,7 @@
         <button data-flt="think" class="chip" title="what each persona is asking its model in real time (model request → purpose)">THINK</button>
         <button data-flt="coord" class="chip">COORD</button>
         <button data-flt="verify" class="chip">VERIFY</button>
-        <button data-flt="artifact" class="chip">SHIP</button>
+        <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
         <button data-flt="crossenv" class="chip">CROSS-ENV</button>
       </div>
       <ol class="cf-body" id="sysStream"></ol>
@@ -101,6 +101,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260619e"></script>
+  <script type="module" src="assets/discovery.js?v=20260619f"></script>
 </body>
 </html>
