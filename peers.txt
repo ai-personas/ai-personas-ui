@@ -24,11 +24,3 @@
 #
 # A visitor can still pin a node manually for this session with ?peer=<url> in
 # the page URL or the "＋ PEER" button — that lives in their browser, not here.
-
-# ---------------------------------------------------------------------------
-# STABLE PUBLIC SEED (added for seamless first contact): the operator's
-# permanent node front door. The portal connects here directly at boot — no DHT
-# lag, no peer URL for the visitor to know. The IPFS rendezvous path above still
-# works as a redundant/auto-discovery plane. Every record is still Ed25519-
-# verified in-browser; the signature is the trust, never the host.
-https://node1.personas.ai
