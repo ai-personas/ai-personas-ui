@@ -1227,7 +1227,10 @@ async function refreshSystemView(){
       :'<div class="l2" style="padding:8px">no members yet</div>';
     const arts=b.run?(artByRun.get(b.run)||[]):[];
     const bundles=arts.filter((a)=>a._links&&a._links.bundle);
-    const fileCount=arts.filter((a)=>(a._links||{}).content).length;
+    // file cards carry content_stub/content_hash (the public projection), not always a
+    // raw `content` link — count any of them so the bundle chip shows a real file count.
+    const fileCount=arts.filter((a)=>{ const L=a._links||{};
+      return L.content||L.content_stub||L.content_hash; }).length;
     const chips=(bundles.length?bundles:arts).slice(0,6).map((a)=>{
       const n=(bundles.length&&a._links&&a._links.bundle)?fileCount:0;
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
