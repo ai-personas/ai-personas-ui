@@ -118,19 +118,23 @@ b{color:#fff}
 .gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--line2);stroke-width:1.5;transform-box:fill-box;transform-origin:center}
 .gnode.role-verifier .gn-c{stroke:var(--intr)} .gnode.role-lead .gn-c{stroke:var(--purple)}
 .gnode.role-integrator .gn-c{stroke:var(--int)} .gnode.role-specialist .gn-c{stroke:var(--amber)}
-.gnode.gn-live .gn-c{fill:#10241a;stroke:var(--up);animation:breathe 2.6s ease-in-out infinite}
-.gn-ring{fill:none;stroke:var(--up);stroke-width:1;opacity:0}
-.gnode.gn-live .gn-ring{opacity:.4;animation:gnring 2.2s infinite}
-@keyframes gnring{0%{r:14;opacity:.5}100%{r:24;opacity:0}}
-@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+/* active (recently worked) — CALM: filled, no animation, so it never competes for attention */
+.gnode.gn-live .gn-c{fill:#10241a;stroke:var(--up)}
+/* RUNNING NOW — the one persona mid model-call: it alone breathes + ring-pulses */
+.gnode.gn-running .gn-c{fill:#10241a;stroke:var(--up);stroke-width:2.5;
+  filter:drop-shadow(0 0 5px rgba(33,208,122,.55));animation:breathe 2s ease-in-out infinite}
+.gn-ring{fill:none;stroke:var(--up);stroke-width:1.5;opacity:0}
+.gnode.gn-running .gn-ring{opacity:.5;animation:gnring 1.8s infinite}
+@keyframes gnring{0%{r:14;opacity:.6}100%{r:26;opacity:0}}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
 .gnode.gn-hot .gn-c{fill:#16301f;stroke:var(--up);stroke-width:2.5}
 .gnode.gn-flash .gn-c{animation:gflash .7s ease-out}
 @keyframes gflash{0%{stroke:var(--up);stroke-width:3.5;filter:drop-shadow(0 0 6px var(--up))}100%{stroke-width:1.5;filter:none}}
 .gn-verdict-pass .gn-c{stroke:var(--intr)!important} .gn-verdict-fail .gn-c{stroke:var(--down)!important}
 .gn-name{fill:var(--ink);font-size:11px;text-anchor:middle;font-family:var(--mono)}
-.gnode.gn-live .gn-name{fill:#eaf1f8}
+.gnode.gn-live .gn-name,.gnode.gn-running .gn-name{fill:#eaf1f8}
 .gn-role{fill:#7f93a8;font-size:11px;font-weight:800;text-anchor:middle}
-.gnode.gn-live .gn-role{fill:var(--up)}
+.gnode.gn-live .gn-role,.gnode.gn-running .gn-role{fill:var(--up)}
 .gn-do{fill:var(--up);font-size:9px;text-anchor:middle;font-family:var(--mono)}
 .core-c{fill:#0c1622;stroke:var(--amber);stroke-width:2;transform-box:fill-box;transform-origin:center;
   animation:beat var(--beat,5s) ease-in-out infinite}
@@ -164,7 +168,13 @@ b{color:#fff}
   border:1px solid var(--line2);border-radius:9px;padding:9px 11px;cursor:pointer;
   transition:border-color .2s,box-shadow .2s,opacity .2s}
 .pcard:hover{border-color:var(--int)}
-.pcard.live{border-color:var(--up2);box-shadow:0 0 0 1px rgba(33,208,122,.18) inset,0 0 18px rgba(33,208,122,.06)}
+/* active (recently worked) — a quiet steady accent, no animation */
+.pcard.live{border-color:var(--up2);box-shadow:0 0 0 1px rgba(33,208,122,.14) inset}
+/* RUNNING NOW — the one card that pulses, so it's unmistakable at a glance */
+.pcard.running{border-color:var(--up);box-shadow:0 0 0 1px rgba(33,208,122,.45) inset,0 0 22px rgba(33,208,122,.16);
+  animation:runglow 1.8s ease-in-out infinite}
+@keyframes runglow{0%,100%{box-shadow:0 0 0 1px rgba(33,208,122,.42) inset,0 0 16px rgba(33,208,122,.12)}
+  50%{box-shadow:0 0 0 1px rgba(33,208,122,.7) inset,0 0 26px rgba(33,208,122,.26)}}
 .pcard.dimmed{opacity:.32}
 .pcard.role-verifier{border-top:2px solid var(--intr)} .pcard.role-lead{border-top:2px solid var(--purple)}
 .pcard.role-integrator{border-top:2px solid var(--int)} .pcard.role-specialist{border-top:2px solid var(--amber)}
@@ -172,7 +182,15 @@ b{color:#fff}
 @keyframes cardflash{0%{box-shadow:0 0 0 2px var(--up) inset,0 0 22px rgba(33,208,122,.25)}100%{box-shadow:none}}
 .pcard-top{display:flex;align-items:center;gap:7px;margin-bottom:5px}
 .pc-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
-.pc-dot.on{background:var(--up);box-shadow:0 0 7px var(--up);animation:breathe 2.6s ease-in-out infinite} .pc-dot.off{background:var(--mut)}
+/* RUNNING NOW dot pulses; active dot is steady; idle dot is hollow */
+.pc-dot.run{background:var(--up);box-shadow:0 0 8px var(--up);animation:beatdot 1.3s ease-in-out infinite}
+.pc-dot.on{background:var(--up);box-shadow:0 0 5px rgba(33,208,122,.5)}
+.pc-dot.off{background:transparent;border:1.5px solid var(--mut)}
+/* presence badges in the card header */
+.pc-run{font-size:9px;font-weight:800;letter-spacing:.4px;color:#04121f;background:var(--up);
+  border-radius:3px;padding:1px 6px;text-transform:uppercase;animation:pulse2 1.3s infinite}
+.pc-active{font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--up2);text-transform:uppercase}
+.pc-idle{font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--mut);text-transform:uppercase}
 .pc-name{font-weight:700;color:#eaf1f8;font-size:13.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-role{font-size:9.5px;font-weight:700;letter-spacing:.4px;color:#04121f;background:var(--purple);border-radius:3px;padding:1px 5px;text-transform:uppercase}
 .role-verifier .pc-role{background:var(--intr)} .role-integrator .pc-role{background:var(--int)}
@@ -215,6 +233,9 @@ b{color:#fff}
 .ix-verify{border-left-color:var(--intr)} .ix-verify .ix-kind{color:var(--intr)}
 .ix-verify.fail{border-left-color:var(--down)} .ix-verify.fail .ix-kind{color:var(--down)}
 .ix-activity{border-left-color:var(--mut)}
+.ix-think{border-left-color:#9b8cff;background:#0c0b18} .ix-think .ix-kind{color:#9b8cff}
+.ix-think .ix-to{color:#b9adff}
+.ix-msg{font-size:10px;color:var(--mut);font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
 .ix.fresh{animation:synin .7s ease-out}
 @keyframes synin{0%{transform:translateY(-8px);opacity:.3;background:rgba(58,160,255,.16)}100%{transform:none;opacity:1;background:#0b121b}}
 /* per-task thread spine: a colored connector tying adjacent same-scope acts */
@@ -372,13 +393,16 @@ code{background:#070b10;border:1px solid var(--line);border-radius:3px;padding:1
 @keyframes softpulse{0%,100%{opacity:.35}50%{opacity:1}}
 /* 🧠 thinking section */
 .think{background:#0b121b;border:1px solid var(--line2);border-radius:5px;padding:6px 9px;margin:3px 0;font-size:11.5px;line-height:1.5}
+.think.llmout{border-left:2px solid #9b8cff;background:#0c0b18}
+.opmsg{font-family:var(--mono);color:var(--dim);white-space:pre-wrap}
 details.frame{margin:7px 0 2px} details.frame summary{cursor:pointer}
 details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
 .opout{font-family:var(--mono)}
 
 /* ===================== prefers-reduced-motion ===================== */
 @media(prefers-reduced-motion:reduce){
-  .livedot.beating,.core-c,.core-ring,.gn-ring,.gnode.gn-live .gn-c,.pc-dot.on,
+  .livedot.beating,.core-c,.core-ring,.gn-ring,.gnode.gn-live .gn-c,.gnode.gn-running .gn-c,
+  .pc-dot.on,.pc-dot.run,.pcard.running,.pc-run,
   .axon.fire,.ix.fresh,.ix-spine.grow,.rr-new,.pcard.flashcard,.gnode.gn-flash .gn-c,
   .pc-doing .pulse,.art-chip.mint,.ms-running,.livedot2{animation:none!important}
   .axon.fire{opacity:0!important}

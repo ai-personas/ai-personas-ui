@@ -76,6 +76,10 @@ const _shortId=(s)=>String(s||'').replace(/^did:personaos:[^:]+:/,'').replace(/^
 function runOf(r){ if(!r) return null;
   const cands=[...Object.values(r._links||{}), r._url, r._base];
   for(const v of cands){ if(typeof v==='string'){ const m=v.match(/k\/run-[0-9A-Za-z]+/); if(m) return m[0]; } }
+  // Some records (notably ARTIFACTS) carry the run path only NESTED — e.g. an env+federation tier
+  // artifact's body is gated, so its run lives in links.content_stub.note/locator, not a top-level
+  // string link. Deep-scan the links blob so a deliverable still joins to ITS env lane.
+  try{ const m=JSON.stringify(r._links||{}).match(/k\/run-[0-9A-Za-z]+/); if(m) return m[0]; }catch(e){}
   return null; }
 // The bare env ULID — the live entities feed keys envs as `env:<ULID>` (→ ULID
 // via _shortId), but an env RECORD's DID is `…:<kernel>/env/env:<ULID>`, which
@@ -125,10 +129,12 @@ function indexLiveTelemetry(base,live){
   // something. Honest — fires only when a persona's req/resp count GREW since
   // last poll (a static snapshot spikes once on cold load, then rests).
   S.modelCount=S.modelCount||new Map();
+  S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of last GENUINE activity growth (running-now signal)
   for(const [pid,models] of byP){
     const prev=S.modelCount.get(pid); const now2=models.length;
     if(prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
+      S.lastActiveAt.set(pid,Date.now());   // this persona just asked a model → it is RUNNING NOW
       setTimeout(()=>_fireEdge(pid,'produce'),60); }   // the persona just asked a model → its edge fires
     S.modelCount.set(pid,now2);
   }
@@ -166,7 +172,8 @@ function indexLiveTelemetry(base,live){
       S.ixCountBySid=S.ixCountBySid||new Map();
       for(const rec of fresh){
         // monotonic per-persona act tally → drives the card flash on genuine growth
-        for(const sid of _ixSids(rec)) S.ixCountBySid.set(sid,(S.ixCountBySid.get(sid)||0)+1);
+        for(const sid of _ixSids(rec)){ S.ixCountBySid.set(sid,(S.ixCountBySid.get(sid)||0)+1);
+          (S.lastActiveAt=S.lastActiveAt||new Map()).set(sid,Date.now()); }   // running-now signal
         if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
         _pushSpike(_ixClass(rec.kind)); fired++;
         const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500);
@@ -174,6 +181,32 @@ function indexLiveTelemetry(base,live){
       }
     }
     S.ixColdLoaded=true;
+  }
+  // PERSONA MESSAGES (live monitor): a persona's model request IS a live message.
+  // kernel.model_events carry persona_id + model + purpose + rationale (no timestamp),
+  // so order them off the live frame time and merge them into the SAME feed (deduped,
+  // ring-bounded) — the monitor then shows WHAT each persona is asking its model in
+  // real time, not only who→whom coordination. Never fabricated: pure node telemetry.
+  const me2=(live.kernel&&live.kernel.model_events)||[];
+  if(me2.length){
+    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
+    const baseT=Date.parse(live.generated_at||'')||t; let addedM=0;
+    me2.forEach((m,i)=>{
+      if(String(m.kind||'')!=='MODEL_SELECTED') return;
+      const model=String(m.model_id||'—'), purpose=String(m.requested_purpose||m.purpose||'model');
+      const role=String(m.role||''), rationale=String(m.rationale||m.reason||'');
+      const key=`${base}|model|${m.persona_id||''}|${model}|${purpose}|${role}|${rationale}|${i}`;
+      if(S.ixKeys.has(key)) return; S.ixKeys.add(key); addedM++;
+      S.interactions.push({actor_id:String(m.persona_id||''),actor_kind:m.persona_id?'persona':'kernel',
+        affected:[{id:model,kind:'model'}],kind:'MODEL_CALL',scope:'model',scope_id:String(m.environment_id||''),
+        at:'',_base:base,_t:baseT-((me2.length-i)*200),_key:key,
+        _msg:purpose+(role&&role!=='-'&&role!==''?(' · '+role):''),_model:model,_rationale:rationale});
+    });
+    if(addedM){
+      S.interactions.sort((a,b)=>a._t-b._t);
+      if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+      S.ixKeys=new Set(S.interactions.map((e)=>e._key));
+    }
   }
 }
 
@@ -804,7 +837,8 @@ const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created'
   'PROVEN_FACT_RECORDED','TASK_COMPLETED','TASK_ACCEPTED','answer/5']);
 // a verdict that did NOT accept → render in the rejected colour
 const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED';
-function _ixClass(kind){ if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
+function _ixClass(kind){ if(kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
+  if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
   if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
 // interaction-kind → human verb, so a persona card can stream its recent
 // coordination acts when no model req/resp is flowing (live state A). Anything
@@ -817,10 +851,20 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
   COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
-  GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress'};
+  GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
+  MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
+  EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
+  ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
+// RUNNING NOW vs merely live: a persona is "running now" iff its model/coordination activity
+// GREW within the last ~12 s (one poll window) — i.e. it is mid model-call this moment. This is
+// the precise signal that distinguishes the ONE persona actually working from the several that are
+// recently-active ("live"). Everything else stays calm so the running one is unmistakable.
+const _RUNNING_WINDOW_MS=12000;
+function _runningNow(sid){ const t=(S.lastActiveAt&&S.lastActiveAt.get(sid))||0;
+  return t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
 // derive a persona's coordination ROLE from its summary/name (open, emergent —
@@ -861,6 +905,7 @@ function renderPersonaCard(pid){
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   const live=hasModels||actFresh;
+  const running=_runningNow(sid);   // mid model-call THIS moment — the one truly working
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
   const grew=_personaGrew(sid,models.length+actTally);
@@ -888,10 +933,16 @@ function renderPersonaCard(pid){
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
   // — shown only when an operator token is held (and in the 🧠 thinking drawer).
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  return `<div class="pcard role-${role}${live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pcard-top"><span class="pc-dot ${live?'on':'off'}"></span>`
+  // 3-state presence: RUNNING NOW (pulsing) · active (calm, recently worked) · idle.
+  const dotCls=running?'run':(live?'on':'off');
+  const statusBadge=running
+    ? '<span class="pc-run">● RUNNING</span>'
+    : (live?'<span class="pc-active">active</span>':'<span class="pc-idle">idle</span>');
+  return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
     +`<span class="pc-role">${esc(role)}</span>`
+    +statusBadge
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')+`</div>`
     +`<div class="pc-doing">${doingHTML}</div>`
     +`<div class="pc-rr-head">${headLabel}</div>`
@@ -951,7 +1002,9 @@ function renderCoordGraph(persons){
   // core: beat cadence from the heartbeat; caption = live/active count
   const beat=S.heartbeat&&S.heartbeat.interval_s?Math.max(2,+S.heartbeat.interval_s):5;
   svg._core.style.setProperty('--beat',beat+'s');
-  svg._core.querySelector('.core-s').textContent=`${persons.filter((p)=>p.live).length} live`;
+  const runningN=persons.filter((p)=>p.running).length;
+  svg._core.querySelector('.core-s').textContent=
+    `${persons.filter((p)=>p.live).length} live${runningN?` · ${runningN} running`:''}`;
   // edges (static spokes + verify links) — safe to rebuild (no continuous anim)
   let e='';
   persons.forEach((p)=>{ const h=hot.has(p.sid);
@@ -976,7 +1029,7 @@ function renderCoordGraph(persons){
       g.appendChild(_svg('text',{y:4},'gn-role'));
       g.appendChild(_svg('text',{y:25},'gn-do'));
       svg._nodes.appendChild(g); }
-    const cls=`gnode role-${p.role}${p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}`;
+    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (focus to follow)`);
@@ -1204,6 +1257,7 @@ async function refreshSystemView(){
   const persons=graphIds.map((sid)=>{ const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
     const models=d.models||[]; const last=models[models.length-1];
     return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:!!last,
+      running:_runningNow(sid),
       doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; }).slice(0,14);
   renderCoordGraph(persons);
   renderInteractionStream();
@@ -1233,6 +1287,7 @@ function renderInteractionStream(){
   S.ixSeen=S.ixSeen||new Set();   // _keys already painted (so only genuinely-new rows .fresh in)
   const rows=all.filter((e)=>{ const c=_ixClass(e.kind);
     if(flt==='all') return true;
+    if(flt==='think') return c==='think';
     if(flt==='coord') return c==='coord';
     if(flt==='verify') return c==='verify';
     if(flt==='crossenv') return c==='crossenv';
@@ -1252,9 +1307,13 @@ function renderInteractionStream(){
     const sid=e.scope_id&&/[:/]/.test(String(e.scope_id))?String(e.scope_id):null;
     const threaded=sid&&sid===prevScope; prevScope=sid;
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
-    return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}">`
-      +spine+`<span class="ix-kind">${esc(e.kind)}</span>`
-      +`<span class="ix-from">${esc(who)}</span>${arrow}`
+    // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
+    const verb=_ixVerb(e.kind);
+    const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
+    const ttl=e._rationale?` title="${esc(e._rationale)}"`:'';
+    return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
+      +spine+`<span class="ix-kind">${esc(verb)}</span>`
+      +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}`
       +`<span class="ix-scope">${esc(e.scope||'')}</span></li>`;
   }).join('')||'<li class="l2" style="padding:10px">no '+esc(flt==='all'?'':flt+' ')+'coordination yet — fund a mission to watch personas coordinate.</li>';
   const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
@@ -1321,6 +1380,13 @@ function renderEnvFeedDoc(doc){
 // proficiency numbers from the persona's own public feed — content never.
 function renderThinking(t){
   let h='';
+  const out=t.recent_outputs||[];
+  if(out.length){
+    h+=`<div class="l2" style="margin:2px 0 3px">🗣️ Recent model output — what the LLM actually produced (newest first)</div>`
+      +out.slice(-10).reverse().map((o)=>
+        `<div class="think llmout"><span class="amber">${esc(o.kind||'output')}</span> `
+        +`<span class="opmsg">${esc(String(o.text||'').slice(0,240))}</span></div>`).join('');
+  }
   const mp=t.mode_proficiencies||{};
   if(Object.keys(mp).length){
     h+=`<div class="l2" style="margin:2px 0">Cognitive modes (proficiency it earned per mode)</div>`
@@ -1383,6 +1449,60 @@ async function refreshThinking(){
   const doc=S.drawerLiveFeed?await fetchEntityFeed(S.drawerLiveBase||'',S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want) return;
   const el3=$('#thinksec'); if(el3) el3.innerHTML=renderThinkingRedacted(doc);
+}
+// LIVE persona MESSAGES (operator-tier): poll active personas' cognition surface and merge
+// their ACTUAL recent model outputs (what the LLM produced) + newest learned lesson into the
+// SAME live feed — so the operator watches persona LLM messages in real time WITHOUT drilling
+// into a drawer. Public viewers get nothing here by design (A-TF2: content is operator-only).
+let _cogBusy=false;
+async function streamPersonaCognition(){
+  if(_cogBusy) return;
+  _cogBusy=true;
+  try{
+    S.cogBaseFor=S.cogBaseFor||new Map();   // sid -> the base that served its thinking (sticky)
+    // The bases that actually serve the personaos API are the ones that streamed LIVE telemetry
+    // (the cards render from those) — NOT necessarily a discovery record's _base (which may be an
+    // IPFS/alias host that doesn't serve the API). Probe telemetry bases first, then record bases.
+    const apiBases=[...new Set([
+      ...[...(S.liveTel?S.liveTel.keys():[])].map((k)=>k==='@origin'?'':k),
+      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona').map((r)=>r._base||''),
+      '',
+    ])];
+    // Stream for the personas actually SHOWN (live telemetry) plus any discovered persona records.
+    const sids=new Set([...(S.liveByPersona?S.liveByPersona.keys():[])]);
+    for(const id of (S.order||[])){ const r=S.recs.get(id);
+      if(r&&r.kind==='persona') sids.add(_shortId(r.did||r.id||'')); }
+    const list=[...sids].filter(Boolean).slice(0,8);
+    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
+    for(const sid of list){
+      // sticky base first (avoids re-probing every poll), then the candidate API bases
+      const order=[...new Set([S.cogBaseFor.get(sid), ...apiBases].filter((b)=>b!==undefined))];
+      let t=null, usedBase='';
+      for(const base of order){
+        const r=await fetchJson(join(base,`personas/${encodeURIComponent(sid)}/thinking`));
+        if(r && r.schema==='personaos-persona-thinking/1'){ t=r; usedBase=base; S.cogBaseFor.set(sid,base); break; }
+      }
+      if(!t) continue;
+      const rows=[];
+      for(const o of (t.recent_outputs||[])) rows.push({kind:'LLM_OUTPUT',msg:o.text,at:o.at});
+      const lz=(t.lessons||[]); if(lz.length) rows.push({kind:'LLM_LESSON',msg:lz[lz.length-1].action,at:''});
+      for(const row of rows){
+        const msg=String(row.msg||'').trim(); if(!msg) continue;
+        const key=`cog|${sid}|${row.kind}|${msg.slice(0,90)}`;
+        if(S.ixKeys.has(key)) continue; S.ixKeys.add(key); added++;
+        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:'cognition',
+          scope_id:'',at:'',_base:usedBase,_t:Date.parse(row.at||'')||Date.now(),_key:key,
+          _msg:msg.slice(0,200),_rationale:msg});
+      }
+    }
+    if(added){
+      S.interactions.sort((a,b)=>a._t-b._t);
+      if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+      S.ixKeys=new Set(S.interactions.map((e)=>e._key));
+      renderInteractionStream();
+    }
+  }catch(e){}
+  finally{ _cogBusy=false; }
 }
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
@@ -2560,6 +2680,6 @@ async function initP2P(){
   // per-entity drawer feed + node run state + the living network: re-fetch on the
   // node's live cadence so the stage, constellation and feed stream without SSE.
   setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
-    refreshSystemView(); }catch(e){} }, 5000);
+    refreshSystemView(); streamPersonaCognition(); }catch(e){} }, 5000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
