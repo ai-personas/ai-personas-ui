@@ -517,6 +517,16 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .pc-follow{min-width:38px;justify-content:center}
   .con-toggle{line-height:30px}
 }
+/* PHONE + TABLET (<880, single-column): the desktop app-shell is a FIXED viewport with nested
+   scroll panes (body overflow:hidden, .stage overflow:auto) — cramped on a small screen. Below
+   880 let the WHOLE PAGE scroll naturally so the stage grows to fit every persona card and the
+   feed flows beneath it, instead of two tiny internal scrollbars. (>=880 keeps the dashboard shell.) */
+@media(max-width:879px){
+  body{overflow-y:auto;overflow-x:hidden}
+  .stage-wrap{flex:0 0 auto;grid-template-rows:auto auto;min-height:0}
+  .stage{overflow:visible;min-height:0}
+  .coordfeed{max-height:none}
+}
 /* TABLET (>=640): 2-up cards, constellation appears, feed still stacks */
 @media(min-width:640px){
   .constellation{display:block}
