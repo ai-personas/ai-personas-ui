@@ -17,8 +17,20 @@
    lazy-loaded ONLY inside render() via ctx.lazy(). Domain-agnostic:
    renders whatever delimited bytes arrive, no project assumptions.
 
+   ROBUSTNESS: empty/blank → throw (fallback). Malformed/ragged rows →
+   padded to header width, rendered anyway. Very large files are byte-
+   capped BEFORE the (synchronous) parse so a multi-MB CSV can't freeze
+   the tab, and the rendered DOM is row-capped on top of that — both
+   surfaced with a visible "showing N of M / truncated" notice. A real
+   parse error throws; a partial parse shows an inline notice but still
+   renders the rows it got.
+
    SECURITY: every cell is inserted with the el(tag,cls,txt) helper
    (textContent — never innerHTML of remote peer content). No eval.
+   Styles are injected once via an id-guarded <style> using the
+   discovery palette CSS vars (with safe fallbacks) — the host CSS does
+   not ship the fv-tbl-* classes this module needs for layout, sticky
+   header, numeric alignment and 360px-drawer fit.
    ==================================================================== */
 
 export const meta = {
@@ -30,10 +42,16 @@ export const meta = {
 
 const PAPAPARSE = 'https://esm.sh/papaparse@5.4.1';
 
-// Cap rows actually rendered to the DOM so a huge CSV can't lock the UI.
+// Cap rows actually painted to the DOM so a huge CSV can't lock the UI.
 // Filtering/sorting/summary operate over the FULL parsed set; only the
 // painted slice is capped (and re-derived whenever the view changes).
 const RENDER_CAP = 2000;
+
+// Hard byte ceiling on the text handed to papaparse. The parse is fully
+// synchronous, so an unbounded multi-MB file freezes the tab BEFORE the
+// row cap can ever apply. We truncate to the last complete line under the
+// limit and flag it. 8 MB of delimited text is already ~100k+ rows.
+const PARSE_BYTE_CAP = 8 * 1024 * 1024;
 
 // ---- BOM heuristics (domain-agnostic: column-NAME shape, not values) ----
 const QTY_RE  = /^(qty|quantity|count|amount|qnt|qte)$/i;
@@ -41,40 +59,67 @@ const COST_RE = /(cost|price|total|amount|subtotal|ext(?:ended)?|unit\s*price|li
 const REF_RE  = /(ref\s*des|refdes|reference|designator|part\s*(no|number|num|#)?|mpn|sku|component)/i;
 
 export async function render(ctx) {
-  const { host, el, esc } = ctx;
-  host.appendChild(loadingNode(el, 'loading table parser…'));
+  const { host, el } = ctx;
+  injectStyle(host, el);
+
+  // ---- fetch text first (may be a slow gated/peer fetch) ----
+  host.textContent = '';
+  host.appendChild(loadingNode(el, 'loading table data…'));
+  const rawText = (ctx.text != null ? ctx.text : await ctx.fetchText());
+  if (rawText == null) throw new Error('table fetch failed');
+
+  // Strip a UTF-8 BOM if present, then bail early on truly empty input so
+  // the host fallback (download / plain text) shows instead of a blank pane.
+  let text = String(rawText).replace(/^﻿/, '');
+  if (!text.trim()) throw new Error('empty table');
+
+  // Byte-cap BEFORE parse (see PARSE_BYTE_CAP). Trim to the last newline so
+  // we don't hand papaparse a half-row.
+  let truncatedBytes = false;
+  if (text.length > PARSE_BYTE_CAP) {
+    const cut = text.lastIndexOf('\n', PARSE_BYTE_CAP);
+    text = text.slice(0, cut > 0 ? cut : PARSE_BYTE_CAP);
+    truncatedBytes = true;
+  }
+  text = text.trimEnd();
+  if (!text.trim()) throw new Error('empty table');
 
   // ---- lazy-load papaparse (THROWS on CDN failure → host fallback) ----
+  host.textContent = '';
+  host.appendChild(loadingNode(el, 'loading CSV parser…'));
   const mod = await ctx.lazy(PAPAPARSE);
-  const Papa = (mod && (mod.default || mod.parse ? mod : mod.Papa)) || mod;
-  if (!Papa || typeof Papa.parse !== 'function') {
-    const P = Papa && Papa.default ? Papa.default : Papa;
-    if (!P || typeof P.parse !== 'function') throw new Error('papaparse unavailable');
-    return renderWith(ctx, P);
-  }
-  return renderWith(ctx, Papa);
+  const Papa = resolvePapa(mod);
+  if (!Papa || typeof Papa.parse !== 'function') throw new Error('papaparse unavailable');
+
+  return renderWith(ctx, Papa, text, truncatedBytes);
 }
 
-async function renderWith(ctx, Papa) {
-  const { host, el, esc } = ctx;
-
-  const text = (ctx.text != null ? ctx.text : await ctx.fetchText());
-  if (text == null) throw new Error('table fetch failed');
-  const trimmed = String(text).replace(/^﻿/, '').trimEnd();
-  if (!trimmed.trim()) throw new Error('empty table');
+async function renderWith(ctx, Papa, text, truncatedBytes) {
+  const { host, el } = ctx;
 
   // Force-pick delimiter from extension when known; else let papaparse sniff.
   const ext = String(ctx.ext || extOf(ctx.title) || '').toLowerCase();
   const forced = ext === 'tsv' ? '\t' : (ext === 'csv' ? ',' : '');
 
-  const out = Papa.parse(trimmed, {
-    delimiter: forced,                 // '' → auto-detect
-    skipEmptyLines: 'greedy',
-    dynamicTyping: false,              // keep raw strings; we coerce ourselves
-    header: false,
-  });
+  host.textContent = '';
+  host.appendChild(loadingNode(el, 'parsing rows…'));
+
+  let out;
+  try {
+    out = Papa.parse(text, {
+      delimiter: forced,                 // '' → auto-detect
+      skipEmptyLines: 'greedy',
+      dynamicTyping: false,              // keep raw strings; we coerce ourselves
+      header: false,
+    });
+  } catch (e) {
+    throw new Error('table parse failed: ' + (e && e.message || e));
+  }
   const grid = (out && out.data) || [];
   if (!grid.length) throw new Error('no rows parsed');
+  // papaparse reports recoverable issues in out.errors without throwing; we
+  // still render what parsed but surface a degraded-render notice below.
+  const parseErrors = (out && Array.isArray(out.errors)) ? out.errors : [];
 
   // Normalise into a header row + body rows of equal width.
   let header = (grid[0] || []).map((c) => (c == null ? '' : String(c)));
@@ -82,6 +127,7 @@ async function renderWith(ctx, Papa) {
   // If a header cell is blank, give it a positional name so sorting works.
   header = header.map((h, i) => (h.trim() ? h : `col ${i + 1}`));
   const cols = header.length;
+  if (!cols) throw new Error('no columns parsed');
   body = body.map((r) => {
     const row = r.slice(0, cols);
     while (row.length < cols) row.push('');
@@ -103,8 +149,16 @@ async function renderWith(ctx, Papa) {
     (!!qtyCol || colMeta.some((c) => c.isRef)) && (!!qtyCol || costCols.length > 0);
 
   // ====================== build the UI shell ======================
-  host.innerHTML = '';
+  host.textContent = '';
   const wrap = el('div', 'fv-tbl-root');
+
+  // degraded-render notices (input truncated and/or recoverable parse errors)
+  if (truncatedBytes || parseErrors.length) {
+    const notes = [];
+    if (truncatedBytes) notes.push('file truncated to first ~' + Math.round(PARSE_BYTE_CAP / 1048576) + ' MB');
+    if (parseErrors.length) notes.push(parseErrors.length + ' parse warning' + (parseErrors.length === 1 ? '' : 's'));
+    wrap.appendChild(el('div', 'fv-note', notes.join(' · ')));
+  }
 
   // toolbar: filter box + row counter + (BOM badge)
   const bar = el('div', 'fv-tbl-bar');
@@ -123,7 +177,7 @@ async function renderWith(ctx, Papa) {
   }
   wrap.appendChild(bar);
 
-  // scrollable table region
+  // scrollable table region (horizontal scroll keeps wide tables in a 360px drawer)
   const scroll = el('div', 'fv-tablewrap fv-tbl-scroll');
   const tbl = el('table', 'fv-table fv-tbl');
   const thead = el('thead');
@@ -245,16 +299,28 @@ async function renderWith(ctx, Papa) {
       : `${rows.length} / ${total} rows${capNote}`;
   }
 
+  // debounced filter; tracked so we can cancel it when the view is torn down.
   let t = null;
   filter.addEventListener('input', () => {
     clearTimeout(t);
     t = setTimeout(repaint, 90);        // light debounce on large sets
   });
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(() => clearTimeout(t));
 
   repaint();
 }
 
 /* ----------------------------- helpers ----------------------------- */
+
+// papaparse on esm.sh can surface as the namespace, `.default`, or nested
+// `.Papa` depending on the build — normalise to the object exposing parse().
+function resolvePapa(mod) {
+  if (!mod) return null;
+  if (typeof mod.parse === 'function') return mod;
+  if (mod.default && typeof mod.default.parse === 'function') return mod.default;
+  if (mod.Papa && typeof mod.Papa.parse === 'function') return mod.Papa;
+  return null;
+}
 
 function loadingNode(el, label) {
   const d = el('div', 'fv-loading');
@@ -304,4 +370,64 @@ function fmtNum(n) {
 function trimFloat(n) {
   if (!Number.isFinite(n)) return '';
   return Number.isInteger(n) ? n : Math.round(n * 1e6) / 1e6;
+}
+
+/* ===========================================================================
+   STYLE  (id-guarded; uses the discovery palette vars with safe fallbacks).
+   The host stylesheet ships .fv-table / .fv-tablewrap / .fv-loading / .fv-note
+   but NOT the fv-tbl-* classes this module needs for the toolbar layout,
+   sticky header sitting flush under the scroll viewport, numeric alignment,
+   the totals row, and fitting a 360px-wide drawer (horizontal scroll, no
+   fixed huge widths). Injected once per document/shadow-root.
+   =========================================================================== */
+const STYLE_ID = 'fv-tbl-style';
+const CSS = `
+.fv-tbl-root{display:flex;flex-direction:column;max-width:100%;min-width:0;
+  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.fv-tbl-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+.fv-tbl-filter{flex:1 1 140px;min-width:0;font:12px/1.4 inherit;
+  background:var(--surface-inset,#070b10);color:var(--int,#cfe);
+  border:1px solid var(--line2,#1d2733);border-radius:5px;padding:4px 9px}
+.fv-tbl-filter:focus{outline:none;border-color:var(--amber,#f0b429)}
+.fv-tbl-count{font-size:10.5px;color:var(--l2,#7c8a99);white-space:nowrap}
+.fv-tbl-badge{font-size:9.5px;letter-spacing:.06em;color:var(--intr,#21d07a);
+  border:1px solid var(--intr,#21d07a);border-radius:3px;padding:1px 5px;
+  text-transform:uppercase}
+/* scroll viewport: vertical cap + horizontal scroll so wide/tall tables
+   stay inside the drawer instead of stretching it. */
+.fv-tbl-scroll{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+.fv-tbl{border-collapse:collapse;font-size:11px;width:100%;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.fv-tbl th{position:sticky;top:0;z-index:1;background:var(--code-bg,#0b1118);
+  color:var(--l2,#7c8a99);text-align:left;padding:5px 9px;white-space:nowrap;
+  border-bottom:1px solid var(--line2,#1d2733);cursor:pointer;
+  user-select:none;font-weight:600}
+.fv-tbl th:hover{color:var(--int,#cfe)}
+.fv-tbl th:focus-visible{outline:1px solid var(--amber,#f0b429);outline-offset:-1px}
+.fv-tbl th.fv-tbl-sorted{color:var(--amber,#f0b429)}
+.fv-tbl-arrow{color:var(--amber,#f0b429);font-size:9px}
+.fv-tbl td{padding:4px 9px;border-bottom:1px solid var(--line,#141c25);
+  color:var(--int,#cfe);white-space:nowrap;max-width:42ch;
+  overflow:hidden;text-overflow:ellipsis}
+.fv-tbl tbody tr:hover td{background:rgba(255,255,255,.025)}
+.fv-tbl .fv-tbl-num{text-align:right;font-variant-numeric:tabular-nums}
+.fv-tbl tfoot .fv-tbl-total td{position:sticky;bottom:0;
+  background:var(--code-bg,#0b1118);color:var(--int,#cfe);font-weight:600;
+  border-top:1px solid var(--line2,#1d2733)}
+@media (max-width:420px){
+  .fv-tbl td{max-width:22ch}
+  .fv-tbl th,.fv-tbl td{padding:4px 6px}
+}
+`;
+
+function injectStyle(host, el) {
+  const doc = (host && host.ownerDocument) || (typeof document !== 'undefined' ? document : null);
+  if (!doc) return;
+  const rootNode = host.getRootNode ? host.getRootNode() : doc;
+  const scope = rootNode && rootNode.nodeType === 11 ? rootNode : (doc.head || doc.documentElement);
+  if (!scope || (scope.querySelector && scope.querySelector('#' + STYLE_ID))) return;
+  const style = (typeof el === 'function') ? el('style', null) : doc.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = CSS;
+  scope.appendChild(style);
 }

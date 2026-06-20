@@ -43,10 +43,20 @@ export const meta = {
 /*   atom | "quoted string" | ( token child child ... )             */
 /* Quoted strings use backslash escapes. Returns nested arrays where */
 /* the first element of a list is its token (a string).             */
+/*                                                                  */
+/* This is an EXPLICIT-STACK parser (not recursive): KiCad PCBs can  */
+/* nest hundreds of levels deep, which would blow the JS call stack  */
+/* with a recursive descent. We also cap total node count so a       */
+/* pathological / adversarial peer file can't pin the tab forever;   */
+/* on cap we stop early and flag `truncated` rather than hang.       */
 /* ---------------------------------------------------------------- */
+const MAX_NODES = 4000000; // ceiling on parsed list+atom nodes (~tens of MB of EDA text)
+
 function parseSexpr(src) {
   let i = 0;
   const n = src.length;
+  let nodes = 0;
+  let truncated = false;
   function skipWs() {
     while (i < n) {
       const c = src[i];
@@ -75,31 +85,42 @@ function parseSexpr(src) {
     return out; // unterminated — tolerate
   }
   function readAtom() {
-    let out = '';
+    const start = i;
     while (i < n) {
       const c = src[i];
       if (c === ' ' || c === '\t' || c === '\r' || c === '\n' || c === '(' || c === ')' || c === '"') break;
-      out += c; i++;
+      i++;
     }
-    return out;
+    return src.slice(start, i);
   }
-  function readList() {
-    i++; // consume '('
-    const list = [];
-    while (i < n) {
-      skipWs();
-      const c = src[i];
-      if (c === undefined) break; // unterminated — tolerate
-      if (c === ')') { i++; return list; }
-      if (c === '(') list.push(readList());
-      else if (c === '"') list.push(readString());
-      else list.push(readAtom());
-    }
-    return list; // unterminated — tolerate
-  }
+
   skipWs();
   if (src[i] !== '(') throw new Error('not an S-expression (no opening paren)');
-  const root = readList();
+
+  // Iterative read of the root list and all descendants via an explicit stack.
+  i++; // consume root '('
+  const root = [];
+  const stack = [root];
+  while (i < n) {
+    if (nodes >= MAX_NODES) { truncated = true; break; }
+    skipWs();
+    const c = src[i];
+    if (c === undefined) break; // unterminated — tolerate
+    const cur = stack[stack.length - 1];
+    if (c === ')') { i++; stack.pop(); if (stack.length === 0) break; continue; }
+    if (c === '(') {
+      i++; // consume '('
+      const child = [];
+      cur.push(child);
+      stack.push(child);
+      nodes++;
+    } else if (c === '"') {
+      cur.push(readString()); nodes++;
+    } else {
+      cur.push(readAtom()); nodes++;
+    }
+  }
+  root._truncated = truncated;
   return root;
 }
 
@@ -124,27 +145,63 @@ function leafVal(node, name) {
   if (!c) return null;
   return c[1] != null ? String(c[1]) : '';
 }
-// deep count of all list nodes carrying token `name`
+// deep count of all list nodes carrying token `name`. Iterative (explicit
+// stack) so a deeply-nested but legitimate file can't overflow the call stack.
 function deepCount(node, name) {
+  if (!Array.isArray(node)) return 0;
   let count = 0;
-  (function walk(x) {
-    if (!Array.isArray(x)) return;
+  const stack = [node];
+  while (stack.length) {
+    const x = stack.pop();
     if (x[0] === name) count++;
-    for (const c of x) if (Array.isArray(c)) walk(c);
-  })(node);
+    for (let k = x.length - 1; k >= 0; k--) if (Array.isArray(x[k])) stack.push(x[k]);
+  }
   return count;
 }
-// deep collect of all list nodes carrying token `name`
-function deepCollect(node, name, limit) {
-  const out = [];
-  (function walk(x) {
-    if (out.length >= limit) return;
-    if (!Array.isArray(x)) return;
-    if (x[0] === name) out.push(x);
-    for (const c of x) { if (out.length >= limit) return; if (Array.isArray(c)) walk(c); }
-  })(node);
-  return out;
+
+// Board bounding box from the Edge.Cuts outline (mm). KiCad draws the board
+// boundary as gr_line/gr_rect/gr_arc/gr_poly (and footprint fp_* equivalents)
+// on layer "Edge.Cuts"; we accumulate the extent of every (start/end/center/xy)
+// point belonging to such graphics. Iterative walk (no recursion). Returns
+// {w,h,minX,minY,maxX,maxY} in mm, or null if no outline geometry is found.
+const EDGE_GFX = new Set(['gr_line', 'gr_rect', 'gr_arc', 'gr_poly', 'gr_circle',
+  'fp_line', 'fp_rect', 'fp_arc', 'fp_poly', 'fp_circle']);
+function boardBBox(root) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const num = (v) => { const f = parseFloat(v); return Number.isFinite(f) ? f : null; };
+  const acc = (x, y) => {
+    if (x == null || y == null) return;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  };
+  // collect coordinate pairs from a graphic node's direct point-bearing children
+  const pointsOf = (g) => {
+    for (const c of g) {
+      if (!Array.isArray(c)) continue;
+      const t = c[0];
+      if (t === 'start' || t === 'end' || t === 'center' || t === 'mid' || t === 'xy') {
+        acc(num(c[1]), num(c[2]));
+      } else if (t === 'pts') {
+        for (const p of c) if (Array.isArray(p) && p[0] === 'xy') acc(num(p[1]), num(p[2]));
+      }
+    }
+  };
+  // iterative DFS so a deep tree never recurses
+  const stack = [root];
+  while (stack.length) {
+    const x = stack.pop();
+    if (!Array.isArray(x)) continue;
+    if (EDGE_GFX.has(x[0])) {
+      // only count graphics actually on the Edge.Cuts layer
+      const layer = leafVal(x, 'layer');
+      if (layer === 'Edge.Cuts') pointsOf(x);
+    }
+    for (let k = x.length - 1; k >= 0; k--) if (Array.isArray(x[k])) stack.push(x[k]);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
+const fmtMM = (v) => (Math.round(v * 1000) / 1000).toString();
 
 /* ---------------------------------------------------------------- */
 /* DOM helpers built on ctx.el (safe textContent only).             */
@@ -167,6 +224,88 @@ function makeTable(ctx, headers, rows) {
 function section(ctx, titleText) {
   const wrap = ctx.el('section', 'kic-section');
   if (titleText) wrap.appendChild(ctx.el('h4', 'kic-h', titleText));
+  return wrap;
+}
+
+/* Sortable + text-filterable table. Pure client-side over already-capped rows
+   (<= MAX_ROWS), so this stays cheap and can't be made to hang by a big file.
+   Click a header to sort (toggles asc/desc; numeric columns sort numerically);
+   type in the filter box to keep only rows containing the term (any column). */
+function makeRichTable(ctx, headers, rows) {
+  const wrap = ctx.el('div');
+  let filterInput = null;
+  if (rows.length > 8) {
+    filterInput = ctx.el('input', 'kic-filter');
+    filterInput.setAttribute('type', 'search');
+    filterInput.setAttribute('placeholder', 'filter ' + rows.length + ' rows…');
+    filterInput.setAttribute('aria-label', 'filter table');
+    wrap.appendChild(filterInput);
+  }
+  const tblWrap = ctx.el('div', 'kic-tablewrap');
+  const tbl = ctx.el('table', 'kic-table');
+  const thead = ctx.el('thead');
+  const htr = ctx.el('tr');
+  const ths = [];
+  headers.forEach((h, ci) => {
+    const th = ctx.el('th', 'kic-sortable', String(h));
+    th.setAttribute('role', 'button');
+    th.setAttribute('tabindex', '0');
+    ths.push(th);
+    const onSort = () => sortBy(ci, th);
+    th.addEventListener('click', onSort);
+    th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(); } });
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr); tbl.appendChild(thead);
+  const tbody = ctx.el('tbody');
+  tbl.appendChild(tbody);
+  tblWrap.appendChild(tbl);
+  wrap.appendChild(tblWrap);
+
+  const status = ctx.el('div', 'kic-more');
+  wrap.appendChild(status);
+
+  // working copy of rows as strings
+  const all = rows.map(r => r.map(c => (c == null ? '' : String(c))));
+  let view = all;
+  let sortCol = -1, sortDir = 1;
+
+  const numericCol = (ci) => all.length > 0 && all.every(r => r[ci] === '' || /^-?\d+(\.\d+)?$/.test(r[ci].trim()));
+
+  function paint() {
+    tbody.replaceChildren();
+    for (const r of view) {
+      const tr = ctx.el('tr');
+      for (const cell of r) tr.appendChild(ctx.el('td', null, cell));
+      tbody.appendChild(tr);
+    }
+    if (view.length !== all.length) status.textContent = 'showing ' + view.length + ' of ' + all.length + ' rows';
+    else status.textContent = '';
+  }
+  function applyFilter() {
+    const q = filterInput ? filterInput.value.trim().toLowerCase() : '';
+    let base = q ? all.filter(r => r.some(c => c.toLowerCase().includes(q))) : all.slice();
+    if (sortCol >= 0) {
+      const numeric = numericCol(sortCol);
+      base.sort((a, b) => {
+        const av = a[sortCol], bv = b[sortCol];
+        let cmp;
+        if (numeric) cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
+        else cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
+        return cmp * sortDir;
+      });
+    }
+    view = base;
+    paint();
+  }
+  function sortBy(ci, th) {
+    if (sortCol === ci) sortDir = -sortDir; else { sortCol = ci; sortDir = 1; }
+    ths.forEach(x => { x.removeAttribute('data-sort'); });
+    th.setAttribute('data-sort', sortDir > 0 ? 'asc' : 'desc');
+    applyFilter();
+  }
+  if (filterInput) filterInput.addEventListener('input', applyFilter);
+  paint();
   return wrap;
 }
 function kvGrid(ctx, pairs) {
@@ -232,6 +371,13 @@ function ensureStyle() {
 .kic-table th{background:rgba(128,128,128,.12);font-weight:600;position:sticky;top:0}
 .kic-table tbody tr:nth-child(even){background:rgba(128,128,128,.05)}
 .kic-tablewrap{max-height:24em;overflow:auto;border-radius:.3em}
+.kic-sortable{cursor:pointer;user-select:none}
+.kic-sortable:hover{background:rgba(43,108,176,.18)}
+.kic-sortable::after{content:'';opacity:.45;font-size:.85em;margin-left:.35em}
+.kic-sortable[data-sort=asc]::after{content:'▲'}
+.kic-sortable[data-sort=desc]::after{content:'▼'}
+.kic-filter{display:block;width:100%;max-width:20em;box-sizing:border-box;margin:.2em 0 .4em;padding:.3em .5em;font:inherit;font-size:.85em;border:1px solid rgba(128,128,128,.4);border-radius:.3em;background:rgba(128,128,128,.06);color:inherit}
+.kic-loading{padding:1em .2em;opacity:.7;font-size:.9em}
 .kic-more{opacity:.6;font-size:.8em;margin:.25em 0}
 .kic-toggle{margin:.8em 0 .3em;cursor:pointer;font-size:.85em;font-weight:600;color:#2b6cb0;background:none;border:1px solid rgba(43,108,176,.4);border-radius:.35em;padding:.3em .7em}
 .kic-toggle:hover{background:rgba(43,108,176,.1)}
@@ -279,8 +425,11 @@ function renderPcb(ctx, root, frag) {
     d.appendChild(document.createTextNode(' ' + label));
     return d;
   };
+  // net 0 is the unconnected/no-net entry; named nets are the meaningful count.
+  const namedNetCount = nets.filter(nn => nn[2] && nn[2] !== '').length;
+  const bbox = boardBBox(root);
   stats.appendChild(stat('layers', layerRows.length));
-  stats.appendChild(stat('nets', Math.max(0, nets.length - childrenByTok(root, 'net').filter(x => x[2] === '').length)));
+  stats.appendChild(stat('nets', namedNetCount));
   stats.appendChild(stat('footprints', footprints.length));
   stats.appendChild(stat('tracks', tracks));
   stats.appendChild(stat('vias', vias));
@@ -290,6 +439,9 @@ function renderPcb(ctx, root, frag) {
   const tb = titleBlockPairs(root);
   const thickness = (() => { const g = firstChild(root, 'general'); return g ? leafVal(g, 'thickness') : null; })();
   const meta = [['Paper', leafVal(root, 'paper')], ...tb];
+  if (bbox && bbox.w > 0 && bbox.h > 0) {
+    meta.push(['Board size', fmtMM(bbox.w) + ' × ' + fmtMM(bbox.h) + ' mm (from Edge.Cuts)']);
+  }
   if (thickness) meta.push(['Board thickness', thickness + ' mm']);
   if (meta.some(p => p[1])) {
     const s = section(ctx, 'Board');
@@ -318,9 +470,7 @@ function renderPcb(ctx, root, frag) {
       const pads = deepCount(fp, 'pad');
       rows.push([ref, val, lib, layer, pads]);
     }
-    const w = ctx.el('div', 'kic-tablewrap');
-    w.appendChild(makeTable(ctx, ['Ref', 'Value', 'Library / Footprint', 'Layer', 'Pads'], rows));
-    s.appendChild(w);
+    s.appendChild(makeRichTable(ctx, ['Ref', 'Value', 'Library / Footprint', 'Layer', 'Pads'], rows));
     if (footprints.length > MAX_ROWS) s.appendChild(ctx.el('div', 'kic-more', '… ' + (footprints.length - MAX_ROWS) + ' more not shown'));
     frag.appendChild(s);
   }
@@ -329,9 +479,7 @@ function renderPcb(ctx, root, frag) {
   if (namedNets.length) {
     const s = section(ctx, 'Nets (' + namedNets.length + ')');
     const rows = namedNets.slice(0, MAX_ROWS).map(nn => [nn[1], nn[2]]);
-    const w = ctx.el('div', 'kic-tablewrap');
-    w.appendChild(makeTable(ctx, ['#', 'Net name'], rows));
-    s.appendChild(w);
+    s.appendChild(makeRichTable(ctx, ['#', 'Net name'], rows));
     if (namedNets.length > MAX_ROWS) s.appendChild(ctx.el('div', 'kic-more', '… ' + (namedNets.length - MAX_ROWS) + ' more not shown'));
     frag.appendChild(s);
   }
@@ -377,9 +525,7 @@ function renderSch(ctx, root, frag) {
       const lib = leafVal(sym, 'lib_id') || (typeof sym[1] === 'string' ? sym[1] : '');
       rows.push([ref, val, fp, lib]);
     }
-    const w = ctx.el('div', 'kic-tablewrap');
-    w.appendChild(makeTable(ctx, ['Ref', 'Value', 'Footprint', 'Library ID'], rows));
-    s.appendChild(w);
+    s.appendChild(makeRichTable(ctx, ['Ref', 'Value', 'Footprint', 'Library ID'], rows));
     if (list.length > MAX_ROWS) s.appendChild(ctx.el('div', 'kic-more', '… ' + (list.length - MAX_ROWS) + ' more not shown'));
     frag.appendChild(s);
   }
@@ -420,12 +566,11 @@ function renderMod(ctx, root, frag) {
       const pos = at ? at.slice(1).join(' ') : '';
       const sz = firstChild(pad, 'size');
       const size = sz ? sz.slice(1).join(' x ') : '';
-      const net = leafVal(pad, 'net') || '';
+      const netNode = firstChild(pad, 'net');
+      const net = netNode ? (netNode[2] != null ? String(netNode[2]) : String(netNode[1] ?? '')) : '';
       rows.push([num, type, shape, pos, size, net]);
     }
-    const w = ctx.el('div', 'kic-tablewrap');
-    w.appendChild(makeTable(ctx, ['Pad', 'Type', 'Shape', 'Pos (x y rot)', 'Size', 'Net'], rows));
-    s.appendChild(w);
+    s.appendChild(makeRichTable(ctx, ['Pad', 'Type', 'Shape', 'Pos (x y rot)', 'Size', 'Net'], rows));
     if (pads.length > MAX_ROWS) s.appendChild(ctx.el('div', 'kic-more', '… ' + (pads.length - MAX_ROWS) + ' more not shown'));
     frag.appendChild(s);
   }
@@ -448,7 +593,6 @@ function renderPro(ctx, source, frag) {
     if (data.meta.filename) meta.push(['Project file', data.meta.filename]);
     if (data.meta.version != null) meta.push(['Project format', data.meta.version]);
   }
-  const erc = data && data.board && data.board.design_settings;
   if (data && data.text_variables && Object.keys(data.text_variables).length) {
     for (const [k, v] of Object.entries(data.text_variables)) meta.push(['var: ' + k, String(v)]);
   }
@@ -476,8 +620,28 @@ function renderPro(ctx, source, frag) {
 /* ---------------------------------------------------------------- */
 export async function render(ctx) {
   ensureStyle();
-  const source = await ctx.fetchText();
-  if (source == null) throw new Error('empty KiCad body');
+
+  // LOADING STATE: paint an indicator into the host before the (potentially
+  // slow) authenticated fetch + heavy in-browser parse. We mount it, then
+  // yield a frame so the browser actually renders it before we block on parse.
+  const loading = ctx.el('div', 'kic-loading', 'Loading KiCad file…');
+  ctx.host.appendChild(loading);
+  await new Promise(r => (typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
+
+  let source;
+  try {
+    source = await ctx.fetchText();
+  } catch (e) {
+    loading.remove();
+    throw new Error('failed to fetch KiCad body: ' + (e && e.message || e));
+  }
+  if (source == null) { loading.remove(); throw new Error('empty KiCad body'); }
+  if (source.trim() === '') { loading.remove(); throw new Error('empty KiCad body'); }
+  loading.textContent = 'Parsing KiCad file…';
+  // Yield once more so the "Parsing…" text paints before a multi-MB parse blocks.
+  await new Promise(r => (typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));
 
   // Determine file kind from the title extension (primary) then content.
   const t = String(ctx.title || '').toLowerCase();
@@ -508,12 +672,15 @@ export async function render(ctx) {
 
   // Parse + structured view. THROW on parse failure so the app falls back.
   const body = ctx.el('div', 'kic-body');
+  let truncatedParse = false;
   if (ext === 'kicad_pro') {
-    renderPro(ctx, source, body);
+    try { renderPro(ctx, source, body); }
+    catch (e) { loading.remove(); throw e; }
   } else {
     let tree;
     try { tree = parseSexpr(source); }
-    catch (e) { throw new Error('KiCad S-expression parse failed: ' + (e && e.message || e)); }
+    catch (e) { loading.remove(); throw new Error('KiCad S-expression parse failed: ' + (e && e.message || e)); }
+    truncatedParse = !!tree._truncated;
     const rootTok = tok(tree);
     // generator / version are common to PCB & SCH
     const gen = leafVal(tree, 'generator');
@@ -524,11 +691,25 @@ export async function render(ctx) {
       if (gen) gp.push(['Generator', gen]);
       body.appendChild(kvGrid(ctx, gp));
     }
-    if (ext === 'kicad_sch') renderSch(ctx, tree, body);
-    else if (ext === 'kicad_mod') renderMod(ctx, tree, body);
-    else renderPcb(ctx, tree, body); // default & kicad_pcb
+    try {
+      if (ext === 'kicad_sch') renderSch(ctx, tree, body);
+      else if (ext === 'kicad_mod') renderMod(ctx, tree, body);
+      else renderPcb(ctx, tree, body); // default & kicad_pcb
+    } catch (e) {
+      loading.remove();
+      throw new Error('KiCad structure extraction failed: ' + (e && e.message || e));
+    }
     void rootTok;
   }
+
+  // DEGRADED-RENDER notice: if the parser hit its node ceiling we still show
+  // everything we managed to extract, but warn the structural view is partial.
+  if (truncatedParse) {
+    root.appendChild(ctx.el('div', 'kic-note',
+      'Large file: parsing stopped at a safety limit, so the structural summary '
+      + 'below is partial. Use the raw source or the download link for the full file.'));
+  }
+
   root.appendChild(body);
 
   // Note explaining the parsed view (honest about no live render).
@@ -538,7 +719,11 @@ export async function render(ctx) {
     + 'below with the raw source.');
   root.appendChild(note);
 
-  // Raw source toggle with lightweight syntax highlight.
+  // Raw source toggle with lightweight syntax highlight. Built lazily on first
+  // open so the heavy tokenise/append never runs unless the user asks for it.
+  const HL_CAP = 200000;   // above this, skip syntax highlight (plain text)
+  const SHOW_CAP = 2000000; // above this, even the plain <pre> is truncated so
+  //                           the browser can't choke laying out a huge node.
   const btn = ctx.el('button', 'kic-toggle', 'Show raw source');
   const pre = ctx.el('pre', 'kic-src');
   pre.style.display = 'none';
@@ -547,12 +732,18 @@ export async function render(ctx) {
     const showing = pre.style.display !== 'none';
     if (showing) { pre.style.display = 'none'; btn.textContent = 'Show raw source'; return; }
     if (!built) {
-      // cap highlight cost on very large files; show plain text past the cap
-      const CAP = 200000;
+      const shown = source.length > SHOW_CAP ? source.slice(0, SHOW_CAP) : source;
       try {
-        if (source.length > CAP) { pre.textContent = source; }
-        else { highlightInto(ctx, pre, source); }
-      } catch (e) { pre.textContent = source; }
+        if (shown.length > HL_CAP) { pre.textContent = shown; }
+        else { highlightInto(ctx, pre, shown); }
+      } catch (e) { pre.textContent = shown; }
+      if (source.length > SHOW_CAP) {
+        const more = ctx.el('div', 'kic-more',
+          'showing first ' + SHOW_CAP.toLocaleString() + ' of ' + source.length.toLocaleString()
+          + ' characters — use the download link above for the complete file.');
+        pre.appendChild(document.createTextNode('\n'));
+        pre.appendChild(more);
+      }
       built = true;
     }
     pre.style.display = ''; btn.textContent = 'Hide raw source';
@@ -560,5 +751,7 @@ export async function render(ctx) {
   root.appendChild(btn);
   root.appendChild(pre);
 
+  // Atomically swap the loading indicator for the finished view.
+  loading.remove();
   ctx.host.appendChild(root);
 }

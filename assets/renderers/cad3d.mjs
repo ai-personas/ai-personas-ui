@@ -12,6 +12,11 @@ const THREE_VER = '0.160.0';
 const THREE = `https://esm.sh/three@${THREE_VER}`;
 const JSM = (p) => `https://esm.sh/three@${THREE_VER}/examples/jsm/${p}?deps=three@${THREE_VER}`;
 
+// Guardrails so a pathological file can't freeze the drawer tab.
+const MAX_TRIS = 4_000_000;     // soft warn above this; we still render but flag it
+const MAX_POINTS = 6_000_000;   // point-cloud cap (PLY without faces)
+const STEP_SCAN_BYTES = 12 << 20; // 12 MB: cap STEP regex scan region
+
 export const meta = {
   exts: ['step', 'stp', 'stl', '3mf', 'obj', 'gltf', 'glb', 'ply'],
   media_kinds: ['cad', 'cad3d', 'mesh', '3d', 'model', 'step', 'stl', 'gltf', 'glb', 'obj', 'ply', '3mf'],
@@ -26,30 +31,58 @@ export const meta = {
 // ---------------------------------------------------------------------------
 export async function render(ctx) {
   const ext = extOf(ctx.title, ctx.url);
-  const buf = await ctx.fetchBytes();
-  if (!buf || buf.byteLength === 0) throw new Error('cad3d: empty body');
+  const isStep = ext === 'step' || ext === 'stp';
 
-  if (ext === 'step' || ext === 'stp') {
-    // No permissive STEP tessellator — enhanced parsed fallback (still useful).
-    return renderStep(ctx, buf);
+  // Immediate loading note: shown BEFORE the (slow) byte fetch + CDN import +
+  // heavy parse resolve, so the drawer never sits blank. Removed once we paint.
+  const loading = ctx.el('div', 'fv-loading');
+  loading.style.cssText = 'font:12px/1.5 ui-monospace,Menlo,monospace;color:#9aa7b4;padding:14px;';
+  loading.textContent = isStep ? 'parsing STEP structure…' : `loading 3D viewer (three.js)…`;
+  ctx.host.appendChild(loading);
+  const dropLoading = () => { try { loading.remove(); } catch { /* ignore */ } };
+
+  let buf;
+  try {
+    buf = await ctx.fetchBytes();
+  } catch (e) {
+    dropLoading();
+    throw new Error(`cad3d: fetch failed: ${e && e.message ? e.message : e}`);
   }
-  return renderMesh(ctx, buf, ext);
+  if (!buf || buf.byteLength === 0) { dropLoading(); throw new Error('cad3d: empty body'); }
+
+  try {
+    if (isStep) {
+      // No permissive STEP tessellator — enhanced parsed fallback (still useful).
+      renderStep(ctx, buf);
+    } else {
+      await renderMesh(ctx, buf, ext, loading);
+    }
+  } catch (e) {
+    dropLoading();
+    throw e;
+  }
+  dropLoading();
 }
 
 // ---------------------------------------------------------------------------
 // three.js mesh / scene viewer
 // ---------------------------------------------------------------------------
-async function renderMesh(ctx, buf, ext) {
+async function renderMesh(ctx, buf, ext, loading) {
+  if (loading) loading.textContent = `loading 3D viewer (three.js)…`;
   const three = await ctx.lazy(THREE);
+  if (loading) loading.textContent = `parsing ${ext.toUpperCase()} mesh…`;
 
   // Layout: viewport + small info bar. host may have no fixed height; give one.
   const wrap = ctx.el('div', 'cad3d-wrap');
   wrap.style.cssText = 'position:relative;width:100%;height:520px;max-height:78vh;background:#0d1117;border-radius:6px;overflow:hidden;';
   const bar = ctx.el('div', 'cad3d-bar');
   bar.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:2;font:11px/1.4 ui-monospace,Menlo,monospace;color:#9aa7b4;background:rgba(13,17,23,.66);padding:3px 7px;border-radius:4px;pointer-events:none;max-width:calc(100% - 16px);';
-  bar.textContent = `${ctx.title || 'model'} · ${ext.toUpperCase()} · loading…`;
+  bar.textContent = `${ctx.title || 'model'} · ${ext.toUpperCase()} · parsing…`;
   wrap.appendChild(bar);
   ctx.host.appendChild(wrap);
+  // The viewport (with its own status bar) is now mounted; drop the plain
+  // pre-import loading note so we don't show two "loading" lines at once.
+  if (loading) { try { loading.remove(); } catch { /* ignore */ } }
 
   // Renderer / scene / camera.
   const renderer = new three.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
@@ -60,6 +93,51 @@ async function renderMesh(ctx, buf, ext) {
   renderer.outputColorSpace = three.SRGBColorSpace;
   wrap.appendChild(renderer.domElement);
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;';
+
+  // Mutable refs so dispose() (registered before they exist) tears everything
+  // down deterministically when the drawer navigates away.
+  let raf = 0;
+  let alive = true;
+  let ro = null;
+  let controls = null;
+  let disposed = false;
+  let object = null;
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    alive = false;
+    if (raf) cancelAnimationFrame(raf);
+    if (ro) { try { ro.disconnect(); } catch { /* ignore */ } }
+    if (controls && controls.dispose) { try { controls.dispose(); } catch { /* ignore */ } }
+    renderer.domElement.removeEventListener('webglcontextlost', onCtxLost);
+    scene.traverse((o) => {
+      if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+      const m = o.material;
+      if (m) {
+        (Array.isArray(m) ? m : [m]).forEach((mm) => {
+          if (mm && mm.map && mm.map.dispose) mm.map.dispose();
+          if (mm && mm.dispose) mm.dispose();
+        });
+      }
+    });
+    try { renderer.dispose(); } catch { /* ignore */ }
+    // Force-release the GPU context (three's dispose() doesn't always free it).
+    try { renderer.forceContextLoss && renderer.forceContextLoss(); } catch { /* ignore */ }
+  }
+  function cleanup() { dispose(); try { wrap.remove(); } catch { /* ignore */ } }
+  // Deterministic teardown: the dispatcher runs this on every view switch
+  // (renderTop → runViewCleanups), so nothing leaks across navigation. This is
+  // the contract's hook — far more reliable than watching the DOM for removal.
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(dispose);
+
+  // GPU may drop the context on a huge model; surface it instead of blanking.
+  const onCtxLost = (ev) => {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    alive = false;
+    if (raf) cancelAnimationFrame(raf);
+    bar.textContent = `${ctx.title || 'model'} · ${ext.toUpperCase()} · WebGL context lost (model too large for this GPU) — download to view`;
+  };
+  renderer.domElement.addEventListener('webglcontextlost', onCtxLost, false);
 
   const scene = new three.Scene();
   scene.background = new three.Color(0x0d1117);
@@ -74,12 +152,13 @@ async function renderMesh(ctx, buf, ext) {
   scene.add(fill);
 
   // Load the object as a three.Object3D (THROWS on failure → app fallback).
-  let object;
   let stats = '';
+  let overCap = false;
   try {
     const r = await loadObject(ctx, three, buf, ext);
     object = r.object;
     stats = r.stats;
+    overCap = !!r.overCap;
   } catch (e) {
     cleanup();
     throw new Error(`cad3d: ${ext} load failed: ${e && e.message ? e.message : e}`);
@@ -107,7 +186,6 @@ async function renderMesh(ctx, buf, ext) {
   camera.lookAt(0, 0, 0);
 
   // Orbit controls.
-  let controls = null;
   try {
     const { OrbitControls } = await ctx.lazy(JSM('controls/OrbitControls.js'));
     controls = new OrbitControls(camera, renderer.domElement);
@@ -118,6 +196,8 @@ async function renderMesh(ctx, buf, ext) {
   } catch {
     /* controls are a nicety; static view still works */
   }
+  // If dispose() already ran while we awaited controls, abort cleanly.
+  if (disposed) return;
 
   const dim = box.getSize(new three.Vector3());
   bar.textContent =
@@ -125,9 +205,16 @@ async function renderMesh(ctx, buf, ext) {
     ` · ${fmt(dim.x)}×${fmt(dim.y)}×${fmt(dim.z)}` +
     (controls ? ' · drag to orbit, scroll to zoom' : '');
 
-  // Render loop with visibility/resize handling.
-  let raf = 0;
-  let alive = true;
+  // Over-cap notice: the mesh is still rendered, but flag it so a sluggish or
+  // frozen-looking tab is explained rather than silently confusing the viewer.
+  if (overCap) {
+    const warn = ctx.el('div', 'cad3d-warn');
+    warn.style.cssText = 'position:absolute;left:8px;top:8px;right:8px;z-index:3;font:11px/1.4 ui-monospace,Menlo,monospace;color:#f0d8a8;background:rgba(46,32,8,.85);border:1px solid #5a431a;padding:4px 8px;border-radius:4px;pointer-events:none;';
+    warn.textContent = `Large model (${stats}) — interaction may be slow. Download to open in CAD software.`;
+    wrap.appendChild(warn);
+  }
+
+  // Render loop with resize handling.
   const tick = () => {
     if (!alive) return;
     raf = requestAnimationFrame(tick);
@@ -136,7 +223,6 @@ async function renderMesh(ctx, buf, ext) {
   };
   tick();
 
-  let ro = null;
   if (typeof ResizeObserver !== 'undefined') {
     ro = new ResizeObserver(() => {
       const w = wrap.clientWidth || W;
@@ -148,49 +234,18 @@ async function renderMesh(ctx, buf, ext) {
     });
     ro.observe(wrap);
   }
-
-  // Best-effort teardown when the drawer node leaves the DOM.
-  if (typeof MutationObserver !== 'undefined' && wrap.ownerDocument) {
-    const mo = new MutationObserver(() => {
-      if (!wrap.isConnected) {
-        mo.disconnect();
-        dispose();
-      }
-    });
-    mo.observe(wrap.ownerDocument.body, { childList: true, subtree: true });
-  }
-
-  function dispose() {
-    alive = false;
-    if (raf) cancelAnimationFrame(raf);
-    if (ro) ro.disconnect();
-    if (controls && controls.dispose) controls.dispose();
-    scene.traverse((o) => {
-      if (o.geometry && o.geometry.dispose) o.geometry.dispose();
-      const m = o.material;
-      if (m) {
-        (Array.isArray(m) ? m : [m]).forEach((mm) => {
-          if (mm.map && mm.map.dispose) mm.map.dispose();
-          if (mm.dispose) mm.dispose();
-        });
-      }
-    });
-    renderer.dispose();
-  }
-  function cleanup() {
-    try { renderer.dispose(); } catch { /* ignore */ }
-    try { wrap.remove(); } catch { /* ignore */ }
-  }
 }
 
-// Returns { object: THREE.Object3D, stats: string }. THROWS on parse failure.
+// Returns { object: THREE.Object3D, stats: string, overCap: boolean }.
+// THROWS on parse failure (→ app fallback shows download).
 async function loadObject(ctx, three, buf, ext) {
   if (ext === 'stl') {
     const { STLLoader } = await ctx.lazy(JSM('loaders/STLLoader.js'));
     const geo = new STLLoader().parse(buf);
     geo.computeVertexNormals();
     const mesh = new three.Mesh(geo, defaultMat(three));
-    return { object: mesh, stats: triStats(geo) };
+    const tris = geoTris(geo);
+    return { object: mesh, stats: triStats(geo), overCap: tris > MAX_TRIS };
   }
 
   if (ext === 'ply') {
@@ -200,15 +255,16 @@ async function loadObject(ctx, three, buf, ext) {
     const hasIndex = !!geo.index;
     // Point clouds (no faces) → render as points.
     if (!hasIndex && (!geo.groups || geo.groups.length === 0) && geo.attributes.position) {
+      const n = geo.attributes.position.count;
       const pts = new three.Points(
         geo,
         new three.PointsMaterial({ size: 1.5, sizeAttenuation: false, vertexColors: !!geo.attributes.color, color: 0x9ecbff }),
       );
-      return { object: pts, stats: `${(geo.attributes.position.count).toLocaleString()} pts` };
+      return { object: pts, stats: `${n.toLocaleString()} pts`, overCap: n > MAX_POINTS };
     }
     const mat = defaultMat(three);
     if (geo.attributes.color) { mat.vertexColors = true; }
-    return { object: new three.Mesh(geo, mat), stats: triStats(geo) };
+    return { object: new three.Mesh(geo, mat), stats: triStats(geo), overCap: geoTris(geo) > MAX_TRIS };
   }
 
   if (ext === 'obj') {
@@ -216,14 +272,16 @@ async function loadObject(ctx, three, buf, ext) {
     const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
     const obj = new OBJLoader().parse(text);
     fixMaterials(three, obj);
-    return { object: obj, stats: objStats(obj) };
+    const s = objStats(obj);
+    return { object: obj, stats: s.label, overCap: s.tris > MAX_TRIS };
   }
 
   if (ext === '3mf') {
     const { ThreeMFLoader } = await ctx.lazy(JSM('loaders/3MFLoader.js'));
     const group = new ThreeMFLoader().parse(buf);
     fixMaterials(three, group);
-    return { object: group, stats: objStats(group) };
+    const s = objStats(group);
+    return { object: group, stats: s.label, overCap: s.tris > MAX_TRIS };
   }
 
   if (ext === 'gltf' || ext === 'glb') {
@@ -240,7 +298,8 @@ async function loadObject(ctx, three, buf, ext) {
     });
     const root = gltf.scene || (gltf.scenes && gltf.scenes[0]);
     if (!root) throw new Error('no scene in glTF');
-    return { object: root, stats: objStats(root) };
+    const s = objStats(root);
+    return { object: root, stats: s.label, overCap: s.tris > MAX_TRIS };
   }
 
   throw new Error(`unsupported ext ${ext}`);
@@ -265,24 +324,26 @@ function fixMaterials(three, root) {
   });
 }
 
-function triStats(geo) {
+function geoTris(geo) {
   const verts = geo.attributes && geo.attributes.position ? geo.attributes.position.count : 0;
-  const tris = geo.index ? geo.index.count / 3 : verts / 3;
-  return `${Math.round(tris).toLocaleString()} tris`;
+  return geo.index ? geo.index.count / 3 : verts / 3;
 }
 
+function triStats(geo) {
+  return `${Math.round(geoTris(geo)).toLocaleString()} tris`;
+}
+
+// Returns { label, tris } so callers can both display and cap.
 function objStats(root) {
   let tris = 0;
   let meshes = 0;
   root.traverse((o) => {
     if (o.isMesh && o.geometry) {
       meshes++;
-      const g = o.geometry;
-      const v = g.attributes && g.attributes.position ? g.attributes.position.count : 0;
-      tris += g.index ? g.index.count / 3 : v / 3;
+      tris += geoTris(o.geometry);
     }
   });
-  return `${meshes} mesh${meshes === 1 ? '' : 'es'} · ${Math.round(tris).toLocaleString()} tris`;
+  return { label: `${meshes} mesh${meshes === 1 ? '' : 'es'} · ${Math.round(tris).toLocaleString()} tris`, tris };
 }
 
 function fmt(n) {
@@ -303,8 +364,13 @@ function renderStep(ctx, buf) {
     throw new Error('cad3d: not a recognizable STEP (ISO-10303-21) file');
   }
 
-  const header = parseStepHeader(text);
-  const entities = countStepEntities(text);
+  // Cap the region we regex-scan so a multi-hundred-MB STEP can't freeze the
+  // tab. The header is always near the top; entity counts stay representative.
+  const truncated = text.length > STEP_SCAN_BYTES;
+  const scan = truncated ? text.slice(0, STEP_SCAN_BYTES) : text;
+
+  const header = parseStepHeader(scan);
+  const entities = countStepEntities(scan);
   const totalEnt = entities.reduce((s, e) => s + e.count, 0);
 
   const root = ctx.el('div', 'cad3d-step');
@@ -344,7 +410,10 @@ function renderStep(ctx, buf) {
   root.appendChild(kvTable(ctx, headerRows.length ? headerRows : [['(header)', 'no FILE_NAME/FILE_DESCRIPTION fields found']]));
 
   // Entity summary.
-  root.appendChild(sectionTitle(ctx, `Entity summary · ${totalEnt.toLocaleString()} instances · ${entities.length} types`));
+  const scannedNote = truncated
+    ? ` (scanned first ${Math.round(STEP_SCAN_BYTES / (1 << 20))} MB of ${Math.round(text.length / (1 << 20))} MB)`
+    : '';
+  root.appendChild(sectionTitle(ctx, `Entity summary · ${totalEnt.toLocaleString()}${truncated ? '+' : ''} instances · ${entities.length} types${scannedNote}`));
   const top = entities.slice(0, 40);
   const entRows = top.map((e) => [e.type, e.count.toLocaleString()]);
   root.appendChild(twoColTable(ctx, ['Entity type', 'Count'], entRows));

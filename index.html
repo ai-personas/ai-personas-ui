@@ -6,17 +6,17 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260620d">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260620e">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
   <header class="vitals">
-    <span class="livedot" id="livedot" role="img" title="resolving node heartbeat…"></span>
+    <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
     <h1 class="brandmark" style="margin:0;font:inherit;font-weight:inherit"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
     <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
     <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
-    <span class="vcounts" id="stats"></span>
+    <span class="vcounts" id="stats" role="status" aria-label="live network counters"></span>
     <span class="grow"></span>
     <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter personas, environments and events">
     <input id="peer" type="url" placeholder="discover peer https://host" aria-label="discover a peer node by URL">
@@ -98,8 +98,8 @@
   </main>
 
   <footer>
-    <span id="status">booting discovery…</span>
-    <span id="p2p" class="p2p-stat">P2P · starting libp2p…</span>
+    <span id="status" role="status">booting discovery…</span>
+    <span id="p2p" class="p2p-stat" role="status" aria-label="peer-to-peer connectivity status">P2P · starting libp2p…</span>
     <button id="logbtn" class="link">discovery log</button>
   </footer>
 
@@ -117,6 +117,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260620d"></script>
+  <script type="module" src="assets/discovery.js?v=20260620e"></script>
 </body>
 </html>

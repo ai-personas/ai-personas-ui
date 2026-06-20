@@ -43,13 +43,21 @@ const PINS = { R: 2, C: 2, L: 2, D: 2, V: 2, I: 2, B: 2, S: 4, W: 4,
 export async function render(ctx) {
   const { host, el, esc } = ctx;
 
+  // Loading state: fetch (network) + the parse can be slow on large decks, so
+  // surface progress before any heavy work resolves (contract requirement).
+  host.appendChild(el('div', 'fv-loading', 'fetching netlist…'));
+
   const raw = await ctx.fetchText();
   if (raw == null) throw new Error('netlist: body fetch returned null');
   if (typeof raw !== 'string') throw new Error('netlist: body is not text');
   if (!raw.trim()) throw new Error('netlist: empty body');
 
+  host.innerHTML = '';
+  host.appendChild(el('div', 'fv-loading', 'parsing netlist…'));
+
   // -- parse -----------------------------------------------------------------
   const parsed = parseNetlist(raw);
+  host.innerHTML = '';   // clear the loading indicator before painting
   // Netlist-shaped guard. Arbitrary prose can superficially "parse" as one
   // card (first word -> device letter), so a single isolated card is too weak.
   // Require a real signal: any directive/.model, OR >=2 wired components, OR a
@@ -71,6 +79,13 @@ export async function render(ctx) {
   injectStyle(root, ctx);
 
   root.appendChild(buildSummary(parsed, ctx));
+
+  if (parsed.truncatedLines) {
+    root.appendChild(el('div', 'nl-note nl-warn',
+      `Large netlist: parsed the first ${MAX_LINES.toLocaleString()} lines; ` +
+      `${parsed.truncatedLines.toLocaleString()} further line(s) were not read ` +
+      `to keep the viewer responsive.`));
+  }
 
   // Topology graph (self-contained SVG). Wrapped so a layout glitch on a
   // pathological file still leaves the tables + source usable.
@@ -94,9 +109,33 @@ export async function render(ctx) {
 // ===========================================================================
 // PARSER
 // ===========================================================================
+// Hard ceiling on physical lines actually walked. A pathological multi-MB deck
+// must never freeze the tab; we parse the head and report the truncation.
+const MAX_LINES = 50000;
+
+// Strip an end-of-line SPICE comment: ';' (HSPICE/ngspice) or ' $' (PSPICE)
+// begins a trailing comment. A leading '$' is also a whole-line comment in some
+// dialects. Done at PARSE time so node/value tokens are never polluted by
+// comment words (previously only the highlighter stripped these, cosmetically).
+function stripInlineComment(s) {
+  // ' $' (dollar must be space-delimited so it can't eat a "$param" token);
+  // ';' ends a comment anywhere. Whichever comes first wins.
+  const semi = s.indexOf(';');
+  const dollar = s.search(/\s\$/);
+  let cut = -1;
+  if (semi >= 0) cut = semi;
+  if (dollar >= 0 && (cut < 0 || dollar < cut)) cut = dollar;
+  return cut >= 0 ? s.slice(0, cut) : s;
+}
+
 function parseNetlist(raw) {
   // SPICE line-continuation: a line beginning with '+' appends to the previous.
-  const physical = raw.replace(/\r\n?/g, '\n').split('\n');
+  let physical = raw.replace(/\r\n?/g, '\n').split('\n');
+  let truncatedLines = 0;
+  if (physical.length > MAX_LINES) {
+    truncatedLines = physical.length - MAX_LINES;
+    physical = physical.slice(0, MAX_LINES);
+  }
   const lines = [];
   for (let i = 0; i < physical.length; i++) {
     let ln = physical[i];
@@ -114,6 +153,11 @@ function parseNetlist(raw) {
   const netSet = new Map();      // net -> Set(componentRefs)
   let title = null;
   let subckts = 0;
+  // Subckt scope stack: nets/refs defined inside a .subckt are local. We qualify
+  // them with the subckt name so identically-named nodes (e.g. every subckt's
+  // internal "1") don't collapse into one global net in the tables/graph.
+  const scopeStack = [];
+  const scopePrefix = () => (scopeStack.length ? scopeStack.join('/') + ':' : '');
 
   const touch = (net, ref) => {
     if (net == null || net === '') return;
@@ -137,31 +181,44 @@ function parseNetlist(raw) {
     }
 
     if (trimmed[0] === '*') { comments.push({ lineNo, text: trimmed.slice(1).trim() }); continue; }
+    // Whole-line '$' comment (PSPICE-style) — not a device card.
+    if (trimmed[0] === '$') { comments.push({ lineNo, text: trimmed.slice(1).trim() }); continue; }
 
     if (trimmed[0] === '.') {
-      const tok = trimmed.slice(1).split(/\s+/);
+      // Directive bodies can carry inline comments too.
+      const body = stripInlineComment(trimmed).trim();
+      const tok = body.slice(1).split(/\s+/);
       const dir = (tok[0] || '').toLowerCase();
       if (dir === 'model') {
-        models.push({ lineNo, name: tok[1] || '', type: tok[2] || '', text: trimmed });
+        models.push({ lineNo, name: tok[1] || '', type: tok[2] || '', text: body });
       } else if (dir === 'subckt') {
         subckts++;
-        directives.push({ lineNo, dir: '.' + dir, args: tok.slice(1).join(' '), text: trimmed });
+        scopeStack.push(tok[1] || ('sub' + subckts));
+        directives.push({ lineNo, dir: '.' + dir, args: tok.slice(1).join(' '), text: body });
+      } else if (dir === 'ends' || dir === 'eom') {
+        if (scopeStack.length) scopeStack.pop();
+        directives.push({ lineNo, dir: '.' + dir, args: tok.slice(1).join(' '), text: body });
       } else {
-        directives.push({ lineNo, dir: '.' + dir, args: tok.slice(1).join(' '), text: trimmed });
+        directives.push({ lineNo, dir: '.' + dir, args: tok.slice(1).join(' '), text: body });
       }
       continue;
     }
 
-    // A device card: <ref> <nodes...> <params...>
-    const tok = trimmed.split(/\s+/);
-    const ref = tok[0];
-    const letter = ref[0].toUpperCase();
+    // A device card: <ref> <nodes...> <params...> — drop any inline comment first.
+    const clean = stripInlineComment(trimmed).trim();
+    if (!clean) continue;
+    const tok = clean.split(/\s+/).filter(Boolean);
+    const ref0 = tok[0];
+    if (!ref0) continue;                       // defensive: no usable ref token
+    const pfx = scopePrefix();
+    const ref = pfx + ref0;                     // qualify ref by scope (display keeps prefix)
+    const letter = ref0[0].toUpperCase();
     const klass = DEVICE[letter] || 'Device';
 
     // Decide how many leading tokens are nodes.
     let nNodes = pinCount(letter, tok);
     nNodes = Math.min(nNodes, tok.length - 1);
-    const nodes = tok.slice(1, 1 + nNodes);
+    const nodes = tok.slice(1, 1 + nNodes).map((n) => qualifyNode(n, pfx));
     const rest = tok.slice(1 + nNodes);
 
     // For Q/M/J/Z the token after the node list is usually the model name;
@@ -176,7 +233,7 @@ function parseNetlist(raw) {
     }
 
     const comp = {
-      lineNo, ref, letter, klass,
+      lineNo, ref, letter, klass, scope: scopeStack[scopeStack.length - 1] || '',
       nodes, value: value || '', params: rest.join(' '),
     };
     components.push(comp);
@@ -193,7 +250,15 @@ function parseNetlist(raw) {
     return b.fanout - a.fanout || cmp(a.name, b.name);
   });
 
-  return { title, components, nets, directives, models, comments, subckts, lineCount: lines.length };
+  return { title, components, nets, directives, models, comments, subckts,
+    lineCount: lines.length, truncatedLines };
+}
+
+// Ground stays global (every subckt's "0" is the one true ground). All other
+// nodes inside a subckt are local, so qualify them with the scope prefix.
+function qualifyNode(n, pfx) {
+  if (!pfx) return n;
+  return isGround(n) ? n : pfx + n;
 }
 
 function pinCount(letter, tok) {
@@ -277,8 +342,51 @@ function buildGraph(p, ctx) {
   const netNames = new Set(nets.map((n) => n.name));
 
   const wrap = el('div', 'nl-block');
-  const head = el('div', 'nl-block-h', 'Topology');
-  wrap.appendChild(head);
+  const bar = el('div', 'nl-graph-bar');
+  bar.appendChild(el('span', 'nl-block-h nl-graph-title', 'Topology'));
+  const mkBtn = (txt, title) => { const b = el('button', 'nl-gbtn', txt); b.type = 'button'; if (title) b.title = title; return b; };
+  const bFit = mkBtn('Fit', 'reset zoom');
+  const bIn = mkBtn('+', 'zoom in');
+  const bOut = mkBtn('−', 'zoom out');
+  const hint = el('span', 'nl-ghint', 'drag = pan · wheel = zoom');
+  bar.appendChild(bFit); bar.appendChild(bIn); bar.appendChild(bOut); bar.appendChild(hint);
+  wrap.appendChild(bar);
+
+  // ---- ordering: barycentric sweep to reduce edge crossings / visual overlap.
+  // Components keep deck order initially; nets are placed at the mean Y of the
+  // components they touch, then components are re-placed at the mean Y of their
+  // nets. Two passes is enough to untangle most decks without a layout lib.
+  const adj = new Map();             // ref -> [net names it touches]
+  for (const c of comps) adj.set(c.ref, c.nodes.filter((n) => netNames.has(n)));
+
+  let compOrder = comps.map((c) => c.ref);
+  const idxOf = (arr) => { const m = new Map(); arr.forEach((v, i) => m.set(v, i)); return m; };
+  for (let pass = 0; pass < 2; pass++) {
+    // place nets at barycenter of their (current) component rows
+    const cIdx = idxOf(compOrder);
+    const netBary = nets.map((n) => {
+      const rows = n.members.filter((m) => cIdx.has(m)).map((m) => cIdx.get(m));
+      const b = rows.length ? rows.reduce((a, v) => a + v, 0) / rows.length : 1e9;
+      return { name: n.name, b };
+    });
+    // keep ground nets pinned to the top for readability
+    netBary.sort((a, b) => {
+      const ga = isGround(a.name), gb = isGround(b.name);
+      if (ga !== gb) return ga ? -1 : 1;
+      return a.b - b.b || cmp(a.name, b.name);
+    });
+    const netOrder = netBary.map((x) => x.name);
+    const nIdx = idxOf(netOrder);
+    // place components at barycenter of their nets
+    compOrder = compOrder.slice().sort((ra, rb) => {
+      const ba = baryOf(adj.get(ra), nIdx), bb = baryOf(adj.get(rb), nIdx);
+      return ba - bb || cmp(ra, rb);
+    });
+    // remember final net order on the last pass
+    if (pass === 1) nets.forEach((n) => { n._row = nIdx.get(n.name); });
+    else nets.sort((a, b) => nIdx.get(a.name) - nIdx.get(b.name));
+  }
+  const compRow = idxOf(compOrder);
 
   const colN = nets.length, colC = comps.length;
   const rows = Math.max(colN, colC, 1);
@@ -290,10 +398,11 @@ function buildGraph(p, ctx) {
   svg.setAttribute('class', 'nl-svg');
   svg.setAttribute('width', '100%');
   svg.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+  svg.style.touchAction = 'none';
 
   const yN = {}, yC = {};
-  nets.forEach((n, i) => { yN[n.name] = PADY + i * ROW; });
-  comps.forEach((c, i) => { yC[c.ref] = PADY + i * ROW; });
+  nets.forEach((n) => { yN[n.name] = PADY + (n._row != null ? n._row : 0) * ROW; });
+  comps.forEach((c) => { yC[c.ref] = PADY + (compRow.get(c.ref) || 0) * ROW; });
 
   const mk = (tag, attrs, text) => {
     const e = document.createElementNS(NS, tag);
@@ -301,6 +410,10 @@ function buildGraph(p, ctx) {
     if (text != null) e.textContent = text;
     return e;
   };
+
+  // Everything that should pan/zoom together lives in this group; the column
+  // captions stay fixed in the corner.
+  const view = mk('g', {});
 
   // edges first (under nodes)
   const g = mk('g', {});
@@ -316,29 +429,73 @@ function buildGraph(p, ctx) {
       }));
     }
   }
-  svg.appendChild(g);
+  view.appendChild(g);
 
   // net nodes (left)
   for (const n of nets) {
     const y = yN[n.name];
     const cls = isGround(n.name) ? 'nl-node-net nl-gnd' : 'nl-node-net';
-    svg.appendChild(mk('circle', { cx: LX, cy: y, r: 4, class: cls }));
-    const t = mk('text', { x: LX - 9, y: y + 3.5, class: 'nl-lbl nl-lbl-net' }, n.name);
-    svg.appendChild(t);
+    view.appendChild(mk('circle', { cx: LX, cy: y, r: 4, class: cls }));
+    view.appendChild(mk('text', { x: LX - 9, y: y + 3.5, class: 'nl-lbl nl-lbl-net' }, clip(n.name, 22)));
   }
   // component nodes (right)
   for (const c of comps) {
     const y = yC[c.ref];
-    svg.appendChild(mk('rect', { x: RX - 3.5, y: y - 3.5, width: 7, height: 7, rx: 1.5, class: 'nl-node-comp dev-' + c.letter }));
+    view.appendChild(mk('rect', { x: RX - 3.5, y: y - 3.5, width: 7, height: 7, rx: 1.5, class: 'nl-node-comp dev-' + c.letter }));
     const lbl = c.ref + (c.value ? '  ' + c.value : '');
-    svg.appendChild(mk('text', { x: RX + 9, y: y + 3.5, class: 'nl-lbl nl-lbl-comp' }, lbl));
+    view.appendChild(mk('text', { x: RX + 9, y: y + 3.5, class: 'nl-lbl nl-lbl-comp' }, clip(lbl, 26)));
   }
+  svg.appendChild(view);
 
-  // column captions
+  // column captions (fixed, not inside the pan/zoom group)
   svg.appendChild(mk('text', { x: LX - 9, y: 12, class: 'nl-col-h', 'text-anchor': 'end' }, 'NETS'));
   svg.appendChild(mk('text', { x: RX + 9, y: 12, class: 'nl-col-h' }, 'COMPONENTS'));
 
   wrap.appendChild(svg);
+
+  // ---- zoom / pan via a CSS transform on the inner group (viewBox stays the
+  // intrinsic 0..W/0..H coordinate space; we scale+translate within it).
+  const vs = { scale: 1, tx: 0, ty: 0 };
+  const apply = () => view.setAttribute('transform', `translate(${vs.tx} ${vs.ty}) scale(${vs.scale})`);
+  const ptIn = (ev) => {
+    const r = svg.getBoundingClientRect();
+    const sx = W / (r.width || 1), sy = H / (r.height || 1);
+    return { x: (ev.clientX - r.left) * sx, y: (ev.clientY - r.top) * sy };
+  };
+  const zoomAt = (px, py, f) => {
+    const ns = Math.max(0.2, Math.min(8, vs.scale * f));
+    f = ns / vs.scale;
+    vs.tx = px - (px - vs.tx) * f; vs.ty = py - (py - vs.ty) * f; vs.scale = ns; apply();
+  };
+  const onWheel = (ev) => { ev.preventDefault(); const p = ptIn(ev); zoomAt(p.x, p.y, ev.deltaY < 0 ? 1.15 : 1 / 1.15); };
+  svg.addEventListener('wheel', onWheel, { passive: false });
+
+  let drag = false, lx = 0, ly = 0;
+  const onDown = (ev) => { drag = true; const p = ptIn(ev); lx = p.x; ly = p.y; svg.style.cursor = 'grabbing';
+    svg.setPointerCapture && svg.setPointerCapture(ev.pointerId); };
+  const onMove = (ev) => { if (!drag) return; const p = ptIn(ev); vs.tx += p.x - lx; vs.ty += p.y - ly; lx = p.x; ly = p.y; apply(); };
+  const onUp = () => { drag = false; svg.style.cursor = 'grab'; };
+  svg.addEventListener('pointerdown', onDown);
+  svg.addEventListener('pointermove', onMove);
+  svg.addEventListener('pointerup', onUp);
+  svg.addEventListener('pointercancel', onUp);
+  svg.style.cursor = 'grab';
+
+  const cc = () => ({ x: W / 2, y: Math.min(H, 220) });
+  bIn.addEventListener('click', () => { const p = cc(); zoomAt(p.x, p.y, 1.3); });
+  bOut.addEventListener('click', () => { const p = cc(); zoomAt(p.x, p.y, 1 / 1.3); });
+  bFit.addEventListener('click', () => { vs.scale = 1; vs.tx = 0; vs.ty = 0; apply(); });
+
+  // dispose listeners when the drawer switches files
+  if (typeof ctx.onCleanup === 'function') {
+    ctx.onCleanup(() => {
+      svg.removeEventListener('wheel', onWheel);
+      svg.removeEventListener('pointerdown', onDown);
+      svg.removeEventListener('pointermove', onMove);
+      svg.removeEventListener('pointerup', onUp);
+      svg.removeEventListener('pointercancel', onUp);
+    });
+  }
 
   if (p.components.length > MAXC || p.nets.length > MAXN) {
     wrap.appendChild(el('div', 'nl-note',
@@ -348,53 +505,128 @@ function buildGraph(p, ctx) {
   return wrap;
 }
 
+// mean row-index of a node's neighbours; isolated nodes sink to the bottom
+function baryOf(neighbors, idxMap) {
+  if (!neighbors || !neighbors.length) return 1e9;
+  let sum = 0, n = 0;
+  for (const k of neighbors) { if (idxMap.has(k)) { sum += idxMap.get(k); n++; } }
+  return n ? sum / n : 1e9;
+}
+
+// clip an SVG label so very long net/ref names can't overrun the column
+const clip = (s, max) => { s = String(s); return s.length > max ? s.slice(0, max - 1) + '…' : s; };
+
 // ===========================================================================
 // TABLES
 // ===========================================================================
-function buildComponentsTable(p, ctx) {
+// Max rows we paint at once; beyond this the DOM (and the tab) chokes. The
+// filter still searches the FULL dataset, so a hidden row is reachable by name.
+const MAX_ROWS = 2000;
+
+// Shared sortable + filterable table. `cols` describe headers and how to sort;
+// `rowHtml(r)` returns the <tr> innerHTML; `sortKey(r, ci)` returns the value
+// to compare for column ci (string or number).
+function buildDataTable(ctx, blockTitle, rows, cols, rowHtml, sortKey) {
   const { el, esc } = ctx;
   const wrap = el('div', 'nl-block');
-  wrap.appendChild(el('div', 'nl-block-h', `Components (${p.components.length})`));
+  wrap.appendChild(el('div', 'nl-block-h', `${blockTitle} (${rows.length})`));
+
+  const bar = el('div', 'nl-tbar');
+  const filter = el('input', 'nl-filter');
+  filter.type = 'search';
+  filter.placeholder = 'filter…';
+  filter.spellcheck = false;
+  filter.setAttribute('aria-label', `filter ${blockTitle}`);
+  const counter = el('span', 'nl-count');
+  bar.appendChild(filter); bar.appendChild(counter);
+  wrap.appendChild(bar);
+
   const tbl = el('table', 'nl-table');
-  tbl.innerHTML = `<thead><tr>
-    <th>Ref</th><th>Type</th><th>Nodes</th><th>Value / Model</th><th class="nl-rl">Line</th>
-  </tr></thead>`;
+  const thead = el('thead', '');
+  const htr = el('tr', '');
+  let sortCi = -1, sortDir = 1;
+  cols.forEach((c, ci) => {
+    const th = el('th', (c.right ? 'nl-rl ' : '') + 'nl-sortable');
+    th.textContent = c.label;
+    th.setAttribute('role', 'button');
+    th.tabIndex = 0;
+    const onSort = () => {
+      if (sortCi === ci) sortDir = -sortDir; else { sortCi = ci; sortDir = 1; }
+      cols.forEach((_, j) => { htr.children[j].removeAttribute('data-sort'); });
+      th.setAttribute('data-sort', sortDir > 0 ? 'asc' : 'desc');
+      paint();
+    };
+    th.addEventListener('click', onSort);
+    th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(); } });
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  tbl.appendChild(thead);
   const tb = el('tbody', '');
-  for (const c of p.components) {
-    const tr = el('tr', '');
+  tbl.appendChild(tb);
+  wrap.appendChild(tbl);
+
+  const paint = () => {
+    const q = filter.value.trim().toLowerCase();
+    let view = q
+      ? rows.filter((r) => cols.some((c, ci) => String(sortKey(r, ci)).toLowerCase().includes(q)))
+      : rows.slice();
+    if (sortCi >= 0) {
+      const col = cols[sortCi];
+      view.sort((a, b) => {
+        let va = sortKey(a, sortCi), vb = sortKey(b, sortCi);
+        if (col.numeric) { va = Number(va); vb = Number(vb); if (isNaN(va)) va = -Infinity; if (isNaN(vb)) vb = -Infinity; return (va - vb) * sortDir; }
+        return cmp(String(va).toLowerCase(), String(vb).toLowerCase()) * sortDir;
+      });
+    }
+    const total = view.length;
+    const shown = Math.min(total, MAX_ROWS);
+    let html = '';
+    for (let i = 0; i < shown; i++) html += `<tr>${rowHtml(view[i])}</tr>`;
+    tb.innerHTML = html;
+    counter.textContent = total > shown
+      ? `showing ${shown} of ${total}${q ? ' matched' : ''}`
+      : `${total}${q && total !== rows.length ? ' of ' + rows.length : ''} row${total === 1 ? '' : 's'}`;
+  };
+
+  let t = null;
+  filter.addEventListener('input', () => { clearTimeout(t); t = setTimeout(paint, 90); });
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(() => clearTimeout(t));
+  paint();
+  return wrap;
+}
+
+function buildComponentsTable(p, ctx) {
+  const { esc } = ctx;
+  const cols = [
+    { label: 'Ref' }, { label: 'Type' }, { label: 'Nodes' },
+    { label: 'Value / Model' }, { label: 'Line', right: true, numeric: true },
+  ];
+  const sortKey = (c, ci) => ci === 0 ? c.ref : ci === 1 ? c.klass
+    : ci === 2 ? c.nodes.join(' ') : ci === 3 ? c.value : c.lineNo;
+  const rowHtml = (c) => {
     const nodes = c.nodes.map((n) =>
       `<span class="nl-pin${isGround(n) ? ' nl-pin-gnd' : ''}">${esc(n)}</span>`).join('');
-    tr.innerHTML =
-      `<td class="nl-ref dev-${esc(c.letter)}">${esc(c.ref)}</td>` +
+    return `<td class="nl-ref dev-${esc(c.letter)}">${esc(c.ref)}</td>` +
       `<td>${esc(c.klass)}</td>` +
       `<td class="nl-nodes">${nodes || '<span class="nl-dim">—</span>'}</td>` +
       `<td class="nl-val">${c.value ? esc(c.value) : '<span class="nl-dim">—</span>'}</td>` +
       `<td class="nl-rl nl-dim">${c.lineNo}</td>`;
-    tb.appendChild(tr);
-  }
-  tbl.appendChild(tb);
-  wrap.appendChild(tbl);
-  return wrap;
+  };
+  return buildDataTable(ctx, 'Components', p.components, cols, rowHtml, sortKey);
 }
 
 function buildNetsTable(p, ctx) {
-  const { el, esc } = ctx;
-  const wrap = el('div', 'nl-block');
-  wrap.appendChild(el('div', 'nl-block-h', `Nets (${p.nets.length})`));
-  const tbl = el('table', 'nl-table');
-  tbl.innerHTML = `<thead><tr><th>Net</th><th class="nl-rl">Fan-out</th><th>Connected to</th></tr></thead>`;
-  const tb = el('tbody', '');
-  for (const n of p.nets) {
-    const tr = el('tr', '');
-    tr.innerHTML =
-      `<td class="nl-net${isGround(n.name) ? ' nl-pin-gnd' : ''}">${esc(n.name)}</td>` +
-      `<td class="nl-rl">${n.fanout}</td>` +
-      `<td class="nl-members">${n.members.map((m) => `<span class="nl-pin">${esc(m)}</span>`).join('')}</td>`;
-    tb.appendChild(tr);
-  }
-  tbl.appendChild(tb);
-  wrap.appendChild(tbl);
-  return wrap;
+  const { esc } = ctx;
+  const cols = [
+    { label: 'Net' }, { label: 'Fan-out', right: true, numeric: true }, { label: 'Connected to' },
+  ];
+  const sortKey = (n, ci) => ci === 0 ? n.name : ci === 1 ? n.fanout : n.members.join(' ');
+  const rowHtml = (n) =>
+    `<td class="nl-net${isGround(n.name) ? ' nl-pin-gnd' : ''}">${esc(n.name)}</td>` +
+    `<td class="nl-rl">${n.fanout}</td>` +
+    `<td class="nl-members">${n.members.map((m) => `<span class="nl-pin">${esc(m)}</span>`).join('')}</td>`;
+  return buildDataTable(ctx, 'Nets', p.nets, cols, rowHtml, sortKey);
 }
 
 function buildDirectives(p, ctx) {
@@ -431,21 +663,29 @@ function buildModels(p, ctx) {
 // ===========================================================================
 // SOURCE  (syntax-highlighted, self-contained tokenizer)
 // ===========================================================================
+// Cap highlighted source lines: each line becomes a span, so an enormous deck
+// would otherwise build millions of nodes and freeze the tab.
+const MAX_SRC_LINES = 5000;
+
 function buildSource(raw, p, ctx) {
   const { el, esc } = ctx;
   const wrap = el('div', 'nl-block');
   wrap.appendChild(el('div', 'nl-block-h', 'Source'));
+  const allLines = raw.replace(/\r\n?/g, '\n').split('\n');
+  const total = allLines.length;
+  const lines = total > MAX_SRC_LINES ? allLines.slice(0, MAX_SRC_LINES) : allLines;
   const pre = el('pre', 'nl-src');
-  const lines = raw.replace(/\r\n?/g, '\n').split('\n');
   let out = '';
-  let n = 0;
-  for (const ln of lines) {
-    n++;
-    out += `<span class="nl-ln">${highlightLine(ln, esc)}</span>`;
-    if (n < lines.length) out += '\n';
+  for (let n = 0; n < lines.length; n++) {
+    out += `<span class="nl-ln">${highlightLine(lines[n], esc)}</span>`;
+    if (n < lines.length - 1) out += '\n';
   }
   pre.innerHTML = out;
   wrap.appendChild(pre);
+  if (total > MAX_SRC_LINES) {
+    wrap.appendChild(el('div', 'nl-note',
+      `Source truncated: showing ${MAX_SRC_LINES.toLocaleString()} of ${total.toLocaleString()} lines.`));
+  }
   return wrap;
 }
 
@@ -511,7 +751,24 @@ function injectStyle(root, ctx) {
 .nl-block{margin:16px 0;border:1px solid var(--line2,#1d2733);border-radius:6px;overflow:hidden;background:var(--code-bg,#070b10)}
 .nl-block-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber,#f0b429);padding:7px 10px;border-bottom:1px solid var(--line2,#1d2733);background:rgba(255,255,255,.02);font-family:ui-sans-serif,system-ui,sans-serif}
 .nl-note{font-size:10.5px;color:var(--l2,#7c8a99);padding:6px 10px}
-.nl-table{width:100%;border-collapse:collapse;font-size:11px}
+.nl-warn{color:var(--amber,#f0b429);background:rgba(240,180,41,.06);border:1px solid var(--line2,#1d2733);border-radius:5px;margin:8px 0}
+/* graph toolbar */
+.nl-graph-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;border-bottom:1px solid var(--line2,#1d2733);background:rgba(255,255,255,.02)}
+.nl-graph-title{border:0;padding:0;background:none;margin-right:4px}
+.nl-gbtn{background:var(--surface-inset,#070b10);color:var(--int,#cfe);border:1px solid var(--line2,#1d2733);border-radius:4px;font:11px ui-monospace,Menlo,monospace;padding:2px 9px;cursor:pointer;min-width:26px}
+.nl-gbtn:hover{border-color:var(--amber,#f0b429);color:var(--amber,#f0b429)}
+.nl-ghint{margin-left:auto;font-size:10px;color:var(--l2,#5b6773)}
+/* table toolbar */
+.nl-tbar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line2,#1d2733)}
+.nl-filter{flex:1;min-width:0;background:var(--surface-inset,#070b10);color:var(--int,#cfe);border:1px solid var(--line2,#1d2733);border-radius:4px;font:11px ui-monospace,Menlo,monospace;padding:3px 8px}
+.nl-filter:focus{outline:none;border-color:var(--amber,#f0b429)}
+.nl-count{font-size:10px;color:var(--l2,#7c8a99);white-space:nowrap}
+.nl-sortable{cursor:pointer;user-select:none}
+.nl-sortable:hover{color:var(--int,#cfe)}
+.nl-sortable[data-sort=asc]:after{content:' ▲';font-size:8px;color:var(--amber,#f0b429)}
+.nl-sortable[data-sort=desc]:after{content:' ▼';font-size:8px;color:var(--amber,#f0b429)}
+.nl-table{width:100%;border-collapse:collapse;font-size:11px;table-layout:auto}
+.nl-table td,.nl-table th{word-break:break-word;overflow-wrap:anywhere}
 .nl-table th{text-align:left;font-weight:600;color:var(--l2,#7c8a99);padding:5px 10px;border-bottom:1px solid var(--line2,#1d2733);position:sticky;top:0;background:var(--code-bg,#070b10)}
 .nl-table td{padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
 .nl-table tr:last-child td{border-bottom:0}
@@ -529,8 +786,9 @@ function injectStyle(root, ctx) {
 /* device colour accents */
 .dev-R{color:#e06c75}.dev-C{color:#56b6c2}.dev-L{color:#c678dd}.dev-D{color:#e5c07b}
 .dev-Q,.dev-M,.dev-J,.dev-Z{color:#61afef}.dev-V,.dev-I{color:#98c379}.dev-X{color:#d19a66}
-/* svg graph */
-.nl-svg{display:block;background:var(--code-bg,#070b10)}
+/* svg graph — clamp height so a tall deck doesn't dominate the drawer; the
+   pan/zoom controls reach the rest. touch-action:none lets pointer drag work. */
+.nl-svg{display:block;background:var(--code-bg,#070b10);max-height:60vh;width:100%;touch-action:none}
 .nl-edge{fill:none;stroke:var(--line2,#1d2733);stroke-width:1;opacity:.7}
 .nl-edge-gnd{stroke:#33414f;opacity:.45;stroke-dasharray:2 2}
 .nl-node-net{fill:var(--int,#cfe);stroke:var(--code-bg,#070b10);stroke-width:1}

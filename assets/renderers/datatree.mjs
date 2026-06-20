@@ -22,6 +22,14 @@ export const meta = {
 const YAML_CDN = 'https://esm.sh/yaml@2.9.0';        // ISC
 const TOML_CDN = 'https://esm.sh/smol-toml@1.6.1';   // BSD-3-Clause
 
+// Render guards: keep huge documents from freezing the drawer tab.
+//   - CHILD_CAP: max children painted per container at once; the rest sit
+//     behind a "show N more" affordance ("showing N of M").
+//   - SCALAR_CAP: long string scalars are truncated in the display (the FULL
+//     value is still copyable via the row's value title).
+const CHILD_CAP = 1000;
+const SCALAR_CAP = 600;
+
 // ---- value-type classification ----------------------------------------------
 function typeOf(v) {
   if (v === null) return 'null';
@@ -61,15 +69,31 @@ function extFromTitle(title) {
   return m ? m[1] : '';
 }
 
+// NDJSON is parsed line-by-line and is DEGRADE-FRIENDLY: a single malformed
+// line should not blank the whole document. We render every line that parses
+// and report the rest via `skipped` so the caller can show an inline notice.
+// Throws ONLY when not a single line parses (truly not NDJSON → fail soft).
 function parseNdjson(text) {
   const rows = [];
+  const skipped = []; // {line, message}
   const lines = text.split(/\r?\n/);
+  let firstErr = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    rows.push(JSON.parse(line)); // THROW on a bad line → fail soft
+    try {
+      rows.push(JSON.parse(line));
+    } catch (e) {
+      if (!firstErr) firstErr = e;
+      if (skipped.length < 50) skipped.push({ line: i + 1, message: errMessage(e) });
+      else skipped.push(null); // keep counting, stop collecting detail
+    }
   }
-  return rows;
+  if (!rows.length) {
+    // nothing usable — surface a located error so fallback/notice is clear.
+    throw locateError(firstErr || new Error('no parseable NDJSON lines'), text);
+  }
+  return { rows, skipped: skipped.filter(Boolean), skippedCount: skipped.length };
 }
 
 // Best-effort sniff when the format is unknown: try JSON, then NDJSON.
@@ -81,31 +105,90 @@ function sniffParse(text) {
   }
   // NDJSON: multiple JSON values, one per line
   if (/\n/.test(trimmed)) {
-    const rows = parseNdjson(trimmed);
-    if (rows.length) return { value: rows, fmt: 'ndjson' };
+    try {
+      const nd = parseNdjson(trimmed);
+      if (nd.rows.length) return { value: nd.rows, fmt: 'ndjson', skipped: nd.skipped, skippedCount: nd.skippedCount };
+    } catch (_) { /* fall through to single-value attempt */ }
   }
   // single JSON scalar/value
-  return { value: JSON.parse(trimmed), fmt: 'json' };
+  try { return { value: JSON.parse(trimmed), fmt: 'json' }; }
+  catch (e) { throw locateError(e, trimmed); }
 }
 
-async function parseByFormat(ctx, text, fmt) {
+// ---- parse-error location ---------------------------------------------------
+// Enriches a thrown parse error with a 1-based line number + the offending line
+// text, so the message that reaches the app's fail-soft fallback (and any inline
+// notice) points the user AT the problem instead of a bare "Unexpected token".
+function errMessage(e) {
+  return (e && e.message) ? String(e.message) : String(e);
+}
+function lineFromPos(text, pos) {
+  if (!(pos >= 0)) return 0;
+  let line = 1;
+  for (let i = 0; i < pos && i < text.length; i++) if (text.charCodeAt(i) === 10) line++;
+  return line;
+}
+function locateError(e, text) {
+  const msg = errMessage(e);
+  let line = 0;
+  // V8 JSON.parse, form A: "... at position 123" / "at line 4 column 5".
+  let m = /at line (\d+)/i.exec(msg);
+  if (m) line = parseInt(m[1], 10);
+  if (!line) { m = /position (\d+)/i.exec(msg); if (m) line = lineFromPos(text, parseInt(m[1], 10)); }
+  // yaml/toml libs commonly attach a structured position.
+  if (!line && e && e.linePos && e.linePos[0] && e.linePos[0].line) line = e.linePos[0].line;
+  if (!line && e && e.line) line = e.line;
+  // V8 JSON.parse, form B (no position): "Unexpected token X, \"…snippet…\" is
+  // not valid JSON". Recover the offset by locating that snippet in the source.
+  if (!line) {
+    const sm = /"((?:[^"\\]|\\.)+)"\s+is not valid JSON/.exec(msg);
+    if (sm) {
+      let snip = sm[1].replace(/\.\.\./g, ''); // strip the "..." ellipses V8 inserts
+      try { snip = JSON.parse('"' + snip + '"'); } catch (_) { /* keep raw */ }
+      const at = snip ? text.indexOf(snip) : -1;
+      if (at >= 0) line = lineFromPos(text, at);
+    }
+  }
+  let snippet = '';
+  if (line) {
+    const ln = text.split(/\r?\n/)[line - 1];
+    if (ln != null) snippet = ln.length > 120 ? ln.slice(0, 117) + '…' : ln;
+  }
+  const out = new Error(
+    'datatree: parse error' + (line ? ' at line ' + line : '') + ': ' + msg +
+    (snippet ? '  ›  ' + snippet.trim() : '')
+  );
+  out.dtLine = line;
+  return out;
+}
+
+async function parseByFormat(ctx, text, fmt, onPhase) {
   switch (fmt) {
     case 'json':
-      return { value: JSON.parse(text), fmt };
-    case 'ndjson':
-      return { value: parseNdjson(text), fmt };
+      try { return { value: JSON.parse(text), fmt }; }
+      catch (e) { throw locateError(e, text); }
+    case 'ndjson': {
+      const nd = parseNdjson(text); // throws only if 0 lines parse
+      return { value: nd.rows, fmt, skipped: nd.skipped, skippedCount: nd.skippedCount };
+    }
     case 'yaml':
     case 'yml': {
+      if (onPhase) onPhase('loading yaml parser…');
       const mod = await ctx.lazy(YAML_CDN);
       const YAML = mod.default && mod.default.parse ? mod.default : mod;
       if (typeof YAML.parse !== 'function') throw new Error('yaml lib missing parse()');
-      return { value: YAML.parse(text), fmt: 'yaml' };
+      if (onPhase) onPhase('parsing yaml…');
+      try { return { value: YAML.parse(text), fmt: 'yaml' }; }
+      catch (e) { throw locateError(e, text); }
     }
     case 'toml': {
+      if (onPhase) onPhase('loading toml parser…');
       const mod = await ctx.lazy(TOML_CDN);
       const TOML = mod.default && mod.default.parse ? mod.default : mod;
       if (typeof TOML.parse !== 'function') throw new Error('toml lib missing parse()');
-      return { value: TOML.parse(text), fmt: 'toml' };
+      if (onPhase) onPhase('parsing toml…');
+      try { return { value: TOML.parse(text), fmt: 'toml' }; }
+      catch (e) { throw locateError(e, text); }
     }
     default:
       return sniffParse(text);
@@ -155,6 +238,14 @@ const CSS = `
 .dt-copy:hover{color:#9ad0ff;background:#1d2733}
 .dt-copy.dt-ok{color:#9ee493}
 .dt-empty{color:#6b7a8a;font-style:italic;padding:8px 2px}
+.dt-note{margin:0 0 8px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:11.5px;color:#e0b56c;background:#241d12;border:1px solid #3a2e18;
+  border-radius:5px;padding:5px 8px;word-break:break-word}
+.dt-loading{padding:10px 12px;color:#7fb2e0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:12px}
+.dt-more{padding:2px 0 2px 16px}
+.dt-morebtn{font:inherit;font-size:11px;cursor:pointer;background:#1b2531;color:#7fb2e0;
+  border:1px dashed #324252;border-radius:5px;padding:2px 9px}
+.dt-morebtn:hover{background:#243140;color:#dce6ef}
 `;
 
 function ensureStyle(host) {
@@ -265,7 +356,17 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
   } else {
     const valEl = doc.createElement('span');
     valEl.className = 'dt-v-' + (value instanceof Date ? 'date' : t);
-    valEl.textContent = formatScalar(value, t);
+    const full = formatScalar(value, t);
+    if (full.length > SCALAR_CAP) {
+      valEl.textContent = full.slice(0, SCALAR_CAP) + '… ';
+      valEl.title = 'value truncated for display (' + full.length + ' chars) — use copy path';
+      const more = doc.createElement('span');
+      more.className = 'dt-count';
+      more.textContent = '+' + (full.length - SCALAR_CAP) + ' chars';
+      valEl.appendChild(more);
+    } else {
+      valEl.textContent = full;
+    }
     row.appendChild(valEl);
   }
 
@@ -293,13 +394,41 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
     const ul = doc.createElement('ul');
     // lazy child build: only materialize children when first expanded (keeps
     // huge documents responsive). Root + shallow levels are eager.
+    // Children are painted in CHILD_CAP-sized pages so a container with tens of
+    // thousands of entries can't lock the tab on expand — a "show N more" row
+    // ("showing N of M") reveals the next page on demand.
+    const kids = entriesOf(value);
+    let painted = 0;
+    let moreRow = null;
+    const paintPage = () => {
+      const end = Math.min(painted + CHILD_CAP, kids.length);
+      for (let i = painted; i < end; i++) {
+        const { key, value: cv, isIndex: ci } = kids[i];
+        ul.appendChild(buildNode(ctx, cv, key, ci, path.concat([key]), depth + 1));
+      }
+      painted = end;
+      if (moreRow) moreRow.remove();
+      if (painted < kids.length) {
+        moreRow = doc.createElement('li');
+        moreRow.className = 'dt-node dt-more';
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dt-morebtn';
+        const remaining = kids.length - painted;
+        const next = Math.min(CHILD_CAP, remaining);
+        btn.textContent = 'show ' + next + ' more (' + painted + ' of ' + kids.length + ')';
+        btn.addEventListener('click', (e) => { e.stopPropagation(); paintPage(); });
+        moreRow.appendChild(btn);
+        ul.appendChild(moreRow);
+      } else {
+        moreRow = null;
+      }
+    };
     let built = false;
     const buildChildren = () => {
       if (built) return;
       built = true;
-      for (const { key, value: cv, isIndex: ci } of entriesOf(value)) {
-        ul.appendChild(buildNode(ctx, cv, key, ci, path.concat([key]), depth + 1));
-      }
+      paintPage();
     };
     li.appendChild(ul);
 
@@ -331,10 +460,23 @@ export async function render(ctx) {
   const host = ctx.host;
   const doc = host.ownerDocument || document;
 
+  // 0) loading state — the CDN import (yaml/toml) + parse can take a beat, so
+  // paint an indicator NOW instead of leaving the previous content/blank pane.
+  // On the success path host is cleared before building; on a throw, the app's
+  // fail-soft fallback clears host before rendering download/plain-text.
+  ensureStyle(host);
+  const loading = doc.createElement('div');
+  loading.className = 'fv-loading dt-loading';
+  loading.textContent = 'loading structured data…';
+  host.textContent = '';
+  host.appendChild(loading);
+  const setPhase = (msg) => { try { loading.textContent = msg; } catch (_) { /* detached */ } };
+
   // 1) fetch text body (THROW on failure → app fallback)
   let text;
-  if (typeof ctx.fetchText === 'function') text = await ctx.fetchText();
+  if (typeof ctx.fetchText === 'function') { setPhase('fetching…'); text = await ctx.fetchText(); }
   if (text == null) throw new Error('datatree: empty body');
+  if (!String(text).trim()) throw new Error('datatree: empty body');
 
   // perf guard for pathologically large bodies — let the app's plain-text
   // renderer handle multi-MB blobs instead of building a giant DOM tree.
@@ -342,14 +484,16 @@ export async function render(ctx) {
     throw new Error('datatree: body > 4 MB — falling back to plain text');
   }
 
-  // 2) parse by detected format (THROW on parse failure → app fallback)
+  // 2) parse by detected format (THROW on parse failure → app fallback).
+  // The thrown error is line-located so the fallback's message points at the
+  // offending line; the raw text remains visible via the plain-text fallback.
   const fmt = detectFormat(ctx);
-  const parsed = await parseByFormat(ctx, text, fmt);
+  setPhase('parsing…');
+  const parsed = await parseByFormat(ctx, text, fmt, setPhase);
   const value = parsed.value;
 
   // 3) build the UI
-  ensureStyle(host);
-  host.textContent = '';
+  host.textContent = ''; // drop the loading node
 
   const rootEl = doc.createElement('div');
   rootEl.className = 'dt-root';
@@ -382,6 +526,20 @@ export async function render(ctx) {
   bar.appendChild(expandAll);
   bar.appendChild(collapseAll);
   rootEl.appendChild(bar);
+
+  // degraded-render notice: NDJSON that had unparseable lines is shown for the
+  // lines that DID parse, with an inline note instead of failing the whole view.
+  if (parsed.skippedCount) {
+    const note = doc.createElement('div');
+    note.className = 'fv-note dt-note';
+    const detail = (parsed.skipped && parsed.skipped[0])
+      ? '  (first: line ' + parsed.skipped[0].line + ' — ' + parsed.skipped[0].message + ')'
+      : '';
+    note.textContent = parsed.skippedCount + ' of ' +
+      (parsed.skippedCount + (Array.isArray(value) ? value.length : 0)) +
+      ' lines skipped — not valid JSON' + detail;
+    rootEl.appendChild(note);
+  }
 
   // tree
   const treeUl = doc.createElement('ul');

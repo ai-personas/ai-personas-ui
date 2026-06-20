@@ -26,6 +26,11 @@ const ACI = {
   6: '#ff66ff', 7: '#e8eef5', 8: '#808080', 9: '#c0c0c0',
 };
 const TWO_PI = Math.PI * 2;
+// Hard cap on flattened drawable primitives. A pathological DXF (deep nested
+// INSERTs, million-vertex polylines) would otherwise blow memory in flatten()
+// and stall every pan/zoom frame in draw(). We stop flattening past the budget
+// and surface a "showing N of M" notice rather than freezing the tab.
+const MAX_PRIMS = 60000;
 
 function aciToColor(idx) {
   if (idx == null || idx === 256 || idx === 0) return null; // BYLAYER / BYBLOCK
@@ -60,9 +65,10 @@ function arcPt(cx, cy, r, a) { return { x: cx + r * Math.cos(a), y: cy + r * Mat
 // Expand INSERTs into a flat list of drawable primitives in model space.
 // Each primitive is one of: {k:'poly',pts,closed}, {k:'circle',c,r},
 // {k:'arc',c,r,a0,a1}, {k:'text',p,h,s,rot}, {k:'point',p}. color/layer attached.
-function flatten(entities, blocks, layers, out, xf, depth) {
+function flatten(entities, blocks, layers, out, xf, depth, stats) {
   if (!entities || depth > 12) return;
   for (const e of entities) {
+    if (out.length >= MAX_PRIMS) { stats.truncated = true; return; }
     if (!e || !e.type) continue;
     const col = entColor(e, layers);
     const ly = e.layer || '0';
@@ -136,11 +142,15 @@ function flatten(entities, blocks, layers, out, xf, depth) {
             bx: (blk.position && blk.position.x) || 0,
             by: (blk.position && blk.position.y) || 0,
           });
-          flatten(blk.entities, blocks, layers, out, child, depth + 1);
+          flatten(blk.entities, blocks, layers, out, child, depth + 1, stats);
         }
         break;
       }
-      default: break; // unknown entity types are skipped, not fatal
+      default:
+        // Unknown entity types are skipped, not fatal — but we tally them so the
+        // header can warn that the drawing is partially rendered.
+        stats.unsupported[e.type] = (stats.unsupported[e.type] || 0) + 1;
+        break;
     }
   }
 }
@@ -237,7 +247,8 @@ function bboxOf(prims) {
 
 export async function render(ctx) {
   const { host } = ctx;
-  host.appendChild(loading(ctx, 'loading DXF renderer…'));
+  const note = loading(ctx, 'loading DXF renderer…');
+  host.appendChild(note);
 
   // 1) fetch the drawing text
   const text = await ctx.fetchText();
@@ -248,7 +259,9 @@ export async function render(ctx) {
   const DxfParser = mod.default || mod.DxfParser || mod;
   if (typeof DxfParser !== 'function') throw new Error('dxf: parser export missing');
 
-  // 3) parse → entity model
+  // 3) parse → entity model. The parse is a heavy SYNCHRONOUS pass; flag the
+  // stage so a multi-MB drawing doesn't sit on the "loading renderer" text.
+  note.textContent = 'parsing DXF…';
   let dxf;
   try {
     const parser = new DxfParser();
@@ -261,9 +274,12 @@ export async function render(ctx) {
   const layers = (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) || {};
   const blocks = dxf.blocks || {};
 
-  // 4) flatten (expand INSERTs) into drawable primitives in model space
+  // 4) flatten (expand INSERTs) into drawable primitives in model space, under a
+  // budget so a huge file can't freeze the tab. stats carries degraded-render
+  // signals (truncation + unsupported entity types) for the inline notice.
+  const stats = { truncated: false, unsupported: {} };
   const prims = [];
-  flatten(dxf.entities, blocks, layers, prims, null, 0);
+  flatten(dxf.entities, blocks, layers, prims, null, 0, stats);
   if (!prims.length) throw new Error('dxf: nothing drawable (no supported entities)');
 
   const bb = bboxOf(prims);
@@ -289,6 +305,22 @@ export async function render(ctx) {
   const sub = ctx.el('div', null, tallyStr || '—');
   sub.style.cssText = 'color:#5f7da0;margin-top:2px;word-break:break-word';
   head.appendChild(sub);
+
+  // degraded-render notice: budget-truncated and/or unsupported entity types.
+  // We still render what we have — this is a warning, not a fatal throw.
+  const unsupNames = Object.keys(stats.unsupported);
+  if (stats.truncated || unsupNames.length) {
+    const parts = [];
+    if (stats.truncated) parts.push(`large drawing capped — showing first ${prims.length.toLocaleString()} shapes (more exist)`);
+    if (unsupNames.length) {
+      const total = unsupNames.reduce((s, k) => s + stats.unsupported[k], 0);
+      const shown = unsupNames.slice(0, 6).map((k) => `${k}×${stats.unsupported[k]}`).join(', ');
+      parts.push(`${total} unsupported entit${total === 1 ? 'y' : 'ies'} not drawn (${shown}${unsupNames.length > 6 ? ', …' : ''})`);
+    }
+    const warn = ctx.el('div', 'dxfv-warn', '⚠ ' + parts.join(' · '));
+    warn.style.cssText = 'color:#e6c07b;margin-top:4px;word-break:break-word;line-height:1.35';
+    head.appendChild(warn);
+  }
   wrap.appendChild(head);
 
   const bar = ctx.el('div', 'dxfv-bar');
@@ -313,14 +345,22 @@ export async function render(ctx) {
 
   // ---- view state: model→screen via {scale, tx, ty}; Y flips (DXF is Y-up) --
   const view = { scale: 1, tx: 0, ty: 0, showText: true };
+  // teardown guard: once the view is disposed, deferred RAFs / observer
+  // callbacks must no-op (the canvas may be detached).
+  let alive = true;
   const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
   const g = canvas.getContext('2d');
   if (!g) throw new Error('dxf: 2d canvas unavailable');
 
+  // Resize the canvas backing store to the container. Only call this on real
+  // size changes (fit + ResizeObserver) — NOT inside draw(), or every pan/zoom
+  // frame would reallocate the backing store and stutter on large drawings.
   function sizeCanvas() {
     const r = cvWrap.getBoundingClientRect();
     const cw = Math.max(50, Math.floor(r.width)), ch = Math.max(50, Math.floor(r.height));
-    canvas.width = Math.floor(cw * dpr); canvas.height = Math.floor(ch * dpr);
+    const bw = Math.floor(cw * dpr), bh = Math.floor(ch * dpr);
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
     return { cw, ch };
   }
   function fit() {
@@ -338,11 +378,12 @@ export async function render(ctx) {
   const toScreen = (x, y) => ({ X: x * view.scale + view.tx, Y: -y * view.scale + view.ty });
 
   function draw() {
-    sizeCanvas();
+    if (!alive) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const r = cvWrap.getBoundingClientRect();
-    g.clearRect(0, 0, r.width, r.height);
-    g.fillStyle = '#0c1118'; g.fillRect(0, 0, r.width, r.height);
+    // backing-store size in CSS px (set by sizeCanvas) drives the clear/fill.
+    const cw = canvas.width / dpr, ch = canvas.height / dpr;
+    g.clearRect(0, 0, cw, ch);
+    g.fillStyle = '#0c1118'; g.fillRect(0, 0, cw, ch);
     g.lineWidth = 1; g.lineJoin = 'round'; g.lineCap = 'round';
 
     for (const p of prims) {
@@ -413,15 +454,27 @@ export async function render(ctx) {
   bOut.addEventListener('click', () => { const p = cc(); zoomAt(p.x, p.y, 1 / 1.3); });
   bTxt.addEventListener('click', () => { view.showText = !view.showText; bTxt.textContent = 'Text: ' + (view.showText ? 'on' : 'off'); draw(); });
 
-  // redraw on container resize (drawer open / window resize)
-  let ro;
+  // resize the backing store then repaint on container resize (drawer open /
+  // window resize). draw() alone no longer resizes, so resize must do both.
+  const onResize = () => { if (!alive) return; sizeCanvas(); draw(); };
+  let ro = null;
   try {
-    ro = new ResizeObserver(() => draw());
+    ro = new ResizeObserver(onResize);
     ro.observe(cvWrap);
-  } catch (_) { window.addEventListener('resize', draw); }
+  } catch (_) { window.addEventListener('resize', onResize); }
+
+  // teardown: stop deferred work and detach observers/listeners so switching
+  // files doesn't leak a live ResizeObserver / window handler per opened DXF.
+  const dispose = () => {
+    if (!alive) return;
+    alive = false;
+    if (ro) { try { ro.disconnect(); } catch (_) {} }
+    try { window.removeEventListener('resize', onResize); } catch (_) {}
+  };
+  if (typeof ctx.onCleanup === 'function') { try { ctx.onCleanup(dispose); } catch (_) {} }
 
   // initial paint — defer one frame so the drawer has its final size
-  requestAnimationFrame(fit);
+  requestAnimationFrame(() => { if (alive) fit(); });
 }
 
 function loading(ctx, label) {

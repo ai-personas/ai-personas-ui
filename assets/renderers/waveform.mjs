@@ -1,10 +1,12 @@
-// PersonaOS deliverable viewer — waveform renderer
+// PersonaOS deliverable viewer — waveform renderer (lazy module)
 // Family: waveform — digital timing diagrams.
 //   * WaveJSON timing descriptions (.wavedrom .wave .json) -> rendered via WaveDrom.
-//   * Value-Change-Dump (.vcd) -> hand-parsed into WaveJSON, then rendered via WaveDrom.
+//   * Value-Change-Dump (.vcd, IEEE 1364) -> hand-parsed into WaveJSON, then via WaveDrom.
 // Lib: wavedrom@3.6.1 (MIT) loaded lazily from esm.sh inside render().
-// Contract: lazy-load only inside render(); self-contained; FAIL-SOFT by THROWING so the
-// app shows its own download/text fallback. Domain-agnostic: render whatever bytes appear.
+// Contract (see discovery.js): export `meta` + async `render(ctx)`. render() paints into
+// ctx.host and THROWS on any fatal failure so the host app's own download/text fallback
+// takes over — it must never leave a blank or broken pane. Domain-agnostic: render
+// whatever bytes appear. Heavy lib loaded ONLY inside render() via ctx.lazy().
 
 export const meta = {
   exts: ['vcd', 'wavedrom', 'wave', 'wavejson'],
@@ -14,6 +16,17 @@ export const meta = {
 };
 
 const WAVEDROM_ESM = 'https://esm.sh/wavedrom@3.6.1?bundle';
+
+// --- size ceilings so a pathological file can't freeze / OOM the tab --------
+// A real VCD can carry millions of value-change lines across thousands of nets.
+// The cost of rendering is O(signals × distinct-timesteps): every signal gets a
+// `wave` string spanning every timestep, then WaveDrom builds one SVG node per
+// glyph. We therefore bound BOTH axes before the heavy parse/render and surface
+// a visible "showing N of M" notice when a bound bites.
+const MAX_SIGNALS    = 256;     // rows actually fed to WaveDrom
+const MAX_SAMPLES    = 4000;    // distinct timesteps kept (the visible window)
+const MAX_VCD_LINES  = 4_000_000; // hard stop on value-change scanning
+const MAX_INPUT_CHARS = 24 * 1024 * 1024; // 24 MB of text — refuse larger
 
 // ---------------------------------------------------------------------------
 // WaveJSON parsing — accepts strict JSON, or the relaxed/JSON5-ish form that
@@ -87,7 +100,7 @@ function parseWaveJson(text) {
   const parsed = tryStrictJson(relaxed);
   if (parsed && typeof parsed === 'object') return parsed;
 
-  throw new Error('not parseable as WaveJSON');
+  throw new Error('not parseable as WaveJSON (expected a { signal: [...] } object)');
 }
 
 function looksLikeWaveJson(obj) {
@@ -101,12 +114,14 @@ function looksLikeWaveJson(obj) {
 
 function parseVcd(text) {
   const lines = text.split(/\r?\n/);
-  const vars = new Map();   // id -> { name, size }
+  const vars = new Map();   // id -> { name, scope, size }
   const order = [];         // id order as declared
   const scopeStack = [];
+  const nameCounts = new Map(); // leaf name -> count (for scope-qualifying dupes)
   let timescale = '';
   let i = 0;
   const n = lines.length;
+  let truncatedTime = false;
 
   // --- header / declarations ---
   for (; i < n; i++) {
@@ -121,7 +136,8 @@ function parseVcd(text) {
     }
     if (ln.startsWith('$scope')) {
       const p = ln.split(/\s+/);
-      if (p[2]) scopeStack.push(p[2]);
+      // $scope <type> <name> $end — name is the token before $end (or p[2]).
+      if (p[2] && p[2] !== '$end') scopeStack.push(p[2]);
       continue;
     }
     if (ln.startsWith('$upscope')) { scopeStack.pop(); continue; }
@@ -131,15 +147,23 @@ function parseVcd(text) {
       const endIdx = p.indexOf('$end');
       const size = parseInt(p[2], 10) || 1;
       const id = p[3];
+      if (!id) continue;
       const refParts = p.slice(4, endIdx === -1 ? p.length : endIdx);
-      let name = refParts.join(' ').trim() || id;
+      const name = (refParts.join(' ').trim() || id);
       if (!vars.has(id)) {
-        vars.set(id, { name, size });
+        vars.set(id, { name, scope: scopeStack.join('.'), size });
         order.push(id);
+        nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
       }
       continue;
     }
     if (ln.startsWith('$enddefinitions')) { i += 1; break; }
+  }
+
+  // Same leaf reference appearing under several scopes is ambiguous — qualify
+  // those (and only those) with their scope path so rows stay distinguishable.
+  for (const v of vars.values()) {
+    v.label = (nameCounts.get(v.name) > 1 && v.scope) ? (v.scope + '.' + v.name) : v.name;
   }
 
   // --- value changes ---
@@ -148,13 +172,17 @@ function parseVcd(text) {
   const changes = new Map();        // id -> Map(time -> value string)
   for (const id of vars.keys()) changes.set(id, new Map());
   let t = 0;
+  let atCap = false;                // stop recording new timesteps past the cap
 
   const record = (id, val) => {
+    if (atCap && !seenTime.has(t)) return; // ignore changes at times we won't keep
     const cm = changes.get(id);
     if (cm) cm.set(t, val);
   };
 
-  for (; i < n; i++) {
+  const scanned = Math.min(n, MAX_VCD_LINES + i);
+  if (n > scanned) truncatedTime = true;
+  for (; i < scanned; i++) {
     let ln = lines[i].trim();
     if (!ln) continue;
     if (ln[0] === '$') continue; // $dumpvars / $end / $comment etc.
@@ -163,7 +191,10 @@ function parseVcd(text) {
       const nt = parseInt(ln.slice(1), 10);
       if (!Number.isNaN(nt)) {
         t = nt;
-        if (!seenTime.has(t)) { seenTime.add(t); times.push(t); }
+        if (!seenTime.has(t)) {
+          if (times.length >= MAX_SAMPLES) { atCap = true; truncatedTime = true; }
+          else { seenTime.add(t); times.push(t); }
+        }
       }
       continue;
     }
@@ -182,7 +213,7 @@ function parseVcd(text) {
   }
 
   times.sort((a, b) => a - b);
-  return { timescale, vars, order, times, changes };
+  return { timescale, vars, order, times, changes, truncatedTime };
 }
 
 function hexFromBinary(bits) {
@@ -196,16 +227,27 @@ function hexFromBinary(bits) {
   }
 }
 
-function vcdToWaveJson(parsed) {
-  const { vars, order, times, changes, timescale } = parsed;
+// Normalise a VCD bus token: pure-binary -> 0x… hex; an x/z-bearing token
+// stays verbatim (so partial-unknown buses read as e.g. `1x0z`).
+function busLabel(cur) {
+  if (/^[01]+$/.test(cur)) return '0x' + hexFromBinary(cur);
+  return cur;
+}
+
+function vcdToWaveJson(parsed, cappedOrder) {
+  const { vars, times, changes, timescale } = parsed;
+  const order = cappedOrder;
   const signal = [];
 
   if (times.length === 0) {
-    // No timesteps recorded — still surface the declared signals.
+    // No timesteps recorded — still surface the declared signals as unknown.
     for (const id of order) {
       const v = vars.get(id);
-      signal.push({ name: v.name, wave: 'x' });
+      signal.push({ name: v.label || v.name, wave: 'x' });
     }
+    const wj0 = { signal };
+    if (timescale) wj0.head = { text: 'timescale ' + timescale };
+    return wj0;
   }
 
   for (const id of order) {
@@ -219,11 +261,11 @@ function vcdToWaveJson(parsed) {
       const has = cm.has(tm);
       const cur = has ? cm.get(tm) : null;
 
-      if (cur === null) { wave += '.'; continue; }
+      if (cur === null) { wave += wave ? '.' : 'x'; continue; } // hold; lead-in unknown
 
       if (v.size === 1) {
-        let sym;
         const c = cur.toLowerCase();
+        let sym;
         if (c === '1') sym = '1';
         else if (c === '0') sym = '0';
         else if (c === 'z') sym = 'z';
@@ -232,9 +274,7 @@ function vcdToWaveJson(parsed) {
         last = sym;
       } else {
         // bus / vector
-        let label;
-        if (/^[01]+$/.test(cur)) label = '0x' + hexFromBinary(cur);
-        else label = cur; // x / z / partial-unknown
+        const label = busLabel(cur);
         const token = '=' + label;
         if (last === token) {
           wave += '.';
@@ -246,7 +286,8 @@ function vcdToWaveJson(parsed) {
       }
     }
 
-    const sig = { name: v.name + (v.size > 1 ? `[${v.size - 1}:0]` : ''), wave: wave || 'x' };
+    const name = (v.label || v.name) + (v.size > 1 ? `[${v.size - 1}:0]` : '');
+    const sig = { name, wave: wave || 'x' };
     if (data.length) sig.data = data;
     signal.push(sig);
   }
@@ -280,7 +321,7 @@ function renderToSvgString(mod, waveJson) {
     if (svg && svg.indexOf('<svg') !== -1) return svg;
   }
 
-  throw new Error('WaveDrom produced no SVG output');
+  throw new Error('WaveDrom produced no SVG output for this description');
 }
 
 function buildSummary(ctx, waveJson, source, headerNote) {
@@ -304,7 +345,8 @@ function buildSummary(ctx, waveJson, source, headerNote) {
     }
     table.appendChild(thead);
 
-    for (const s of signals.slice(0, 64)) {
+    const ROWS = 64;
+    for (const s of signals.slice(0, ROWS)) {
       const tr = ctx.el('tr');
       const wave = typeof s.wave === 'string' ? s.wave : '';
       const transitions = wave ? wave.replace(/\./g, '').length : 0;
@@ -316,9 +358,17 @@ function buildSummary(ctx, waveJson, source, headerNote) {
       cells.forEach((val, idx) => {
         const td = ctx.el('td', null, val);
         td.style.cssText = 'padding:2px 8px;border-bottom:1px solid #f0f0f0;' +
-          (idx === 2 ? 'white-space:pre;color:#0a7;' : '');
+          (idx === 2 ? 'white-space:pre;color:#0a7;' : (idx === 0 ? 'word-break:break-all;' : ''));
         tr.appendChild(td);
       });
+      table.appendChild(tr);
+    }
+    if (signals.length > ROWS) {
+      const tr = ctx.el('tr');
+      const td = ctx.el('td', null, `… and ${signals.length - ROWS} more`);
+      td.setAttribute('colspan', '3');
+      td.style.cssText = 'padding:4px 8px;color:#888;';
+      tr.appendChild(td);
       table.appendChild(tr);
     }
     wrap.appendChild(table);
@@ -326,12 +376,14 @@ function buildSummary(ctx, waveJson, source, headerNote) {
   return wrap;
 }
 
-function flattenSignals(arr, out) {
+function flattenSignals(arr, out, depth) {
   out = out || [];
+  depth = depth || 0;
+  if (depth > 64) return out; // guard against pathological nesting
   for (const item of arr) {
     if (Array.isArray(item)) {
       // group: [groupName?, ...signals]
-      flattenSignals(item.filter((x) => typeof x === 'object' || Array.isArray(x)), out);
+      flattenSignals(item.filter((x) => typeof x === 'object' || Array.isArray(x)), out, depth + 1);
     } else if (item && typeof item === 'object') {
       if ('wave' in item || 'name' in item) out.push(item);
     }
@@ -339,67 +391,162 @@ function flattenSignals(arr, out) {
   return out;
 }
 
+// Count leaf signals in a (possibly grouped) WaveJSON signal array.
+function countSignals(arr) {
+  return flattenSignals(Array.isArray(arr) ? arr : []).length;
+}
+
+// Truncate a WaveJSON signal array to at most `cap` leaf signals, preserving
+// group structure. Returns {signal, total}. Groups are kept whole until the
+// cap is reached; nested groups recurse.
+function capWaveJsonSignals(arr, cap) {
+  const total = countSignals(arr);
+  if (total <= cap) return { signal: arr, total };
+  let budget = cap;
+  const take = (items) => {
+    const out = [];
+    for (const item of items) {
+      if (budget <= 0) break;
+      if (Array.isArray(item)) {
+        const inner = take(item.filter((x) => Array.isArray(x) || (x && typeof x === 'object' && ('wave' in x || 'name' in x))));
+        const labels = item.filter((x) => typeof x === 'string');
+        if (inner.length) out.push([...labels, ...inner]);
+      } else if (item && typeof item === 'object' && ('wave' in item || 'name' in item)) {
+        out.push(item); budget -= 1;
+      } else {
+        out.push(item); // config-ish entries pass through, don't count
+      }
+    }
+    return out;
+  };
+  return { signal: take(arr), total };
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 export async function render(ctx) {
+  const { host, el } = ctx;
+
+  // Show a loading indicator immediately — the CDN import + parse can be slow.
+  const loading = el('div', 'fv-loading', 'parsing waveform…');
+  host.appendChild(loading);
+
   const text = await ctx.fetchText();
-  if (!text || !text.trim()) throw new Error('empty waveform body');
+  if (text == null) throw new Error('waveform fetch failed');
+  if (!text.trim()) throw new Error('empty waveform body');
+  if (text.length > MAX_INPUT_CHARS) {
+    throw new Error(`waveform too large to render in-browser (${(text.length / 1048576).toFixed(0)} MB) — use the download link`);
+  }
 
   const title = (ctx.title || '').toLowerCase();
+  const ext = (ctx.ext || '').toLowerCase();
   const kind = (ctx.kind || '').toLowerCase();
   const trimmed = text.trimStart();
 
-  // Decide the input shape.
+  // Decide the input shape. Extension is authoritative; otherwise sniff content.
   const looksVcd =
+    ext === 'vcd' ||
     title.endsWith('.vcd') ||
     kind === 'vcd' ||
     /\$enddefinitions\b/.test(text) ||
     (/\$timescale\b/.test(text) && /\$var\b/.test(text));
 
-  let waveJson;
+  let waveJson;     // the (capped) description fed to WaveDrom
+  let fullSignal;   // the un-capped signal array (for the summary count)
   let source;
+  const notes = []; // inline degraded-render notices (still render what we can)
   let headerNote = '';
 
   if (looksVcd) {
     const parsed = parseVcd(text);
-    if (parsed.order.length === 0) throw new Error('VCD has no $var declarations');
-    waveJson = vcdToWaveJson(parsed);
+    if (parsed.order.length === 0) throw new Error('VCD has no $var declarations — not a usable dump');
+
+    const totalSignals = parsed.order.length;
+    const cappedOrder = parsed.order.slice(0, MAX_SIGNALS);
+    waveJson = vcdToWaveJson(parsed, cappedOrder);
+    fullSignal = waveJson.signal;
     source = 'VCD';
-    if (parsed.timescale) headerNote = 'timescale ' + parsed.timescale;
-    if (parsed.times.length) headerNote += (headerNote ? ' · ' : '') + parsed.times.length + ' timesteps';
+
+    const bits = [];
+    if (parsed.timescale) bits.push('timescale ' + parsed.timescale);
+    if (parsed.times.length) bits.push(parsed.times.length + ' timesteps');
+    headerNote = bits.join(' · ');
+
+    if (totalSignals > MAX_SIGNALS) {
+      notes.push(`showing ${MAX_SIGNALS} of ${totalSignals} signals`);
+    }
+    if (parsed.truncatedTime) {
+      notes.push(`time window truncated to first ${parsed.times.length} steps`);
+    }
   } else {
     const obj = parseWaveJson(trimmed);
-    if (!looksLikeWaveJson(obj)) throw new Error('not a recognizable WaveJSON timing description');
-    waveJson = obj;
+    if (!looksLikeWaveJson(obj)) {
+      throw new Error('not a recognizable WaveJSON timing description (no `signal`/`reg`/`assign`)');
+    }
     source = 'WaveJSON';
+    const totalSignals = countSignals(obj.signal);
+    const { signal: capped } = capWaveJsonSignals(Array.isArray(obj.signal) ? obj.signal : [], MAX_SIGNALS);
+    waveJson = { ...obj, signal: capped };
+    fullSignal = Array.isArray(obj.signal) ? obj.signal : [];
+    if (totalSignals > MAX_SIGNALS) {
+      notes.push(`showing ${MAX_SIGNALS} of ${totalSignals} signals`);
+    }
   }
 
-  // Lazy-load the lib only now.
+  // Lazy-load the lib only now (slow CDN fetch). THROWS up to the host on
+  // failure → the app's download/text fallback shows.
+  loading.textContent = 'loading WaveDrom…';
   const mod = await ctx.lazy(WAVEDROM_ESM);
+  if (!mod) throw new Error('WaveDrom failed to load');
 
   // Deep-clone the WaveJSON: WaveDrom mutates its input.
-  const forRender = JSON.parse(JSON.stringify(waveJson));
-  const svg = renderToSvgString(mod, forRender);
+  let svg;
+  try {
+    const forRender = JSON.parse(JSON.stringify(waveJson));
+    svg = renderToSvgString(mod, forRender);
+  } catch (e) {
+    // A malformed-but-parseable description (bad `data` length, exotic config…)
+    // can make WaveDrom throw. That's a real, fatal render failure for this
+    // module → rethrow so the host fallback shows the raw text.
+    throw new Error('WaveDrom could not render this description: ' + (e && e.message || e));
+  }
 
-  // Mount.
-  const container = ctx.el('div', 'wf-root');
-  container.style.cssText = 'width:100%;overflow:auto;padding:8px 0;';
+  // ---- Mount -------------------------------------------------------------
+  host.innerHTML = ''; // clear the loading indicator
 
-  const diagram = ctx.el('div', 'wf-diagram');
-  diagram.style.cssText = 'overflow:auto;max-width:100%;';
+  const container = el('div', 'wf-root');
+  container.style.cssText = 'width:100%;max-width:100%;padding:6px 0;box-sizing:border-box;';
+
+  // Degraded-render notice (we still render what we can).
+  if (notes.length) {
+    const note = el('div', 'fv-note', notes.join(' · '));
+    container.appendChild(note);
+  }
+
+  // WaveDrom emits black-on-transparent SVG; on the dark dashboard theme that
+  // is illegible, so frame it on a light card. Keep the SVG at its NATURAL
+  // width and scroll horizontally — shrinking a wide timing diagram to fit
+  // would crush the detail. The card itself never exceeds the drawer width.
+  const diagram = el('div', 'wf-diagram');
+  diagram.style.cssText =
+    'overflow-x:auto;overflow-y:hidden;max-width:100%;-webkit-overflow-scrolling:touch;' +
+    'background:#fff;border:1px solid var(--line2,#2a3340);border-radius:6px;padding:8px;box-sizing:border-box;';
   // svg is a complete, self-contained <svg> string produced by WaveDrom/onml.
+  // It carries no scripting; WaveDrom is the producer, not peer-authored markup.
   diagram.innerHTML = svg;
 
   const svgEl = diagram.querySelector('svg');
   if (svgEl) {
-    svgEl.style.maxWidth = '100%';
+    // Let it keep its intrinsic width so it can scroll; cap height sanely.
     svgEl.style.height = 'auto';
+    svgEl.style.maxWidth = 'none';
+    svgEl.style.display = 'block';
   }
 
   container.appendChild(diagram);
-  container.appendChild(buildSummary(ctx, waveJson, source, headerNote));
+  container.appendChild(buildSummary(ctx, { signal: fullSignal }, source, headerNote));
 
-  ctx.host.appendChild(container);
+  host.appendChild(container);
 }

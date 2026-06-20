@@ -2190,16 +2190,16 @@ function lazyLib(key){
    specific → most-generic so 'pcb'→gerber, 'eda'→netlist, 'cad'→cad3d).
    ==================================================================== */
 const LAZY_RENDERERS=[
-  {file:'gerber.mjs',exts:['gbr','ger','gtl','gbl','gto','gts','gko','gm1','drl','xln'],media_kinds:['gerber','excellon','drill','pcb','gerber-layer'],fetchMode:'text'},
-  {file:'kicad.mjs',exts:['kicad_pcb','kicad_sch','kicad_pro','kicad_mod'],media_kinds:['kicad','schematic'],fetchMode:'text'},
-  {file:'netlist.mjs',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],media_kinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
-  {file:'dxf.mjs',exts:['dxf'],media_kinds:['dxf','drawing','mechanical','mechanical_drawing'],fetchMode:'text'},
-  {file:'cad3d.mjs',exts:['step','stp','stl','3mf','obj','gltf','glb','ply'],media_kinds:['cad3d','mesh','3d','model','step','stl','gltf','glb','obj','ply','3mf','cad'],fetchMode:'bytes'},
-  {file:'pdf.mjs',exts:['pdf'],media_kinds:['pdf','application/pdf'],fetchMode:'bytes'},
-  {file:'waveform.mjs',exts:['vcd','wavedrom','wave','wavejson'],media_kinds:['waveform','vcd','wavedrom','wavejson','timing'],fetchMode:'text'},
-  {file:'table.mjs',exts:['csv','tsv','bom'],media_kinds:['table','bom','csv','tsv','tab'],fetchMode:'text'},
-  {file:'mdrich.mjs',exts:['md','markdown'],media_kinds:['md','markdown'],fetchMode:'text'},
-  {file:'datatree.mjs',exts:['json','yaml','yml','toml','ndjson'],media_kinds:['json','yaml','yml','toml','ndjson','datatree','structured','data'],fetchMode:'text'},
+  {file:'gerber.mjs',label:'PCB Gerber',exts:['gbr','ger','gtl','gbl','gto','gts','gko','gm1','drl','xln'],media_kinds:['gerber','excellon','drill','pcb','gerber-layer'],fetchMode:'text'},
+  {file:'kicad.mjs',label:'KiCad',exts:['kicad_pcb','kicad_sch','kicad_pro','kicad_mod'],media_kinds:['kicad','schematic'],fetchMode:'text'},
+  {file:'netlist.mjs',label:'netlist / SPICE',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],media_kinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
+  {file:'dxf.mjs',label:'DXF drawing',exts:['dxf'],media_kinds:['dxf','drawing','mechanical','mechanical_drawing'],fetchMode:'text'},
+  {file:'cad3d.mjs',label:'3D model',exts:['step','stp','stl','3mf','obj','gltf','glb','ply'],media_kinds:['cad3d','mesh','3d','model','step','stl','gltf','glb','obj','ply','3mf','cad'],fetchMode:'bytes'},
+  {file:'pdf.mjs',label:'PDF',exts:['pdf'],media_kinds:['pdf','application/pdf'],fetchMode:'bytes'},
+  {file:'waveform.mjs',label:'waveform',exts:['vcd','wavedrom','wave','wavejson'],media_kinds:['waveform','vcd','wavedrom','wavejson','timing'],fetchMode:'text'},
+  {file:'table.mjs',label:'table',exts:['csv','tsv','bom'],media_kinds:['table','bom','csv','tsv','tab'],fetchMode:'text'},
+  {file:'mdrich.mjs',label:'Markdown',exts:['md','markdown'],media_kinds:['md','markdown'],fetchMode:'text'},
+  {file:'datatree.mjs',label:'structured data',exts:['json','yaml','yml','toml','ndjson'],media_kinds:['json','yaml','yml','toml','ndjson','datatree','structured','data'],fetchMode:'text'},
 ];
 // Flattened ext → entry index (built once). Extensions are collision-free, so an
 // ext hit is a definitive, unambiguous module choice.
@@ -2489,9 +2489,19 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +`<div id="fv-body" class="fv-body"></div>`;
   // EXISTING (legacy) renderer path — the FALLBACK used when no lazy module
   // matches, or when a matched lazy module throws (CDN/lib/parse/empty).
-  const runLegacy=async(host)=>{
-    const r=RENDERERS[(forcedPlain?'plain':pick.id)]||renderPlain;
-    const legacyBinary=BINARY_RENDERERS.has(forcedPlain?'plain':pick.id);
+  const runLegacy=async(host,lazyErr)=>{
+    const legacyId=forcedPlain?'plain':pick.id;
+    const r=RENDERERS[legacyId]||renderPlain;
+    const legacyBinary=BINARY_RENDERERS.has(legacyId);
+    // A rich .mjs viewer was matched but failed (CDN offline / parse / no export),
+    // and the only fallback for this ext/kind is bare plain text — say so once, so
+    // the downgrade from the expected rich view isn't silent. (When the legacy path
+    // is itself a real renderer the user still gets a good view; no note needed.)
+    if(lazyErr && r===renderPlain){
+      const why=String(lazyErr&&lazyErr.message||'load failed').slice(0,140);
+      host.appendChild(el('div','fv-note',
+        'rich '+(ctx.ext||kind||'')+' viewer unavailable ('+why+') — plain text below'));
+    }
     try{ await r(host,ctx);   // size discovered during a binary fetch reflected by caller
     }catch(e){
       // GRACEFUL FALLBACK: CDN import failed / parse error → plain <pre>, never broken.
@@ -2508,7 +2518,14 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the download/open-raw link above, or hold an operator token.')); return; }
     // LAZY MODULE FIRST (richer renderer). On ANY throw, clear and fall back to
     // the existing legacy renderer path exactly as before — never broken/blank.
+    let lazyErr=null;
     if(lazyPick && !forcedPlain){
+      // Immediate spinner: the .mjs module import (a network round-trip on first
+      // open) AND each module's own fetch/CDN-lib load happen BEFORE its render()
+      // paints. Without this the drawer sits blank for that whole window. Every
+      // module clears the host as its first paint, so this is replaced cleanly.
+      host.innerHTML='';
+      host.appendChild(loadingNode(`loading ${lazyPick.entry.label||ctx.ext||'rich'} viewer…`));
       try{
         const mod=await _lazyModule(lazyPick.entry.file);
         if(!mod || typeof mod.render!=='function') throw new Error('no render() export');
@@ -2528,10 +2545,11 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
         return;
       }catch(e){
-        host.innerHTML='';   // clear any partial render before falling back
+        lazyErr=e;           // remember WHY so the fallback can explain a silent downgrade
+        host.innerHTML='';   // clear the spinner / any partial render before falling back
       }
     }
-    await runLegacy(host);
+    await runLegacy(host,lazyErr);
     if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};

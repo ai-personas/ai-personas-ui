@@ -406,13 +406,28 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .atree .tgated{color:var(--mut)}
 
 /* ---------- media-aware file renderer ---------- */
+/* The #fv-body host is the SHARED mount for every renderer (legacy inline + the
+   lazy .mjs modules). It lives inside the detail drawer (≤460px desktop / 100vw
+   phone), so it owns the safety net the per-format modules don't: it caps its own
+   height with an inner scroll, never overflows the drawer width, and clamps any
+   intrinsically-wide child (an SVG with a width attr, a canvas, a raster image)
+   to the host so a wide CAD/waveform/PCB render can't escape the panel sideways. */
 .fv-rid{color:var(--mut);font-size:10px}
-.fv-body{margin:8px 0 4px}
-.fv-loading{color:var(--amber);font-size:11px;padding:10px 2px;letter-spacing:.4px}
-.fv-loading:before{content:'◴ '}
-.fv-note{color:var(--mut);font-size:10.5px;margin:4px 0 6px;letter-spacing:.3px}
+.fv-body{margin:8px 0 4px;max-width:100%;overflow-x:auto;overscroll-behavior:contain}
+.fv-body>*{max-width:100%}
+.fv-body svg,.fv-body canvas,.fv-body img{max-width:100%}
+/* loading + soft-error notices: a real (not glyph-only) spinner that actually
+   turns, and a min-height so the host doesn't visibly collapse→reflow when the
+   spinner is swapped for the rendered surface on first paint. */
+.fv-loading{display:flex;align-items:center;gap:7px;color:var(--amber);font-size:11px;
+  padding:10px 2px;letter-spacing:.4px;min-height:36px}
+.fv-loading:before{content:'';width:12px;height:12px;flex:0 0 auto;border-radius:50%;
+  border:2px solid rgba(240,167,58,.28);border-top-color:var(--amber);animation:fvspin .7s linear infinite}
+@keyframes fvspin{to{transform:rotate(360deg)}}
+.fv-note{color:var(--mut);font-size:10.5px;margin:4px 0 6px;letter-spacing:.3px;
+  overflow-wrap:anywhere}
 .fv-md{color:var(--ink);font-size:12.5px;line-height:1.55;background:var(--surface-inset);border:1px solid var(--line2);
-  border-radius:6px;padding:10px 12px;max-height:480px;overflow:auto}
+  border-radius:6px;padding:10px 12px;max-height:min(480px,70vh);overflow:auto;overscroll-behavior:contain}
 .fv-md h1,.fv-md h2,.fv-md h3,.fv-md h4{color:var(--amber);margin:12px 0 5px;line-height:1.3}
 .fv-md h1{font-size:15px} .fv-md h2{font-size:13.5px} .fv-md h3{font-size:12.5px} .fv-md h4{font-size:11.5px}
 .fv-md p{margin:5px 0} .fv-md a{color:var(--int)} .fv-md ul,.fv-md ol{margin:4px 0 4px 18px;padding:0}
@@ -424,7 +439,8 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .fv-md th,.fv-md td{border:1px solid var(--line2);padding:3px 8px;text-align:left}
 .fv-md hr{border:none;border-top:1px solid var(--line2);margin:10px 0}
 .fv-md img{max-width:100%;height:auto}
-.fv-tablewrap{max-height:440px;overflow:auto;border:1px solid var(--line2);border-radius:6px;background:var(--surface-inset)}
+.fv-tablewrap{max-height:min(440px,68vh);overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line2);border-radius:6px;background:var(--surface-inset)}
 .fv-table{border-collapse:collapse;font-size:11px;width:100%}
 .fv-table th{position:sticky;top:0;background:#0b1118;color:var(--mut);text-align:left;padding:5px 9px;
   border-bottom:1px solid var(--line2);font-weight:600;white-space:nowrap}
@@ -432,7 +448,7 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .fv-table tbody tr:hover{background:#0e1722}
 .fv-img{display:block;max-width:100%;max-height:460px;object-fit:contain;margin:0 auto;
   background:var(--well);border:1px solid var(--line2);border-radius:6px}
-.fv-code{max-height:480px}
+.fv-code{max-height:min(480px,72vh);overscroll-behavior:contain}
 .fv-code .hljs-keyword,.fv-code .hljs-selector-tag,.fv-code .hljs-built_in{color:var(--purple)}
 .fv-code .hljs-string,.fv-code .hljs-attr{color:var(--up)}
 .fv-code .hljs-number,.fv-code .hljs-literal{color:var(--amber)}
@@ -446,7 +462,10 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .fv-card{background:var(--surface-inset);border:1px solid var(--line2);border-radius:6px;padding:10px 12px;margin:4px 0}
 .fv-cardhd{color:var(--amber);font-size:11px;margin-bottom:6px;letter-spacing:.4px}
 .fv-card .row{border-bottom:1px solid var(--line)}
-.fv-pdf{width:100%;height:480px;border:1px solid var(--line2);border-radius:6px;background:var(--well)}
+/* PDF iframe scrolls internally, so its height is pure CSS — let it shrink on a
+   short viewport instead of pinning a tall 480px frame on a phone. (.fv-3d height
+   stays fixed at 260px: the legacy WebGL canvas is sized to that in JS.) */
+.fv-pdf{width:100%;height:clamp(300px,62vh,480px);border:1px solid var(--line2);border-radius:6px;background:var(--well)}
 
 /* operator console (bearer-token authority) */
 .opform{display:flex;flex-direction:column;gap:7px;margin:6px 0}
@@ -565,7 +584,8 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .livedot.beating,.core-c,.core-ring,.gn-ring,.gnode.gn-live .gn-c,.gnode.gn-running .gn-c,
   .pc-dot.on,.pc-dot.run,.pcard.running,
   .axon.fire,.cl-fire.fire,.ix.fresh,.ix-spine.grow,.rr-new,.pc-msg.fresh,.pcard.flashcard,.gnode.gn-flash .gn-c,
-  .pc-doing .pulse,.art-chip.mint,.ms-running,.cg-legend .lg-dot.pulse,.livedot2{animation:none!important}
+  .pc-doing .pulse,.art-chip.mint,.ms-running,.cg-legend .lg-dot.pulse,.livedot2,
+  .fv-loading:before{animation:none!important}
   .axon.fire,.cl-fire.fire{opacity:0!important}
   .pcard,.constellation,.con-toggle{transition:none!important}
 }
