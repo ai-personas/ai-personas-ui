@@ -252,7 +252,7 @@ async function renderWith(ctx, Papa, text, truncatedBytes) {
       const idx = Number(th.dataset.col);
       th.classList.toggle('fv-tbl-sorted', !!sortState && sortState.col === idx);
       if (arr) arr.textContent = (sortState && sortState.col === idx)
-        ? (sortState.dir === 1 ? ' ▲' : ' ▼') : '';
+        ? (sortState.dir === 1 ? '▲' : '▼') : '';
     });
 
     const rows = currentRows();
@@ -264,7 +264,13 @@ async function renderWith(ctx, Papa, text, truncatedBytes) {
     for (const r of shown) {
       const tr = el('tr');
       for (let i = 0; i < cols; i++) {
-        tr.appendChild(el('td', colMeta[i].numeric ? 'fv-tbl-num' : null, r[i]));
+        const td = el('td', colMeta[i].numeric ? 'fv-tbl-num' : null, r[i]);
+        // Cells clip at max-width with text-overflow:ellipsis and no title, so a
+        // long BOM description / MPN / URL is unreadable. Set a native tooltip
+        // when the value is long enough to plausibly clip (24-char gate keeps the
+        // DOM lean; the browser only shows the tooltip when actually truncated).
+        if (r[i] && r[i].length > 24) td.title = r[i];
+        tr.appendChild(td);
       }
       frag.appendChild(tr);
     }
@@ -273,17 +279,27 @@ async function renderWith(ctx, Papa, text, truncatedBytes) {
     // summary / totals row for BOM-like data (totals over FILTERED rows)
     tfoot.textContent = '';
     if (looksBom) {
+      // Identify summable (qty/cost & numeric) columns FIRST, then place the
+      // "Σ N items" label in the first NON-summable column. The old code claimed
+      // column 0 unconditionally, so a Qty/cost column at index 0 (common in
+      // exported BOMs) never summed and showed the item count instead.
+      const sumCols = new Set(
+        colMeta.filter((c) => (c.isQty || c.isCost) && c.numeric).map((c) => c.index),
+      );
+      const labelCol = colMeta.findIndex((c) => !sumCols.has(c.index));
+      const firstLabelCol = labelCol < 0 ? 0 : labelCol;
       const tr = el('tr', 'fv-tbl-total');
       for (let i = 0; i < cols; i++) {
         let txt = '';
         const cm = colMeta[i];
-        if (i === 0) txt = `Σ ${rows.length} item${rows.length === 1 ? '' : 's'}`;
-        else if ((cm.isQty || cm.isCost) && cm.numeric) {
+        if (sumCols.has(i)) {
           const sum = rows.reduce((acc, r) => {
             const n = parseNum(r[i]);
             return acc + (Number.isNaN(n) ? 0 : n);
           }, 0);
           txt = cm.isCost ? fmtNum(sum) : String(trimFloat(sum));
+        } else if (i === firstLabelCol) {
+          txt = `Σ ${rows.length} item${rows.length === 1 ? '' : 's'}`;
         }
         const td = el('td', cm.numeric ? 'fv-tbl-num' : null, txt);
         tr.appendChild(td);
@@ -432,7 +448,10 @@ const CSS = `
 .fv-tbl th:focus-visible{outline:none;color:var(--ink,#cdd9e5);
   box-shadow:inset 0 0 0 1px var(--accent,#4c9ff0)}
 .fv-tbl th.fv-tbl-sorted{color:var(--accent,#4c9ff0)}
-.fv-tbl-arrow{color:var(--accent,#4c9ff0);font-size:var(--fs-meta,10px)}
+/* reserve constant glyph space so the empty (unsorted) state doesn't collapse
+   and nudge the header label on every sort toggle */
+.fv-tbl-arrow{display:inline-block;width:.85em;margin-left:var(--space-0,2px);
+  text-align:center;color:var(--accent,#4c9ff0);font-size:var(--fs-meta,10px)}
 .fv-tbl td{padding:var(--space-1,4px) var(--space-2,8px);
   border-bottom:1px solid var(--line,#1c2733);
   color:var(--ink,#cdd9e5);white-space:nowrap;max-width:42ch;

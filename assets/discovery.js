@@ -41,6 +41,7 @@ const _ICON_PATHS={
   mode:'M8 2.5l1.5 1.5L8 5.5 6.5 4 8 2.5zM8 10.5L9.5 12 8 13.5 6.5 12 8 10.5zM2.5 8L4 6.5 5.5 8 4 9.5 2.5 8zM10.5 8L12 6.5 13.5 8 12 9.5 10.5 8z', // ◈ cognitive mode
   target:'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', // ◎ follow / watch-one
   box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ deliverable bundle (package)
+  copy:'M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z',                  // ⧉ copy (two overlapping sheets)
 };
 function icon(name,extra){
   const d=_ICON_PATHS[name]; if(!d) return '';
@@ -57,6 +58,27 @@ const _verdict=(state)=>state==='pass'?icon('check'):state==='fail'?icon('x'):ic
 // Ed25519-signed payload, yet are written into real <a href> navigations. esc()
 // neutralises markup but NOT dangerous schemes — block javascript:/data:/vbscript:/file:.
 const safeUrl=(u)=>{ const s=String(u||'').trim(); return /^\s*(javascript|data|vbscript|file):/i.test(s)?'#':s; };
+// ---- copy-to-clipboard for long cognition/script surfaces ----
+// A long thinking frame / model output / sandbox stdout is shown truncated and/or
+// inside a scroll box, so reading it is not the same as having it. Each such surface
+// gets a small copy button that lifts the surface's OWN full textContent (never a
+// re-truncated copy) to the clipboard. copyBtn() emits the button; copyFromButton()
+// resolves the target (the .copy-host the button sits in) and copies + flashes 'copied'.
+function copyBtn(){ return `<button class="copy-btn" data-act="copy" type="button" title="copy to clipboard" aria-label="copy to clipboard">${icon('copy','ico-sm')}<span class="copy-lbl">copy</span></button>`; }
+async function copyFromButton(btn){
+  const host=btn.closest('.copy-host'); if(!host) return;
+  // .copy-src isolates the payload text (the button lives outside it), so its
+  // textContent is exactly the surface content — no label-stripping needed.
+  const tgt=host.querySelector('.copy-src')||host;
+  const text=(tgt.textContent||'').trimEnd();
+  let ok=false;
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); ok=true; } }catch(e){}
+  if(!ok){ try{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); ok=document.execCommand('copy'); document.body.removeChild(ta); }catch(e){} }
+  const lbl=btn.querySelector('.copy-lbl'); const prev=lbl?lbl.textContent:'';
+  btn.classList.toggle('ok',ok); btn.classList.toggle('no',!ok); if(lbl) lbl.textContent=ok?'copied':'failed';
+  clearTimeout(btn._cpT); btn._cpT=setTimeout(()=>{ btn.classList.remove('ok','no'); if(lbl) lbl.textContent=prev||'copy'; },1600);
+}
 const enc=new TextEncoder();
 const hexToBytes=(h)=>Uint8Array.from((h||'').match(/.{1,2}/g)?.map((b)=>parseInt(b,16))||[]);
 const pad=(n,w=2)=>String(n).padStart(w,'0');
@@ -220,7 +242,9 @@ function indexLiveTelemetry(base,live){
   // last poll (a static snapshot spikes once on cold load, then rests).
   S.modelCount=S.modelCount||new Map();
   S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of last GENUINE activity growth (running-now signal)
+  S.lastModelSeenAt=S.lastModelSeenAt||new Map();   // sid -> frame ts this persona last carried live model events (liveness decay)
   for(const [pid,models] of byP){
+    S.lastModelSeenAt.set(pid,t);   // byP carries THIS persona this poll → stamp model-recency for the 5-min liveness window
     const prev=S.modelCount.get(pid); const now2=models.length;
     if(prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
@@ -269,13 +293,13 @@ function indexLiveTelemetry(base,live){
         for(const sid of _ixSids(rec)){ S.ixCountBySid.set(sid,(S.ixCountBySid.get(sid)||0)+1); }
         if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
         _pushSpike(_ixClass(rec.kind)); fired++;
-        const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500);
+        const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500), failed=_ixFailed(rec.kind);
         // PRIMARY (rare on real data): if a single act names an actor persona AND affected
         // persona(s), fire the DIRECTIONAL actor→affected chord — that IS the inter-persona message.
         const from=rec.actor_kind==='persona'?_shortId(rec.actor_id):null;
         const tos=(rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id)).filter((s)=>s&&s!==from);
         if(from&&tos.length){
-          setTimeout(()=>{ _flashNode(from,cls); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls); }); },d);
+          setTimeout(()=>{ _flashNode(from,cls,failed); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls,failed); }); },d);
         } else {
           // REAL path (telemetry is 100% kernel-mediated): the act touches ONE persona on an
           // env scope. Resolve the live peer the kernel relays among that scope and fire the
@@ -291,7 +315,7 @@ function indexLiveTelemetry(base,live){
           const peer=onEnv&&subj?_scopePeer(rec.scope_id,subj):null;
           if(peer){
             const a=outbound?subj:peer, b=outbound?peer:subj;   // M is always the source of the dash
-            setTimeout(()=>{ _fireLink(a,b,cls); _flashNode(subj,cls); },d);
+            setTimeout(()=>{ _fireLink(a,b,cls); _flashNode(subj,cls,failed); },d);
           } else {
             _ixSids(rec).forEach((sid)=>setTimeout(()=>_fireEdge(sid,cls,outbound?'out':'in'),d));
           }
@@ -949,6 +973,19 @@ function trustPanel(r){
 const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate',judge:'judging (PoLL)',
   safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
   domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering'};
+// MODEL-PER-ROLE rollup: PersonaOS resolves a DIFFERENT model per role/purpose
+// (EnvironmentModelRegistry), so summarise the distinct models a persona/env used
+// → the roles/purposes each served, busiest first, as mono <code> chips. Honest:
+// pure live telemetry; renders nothing when idle.
+function _modelSummary(models){
+  if(!models||!models.length) return '';
+  const byM=new Map();
+  for(const m of models){ const mdl=String(m.model||'—'); const r=String(m.role||m.purpose||'');
+    const e=byM.get(mdl)||{n:0,roles:new Set()}; e.n++; if(r&&r!=='-') e.roles.add(PURPOSE_LABEL[r]||r); byM.set(mdl,e); }
+  return [...byM.entries()].sort((a,b)=>b[1].n-a[1].n).map(([mdl,e])=>
+    `<div class="grant"><span><code>${esc(mdl)}</code></span>`
+    +`<span class="l2">${esc([...e.roles].slice(0,4).join(', ')||'model')}${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span></div>`).join('');
+}
 function _liveFeed(models){
   if(!models||!models.length) return '<div class="l2">idle — no recent model calls</div>';
   // A persona legitimately produces, repairs AND evolves its own tactics — so SUMMARISE
@@ -956,18 +993,21 @@ function _liveFeed(models){
   // repeating row per call that reads like a glitch ("repairing candidate" ×6 in a row).
   const byP=new Map(); let i=0;
   for(const m of models){ const k=m.purpose||'model';
-    const e=byP.get(k)||{n:0,model:m.model,seen:i}; e.n++; e.model=m.model||e.model; e.seen=i++; byP.set(k,e); }
+    const e=byP.get(k)||{n:0,model:m.model,role:m.role||'',seen:i}; e.n++; e.model=m.model||e.model; if(m.role) e.role=m.role; e.seen=i++; byP.set(k,e); }
   const order=[...byP.entries()].sort((a,b)=>b[1].seen-a[1].seen);   // most-recently-used purpose first
   return order.map(([p,e])=>{
     const lbl=PURPOSE_LABEL[p]||p;
     return `<div class="grant"><span class="l2"><span class="livedot2"></span>${esc(lbl)}`
       +`${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span>`
-      +`<span><code>${esc(e.model)}</code></span></div>`;
+      +`<span><code>${esc(e.model)}</code>${e.role&&e.role!=='-'&&e.role!==p?` <span class="l2">${esc(e.role)}</span>`:''}</span></div>`;
   }).join('');
 }
-function renderPersonaLive(pid){
-  const d=S.liveByPersona.get(_shortId(pid)); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
-  const s=d.summary||{}; let h='';
+function renderPersonaLive(pid,profileFallback){
+  // profileFallback (the served persona card) lets the grid render for IDLE personas too
+  // (state/tasks/reputation), since the drawer no longer duplicates those as kv rows.
+  const d=S.liveByPersona.get(_shortId(pid))||(profileFallback?{summary:profileFallback,models:[]}:null);
+  if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
+  const s=d.summary||profileFallback||{}; let h='';
   // PER-04 / 09_PROTOCOLS §4.1: public tiles only (state, tasks, reputation);
   // operator-tier evolution internals (fitness, tactics, lessons, memory) appear
   // only when an operator token is held.
@@ -983,7 +1023,7 @@ function renderPersonaLive(pid){
         +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
       +`</div>`;
   }
-  h+=`<div class="l2" style="margin:6px 0 3px">Doing now</div>`+_liveFeed(d.models);
+  h+=`<div class="sublabel">Doing now</div>`+_liveFeed(d.models);
   return h;
 }
 function renderEnvLive(eid){
@@ -992,11 +1032,11 @@ function renderEnvLive(eid){
   const sp=d.spans||[];
   if(sp.length){
     const counts={}; sp.forEach((s)=>{counts[s.kind]=(counts[s.kind]||0)+1;});
-    h+=`<div class="l2" style="margin:3px 0">Lineage events</div>`
+    h+=`<div class="sublabel">Lineage events</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>
         `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
-  h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env</div>`+_liveFeed(d.models);
+  h+=`<div class="sublabel">Model activity in this env</div>`+_liveFeed(d.models);
   return h;
 }
 
@@ -1103,11 +1143,25 @@ function renderPersonaCard(pid){
   const recentAct=acts[acts.length-1];
   // live persona MESSAGES (cognition): the LLM's own recent outputs + lessons for THIS persona,
   // streamed straight onto the card (newest first) — the same data the THINK feed shows.
-  const cogMsgs=(S.interactions||[]).filter((e)=>e.scope==='cognition'&&_shortId(e.actor_id)===sid)
-    .slice(-4).reverse();
+  // DEDUP consecutive identical _msg (the fixture/real loops emit identical back-to-back
+  // outputs) BEFORE the on-card budget so the wall shows two DISTINCT recent messages.
+  const _cogAll=(S.interactions||[]).filter((e)=>e.scope==='cognition'&&_shortId(e.actor_id)===sid);
+  const _cogDedup=[]; for(const e of _cogAll){ const p=_cogDedup[_cogDedup.length-1]; if(!p||p._msg!==e._msg) _cogDedup.push(e); }
+  const cogMsgs=_cogDedup.slice(-2).reverse();
+  // CARD/FEED freshness decoupled from token arrival: track the newest cognition _key
+  // seen per persona, so only an actually-new top cognition message slides in (model-count
+  // growth no longer false-flashes the unchanged top message).
+  S.pcCogSeen=S.pcCogSeen||new Map();
+  const _topCogKey=cogMsgs[0]?cogMsgs[0]._key:'';
+  const _cogFresh=!!_topCogKey && S.pcCogSeen.get(sid)!==_topCogKey;
+  S.pcCogSeen.set(sid,_topCogKey);
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
-  const live=hasModels||actFresh;
+  // HONEST recency: a model-bearing card decays to idle once its model events stop
+  // arriving (5-min window) instead of staying green forever via the sticky models[]
+  // carry-forward. Liveness = model events seen recently OR a fresh coordination act.
+  const modelFresh=hasModels&&(Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
+  const live=modelFresh||actFresh;
   const running=_runningNow(sid);   // mid model-call THIS moment — the one truly working
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
@@ -1151,8 +1205,13 @@ function renderPersonaCard(pid){
   // 3-state presence: RUNNING NOW (pulsing) · active (calm, recently worked) · idle.
   const dotCls=running?'run':(live?'on':'off');
   const statusBadge=running
-    ? '<span class="pc-run">● RUNNING</span>'
+    ? '<span class="pc-run">RUNNING</span>'
     : (live?'<span class="pc-active">active</span>':'<span class="pc-idle">idle</span>');
+  // HONEST recency tag on the doing line: when did this persona last actually do
+  // something (model event / coordination act / cognition / tool use)? So an "active"
+  // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
+  const lastSeen=Math.max(S.lastModelSeenAt?.get(sid)||0, recentAct?._t||0, cogMsgs[0]?._t||0, toolAct?._t||0);
+  if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
   return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
@@ -1162,9 +1221,10 @@ function renderPersonaCard(pid){
     +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
     +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?icon('warn','ico-sm'):icon('tool','ico-sm')} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
-    +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
-        `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
-        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?icon('lesson','ico-sm'):icon('play','ico-sm')}</span>${esc(m._msg||'')}</div>`).join('')
+    +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>{
+        const ct=(m._ctype&&m._ctype!=='think')?`<span class="pc-ct ct-${m._ctype}">${m._ctype}</span>`:'';
+        return `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${_cogFresh&&i===0?' fresh':''}">`
+        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?icon('lesson','ico-sm'):icon('play','ico-sm')}</span>${ct}${esc(m._msg||'')}</div>`; }).join('')
       +`</div>`:'')
     +(glance?`<div class="pc-glance">${glance}</div>`:'')
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
@@ -1302,6 +1362,7 @@ function renderCoordGraph(persons,totalPersons){
     svg.appendChild(links);
     svg.appendChild(_svg('g',{},'cg-axons'));
     const core=_svg('g',{transform:`translate(${cx},${cy})`},'core');
+    core.appendChild(_svg('title',{}));   // native hover tooltip for the kernel hub
     core.appendChild(_svg('circle',{r:34},'core-ring'));
     core.appendChild(_svg('circle',{r:28},'core-c'));
     core.appendChild(_svg('text',{y:-2},'core-t')).textContent='KERNEL';
@@ -1319,6 +1380,8 @@ function renderCoordGraph(persons,totalPersons){
   // core: beat cadence from the heartbeat; caption = live/active count
   const beat=S.heartbeat&&S.heartbeat.interval_s?Math.max(2,+S.heartbeat.interval_s):5;
   svg._core.style.setProperty('--beat',beat+'s');
+  const _coreTitle=svg._core.querySelector('title');
+  if(_coreTitle) _coreTitle.textContent=`PersonaOS kernel — routes all persona coordination · heartbeat ${beat}s`;
   const runningN=persons.filter((p)=>p.running).length;
   const liveN=persons.filter((p)=>p.live).length;
   svg._core.querySelector('.core-s').textContent=
@@ -1361,6 +1424,7 @@ function renderCoordGraph(persons,totalPersons){
   persons.forEach((p)=>{ let g=svg._nodes.querySelector(`[data-gp="${cssEsc(p.sid)}"]`);
     if(!g){ g=_svg('g',{},''); g.setAttribute('data-gp',p.sid);
       g.setAttribute('tabindex','0'); g.setAttribute('role','button');   // keyboard-focusable map node
+      g.appendChild(_svg('title',{}));   // native SVG hover tooltip (full untruncated name — first child)
       g.appendChild(_svg('circle',{r:11},'gn-c'));
       g.appendChild(_svg('circle',{r:14},'gn-ring'));
       g.appendChild(_svg('text',{y:-17},'gn-name'));
@@ -1371,9 +1435,12 @@ function renderCoordGraph(persons,totalPersons){
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
-    const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[2].textContent!==nm) g.children[2].textContent=nm;
-    const rl=(p.role[0]||'?').toUpperCase(); if(g.children[3].textContent!==rl) g.children[3].textContent=rl;
-    const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[4].textContent!==dn) g.children[4].textContent=dn; });
+    // full untruncated hover tooltip — the on-screen name is clipped to 10 chars
+    const ttl=`${p.name||'persona'} — ${p.role} · ${p.running?(p.doing||'active'):(p.live?'active':'idle')}`;
+    if(g.children[0].textContent!==ttl) g.children[0].textContent=ttl;
+    const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[3].textContent!==nm) g.children[3].textContent=nm;
+    const rl=(p.role[0]||'?').toUpperCase(); if(g.children[4].textContent!==rl) g.children[4].textContent=rl;
+    const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[5].textContent!==dn) g.children[5].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
   // drop reused fire-pulse paths whose endpoints left the graph (keeps the persistent
   // linkfire layer from accumulating orphans referencing positions that no longer exist)
@@ -1413,11 +1480,13 @@ function _fireLink(fromSid,toSid,cls){
   p.setAttribute('class','cl-fire'); void p.getBoundingClientRect();
   p.setAttribute('class','cl-fire fire'+(cls&&cls!=='coord'?' fire-'+cls:''));
 }
-function _flashNode(sid,cls){
+function _flashNode(sid,cls,failed){
   const svg=$('#sysGraph'); if(!svg||!svg._nodes) return;
   const g=svg._nodes.querySelector(`[data-gp="${cssEsc(sid)}"]`); if(!g) return;
   const base=g.getAttribute('class').replace(/ gn-flash| gn-verdict-\w+/g,'');
-  const verdict=cls==='verify'?' gn-verdict-pass':'';
+  // a VERIFY flash must read PASS-green vs FAIL-red HONESTLY — a rejected verdict
+  // flashing green while the same act reads FAIL-red in the feed was a bug.
+  const verdict=cls==='verify'?(failed?' gn-verdict-fail':' gn-verdict-pass'):'';
   g.setAttribute('class',base+' gn-flash'+verdict);
   setTimeout(()=>{ g.setAttribute('class',base); },800);
 }
@@ -1475,7 +1544,9 @@ function updateVitalsCounters(){
     box.innerHTML=['auth','personas','active','envs','acts','signed'].map((k)=>{
       const lbl={auth:'access',personas:'personas',active:'streaming',envs:'envs',acts:'acts/min',signed:'verified'}[k];
       const init=k==='auth'?'discover':'0';
-      return `<div class="stat" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
+      // the STREAMING counter is the page's hero metric — the already-built .stat.primary
+      // (18px/green when .hot) gives the page a visual anchor when work is live.
+      return `<div class="stat${k==='active'?' primary':''}" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
     }).join(''); }
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
     if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
@@ -1501,6 +1572,7 @@ function updateVitalsCounters(){
   const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp);
     authEl.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
   setV('#st-personas',personasN); setV('#st-active',active); setV('#st-envs',S.envCount);
+  $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',acts); setV('#st-signed',signed.toLocaleString());
   // verify badge live count
   const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed record(s) Ed25519-verified in your browser`;
@@ -1763,7 +1835,10 @@ function renderInteractionStream(){
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
     const verb=_ixVerb(e.kind);
-    const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
+    // content-type chip: a persona producing CODE vs hitting an ERROR vs writing a
+    // PLAN reads instantly (the single _ctype computed once in streamPersonaCognition).
+    const ct=(e._ctype&&e._ctype!=='think')?`<span class="ix-ct ct-${e._ctype}">${e._ctype}</span>`:'';
+    const msg=e._msg?`<span class="ix-msg">${ct}${esc(e._msg)}</span>`:'';
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
@@ -1841,10 +1916,10 @@ function renderPersonaFeedDoc(doc){
     +`</div>`;
   if(hasOp&&(s.evolution_trace_count!=null||s.accepted_trace_count!=null))
     h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials${s.gepa_cohort_id?' · cohort '+esc(String(s.gepa_cohort_id).slice(0,18)):''}</div>`;
-  h+=`<div class="l2" style="margin:6px 0 3px">Doing now</div>`+_liveFeed(feedModels(doc));
+  h+=`<div class="sublabel">Doing now</div>`+_liveFeed(feedModels(doc));
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="l2" style="margin:6px 0 3px">Lifecycle / lineage</div>`
+    h+=`<div class="sublabel">Lifecycle / lineage</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k2,v])=>
         `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
   return h;
@@ -1858,10 +1933,10 @@ function renderEnvFeedDoc(doc){
     +`</div>`;
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="l2" style="margin:3px 0">Lineage events (this env)</div>`
+    h+=`<div class="sublabel">Lineage events (this env)</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k2,v])=>
         `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
-  h+=`<div class="l2" style="margin:6px 0 3px">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
+  h+=`<div class="sublabel">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
   return h;
 }
 // ---- 🧠 persona THINKING (02_PERSONA §4/§8-10) ----
@@ -1876,9 +1951,20 @@ function renderThinking(t){
   const out=t.recent_outputs||[];
   if(out.length){
     h+=`<div class="l2" style="margin:2px 0 3px">Recent model output — what the LLM actually produced (newest first)</div>`
-      +out.slice(-10).reverse().map((o)=>
-        `<div class="think llmout"><span class="amber">${esc(o.kind||'output')}</span> `
-        +`<span class="opmsg">${esc(String(o.text||'').slice(0,240))}</span></div>`).join('');
+      +out.slice(-10).reverse().map((o)=>{
+        // the FULL text is carried in the (scroll-capped) surface so copy lifts everything,
+        // not the 240-char preview. TYPE-AWARE: error/code/json/tool keep their structure
+        // in a real <pre> (indentation + newlines preserved, larger scroll budget); prose
+        // types (markdown/plan/think) stay clamped one-line prose. esc() on every byte.
+        const full=String(o.text||''); const ty=_cogType(full);
+        if(ty==='error'||ty==='code'||ty==='json'||ty==='tool'){
+          return `<div class="think llmout copy-host ctype-${ty}"><span class="ctype-tag amber">${esc(o.kind||ty)}</span> ${copyBtn()}`
+            +`<pre class="ct-pre copy-src">${esc(full)}</pre></div>`;
+        }
+        const long=full.length>240;
+        return `<div class="think llmout copy-host"><span class="amber">${esc(o.kind||'output')}</span> ${copyBtn()}`
+          +`<span class="opmsg copy-src${long?' clamp':''}">${esc(full)}</span></div>`;
+      }).join('');
   }
   const mp=t.mode_proficiencies||{};
   if(Object.keys(mp).length){
@@ -1915,7 +2001,7 @@ function renderThinking(t){
   }
   if(t.thinking_frame)
     h+=`<details class="frame"><summary class="l2">thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
-      +`<pre class="opout">${esc(t.thinking_frame)}</pre></details>`;
+      +`<div class="copy-host">${copyBtn()}<pre class="opout copy-src">${esc(t.thinking_frame)}</pre></div></details>`;
   return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
 }
 function renderThinkingRedacted(doc){
@@ -1948,6 +2034,32 @@ async function refreshThinking(){
 // SAME live feed — so the operator watches persona LLM messages in real time WITHOUT drilling
 // into a drawer. Public viewers get nothing here by design (A-TF2: content is operator-only).
 let _cogBusy=false;
+// ONE content-type classifier shared by feed / card / drawer — the substance a
+// persona's raw model output IS, computed once and ridden through on the interaction
+// record (_ctype). Order-sensitive, cheapest-first: a failing-loop persona's error
+// must out-rank a JSON/code read; tool-call json before generic json; a fenced/code
+// blob before prose; a numbered plan before markdown. Returns one vocabulary value:
+// error | tool | json | code | markdown | plan | think.
+function _cogType(s){
+  const v=String(s||'').trim(); if(!v) return 'think';
+  // 1) ERROR — a traceback / exception / fatal line anywhere (a stuck loop).
+  if(/(^|\n)\s*(Traceback \(most recent call last\)|[A-Za-z_]*(?:Error|Exception)\b\s*:|fatal:|FATAL\b|panic:|Segmentation fault)/.test(v)
+     || /\b(Error|Exception)\b[^\n]*\n\s+at /.test(v)) return 'error';
+  // 2) TOOL — a tool-call object (the distinctive keys), checked before generic json.
+  if(v[0]==='{'){ try{ const o=JSON.parse(v);
+    if(o&&typeof o==='object'&&(('tool_name' in o)||('tool' in o&&'arguments' in o)||('name' in o&&'arguments' in o)||('tool_calls' in o)||('function_call' in o))) return 'tool';
+  }catch(e){} }
+  // 3) JSON — parses cleanly as an object/array.
+  if(v[0]==='{'||v[0]==='['){ try{ JSON.parse(v); return 'json'; }catch(e){} }
+  // 4) CODE — a fenced block, a shebang, or a leading import/def/function line.
+  if(/```/.test(v)||/^#!/.test(v)||/^\s*(import |from \S+ import |def |class |function |const |let |var |#include|package )/m.test(v)) return 'code';
+  // 5) PLAN — a numbered step list (≥2 "1. … 2. …" lines).
+  if((v.match(/^\s*\d+[.)]\s+\S/gm)||[]).length>=2) return 'plan';
+  // 6) MARKDOWN — headings / bullets / tables (prose with structure).
+  if(/^#{1,6}\s+\S/m.test(v)||/^\s*[-*]\s+\S/m.test(v)||/^\s*\|.+\|/m.test(v)) return 'markdown';
+  // 7) THINK — plain reasoning prose (the default).
+  return 'think';
+}
 // Readable one-line preview of a persona's raw model OUTPUT (a candidate package
 // JSON or a code blob) — so the THINK feed shows WHAT it produced, not a code dump.
 function _cogPreview(msg){
@@ -1957,6 +2069,13 @@ function _cogPreview(msg){
     if(Array.isArray(files)&&files.length) return `produced ${files.length}-file package — ${files.slice(0,4).join(', ')}${files.length>4?'…':''}`;
     if(p&&p.file_count) return `produced ${p.file_count}-file package`;
   }catch(e){} }
+  // ERROR-FIRST: a failing-loop persona surfaces the verb (mirrors 'learned — '),
+  // so it reads 'errored — KeyError: …' instead of masquerading as normal output.
+  if(_cogType(s)==='error'){
+    const ln=s.split(/\r?\n/).map((x)=>x.trim()).find((x)=>/((?:[A-Za-z_]*(?:Error|Exception))\b\s*:|fatal:|panic:|Segmentation fault)/.test(x))
+      ||s.split(/\r?\n/).map((x)=>x.trim()).find(Boolean)||'';
+    return 'errored — '+ln.slice(0,140);
+  }
   for(const ln of s.split(/\r?\n/)){ const t=ln.trim();
     if(!t||t.startsWith('#!')||/^(import |from |\/\/|#|"""|''')/.test(t)) continue; return t.slice(0,150); }
   return s.replace(/\s+/g,' ').slice(0,150);
@@ -2006,7 +2125,8 @@ async function streamPersonaCognition(){
         const preview=row.kind==='LLM_LESSON'?('learned — '+msg):_cogPreview(msg);
         S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:'cognition',
           scope_id:'',at:'',_base:usedBase,_t:Date.parse(row.at||'')||Date.now(),_key:key,
-          _msg:preview.slice(0,200),_rationale:msg});
+          _msg:preview.slice(0,200),_rationale:msg,
+          _ctype:row.kind==='LLM_LESSON'?'think':_cogType(msg)});
       }
     }
     if(added){
@@ -2014,6 +2134,9 @@ async function streamPersonaCognition(){
       if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
       S.ixKeys=new Set(S.interactions.map((e)=>e._key));
       renderInteractionStream();
+      // CARD↔FEED sync: advance the card cognition walls together with the feed (the
+      // diff-guards in refreshSystemView make the extra call cheap when nothing changed).
+      if(typeof refreshSystemView==='function') refreshSystemView();
     }
   }catch(e){}
   finally{ _cogBusy=false; }
@@ -2051,25 +2174,38 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   const role=ps.role||(ps.membership||{}).role||'—';
   const state=ps.lifecycle_state||'—';
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
+  // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
+  // and the title already shows (name): keep only rows the grid does NOT carry.
   let html=kv('Persona id',S0(pid||r.did))
-    +kv('Name',S0(ps.name||r.label))
     +kv('Role',`<span class="cap">${esc(role)}</span>`)
-    +kv('Lifecycle',state==='ACTIVE'?`<span class="ok">● ACTIVE</span>`:`<span class="dim">${esc(state)}</span>`)
-    +kv('Reputation',rep==='—'?'—':`<span class="ok">${esc(rep)}</span> <span class="l2">role-relative [0,1]</span>`)
     +kv('Archetype',S0(ps.archetype))
     +kv('Disposition',S0(ps.primary_disposition))
-    +kv('Experience tasks',S0(ps.experience_tasks))
     +kv('Soul version',S0(ps.soul_version))
     +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
+  // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
+  // picks one per role/purpose) — surfaced right under identity when it has live model calls.
+  const _liveModels=(S.liveByPersona.get(_shortId(pid||r.did))||{}).models||[];
+  if(_liveModels.length) html+=kv('Model',_modelSummary(_liveModels));
   if(ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
   if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
   if((ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
+  // what this persona CAN DO — its advertised capabilities (filtering the generic
+  // project_workspace marker, same as the env lanes do).
+  const caps=(ps.capability_summary||r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
+  if(caps.length) html+=H('Capabilities')+chipsOf(caps);
+  // THE PLAN — the mission this persona is working on: the charter, objectives,
+  // current round and blocked/measured state of the run its workspace env pursues.
+  // The persona's own record may carry the run path; otherwise resolve it from its
+  // kernel's env record (runOf scans the resolved links for k/run-XXXX).
+  const _eidR=kernelRec(r._kernel,'env');
+  const _prun=runOf(r)||(_eidR?runOf(S.recs.get(_eidR)):null);
+  if(_prun) html+=await planSection(base,_prun);
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
   // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
   S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveBase=base;
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did)}</div>`;
+  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
   // transition timeline for everyone else. Streams on the live cadence.
@@ -2077,7 +2213,14 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   html+=H('Thinking')+`<div id="thinksec" class="livesec"><div class="fv-loading">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
-  const eid=kernelRec(r._kernel,'env');
+  // the persona's OWN env, not merely the FIRST env on the kernel (wrong on multi-env
+  // nodes): prefer links.env / the profile's environment_id, resolved to a discovered
+  // record; fall back to kernelRec only when neither resolves.
+  const _ownEnvId=L.env||ps.environment_id||prof.environment_id||'';
+  const _ownEnvSid=_ownEnvId?_shortId(_ownEnvId):'';
+  const _ownEnvRec=_ownEnvSid?S.order.find((id)=>{ const x=S.recs.get(id);
+    return x&&x.kind==='env'&&((x.did||'').includes(_ownEnvSid)||(x.record_id||'').includes(_ownEnvSid)||_envSid(x)===_ownEnvSid); }):null;
+  const eid=_ownEnvRec||kernelRec(r._kernel,'env');
   const bid=S.order.find((id)=>{ const x=S.recs.get(id);
     return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle; });
   let nav='';
@@ -2095,18 +2238,25 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const ns=d.environment_id?{}:(await fetchNodeStatus(base)||{});
   const members=d.members||[];
   const ld=d.lineage_digest||{};
+  // de-dup scalars the live tiles + the 'Members (N)' header already carry
+  // (name is in the title; status + member count are live tiles): keep only the rest.
   let html=kv('Environment',S0(d.environment_id||r.did||r.label))
-    +kv('Name',S0(d.name||r.label))
     +kv('Type',`<span class="cap">${esc(d.env_type||'—')}</span>`)
-    +kv('Status',d.status==='active'?'<span class="ok">● active</span>':`<span class="dim">${esc(d.status||'—')}</span>`)
-    +kv('Members',S0(members.length||(ns.personas||[]).length))
     +kv('Env rules',S0(d.rule_count))
     +kv('Lineage events',S0(ld.event_count));
+  // MODEL-PER-ROLE: the distinct models in use across this environment's personas
+  // (the env's own model_events) — what THIS workspace is actually running on.
+  const _envLiveModels=(S.liveByEnv.get(_shortId(d.environment_id||r.did))||{}).models||[];
+  if(_envLiveModels.length) html+=kv('Models in use',_modelSummary(_envLiveModels));
   if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
+  // THE PLAN — the mission charter this environment exists to pursue (objectives,
+  // current round, blocked/measured state). Surfaced right under the env header so
+  // the drawer answers "what is this env trying to DO", not only "what did it make".
+  const _run=runOf(r);
+  if(_run) html+=await planSection(base,_run);
   // Deliverables produced in THIS environment — every signed bundle and every
   // file, joined to the env by its workspace run id. The whole point of clicking
   // an environment: see ALL its artifacts. Each row opens the verified body.
-  const _run=runOf(r);
   const myArts=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&runOf(x)===_run):[];
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
@@ -2127,7 +2277,11 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
       const rid=findRecByDid(m.persona_id)||findRecByDid('did:personaos:'+m.persona_id);
       const label=rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id);
       const active=m.active!==false;
-      return `<div class="grant">${label}<span class="l2"><span class="${active?'ok':'dim'}">${active?'active':'departed'}</span></span></div>`;
+      // the model this member is running on (its latest live model selection) — so the
+      // roster shows WHO is on WHICH model, not just who is a member.
+      const lm=(S.liveByPersona.get(_shortId(m.persona_id))||{}).models;
+      const mdl=lm&&lm.length?lm[lm.length-1].model:'';
+      return `<div class="grant">${label}<span class="l2">${mdl?`<code>${esc(mdl)}</code> · `:''}<span class="${active?'ok':'dim'}">${active?'active':'departed'}</span></span></div>`;
     }).join('');
   }
   if(ld.kind_counts && Object.keys(ld.kind_counts).length){
@@ -2147,6 +2301,8 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
+  // the env's MISSION — objectives + round trajectory, otherwise unreachable from here.
+  const mid=kernelRec(r._kernel,'mission'); if(mid) nav+=`<div class="row">${recLink(mid,'Mission · objectives & round trajectory →')}</div>`;
   if(L.bundle && !myBundles.length) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-env">ENV</span> ${esc(d.name||r.label)}`, html};
@@ -2491,6 +2647,12 @@ async function renderCode(host,ctx){
   if(isJson){
     if((ctx.realSize??body.length)>200*1024){ host.appendChild(plainPre(body,'json > 200 KB — plain text (perf)')); return; }
     try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){}
+  }
+  // highlight.js tokenises the WHOLE string on the main thread; a multi-MB generated
+  // bundle / huge xml would freeze the UI for seconds. The JSON path is already capped
+  // above — cap every other code body too, falling back to scroll-able plain <pre>.
+  else if((ctx.realSize??body.length)>400*1024){
+    host.appendChild(plainPre(body,'code > 400 KB — plain text (perf, no highlight)')); return;
   }
   host.appendChild(loadingNode('loading syntax highlighter…'));
   const {core,name}=await loadHljs(isJson?'json':ctx.ext);
@@ -2881,6 +3043,74 @@ function missionDocHTML(ref){
   if(ceiling) html+=H('Physical-realization ceiling (honest)')+`<div class="l2">${esc(ceiling)}</div>`;
   return html;
 }
+// ---------- THE PLAN — the mission charter that drives a persona/env ----------
+// An environment (and the personas inside it) exists to PURSUE a mission: a task
+// charter with objective TARGETS climbed over budget-scaled ROUNDS, some BLOCKED,
+// each value MEASURED or honestly unmeasured. The whole plan is served by the
+// node at /runs/<run> (run_state() -> {run_state, design_history}) — the exact
+// doc operatorRunView + missionDocHTML consume — and runOf() already resolves
+// the run id an env/artifact carries. This surfaces that plan in the drawer the
+// user actually opens (the persona/env), not only the separate MISSION card / op
+// console. Read-gated like the run endpoint itself: operator token or a local
+// node returns the doc; an anonymous viewer gets an honest pointer, never a fake.
+async function planSection(base,run){
+  if(!run) return '';
+  const doc=await dfetch(base,'runs/'+encodeURIComponent(run));
+  // run_state is operator-tier (09_PROTOCOLS §3G.3): no token (or a tunneled node
+  // without one) -> no plan to show. Say WHY + HOW to unlock instead of nothing.
+  if(!doc||(!doc.run_state&&!doc.design_history)){
+    return H('Plan')+`<div class="l2">${icon('key','ico-sm')} this mission's charter, objectives and round-by-round trajectory are <b>read-gated</b> (operator tier). Click <b>OPERATOR</b> and paste this node's token, or open the page on the node's own machine (localhost = operator), to see the plan for <code>${esc(run)}</code>.</div>`;
+  }
+  const rs=doc.run_state||{}, dh=doc.design_history||rs.refinement_mission||{};
+  const S0=(v)=>esc((v===''||v==null)?'—':v);
+  // headline state — reuse the mission-card state chips (running/paused/shipped/converged)
+  const stt=String(rs.status||dh.final_status||'—');
+  const conv=dh.converged===true;
+  const stCls=conv?'ms-converged':(stt==='shipped'||stt==='completed'||rs.accepted)?'ms-shipped'
+    :(stt==='running'||stt==='queued')?'ms-running':(/budget|paused/.test(stt)?'ms-paused':'ms-shipped');
+  const stLbl=conv?'CONVERGED':String(stt||'—').toUpperCase();
+  let html=H('Plan — the mission charter');
+  // CHARTER: the human task this env/persona is pursuing (the reason it exists).
+  const task=String(rs.task||dh.task||'');
+  if(task) html+=`<div class="desc2">${esc(task.slice(0,400))}</div>`;
+  html+=kv('State',`<span class="mstate ${stCls}">● ${esc(stLbl)}</span>`
+      +(conv?'':(dh.converged===false?' <span class="l2">reopen-eligible</span>':'')))
+    +kv('Backend',S0(rs.task_class||dh.backend))
+    +kv('Best-so-far',(dh.best_so_far_score!=null?`<b class="ok">${Number(dh.best_so_far_score).toFixed(4)}</b>`
+        :(rs.best_score!=null?`<b class="ok">${Number(rs.best_score).toFixed(4)}</b>`:'—'))
+      +(dh.best_so_far_ref?` <span class="l2">${esc(String(dh.best_so_far_ref).slice(0,18))}</span>`:''));
+  // CURRENT ROUND — the live front of the plan: where the mission is right now.
+  const traj=dh.trajectory||[];
+  const last=traj.length?traj[traj.length-1]:null;
+  if(last){
+    const blk=(last.blocked_targets||[]);
+    html+=kv('Round',`<b>r${esc(last.round)}</b> <span class="l2">${esc(last.candidates_explored||0)} candidate(s) explored`
+      +(last.marginal_value!=null?` · <span class="${last.marginal_value>=0?'ok':'down'}">Δ${Number(last.marginal_value).toFixed(4)}</span>`:'')+`</span>`);
+    if(blk.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} blocked this round: ${esc(blk.join(', '))} — the mission honest-blocked rather than fabricate a value.</div>`;
+  }
+  // OBJECTIVES / TARGETS — baseline -> current -> ideal, each stamped with the
+  // evidence that credited it (MEASURED vs claimed-but-unmeasured). The plan's spine.
+  const targets=dh.objective_targets||[];
+  const fin=dh.final_objective||{}; const evd=dh.objective_evidence||rs.objective_evidence||{};
+  if(targets.length){
+    html+=H('Objectives — baseline → current → ideal (every value carries its evidence)');
+    html+=targets.map((t)=>{ const cur=fin[t.name]; const dir=t.direction==='minimize'?'↓':'↑';
+      return `<div class="grant"><span>${esc(t.name)} ${dir} ${evBadge(evd[t.name])}</span>`
+        +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
+    const unmeasured=targets.filter((t)=>String((evd[t.name]||{}).evidence_strength||'unmeasured')==='unmeasured');
+    if(unmeasured.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
+  } else if(rs.objective_evidence||dh.objective_evidence){
+    const ev=rs.objective_evidence||dh.objective_evidence;
+    html+=H('Objective evidence basis')+Object.entries(ev).map(([n,e2])=>{
+      const es=(e2||{}).evidence_strength||'—';
+      const cls=(es==='executed'||es==='executed_attested'||es==='attested')?'ok':(es==='unmeasured'?'no':'amber');
+      return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(String(es).replace(/_/g,' '))}</span></div>`;
+    }).join('');
+  }
+  // open the full ADR-0071 trajectory (the same operator RUN view) for the deep dive.
+  html+=`<div class="row"><a href="#" data-act="op-run" data-base="${esc(base)}" data-run="${esc(run)}">full mission trajectory (round-by-round) →</a></div>`;
+  return html;
+}
 async function missionView(r){
   // The ADR-0071 refinement trajectory is a DISCOVERED, Ed25519-verified Design-
   // History-File artifact; resolve its content (the trajectory JSON) the same way
@@ -3116,7 +3346,7 @@ async function operatorRunView(b,run){
   return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
 }
 
-async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'not found'};
+async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'<div class="viewerr">'+icon('warn','ico-sm')+' record not found — it may have been re-resolved or evicted since you clicked. Close this and reopen from the stage.</div>'};
   const L=r._links||{};
   if(r.kind==='artifact' && _isMissionDoc(r,L)) return missionView(r);
   if(r.kind==='mission' && L.content) return missionView(r);
@@ -3154,12 +3384,18 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   if(gen!==S._renderGen) return;
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
   $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
+  // A11y: move focus into the dialog ONLY after its accessible name (the title) is
+  // populated, and only when the drawer is open and focus isn't already inside it.
+  // Re-anchors focus on Back/nav when the clicked control was hidden/removed, so focus
+  // never escapes the trap to <body>. (Replaces the eager pre-title-populate focus().)
+  const dw=$('#detailwrap'); if(dw&&dw.classList.contains('open')&&!dw.contains(document.activeElement)) $('.drawer')?.focus();
   // optional async post-mount step (media renderers paint into a container here)
   if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} if(gen!==S._renderGen) return; }
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
 function openDetail(id){ S._topIsOp=false; S._lastFocus=document.activeElement;
-  S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); }
+  // focus moves into the drawer in renderTop(), AFTER the title (accessible name) is painted.
+  S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
 
 // ---------- main animation loop ----------
 // One rAF: paint the ECG vital every frame, and refresh the missions strip +
@@ -3274,7 +3510,7 @@ function wire(){
     e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
   // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
   $('#sysStreamTabs').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
-    S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>c.classList.toggle('on',c===b)); renderInteractionStream(); });
+    S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>{ c.classList.toggle('on',c===b); c.setAttribute('aria-pressed',String(c===b)); }); renderInteractionStream(); });
   // stage click: a persona card or env name → open its Ed25519 drawer; deliverable chip → bundle/mission drawer
   $('#sysEnvs').addEventListener('click',(e)=>{
     // follow toggle: the card's ◎ button focuses the stage+feed on ONE persona
@@ -3329,7 +3565,7 @@ function wire(){
     if(open && S._topIsOp){ closeDetail(); return; }   // closeDetail clears _topIsOp, restores focus, and tears down the active view
     S._lastFocus=document.activeElement;
     S.views=[()=>operatorView()]; S._topIsOp=true;
-    $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); });
+    $('#detailwrap').classList.add('open'); renderTop(); });   // focus moves in via renderTop() after the title paints
   updateOpBadge();
   // "what is this" intro + setup instructions: HIDDEN by default (the living network is
   // the page — instructions don't eat real estate); the ？ button toggles them on demand.
@@ -3348,10 +3584,19 @@ function wire(){
     if(c.dataset.mrec){ openDetail(c.dataset.mrec); return; }
     if(c.dataset.mrun){ S._lastFocus=document.activeElement;
       S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
-      $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); } });
+      $('#detailwrap').classList.add('open'); renderTop(); } });   // focus moves in via renderTop() after the title paints
   // in-drawer navigation: follow links to other records / bundles / artifact files
-  $('#detailbody').addEventListener('click',(e)=>{ const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
+  $('#detailbody').addEventListener('click',(e)=>{
+    // click a collapsed model-output to expand it in place (no nav). Guard against the
+    // copy button living inside the same block so copying doesn't also expand.
+    const clamped=e.target.closest('.opmsg.clamp');
+    if(clamped && !e.target.closest('.copy-btn')){ clamped.classList.remove('clamp'); return; }
+    const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
     const act=a.dataset.act, base=S.curBase||'';
+    // COPY: lift the full text of the cognition/script surface this button hangs on
+    // (the thinking frame's exact prompt, a model output, sandbox stdout) to the
+    // clipboard — these are often truncated/scrolled, so reading != copyable.
+    if(act==='copy'){ copyFromButton(a); return; }
     if(act==='tdir'){ const key=a.dataset.key, wasCollapsed=a.dataset.collapsed==='1';
       if(!S.bundleDirs)S.bundleDirs=new Set(); if(!S.bundleDirsOpen)S.bundleDirsOpen=new Set();
       // flip the effective state regardless of depth-default; explicit sets win over the default

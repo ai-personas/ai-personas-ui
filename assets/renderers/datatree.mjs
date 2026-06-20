@@ -246,7 +246,8 @@ const CSS = `
   box-shadow:0 0 0 2px var(--focus-ring,rgba(76,159,240,.20));color:var(--accent,#4c9ff0)}
 .dt-node.dt-collapsed > .dt-row .dt-tw{transform:rotate(-90deg)}
 .dt-node.dt-collapsed > ul{display:none}
-.dt-key{color:var(--int,#4c9ff0);white-space:pre}
+.dt-key{color:var(--int,#4c9ff0);font-weight:var(--w-med,500);
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 .dt-idx{color:var(--mut,#7d8ea2);white-space:pre}
 .dt-colon{color:var(--mut,#7d8ea2);white-space:pre}
 .dt-v-string{color:var(--up,#21d07a)}
@@ -380,7 +381,11 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
   if (keyLabel !== null) {
     const keyEl = doc.createElement('span');
     keyEl.className = isIndex ? 'dt-idx' : 'dt-key';
-    keyEl.textContent = isIndex ? String(keyLabel) : String(keyLabel);
+    keyEl.textContent = isIndex
+      ? String(keyLabel)
+      : (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(keyLabel))
+        ? String(keyLabel)
+        : JSON.stringify(String(keyLabel)));
     row.appendChild(keyEl);
     const colon = doc.createElement('span');
     colon.className = 'dt-colon';
@@ -388,6 +393,9 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
     row.appendChild(colon);
   }
 
+  // copy-value button (scalars only) — declared here so the row-toggle guard
+  // below can exempt it; built inside the scalar branch where the value exists.
+  let cv = null;
   if (container) {
     const n = childCount(value);
     const summary = doc.createElement('span');
@@ -408,7 +416,7 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
     const full = formatScalar(value, t);
     if (full.length > SCALAR_CAP) {
       valEl.textContent = full.slice(0, SCALAR_CAP) + '… ';
-      valEl.title = 'value truncated for display (' + full.length + ' chars) — use copy path';
+      valEl.title = 'value truncated for display (' + full.length + ' chars) — use copy value';
       const more = doc.createElement('span');
       more.className = 'dt-count';
       more.textContent = '+' + (full.length - SCALAR_CAP) + ' chars';
@@ -417,6 +425,25 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
       valEl.textContent = full;
     }
     row.appendChild(valEl);
+
+    // copy the FULL value (not the path): raw string for strings, formatted
+    // scalar otherwise. Truncated long strings stay reachable via this button.
+    cv = doc.createElement('button');
+    cv.className = 'dt-copy';
+    cv.type = 'button';
+    cv.title = 'Copy value';
+    cv.textContent = 'copy value';
+    cv.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ok = copyText(doc, t === 'string' ? value : formatScalar(value, t));
+      if (ok) {
+        const prev = cv.textContent;
+        cv.textContent = 'copied';
+        cv.classList.add('dt-ok');
+        setTimeout(() => { cv.textContent = prev; cv.classList.remove('dt-ok'); }, 1100);
+      }
+    });
+    row.appendChild(cv);
   }
 
   // copy-path button
@@ -506,7 +533,7 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
     });
     // clicking the summary/key area also toggles (but not the copy button)
     row.addEventListener('click', (e) => {
-      if (e.target === copy) return;
+      if (e.target === copy || e.target === cv) return;
       toggle();
     });
     row.style.cursor = 'pointer';

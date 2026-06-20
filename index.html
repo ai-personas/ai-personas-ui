@@ -8,7 +8,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260620h">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260620i">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -98,7 +98,7 @@
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
     <aside class="coordfeed" aria-label="live persona activity">
-      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
+      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate" role="status" aria-live="polite"></span></div>
       <div class="cf-tabs" id="sysStreamTabs" role="group" aria-label="filter the activity feed">
         <button data-flt="all" class="chip on" title="every live event across all personas and environments">ALL</button>
         <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
@@ -133,6 +133,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260620h"></script>
+  <script type="module" src="assets/discovery.js?v=20260620i"></script>
 </body>
 </html>

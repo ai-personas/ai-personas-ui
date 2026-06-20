@@ -35,6 +35,31 @@ const URL_MERMAID   = 'https://esm.sh/mermaid@11.4.1';
 const URL_KATEX     = 'https://esm.sh/katex@0.16.11';
 const URL_KATEX_AR  = 'https://esm.sh/katex@0.16.11/contrib/auto-render';
 const URL_KATEX_CSS = 'https://esm.sh/katex@0.16.11/dist/katex.min.css';
+// highlight.js core (one import, shared) + per-language packs (lazy, one each).
+// Mirrors discovery.js's pinned 11.10.0 core so the markdown and standalone code
+// views tokenise with the same engine. Fenced blocks only — never loaded for a
+// plain-prose doc, and only once a recognised language is present.
+const URL_HLJS_CORE = 'https://esm.sh/highlight.js@11.10.0/lib/core';
+const URL_HLJS_LANG = (n) => 'https://esm.sh/highlight.js@11.10.0/lib/languages/' + n;
+// fenced-class alias → hljs language pack name (matches discovery.js HLJS_LANGS).
+const HLJS_LANGS = {
+  python: 'python', py: 'python', js: 'javascript', javascript: 'javascript',
+  jsx: 'javascript', ts: 'typescript', typescript: 'typescript', tsx: 'typescript',
+  sh: 'bash', bash: 'bash', shell: 'bash', zsh: 'bash', console: 'bash',
+  json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'ini', ini: 'ini',
+  c: 'c', h: 'c', cpp: 'cpp', 'c++': 'cpp', cc: 'cpp', cxx: 'cpp',
+  rs: 'rust', rust: 'rust', go: 'go', golang: 'go', java: 'java',
+  rb: 'ruby', ruby: 'ruby', php: 'php', sql: 'sql', diff: 'diff', patch: 'diff',
+  xml: 'xml', html: 'xml', svg: 'xml', css: 'css', scss: 'scss', less: 'less',
+  md: 'markdown', markdown: 'markdown', dockerfile: 'dockerfile', docker: 'dockerfile',
+  make: 'makefile', makefile: 'makefile', verilog: 'verilog', v: 'verilog',
+  vhdl: 'vhdl', tcl: 'tcl', lua: 'lua', kt: 'kotlin', kotlin: 'kotlin',
+  swift: 'swift', cs: 'csharp', csharp: 'csharp',
+};
+// per-block highlight cap: hljs tokenises on the main thread; a giant pasted
+// blob shouldn't lock the drawer. Above this, leave the plain (escaped) text.
+const MAX_HL_BYTES = 100 * 1024;
+const MAX_GUTTER_LINES = 2000;   // line-number gutter cap (huge blocks: no gutter)
 
 // Guardrails so a pathological body can't freeze the drawer tab. Markdown is
 // cheap per-byte, but marked + DOMPurify + KaTeX auto-render over a multi-MB
@@ -124,6 +149,63 @@ const CSS = `
   border-radius:var(--radius-sm,4px);padding:var(--space-2,8px) var(--space-3,12px);
   font:var(--fs-body,12px)/var(--lh-snug,1.4) var(--mono,ui-monospace,Menlo,Consolas,monospace);
   color:var(--ink,#cdd9e5);overflow:auto;white-space:pre-wrap;word-break:break-word;
+}
+
+/* ---- fenced code block: bar (lang + copy) + highlighted body + gutter ----
+   Mirrors the standalone code view (.fv-code) and datatree's .dt-copy so the
+   markdown and code surfaces read as one product. Tokens map EXACTLY to the
+   .fv-code .hljs-* palette in discovery.css. The figure stays overflow:visible
+   so the bar isn't clipped; the inner <pre> owns the horizontal scroll. */
+.fv-mdrich .fv-codeblk{
+  margin:var(--space-3,12px) 0;border:1px solid var(--line2,#233040);
+  border-radius:var(--radius-md,6px);overflow:visible;background:var(--surface-inset,#070b10);
+}
+.fv-mdrich .fv-codebar{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--space-2,8px);
+  padding:var(--space-1,4px) var(--space-2,8px);
+  background:var(--surface-well2,#0b1118);border-bottom:1px solid var(--line2,#233040);
+  border-radius:var(--radius-md,6px) var(--radius-md,6px) 0 0;
+}
+.fv-mdrich .fv-codelang{
+  font-family:var(--sans,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif);
+  font-size:var(--fs-meta,10px);font-weight:var(--w-semi,600);color:var(--mut,#7d8ea2);
+  letter-spacing:var(--tr-caps,.06em);text-transform:uppercase;
+}
+.fv-mdrich .fv-codecopy{
+  flex:0 0 auto;cursor:pointer;border:0;background:none;color:var(--idle,#6b7a8a);
+  font:var(--w-semi,600) var(--fs-meta,10px)/1 var(--sans,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif);
+  letter-spacing:var(--tr-caps,.06em);text-transform:uppercase;padding:1px 5px;
+  border-radius:var(--radius-sm,4px);
+  transition:color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    background-color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1));
+}
+.fv-mdrich .fv-codecopy:hover{color:var(--accent,#4c9ff0);background:var(--accent-weak,rgba(76,159,240,.12))}
+.fv-mdrich .fv-codecopy:focus-visible{outline:none;box-shadow:0 0 0 2px var(--focus-ring,rgba(76,159,240,.20))}
+.fv-mdrich .fv-codecopy.is-ok{color:var(--up,#21d07a)}
+/* the bar squares off the <pre> top corners it sits on */
+.fv-mdrich .fv-codeblk pre{
+  margin:0;border:none;border-radius:0 0 var(--radius-md,6px) var(--radius-md,6px);
+  white-space:pre;overflow:auto;overscroll-behavior:contain;
+}
+/* line-number gutter via a CSS counter — digits are generated content, so they
+   never enter the selection/clipboard; the copy button yields clean source. */
+.fv-mdrich .fv-codeln code{counter-reset:l}
+.fv-mdrich .fv-codeln .fv-ln{display:block;counter-increment:l}
+.fv-mdrich .fv-codeln .fv-ln::before{
+  content:counter(l);display:inline-block;width:2.5em;margin-right:var(--space-2,8px);
+  text-align:right;color:var(--mut,#7d8ea2);opacity:.6;user-select:none;-webkit-user-select:none;
+}
+/* hljs token theme — EXACT mapping from discovery.css .fv-code .hljs-* so the
+   markdown and standalone code views tokenise identically. */
+.fv-mdrich .hljs-keyword,.fv-mdrich .hljs-selector-tag,.fv-mdrich .hljs-built_in{color:var(--purple,#a081e0)}
+.fv-mdrich .hljs-string,.fv-mdrich .hljs-attr{color:var(--up,#21d07a)}
+.fv-mdrich .hljs-number,.fv-mdrich .hljs-literal{color:var(--amber,#f0a73a)}
+.fv-mdrich .hljs-comment{color:var(--mut,#7d8ea2);font-style:italic}
+.fv-mdrich .hljs-title,.fv-mdrich .hljs-function .hljs-title,.fv-mdrich .hljs-section{color:var(--int,#4c9ff0)}
+.fv-mdrich .hljs-attribute,.fv-mdrich .hljs-name,.fv-mdrich .hljs-tag{color:var(--intr,#19c39a)}
+.fv-mdrich .hljs-meta,.fv-mdrich .hljs-symbol{color:var(--pink,#e86aa6)}
+@media (prefers-reduced-motion:reduce){
+  .fv-mdrich .fv-codecopy{transition-duration:.01ms!important}
 }
 `;
 
@@ -311,6 +393,19 @@ export async function render(ctx) {
       kb(src.length + truncatedBy) + ' KB. Use the download link above for the full document.'));
   }
 
+  // ---- 5b. syntax-highlight fenced code blocks (lazy hljs) ----
+  // Runs over the mounted, sanitised DOM. hljs core loads ONCE and only if at
+  // least one <pre><code> with a RECOGNISED language is present; each language
+  // pack loads on demand and is cached on the core. Per-block: size-capped,
+  // wrapped in a figure with a lang label + copy button, and (when multi-line)
+  // a CSS-counter gutter that doesn't pollute the copied source. Cosmetic —
+  // any failure leaves the plain (already-escaped) code block intact.
+  if (live()) {
+    try { await enhanceCodeBlocks(md, ctx, doc, el, live); }
+    catch (_e) { /* highlighting is an enhancement; never lose the doc over it */ }
+  }
+  if (!live()) return;
+
   // ---- 6. render mermaid diagrams into their placeholders ----
   // Per-diagram failures degrade in place (show the source) — they do NOT throw
   // the whole render, since a single bad diagram shouldn't lose the document.
@@ -468,4 +563,196 @@ function mermaidFallback(doc, code, el, esc, why) {
   pre.appendChild(c);
   wrap.appendChild(pre);
   return wrap;
+}
+
+// Read the marked-emitted `language-xxx` class off a <code>, mapped to an hljs
+// pack name. Returns {alias, name} or null when no recognised language is set.
+// marked sets `class="language-foo"`; an unfenced/indented block has no class.
+function langOf(code) {
+  const cls = (code.getAttribute && code.getAttribute('class')) || '';
+  const m = /(?:^|\s)language-([\w+#.-]+)/i.exec(cls);
+  if (!m) return null;
+  const alias = m[1].toLowerCase();
+  const name = HLJS_LANGS[alias];
+  return name ? { alias, name } : { alias, name: null };
+}
+
+// Post-mount pass: tokenise + chrome each fenced code block. Loads hljs core at
+// most ONCE (only when a recognised language is present), each pack on demand.
+async function enhanceCodeBlocks(md, ctx, doc, el, live) {
+  const blocks = md.querySelectorAll('pre > code');
+  if (!blocks.length) return;
+
+  // Decide up front whether ANY block names a language we can highlight; only
+  // then pay for the hljs core import. Blocks with no recognised language still
+  // get the bar/copy/gutter chrome (just no token colours).
+  let needCore = false;
+  blocks.forEach((c) => { const L = langOf(c); if (L && L.name) needCore = true; });
+
+  let core = null;
+  if (needCore) {
+    try {
+      const mod = await ctx.lazy(URL_HLJS_CORE);
+      core = mod.default || mod;
+      if (!core || typeof core.highlight !== 'function') core = null;
+    } catch (_e) { core = null; }
+  }
+  if (!live()) return;
+
+  for (const code of blocks) {
+    if (!live()) return;
+    const pre = code.parentElement;
+    if (!pre || pre.tagName !== 'PRE') continue;
+    // skip blocks we've already wrapped (idempotent if a re-render ever reuses DOM)
+    if (pre.parentElement && pre.parentElement.classList &&
+        pre.parentElement.classList.contains('fv-codeblk')) continue;
+
+    const L = langOf(code);
+    const src = code.textContent || '';
+    const tooBig = src.length > MAX_HL_BYTES;
+
+    // 1. tokenise (size-capped, recognised language only) — write hljs HTML
+    //    (already HTML-escaped) into the <code>; on any throw keep plain text.
+    if (core && L && L.name && !tooBig) {
+      try {
+        if (!core.getLanguage(L.name)) {
+          try {
+            const m = await ctx.lazy(URL_HLJS_LANG(L.name));
+            const def = m.default || m;
+            if (def) core.registerLanguage(L.name, def);
+          } catch (_e) { /* pack unavailable — fall through to plain */ }
+        }
+        if (!live()) return;
+        if (core.getLanguage(L.name)) {
+          const out = core.highlight(src, { language: L.name, ignoreIllegals: true });
+          if (out && out.value != null) {
+            code.innerHTML = out.value;   // hljs output is HTML-escaped tokens
+            code.classList.add('hljs');
+          }
+        }
+      } catch (_e) { /* leave the plain (escaped) textContent in place */ }
+    }
+    if (!live()) return;
+
+    // 2. line-number gutter — wrap each rendered line in a counted span so the
+    //    digits are CSS generated content (never copied). Capped; skipped for
+    //    single-line blocks. Works on highlighted OR plain content.
+    const lineCount = (src.match(/\n/g) || []).length + 1;
+    if (lineCount > 1 && lineCount <= MAX_GUTTER_LINES) {
+      try {
+        wrapLines(code, doc);
+        pre.classList.add('fv-codeln');
+      } catch (_e) { /* gutter is cosmetic */ }
+    }
+
+    // 3. chrome: figure wrapper + bar (lang label + copy button). Built with
+    //    createElement/textContent only — never innerHTML of artifact content.
+    const fig = doc.createElement('figure');
+    fig.className = 'fv-codeblk';
+    const bar = doc.createElement('div');
+    bar.className = 'fv-codebar';
+    const label = doc.createElement('span');
+    label.className = 'fv-codelang';
+    label.textContent = (L && L.alias) ? L.alias : 'text';
+    bar.appendChild(label);
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fv-codecopy';
+    btn.textContent = 'copy';
+    btn.addEventListener('click', () => {
+      const ok = copyText(doc, src);   // copy the ORIGINAL source (no gutter digits)
+      btn.classList.add('is-ok');
+      btn.textContent = ok ? 'copied' : 'copy failed';
+      doc.defaultView && doc.defaultView.setTimeout(() => {
+        btn.classList.remove('is-ok');
+        btn.textContent = 'copy';
+      }, 1200);
+    });
+    bar.appendChild(btn);
+
+    pre.replaceWith(fig);   // detach <pre> from its current parent
+    fig.appendChild(bar);
+    fig.appendChild(pre);   // re-attach under the figure, below the bar
+  }
+}
+
+// Wrap each line of a (highlighted or plain) <code> in a `.fv-ln` span so a CSS
+// counter can number it as generated content (uncopyable). Operates on the
+// rendered, already-escaped HTML. hljs CAN emit a token span that straddles a
+// newline (block comment / multi-line string), so we maintain a stack of the
+// open <span> tags and, at each newline, close every open span before ending
+// the line and re-open them on the next — keeping every line independently
+// well-formed AND preserving the token colour across the break. We only ever
+// re-emit existing escaped HTML and the spans we open/close ourselves; no
+// artifact text is reinterpreted, so this stays injection-safe.
+function wrapLines(code, doc) {
+  const html = code.innerHTML;
+  if (html.indexOf('\n') === -1) return;
+  // tokenise into text runs, <span ...> opens, and </span> closes (hljs output
+  // contains only <span> elements + escaped text; entities stay inside runs).
+  const tagRe = /<span\b[^>]*>|<\/span>/gi;
+  const openStack = [];
+  let out = '<span class="fv-ln">';
+  let lineHasContent = false;
+  let pos = 0, m;
+  const flushNewline = () => {
+    // close open spans for this line (deepest first), end the line, re-open them.
+    for (let i = openStack.length - 1; i >= 0; i--) out += '</span>';
+    if (!lineHasContent) out += '&#8203;';   // keep an empty line visible/numbered
+    out += '</span><span class="fv-ln">';
+    for (let i = 0; i < openStack.length; i++) out += openStack[i];
+    lineHasContent = false;
+  };
+  const emitText = (text) => {
+    let start = 0, nl;
+    while ((nl = text.indexOf('\n', start)) !== -1) {
+      const head = text.slice(start, nl);
+      out += head;
+      if (head) lineHasContent = true;
+      flushNewline();
+      start = nl + 1;
+    }
+    const tail = text.slice(start);
+    out += tail;
+    if (tail) lineHasContent = true;
+  };
+  while ((m = tagRe.exec(html))) {
+    if (m.index > pos) emitText(html.slice(pos, m.index));
+    const tag = m[0];
+    out += tag;
+    if (tag[1] === '/') openStack.pop(); else openStack.push(tag);
+    lineHasContent = true;
+    pos = tagRe.lastIndex;
+  }
+  if (pos < html.length) emitText(html.slice(pos));
+  // close the final line; drop it if it ended up empty (trailing newline).
+  for (let i = openStack.length - 1; i >= 0; i--) out += '</span>';
+  out += '</span>';
+  out = out.replace(/<span class="fv-ln"><\/span>$/, '');
+  code.innerHTML = out;   // composed only from existing escaped/hljs HTML + our own spans
+}
+
+// ---- clipboard (best-effort, never throws to caller) — mirrors datatree.mjs --
+function copyText(doc, text) {
+  try {
+    if (doc.defaultView && doc.defaultView.navigator && doc.defaultView.navigator.clipboard) {
+      doc.defaultView.navigator.clipboard.writeText(text).catch(() => fallbackCopy(doc, text));
+      return true;
+    }
+  } catch (_) { /* fall through */ }
+  return fallbackCopy(doc, text);
+}
+function fallbackCopy(doc, text) {
+  try {
+    const ta = doc.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    (doc.body || doc.documentElement).appendChild(ta);
+    ta.select();
+    const ok = doc.execCommand && doc.execCommand('copy');
+    ta.remove();
+    return !!ok;
+  } catch (_) { return false; }
 }
