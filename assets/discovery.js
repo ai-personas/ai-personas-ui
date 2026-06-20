@@ -2955,7 +2955,13 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
   if(r.kind==='project') return projectView(r);
   if(r.kind==='telemetry') return telemetryView(r);
   if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle,L);
-  if(r.kind==='artifact' && L.content) return fileView(r._base||'',_bodyPath(L.content,runOf(r)),r.label,L.media_kind);
+  if(r.kind==='artifact'){
+    // File artifact: prefer the explicit content link; otherwise derive the served path from the
+    // package-relative title (artifacts/package/<title>) so an art-chip whose record carries no
+    // content link still opens. _bodyPath adds the k/<run>/ prefix to hit the served bytes.
+    const cpath=L.content||((r.title||r.label)?('artifacts/package/'+(r.title||r.label)):'');
+    if(cpath) return fileView(r._base||'',_bodyPath(cpath,runOf(r)),r.label,L.media_kind);
+  }
   return genericView(r);
 }
 // Any renderer that allocates per-view resources (blob: URLs, a three.js scene,
