@@ -2177,6 +2177,77 @@ function lazyLib(key){
   LIBS.set(key,p); return p;
 }
 
+/* ====================================================================
+   LAZY .mjs RENDERER REGISTRY (richer deliverable viewers)
+   --------------------------------------------------------------------
+   Each entry is a self-contained ES module under ./renderers/ that
+   lazy-loads its own heavy CDN libs (via ctx.lazy) inside render().
+   These OUTRANK the legacy inline EXT_RENDERER/KIND_RENDERER maps for
+   any ext/kind they claim; on ANY throw the host falls back to the
+   built-in renderer path (markdown/csv/code/image/pdf/plain/download).
+   DISPATCH: extension is authoritative (zero collisions across modules);
+   media_kind is the fallback (first-writer-wins, registry ordered most-
+   specific → most-generic so 'pcb'→gerber, 'eda'→netlist, 'cad'→cad3d).
+   ==================================================================== */
+const LAZY_RENDERERS=[
+  {file:'gerber.mjs',exts:['gbr','ger','gtl','gbl','gto','gts','gko','gm1','drl','xln'],media_kinds:['gerber','excellon','drill','pcb','gerber-layer'],fetchMode:'text'},
+  {file:'kicad.mjs',exts:['kicad_pcb','kicad_sch','kicad_pro','kicad_mod'],media_kinds:['kicad','schematic'],fetchMode:'text'},
+  {file:'netlist.mjs',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],media_kinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
+  {file:'dxf.mjs',exts:['dxf'],media_kinds:['dxf','drawing','mechanical','mechanical_drawing'],fetchMode:'text'},
+  {file:'cad3d.mjs',exts:['step','stp','stl','3mf','obj','gltf','glb','ply'],media_kinds:['cad3d','mesh','3d','model','step','stl','gltf','glb','obj','ply','3mf','cad'],fetchMode:'bytes'},
+  {file:'pdf.mjs',exts:['pdf'],media_kinds:['pdf','application/pdf'],fetchMode:'bytes'},
+  {file:'waveform.mjs',exts:['vcd','wavedrom','wave','wavejson'],media_kinds:['waveform','vcd','wavedrom','wavejson','timing'],fetchMode:'text'},
+  {file:'table.mjs',exts:['csv','tsv','bom'],media_kinds:['table','bom','csv','tsv','tab'],fetchMode:'text'},
+  {file:'mdrich.mjs',exts:['md','markdown'],media_kinds:['md','markdown'],fetchMode:'text'},
+  {file:'datatree.mjs',exts:['json','yaml','yml','toml','ndjson'],media_kinds:['json','yaml','yml','toml','ndjson','datatree','structured','data'],fetchMode:'text'},
+];
+// Flattened ext → entry index (built once). Extensions are collision-free, so an
+// ext hit is a definitive, unambiguous module choice.
+const _LAZY_BY_EXT=new Map();
+// media_kind → entry index, FIRST-WRITER-WINS over registry order so the
+// deliberate most-specific→most-generic ordering encodes precedence for the
+// resolved kind collisions (gerber>kicad 'pcb'; netlist>kicad 'eda'; cad3d 'cad').
+const _LAZY_BY_KIND=new Map();
+for(const e of LAZY_RENDERERS){
+  for(const x of e.exts){ const xl=String(x).toLowerCase(); if(!_LAZY_BY_EXT.has(xl)) _LAZY_BY_EXT.set(xl,e); }
+  for(const k of e.media_kinds){ const kl=String(k).toLowerCase(); if(!_LAZY_BY_KIND.has(kl)) _LAZY_BY_KIND.set(kl,e); }
+}
+// extOf grabs only the final dot-segment, so it can't see the multi-underscore
+// KiCad suffixes (.kicad_pcb / .kicad_sch / .kicad_pro / .kicad_mod) — match the
+// full filename suffix FIRST, then fall back to the single trailing token.
+function lazyExtOf(title){
+  const t=String(title||'').toLowerCase();
+  for(const x of _LAZY_BY_EXT.keys()){ if(x.includes('_') && t.endsWith('.'+x)) return x; }
+  return extOf(title);
+}
+// Resolve the lazy module entry for a file: EXTENSION first (authoritative),
+// then media_kind (fallback only when the ext is absent/unknown). Returns
+// {entry,ext} or null.
+function pickLazyRenderer(title,kind){
+  const ext=lazyExtOf(title);
+  if(ext && _LAZY_BY_EXT.has(ext)) return {entry:_LAZY_BY_EXT.get(ext),ext};
+  const k=String(kind||'').toLowerCase();
+  if(k && _LAZY_BY_KIND.has(k)) return {entry:_LAZY_BY_KIND.get(k),ext};
+  return null;
+}
+// Cached per-URL dynamic import — this is ctx.lazy passed into each module for
+// its heavy CDN libs (esm.sh / jsdelivr), with a per-URL retry on failure.
+const _LAZY_URL=new Map();
+async function _lazy(url){
+  if(_LAZY_URL.has(url)) return _LAZY_URL.get(url);
+  const p=import(/* @vite-ignore */ url);
+  p.catch(()=>_LAZY_URL.delete(url));   // failed load → allow a later retry
+  _LAZY_URL.set(url,p); return p;
+}
+// Cached per-file import of the renderer module itself (lazy on first open).
+const _LAZY_MOD=new Map();
+async function _lazyModule(file){
+  if(_LAZY_MOD.has(file)) return _LAZY_MOD.get(file);
+  const p=import(/* @vite-ignore */ './renderers/'+file);
+  p.catch(()=>_LAZY_MOD.delete(file));
+  _LAZY_MOD.set(file,p); return p;
+}
+
 // Highlight.js language packs are lazy too (one import per language, cached).
 const HLJS_LANGS={ python:'python', py:'python', js:'javascript', javascript:'javascript',
   ts:'typescript', typescript:'typescript', sh:'bash', bash:'bash', json:'json',
@@ -2381,19 +2452,28 @@ const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage, cod
 async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const pick=pickRenderer(title,kind);
   const url=join(base,path);
-  const isBinary=BINARY_RENDERERS.has(pick.id);
   const forcedPlain=opts.raw===true;
-  const rendId=forcedPlain?'plain':pick.id;
-  // text bodies fetched here; binaries deferred to their renderer (blob).
+  // LAZY .mjs registry takes precedence over the legacy inline maps for any
+  // ext/kind it claims (richer viewers win). Resolved once; only used when this
+  // is NOT a forced-plain/raw view (raw always shows the built-in plain text).
+  const lazyPick=forcedPlain?null:pickLazyRenderer(title,kind);
+  // fetchMode drives byte-vs-text fetch: a bytes module fetches its own
+  // ArrayBuffer inside render(), so we must NOT do a pointless text prefetch.
+  const lazyBytes=!!(lazyPick && lazyPick.entry.fetchMode==='bytes');
+  // header media-kind label reflects the chosen renderer (lazy ext if matched).
+  const lazyExt=lazyPick?lazyPick.ext:'';
+  const isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
+  const rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
+  // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
   let text=null, realSize=null;
-  if(!isBinary || forcedPlain){
+  if(!isBinary){
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
-    if(!isBinary){ text=await fetchText(url); realSize=text?text.length:null; }
+    text=await fetchText(url); realSize=text?text.length:null;
   }
-  const ctx={ base, path, url, title, kind, ext:pick.ext, text, realSize, size:opts.size,
+  const ctx={ base, path, url, title, kind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
     contentHash:opts.contentHash||null };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
-  // as a SILENT blank pane (the text renderers consume ctx.text||'' and "succeed"); flag it.
+  // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
   const bodyUnavailable=(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
   const rawTog=forcedPlain
@@ -2402,27 +2482,57 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         ? `<a href="#" data-act="fv-raw" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">raw text</a>`
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
-    +kv('Media kind',`${esc(kind||pick.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
+    +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
     +`<a href="${esc(url)}" target="_blank" rel="noopener" download>download / open raw →</a></span></div>`
     +`<div id="fv-body" class="fv-body"></div>`;
-  const mount=async(root)=>{
-    const host=root.querySelector('#fv-body'); if(!host) return;
-    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the download/open-raw link above, or hold an operator token.')); return; }
-    const r=RENDERERS[rendId]||renderPlain;
-    try{ await r(host,ctx);
-      // size discovered during a binary fetch → reflect it in the header
-      if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
+  // EXISTING (legacy) renderer path — the FALLBACK used when no lazy module
+  // matches, or when a matched lazy module throws (CDN/lib/parse/empty).
+  const runLegacy=async(host)=>{
+    const r=RENDERERS[(forcedPlain?'plain':pick.id)]||renderPlain;
+    const legacyBinary=BINARY_RENDERERS.has(forcedPlain?'plain':pick.id);
+    try{ await r(host,ctx);   // size discovered during a binary fetch reflected by caller
     }catch(e){
       // GRACEFUL FALLBACK: CDN import failed / parse error → plain <pre>, never broken.
       host.innerHTML='';
       host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
       let body=ctx.text;
-      if(body==null){ body=isBinary?null:await fetchText(url); }
-      if(body==null && isBinary){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; }
+      if(body==null){ body=legacyBinary?null:await fetchText(url); }
+      if(body==null && legacyBinary){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
+  };
+  const mount=async(root)=>{
+    const host=root.querySelector('#fv-body'); if(!host) return;
+    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the download/open-raw link above, or hold an operator token.')); return; }
+    // LAZY MODULE FIRST (richer renderer). On ANY throw, clear and fall back to
+    // the existing legacy renderer path exactly as before — never broken/blank.
+    if(lazyPick && !forcedPlain){
+      try{
+        const mod=await _lazyModule(lazyPick.entry.file);
+        if(!mod || typeof mod.render!=='function') throw new Error('no render() export');
+        // ctx per the module contract: createElement+textContent-safe el(),
+        // authenticated fetchText/fetchBytes against the resolved body url,
+        // version-pinned CDN loader (lazy), and a view-scoped onCleanup.
+        const mctx={ host, title, path, url, ext:ctx.ext, kind, size:opts.size, contentHash:ctx.contentHash,
+          esc, el, lazy:_lazy, onCleanup:onViewCleanup,
+          // both provided; honor fetchMode for the default fetch but never deny either.
+          text:lazyBytes?null:ctx.text,
+          fetchText:async()=>{ if(!lazyBytes && ctx.text!=null) return ctx.text; return await fetchText(url); },
+          fetchBytes:async()=>{ const fb=await fetchBlob(url); if(!fb){ return null; }
+            ctx.realSize=fb.size; const ab=await fb.blob.arrayBuffer();
+            // copy so libs that DETACH the buffer (pdf.js) can't corrupt a shared one
+            return ab.slice(0); } };
+        await mod.render(mctx);
+        if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
+        return;
+      }catch(e){
+        host.innerHTML='';   // clear any partial render before falling back
+      }
+    }
+    await runLegacy(host);
+    if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
 }
