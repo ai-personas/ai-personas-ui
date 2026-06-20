@@ -2027,6 +2027,12 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
 // artifacts/package/<title>; gating is keyed on body_published (origin_gated stub when false).
 // Group entries by path segments into a nested dir/file tree; flat packages (no '/') collapse
 // to a single-level tree with all files at the root.
+// Run-artifact bodies are SERVED under k/<run>/artifacts/package/<path>, but record content
+// links and bundle-manifest paths are run-RELATIVE (artifacts/package/<path>). Prefix with the
+// run segment so the body fetch hits the served bytes. Idempotent — skips already-absolute or
+// already-prefixed paths, so it is safe even where the public promotion already added k/<run>/.
+function _bodyPath(p,run){ p=String(p||''); if(!p) return p;
+  if(/^(https?:|\/|k\/run-)/.test(p)) return p; return run?('k/'+run+'/'+p):p; }
 function buildArtifactTree(arts){
   const root={dirs:new Map(), files:[]};
   for(const a of (arts||[])){
@@ -2040,29 +2046,30 @@ function buildArtifactTree(arts){
 }
 // collapsed dir paths remembered in-page (default expanded for depth ≤ 2)
 function dirCollapsed(key,depth){ if(S.bundleDirs.has(key)) return true; if(S.bundleDirsOpen.has(key)) return false; return depth>=2; }
-function renderArtifactNode(node,prefix,depth){
+function renderArtifactNode(node,prefix,depth,pkgRun){
   let h='';
   for(const [seg,child] of [...node.dirs.entries()].sort((a,b)=>a[0].localeCompare(b[0]))){
     const key=prefix?prefix+'/'+seg:seg; const collapsed=dirCollapsed(key,depth);
     const n=(child.files.length)+child.dirs.size;
     h+=`<div class="tnode tdir" style="padding-left:${depth*14}px"><a href="#" data-act="tdir" data-key="${esc(key)}" data-collapsed="${collapsed?1:0}">`
       +`<span class="ttog">${collapsed?'▸':'▾'}</span> ${esc(seg)}/</a><span class="l2">${n}</span></div>`;
-    if(!collapsed) h+=`<div class="tkids">${renderArtifactNode(child,key,depth+1)}</div>`; }
+    if(!collapsed) h+=`<div class="tkids">${renderArtifactNode(child,key,depth+1,pkgRun)}</div>`; }
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc('artifacts/package/'+f.path)}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size??a.bytes??'')}">${esc(f.name)}</a>`
+      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size??a.bytes??'')}">${esc(f.name)}</a>`
       : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
     const sz=(a.size??a.bytes);
     h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
 }
-function renderArtifactTree(arts){
+function renderArtifactTree(arts,pkgRun){
   if(!S.bundleDirs) S.bundleDirs=new Set(); if(!S.bundleDirsOpen) S.bundleDirsOpen=new Set();
   if(!(arts||[]).length) return '<div class="l2">— no artifacts —</div>';
-  return `<div class="atree">${renderArtifactNode(buildArtifactTree(arts),'',0)}</div>`;
+  return `<div class="atree">${renderArtifactNode(buildArtifactTree(arts),'',0,pkgRun)}</div>`;
 }
 async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
+  const pkgRun=(String(url).match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||(L&&L.run&&(String(L.run).match(/k\/(run-[0-9A-Za-z]+)/)||[])[1])||'';
   if(!d){
     // An anonymous viewer holds only 'discover': the node publishes that the deliverable
     // EXISTS (files, hashes, metadata) but gates the BYTES to read+ tier (07_ARTIFACTS §10a).
@@ -2121,7 +2128,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
       +`<span class="${String(v.verdict||'').includes('accept')?'ok':'no'}">${esc(v.verdict||'—')}</span></div>`
       +(v.rationale?`<div class="desc2">${esc(String(v.rationale).slice(0,240))}</div>`:'')).join('');
   }
-  html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts);
+  html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts,pkgRun);
   if(L && L.run){ html+=H('Provenance')
     +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · model cascade →</a></div>`
     +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
@@ -2820,7 +2827,7 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
   if(r.kind==='project') return projectView(r);
   if(r.kind==='telemetry') return telemetryView(r);
   if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle,L);
-  if(r.kind==='artifact' && L.content) return fileView(r._base||'',L.content,r.label,L.media_kind);
+  if(r.kind==='artifact' && L.content) return fileView(r._base||'',_bodyPath(L.content,runOf(r)),r.label,L.media_kind);
   return genericView(r);
 }
 // Any renderer that allocates per-view resources (blob: URLs, a three.js scene,
