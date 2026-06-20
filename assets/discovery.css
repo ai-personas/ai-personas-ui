@@ -550,6 +550,12 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .vitals{gap:16px}
   .drawer{width:min(540px,96vw)}
   #sysGraph{height:150px}
+  /* With only a few personas, fluid cards capped at 380px clump left and leave a
+     wide void before the feed panel. Let each card spread further (and widen the gap)
+     so 2-3 cards fill the wide stage and the row reads as deliberate; 3-up still holds
+     because the per-card computed width on this stage stays under the raised cap. */
+  .env-personas{gap:14px}
+  .pcard{flex-basis:340px;max-width:460px}
 }
 
 /* ===================== prefers-reduced-motion ===================== */

@@ -6,21 +6,21 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260619w">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260620a">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
   <header class="vitals">
     <span class="livedot" id="livedot" title="resolving node heartbeat…"></span>
-    <span class="brandmark"><b class="mark">PersonaOS</b><span class="vsub">LIVING&nbsp;NETWORK</span></span>
+    <h1 class="brandmark" style="margin:0;font:inherit;font-weight:inherit"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
     <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
     <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
     <span class="vcounts" id="stats"></span>
     <span class="grow"></span>
-    <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter">
-    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="peer">
-    <button id="helpbtn" class="btn" title="what am I looking at?" aria-expanded="false" aria-controls="intro">？</button>
+    <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter personas, environments and events">
+    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="discover a peer node by URL">
+    <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">？</button>
     <button id="addpeer" class="btn">＋&nbsp;PEER</button>
     <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑&nbsp;OPERATOR</button>
   </header>
@@ -45,20 +45,20 @@
     then add <code>?peer=http://localhost:8805</code> to this page's URL or use ＋PEER.</p>
   </div>
 
-  <div class="globalbar">
+  <nav class="globalbar" aria-label="discovered nodes">
     <span class="globalbar-label" title="every PersonaOS kernel this page has discovered, and how it was reached (HTTP, P2P gossipsub, gossip cards)">NODES</span>
     <span id="globalKernels" class="globalbar-list"><span class="dim">discovering kernels…</span></span>
-  </div>
+  </nav>
 
-  <div class="missions" id="missions" hidden>
+  <section class="missions" id="missions" aria-label="missions" hidden>
     <span class="globalbar-label" title="every task the discovered personas are working on, paused on, or have shipped — click a card for the full mission record">MISSIONS</span>
     <div id="missionCards" class="mission-cards"></div>
-  </div>
+  </section>
 
   <!-- R1 · CONSTELLATION RAIL — supporting minimap of the node: the kernel core
        beats on the heartbeat; persona nodes breathe when live; an edge fires a
        traveling pulse when a coordination message names that persona. -->
-  <section class="constellation" id="constellation">
+  <section class="constellation" id="constellation" aria-labelledby="conTitle">
     <div class="con-head">
       <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
       <span class="dim" id="sysGraphCap">the kernel relays among personas that share a task · curved links connect who coordinates with whom · pulses travel the direction work flows</span>
@@ -80,16 +80,16 @@
   <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
-    <aside class="coordfeed">
+    <aside class="coordfeed" aria-label="live persona activity">
       <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate"></span></div>
-      <div class="cf-tabs" id="sysStreamTabs">
-        <button data-flt="all" class="chip on">ALL</button>
+      <div class="cf-tabs" id="sysStreamTabs" role="group" aria-label="filter the activity feed">
+        <button data-flt="all" class="chip on" title="every live event across all personas and environments">ALL</button>
         <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
-        <button data-flt="coord" class="chip">COORD</button>
-        <button data-flt="verify" class="chip">VERIFY</button>
+        <button data-flt="coord" class="chip" title="who→whom coordination messages the kernel routes between personas">COORD</button>
+        <button data-flt="verify" class="chip" title="signature and acceptance checks on each claim">VERIFY</button>
         <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
         <button data-flt="tool" class="chip" title="a persona reaching for / acquiring / using a tool">TOOLS</button>
-        <button data-flt="crossenv" class="chip">CROSS-ENV</button>
+        <button data-flt="crossenv" class="chip" title="coordination that crosses from one environment into another">CROSS-ENV</button>
       </div>
       <ol class="cf-body" id="sysStream" role="log" aria-live="polite" aria-relevant="additions" aria-label="live persona coordination"></ol>
       <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link" id="cfUnfollow">show all ✕</button></div>
@@ -116,6 +116,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260619w"></script>
+  <script type="module" src="assets/discovery.js?v=20260620a"></script>
 </body>
 </html>

@@ -69,7 +69,18 @@ const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion:
 // Index a live-telemetry doc per-persona and per-env so the detail views can
 // render each entity's OWN activity (model_events carry persona_id +
 // environment_id; spans carry scope + trace_id). Keyed by short persona/env id.
-const _shortId=(s)=>String(s||'').replace(/^did:personaos:[^:]+:/,'').replace(/^(persona|env|kernel):/,'');
+// Reduce ANY id form to the bare trailing id (ULID / kernel hex) the node's
+// /thinking + per-entity endpoints resolve. Personas/envs ship two DID shapes:
+//   colon  did:personaos:<kernel>:persona:<ULID>
+//   slash  did:personaos:kernel:<kernel>/persona/persona:<ULID>   (live form)
+// The slash form's trailing segment is the real id — taking only the last path
+// segment is what strips the `<kernel>/persona/` middle that previously survived
+// and leaked into /thinking fetches (URL-encoded → ':'→%3A, '/'→%2F → 404).
+const _shortId=(s)=>{
+  let v=String(s||'').replace(/^did:personaos:[^:]+:/,'');
+  if(v.includes('/')) v=v.slice(v.lastIndexOf('/')+1);   // slash-path DID → trailing id
+  return v.replace(/^(persona|env|kernel):/,'');
+};
 // The workspace RUN id (k/run-XXXX) every record carries in its resolved links /
 // url. It is the reliable join between an environment and ITS deliverables: an
 // env record and the artifact bundle + files it produced all share one run path.
@@ -627,6 +638,36 @@ function emptyStateHTML(){
     (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
     personas, live telemetry.</div>
   </div>`;
+}
+
+// ---------- WARMING state: a reachable node is alive but the first candidate /
+// telemetry hasn't reached this client yet ----------
+// HONEST gate: at least one node bootstrapped OK (S.boots / a reachable peer),
+// the heartbeat is running, but NOTHING streamable has landed (no env lanes, no
+// live personas, no coordination acts). Distinct from emptyStateHTML() (no node
+// at all) and from a populated stage. Returns '' when it is NOT genuinely warming.
+function isReachableNode(){
+  if(S.boots&&S.boots.size) return true;
+  for(const h of (S.peerHealth||new Map()).values()) if(h&&h.ok) return true;
+  return false;
+}
+function isWarming(){
+  // reachable + heartbeat running, yet zero streamable signal at the client
+  if(!isReachableNode()) return false;
+  if(!(S.heartbeat&&S.heartbeat.running)) return false;
+  const noPersonas=!(S.liveByPersona&&S.liveByPersona.size);
+  const noActs=!((S.interactions||[]).length);
+  return noPersonas&&noActs;
+}
+// Self-styled (no CSS dependency — this file does not own the stylesheet): a calm
+// pulsing-green status line. The dot reuses the existing 'live' class for its pulse
+// where the stylesheet defines it, with an inline fallback so it always reads.
+function warmingHTML(){
+  return `<div style="display:flex;align-items:center;gap:10px;padding:20px;line-height:1.5">`
+    +`<span class="dot live" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#19c39a;box-shadow:0 0 8px #19c39a;flex:0 0 auto"></span>`
+    +`<div><b style="color:#19c39a">node is producing the first candidate</b>`
+    +`<span class="l2"> — telemetry will stream here shortly. Personas, coordination and deliverables appear the moment the run emits them.</span></div>`
+    +`</div>`;
 }
 
 // a live telemetry frame arrived (SSE) — the per-entity index + heartbeat were
@@ -1509,7 +1550,11 @@ async function refreshSystemView(){
       +`<span class="env-meta">personas not currently in a task environment</span></div>`
       +`<div class="env-personas">${orphans.map(renderPersonaCard).join('')}</div></div>`;
   }
-  const finalHTML=html||((S.recs.size||S.liveByPersona.size)
+  // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
+  // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
+  // viewer who just started a run sees honest "first candidate is coming", not a blank.
+  const finalHTML=html||(isWarming()?warmingHTML()
+    :(S.recs.size||S.liveByPersona.size)
     ?'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>'
     :emptyStateHTML());
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
@@ -1596,6 +1641,12 @@ function renderInteractionStream(){
     // always empty — explain that instead of the generic 'fund a mission' line.
     if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
       return '<li class="l2" style="padding:10px">persona cognition is operator-only (A-TF2) — add an operator token in the console to watch the THINK stream.</li>';
+    // warming: a reachable node is running but no act has streamed yet — say so on the
+    // unfiltered feed rather than implying nothing is funded (honest only when warming).
+    if(flt==='all' && isWarming())
+      return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
+        +'<span class="dot live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19c39a;box-shadow:0 0 6px #19c39a;flex:0 0 auto"></span>'
+        +'<span><b style="color:#19c39a">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
@@ -1873,7 +1924,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
   // transition timeline for everyone else. Streams on the live cadence.
-  S.drawerThinkPid=pid||_shortId(r.did);
+  S.drawerThinkPid=_shortId(pid||r.did);   // always the bare id the /thinking endpoint resolves
   html+=H('🧠 Thinking')+`<div id="thinksec" class="livesec"><div class="l2">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
