@@ -23,7 +23,6 @@
   --radius-sm:4px; --radius-md:6px; --radius-lg:8px;
   --stroke-base:1.5px; --stroke-bold:2px; --stroke-heavy:2.5px;
   --shadow-drawer:-12px 0 32px rgba(0,0,0,.35); --shadow-card-glow:0 0 22px rgba(33,208,122,.16);
-  --shadow-lg:-12px 0 32px rgba(0,0,0,.35); --shadow-md:0 4px 12px rgba(0,0,0,.2); --shadow-sm:0 1px 3px rgba(0,0,0,.15);
   --idle:#6b7a8a;                 /* calm idle surface for receded personas/nodes */
   --code-bg:#070b10; --code-text:var(--intr);
   /* recurring surface fills promoted from raw literals */
@@ -71,7 +70,7 @@ b{color:var(--bright)}
 .stat.auth-read .v{color:var(--up)}
 .vitals input{background:var(--surface-inset);border:1px solid var(--line2);color:var(--ink);border-radius:5px;
   padding:6px 9px;font-family:var(--mono);font-size:12px}
-#q{flex:0 1 210px;min-width:140px} #peer{flex:0 1 200px}
+#q{flex:0 1 210px;min-width:140px} #peer{flex:0 1 200px;min-width:150px}
 .chip,.btn{background:var(--surface-raised);border:1px solid var(--line2);color:var(--dim);border-radius:5px;
   padding:5px 9px;font-size:11px;cursor:pointer;letter-spacing:.4px}
 .chip.on{background:var(--int);border-color:var(--int);color:var(--ink-on-accent);font-weight:700}
@@ -130,6 +129,7 @@ b{color:var(--bright)}
 .cg-legend .lg-ring{width:9px;height:9px;border-radius:50%;display:inline-block;background:transparent;border:2px solid var(--mut)}
 .cg-legend .lg-ring.r-lead{border-color:var(--purple)} .cg-legend .lg-ring.r-verifier{border-color:var(--intr)}
 .cg-legend .lg-ring.r-integrator{border-color:var(--int)} .cg-legend .lg-ring.r-specialist{border-color:var(--amber)}
+.cg-legend .lg-ring.r-member{border-color:var(--mut)}
 .con-toggle{margin-left:auto;background:none;border:1px solid var(--line2);color:var(--dim);border-radius:4px;
   cursor:pointer;font-size:11px;padding:0 7px;line-height:18px;transition:transform .25s ease,border-color .2s,color .2s}
 .con-toggle:hover{border-color:var(--int);color:var(--int)}
@@ -166,6 +166,7 @@ b{color:var(--bright)}
 .gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--idle);stroke-width:var(--stroke-base);transform-box:fill-box;transform-origin:center}
 .gnode.role-verifier .gn-c{stroke:var(--intr)} .gnode.role-lead .gn-c{stroke:var(--purple)}
 .gnode.role-integrator .gn-c{stroke:var(--int)} .gnode.role-specialist .gn-c{stroke:var(--amber)}
+.gnode.role-member .gn-c{stroke:var(--mut)}
 /* active (recently worked) — CALM: filled, no animation, so it never competes for attention */
 .gnode.gn-live .gn-c{fill:var(--fill-live);stroke:var(--up)}
 /* RUNNING NOW — the one persona mid model-call: it alone breathes + ring-pulses */
@@ -280,6 +281,7 @@ b{color:var(--bright)}
 .pc-g{background:var(--surface-raised);border:1px solid var(--line);border-radius:3px;padding:1px 6px;white-space:nowrap}
 .pc-g b{color:var(--ink);font-weight:700}
 .pc-doing .pulse{color:var(--up);animation:pulse2 1.3s infinite}
+.pc-doing .pc-rest{color:var(--mut)}
 @keyframes pulse2{0%,100%{opacity:1}50%{opacity:.25}}
 .pc-doing code,.rr-a code{background:var(--surface-inset);border:1px solid var(--line2);border-radius:3px;padding:0 4px;font-size:10.5px;color:var(--int)}
 .pc-rr-head{display:flex;justify-content:space-between;font-size:9.5px;color:var(--mut);letter-spacing:.4px;
@@ -295,7 +297,7 @@ b{color:var(--bright)}
 
 /* coordination feed */
 .coordfeed{background:#080c12;display:flex;flex-direction:column;min-height:0;
-  border-top:1px solid var(--line2);order:2;max-height:50vh}
+  border-top:1px solid var(--line2);order:2}
 .cf-head{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);
   color:var(--dim);font-size:11px;letter-spacing:.6px;font-weight:700}
 .cf-tabs{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -512,7 +514,7 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .logcard{width:96vw}
   .ix-msg{max-width:120px}
   /* tap-target floor on phone (≥38px) — scoped to phone so desktop density is unchanged */
-  .cf-tabs .chip,.btn,.chip,.link,.pc-follow{min-height:38px;display:inline-flex;align-items:center}
+  .cf-tabs .chip,.btn,.chip,.link,.pc-follow,.art-chip{min-height:38px;display:inline-flex;align-items:center}
   .link{padding:0 4px}
   .pc-follow{min-width:38px;justify-content:center}
   .con-toggle{line-height:30px}

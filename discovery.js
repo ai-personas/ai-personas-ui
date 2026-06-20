@@ -664,8 +664,8 @@ function isWarming(){
 // where the stylesheet defines it, with an inline fallback so it always reads.
 function warmingHTML(){
   return `<div style="display:flex;align-items:center;gap:10px;padding:20px;line-height:1.5">`
-    +`<span class="dot live" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#19c39a;box-shadow:0 0 8px #19c39a;flex:0 0 auto"></span>`
-    +`<div><b style="color:#19c39a">node is producing the first candidate</b>`
+    +`<span class="dot live" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--up);box-shadow:0 0 8px var(--up);flex:0 0 auto"></span>`
+    +`<div><b style="color:var(--up)">node is producing the first candidate</b>`
     +`<span class="l2"> — telemetry will stream here shortly. Personas, coordination and deliverables appear the moment the run emits them.</span></div>`
     +`</div>`;
 }
@@ -958,10 +958,10 @@ const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
 // RUNNING NOW vs merely live: a persona is "running now" iff its model/coordination activity
-// GREW within the last ~12 s (one poll window) — i.e. it is mid model-call this moment. This is
+// GREW within the last ~18 s (just over one 15s poll window) — i.e. it is mid model-call this moment. This is
 // the precise signal that distinguishes the ONE persona actually working from the several that are
 // recently-active ("live"). Everything else stays calm so the running one is unmistakable.
-const _RUNNING_WINDOW_MS=12000;
+const _RUNNING_WINDOW_MS=18000;
 function _runningNow(sid){ const t=(S.lastActiveAt&&S.lastActiveAt.get(sid))||0;
   return t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
 
@@ -1016,13 +1016,13 @@ function renderPersonaCard(pid){
   // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
   let doingHTML, glance='';
   if(hasModels){
-    doingHTML=`<span class="pulse">●</span> ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
+    doingHTML=`${running?'<span class="pulse">●</span>':'<span class="pc-rest">▸</span>'} ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
     const byP=new Map();
     for(const m of models){ const k=m.purpose||'model'; byP.set(k,(byP.get(k)||0)+1); }
     glance=[...byP.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4)
       .map(([p,n])=>`<span class="pc-g">${esc(PURPOSE_VERB[p]||p)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
   } else if(actFresh){
-    doingHTML=`<span class="pulse">●</span> ${esc(_ixVerb(recentAct.kind))}`;
+    doingHTML=`${running?'<span class="pulse">●</span>':'<span class="pc-rest">▸</span>'} ${esc(_ixVerb(recentAct.kind))}`;
   } else {
     doingHTML='<span class="l2">idle — awaiting a mission</span>';
   }
@@ -1039,6 +1039,13 @@ function renderPersonaCard(pid){
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
   // — shown only when an operator token is held (and in the 🧠 thinking drawer).
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
+  // pc-stats footer: assemble the spans first so a model-only persona (s={}, no summary)
+  // doesn't render an EMPTY pc-stats div whose border-top draws a stray separator bar.
+  const statHTML=(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
+    +(s.reputation_score!=null?`<span title="reputation — role-relative [0,1]">✦ ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
+    +(hasOp&&s.tactic_count!=null?`<span title="evolved tactics (operator)">🧬 ${esc(s.tactic_count)}</span>`:'')
+    +(hasOp&&s.lesson_count!=null?`<span title="lessons learned (operator)">💡 ${esc(s.lesson_count)}</span>`:'')
+    +(hasOp&&topMode?`<span title="strongest cognitive mode (operator)">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
   // 3-state presence: RUNNING NOW (pulsing) · active (calm, recently worked) · idle.
   const dotCls=running?'run':(live?'on':'off');
   const statusBadge=running
@@ -1058,13 +1065,8 @@ function renderPersonaCard(pid){
         +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
       +`</div>`:'')
     +(glance?`<div class="pc-glance">${glance}</div>`:'')
-    +`<div class="pc-stats">`
-    +(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
-    +(s.reputation_score!=null?`<span title="reputation — role-relative [0,1]">✦ ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
-    +(hasOp&&s.tactic_count!=null?`<span title="evolved tactics (operator)">🧬 ${esc(s.tactic_count)}</span>`:'')
-    +(hasOp&&s.lesson_count!=null?`<span title="lessons learned (operator)">💡 ${esc(s.lesson_count)}</span>`:'')
-    +(hasOp&&topMode?`<span title="strongest cognitive mode (operator)">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
-    +`</div></div>`;
+    +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
+    +'</div>';
 }
 
 // ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
@@ -1089,7 +1091,7 @@ function _hotPersonas(){
 function _chordCtl(ax,ay,bx,by,bow){
   const cx=500,cy=100, mx=(ax+bx)/2, my=(ay+by)/2;
   let nx=mx-cx, ny=my-cy; let nl=Math.hypot(nx,ny);
-  if(nl<6){ nx=-(by-ay); ny=(bx-ax); nl=Math.hypot(nx,ny)||1; }   // degenerate → use chord perpendicular
+  if(nl<6){ nx=-(by-ay); ny=(bx-ax); nl=Math.hypot(nx,ny)||1; bow=Math.max(bow,84); }   // degenerate (opposite nodes) → chord perpendicular + force a core-clearing bow (apex stays clear of the r=34 ring)
   nx/=nl; ny/=nl;
   return {qx:+(mx+nx*bow).toFixed(1), qy:+(my+ny*bow).toFixed(1)};
 }
@@ -1380,10 +1382,12 @@ function updateVitalsCounters(){
   const recPersona=S.order.filter((id)=>S.recs.get(id).kind==='persona').length;
   personasN=Math.max(S.liveByPersona.size,recPersona);
   const now=Date.now();
-  // STREAMING = personas with live req/resp (model_events) OR a coordination act
-  // in the last 60s — so the headline can't read 0 while the feed is streaming.
+  // STREAMING = personas whose activity GREW in the running window (genuinely mid-work
+  // right now) OR with a coordination act in the last 60s — so the headline can't read 0
+  // while the feed is streaming, and a persona that merely once called a model (its
+  // models[] is carried forward forever) is NOT counted as permanently streaming.
   const streaming=new Set();
-  for(const [psid,pd] of S.liveByPersona) if((pd.models||[]).length>0) streaming.add(psid);
+  for(const psid of (S.lastActiveAt?S.lastActiveAt.keys():[])) if(_runningNow(psid)) streaming.add(psid);
   if(S.ixByPersona) for(const [psid,arr] of S.ixByPersona) if(arr.some((a)=>now-a._t<60000)) streaming.add(psid);
   const active=streaming.size;
   const acts=(S.interactions||[]).filter((e)=>now-e._t<60000).length;
@@ -1476,8 +1480,16 @@ async function refreshSystemView(){
     if(r.kind!=='artifact') continue; const run=runOf(r); if(!run) continue;
     (artByRun.get(run)||artByRun.set(run,[]).get(run)).push(r); }
 
+  // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
+  // so the one persona actually working floats to the top of its lane instead of sitting in
+  // raw roster order. Hoisted so the orphan lane sorts the same way.
+  const _rank=(m)=>{ const live=((S.liveByPersona.get(m)||{}).models||[]).length>0;
+    return _runningNow(m)?0:(live?1:2); };
+  // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
+  // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
+  S.seenArts=S.seenArts||new Set();
   const laneHTML=(b)=>{
-    const cards=b.members.length?b.members.map(renderPersonaCard).join('')
+    const cards=b.members.length?[...b.members].sort((a,c)=>_rank(a)-_rank(c)).map(renderPersonaCard).join('')
       :'<div class="l2" style="padding:8px">awaiting members</div>';
     const arts=b.run?(artByRun.get(b.run)||[]):[];
     const bundles=arts.filter((a)=>a._links&&a._links.bundle);
@@ -1495,7 +1507,8 @@ async function refreshSystemView(){
       // (records have no .id field), or the click handler's S.recs.has() always misses.
       const aid=a.record_id||a.card_id||a.id||'';
       const _al=a.label||'artifact';
-      return `<span class="art-chip" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
+      const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
+      return `<span class="art-chip${isNew?' mint':''}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
@@ -1545,10 +1558,11 @@ async function refreshSystemView(){
   envBlocks.length=0; envBlocks.push(...((_visible.length||orphans.length)?_visible:_kept));
   S.envCount=envBlocks.length;
   let html=envBlocks.map(laneHTML).join('');
+  S.artsColdLoaded=true;   // first full lane pass done → from now on a NEW chip id mints
   if(orphans.length){
     html+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
       +`<span class="env-meta">personas not currently in a task environment</span></div>`
-      +`<div class="env-personas">${orphans.map(renderPersonaCard).join('')}</div></div>`;
+      +`<div class="env-personas">${[...orphans].sort((a,c)=>_rank(a)-_rank(c)).map(renderPersonaCard).join('')}</div></div>`;
   }
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
@@ -1585,7 +1599,7 @@ function _applyFollow(){
   const f=S.follow;
   document.querySelectorAll('.pcard').forEach((el)=>{ el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f);
     el.querySelector('.pc-follow')?.setAttribute('aria-pressed',String(el.dataset.pcard===f)); });
-  const ff=$('#cfFollow'); if(ff) ff.hidden=!f;
+  const ff=$('#cfFollow'); if(ff){ ff.hidden=!f; const lbl=ff.querySelector('.dim'); if(lbl&&f) lbl.textContent='following '+_nameFor(f); }
   // light up the followed node in the constellation too (card/feed-initiated follows
   // should give the graph the same selected feedback as clicking a node directly).
   const g=$('#sysGraph'); if(g){ g.classList.toggle('has-follow',!!f);
@@ -1615,10 +1629,14 @@ function renderInteractionStream(){
   const matches=(e)=>!f|| (e.actor_kind==='persona'&&_shortId(e.actor_id)===f)
     || (e.affected||[]).some((a)=>a.kind==='persona'&&_shortId(a.id)===f);
   let prevScope=null;
+  // preserve the reader's scroll position across the wholesale innerHTML rebuild: newest
+  // rows are prepended at top (rows are .reverse()'d), so when not pinned to the top, add
+  // the grown height so the rows being read stay stationary; at the top, leave it pinned.
+  const atTop=el.scrollTop<=4, prevH=el.scrollHeight, prevTop=el.scrollTop;
   el.innerHTML=rows.map((e)=>{
     const c=_ixClass(e.kind); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
     const who=e.actor_kind==='persona'?_nameFor(_shortId(e.actor_id)):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
-    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):`${a.kind}:${(a.id||'').slice(0,8)}`);
+    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
     const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
     const fresh=!S.ixSeen.has(e._key); if(fresh) S.ixSeen.add(e._key);
     // thread spine when this row shares a real scope_id with the one above it
@@ -1635,7 +1653,7 @@ function renderInteractionStream(){
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}`
-      +`<span class="ix-scope">${esc(e.scope==='cognition'?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
+      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
     // cognition is operator-token-only by design (A-TF2), so an anonymous THINK feed is
     // always empty — explain that instead of the generic 'fund a mission' line.
@@ -1645,13 +1663,14 @@ function renderInteractionStream(){
     // unfiltered feed rather than implying nothing is funded (honest only when warming).
     if(flt==='all' && isWarming())
       return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
-        +'<span class="dot live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#19c39a;box-shadow:0 0 6px #19c39a;flex:0 0 auto"></span>'
-        +'<span><b style="color:#19c39a">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
+        +'<span class="dot live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 6px var(--up);flex:0 0 auto"></span>'
+        +'<span><b style="color:var(--up)">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
     return '<li class="l2" style="padding:10px">no '+esc(q)+'activity yet — fund a mission to watch personas coordinate.</li>';
   })();
+  if(!atTop) el.scrollTop=prevTop+(el.scrollHeight-prevH);
   const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
   // self-filter so an active search query keeps filtering the feed even when this is
   // called directly (tab-switch / follow toggle / cognition merge), not only via the 5s caller.
@@ -1965,7 +1984,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     html+=H(`Deliverables — ${myArts.length} artifact${myArts.length>1?'s':''}`
       +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
     for(const bnd of myBundles)
-      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}">▣ ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
+      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">▣ ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
     if(myFiles.length)
       html+=`<div class="atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
@@ -2034,7 +2053,8 @@ function renderArtifactNode(node,prefix,depth){
     const body=published
       ? `<a href="#" data-act="file" data-path="${esc('artifacts/package/'+f.path)}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size??a.bytes??'')}">${esc(f.name)}</a>`
       : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
-    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}</span></div>`; }
+    const sz=(a.size??a.bytes);
+    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
 }
 function renderArtifactTree(arts){
@@ -2365,6 +2385,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   }
   const ctx={ base, path, url, title, kind, ext:pick.ext, text, realSize, size:opts.size,
     contentHash:opts.contentHash||null };
+  // a texty body that came back null (read-gated bytes / offline node / 404) would render
+  // as a SILENT blank pane (the text renderers consume ctx.text||'' and "succeed"); flag it.
+  const bodyUnavailable=(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
   const rawTog=forcedPlain
     ? `<a href="#" data-act="fv-rich" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">rich view ←</a>`
@@ -2379,6 +2402,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +`<div id="fv-body" class="fv-body"></div>`;
   const mount=async(root)=>{
     const host=root.querySelector('#fv-body'); if(!host) return;
+    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the download/open-raw link above, or hold an operator token.')); return; }
     const r=RENDERERS[rendId]||renderPlain;
     try{ await r(host,ctx);
       // size discovered during a binary fetch → reflect it in the header
@@ -2622,7 +2646,7 @@ async function operatorView(){
   html+=H('Add a node')+`<div class="opform">`
     +`<input id="op-base" type="url" placeholder="node base URL, e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}">`
     +`<input id="op-token" type="password" placeholder="operator token">`
-    +`<button class="btn" data-act="op-save">SAVE</button></div>`;
+    +`<button class="btn" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
   for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
     html+=`<div class="grant"><span>${esc(b)}${loc&&!tokd?' <span class="ok">· local · token bypassed (loopback)</span>':''}</span>`
@@ -2905,6 +2929,9 @@ function wire(){
   // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
   // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
+    // the ◎ follow button lives INSIDE the card, so Enter/Space would otherwise walk up to
+    // the .pc-card and open the drawer — short-circuit it so follow is keyboard-reachable.
+    const fb=e.target.closest('[data-follow]'); if(fb){ e.preventDefault(); fb.click(); return; }
     const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],.mcard'); if(!t) return;
     e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
   // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
@@ -2962,8 +2989,9 @@ function wire(){
   $('#opbtn').addEventListener('click',()=>{
     const open=$('#detailwrap').classList.contains('open');
     if(open && S._topIsOp){ $('#detailwrap').classList.remove('open'); S._topIsOp=false; return; }
+    S._lastFocus=document.activeElement;
     S.views=[()=>operatorView()]; S._topIsOp=true;
-    $('#detailwrap').classList.add('open'); renderTop(); });
+    $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); });
   updateOpBadge();
   // "what is this" intro + setup instructions: HIDDEN by default (the living network is
   // the page — instructions don't eat real estate); the ？ button toggles them on demand.
@@ -2980,8 +3008,9 @@ function wire(){
   const mc=$('#missionCards');
   if(mc) mc.addEventListener('click',(e)=>{ const c=e.target.closest('.mcard'); if(!c) return;
     if(c.dataset.mrec){ openDetail(c.dataset.mrec); return; }
-    if(c.dataset.mrun){ S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
-      $('#detailwrap').classList.add('open'); renderTop(); } });
+    if(c.dataset.mrun){ S._lastFocus=document.activeElement;
+      S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
+      $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); } });
   // in-drawer navigation: follow links to other records / bundles / artifact files
   $('#detailbody').addEventListener('click',(e)=>{ const a=e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
     const act=a.dataset.act, base=S.curBase||'';
@@ -2991,8 +3020,10 @@ function wire(){
       if(wasCollapsed){ S.bundleDirs.delete(key); S.bundleDirsOpen.add(key); }
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
-    if(act==='op-save'){ const nb=opBaseKey($('#op-base').value.trim()), tv=$('#op-token').value.trim();
-      if(nb&&tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); } return; }
+    if(act==='op-save'){ let raw=$('#op-base').value.trim(); if(raw && !/^https?:\/\//i.test(raw)) raw=(location.protocol==='https:'?'https://':'http://')+raw; const nb=opBaseKey(raw), tv=$('#op-token').value.trim();
+      if(nb&&tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); }
+      else { const msg=$('#op-save-msg'); if(msg) msg.textContent = !nb ? 'enter the node base URL first' : 'enter the operator token first'; }
+      return; }
     if(act==='op-del'){ const m2=opTokens(); delete m2[a.dataset.base]; opSaveTokens(m2);
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
@@ -3051,7 +3082,8 @@ function wire(){
       // the console so the new run / updated paused list shows (mirrors op-newenv).
       const show=(r)=>{ done();
         if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
-        if(r.status<300){ S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
+        if(r.status<300){ const bi=$('#opr-budget')||$('#op-budget'); if(bi) bi.value='';   // clear the budget so the 3s re-render window can't double-fund
+          S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
       if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
       if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; done(); return; }
@@ -3071,7 +3103,7 @@ function wire(){
       S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true}); renderTop(); }
     else if(act==='fv-rich'){ // swap back to the rich media renderer
       S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{}); renderTop(); }
-    else if(act==='bundle') pushView(()=>bundleView(base,a.dataset.url));
+    else if(act==='bundle'){ const br=a.dataset.rec?S.recs.get(a.dataset.rec):null; pushView(()=>bundleView(base,a.dataset.url,br?br._links:undefined)); }
     else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
     else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));
     else if(act==='physical') pushView(()=>physicalView(base,a.dataset.url));
@@ -3089,7 +3121,22 @@ function wire(){
   $('#logmodal').addEventListener('click',(e)=>{ if(e.target.id==='logmodal') closeLog(); });
   $('#detailclose').addEventListener('click',closeDetail);
   $('#detailwrap').addEventListener('click',(e)=>{ if(e.target.id==='detailwrap') closeDetail(); });
-  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeLog(); closeDetail(); } });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'){ closeLog(); closeDetail(); return; }
+    // Tab focus trap: both .drawer and .logcard are aria-modal — keep Tab inside the open
+    // overlay instead of letting it walk into the page behind it.
+    if(e.key!=='Tab') return;
+    const wrap=$('#detailwrap')?.classList.contains('open')?$('#detailwrap')
+      :($('#logmodal')?.classList.contains('open')?$('#logmodal'):null);
+    if(!wrap) return;
+    const panel=wrap.querySelector('.drawer,.logcard')||wrap;
+    const foc=[...panel.querySelectorAll('a[href],button:not([disabled]),input,textarea,[tabindex]:not([tabindex="-1"])')]
+      .filter((n)=>n.offsetParent!==null);
+    if(!foc.length) return;
+    const first=foc[0], last=foc[foc.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+  });
 }
 
 // ---------- real P2P transport: a js-libp2p node in the browser ----------
