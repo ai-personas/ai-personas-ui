@@ -533,9 +533,34 @@ export async function render(ctx) {
   diagram.style.cssText =
     'overflow-x:auto;overflow-y:hidden;max-width:100%;-webkit-overflow-scrolling:touch;' +
     'background:#fff;border:1px solid var(--line2,#2a3340);border-radius:6px;padding:8px;box-sizing:border-box;';
-  // svg is a complete, self-contained <svg> string produced by WaveDrom/onml.
-  // It carries no scripting; WaveDrom is the producer, not peer-authored markup.
-  diagram.innerHTML = svg;
+  // The svg string is WaveDrom output built from PEER-authored WaveJSON (signal
+  // names, head/foot text, node labels); WaveDrom reflects that text into the SVG
+  // without reliable escaping, so a crafted .wavedrom/.vcd can inject markup.
+  // Sanitise via an inert XML document (mirrors gerber.mjs svgStringToNode): parse,
+  // reject on parse error / no <svg> root (throw → host text/download fallback),
+  // strip active/embedding elements and event/URL/style attributes, then adopt.
+  const sdoc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  if (sdoc.getElementsByTagName('parsererror').length) {
+    throw new Error('waveform: SVG parse error');
+  }
+  const sroot = sdoc.documentElement;
+  if (!sroot || sroot.localName.toLowerCase() !== 'svg') {
+    throw new Error('waveform: no <svg> root produced');
+  }
+  sroot.querySelectorAll('script,foreignObject,iframe,image,a').forEach((n) => n.remove());
+  const walkSvg = (node) => {
+    if (node.attributes) {
+      for (const attr of Array.from(node.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on') || name === 'href' || name.endsWith(':href') || name === 'style') {
+          node.removeAttribute(attr.name);
+        }
+      }
+    }
+    for (const child of Array.from(node.children || [])) walkSvg(child);
+  };
+  walkSvg(sroot);
+  diagram.appendChild(document.importNode(sroot, true));
 
   const svgEl = diagram.querySelector('svg');
   if (svgEl) {

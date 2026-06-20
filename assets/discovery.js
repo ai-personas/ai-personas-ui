@@ -2,6 +2,10 @@ import * as ed from './noble-ed25519.js';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Record envelope fields (base/_url/links.profile/content path) live OUTSIDE the
+// Ed25519-signed payload, yet are written into real <a href> navigations. esc()
+// neutralises markup but NOT dangerous schemes — block javascript:/data:/vbscript:/file:.
+const safeUrl=(u)=>{ const s=String(u||'').trim(); return /^\s*(javascript|data|vbscript|file):/i.test(s)?'#':s; };
 const enc=new TextEncoder();
 const hexToBytes=(h)=>Uint8Array.from((h||'').match(/.{1,2}/g)?.map((b)=>parseInt(b,16))||[]);
 const pad=(n,w=2)=>String(n).padStart(w,'0');
@@ -40,6 +44,12 @@ const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostna
 function tokenFor(u){ const m=opTokens(); const abs=isAbs(u)?u:join(location.origin,u);
   let best='',tok=''; for(const k in m){ if(abs.startsWith(k)&&k.length>best.length){ best=k; tok=m[k]; } }
   return tok; }
+// In-drawer renderers fetch bytes WITH the operator token (authHeaders), but a plain
+// <a download href> carries none — so for the default federation-tier (read-gated)
+// bodies this UI exists to surface, the node returns 403/404 and the download silently
+// fails. The node accepts ?token= (already used for EventSource), so thread it onto the
+// raw href when we hold a token for that base.
+function dlHref(u){ const t=tokenFor(u); return t?u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(t):u; }
 function authHeaders(u){ const t=tokenFor(u); return t?{'Authorization':'Bearer '+t}:{}; }
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   const n=Object.keys(opTokens()).length; b.classList.toggle('on',n>0);
@@ -86,11 +96,11 @@ const _shortId=(s)=>{
 // env record and the artifact bundle + files it produced all share one run path.
 function runOf(r){ if(!r) return null;
   const cands=[...Object.values(r._links||{}), r._url, r._base];
-  for(const v of cands){ if(typeof v==='string'){ const m=v.match(/k\/run-[0-9A-Za-z]+/); if(m) return m[0]; } }
+  for(const v of cands){ if(typeof v==='string'){ const m=v.match(/k\/(run-[0-9A-Za-z]+)/); if(m) return m[1]; } }
   // Some records (notably ARTIFACTS) carry the run path only NESTED — e.g. an env+federation tier
   // artifact's body is gated, so its run lives in links.content_stub.note/locator, not a top-level
   // string link. Deep-scan the links blob so a deliverable still joins to ITS env lane.
-  try{ const m=JSON.stringify(r._links||{}).match(/k\/run-[0-9A-Za-z]+/); if(m) return m[0]; }catch(e){}
+  try{ const m=JSON.stringify(r._links||{}).match(/k\/(run-[0-9A-Za-z]+)/); if(m) return m[1]; }catch(e){}
   return null; }
 // The bare env ULID — the live entities feed keys envs as `env:<ULID>` (→ ULID
 // via _shortId), but an env RECORD's DID is `…:<kernel>/env/env:<ULID>`, which
@@ -112,12 +122,16 @@ function indexLiveTelemetry(base,live){
   // read the whole page as idle. running = ANY node running; interval = min over running.
   if(live.node&&live.node.heartbeat){
     (S.heartbeatByBase=S.heartbeatByBase||new Map()).set(base||'@origin',live.node.heartbeat);
-    let anyRunning=false, minIv=null;
+    let anyRunning=false, anyBusy=false, minIv=null;
     for(const hb of S.heartbeatByBase.values()){
       const r=hb&&hb.running!==false; if(r){ anyRunning=true;
-        const iv=+(hb&&hb.interval_s); if(iv>0) minIv=(minIv==null?iv:Math.min(minIv,iv)); } }
+        const iv=+(hb&&hb.interval_s); if(iv>0) minIv=(minIv==null?iv:Math.min(minIv,iv)); }
+      // busy is the HONEST distinguisher: node.py sets heartbeat.busy='running run-xxxx'
+      // only while actually producing, '' when idle. OR it across bases so the warming
+      // claim ('producing the first candidate') never shows for an unfunded/idle node.
+      if(hb&&hb.busy) anyBusy=true; }
     // when nothing is running, keep the last reported interval so the cadence is stable
-    S.heartbeat={running:anyRunning,interval_s:(minIv!=null?minIv:(S.heartbeat&&S.heartbeat.interval_s)||live.node.heartbeat.interval_s)};
+    S.heartbeat={running:anyRunning,busy:anyBusy,interval_s:(minIv!=null?minIv:(S.heartbeat&&S.heartbeat.interval_s)||live.node.heartbeat.interval_s)};
   }
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
@@ -532,7 +546,7 @@ function upsert(r){
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
-
+    description:r.description||'',
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
 function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
@@ -585,7 +599,12 @@ function pruneDeadManualPeers(){
     log('peers',`removed ${s.length-keep.length} unreachable ＋PEER node(s) from this browser`,false);
   }
 }
+let _discoverBusy=false;
 async function discover(){
+  // re-entrancy guard: the 15s interval is .then()-fired-and-forgotten and can stack
+  // on a slow tunnel (each run does parallel per-base fetches + telemetry loads).
+  if(_discoverBusy) return; _discoverBusy=true;
+  try{
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
   await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
   const seeds=[...new Set(['', ...peerList()])];
@@ -606,6 +625,7 @@ async function discover(){
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
     +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
     +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
+  }finally{ _discoverBusy=false; }
 }
 
 // ---------- empty state: never a silent blank network ----------
@@ -652,12 +672,32 @@ function isReachableNode(){
   return false;
 }
 function isWarming(){
-  // reachable + heartbeat running, yet zero streamable signal at the client
+  // reachable + heartbeat actually BUSY producing, yet zero streamable signal at the
+  // client. heartbeat.running alone is true for an unfunded/idle node (the thread is
+  // just alive), so requiring busy stops the green 'producing' claim on an idle node.
   if(!isReachableNode()) return false;
-  if(!(S.heartbeat&&S.heartbeat.running)) return false;
+  if(!(S.heartbeat&&S.heartbeat.running&&S.heartbeat.busy)) return false;
   const noPersonas=!(S.liveByPersona&&S.liveByPersona.size);
   const noActs=!((S.interactions||[]).length);
   return noPersonas&&noActs;
+}
+// HONEST idle-but-alive: node reachable, heartbeat running, but NOT busy (no funded
+// mission) and nothing has streamed yet. Distinct from warming (busy) — the copy must
+// not claim production.
+function isIdleAlive(){
+  if(!isReachableNode()) return false;
+  if(!(S.heartbeat&&S.heartbeat.running)) return false;
+  if(S.heartbeat.busy) return false;
+  const noPersonas=!(S.liveByPersona&&S.liveByPersona.size);
+  const noActs=!((S.interactions||[]).length);
+  return noPersonas&&noActs;
+}
+function idleAliveHTML(){
+  return `<div style="display:flex;align-items:center;gap:10px;padding:20px;line-height:1.5">`
+    +`<span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);flex:0 0 auto"></span>`
+    +`<div><b style="color:var(--amber)">node is online — no funded mission running</b>`
+    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>🔑&nbsp;OPERATOR</b>, ask the node a task and fund a budget to start a run; personas, coordination and deliverables stream here the moment it produces.</span></div>`
+    +`</div>`;
 }
 // Self-styled (no CSS dependency — this file does not own the stylesheet): a calm
 // pulsing-green status line. The dot reuses the existing 'live' class for its pulse
@@ -1051,7 +1091,7 @@ function renderPersonaCard(pid){
   const statusBadge=running
     ? '<span class="pc-run">● RUNNING</span>'
     : (live?'<span class="pc-active">active</span>':'<span class="pc-idle">idle</span>');
-  return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
+  return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
     +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
@@ -1409,8 +1449,14 @@ function updateVitalsCounters(){
     dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
+let _sysBusy=false;
 async function refreshSystemView(){
-  const host=$('#sysEnvs'); if(!host) return;
+  const host=$('#sysEnvs'); if(!host||_sysBusy) return;
+  // re-entrancy guard (mirrors _cogBusy): the 5s interval fires this unconditionally,
+  // and its many serial awaited fetches can overrun the interval on a slow link, so
+  // invocations would otherwise overlap and stack duplicate fetches + full rebuilds.
+  _sysBusy=true;
+  try{
   // structure: each discovered base → its envs (entities index) → members (env feed).
   const bases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
   const envBlocks=[];          // {kernel, envId, sid, name, type, status, members[], run, recId, live}
@@ -1502,13 +1548,21 @@ async function refreshSystemView(){
     const metaFiles=arts.filter((a)=>{ const L=a._links||{};
       return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
     const chips=(bundles.length?bundles:arts).slice(0,6).map((a)=>{
-      const n=(bundles.length&&a._links&&a._links.bundle)?fileCount:0;
+      // The signed bundle record's description is '{state} deliverable bundle (N files)'.
+      // Parse it for per-BUNDLE state + count: prefer the per-bundle file count over the
+      // run-wide fileCount (which is wrong when a run has >1 bundle), and show the state so
+      // the chip distinguishes draft from shipped.
+      const m=String(a.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
+      const stt=m?m[1].toLowerCase():''; const bn=m?+m[2]:0;
+      const isBundle=bundles.length&&a._links&&a._links.bundle;
+      const n=isBundle?(bn||fileCount):0;
+      const stCls=isBundle&&stt?((stt==='shipped'||stt==='accepted')?' ds-ok':(stt==='deprecated'||stt==='rejected')?' ds-no':' ds-amber'):'';
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
       // (records have no .id field), or the click handler's S.recs.has() always misses.
       const aid=a.record_id||a.card_id||a.id||'';
       const _al=a.label||'artifact';
       const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
-      return `<span class="art-chip${isNew?' mint':''}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
+      return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
@@ -1568,6 +1622,7 @@ async function refreshSystemView(){
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
   // viewer who just started a run sees honest "first candidate is coming", not a blank.
   const finalHTML=html||(isWarming()?warmingHTML()
+    :isIdleAlive()?idleAliveHTML()
     :(S.recs.size||S.liveByPersona.size)
     ?'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>'
     :emptyStateHTML());
@@ -1589,6 +1644,7 @@ async function refreshSystemView(){
   renderInteractionStream();
   updateVitalsCounters();
   if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
+  }finally{ _sysBusy=false; }
 }
 // per-env accent hue (stable, from the design palette) for the lane border/badge
 const _ENV_HUES=['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2'];
@@ -1665,13 +1721,25 @@ function renderInteractionStream(){
       return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
         +'<span class="dot live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 6px var(--up);flex:0 0 auto"></span>'
         +'<span><b style="color:var(--up)">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
+    // idle-but-alive: reachable + heartbeat running but NOT busy (no funded mission) —
+    // honest amber, never the green 'producing' claim.
+    if(flt==='all' && isIdleAlive())
+      return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
+        +'<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px var(--amber);flex:0 0 auto"></span>'
+        +'<span><b style="color:var(--amber)">node is online — no funded mission</b> — ask a task and fund a budget in the console to start a run.</span></li>';
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
     return '<li class="l2" style="padding:10px">no '+esc(q)+'activity yet — fund a mission to watch personas coordinate.</li>';
   })();
   if(!atTop) el.scrollTop=prevTop+(el.scrollHeight-prevH);
-  const r=$('#sysStreamRate'); if(r) r.textContent=`${all.length} live acts`;
+  // headline count must match what the reader sees: the grand total only for the
+  // default all+no-follow view, else the shown (tab-filtered, follow-matching) count.
+  const r=$('#sysStreamRate'); if(r){
+    const narrowed=(flt!=='all')||!!f;
+    const shown=f?rows.filter(matches).length:rows.length;
+    r.textContent=narrowed?`${shown} of ${all.length} acts`:`${all.length} live acts`;
+  }
   // self-filter so an active search query keeps filtering the feed even when this is
   // called directly (tab-switch / follow toggle / cognition merge), not only via the 5s caller.
   if(S.q) document.querySelectorAll('#sysStream .ix').forEach((li)=>{ if(!li.textContent.toLowerCase().includes(S.q)) li.style.display='none'; });
@@ -1954,7 +2022,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
-  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(join(base,L.profile))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
+  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(base,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
   return {title:`<span class="kind k-persona">PERSONA</span> ${esc(ps.name||r.label)}`, html};
 }
 async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
@@ -1988,7 +2056,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     if(myFiles.length)
       html+=`<div class="atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
-        +`<span class="l2">${esc(a.media_kind||'')}</span></div>`).join('')+`</div>`;
+        +`<span class="l2">${esc((a._links||{}).media_kind||'')}</span></div>`).join('')+`</div>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
   if(roster.length){
@@ -2057,9 +2125,9 @@ function renderArtifactNode(node,prefix,depth,pkgRun){
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size??a.bytes??'')}">${esc(f.name)}</a>`
+      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}">${esc(f.name)}</a>`
       : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
-    const sz=(a.size??a.bytes);
+    const sz=(a.size_bytes??a.size??a.bytes);
     h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${esc(a.media_kind||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
 }
@@ -2097,7 +2165,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
   // is MANDATORY for verified/accepted — surface it as the proof, not a one-liner.
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const arts=d.artifacts||[], ev=d.verifier_evidence||[], rv=d.review_verdicts||[];
-  const cosigners=Object.keys(d.co_signatures||{});
+  const cosigners=d.co_signers||Object.keys(d.co_signatures||{});
   const st=String(d.state||'—');
   const stClass=(st==='shipped'||st==='accepted')?'ok':(st==='rejected'?'no':'amber');
   let html=kv('Bundle',`<code>${esc(d.bundle_id||'')}</code>`)
@@ -2116,17 +2184,26 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
       const nr=e.parsed_verdict==='not_run';
       const cls=nr?'amber':(ok?'ok':'no');
       const mark=nr?'∅ not_run':(ok?'✓ pass':'✗ fail');
-      return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'check')}</span>`
-        +`<span class="${cls}">${mark}</span></div>`;
+      // surface what the export already ships: the failure_kind on non-pass rows and
+      // a kernel-signed mark when the evidence carries the kernel's signature.
+      const fk=(!ok&&!nr&&e.failure_kind)?` <span class="no" title="failure kind">(${esc(e.failure_kind)})</span>`:'';
+      const ks=e.signed_by_kernel?' <span class="ok" title="kernel-signed evidence">⛨ kernel</span>':'';
+      return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'check')}${ks}</span>`
+        +`<span class="${cls}">${mark}${fk}</span></div>`;
     }).join('');
   } else {
     html+=H('Verifier evidence')+`<div class="l2">— none recorded (below verified) —</div>`;
   }
   if(rv.length){
     html+=H(`Review verdicts (${rv.length})`);
-    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_persona_id||v.reviewer||'reviewer')}</span>`
+    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_id||v.reviewer_persona_id||v.reviewer||'reviewer')}${v.signed_by?' <span class="ok" title="Ed25519 signed">✓ signed</span>':''}</span>`
       +`<span class="${String(v.verdict||'').includes('accept')?'ok':'no'}">${esc(v.verdict||'—')}</span></div>`
       +(v.rationale?`<div class="desc2">${esc(String(v.rationale).slice(0,240))}</div>`:'')).join('');
+  }
+  // Co-signer identities — the export ships them, but the UI previously showed only a bare count.
+  if(cosigners.length){
+    html+=H(`Co-signers (${cosigners.length})`);
+    html+=cosigners.map((c)=>`<div class="grant"><span class="l2">${esc(c)}</span><span class="ok" title="Ed25519 signed">✓ signed</span></div>`).join('');
   }
   html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts,pkgRun);
   if(L && L.run){ html+=H('Provenance')
@@ -2418,7 +2495,7 @@ async function renderDescriptor(host,ctx){
   add('Content hash',ctx.contentHash||'—');
   host.appendChild(card);
   const dl=el('div','row'); const a=document.createElement('a');
-  a.href=ctx.url; a.target='_blank'; a.rel='noopener'; a.setAttribute('download',''); a.textContent='download →';
+  a.href=dlHref(ctx.url); a.target='_blank'; a.rel='noopener'; a.setAttribute('download',''); a.textContent='download →';
   dl.appendChild(a); host.appendChild(dl);
   if(TEXTY_DESCRIPTOR_EXT.has(ctx.ext)){
     const txt=await fetchText(ctx.url);
@@ -2477,15 +2554,15 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const bodyUnavailable=(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
   const rawTog=forcedPlain
-    ? `<a href="#" data-act="fv-rich" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">rich view ←</a>`
+    ? `<a href="#" data-act="fv-rich" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
     : (rendId!=='plain'
-        ? `<a href="#" data-act="fv-raw" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}">raw text</a>`
+        ? `<a href="#" data-act="fv-raw" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
     +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
-    +`<a href="${esc(url)}" target="_blank" rel="noopener" download>download / open raw →</a></span></div>`
+    +`<a href="${esc(safeUrl(dlHref(url)))}" target="_blank" rel="noopener" download>download / open raw →</a></span></div>`
     +`<div id="fv-body" class="fv-body"></div>`;
   // EXISTING (legacy) renderer path — the FALLBACK used when no lazy module
   // matches, or when a matched lazy module throws (CDN/lib/parse/empty).
@@ -2509,7 +2586,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
       let body=ctx.text;
       if(body==null){ body=legacyBinary?null:await fetchText(url); }
-      if(body==null && legacyBinary){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; }
+      if(body==null && legacyBinary){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The download/open-raw link above may also be gated; hold an operator token or open this on the node\'s own machine.')); return; }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
   };
@@ -2612,7 +2689,7 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
     +kv('Events (this run)',esc(r.events));
   const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
-    +H('Source')+`<div class="row"><a href="${esc(r._url)}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
+    +H('Source')+`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
   return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
@@ -2651,7 +2728,10 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-project">PROJECT</span> ${esc(d.name||r.label)}`, html};
 }
-async function bodyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const b=rj.body||{}, ex=rj.real_execution||{};
+async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
+  if(!rj0) return {title:`<span class="kind k-persona">BODY · J7</span> codex run`,
+    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
+  const rj=rj0; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
     +kv('Accepted',b.accepted?'<span class="ok">✓ verified</span>':'<span class="no">✗</span>')
     +kv('Verified by model',`<span class="ok">${esc(b.verified_by_model||'—')}</span>`)+kv('Program',esc((b.program_chars||0)+' chars'));
@@ -2660,14 +2740,21 @@ async function bodyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base
   html+=H(`Safety floor sources (${(b.safety_sources||[]).length} of 8)`)+chipsOf(b.safety_sources);
   return {title:`<span class="kind k-persona">BODY · J7</span> codex run`, html};
 }
-async function verifyView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
+async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
+  if(!rj0) return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`,
+    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
+  const rj=rj0; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
   let html=kv('Bundle verified',bv.passed?'<span class="ok">✓ passed</span>':'<span class="no">✗</span>')
     +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
   html+=H('Verifier cascade')+(bv.invocations||[]).map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="ok">${v[1]?'✓':'✗'}</span></div>`).join('');
   const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Env-rule evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">• ${esc(e.rule_name||e.rule_id||'rule')} — ${e.passed===false?'✗':'✓ signed'}</div>`).join('');
   return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`, html};
 }
-async function distributionView(base,L){ S.curBase=base; const oci=await dfetch(base,L.oci)||{}, dag=await dfetch(base,L.dag)||{}, reg=await dfetch(base,L.registry)||{};
+async function distributionView(base,L){ S.curBase=base;
+  const oci0=await dfetch(base,L.oci), dag0=await dfetch(base,L.dag), reg0=await dfetch(base,L.registry);
+  if(!oci0&&!dag0&&!reg0) return {title:`<span class="kind k-artifact">DISTRIBUTION</span> OCI + IPLD`,
+    html:`<div class="viewerr">distribution documents could not be loaded — the node may be offline or the bodies are read-gated; hold an operator token (or open on the node's machine) to view them.</div>`};
+  const oci=oci0||{}, dag=dag0||{}, reg=reg0||{};
   let html=kv('OCI artifactType',esc(oci.artifactType||'—'))+kv('OCI layers',esc((oci.layers||[]).length))
     +kv('IPLD root CID',esc(((dag.root_cid||'')+'').slice(0,32)||'—'))+kv('Addressing','SHA-256 · CIDv1 · content-addressed');
   const pk=reg.packages||[]; if(pk.length) html+=H(`Registry DIDs (${pk.length})`)+pk.map((p)=>`<div class="grant"><span>${esc(p.kind)}</span><span class="l2">${esc((p.did||'').slice(0,34))}…</span></div>`).join('');
@@ -2960,7 +3047,8 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
     // package-relative title (artifacts/package/<title>) so an art-chip whose record carries no
     // content link still opens. _bodyPath adds the k/<run>/ prefix to hit the served bytes.
     const cpath=L.content||((r.title||r.label)?('artifacts/package/'+(r.title||r.label)):'');
-    if(cpath) return fileView(r._base||'',_bodyPath(cpath,runOf(r)),r.label,L.media_kind);
+    const _b=r._base||'';
+    if(cpath) return fileView(_b, /k\/run-/.test(_b)?cpath:_bodyPath(cpath,runOf(r)), r.label, L.media_kind);
   }
   return genericView(r);
 }
@@ -2973,12 +3061,17 @@ function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
   S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
+  // monotonic guard: top() awaits the network (file/bundle/body views), and Back /
+  // pushView call renderTop without serialization. A stale in-flight render must not
+  // write LAST and show a view the user already navigated away from — latest wins.
+  const gen=(S._renderGen=(S._renderGen||0)+1);
   $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
+  if(gen!==S._renderGen) return;
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
   $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
   // optional async post-mount step (media renderers paint into a container here)
-  if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} }
+  if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} if(gen!==S._renderGen) return; }
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
 function openDetail(id){ S._topIsOp=false; S._lastFocus=document.activeElement;
@@ -3129,7 +3222,7 @@ function wire(){
   // drawer clears the flag, so the toggle reflects true open-ness.
   $('#opbtn').addEventListener('click',()=>{
     const open=$('#detailwrap').classList.contains('open');
-    if(open && S._topIsOp){ $('#detailwrap').classList.remove('open'); S._topIsOp=false; return; }
+    if(open && S._topIsOp){ closeDetail(); return; }   // closeDetail clears _topIsOp, restores focus, and tears down the active view
     S._lastFocus=document.activeElement;
     S.views=[()=>operatorView()]; S._topIsOp=true;
     $('#detailwrap').classList.add('open'); renderTop(); $('.drawer')?.focus(); });
@@ -3180,8 +3273,8 @@ function wire(){
       if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
       if(out) out.textContent=smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…';
       opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{ done();
-        if(out){ showOpResult(out,r,r.status<300?'\n\n→ now FUND the mission to resume with the attested capability.':''); out.scrollIntoView({block:'nearest'}); }
-        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
+        if(out){ showOpResult(out,r,(r.status>=200&&r.status<300)?'\n\n→ now FUND the mission to resume with the attested capability.':''); out.scrollIntoView({block:'nearest'}); }
+        if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3500); } });
       return; }
     if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
@@ -3189,7 +3282,7 @@ function wire(){
       const show=(r)=>{ done();
         if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
         // leave the result readable, then refresh the console so the new entity shows
-        if(r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
+        if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
       if(act==='op-newenv'){ const name=($('#op-env-name')?.value||'').trim();
         if(!name){ if(out) out.textContent='enter an environment name first'; return; }
@@ -3223,7 +3316,7 @@ function wire(){
       // the console so the new run / updated paused list shows (mirrors op-newenv).
       const show=(r)=>{ done();
         if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
-        if(r.status<300){ const bi=$('#opr-budget')||$('#op-budget'); if(bi) bi.value='';   // clear the budget so the 3s re-render window can't double-fund
+        if(r.status>=200&&r.status<300){ const bi=$('#opr-budget')||$('#op-budget'); if(bi) bi.value='';   // clear the budget so the 3s re-render window can't double-fund
           S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
       if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
@@ -3241,9 +3334,9 @@ function wire(){
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null};
       pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,o)); }
     else if(act==='fv-raw'){ // swap the CURRENT file view to forced plain text (re-render in place)
-      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true}); renderTop(); }
+      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true,contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); }
     else if(act==='fv-rich'){ // swap back to the rich media renderer
-      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{}); renderTop(); }
+      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); }
     else if(act==='bundle'){ const br=a.dataset.rec?S.recs.get(a.dataset.rec):null; pushView(()=>bundleView(base,a.dataset.url,br?br._links:undefined)); }
     else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
     else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));
@@ -3254,7 +3347,15 @@ function wire(){
   // restore it on close (a11y — overlays are role=dialog aria-modal).
   const closeLog=()=>{ $('#logmodal').classList.remove('open');
     if(S._lastFocusLog){ try{ S._lastFocusLog.focus(); }catch(e){} S._lastFocusLog=null; } };
-  const closeDetail=()=>{ $('#detailwrap').classList.remove('open'); S._topIsOp=false;
+  const closeDetail=()=>{
+    // Closing the drawer over a 3D/PDF view must run the active view's teardown
+    // (renderer.dispose/forceContextLoss, URL.revokeObjectURL) — runViewCleanups()
+    // only ran at the top of renderTop(), so closing here leaked WebGL/object-URLs.
+    // Clear the drawer-live keys too, or the 5s loop keeps fetching feed/thinking
+    // against the now-hidden drawer forever.
+    runViewCleanups();
+    S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveBase='';
+    $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
     $('#logmodal').classList.add('open'); $('.logcard')?.focus(); });

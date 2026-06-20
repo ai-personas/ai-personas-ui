@@ -216,6 +216,10 @@ b{color:var(--bright)}
   padding:4px 10px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px}
 .art-chip:hover{border-color:var(--amber)}
 .art-chip.mint{animation:mint .8s ease-out}
+/* per-bundle deliverable state: shipped/accepted=green, deprecated/rejected=red, else amber (default). */
+.art-chip.ds-ok{background:rgba(25,195,154,.10);border-color:var(--up);color:var(--up)}
+.art-chip.ds-amber{background:#1f1a0c;border-color:#43381a;color:var(--amber)}
+.art-chip.ds-no{background:rgba(255,95,95,.08);border-color:var(--down);color:var(--down)}
 @keyframes mint{0%{transform:scale(.8);background:rgba(240,167,58,.35)}60%{transform:scale(1.06)}100%{transform:scale(1);background:#1f1a0c}}
 
 /* living persona card — FLUID auto-pack: each card wants ~270px, grows to fill the row
@@ -399,7 +403,11 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 /* deliverable-bundle artifact tree */
 .atree{font-size:11.5px;margin:2px 0}
 .atree .tnode{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid var(--line)}
-.atree .tdir>a{color:var(--amber);text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+/* a long deliverable name must not force the full-width phone drawer into horizontal
+   scroll: truncate the filename link, keep the right-side meta from shrinking. */
+.atree .tnode>a,.atree .tnode>.tgated{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atree .tnode>.l2{flex:0 0 auto;white-space:nowrap}
+.atree .tdir>a{color:var(--amber);text-decoration:none;display:inline-flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .atree .tdir>a:hover{text-decoration:underline}
 .atree .ttog{display:inline-block;width:10px;color:var(--dim);font-size:9px}
 .atree .tfile>a{color:var(--int)}

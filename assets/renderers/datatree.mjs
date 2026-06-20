@@ -235,6 +235,7 @@ const CSS = `
 .dt-copy{flex:0 0 auto;margin-left:8px;opacity:0;cursor:pointer;border:0;background:none;
   color:#5c7186;font:inherit;padding:0 4px;border-radius:4px;transition:opacity .1s}
 .dt-row:hover .dt-copy{opacity:1}
+.dt-row:focus-within .dt-copy,.dt-copy:focus,.dt-copy:focus-visible{opacity:1}
 .dt-copy:hover{color:#9ad0ff;background:#1d2733}
 .dt-copy.dt-ok{color:#9ee493}
 .dt-empty{color:#6b7a8a;font-style:italic;padding:8px 2px}
@@ -436,13 +437,25 @@ function buildNode(ctx, value, keyLabel, isIndex, path, depth) {
     const startCollapsed = depth >= 2;
     if (startCollapsed) li.classList.add('dt-collapsed');
     else buildChildren();
+    // a11y: the twisty is the keyboard-operable control; reflect expand state on the li.
+    tw.tabIndex = 0;
+    tw.setAttribute('role', 'button');
+    tw.setAttribute('aria-label', 'toggle');
+    li.setAttribute('aria-expanded', startCollapsed ? 'false' : 'true');
 
     const toggle = () => {
       const willOpen = li.classList.contains('dt-collapsed');
       if (willOpen) buildChildren();
       li.classList.toggle('dt-collapsed');
+      li.setAttribute('aria-expanded', li.classList.contains('dt-collapsed') ? 'false' : 'true');
     };
     tw.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    // keyboard: Enter/Space on the focused twisty expands/collapses the node.
+    tw.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault(); e.stopPropagation(); toggle();
+      }
+    });
     // clicking the summary/key area also toggles (but not the copy button)
     row.addEventListener('click', (e) => {
       if (e.target === copy) return;
@@ -571,7 +584,7 @@ export async function render(ctx) {
   });
   collapseAll.addEventListener('click', () => {
     treeUl.querySelectorAll('.dt-node').forEach((n) => {
-      if (n.querySelector(':scope > ul')) n.classList.add('dt-collapsed');
+      if (n.querySelector(':scope > ul')) { n.classList.add('dt-collapsed'); n.setAttribute('aria-expanded', 'false'); }
     });
   });
 

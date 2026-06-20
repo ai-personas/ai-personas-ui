@@ -624,7 +624,12 @@ export async function render(ctx) {
   // LOADING STATE: paint an indicator into the host before the (potentially
   // slow) authenticated fetch + heavy in-browser parse. We mount it, then
   // yield a frame so the browser actually renders it before we block on parse.
-  const loading = ctx.el('div', 'kic-loading', 'Loading KiCad file…');
+  // Clear the host first: the dispatcher mounts its own fv-loading spinner and
+  // relies on each module clearing the host as its first paint. Only appending
+  // here orphaned that spinner above the finished view. Adding fv-loading also
+  // gives KiCad the real animated spinner it otherwise lacked.
+  ctx.host.textContent = '';
+  const loading = ctx.el('div', 'fv-loading kic-loading', 'Loading KiCad file…');
   ctx.host.appendChild(loading);
   await new Promise(r => (typeof requestAnimationFrame === 'function'
     ? requestAnimationFrame(() => r()) : setTimeout(r, 0)));

@@ -38,6 +38,9 @@ export async function render(ctx) {
   const loading = ctx.el('div', 'fv-loading');
   loading.style.cssText = 'font:12px/1.5 ui-monospace,Menlo,monospace;color:#9aa7b4;padding:14px;';
   loading.textContent = isStep ? 'parsing STEP structure…' : `loading 3D viewer (three.js)…`;
+  // Clear host first so the dispatcher's own fv-loading spinner doesn't orphan
+  // above this view (every module is expected to clear the host on first paint).
+  ctx.host.textContent = '';
   ctx.host.appendChild(loading);
   const dropLoading = () => { try { loading.remove(); } catch { /* ignore */ } };
 
