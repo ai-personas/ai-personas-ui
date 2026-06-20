@@ -2,6 +2,57 @@ import * as ed from './noble-ed25519.js';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* ---------- ONE inline-SVG icon set (design-system iconography) ----------
+   16x16 viewBox, stroke=currentColor, fill=none, round caps/joins (Lucide/Geist
+   house style) so every glyph inherits its surface colour and the token palette.
+   aria-hidden — the accessible name always lives on the host element's
+   aria-label/title (never on the decorative glyph). Replaces ALL colour emoji and
+   fullwidth/symbol faux-icons so they stop defeating the token palette. */
+const _ICON_PATHS={
+  // verdicts (pass / fail / not-run) — colour comes from the parent .ok/.no/.amber currentColor
+  check:'M3.5 8.5l3 3 6-7',
+  x:'M4 4l8 8M12 4l-8 8',
+  minus:'M4 8h8',
+  // nav / disclosure
+  close:'M4 4l8 8M12 4l-8 8',
+  back:'M10 3l-5 5 5 5',
+  chevron:'M5 6l3 3 3-3',                 // disclosure ▸/▾ (rotated by CSS when collapsed)
+  play:'M6 4l5 4-5 4z',                    // ▸ resting/activity marker (filled triangle)
+  // toolbar / actions
+  key:'M10.5 2.5a3.5 3.5 0 1 0 2.3 6.1l1.2 1.2 1.5-1.5-1.2-1.2A3.5 3.5 0 0 0 10.5 2.5zM9.6 6.4l-6 6',
+  plus:'M8 3.5v9M3.5 8h9',
+  help:'M6 6a2 2 0 1 1 2.6 1.9c-.6.2-.9.7-.9 1.3v.3M8 12.2v.1',
+  // operator verbs
+  ask:'M9 2L3.5 9H8l-1 5 5.5-7H8l1-5z',                 // ⚡ ASK
+  fund:'M8 2.5v11M5 5.5h4a1.5 1.5 0 0 1 0 3H6.5a1.5 1.5 0 0 0 0 3H11', // 💰 FUND (cash)
+  stop:'M5 5h6v6H5z',                                    // ⏹ STOP
+  env_new:'M2.5 13.5V7L8 3l5.5 4v6.5M6 13.5v-4h4v4',     // 🏗 NEW ENV (building)
+  persona_new:'M8 8.5a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4zM3.5 13.5a4.5 4.5 0 0 1 9 0', // 🧬 NEW PERSONA (person)
+  tool:'M11.5 2.5a3 3 0 0 1-4 4l-4.5 4.5 1.5 1.5L9 8a3 3 0 0 0 4-4l-1.5 1.5-1.5-1.5L11.5 2.5z', // 🔧 tool (wrench)
+  attest:'M9.5 3l3.5 3.5-6.5 6.5H3v-3.5L9.5 3z',         // ✍ ATTEST (pen)
+  // status / glance
+  lesson:'M8 2.5a3.5 3.5 0 0 0-2 6.4V11h4V8.9A3.5 3.5 0 0 0 8 2.5zM6.5 13h3', // 💡 lesson (bulb)
+  task:'M5.5 8.5l1.5 1.5 3.5-4M3 3h10v10H3z',            // ⚙/task → checklist
+  rep:'M8 2.5l1.6 3.4 3.7.4-2.8 2.5.8 3.6L8 10.6 4.7 12.4l.8-3.6L2.7 6.3l3.7-.4L8 2.5z', // ✦ reputation (star)
+  warn:'M8 2.5l6 11H2l6-11zM8 7v3M8 12v.1',              // ⚠ warning (triangle)
+  arrow:'M3 8h9M9 5l3 3-3 3',                            // → flow arrow
+  dot:'M8 4.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z',     // ● filled-ish marker (running pulse host)
+  dna:'M5 3c0 3 6 3 6 6s-6 3-6 6M11 3c0 3-6 3-6 6s6 3 6 6M5.5 5h5M5.5 11h5', // 🧬 evolved tactics
+  mode:'M8 2.5l1.5 1.5L8 5.5 6.5 4 8 2.5zM8 10.5L9.5 12 8 13.5 6.5 12 8 10.5zM2.5 8L4 6.5 5.5 8 4 9.5 2.5 8zM10.5 8L12 6.5 13.5 8 12 9.5 10.5 8z', // ◈ cognitive mode
+  target:'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', // ◎ follow / watch-one
+  box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ deliverable bundle (package)
+};
+function icon(name,extra){
+  const d=_ICON_PATHS[name]; if(!d) return '';
+  const cls='ico'+(extra?' '+extra:'');
+  const fill=(name==='dot'||name==='play')?'currentColor':'none';
+  return `<svg class="${cls}" viewBox="0 0 16 16" width="16" height="16" fill="${fill}" stroke="currentColor" `
+    +`stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">`
+    +`<path d="${d}"/></svg>`;
+}
+// verdict glyph keyed to the three states the verdict columns use (pass/fail/not-run),
+// wrapped so the existing .ok/.no/.amber colour classes still drive the hue via currentColor.
+const _verdict=(state)=>state==='pass'?icon('check'):state==='fail'?icon('x'):icon('minus','ico-sm');
 // Record envelope fields (base/_url/links.profile/content path) live OUTSIDE the
 // Ed25519-signed payload, yet are written into real <a href> navigations. esc()
 // neutralises markup but NOT dangerous schemes — block javascript:/data:/vbscript:/file:.
@@ -53,7 +104,9 @@ function dlHref(u){ const t=tokenFor(u); return t?u+(u.includes('?')?'&':'?')+'t
 function authHeaders(u){ const t=tokenFor(u); return t?{'Authorization':'Bearer '+t}:{}; }
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   const n=Object.keys(opTokens()).length; b.classList.toggle('on',n>0);
-  b.textContent=n>0?`🔑 OPERATOR · ${n}`:'🔑 OPERATOR'; }
+  // stroked key glyph (inherits the button's currentColor; goes green via #opbtn.on)
+  // instead of the colour emoji that defeated the token palette.
+  b.innerHTML=icon('key')+`<span class="opbtn-label">OPERATOR${n>0?` · ${n}`:''}</span>`; }
 async function fetchJson(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null; return await r.json(); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
@@ -377,7 +430,7 @@ function noteKernel(kernelId,via,base){
 function renderGlobalKernels(){
   const el=$('#globalKernels'); if(!el) return;
   const g=S.globalKernels||new Map();
-  if(!g.size){ el.innerHTML='<span class="dim">no kernels discovered yet</span>'; return; }
+  if(!g.size){ el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>'; return; }
   const now=Date.now();
   el.innerHTML=[...g.entries()].map(([kid,info])=>{
     const fresh=(now-info.lastSeen)<45000;
@@ -639,7 +692,7 @@ function emptyStateHTML(){
     ||'<div class="l2">no peers attempted yet</div>';
   const httpsPage=location.protocol==='https:';
   return `<div class="empty-card">
-    <h3>No live PersonaOS personas discovered yet</h3>
+    <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
     discovered at runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
     no reachable node is currently publishing public records.</div>
@@ -654,7 +707,7 @@ function emptyStateHTML(){
     and add the tunnel URL with <b>＋ PEER</b>.`:`2 · Add your node's URL with <b>＋ PEER</b>
     (or <code>?peer=&lt;url&gt;</code>).`}<br>
     3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
-    4 · Your own node? Click <b>🔑 OPERATOR</b>, paste its token
+    4 · Your own node? Click <b>OPERATOR</b>, paste its token
     (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
     personas, live telemetry.</div>
   </div>`;
@@ -693,18 +746,21 @@ function isIdleAlive(){
   return noPersonas&&noActs;
 }
 function idleAliveHTML(){
-  return `<div style="display:flex;align-items:center;gap:10px;padding:20px;line-height:1.5">`
-    +`<span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);flex:0 0 auto"></span>`
-    +`<div><b style="color:var(--amber)">node is online — no funded mission running</b>`
-    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>🔑&nbsp;OPERATOR</b>, ask the node a task and fund a budget to start a run; personas, coordination and deliverables stream here the moment it produces.</span></div>`
+  // .state-banner / .idle: token-elevated callout (reduced-motion-covered dot) — the
+  // inline-style blob is gone; the class carries the spacing/colour from the design system.
+  // A minimal inline fallback on the dot keeps it legible until the shared CSS lands.
+  return `<div class="state-banner idle">`
+    +`<span class="dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>`
+    +`<div><b class="amber">node is online — no funded mission running</b>`
+    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>OPERATOR</b>, ask the node a task and fund a budget to start a run; personas, coordination and deliverables stream here the moment it produces.</span></div>`
     +`</div>`;
 }
-// Self-styled (no CSS dependency — this file does not own the stylesheet): a calm
-// pulsing-green status line. The dot reuses the existing 'live' class for its pulse
-// where the stylesheet defines it, with an inline fallback so it always reads.
+// A calm pulsing-green warming banner: the dot reuses the existing 'live' class for its
+// pulse (with a minimal inline colour fallback) and the .state-banner shell carries the
+// shared token spacing/elevation — no more inline layout blob.
 function warmingHTML(){
-  return `<div style="display:flex;align-items:center;gap:10px;padding:20px;line-height:1.5">`
-    +`<span class="dot live" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--up);box-shadow:0 0 8px var(--up);flex:0 0 auto"></span>`
+  return `<div class="state-banner warming">`
+    +`<span class="dot live" style="background:var(--up);box-shadow:0 0 8px var(--up)"></span>`
     +`<div><b style="color:var(--up)">node is producing the first candidate</b>`
     +`<span class="l2"> — telemetry will stream here shortly. Personas, coordination and deliverables appear the moment the run emits them.</span></div>`
     +`</div>`;
@@ -869,7 +925,7 @@ function trustPanel(r){
   const anchor=r.content_hash?('sha256 '+String(r.content_hash).replace('sha256:','').slice(0,20)+'…')
     :(r.content_locator_ref?('locator '+esc(String(r.content_locator_ref).slice(0,24))):'— (discover-level metadata only)');
   let html=H('Trust · Ed25519')
-    +kv('Verified in browser','<span class="ok">✓ signature checked here</span>')
+    +kv('Verified in browser',`<span class="ok">${icon('check','ico-sm')} signature checked here</span>`)
     +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}…</span>`:''}`)
     +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
   // drive min-to-discover/read from the record's REAL access policy, not constants
@@ -994,6 +1050,10 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
+// per-row feed kind glyph keyed to the _ixClass lane (inherits the lane colour via
+// currentColor on .ix-kind). One stroked icon per lane — no colour emoji.
+const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',tool:'tool',crossenv:'arrow',activity:'dot'};
+const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
@@ -1056,13 +1116,13 @@ function renderPersonaCard(pid){
   // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
   let doingHTML, glance='';
   if(hasModels){
-    doingHTML=`${running?'<span class="pulse">●</span>':'<span class="pc-rest">▸</span>'} ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
     const byP=new Map();
     for(const m of models){ const k=m.purpose||'model'; byP.set(k,(byP.get(k)||0)+1); }
     glance=[...byP.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4)
       .map(([p,n])=>`<span class="pc-g">${esc(PURPOSE_VERB[p]||p)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
   } else if(actFresh){
-    doingHTML=`${running?'<span class="pulse">●</span>':'<span class="pc-rest">▸</span>'} ${esc(_ixVerb(recentAct.kind))}`;
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(_ixVerb(recentAct.kind))}`;
   } else {
     doingHTML='<span class="l2">idle — awaiting a mission</span>';
   }
@@ -1081,11 +1141,13 @@ function renderPersonaCard(pid){
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   // pc-stats footer: assemble the spans first so a model-only persona (s={}, no summary)
   // doesn't render an EMPTY pc-stats div whose border-top draws a stray separator bar.
-  const statHTML=(s.experience_tasks!=null?`<span title="tasks worked">⚙ ${esc(s.experience_tasks)}</span>`:'')
-    +(s.reputation_score!=null?`<span title="reputation — role-relative [0,1]">✦ ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
-    +(hasOp&&s.tactic_count!=null?`<span title="evolved tactics (operator)">🧬 ${esc(s.tactic_count)}</span>`:'')
-    +(hasOp&&s.lesson_count!=null?`<span title="lessons learned (operator)">💡 ${esc(s.lesson_count)}</span>`:'')
-    +(hasOp&&topMode?`<span title="strongest cognitive mode (operator)">◈ ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
+  // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
+  // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
+  const statHTML=(s.experience_tasks!=null?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
+    +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
+    +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
+    +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
+    +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
   // 3-state presence: RUNNING NOW (pulsing) · active (calm, recently worked) · idle.
   const dotCls=running?'run':(live?'on':'off');
   const statusBadge=running
@@ -1097,12 +1159,12 @@ function renderPersonaCard(pid){
     +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
     +statusBadge
     +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')
-    +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">◎</button></div>`
+    +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
-    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?'⚠':'🔧'} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
+    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?icon('warn','ico-sm'):icon('tool','ico-sm')} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
     +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>
         `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${grew&&i===0?' fresh':''}">`
-        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?'💡':'▸'}</span>${esc(m._msg||'')}</div>`).join('')
+        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?icon('lesson','ico-sm'):icon('play','ico-sm')}</span>${esc(m._msg||'')}</div>`).join('')
       +`</div>`:'')
     +(glance?`<div class="pc-glance">${glance}</div>`:'')
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
@@ -1562,7 +1624,7 @@ async function refreshSystemView(){
       const aid=a.record_id||a.card_id||a.id||'';
       const _al=a.label||'artifact';
       const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
-      return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">▣ ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
+      return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">${icon('box','ico-sm')} ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
@@ -1707,7 +1769,7 @@ function renderInteractionStream(){
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
     const ttl=e._rationale?` title="${esc(e._rationale)}"`:(cap&&cap.error?` title="${esc(cap.error)}"`:'');
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
-      +spine+`<span class="ix-kind">${esc(verb)}</span>`
+      +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}`
       +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
@@ -1718,15 +1780,15 @@ function renderInteractionStream(){
     // warming: a reachable node is running but no act has streamed yet — say so on the
     // unfiltered feed rather than implying nothing is funded (honest only when warming).
     if(flt==='all' && isWarming())
-      return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
-        +'<span class="dot live" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 6px var(--up);flex:0 0 auto"></span>'
+      return '<li class="loading-inline">'
+        +'<span class="dot live" style="background:var(--up);box-shadow:0 0 6px var(--up)"></span>'
         +'<span><b style="color:var(--up)">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
     // idle-but-alive: reachable + heartbeat running but NOT busy (no funded mission) —
     // honest amber, never the green 'producing' claim.
     if(flt==='all' && isIdleAlive())
-      return '<li class="l2" style="padding:10px;display:flex;align-items:center;gap:8px">'
-        +'<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px var(--amber);flex:0 0 auto"></span>'
-        +'<span><b style="color:var(--amber)">node is online — no funded mission</b> — ask a task and fund a budget in the console to start a run.</span></li>';
+      return '<li class="loading-inline">'
+        +'<span class="dot" style="background:var(--amber);box-shadow:0 0 6px var(--amber)"></span>'
+        +'<span><b class="amber">node is online — no funded mission</b> — ask a task and fund a budget in the console to start a run.</span></li>';
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
@@ -1813,7 +1875,7 @@ function renderThinking(t){
   let h='';
   const out=t.recent_outputs||[];
   if(out.length){
-    h+=`<div class="l2" style="margin:2px 0 3px">🗣️ Recent model output — what the LLM actually produced (newest first)</div>`
+    h+=`<div class="l2" style="margin:2px 0 3px">Recent model output — what the LLM actually produced (newest first)</div>`
       +out.slice(-10).reverse().map((o)=>
         `<div class="think llmout"><span class="amber">${esc(o.kind||'output')}</span> `
         +`<span class="opmsg">${esc(String(o.text||'').slice(0,240))}</span></div>`).join('');
@@ -1849,10 +1911,10 @@ function renderThinking(t){
     h+=`<div class="l2" style="margin:6px 0 3px">Cognition timeline (signed evolution log)</div><div class="tape-mini">`
       +tl.slice(-10).reverse().map((e)=>
         `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
-        +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?'✓':e.accepted===false?'✗':''}</span></div>`).join('')+`</div>`;
+        +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+`</div>`;
   }
   if(t.thinking_frame)
-    h+=`<details class="frame"><summary class="l2">🧠 thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
+    h+=`<details class="frame"><summary class="l2">thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
       +`<pre class="opout">${esc(t.thinking_frame)}</pre></details>`;
   return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
 }
@@ -1866,7 +1928,7 @@ function renderThinkingRedacted(doc){
   if(tl.length)
     h+='<div class="tape-mini">'+tl.slice(-10).reverse().map((e)=>
       `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
-      +`<span class="l2">${e.accepted===true?'✓':e.accepted===false?'✗':''}</span></div>`).join('')+'</div>';
+      +`<span class="l2">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+'</div>';
   return h;
 }
 async function refreshThinking(){
@@ -2012,7 +2074,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
   // transition timeline for everyone else. Streams on the live cadence.
   S.drawerThinkPid=_shortId(pid||r.did);   // always the bare id the /thinking endpoint resolves
-  html+=H('🧠 Thinking')+`<div id="thinksec" class="livesec"><div class="l2">resolving cognition…</div></div>`;
+  html+=H('Thinking')+`<div id="thinksec" class="livesec"><div class="fv-loading">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   const eid=kernelRec(r._kernel,'env');
@@ -2052,7 +2114,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     html+=H(`Deliverables — ${myArts.length} artifact${myArts.length>1?'s':''}`
       +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
     for(const bnd of myBundles)
-      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">▣ ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
+      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
     if(myFiles.length)
       html+=`<div class="atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
@@ -2120,7 +2182,7 @@ function renderArtifactNode(node,prefix,depth,pkgRun){
     const key=prefix?prefix+'/'+seg:seg; const collapsed=dirCollapsed(key,depth);
     const n=(child.files.length)+child.dirs.size;
     h+=`<div class="tnode tdir" style="padding-left:${depth*14}px"><a href="#" data-act="tdir" data-key="${esc(key)}" data-collapsed="${collapsed?1:0}">`
-      +`<span class="ttog">${collapsed?'▸':'▾'}</span> ${esc(seg)}/</a><span class="l2">${n}</span></div>`;
+      +`<span class="ttog${collapsed?' collapsed':''}">${icon('chevron','ico-sm')}</span> ${esc(seg)}/</a><span class="l2">${n}</span></div>`;
     if(!collapsed) h+=`<div class="tkids">${renderArtifactNode(child,key,depth+1,pkgRun)}</div>`; }
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
@@ -2145,10 +2207,10 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     const run=(String(url||'').match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||'';
     const files=(S.order||[]).map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='artifact'
         && !((r._links||{}).bundle) && runOf(r)===run);
-    let mh='<div class="empty-card"><h3>Deliverable — content is read-gated</h3>'
+    let mh=`<div class="empty-card"><h3>${icon('key')} Deliverable — content is read-gated</h3>`
       +'<p class="desc2">This node publishes that the deliverable <b>exists</b> (file list, hashes, metadata) '
       +'to anonymous viewers, but serves the actual <b>bytes</b> only at <b>read+</b> tier '
-      +'(07_ARTIFACTS §10a). To open the files: click <b>🔑&nbsp;OPERATOR</b> and paste this node\'s '
+      +'(07_ARTIFACTS §10a). To open the files: click <b>OPERATOR</b> and paste this node\'s '
       +'bearer token, or open the page on the node\'s own machine (localhost = operator).</p></div>';
     if(files.length){
       mh+=H(`Files (${files.length}) — published manifest`)+files.slice(0,80).map((r)=>{
@@ -2183,11 +2245,11 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
       const ok=(e.exit_status_kind==='success')||(e.parsed_verdict==='pass');
       const nr=e.parsed_verdict==='not_run';
       const cls=nr?'amber':(ok?'ok':'no');
-      const mark=nr?'∅ not_run':(ok?'✓ pass':'✗ fail');
+      const mark=nr?(_verdict('notrun')+' not_run'):(ok?(_verdict('pass')+' pass'):(_verdict('fail')+' fail'));
       // surface what the export already ships: the failure_kind on non-pass rows and
       // a kernel-signed mark when the evidence carries the kernel's signature.
       const fk=(!ok&&!nr&&e.failure_kind)?` <span class="no" title="failure kind">(${esc(e.failure_kind)})</span>`:'';
-      const ks=e.signed_by_kernel?' <span class="ok" title="kernel-signed evidence">⛨ kernel</span>':'';
+      const ks=e.signed_by_kernel?` <span class="ok" title="kernel-signed evidence">${icon('check','ico-sm')} kernel</span>`:'';
       return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'check')}${ks}</span>`
         +`<span class="${cls}">${mark}${fk}</span></div>`;
     }).join('');
@@ -2196,14 +2258,14 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
   }
   if(rv.length){
     html+=H(`Review verdicts (${rv.length})`);
-    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_id||v.reviewer_persona_id||v.reviewer||'reviewer')}${v.signed_by?' <span class="ok" title="Ed25519 signed">✓ signed</span>':''}</span>`
+    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_id||v.reviewer_persona_id||v.reviewer||'reviewer')}${v.signed_by?` <span class="ok" title="Ed25519 signed">${icon('check','ico-sm')} signed</span>`:''}</span>`
       +`<span class="${String(v.verdict||'').includes('accept')?'ok':'no'}">${esc(v.verdict||'—')}</span></div>`
       +(v.rationale?`<div class="desc2">${esc(String(v.rationale).slice(0,240))}</div>`:'')).join('');
   }
   // Co-signer identities — the export ships them, but the UI previously showed only a bare count.
   if(cosigners.length){
     html+=H(`Co-signers (${cosigners.length})`);
-    html+=cosigners.map((c)=>`<div class="grant"><span class="l2">${esc(c)}</span><span class="ok" title="Ed25519 signed">✓ signed</span></div>`).join('');
+    html+=cosigners.map((c)=>`<div class="grant"><span class="l2">${esc(c)}</span><span class="ok" title="Ed25519 signed">${icon('check','ico-sm')} signed</span></div>`).join('');
   }
   html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts,pkgRun);
   if(L && L.run){ html+=H('Provenance')
@@ -2659,7 +2721,7 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
   for(const e of selected){ const pp=e.requested_purpose||e.role||'other'; byPurpose[pp]=(byPurpose[pp]||0)+1; }
   let html=kv('Feed',S0(r.label))
     +kv('Reason',S0(tel.reason))
-    +kv('Lineage durable',k.lineage_durable?'<span class="ok">✓ durable</span>':'<span class="no">in-memory only</span>')
+    +kv('Lineage durable',k.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:'<span class="no">in-memory only</span>')
     +kv('Signed spans',S0((k.spans||[]).length))
     +kv('Model-selection events',S0(selected.length))
     +kv('Access','consent-gated · read+ (operator) or public-telemetry opt-in');
@@ -2685,7 +2747,7 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
 async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]; S.curBase=r._base||'';
   const anchor=r.content_hash?('sha256 '+r.content_hash.replace('sha256:','').slice(0,18)+'…'):'— (metadata only)';
   let html=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))+kv('DID',esc(r.did))
-    +kv('Kernel',esc(r._kernel||'—'))+kv('Signature','<span class="ok">✓ Ed25519 verified</span>')+kv('Body anchor',esc(anchor))
+    +kv('Kernel',esc(r._kernel||'—'))+kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)+kv('Body anchor',esc(anchor))
     +kv('Events (this run)',esc(r.events));
   const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
@@ -2733,9 +2795,9 @@ async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(bas
     html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
   const rj=rj0; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
-    +kv('Accepted',b.accepted?'<span class="ok">✓ verified</span>':'<span class="no">✗</span>')
+    +kv('Accepted',b.accepted?`<span class="ok">${icon('check','ico-sm')} verified</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
     +kv('Verified by model',`<span class="ok">${esc(b.verified_by_model||'—')}</span>`)+kv('Program',esc((b.program_chars||0)+' chars'));
-  const at=b.attempts||[]; if(at.length) html+=H('Codex model cascade')+at.map((a)=>`<div class="grant"><span>${a.accepted?'✓':'✗'} ${esc(a.model_id)}</span><span class="l2">${esc(a.status)} · ${esc(a.program_chars)} ch</span></div>`).join('');
+  const at=b.attempts||[]; if(at.length) html+=H('Codex model cascade')+at.map((a)=>`<div class="grant"><span class="${a.accepted?'ok':'no'}">${a.accepted?icon('check','ico-sm'):icon('x','ico-sm')} ${esc(a.model_id)}</span><span class="l2">${esc(a.status)} · ${esc(a.program_chars)} ch</span></div>`).join('');
   html+=H('Real sandbox execution')+kv('Result',ex.ok?'<span class="ok">ok</span>':'<span class="no">failed</span>')+kv('Return code',esc(ex.returncode))+kv('stdout',`<code>${esc(ex.stdout||'')}</code>`);
   html+=H(`Safety floor sources (${(b.safety_sources||[]).length} of 8)`)+chipsOf(b.safety_sources);
   return {title:`<span class="kind k-persona">BODY · J7</span> codex run`, html};
@@ -2744,10 +2806,10 @@ async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(b
   if(!rj0) return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`,
     html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
   const rj=rj0; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
-  let html=kv('Bundle verified',bv.passed?'<span class="ok">✓ passed</span>':'<span class="no">✗</span>')
+  let html=kv('Bundle verified',bv.passed?`<span class="ok">${icon('check','ico-sm')} passed</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
     +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
-  html+=H('Verifier cascade')+(bv.invocations||[]).map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="ok">${v[1]?'✓':'✗'}</span></div>`).join('');
-  const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Env-rule evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">• ${esc(e.rule_name||e.rule_id||'rule')} — ${e.passed===false?'✗':'✓ signed'}</div>`).join('');
+  html+=H('Verifier cascade')+(bv.invocations||[]).map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="${v[1]?'ok':'no'}">${v[1]?icon('check','ico-sm'):icon('x','ico-sm')}</span></div>`).join('');
+  const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Env-rule evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">• ${esc(e.rule_name||e.rule_id||'rule')} — ${e.passed===false?`<span class="no">${icon('x','ico-sm')}</span>`:`<span class="ok">${icon('check','ico-sm')} signed</span>`}</div>`).join('');
   return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`, html};
 }
 async function distributionView(base,L){ S.curBase=base;
@@ -2797,7 +2859,7 @@ function missionDocHTML(ref){
     return `<div class="grant"><span>${esc(t.name)} ${dir} ${evBadge(ev)}</span>`
       +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
   const unmeasured=targets.filter((t)=>String((evd[t.name]||{}).evidence_strength||'unmeasured')==='unmeasured');
-  if(unmeasured.length) html+=`<div class="viewerr">⚠ ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
+  if(unmeasured.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
   // Budget tranches — "resume with more budget → measurably better best-so-far".
   if(tr.length){ html+=H('Budget tranches — resume with more budget → higher best-so-far');
     html+=tr.map((x)=>`<div class="grant"><span>tranche ${esc(x.tranche)} · budget ${esc(x.budget_candidates)} cand · ${esc(x.rounds_this_tranche)} rounds</span>`
@@ -2814,7 +2876,7 @@ function missionDocHTML(ref){
   if(em.length){ html+=H('Budget → emergence (16_POP §4A factor 7)');
     html+=em.map((e)=>{ const g=e.genesis||{};
       return `<div class="grant"><span>genesis: <b class="ok">${esc(g.niche)}</b> · sub-env ${esc((e.sub_env||{}).kind)}</span>`
-        +`<span class="l2">pressure ${esc(e.pressure_score)} (admissible ${e.pressure_admissible?'✓':'✗'}) · ReplicationBound ceiling ${esc(g.replication_bound_population_ceiling)}</span></div>`; }).join(''); }
+        +`<span class="l2">pressure ${esc(e.pressure_score)} (admissible ${e.pressure_admissible?`<span class="ok">${icon('check','ico-sm')}</span>`:`<span class="no">${icon('x','ico-sm')}</span>`}) · ReplicationBound ceiling ${esc(g.replication_bound_population_ceiling)}</span></div>`; }).join(''); }
   const ceiling=ref.physical_realization_ceiling||ref.manufacturability_ceiling;
   if(ceiling) html+=H('Physical-realization ceiling (honest)')+`<div class="l2">${esc(ceiling)}</div>`;
   return html;
@@ -2835,11 +2897,26 @@ async function missionView(r){
 // common operator failures (bad/missing token; unreachable node), then the raw JSON.
 function showOpResult(out,r,suffix){
   let hint='';
-  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget ✕ then re-paste), or open the node\'s localhost UI where loopback grants access.\n\n';
+  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget, then re-paste), or open the node\'s localhost UI where loopback grants access.\n\n';
   else if(r.status===0) hint='could not reach the node'+((r.body&&r.body.error)?' — '+String(r.body.error).slice(0,200):'')+'\n\n';
   const head=r.status===0?'HTTP 0 (no response)':`HTTP ${r.status}`;
   out.textContent=hint+head+'\n'+JSON.stringify(r.body,null,1).slice(0,1600)+(suffix||'');
+  // colour the result pane off the status the call already computed: 2xx = ok (green
+  // edge), everything else (auth/guard/unreachable) = err (danger edge). Additive
+  // classes the design system styles; cleared each render so a retry re-derives them.
+  const ok=r.status>=200&&r.status<300;
+  out.classList.remove('is-ok','is-err'); out.classList.add(ok?'is-ok':'is-err');
 }
+// neutral 'in-progress' state for the result pane (clears any prior ok/err edge so a
+// new submission doesn't keep the previous verdict colour while it awaits the network).
+function opPending(out,msg){ if(!out) return; out.textContent=msg||'submitting…';
+  out.classList.remove('is-ok','is-err'); }
+// flag an operator field as invalid (red ring) for a failed inline guard; the flag
+// clears itself the next time the user edits the field. No data/contract change —
+// aria-invalid is presentational + a11y only.
+function opInvalid(el){ if(!el) return; el.setAttribute('aria-invalid','true');
+  const clear=()=>{ el.removeAttribute('aria-invalid'); el.removeEventListener('input',clear); };
+  el.addEventListener('input',clear); el.focus&&el.focus(); }
 async function opPost(base,path,body){ const u=join(base,path);
   try{ const r=await fetch(u,{method:'POST',
       headers:{'Content-Type':'application/json',...authHeaders(u)},body:JSON.stringify(body)});
@@ -2866,14 +2943,16 @@ async function operatorView(){
     +`operator, so <b>no token is needed</b> for it (a tunneled node keeps the public host and `
     +`still requires the token).</div>`;
   html+=H('Add a node')+`<div class="opform">`
-    +`<input id="op-base" type="url" placeholder="node base URL, e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}">`
-    +`<input id="op-token" type="password" placeholder="operator token">`
-    +`<button class="btn" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
+    +`<label class="field"><span class="field-label">node base URL</span>`
+    +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
+    +`<label class="field"><span class="field-label">operator token</span>`
+    +`<input id="op-token" type="password" placeholder="paste the per-install token"></label>`
+    +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
   for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
     html+=`<div class="grant"><span>${esc(b)}${loc&&!tokd?' <span class="ok">· local · token bypassed (loopback)</span>':''}</span>`
     +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
-    +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ✕</a>`:'')+`</span></div>`; }
+    +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ${icon('x','ico-sm')}</a>`:'')+`</span></div>`; }
   if(!bases.length) html+=`<div class="l2">no operator tokens saved and no local node discovered — this browser is an anonymous public viewer. Run a node locally (it appears here automatically) or paste a remote node's token.</div>`;
   return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
 }
@@ -2898,7 +2977,7 @@ async function operatorNodeView(b){
   else if(pub&&loc) html+=`<div class="desc2"><span class="no">loopback trust off or proxied</span> — a local node should grant operator access without a token. If you reached it through a tunnel/proxy the token is still required; otherwise check it isn't started with <code>PERSONAOS_TRUST_LOOPBACK=0</code>.</div>`;
   else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Paste this node's token in the operator console (or open its localhost UI, where loopback grants access).</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
-    +kv('Lineage',st.lineage_durable?'<span class="ok">durable ✓</span>':(pub?'—':'<span class="no">in-memory only</span>'))
+    +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(pub?'—':'<span class="no">in-memory only</span>'))
     +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
     +kv('Artifact tier',S0(st.artifact_tier))
     +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
@@ -2918,11 +2997,11 @@ async function operatorNodeView(b){
   // unavailable external capability instead of fabricating a value. The human
   // attests once (signed bridge evidence); the next resume clears the block.
   const att=st.attestations_needed||[];
-  html+=H(`Human attestation${att.length?` ⚠ needed (${att.length}) — mission honest-blocked`:''}`);
+  html+=H(`Human attestation${att.length?` — needed (${att.length}) — mission honest-blocked`:''}`);
   if(!att.length){
     html+=`<div class="l2">`+(pub
       ?`operator-only — attestation requests appear here once you have owner access (paste the token, or open the node's localhost UI).`
-      :`✓ no mission is blocked on human attestation right now. When a persona honest-blocks on an external capability it cannot self-provision (a hardware instrument, a credential, a paid API…), it appears here with an <b>✍ ATTEST</b> form.`)+`</div>`;
+      :`${icon('check','ico-sm')} no mission is blocked on human attestation right now. When a persona honest-blocks on an external capability it cannot self-provision (a hardware instrument, a credential, a paid API…), it appears here with an <b>ATTEST</b> form.`)+`</div>`;
   } else {
     html+=att.map((a)=>{
       const blocks=(a.blocks||[]).map((bk)=>
@@ -2930,31 +3009,36 @@ async function operatorNodeView(b){
         +`<span class="l2">${esc(bk.target||'')} ${esc((bk.reason||'').slice(0,90))}</span></div>`).join('');
       return `<div class="grant"><span>${esc(a.run)}</span><span class="l2">${esc((a.task||'').slice(0,60))}</span></div>`+blocks
         +`<div class="opform">`
-        +`<input class="op-att-stmt" data-run="${esc(a.run)}" placeholder="what you provisioned / verified (signed into the run)">`
-        +`<textarea class="op-att-smoke" data-run="${esc(a.run)}" rows="2" placeholder="optional SMOKE TEST (Python, runs in the real sandbox; a failing probe REFUSES the attestation; passing output becomes EXECUTED evidence)"></textarea>`
-        +`<div class="oprow"><button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">✍ ATTEST</button></div></div>`;
+        +`<label class="field"><span class="field-label">attestation statement</span>`
+        +`<input class="op-att-stmt" data-run="${esc(a.run)}" placeholder="what you provisioned / verified (signed into the run)"></label>`
+        +`<label class="field"><span class="field-label">smoke test (optional)</span>`
+        +`<textarea class="op-att-smoke" data-run="${esc(a.run)}" rows="2" placeholder="Python, runs in the real sandbox; a failing probe REFUSES the attestation; passing output becomes EXECUTED evidence"></textarea></label>`
+        +`<div class="oprow"><button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">${icon('attest')} ATTEST</button></div></div>`;
     }).join('');
   }
   html+=H('Ask the node — owner intake')
-    +`<div class="opform"><textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea>`
-    +`<div class="oprow"><input id="op-budget" type="number" min="1" placeholder="budget — optional for ASK, required for FUND">`
-    +`<button class="btn" data-act="op-ask" data-base="${esc(b)}" title="start a new mission from the task above (budget optional)">⚡ ASK</button>`
-    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run — resumes a paused mission (needs a run id target, or it funds the node intake)">💰 FUND</button>`
-    +`<input id="op-run-target" placeholder="run id (stop / fund target, optional)">`
-    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">⏹ STOP</button></div>`
+    +`<div class="opform"><label class="field"><span class="field-label">task</span>`
+    +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
+    +`<div class="oprow"><label class="field"><span class="field-label">budget</span>`
+    +`<input id="op-budget" type="number" min="1" placeholder="optional for ASK · required for FUND"></label>`
+    +`<button class="btn btn-primary" data-act="op-ask" data-base="${esc(b)}" title="start a new mission from the task above (budget optional)">${icon('ask')} ASK</button>`
+    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run — resumes a paused mission (needs a run id target, or it funds the node intake)">${icon('fund')} FUND</button>`
+    +`<label class="field"><span class="field-label">run id (optional)</span>`
+    +`<input id="op-run-target" placeholder="stop / fund target"></label>`
+    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">${icon('stop')} STOP</button></div>`
     +`<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>`;
   // Owner-class creation: environments form via the full §12c/§15 ceremony;
   // personas are OPERATOR-seeded souls (personas still never self-author).
   html+=H('Create — environment / persona (owner authority)')
     +`<div class="opform"><div class="oprow">`
-    +`<input id="op-env-name" placeholder="new environment name">`
-    +`<input id="op-env-desc" placeholder="purpose / charter line (optional)">`
-    +`<button class="btn" data-act="op-newenv" data-base="${esc(b)}">🏗 NEW ENV</button></div>`
+    +`<label class="field"><span class="field-label">environment name</span><input id="op-env-name" placeholder="new environment"></label>`
+    +`<label class="field"><span class="field-label">charter (optional)</span><input id="op-env-desc" placeholder="purpose / charter line"></label>`
+    +`<button class="btn" data-act="op-newenv" data-base="${esc(b)}">${icon('env_new')} NEW ENV</button></div>`
     +`<div class="oprow">`
-    +`<input id="op-p-name" placeholder="new persona name">`
-    +`<input id="op-p-role" placeholder="role (default member)">`
-    +`<input id="op-p-desc" placeholder="description (optional)">`
-    +`<button class="btn" data-act="op-newpersona" data-base="${esc(b)}">🧬 NEW PERSONA</button></div></div>`;
+    +`<label class="field"><span class="field-label">persona name</span><input id="op-p-name" placeholder="new persona"></label>`
+    +`<label class="field"><span class="field-label">role</span><input id="op-p-role" placeholder="default member"></label>`
+    +`<label class="field"><span class="field-label">description (optional)</span><input id="op-p-desc" placeholder="short description"></label>`
+    +`<button class="btn" data-act="op-newpersona" data-base="${esc(b)}">${icon('persona_new')} NEW PERSONA</button></div></div>`;
   // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
   // persona-authored, FSM-promoted env tools (invocable below, kernel-mediated).
   const mcp=await fetchJson(join(b,'mcp/tools'));
@@ -2968,10 +3052,10 @@ async function operatorNodeView(b){
       +`<span class="l2">${esc(eid.slice(0,22))} · by ${esc((t.author_persona_id||'').slice(-8))}</span></div>`).join('')).join('');
     else html+=`<div class="l2">no persona-authored tools promoted yet — a persona authors one via the ToolArtifact FSM; promotion mounts it here.</div>`;
     html+=`<div class="opform"><div class="oprow">`
-      +`<input id="op-mcp-env" placeholder="environment id (optional)">`
-      +`<input id="op-mcp-tool" placeholder="tool name, e.g. sandbox_exec">`
-      +`<input id="op-mcp-args" placeholder='args JSON, e.g. {"code":"print(42)"}'>`
-      +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">🔧 CALL</button></div></div>`;
+      +`<label class="field"><span class="field-label">environment id (optional)</span><input id="op-mcp-env" placeholder="env id"></label>`
+      +`<label class="field"><span class="field-label">tool</span><input id="op-mcp-tool" placeholder="e.g. sandbox_exec"></label>`
+      +`<label class="field"><span class="field-label">args JSON</span><input id="op-mcp-args" placeholder='{"code":"print(42)"}'></label>`
+      +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">${icon('tool')} CALL</button></div></div>`;
   }
   return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
 }
@@ -2987,13 +3071,13 @@ async function operatorRunView(b,run){
   // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
   // console-level #op-run-target, and read #opr-budget when present.
   let html='<div class="opform"><div class="oprow">'
-    +'<input id="opr-budget" type="number" min="1" placeholder="add budget">'
-    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">💰 FUND</button>'
-    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">⏹ STOP</button></div>'
+    +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
+    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
+    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
     +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>';
   html+=kv('Run',`<code>${esc(run)}</code>`)
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
-    +kv('Accepted',rs.accepted?'<span class="ok">✓ yes</span>':'<span class="no">no</span>')
+    +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
     +kv('Task',S0((rs.task||'').slice(0,200)));
   // GAP #3: surface the ContinuousRefinementMission trajectory from the served
@@ -3019,7 +3103,7 @@ async function operatorRunView(b,run){
   }).join('');
   const ap=rs.answer_package; if(ap&&ap.schema) html+=H('Signed AnswerPackage (answer/5)')
     +kv('Status',S0(ap.status))+kv('Bundle ref',S0(ap.artifact_bundle_ref))
-    +kv('Bundle state',S0(ap.artifact_bundle_state))+kv('Signed',ap.signed_by?'<span class="ok">✓</span>':'<span class="no">✗</span>');
+    +kv('Bundle state',S0(ap.artifact_bundle_state))+kv('Signed',ap.signed_by?`<span class="ok">${icon('check','ico-sm')}</span>`:`<span class="no">${icon('x','ico-sm')}</span>`);
   const files=arts.package||arts.package_files||arts.files||[];
   if(files.length) html+=H(`Package artifacts (${files.length})`)+files.slice(0,100).map((f)=>{
     const path=typeof f==='string'?f:(f.path||f.title||'');
@@ -3065,7 +3149,7 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   // pushView call renderTop without serialization. A stale in-flight render must not
   // write LAST and show a view the user already navigated away from — latest wins.
   const gen=(S._renderGen=(S._renderGen||0)+1);
-  $('#detailbody').innerHTML='<div class="l2">resolving…</div>';
+  $('#detailbody').innerHTML='<div class="fv-loading">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   if(gen!==S._renderGen) return;
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
@@ -3160,6 +3244,26 @@ function _applyFilter(){
   document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||li.textContent.toLowerCase().includes(q))?'':'none'; });
 }
 function wire(){
+  // Design-system nav family: promote the static index.html nav controls additively
+  // (KEEP every id + the .link/.con-toggle classes the JS/CSS read) — the back control
+  // becomes a ghost nav-back button, close/unfollow/collapse join the .ghost-btn family,
+  // and their glyph text is swapped to the stroked icon set. Purely presentational +
+  // a11y: no data/contract change, and a missing node is tolerated (?. guards).
+  const _adopt=(sel,cls,iconName,label)=>{ const el=$(sel); if(!el) return;
+    cls.split(' ').forEach((c)=>el.classList.add(c));
+    if(iconName) el.innerHTML=icon(iconName)+(label?`<span>${label}</span>`:''); };
+  _adopt('#detailback','nav-back ghost-btn','back','back');
+  _adopt('#detailclose','ghost-btn','close','');
+  _adopt('#logclose','ghost-btn','close','');
+  _adopt('#introclose','ghost-btn','close','');
+  _adopt('#cfUnfollow','ghost-btn','close','show all');
+  // the constellation toggle keeps its rotate transform — only adopt the family class
+  // + swap its ▾ for the shared disclosure chevron (CSS rotates it on .collapsed).
+  const ct=$('#conToggle'); if(ct){ ct.classList.add('ghost-btn'); ct.innerHTML=icon('chevron'); }
+  // the help button (？) → stroked help-circle (keeps its aria-label/title text).
+  const hbtn=$('#helpbtn'); if(hbtn) hbtn.innerHTML=icon('help');
+  // ＋ PEER → stroked plus + label (keeps the button's accessible text on the label span).
+  const ap=$('#addpeer'); if(ap) ap.innerHTML=icon('plus')+'<span>PEER</span>';
   // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
   // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
@@ -3269,9 +3373,9 @@ function wire(){
       const smokeEl=document.querySelector(`.op-att-smoke[data-run="${sel}"]`);
       const statement=(inp&&inp.value||'').trim();
       const smoke_test=(smokeEl&&smokeEl.value||'').trim();
-      if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; return; }
+      if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; opInvalid(inp); return; }
       if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-      if(out) out.textContent=smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…';
+      opPending(out,smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…');
       opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{ done();
         if(out){ showOpResult(out,r,(r.status>=200&&r.status<300)?'\n\n→ now FUND the mission to resume with the attested capability.':''); out.scrollIntoView({block:'nearest'}); }
         if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
@@ -3284,23 +3388,23 @@ function wire(){
         // leave the result readable, then refresh the console so the new entity shows
         if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
-      if(act==='op-newenv'){ const name=($('#op-env-name')?.value||'').trim();
-        if(!name){ if(out) out.textContent='enter an environment name first'; return; }
+      if(act==='op-newenv'){ const nf=$('#op-env-name'); const name=(nf?.value||'').trim();
+        if(!name){ if(out) out.textContent='enter an environment name first'; opInvalid(nf); return; }
         if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        if(out) out.textContent='forming environment (full §12c ceremony)…';
+        opPending(out,'forming environment (full §12c ceremony)…');
         opPost(b2,'env',{name,description:($('#op-env-desc')?.value||'').trim()}).then(show); }
-      else if(act==='op-newpersona'){ const name=($('#op-p-name')?.value||'').trim();
-        if(!name){ if(out) out.textContent='enter a persona name first'; return; }
+      else if(act==='op-newpersona'){ const nf=$('#op-p-name'); const name=(nf?.value||'').trim();
+        if(!name){ if(out) out.textContent='enter a persona name first'; opInvalid(nf); return; }
         if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        if(out) out.textContent='seeding persona…';
+        opPending(out,'seeding persona…');
         opPost(b2,'persona',{name,role:($('#op-p-role')?.value||'').trim()||'member',
           description:($('#op-p-desc')?.value||'').trim()}).then(show); }
-      else { const tool=($('#op-mcp-tool')?.value||'').trim();
-        if(!tool){ if(out) out.textContent='enter a tool name first'; return; }
-        let args={}; try{ args=JSON.parse(($('#op-mcp-args')?.value||'').trim()||'{}'); }
-        catch(e){ if(out) out.textContent='args must be valid JSON'; return; }
+      else { const tf=$('#op-mcp-tool'); const tool=(tf?.value||'').trim();
+        if(!tool){ if(out) out.textContent='enter a tool name first'; opInvalid(tf); return; }
+        const af=$('#op-mcp-args'); let args={}; try{ args=JSON.parse((af?.value||'').trim()||'{}'); }
+        catch(e){ if(out) out.textContent='args must be valid JSON'; opInvalid(af); return; }
         if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        if(out) out.textContent='calling (kernel-mediated, sandboxed)…';
+        opPending(out,'calling (kernel-mediated, sandboxed)…');
         opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
           .then((r)=>{ done(); if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); } }); }
       return; }
@@ -3320,15 +3424,15 @@ function wire(){
           S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
           const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
       if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-      if(act==='op-ask'){ const text=($('#op-task')?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; done(); return; }
+      if(act==='op-ask'){ const tf=$('#op-task'); const text=(tf?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; opInvalid(tf); done(); return; }
         const body={text}; const bd=+($('#op-budget')?.value||0); if(bd>0) body.budget=bd;
-        if(out) out.textContent='submitting…'; opPost(b2,'task',body).then(show); }
-      else if(act==='op-fund'){ const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; done(); return; }
+        opPending(out,'submitting…'); opPost(b2,'task',body).then(show); }
+      else if(act==='op-fund'){ const bf=$('#opr-budget')||$('#op-budget'); const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; opInvalid(bf); done(); return; }
         const body={budget:bd}; if(run) body.run=run;
-        if(out) out.textContent='funding…'; opPost(b2,'budget',body).then(show); }
+        opPending(out,'funding…'); opPost(b2,'budget',body).then(show); }
       else { if(!run && !confirm('No run id entered — stop ALL active missions on this node?')){ done(); return; }
         const body={}; if(run) body.run=run;
-        if(out) out.textContent='stopping…'; opPost(b2,'stop',body).then(show); }
+        opPending(out,'stopping…'); opPost(b2,'stop',body).then(show); }
       return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null};

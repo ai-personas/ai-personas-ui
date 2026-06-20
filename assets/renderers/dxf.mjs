@@ -23,9 +23,18 @@ export const meta = {
 // Index 0 = BYBLOCK, 7 = white/black (drawn light on dark), 256 = BYLAYER.
 const ACI = {
   1: '#ff5555', 2: '#ffff66', 3: '#5dff5d', 4: '#5dffff', 5: '#6a8cff',
-  6: '#ff66ff', 7: '#e8eef5', 8: '#808080', 9: '#c0c0c0',
+  6: '#ff66ff', 7: '#eaf1f8', 8: '#808080', 9: '#c0c0c0',
 };
 const TWO_PI = Math.PI * 2;
+// Default canvas stroke/text colours for entities with no ACI/layer colour, and
+// the drawing backdrop. These are CHROME (not the drawing's own data colours),
+// so they track the design tokens: coordinate-hue stroke on the darkest well.
+// Resolved from the live :root tokens at render() time; the literals here are
+// the canonical token fallbacks (must match discovery.css). The drawing's own
+// ACI layer colours above are DATA and stay untouched.
+let DEFAULT_STROKE = '#4c9ff0'; // --int (coordinate hue)
+let DEFAULT_TEXT = '#cdd9e5';   // --ink
+let CANVAS_BG = '#06090e';      // --well
 // Hard cap on flattened drawable primitives. A pathological DXF (deep nested
 // INSERTs, million-vertex polylines) would otherwise blow memory in flatten()
 // and stall every pan/zoom frame in draw(). We stop flattening past the budget
@@ -34,7 +43,7 @@ const MAX_PRIMS = 60000;
 
 function aciToColor(idx) {
   if (idx == null || idx === 256 || idx === 0) return null; // BYLAYER / BYBLOCK
-  return ACI[idx] || '#e8eef5';
+  return ACI[idx] || '#eaf1f8';
 }
 
 // Resolve an entity's stroke colour: explicit ACI → layer colour → default.
@@ -46,11 +55,23 @@ function entColor(e, layers) {
     const c = aciToColor(ly.color);
     if (c) return c;
   }
-  return '#9fd0ff';
+  return DEFAULT_STROKE; // no ACI / no layer colour → coordinate-hue default
 }
 
 function isFiniteNum(n) { return typeof n === 'number' && isFinite(n); }
 function pt(p) { return p && isFiniteNum(p.x) && isFiniteNum(p.y) ? p : null; }
+
+// Resolve a design-token to a concrete color string for <canvas> (which can't
+// read CSS var()). Reads the live :root token via getComputedStyle and falls
+// back to the canonical token value when unavailable (e.g. the DOM shim). The
+// fallback MUST equal the live token value — a wrong fallback is a 2nd palette.
+function cssVar(name, fallback) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    if (v && v.trim()) return v.trim();
+  } catch (_) { /* no DOM / shim */ }
+  return fallback;
+}
 
 // Grow a {minX,minY,maxX,maxY} bbox by a point (model space).
 function grow(b, x, y) {
@@ -288,9 +309,20 @@ export async function render(ctx) {
   }
 
   // ---- layout: header summary + toolbar + canvas ----------------------------
+  // Resolve chrome colours from the live design tokens (canvas needs concrete
+  // strings; CSS surfaces use var() directly). Fallbacks = canonical token values.
+  DEFAULT_STROKE = cssVar('--int', '#4c9ff0');
+  DEFAULT_TEXT = cssVar('--ink', '#cdd9e5');
+  CANVAS_BG = cssVar('--well', '#06090e');
+  const SANS = "var(--sans,'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif)";
+  const MONO = 'var(--mono,ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace)';
+
   host.innerHTML = '';
   const wrap = ctx.el('div', 'dxfv');
-  wrap.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;min-height:360px;background:#0c1118;color:#cfe0f2;font:12px/1.4 ui-monospace,Menlo,monospace';
+  wrap.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;min-height:360px;'
+    + 'background:var(--surface-inset,#070b10);color:var(--ink,#cdd9e5);'
+    + 'border:1px solid var(--line2,#233040);border-radius:var(--radius-lg,8px);overflow:hidden;'
+    + 'font:var(--fs-body,12px)/var(--lh-snug,1.4) ' + SANS;
 
   // entity-type tally for the summary line
   const tally = {};
@@ -300,10 +332,23 @@ export async function render(ctx) {
   const fmt = (n) => Math.abs(n) >= 1000 ? n.toFixed(0) : (+n.toFixed(3)).toString();
 
   const head = ctx.el('div', 'dxfv-head');
-  head.style.cssText = 'padding:6px 10px;border-bottom:1px solid #1d2a3a;background:#0f1722;font-size:11px;color:#8fb6e0';
-  head.appendChild(ctx.el('div', null, `${ctx.title || 'drawing.dxf'} · ${dxf.entities.length} entities · extent ${fmt(w)} × ${fmt(h)}`));
-  const sub = ctx.el('div', null, tallyStr || '—');
-  sub.style.cssText = 'color:#5f7da0;margin-top:2px;word-break:break-word';
+  head.style.cssText = 'padding:var(--space-2,8px) var(--space-3,12px);'
+    + 'border-bottom:1px solid var(--line2,#233040);background:var(--surface-head,#0c1622)';
+  const title = ctx.el('div', 'dxfv-title');
+  title.style.cssText = 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;'
+    + 'font:var(--w-semi,600) var(--fs-ui,13px)/1.3 ' + SANS + ';color:var(--off-white,#eaf1f8);'
+    + 'letter-spacing:var(--tr-tight,-.01em);overflow-wrap:anywhere';
+  title.appendChild(ctx.el('span', null, ctx.title || 'drawing.dxf'));
+  const meta = ctx.el('span', 'dxfv-meta',
+    `${dxf.entities.length} entities · extent ${fmt(w)} × ${fmt(h)}`);
+  meta.style.cssText = 'font:var(--w-reg,400) var(--fs-meta,10px)/1.3 ' + MONO + ';'
+    + 'color:var(--mut,#7d8ea2);font-variant-numeric:tabular-nums';
+  title.appendChild(meta);
+  head.appendChild(title);
+  const sub = ctx.el('div', 'dxfv-tally', tallyStr || '—');
+  sub.style.cssText = 'margin-top:var(--space-1,4px);color:var(--dim,#90a0b2);'
+    + 'font:var(--fs-meta,10px)/1.4 ' + MONO + ';font-variant-numeric:tabular-nums;'
+    + 'word-break:break-word';
   head.appendChild(sub);
 
   // degraded-render notice: budget-truncated and/or unsupported entity types.
@@ -317,26 +362,61 @@ export async function render(ctx) {
       const shown = unsupNames.slice(0, 6).map((k) => `${k}×${stats.unsupported[k]}`).join(', ');
       parts.push(`${total} unsupported entit${total === 1 ? 'y' : 'ies'} not drawn (${shown}${unsupNames.length > 6 ? ', …' : ''})`);
     }
-    const warn = ctx.el('div', 'dxfv-warn', '⚠ ' + parts.join(' · '));
-    warn.style.cssText = 'color:#e6c07b;margin-top:4px;word-break:break-word;line-height:1.35';
+    // Degraded-render callout — matches the shared .fv-warn idiom (amber-left
+    // bar, amber-weak wash) so it reads as the same product as sibling viewers.
+    const warn = ctx.el('div', 'dxfv-warn fv-warn', parts.join(' · '));
+    warn.style.cssText = 'margin-top:var(--space-2,8px);padding:var(--space-2,8px) var(--space-3,12px);'
+      + 'border-left:2px solid var(--amber,#f0a73a);'
+      + 'background:var(--amber-weak,rgba(240,167,58,.07));'
+      + 'border-radius:var(--radius-sm,4px);'
+      + 'color:var(--amber,#f0a73a);font:var(--fs-label,11px)/var(--lh-snug,1.4) ' + SANS + ';'
+      + 'word-break:break-word';
     head.appendChild(warn);
   }
   wrap.appendChild(head);
 
-  const bar = ctx.el('div', 'dxfv-bar');
-  bar.style.cssText = 'display:flex;gap:6px;align-items:center;padding:5px 10px;border-bottom:1px solid #1d2a3a;background:#0d1420;flex-wrap:wrap';
-  const mkBtn = (label) => { const b = ctx.el('button', null, label);
-    b.style.cssText = 'background:#16263a;color:#bcd6f0;border:1px solid #28435f;border-radius:4px;padding:3px 9px;cursor:pointer;font:11px ui-monospace,monospace';
-    return b; };
-  const bFit = mkBtn('Fit'); const bIn = mkBtn('+'); const bOut = mkBtn('−');
-  const bTxt = mkBtn('Text: on');
-  const hint = ctx.el('span', null, 'drag = pan · wheel = zoom');
-  hint.style.cssText = 'color:#4f6684;margin-left:auto';
+  // Toolbar — matches the shared .fv-toolbar / .fv-btn chrome idiom.
+  const bar = ctx.el('div', 'dxfv-bar fv-toolbar');
+  bar.style.cssText = 'display:flex;gap:var(--space-1,4px);align-items:center;'
+    + 'padding:var(--space-2,8px) var(--space-3,12px);'
+    + 'border-bottom:1px solid var(--line2,#233040);'
+    + 'background:var(--surface-raised,#0b121b);flex-wrap:wrap';
+  const BTN_REST = 'background:var(--surface-inset,#070b10);color:var(--dim,#90a0b2);'
+    + 'border:1px solid var(--line2,#233040)';
+  const mkBtn = (label, aria) => {
+    const b = ctx.el('button', 'dxfv-btn fv-btn', label);
+    if (aria) b.setAttribute('aria-label', aria);
+    b.style.cssText = BTN_REST + ';height:var(--ctl-h,30px);padding:0 var(--ctl-pad-x,10px);'
+      + 'display:inline-flex;align-items:center;justify-content:center;cursor:pointer;'
+      + 'border-radius:var(--radius-md,6px);'
+      + 'font:var(--w-semi,600) var(--fs-label,11px)/1 ' + SANS + ';'
+      + 'transition:border-color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),'
+      + 'background var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),'
+      + 'color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),'
+      + 'transform var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1))';
+    // eased hover/press — accent border + raised fill on hover, tactile press.
+    b.addEventListener('pointerenter', () => { b.style.borderColor = 'var(--accent,#4c9ff0)';
+      b.style.background = 'var(--surface-hover,#0e1722)'; b.style.color = 'var(--ink,#cdd9e5)'; });
+    b.addEventListener('pointerleave', () => { b.style.borderColor = 'var(--line2,#233040)';
+      b.style.background = 'var(--surface-inset,#070b10)'; b.style.color = 'var(--dim,#90a0b2)'; });
+    b.addEventListener('pointerdown', () => { b.style.transform = 'var(--press,translateY(.5px))'; });
+    const up = () => { b.style.transform = 'none'; };
+    b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up);
+    return b;
+  };
+  const bFit = mkBtn('Fit', 'Fit drawing to view');
+  const bIn = mkBtn('+', 'Zoom in');
+  const bOut = mkBtn('−', 'Zoom out');
+  const bTxt = mkBtn('Text: on', 'Toggle text labels');
+  const hint = ctx.el('span', 'dxfv-hint', 'drag = pan · wheel = zoom');
+  hint.style.cssText = 'margin-left:auto;color:var(--mut,#7d8ea2);'
+    + 'font:var(--fs-meta,10px)/1 ' + SANS + ';letter-spacing:var(--tr-caps,.06em)';
   bar.appendChild(bFit); bar.appendChild(bIn); bar.appendChild(bOut); bar.appendChild(bTxt); bar.appendChild(hint);
   wrap.appendChild(bar);
 
   const cvWrap = ctx.el('div', 'dxfv-cv');
-  cvWrap.style.cssText = 'position:relative;flex:1;min-height:300px;overflow:hidden;cursor:grab';
+  cvWrap.style.cssText = 'position:relative;flex:1;min-height:300px;overflow:hidden;cursor:grab;'
+    + 'background:var(--well,#06090e)';
   const canvas = document.createElement('canvas');
   canvas.style.cssText = 'display:block;width:100%;height:100%;touch-action:none';
   cvWrap.appendChild(canvas);
@@ -383,11 +463,11 @@ export async function render(ctx) {
     // backing-store size in CSS px (set by sizeCanvas) drives the clear/fill.
     const cw = canvas.width / dpr, ch = canvas.height / dpr;
     g.clearRect(0, 0, cw, ch);
-    g.fillStyle = '#0c1118'; g.fillRect(0, 0, cw, ch);
+    g.fillStyle = CANVAS_BG; g.fillRect(0, 0, cw, ch);
     g.lineWidth = 1; g.lineJoin = 'round'; g.lineCap = 'round';
 
     for (const p of prims) {
-      g.strokeStyle = p.color || '#9fd0ff';
+      g.strokeStyle = p.color || DEFAULT_STROKE;
       if (p.k === 'poly') {
         if (!p.pts.length) continue;
         g.beginPath();
@@ -406,14 +486,14 @@ export async function render(ctx) {
         }
       } else if (p.k === 'point') {
         const c = toScreen(p.p.x, p.p.y);
-        g.fillStyle = p.color || '#9fd0ff'; g.fillRect(c.X - 1.5, c.Y - 1.5, 3, 3);
+        g.fillStyle = p.color || DEFAULT_STROKE; g.fillRect(c.X - 1.5, c.Y - 1.5, 3, 3);
       } else if (p.k === 'text' && view.showText) {
         const c = toScreen(p.p.x, p.p.y);
         const px = Math.max(7, Math.min(40, (p.h || 2) * view.scale));
         if (px >= 5) {
           g.save(); g.translate(c.X, c.Y);
           if (p.rot) g.rotate((-p.rot * Math.PI) / 180);
-          g.fillStyle = p.color || '#cfe0f2';
+          g.fillStyle = p.color || DEFAULT_TEXT;
           g.font = `${px}px ui-monospace,monospace`;
           g.textBaseline = 'bottom';
           g.fillText(p.s, 0, 0);
@@ -478,7 +558,13 @@ export async function render(ctx) {
 }
 
 function loading(ctx, label) {
+  // Reuse the ONE shared loading pattern (.fv-loading supplies the spinner +
+  // amber ink + min-height). Inline styles are token-based fallbacks only, so
+  // the shared class wins where defined and we still cohere where it isn't.
   const d = ctx.el('div', 'fv-loading', label);
-  d.style.cssText = 'padding:14px;color:#7f9bbd;font:12px ui-monospace,monospace';
+  d.style.cssText = 'display:flex;align-items:center;gap:7px;min-height:36px;'
+    + 'padding:10px var(--space-1,4px);'
+    + 'color:var(--amber,#f0a73a);letter-spacing:var(--tr-caps,.06em);'
+    + "font:var(--w-semi,600) var(--fs-label,11px) var(--sans,'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif)";
   return d;
 }

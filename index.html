@@ -3,26 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0e14">
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260620g">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260620h">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
   <header class="vitals">
-    <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
-    <h1 class="brandmark" style="margin:0;font:inherit;font-weight:inherit"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
-    <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
-    <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
-    <span class="vcounts" id="stats" role="status" aria-label="live network counters"></span>
+    <span class="vgroup vgroup-identity">
+      <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
+      <h1 class="brandmark"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
+    </span>
     <span class="grow"></span>
-    <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter personas, environments and events">
-    <input id="peer" type="url" placeholder="discover peer https://host" aria-label="discover a peer node by URL">
-    <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">？</button>
-    <button id="addpeer" class="btn">＋&nbsp;PEER</button>
-    <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">🔑&nbsp;OPERATOR</button>
+    <span class="vgroup vgroup-live">
+      <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
+      <span class="vsep" aria-hidden="true"></span>
+      <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
+      <span class="vsep" aria-hidden="true"></span>
+      <span class="vcounts" id="stats" role="status" aria-label="live network counters"></span>
+    </span>
+    <span class="vsep" aria-hidden="true"></span>
+    <span class="vgroup vgroup-tools">
+      <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter personas, environments and events">
+      <input id="peer" type="url" placeholder="discover peer https://host" aria-label="discover a peer node by URL">
+      <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">HELP</button>
+      <button id="addpeer" class="btn">PEER</button>
+      <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
+    </span>
   </header>
 
   <div class="intro" id="intro" hidden>
@@ -63,10 +74,15 @@
       <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
       <span class="dim" id="sysGraphCap">the kernel relays among personas that share a task · curved links connect who coordinates with whom · pulses travel the direction work flows</span>
       <span class="cg-legend" aria-label="constellation legend">
+        <span class="lg-cap" aria-hidden="true">state</span>
         <span class="lg"><span class="lg-dot pulse"></span>running (in a model call)</span>
         <span class="lg"><span class="lg-dot"></span>live</span>
         <span class="lg"><span class="lg-dot idle"></span>idle</span>
+        <span class="lg-sep" aria-hidden="true"></span>
+        <span class="lg-cap" aria-hidden="true">channel</span>
         <span class="lg"><span class="lg-link"></span>persona&nbsp;↔&nbsp;persona</span>
+        <span class="lg-sep" aria-hidden="true"></span>
+        <span class="lg-cap" aria-hidden="true">role</span>
         <span class="lg"><span class="lg-ring r-lead"></span>lead</span>
         <span class="lg"><span class="lg-ring r-verifier"></span>verifier</span>
         <span class="lg"><span class="lg-ring r-integrator"></span>integrator</span>
@@ -93,7 +109,7 @@
         <button data-flt="crossenv" class="chip" title="coordination that crosses from one environment into another">CROSS-ENV</button>
       </div>
       <ol class="cf-body" id="sysStream" role="log" aria-label="live persona coordination"></ol>
-      <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link" id="cfUnfollow">show all ✕</button></div>
+      <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link ghost-btn" id="cfUnfollow">show all ✕</button></div>
     </aside>
   </main>
 
@@ -112,11 +128,11 @@
 
   <div class="drawer-wrap" id="detailwrap">
     <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
-      <div class="drawer-head"><b id="detail-title">—</b><span><button id="detailback" class="link" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span></div>
+      <div class="drawer-head"><b id="detail-title">—</b><span><button id="detailback" class="link nav-back" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span></div>
       <div class="drawer-body" id="detailbody"></div>
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260620g"></script>
+  <script type="module" src="assets/discovery.js?v=20260620h"></script>
 </body>
 </html>

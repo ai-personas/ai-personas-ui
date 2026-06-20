@@ -326,21 +326,36 @@ function renderToSvgString(mod, waveJson) {
 
 function buildSummary(ctx, waveJson, source, headerNote) {
   const wrap = ctx.el('div', 'wf-summary');
-  wrap.style.cssText = 'margin-top:12px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#444;';
+  // Dark, token-driven summary that coheres with the dashboard surfaces.
+  // Mono is the right family here (it's signal data + raw wave strings).
+  wrap.style.cssText =
+    'margin-top:var(--space-3,12px);border:1px solid var(--line2,#233040);' +
+    'border-radius:var(--radius-md,6px);background:var(--surface-inset,#070b10);' +
+    'overflow:hidden;font:var(--fs-body,12px)/var(--lh-snug,1.4) var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);' +
+    'color:var(--dim,#90a0b2);font-variant-numeric:tabular-nums;';
 
   const signals = Array.isArray(waveJson.signal) ? flattenSignals(waveJson.signal) : [];
   const head = ctx.el('div', 'wf-summary-head',
     `${source} · ${signals.length} signal${signals.length === 1 ? '' : 's'}` + (headerNote ? ` · ${headerNote}` : ''));
-  head.style.cssText = 'font-weight:600;margin-bottom:6px;color:#222;';
+  // Eyebrow strip header: raised band, uppercase caps, strong ink.
+  head.style.cssText =
+    'font-weight:var(--w-semi,600);padding:7px var(--space-3,12px);' +
+    'background:var(--surface-raised,#0b121b);border-bottom:1px solid var(--line2,#233040);' +
+    'color:var(--ink,#cdd9e5);font-size:var(--fs-label,11px);' +
+    'letter-spacing:var(--tr-caps,.06em);text-transform:uppercase;';
   wrap.appendChild(head);
 
   if (signals.length) {
     const table = ctx.el('table', 'wf-summary-table');
-    table.style.cssText = 'border-collapse:collapse;width:100%;max-width:640px;';
+    table.style.cssText = 'border-collapse:collapse;width:100%;';
     const thead = ctx.el('tr');
     for (const h of ['signal', 'transitions', 'wave']) {
       const th = ctx.el('th', null, h);
-      th.style.cssText = 'text-align:left;padding:2px 8px;border-bottom:1px solid #ddd;color:#666;font-weight:600;';
+      th.style.cssText =
+        'text-align:left;padding:5px var(--space-3,12px);' +
+        'border-bottom:1px solid var(--line2,#233040);color:var(--mut,#7d8ea2);' +
+        'font-weight:var(--w-semi,600);font-size:var(--fs-meta,10px);' +
+        'letter-spacing:var(--tr-caps,.06em);text-transform:uppercase;';
       thead.appendChild(th);
     }
     table.appendChild(thead);
@@ -357,8 +372,14 @@ function buildSummary(ctx, waveJson, source, headerNote) {
       ];
       cells.forEach((val, idx) => {
         const td = ctx.el('td', null, val);
-        td.style.cssText = 'padding:2px 8px;border-bottom:1px solid #f0f0f0;' +
-          (idx === 2 ? 'white-space:pre;color:#0a7;' : (idx === 0 ? 'word-break:break-all;' : ''));
+        // value column (the raw wave string) reads as live data -> --up green.
+        td.style.cssText =
+          'padding:3px var(--space-3,12px);border-bottom:1px solid var(--line,#1c2733);' +
+          (idx === 2
+            ? 'white-space:pre;color:var(--up,#21d07a);'
+            : (idx === 0
+              ? 'word-break:break-all;color:var(--ink,#cdd9e5);'
+              : 'color:var(--dim,#90a0b2);font-variant-numeric:tabular-nums;'));
         tr.appendChild(td);
       });
       table.appendChild(tr);
@@ -367,7 +388,7 @@ function buildSummary(ctx, waveJson, source, headerNote) {
       const tr = ctx.el('tr');
       const td = ctx.el('td', null, `… and ${signals.length - ROWS} more`);
       td.setAttribute('colspan', '3');
-      td.style.cssText = 'padding:4px 8px;color:#888;';
+      td.style.cssText = 'padding:5px var(--space-3,12px);color:var(--mut,#7d8ea2);';
       tr.appendChild(td);
       table.appendChild(tr);
     }
@@ -517,7 +538,7 @@ export async function render(ctx) {
   host.innerHTML = ''; // clear the loading indicator
 
   const container = el('div', 'wf-root');
-  container.style.cssText = 'width:100%;max-width:100%;padding:6px 0;box-sizing:border-box;';
+  container.style.cssText = 'width:100%;max-width:100%;padding:var(--space-1,4px) 0;box-sizing:border-box;';
 
   // Degraded-render notice (we still render what we can).
   if (notes.length) {
@@ -530,9 +551,15 @@ export async function render(ctx) {
   // width and scroll horizontally — shrinking a wide timing diagram to fit
   // would crush the detail. The card itself never exceeds the drawer width.
   const diagram = el('div', 'wf-diagram');
+  // WaveDrom emits black-on-transparent SVG; a light card is the only legible
+  // frame for it, so the #fff fill is deliberate. Everything AROUND the SVG —
+  // border, radius, padding, depth — is tokenised so the card still reads as
+  // part of the dark product (a framed plate, like a spec sheet).
   diagram.style.cssText =
     'overflow-x:auto;overflow-y:hidden;max-width:100%;-webkit-overflow-scrolling:touch;' +
-    'background:#fff;border:1px solid var(--line2,#2a3340);border-radius:6px;padding:8px;box-sizing:border-box;';
+    'background:#fff;border:1px solid var(--line2,#233040);' +
+    'border-radius:var(--radius-md,6px);padding:var(--space-2,8px);box-sizing:border-box;' +
+    'box-shadow:var(--elev-1,0 1px 2px rgba(0,0,0,.30));';
   // The svg string is WaveDrom output built from PEER-authored WaveJSON (signal
   // names, head/foot text, node labels); WaveDrom reflects that text into the SVG
   // without reliable escaping, so a crafted .wavedrom/.vcd can inject markup.

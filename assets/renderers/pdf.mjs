@@ -56,6 +56,14 @@ export const meta = {
 export async function render(ctx) {
   const { host, el, esc } = ctx;
 
+  // Inject the module-local layout chrome once. The host stylesheet ships the
+  // shared .fv-loading / .fv-note primitives (which this module reuses), but
+  // not the pdf-* stage / canvas / page-nav classes below. All colours, radii,
+  // spacing and type reference the discovery design tokens (with fallbacks that
+  // match the live token values) so the viewer reads as one product with the
+  // dashboard and the other renderers.
+  injectStyle(host, el);
+
   // --- progress note (replaced once the first page paints) ---------------
   host.innerHTML = '';
   const loading = el('div', 'fv-loading', 'loading PDF renderer…');
@@ -123,16 +131,11 @@ export async function render(ctx) {
   host.appendChild(note);
 
   // Page viewport: scrolls when a tall page overflows; centred canvas.
-  const stage = el('div');
-  stage.style.cssText =
-    'max-height:520px;overflow:auto;text-align:center;padding:2px;' +
-    'background:var(--surface-inset,#11161c);border-radius:4px';
+  const stage = el('div', 'pdf-stage');
   host.appendChild(stage);
 
   const canvas = document.createElement('canvas');
-  canvas.style.cssText =
-    'display:inline-block;width:auto;max-width:100%;height:auto;' +
-    'border:1px solid var(--line2,#2a3340);border-radius:4px;background:#fff';
+  canvas.className = 'pdf-canvas';
   stage.appendChild(canvas);
 
   // --- teardown bookkeeping (cancel in-flight render, kill worker) --------
@@ -227,34 +230,23 @@ export async function render(ctx) {
   }
 
   // --- page-nav controls -------------------------------------------------
-  const nav = el('div');
-  nav.style.cssText =
-    'display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;' +
-    'margin-top:8px;font-size:11px;color:var(--mut,#7c8a99);letter-spacing:.3px';
+  const nav = el('div', 'pdf-nav');
 
-  const btnCss =
-    'padding:4px 11px;font-size:11px;cursor:pointer;background:var(--surface-inset,#11161c);' +
-    'color:var(--amber,#e2a23b);border:1px solid var(--line2,#2a3340);border-radius:5px;' +
-    'min-width:54px;line-height:1.4';
-
-  const prev = el('button', null, '← prev');
-  const next = el('button', null, 'next →');
+  const prev = el('button', 'pdf-btn', '← prev');
+  const next = el('button', 'pdf-btn', 'next →');
   prev.type = next.type = 'button';
-  prev.style.cssText = next.style.cssText = btnCss;
 
   const jump = document.createElement('input');
   jump.type = 'number';
+  jump.className = 'pdf-jump';
   jump.min = '1';
   jump.max = String(total);
   jump.setAttribute('aria-label', 'go to page');
-  jump.style.cssText =
-    'width:56px;text-align:center;font-size:11px;padding:3px 4px;background:var(--bg,#0d1117);' +
-    'color:var(--fg,#cdd6e0);border:1px solid var(--line2,#2a3340);border-radius:4px';
 
-  const ofTotal = el('span', null, `/ ${total}`);
+  const ofTotal = el('span', 'pdf-of', `/ ${total}`);
 
   // Degraded-render notice (one line, reused).
-  const notice = el('div', 'fv-note', '');
+  const notice = el('div', 'fv-note pdf-notice', '');
   notice.style.display = 'none';
   let flashT = null;
   function flash(msg) {
@@ -309,4 +301,92 @@ export async function render(ctx) {
       ro.observe(stage);
     } catch (_) { ro = null; }
   }
+}
+
+/* ===========================================================================
+   STYLE  (id-guarded; references the discovery design tokens with fallbacks
+   that MATCH the live token values — a wrong fallback would be a latent second
+   palette). The host stylesheet ships the shared .fv-loading / .fv-note
+   primitives this module reuses, but NOT the pdf-* stage / page / page-nav
+   chrome below, which provides the scrolling page viewport, the white page
+   surface (a PDF page is rendered light-on-white by definition) framed to sit
+   inside the dark drawer, and the segmented prev / jump / next control group.
+
+   DESIGN: surfaces use --surface-inset / --surface-raised, hairlines --line2,
+   radii the --radius-* scale, type the --sans chrome font with --mono only for
+   the tabular page-number digits, and a two-layer accent focus ring + eased
+   hover/press so the controls read as one product with the dashboard buttons.
+   Injected once per document / shadow-root.
+   =========================================================================== */
+const STYLE_ID = 'fv-pdf-style';
+const CSS = `
+.pdf-stage{max-height:min(520px,68vh);overflow:auto;overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;text-align:center;
+  padding:var(--space-2,8px);
+  background:var(--surface-inset,#070b10);
+  border:1px solid var(--line2,#233040);border-radius:var(--radius-md,6px)}
+/* The page itself is light-on-white (PDF media-box); frame it so it reads as a
+   document sheet resting on the dark inset, not a raw white box. */
+.pdf-canvas{display:inline-block;width:auto;max-width:100%;height:auto;
+  border-radius:var(--radius-sm,4px);background:#fff;
+  box-shadow:0 1px 2px rgba(0,0,0,.30),0 4px 12px rgba(0,0,0,.22)}
+/* page-nav: centred segmented control group (prev · jump / total · next). */
+.pdf-nav{display:flex;align-items:center;justify-content:center;gap:var(--space-2,8px);
+  flex-wrap:wrap;margin-top:var(--space-2,8px);
+  font-family:var(--sans,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif);
+  font-size:var(--fs-label,11px);color:var(--mut,#7d8ea2);letter-spacing:var(--tr-caps,.06em)}
+.pdf-btn{display:inline-flex;align-items:center;justify-content:center;
+  min-width:62px;min-height:var(--ctl-h,30px);padding:0 var(--ctl-pad-x,10px);
+  font-family:inherit;font-size:var(--fs-label,11px);font-weight:var(--w-semi,600);
+  line-height:1;cursor:pointer;
+  color:var(--dim,#90a0b2);background:var(--surface-raised,#0b121b);
+  border:1px solid var(--line2,#233040);border-radius:var(--radius-md,6px);
+  transition:color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    border-color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    background var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    box-shadow var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    transform var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1))}
+.pdf-btn:hover:not(:disabled){color:var(--ink,#cdd9e5);
+  border-color:var(--accent,#4c9ff0);background:var(--surface-hover,#0e1722)}
+.pdf-btn:active:not(:disabled){transform:var(--press,translateY(.5px))}
+.pdf-btn:focus-visible{outline:none;border-color:var(--accent,#4c9ff0);
+  box-shadow:0 0 0 3px var(--focus-ring,rgba(76,159,240,.20))}
+.pdf-btn:disabled{opacity:.42;cursor:not-allowed}
+.pdf-jump{width:58px;text-align:center;
+  font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
+  font-size:var(--fs-label,11px);font-variant-numeric:tabular-nums;
+  min-height:var(--ctl-h,30px);padding:0 var(--space-1,4px);
+  color:var(--ink,#cdd9e5);background:var(--surface-inset,#070b10);
+  border:1px solid var(--line2,#233040);border-radius:var(--radius-md,6px);
+  transition:border-color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    box-shadow var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1))}
+.pdf-jump:focus{outline:none;border-color:var(--accent,#4c9ff0);
+  box-shadow:0 0 0 3px var(--focus-ring,rgba(76,159,240,.20))}
+.pdf-jump::-webkit-inner-spin-button,
+.pdf-jump::-webkit-outer-spin-button{opacity:.5;filter:grayscale(1)}
+.pdf-of{font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
+  font-variant-numeric:tabular-nums;color:var(--mut,#7d8ea2)}
+/* degraded-page notice: amber-left soft callout, distinct from the neutral
+   document caption note above the stage. */
+.pdf-notice{color:var(--amber,#f0a73a);
+  border-left:2px solid var(--amber,#f0a73a);
+  background:var(--amber-weak,rgba(240,167,58,.07));
+  padding:var(--space-1,4px) var(--space-2,8px);
+  border-radius:0 var(--radius-sm,4px) var(--radius-sm,4px) 0}
+@media (prefers-reduced-motion:reduce){
+  .pdf-btn{transition-duration:.01ms!important}
+  .pdf-jump{transition-duration:.01ms!important}
+}
+`;
+
+function injectStyle(host, el) {
+  const doc = (host && host.ownerDocument) || (typeof document !== 'undefined' ? document : null);
+  if (!doc) return;
+  const rootNode = host && host.getRootNode ? host.getRootNode() : doc;
+  const scope = rootNode && rootNode.nodeType === 11 ? rootNode : (doc.head || doc.documentElement);
+  if (!scope || (scope.querySelector && scope.querySelector('#' + STYLE_ID))) return;
+  const style = (typeof el === 'function') ? el('style', null) : doc.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = CSS;
+  scope.appendChild(style);
 }

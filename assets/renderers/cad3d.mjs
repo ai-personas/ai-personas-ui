@@ -35,8 +35,9 @@ export async function render(ctx) {
 
   // Immediate loading note: shown BEFORE the (slow) byte fetch + CDN import +
   // heavy parse resolve, so the drawer never sits blank. Removed once we paint.
+  // Use the shared .fv-loading chrome (spinner + amber accent) — its color,
+  // padding and animation live in discovery.css, so no inline style is needed.
   const loading = ctx.el('div', 'fv-loading');
-  loading.style.cssText = 'font:12px/1.5 ui-monospace,Menlo,monospace;color:#9aa7b4;padding:14px;';
   loading.textContent = isStep ? 'parsing STEP structure…' : `loading 3D viewer (three.js)…`;
   // Clear host first so the dispatcher's own fv-loading spinner doesn't orphan
   // above this view (every module is expected to clear the host on first paint).
@@ -76,10 +77,12 @@ async function renderMesh(ctx, buf, ext, loading) {
   if (loading) loading.textContent = `parsing ${ext.toUpperCase()} mesh…`;
 
   // Layout: viewport + small info bar. host may have no fixed height; give one.
+  // The viewport is a data-viz well, so it sits on the shared --well backdrop
+  // with a tokenised hairline; the status bar is mono telemetry on --dim.
   const wrap = ctx.el('div', 'cad3d-wrap');
-  wrap.style.cssText = 'position:relative;width:100%;height:520px;max-height:78vh;background:#0d1117;border-radius:6px;overflow:hidden;';
+  wrap.style.cssText = 'position:relative;width:100%;height:520px;max-height:78vh;background:var(--well,#06090e);border:1px solid var(--line2,#233040);border-radius:var(--radius-md,6px);overflow:hidden;';
   const bar = ctx.el('div', 'cad3d-bar');
-  bar.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:2;font:11px/1.4 ui-monospace,Menlo,monospace;color:#9aa7b4;background:rgba(13,17,23,.66);padding:3px 7px;border-radius:4px;pointer-events:none;max-width:calc(100% - 16px);';
+  bar.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:2;font:11px/1.4 var(--mono,ui-monospace,Menlo,monospace);color:var(--dim,#90a0b2);background:color-mix(in srgb,var(--well,#06090e) 78%,transparent);border:1px solid var(--line,#1c2733);padding:3px 7px;border-radius:var(--radius-sm,4px);pointer-events:none;max-width:calc(100% - 16px);font-variant-numeric:tabular-nums;';
   bar.textContent = `${ctx.title || 'model'} · ${ext.toUpperCase()} · parsing…`;
   wrap.appendChild(bar);
   ctx.host.appendChild(wrap);
@@ -143,7 +146,9 @@ async function renderMesh(ctx, buf, ext, loading) {
   renderer.domElement.addEventListener('webglcontextlost', onCtxLost, false);
 
   const scene = new three.Scene();
-  scene.background = new three.Color(0x0d1117);
+  // WebGL clear color: match the --well backdrop token (#06090e) so the canvas
+  // reads as the same dark well as the rest of the file-viewer surfaces.
+  scene.background = new three.Color(0x06090e);
   const camera = new three.PerspectiveCamera(45, W / H, 0.01, 1e6);
 
   scene.add(new three.HemisphereLight(0xffffff, 0x222b36, 1.15));
@@ -211,8 +216,10 @@ async function renderMesh(ctx, buf, ext, loading) {
   // Over-cap notice: the mesh is still rendered, but flag it so a sluggish or
   // frozen-looking tab is explained rather than silently confusing the viewer.
   if (overCap) {
+    // Soft amber callout (the system's deliverable / warn idiom): tinted fill +
+    // amber border + amber text, all derived from the --amber token.
     const warn = ctx.el('div', 'cad3d-warn');
-    warn.style.cssText = 'position:absolute;left:8px;top:8px;right:8px;z-index:3;font:11px/1.4 ui-monospace,Menlo,monospace;color:#f0d8a8;background:rgba(46,32,8,.85);border:1px solid #5a431a;padding:4px 8px;border-radius:4px;pointer-events:none;';
+    warn.style.cssText = 'position:absolute;left:8px;top:8px;right:8px;z-index:3;font:11px/1.4 var(--sans,system-ui,sans-serif);color:var(--amber,#f0a73a);background:color-mix(in srgb,var(--amber,#f0a73a) 14%,var(--well,#06090e));border:1px solid color-mix(in srgb,var(--amber,#f0a73a) 45%,transparent);border-left:2px solid var(--amber,#f0a73a);padding:4px 8px;border-radius:var(--radius-sm,4px);pointer-events:none;';
     warn.textContent = `Large model (${stats}) — interaction may be slow. Download to open in CAD software.`;
     wrap.appendChild(warn);
   }
@@ -376,15 +383,17 @@ function renderStep(ctx, buf) {
   const entities = countStepEntities(scan);
   const totalEnt = entities.reduce((s, e) => s + e.count, 0);
 
+  // Prose/chrome surface: sans body on --ink, matching the file-viewer drawer.
   const root = ctx.el('div', 'cad3d-step');
-  root.style.cssText = 'font:13px/1.55 ui-sans-serif,system-ui,sans-serif;color:#e6edf3;max-width:100%;';
+  root.style.cssText = 'font:13px/1.55 var(--sans,system-ui,sans-serif);color:var(--ink,#cdd9e5);max-width:100%;';
 
   const head = ctx.el('div', 'cad3d-step-head');
   head.style.cssText = 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;';
   const h = ctx.el('div', null, ctx.title || 'STEP model');
-  h.style.cssText = 'font-weight:600;font-size:15px;';
+  h.style.cssText = 'font-weight:600;font-size:15px;color:var(--off-white,#eaf1f8);letter-spacing:-.01em;';
+  // Mono provenance pill (it carries an ID/standard) on the raised chip surface.
   const badge = ctx.el('div', null, 'STEP · ISO-10303-21');
-  badge.style.cssText = 'font:11px ui-monospace,monospace;color:#9aa7b4;background:#161b22;padding:2px 8px;border-radius:10px;';
+  badge.style.cssText = 'font:11px var(--mono,ui-monospace,monospace);color:var(--dim,#90a0b2);background:var(--surface-raised,#0b121b);border:1px solid var(--line2,#233040);padding:2px 8px;border-radius:var(--radius-pill,999px);';
   head.appendChild(h);
   head.appendChild(badge);
   root.appendChild(head);
@@ -394,7 +403,9 @@ function renderStep(ctx, buf) {
     null,
     'No permissively-licensed in-browser STEP tessellator is available, so this shows the parsed B-Rep structure instead of a 3D view. Download the file to open it in CAD software.',
   );
-  note.style.cssText = 'font-size:12px;color:#9aa7b4;background:#161b22;border:1px solid #21262d;border-left:3px solid #d29922;padding:8px 11px;border-radius:5px;margin-bottom:14px;';
+  // Amber-left informational callout (the system's .fv-warn idiom): tinted
+  // inset fill, amber left accent, all from tokens.
+  note.style.cssText = 'font-size:12px;color:var(--dim,#90a0b2);background:var(--surface-inset,#070b10);border:1px solid var(--line2,#233040);border-left:2px solid var(--amber,#f0a73a);padding:8px 11px;border-radius:var(--radius-md,6px);margin-bottom:14px;';
   root.appendChild(note);
 
   // Header table.
@@ -422,7 +433,7 @@ function renderStep(ctx, buf) {
   root.appendChild(twoColTable(ctx, ['Entity type', 'Count'], entRows));
   if (entities.length > top.length) {
     const more = ctx.el('div', null, `…and ${entities.length - top.length} more entity types`);
-    more.style.cssText = 'font-size:12px;color:#7d8590;margin-top:6px;';
+    more.style.cssText = 'font-size:12px;color:var(--mut,#7d8ea2);margin-top:6px;';
     root.appendChild(more);
   }
 
@@ -562,18 +573,20 @@ function titleize(s) {
 
 // ---------- shared DOM builders ----------
 function sectionTitle(ctx, t) {
+  // Uppercase eyebrow on the muted tier — the system's section-label idiom.
   const d = ctx.el('div', null, t);
-  d.style.cssText = 'font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#7d8590;margin:16px 0 7px;';
+  d.style.cssText = 'font-family:var(--sans,system-ui,sans-serif);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut,#7d8ea2);margin:16px 0 7px;';
   return d;
 }
 function kvTable(ctx, rows) {
   const tbl = baseTable(ctx);
   for (const [k, v] of rows) {
     const tr = ctx.el('tr');
+    // Key = sans label on the dim tier; value = ink (mono not needed for prose).
     const th = ctx.el('td', null, k);
-    th.style.cssText = 'padding:5px 12px 5px 0;color:#9aa7b4;white-space:nowrap;vertical-align:top;width:1%;';
+    th.style.cssText = 'padding:5px 12px 5px 0;font-family:var(--sans,system-ui,sans-serif);color:var(--dim,#90a0b2);white-space:nowrap;vertical-align:top;width:1%;';
     const td = ctx.el('td');
-    td.style.cssText = 'padding:5px 0;word-break:break-word;';
+    td.style.cssText = 'padding:5px 0;color:var(--ink,#cdd9e5);word-break:break-word;';
     td.textContent = v;
     tr.appendChild(th);
     tr.appendChild(td);
@@ -586,7 +599,7 @@ function twoColTable(ctx, headers, rows) {
   const htr = ctx.el('tr');
   headers.forEach((hh, i) => {
     const th = ctx.el('th', null, hh);
-    th.style.cssText = `text-align:${i === 0 ? 'left' : 'right'};padding:4px 0;border-bottom:1px solid #21262d;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:#7d8590;`;
+    th.style.cssText = `text-align:${i === 0 ? 'left' : 'right'};padding:4px 0;border-bottom:1px solid var(--line2,#233040);font-family:var(--sans,system-ui,sans-serif);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut,#7d8ea2);`;
     htr.appendChild(th);
   });
   tbl.appendChild(htr);
@@ -594,7 +607,9 @@ function twoColTable(ctx, headers, rows) {
     const tr = ctx.el('tr');
     row.forEach((cell, i) => {
       const td = ctx.el('td');
-      td.style.cssText = `padding:4px 0;${i === 0 ? 'font-family:ui-monospace,Menlo,monospace;font-size:12px;' : 'text-align:right;color:#9ecbff;font-variant-numeric:tabular-nums;'}`;
+      // First col = mono entity-type ID (data); count col = the product-wide
+      // amber number hue, right-aligned with tabular figures.
+      td.style.cssText = `padding:4px 0;border-bottom:1px solid var(--line,#1c2733);${i === 0 ? 'font-family:var(--mono,ui-monospace,Menlo,monospace);font-size:12px;color:var(--ink,#cdd9e5);' : 'text-align:right;font-family:var(--mono,ui-monospace,Menlo,monospace);color:var(--amber,#f0a73a);font-variant-numeric:tabular-nums;'}`;
       td.textContent = cell;
       tr.appendChild(td);
     });

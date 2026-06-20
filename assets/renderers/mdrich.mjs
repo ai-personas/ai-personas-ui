@@ -42,6 +42,134 @@ const URL_KATEX_CSS = 'https://esm.sh/katex@0.16.11/dist/katex.min.css';
 const MAX_CHARS   = 600 * 1024;  // ~600 KB of markdown parsed (rest truncated, noted)
 const MAX_DIAGRAMS = 40;          // mermaid.render is expensive; excess -> source
 
+// ---- scoped styling (token-coherent, injected once per host root) -----------
+// mdrich emits three classes the host stylesheet leaves un-themed (.fv-mdrich,
+// .fv-mermaid, .fv-mermaid-fallback) plus a light-themed mermaid SVG (mermaid
+// computes its palette in JS, not from CSS vars). We inject one id-guarded
+// <style> that authors every value as var(--token, <correct-fallback>) — the
+// fallbacks MATCH the live design-system token values so this never becomes a
+// second palette — to make the rendered markdown + diagrams read as one product
+// with the dashboard. The base .fv-md / .fv-loading / .fv-note chrome already
+// lives in discovery.css; these rules only fill the orphan surfaces and harden
+// the mermaid SVG onto the dark substrate. Scope honours an enclosing shadow
+// root the same way the sibling renderers (table/datatree) do.
+const STYLE_ID = 'mdrich-style';
+const CSS = `
+.fv-mdrich{
+  font-family:var(--sans,'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif);
+}
+.fv-mdrich code,.fv-mdrich pre,.fv-mdrich kbd,.fv-mdrich samp{
+  font-family:var(--mono,ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace);
+  font-variant-numeric:tabular-nums slashed-zero;
+}
+.fv-mdrich h1,.fv-mdrich h2,.fv-mdrich h3,.fv-mdrich h4,.fv-mdrich h5,.fv-mdrich h6{
+  color:var(--amber,#f0a73a);font-weight:var(--w-bold,700);letter-spacing:var(--tr-tight,-.01em);
+  line-height:var(--lh-tight,1.25);text-wrap:balance;margin:var(--space-3,12px) 0 var(--space-1,4px);
+}
+.fv-mdrich h1{font-size:var(--fs-name,15px)}
+.fv-mdrich h2{font-size:var(--fs-h,16px)}
+.fv-mdrich h3{font-size:var(--fs-ui,13px)}
+.fv-mdrich h4,.fv-mdrich h5,.fv-mdrich h6{font-size:var(--fs-body,12px)}
+.fv-mdrich p,.fv-mdrich li{line-height:var(--lh-body,1.55);text-wrap:pretty}
+.fv-mdrich a{color:var(--int,#4c9ff0);text-decoration:none}
+.fv-mdrich a:hover{text-decoration:underline}
+.fv-mdrich strong,.fv-mdrich b{color:var(--off-white,#eaf1f8);font-weight:var(--w-semi,600)}
+.fv-mdrich code{
+  background:var(--surface-raised,#0b121b);border:1px solid var(--line,#1c2733);
+  border-radius:var(--radius-sm,4px);padding:0 var(--space-1,4px);
+  font-size:var(--fs-body,12px);color:var(--intr,#19c39a);
+}
+.fv-mdrich pre{
+  background:var(--surface-inset,#070b10);border:1px solid var(--line2,#233040);
+  border-radius:var(--radius-md,6px);padding:var(--space-2,8px) var(--space-3,12px);
+  font-size:var(--fs-body,12px);color:var(--ink,#cdd9e5);overflow:auto;overscroll-behavior:contain;
+}
+.fv-mdrich pre code{background:none;border:none;padding:0;color:inherit}
+.fv-mdrich blockquote{
+  border-left:var(--stroke-bold,2px) solid var(--line2,#233040);
+  margin:var(--space-2,8px) 0;padding:var(--space-0,2px) 0 var(--space-0,2px) var(--space-3,12px);
+  color:var(--dim,#90a0b2);
+}
+.fv-mdrich hr{border:none;border-top:1px solid var(--line2,#233040);margin:var(--space-3,12px) 0}
+.fv-mdrich table{border-collapse:collapse;margin:var(--space-2,8px) 0;font-size:var(--fs-body,12px)}
+.fv-mdrich thead th{
+  background:var(--surface-well2,#0b1118);color:var(--mut,#7d8ea2);
+  font-weight:var(--w-semi,600);letter-spacing:var(--tr-caps,.06em);
+}
+.fv-mdrich th,.fv-mdrich td{border:1px solid var(--line2,#233040);padding:var(--space-1,4px) var(--space-2,8px);text-align:left}
+.fv-mdrich td{font-variant-numeric:tabular-nums}
+.fv-mdrich img{max-width:100%;height:auto;border-radius:var(--radius-md,6px)}
+.fv-mdrich ul,.fv-mdrich ol{margin:var(--space-1,4px) 0 var(--space-1,4px) var(--space-5,20px);padding:0}
+
+/* mermaid figure — sit the (neutral-themed) SVG on the dark substrate so it
+   reads as part of the dashboard, never a pasted-in light card. */
+.fv-mermaid{
+  margin:var(--space-3,12px) 0;padding:var(--space-3,12px);
+  background:var(--surface-inset,#070b10);border:1px solid var(--line2,#233040);
+  border-radius:var(--radius-lg,8px);overflow:auto;overscroll-behavior:contain;text-align:center;
+}
+.fv-mermaid svg{max-width:100%;height:auto;font-family:var(--sans,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif)!important}
+
+/* per-diagram graceful fallback (source shown) — reuses the .fv-note callout
+   chrome and the inset code well so a bad diagram looks intentional. */
+.fv-mermaid-fallback{
+  margin:var(--space-3,12px) 0;padding:var(--space-2,8px) var(--space-3,12px);
+  background:var(--surface-inset,#070b10);
+  border:1px solid var(--line2,#233040);border-left:var(--stroke-bold,2px) solid var(--amber,#f0a73a);
+  border-radius:var(--radius-md,6px);
+}
+.fv-mermaid-fallback .fv-note{margin:0 0 var(--space-1,4px);color:var(--amber,#f0a73a)}
+.fv-mermaid-fallback pre{
+  margin:0;background:var(--surface-inset,#070b10);border:1px solid var(--line,#1c2733);
+  border-radius:var(--radius-sm,4px);padding:var(--space-2,8px) var(--space-3,12px);
+  font:var(--fs-body,12px)/var(--lh-snug,1.4) var(--mono,ui-monospace,Menlo,Consolas,monospace);
+  color:var(--ink,#cdd9e5);overflow:auto;white-space:pre-wrap;word-break:break-word;
+}
+`;
+
+// mermaid theme overrides — mermaid resolves its palette to concrete colors in
+// JS at render() time (it cannot read CSS vars), so these MUST be literals that
+// equal the design-system token values; the CSS above provides the durable
+// token-driven layer, this keeps mermaid's computed defaults on-palette.
+const MERMAID_THEME_VARS = {
+  darkMode: true,
+  background: '#070b10',            // --surface-inset
+  primaryColor: '#0b121b',          // --surface-raised (node fill)
+  primaryBorderColor: '#233040',    // --line2
+  primaryTextColor: '#cdd9e5',      // --ink
+  secondaryColor: '#0f1620',        // --panel
+  secondaryBorderColor: '#1c2733',  // --line
+  secondaryTextColor: '#cdd9e5',    // --ink
+  tertiaryColor: '#0d131c',         // --bg2
+  tertiaryBorderColor: '#233040',   // --line2
+  tertiaryTextColor: '#cdd9e5',     // --ink
+  lineColor: '#7d8ea2',             // --mut (edges legible on dark)
+  textColor: '#cdd9e5',             // --ink
+  mainBkg: '#0b121b',               // --surface-raised
+  nodeBorder: '#233040',            // --line2
+  clusterBkg: '#0d131c',            // --bg2
+  clusterBorder: '#1c2733',         // --line
+  edgeLabelBackground: '#070b10',   // --surface-inset
+  titleColor: '#f0a73a',            // --amber
+  noteBkgColor: '#0b1118',          // --surface-well2
+  noteBorderColor: '#233040',       // --line2
+  noteTextColor: '#cdd9e5',         // --ink
+  fontFamily: "var(--sans,'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif)",
+};
+
+// Inject the scoped stylesheet once per host root (idempotent; shadow-aware).
+function ensureStyle(host, doc, el) {
+  try {
+    const root = host.getRootNode ? host.getRootNode() : doc;
+    const scope = (root && root.nodeType === 11) ? root : (doc.head || doc.documentElement);
+    if (!scope || (scope.querySelector && scope.querySelector('#' + STYLE_ID))) return;
+    const style = (typeof el === 'function') ? el('style', null) : doc.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    scope.appendChild(style);
+  } catch (_e) { /* styling is cosmetic — never block render on it */ }
+}
+
 // Inject KaTeX stylesheet once per page (idempotent). KaTeX needs its CSS for
 // correct glyph metrics; without it formulas render but mis-spaced.
 function ensureKatexCss(doc) {
@@ -79,6 +207,10 @@ export async function render(ctx) {
     try { ctx.onCleanup(() => { disposed = true; }); } catch (_e) { /* non-fatal */ }
   }
   const live = () => !disposed && host.isConnected !== false;
+
+  // Inject the scoped, token-coherent stylesheet up front so the loading note,
+  // mounted markdown, and any mermaid figures all paint on-palette from frame 1.
+  ensureStyle(host, doc, el);
 
   // Visible progress note before the slow CDN imports + heavy parse resolve, so
   // the drawer never sits blank. Reused/updated through the pipeline.
@@ -191,7 +323,8 @@ export async function render(ctx) {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict', // mermaid sanitises labels; we re-sanitise SVG too
-        theme: 'neutral',
+        theme: 'base',           // 'base' honours themeVariables -> our token palette
+        themeVariables: MERMAID_THEME_VARS,
         fontFamily: 'inherit',
       });
     } catch (_e) { mermaid = null; }

@@ -71,6 +71,61 @@ function fmtBytes(n) {
   return `${i === 0 ? v : v.toFixed(1)} ${u[i]}`;
 }
 
+// One-shot injection of the renderer's scoped chrome styles. Authored entirely
+// against the shared design tokens (every value var(--token,<live-fallback>) so
+// the fallback half can never drift into a second palette). The PCB board itself
+// (green soldermask + gold copper, and the white invert) is the deliberate
+// data-viz representation of the layer — kept off the chrome palette by intent,
+// the same way the WaveDrom card or a CAD mesh keeps its own colours. Everything
+// around it — toolbar, buttons, descriptor bar, hint, frame — is product chrome
+// and rides the tokens so the viewport reads as one piece with the dashboard.
+const STYLE_ID = 'fv-gerber-style';
+const GERBER_CSS = `
+.fv-gerber{display:flex;flex-direction:column;width:100%;max-width:100%;
+  border:1px solid var(--line2,#233040);border-radius:var(--radius-md,6px);
+  overflow:hidden;background:var(--well,#06090e);
+  font-family:var(--sans,'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif)}
+.fv-gerber-bar{display:flex;gap:var(--space-1,4px);align-items:center;flex-wrap:wrap;
+  padding:var(--space-2,8px) var(--space-3,12px);
+  background:var(--surface-raised,#0b121b);
+  border-bottom:1px solid var(--line2,#233040)}
+.fv-gerber-bar button{display:inline-flex;align-items:center;justify-content:center;
+  min-width:28px;height:24px;padding:0 var(--space-2,8px);cursor:pointer;
+  background:var(--surface-inset,#070b10);color:var(--dim,#90a0b2);
+  border:1px solid var(--line2,#233040);border-radius:var(--radius-sm,4px);
+  font:600 11px/1 var(--sans,ui-sans-serif,system-ui,sans-serif);letter-spacing:.02em;
+  transition:border-color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    color var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1)),
+    background var(--dur-fast,120ms) var(--ease-out,cubic-bezier(.2,.8,.2,1))}
+.fv-gerber-bar button:hover:not(:disabled){border-color:var(--accent,#4c9ff0);color:var(--ink,#cdd9e5);background:var(--surface-raised,#0b121b)}
+.fv-gerber-bar button:focus-visible{outline:none;border-color:var(--accent,#4c9ff0);box-shadow:0 0 0 3px var(--focus-ring,rgba(76,159,240,.20))}
+.fv-gerber-bar button:active:not(:disabled){transform:var(--press,translateY(.5px))}
+.fv-gerber-bar button:disabled{opacity:.4;cursor:default}
+.fv-gerber-hint{margin-left:auto;color:var(--mut,#7d8ea2);
+  font:10px/1 var(--mono,ui-monospace,Menlo,monospace);letter-spacing:.04em;
+  font-variant-numeric:tabular-nums}
+/* Board surface + trace colour ARE the PCB data-viz representation: the gerber
+   geometry is emitted with fill/stroke="currentColor", so the stage's color
+   drives the copper tint. Namespaced renderer-local vars keep these overridable
+   while carrying the conventional PCB fallbacks (off the chrome palette). */
+.fv-gerber-stage{position:relative;width:100%;height:clamp(220px,52vh,520px);
+  overflow:hidden;padding:var(--space-3,12px);box-sizing:border-box;
+  touch-action:none;cursor:grab;
+  background:var(--gbr-board,#0b3d2e);color:var(--gbr-trace,#f0c14b)}
+.fv-gerber-stage.is-inverted{background:var(--gbr-board-inv,#f3efe3);color:var(--gbr-trace-inv,#1a1a1a)}
+@media (prefers-reduced-motion:reduce){
+  .fv-gerber-bar button{transition-duration:.01ms!important}
+  .fv-gerber-bar button:active:not(:disabled){transform:none}
+}`;
+
+function ensureStyle() {
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement('style');
+  s.id = STYLE_ID;
+  s.textContent = GERBER_CSS;
+  (document.head || document.documentElement).appendChild(s);
+}
+
 // Sanitise a serialized SVG string into a live, inert SVG node. Parses as
 // XML (no script execution), drops dangerous elements/attributes, then
 // imports the cleaned root into the host document.
@@ -144,7 +199,7 @@ function convert(gerberToSvg, source, id) {
 }
 
 export async function render(ctx) {
-  const { host, el, esc } = ctx;
+  const { host, el } = ctx;
 
   // 1) Source bytes (text format).
   const source = await ctx.fetchText();
@@ -157,7 +212,9 @@ export async function render(ctx) {
     throw new Error(`gerber: file too large to render (${fmtBytes(bytes)} > ${fmtBytes(HARD_BYTES)} cap) — use download`);
   }
 
-  // 2) Loading state (the CDN import + parse are the slow part).
+  // 2) Loading state (the CDN import + parse are the slow part). Reuse the
+  //    single shared .fv-loading pattern (token spinner) for product cohesion.
+  ensureStyle();
   host.innerHTML = '';
   const loading = el('div', 'fv-loading', 'loading PCB Gerber renderer…');
   host.appendChild(loading);
@@ -195,44 +252,47 @@ export async function render(ctx) {
   const w = converter && typeof converter.width === 'number' && isFinite(converter.width) ? converter.width : null;
   const h = converter && typeof converter.height === 'number' && isFinite(converter.height) ? converter.height : null;
 
+  // Descriptor bar: a chrome label (.fv-note, sans) carrying the layer name,
+  // with the measured dimensions/units set in mono as the data half so the
+  // numbers don't jitter and read as telemetry, not prose.
   const bar = el('div', 'fv-note');
-  let dim = '';
+  bar.textContent = layerLabel;
   if (w != null && h != null && units) {
-    dim = ` · ${(+w).toFixed(2)} × ${(+h).toFixed(2)} ${esc(units)}`;
+    const sep = document.createTextNode(' · ');
+    const data = el('span');
+    data.style.cssText = "font-family:var(--mono,ui-monospace,Menlo,monospace);"
+      + 'font-variant-numeric:tabular-nums;color:var(--dim,#90a0b2)';
+    data.textContent = `${(+w).toFixed(2)} × ${(+h).toFixed(2)} ${units}`;
+    bar.appendChild(sep);
+    bar.appendChild(data);
   }
-  bar.textContent = `${layerLabel}${dim}`;
   host.appendChild(bar);
 
   // Degraded-render notice (still show what we have): the layer parsed but has
   // no measurable extent / viewBox, so pan/zoom falls back to plain scaling.
   if (!vb) {
     const warn = el('div', 'fv-note', 'note: no board extent reported — showing layer without measured zoom');
-    warn.style.color = '#f0a73a';
+    warn.style.color = 'var(--amber,#f0a73a)';
     host.appendChild(warn);
   }
 
   // ---- viewport: board backdrop + toolbar + zoom/pan svg ----------------
+  // All chrome is class-driven off the injected token stylesheet; only the
+  // geometry-bound bits (viewBox math) stay inline below.
   const wrap = el('div', 'fv-gerber');
-  wrap.style.cssText = 'display:flex;flex-direction:column;width:100%;max-width:100%;'
-    + 'background:#0b3d2e;color:#f0c14b;border-radius:6px;overflow:hidden';
 
   const toolbar = el('div', 'fv-gerber-bar');
-  toolbar.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 8px;flex-wrap:wrap;'
-    + 'background:rgba(0,0,0,.28);border-bottom:1px solid rgba(255,255,255,.08)';
   const mkBtn = (label, aria) => {
     const b = el('button', null, label);
     b.type = 'button';
     if (aria) b.setAttribute('aria-label', aria);
-    b.style.cssText = 'background:rgba(255,255,255,.08);color:#f4e3b0;border:1px solid rgba(255,255,255,.18);'
-      + 'border-radius:4px;padding:3px 10px;cursor:pointer;font:11px ui-monospace,Menlo,monospace;line-height:1.3';
     return b;
   };
   const bFit = mkBtn('Fit', 'fit to view');
   const bIn = mkBtn('+', 'zoom in');
   const bOut = mkBtn('−', 'zoom out');
   const bInv = mkBtn('Invert', 'invert board colours');
-  const hint = el('span', null, 'drag = pan · wheel = zoom');
-  hint.style.cssText = 'margin-left:auto;color:rgba(244,227,176,.6);font:10.5px ui-monospace,monospace';
+  const hint = el('span', 'fv-gerber-hint', 'drag = pan · wheel = zoom');
   toolbar.appendChild(bFit); toolbar.appendChild(bIn); toolbar.appendChild(bOut);
   toolbar.appendChild(bInv); toolbar.appendChild(hint);
   wrap.appendChild(toolbar);
@@ -240,8 +300,6 @@ export async function render(ctx) {
   // Stage holds the SVG; clipped so panned-out geometry doesn't overflow the
   // drawer. Fixed-ratio height that adapts to the narrow (360px) drawer.
   const stage = el('div', 'fv-gerber-stage');
-  stage.style.cssText = 'position:relative;width:100%;height:clamp(220px,52vh,520px);'
-    + 'overflow:hidden;padding:12px;box-sizing:border-box;touch-action:none;cursor:grab';
   stage.appendChild(node);
   wrap.appendChild(stage);
   host.appendChild(wrap);
@@ -249,11 +307,11 @@ export async function render(ctx) {
   // ---- zoom/pan over the SVG viewBox ------------------------------------
   // When we have a real viewBox we drive {x,y,w,h}; otherwise the SVG just
   // scales to fit (still visible, just no interactive zoom).
+  // The board surface (green soldermask / white invert) is the deliberate PCB
+  // data-viz representation, toggled via a class on the stage so the chrome
+  // stylesheet owns the actual colours (var(--gbr-board…) with PCB fallbacks).
   let inverted = false;
-  const applyColors = () => {
-    wrap.style.background = inverted ? '#f3efe3' : '#0b3d2e';
-    wrap.style.color = inverted ? '#1a1a1a' : '#f0c14b';
-  };
+  const applyColors = () => { stage.classList.toggle('is-inverted', inverted); };
   applyColors();
 
   if (vb) {
@@ -345,7 +403,8 @@ export async function render(ctx) {
     node.style.height = 'auto';
     stage.style.cursor = 'default';
     stage.style.height = 'auto';
-    for (const b of [bFit, bIn, bOut]) { b.disabled = true; b.style.opacity = '.4'; b.style.cursor = 'default'; }
+    // Disabled state (opacity/cursor) is handled by the chrome stylesheet.
+    for (const b of [bFit, bIn, bOut]) { b.disabled = true; }
     hint.textContent = '';
   }
 
