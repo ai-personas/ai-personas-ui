@@ -1,4 +1,4 @@
-"""v1.1 discovery surface for the DC-to-AC run (09_PROTOCOLS §3G / §4.1).
+"""v1.1 discovery surface for a PersonaOS run (09_PROTOCOLS §3G / §4.1).
 
 Projects the run's persona, environment, artifact bundle + each artifact, and the persona's
 telemetry feed as **signed, uniform `DiscoverableRecord`s** (cards are projected to the common
@@ -86,8 +86,8 @@ def export_v11_discovery(
     entries.append(("persona", mint_discoverable_record(
         ks, signing_key_id=key_id, kind="persona",
         did=f"did:personaos:{persona.persona_id}", label=persona.persona_id,
-        description=f"DC-to-AC designer persona ({domain.name})",
-        capability_summary=["dc_to_ac_design", "pcb_package_generation"],
+        description=f"Task persona ({domain.name})",
+        capability_summary=["task_execution", "artifact_generation"],
         access_policy_ref=persona_policy.policy_id, visibility_tier="federation",
         interfaces=[{"kind": "A2A", "endpoint": f".well-known/personas/{persona.persona_id}.json"}],
     ), persona_policy))
@@ -106,14 +106,14 @@ def export_v11_discovery(
     bundle_card = mint_artifact_card(
         ks, signing_key_id=key_id, bundle_id=bundle.bundle_id,
         label=bundle.title or bundle.bundle_id,
-        description=f"Ready-to-order PCB package ({len(artifact_records)} files)",
+        description=f"Artifact package ({len(artifact_records)} files)",
         media_kinds=media_kinds, content_hash=bundle_anchor,
         sharing_policy_ref=bundle.sharing_policy_ref or "",
         version_chain_head=str(bundle.version),
         access_policy_ref=artifact_policy.policy_id, visibility_tier="federation",
     )
     bundle_rec = bundle_card.to_record()
-    bundle_rec.description = f"Ready-to-order PCB package ({len(artifact_records)} files)"
+    bundle_rec.description = f"Artifact package ({len(artifact_records)} files)"
     entries.append(("artifact_bundle", _resign(bundle_rec), artifact_policy))
 
     for rec in artifact_records:
