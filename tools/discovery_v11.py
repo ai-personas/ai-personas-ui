@@ -95,7 +95,7 @@ def export_v11_discovery(
     entries.append(("env", mint_discoverable_record(
         ks, signing_key_id=key_id, kind="env",
         did=f"did:personaos:{env.environment_id}", label=env.name,
-        description=f"{env.type} for the DC-to-AC inverter design",
+        description=f"{env.type} for the task deliverable",
         capability_summary=["project_workspace", domain.name],
         access_policy_ref=env_policy.policy_id, visibility_tier="federation",
     ), env_policy))
