@@ -585,9 +585,9 @@ async function discoverViaIPFS(){
 // box). So probe a few well-known ports here; self-register any that answer. That
 // node then appears in the OPERATOR console as a LOCAL node — loopback ⇒ NO token.
 // Silent when nothing's running. From an https page: https://localhost works if the
-// node's cert is trusted; http://localhost works in Chromium (localhost is
-// potentially-trustworthy) and just fails quietly elsewhere.
-const LOCAL_PORTS=[8805,8765,8910];
+// node's cert is trusted; plain-http localhost is browser-policy dependent and
+// may fail before CORS, so the empty state points users at the node-served UI.
+const LOCAL_PORTS=[8765,8805,8910];
 async function probeBase(base){
   try{
     const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),2500);
@@ -723,10 +723,10 @@ function emptyStateHTML(){
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
-    1 · Run a node: <code>python -m personaos.node --budget 8 --public-discovery</code><br>
+    1 · Run a node: <code>python -m personaos.node --budget 8 --port 8765</code><br>
     ${httpsPage?`2 · This page is <b>https://</b> — browsers block fetches to a plain-http
-    LAN/localhost node (mixed content). Either open the <b>node-served UI</b> at
-    <code>http://&lt;node-host&gt;:&lt;port&gt;/</code> (same shell, same-origin), or expose the
+    LAN/localhost node. Either open the <b>node-served UI</b> at
+    <code>http://localhost:8765/</code> (same-origin), or expose the
     node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
     and add the tunnel URL with <b>＋ PEER</b>.`:`2 · Add your node's URL with <b>＋ PEER</b>
     (or <code>?peer=&lt;url&gt;</code>).`}<br>
@@ -3547,7 +3547,7 @@ function wire(){
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); _applyFilter(); });
   $('#addpeer').addEventListener('click',()=>{ let v=$('#peer').value.trim(); if(!v)return;
     // the input is type=url but there's no <form>, so native validation never runs —
-    // normalise a bare host ('localhost:8805') to an absolute https URL before storing.
+    // normalise a bare host ('localhost:8765') to an absolute https URL before storing.
     if(!/^https?:\/\//i.test(v)) v='https://'+v;
     let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
     localStorage.setItem('personaos_peers',JSON.stringify(s)); $('#peer').value='';

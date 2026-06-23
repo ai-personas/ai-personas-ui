@@ -1,16 +1,8 @@
 # PersonaOS discovery seeds.
 #
-# PREFERRED (content-addressed, URL-free): every PersonaOS kernel pins + provides the
-# well-known rendezvous block "personaos-discovery-rendezvous/v1" on the public IPFS DHT,
-# and publishes a signed IPNS node card whose payload carries its https front door. The
-# portal holds only that block's CID (baked into the UI) and resolves live nodes via
-# delegated routing + the signed card, Ed25519-verifying every record in-browser.
+# This file deliberately carries no fixed node URLs. The browser resolves live
+# nodes at runtime through content-addressed discovery and any peer URL the
+# operator supplies with ?peer=<url> or the PEER control.
 #
-# RELIABILITY SEED (below): that URL-free path depends on public IPFS routing
-# (delegated-ipfs.dev / ipfs.io / dweb.link), which currently returns 400/500 for this
-# node's rendezvous IPNS record and strips the /tls/http front door from the provider
-# record. Until that infra is reliable, the stable tunnel URL is listed here so the portal
-# connects directly — still bootstrapped + Ed25519-verified exactly like ?peer=, the
-# signature is the trust, never the host. Remove this line once IPFS routing resolves the
-# card again. A visitor can also pin a node for a session with ?peer=<url> / "＋ PEER".
-https://node1.personas.ai
+# A committed HTTPS hostname becomes stale when the backing node/tunnel rotates;
+# stale seeds make the hosted UI look empty even when local nodes are healthy.

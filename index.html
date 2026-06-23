@@ -8,7 +8,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260620i">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260623a">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -52,8 +52,8 @@
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8805</code>
-    then add <code>?peer=http://localhost:8805</code> to this page's URL or use ＋PEER.</p>
+    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>
+    then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
   </div>
 
   <nav class="globalbar" aria-label="discovered nodes">
@@ -133,6 +133,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260620i"></script>
+  <script type="module" src="assets/discovery.js?v=20260623a"></script>
 </body>
 </html>
