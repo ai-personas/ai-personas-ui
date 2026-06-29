@@ -404,11 +404,6 @@ function globalDiscoveryEndpoints(){
   if(p.get('no_global_discovery')==='1') return [];
   return [...new Set([GLOBAL_DISCOVERY_DEFAULT,...p.getAll('global_discovery')].map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
-async function sha256Canon(v){
-  if(!globalThis.crypto?.subtle) return '';
-  const hash=await crypto.subtle.digest('SHA-256',enc.encode(canon(v)));
-  return 'sha256:'+Array.from(new Uint8Array(hash)).map((b)=>b.toString(16).padStart(2,'0')).join('');
-}
 async function verifyGlobalEnvelope(env){
   const ann=env?.announcement;
   if(env?.schema!=='personaos-node-announcement-envelope/1'||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
@@ -417,31 +412,8 @@ async function verifyGlobalEnvelope(env){
   let ok=false;
   try{ ok=await ed.verifyAsync(hexToBytes(env.signature_hex),enc.encode(canon(ann)),hexToBytes(env.public_key_hex)); }catch(e){}
   if(!ok) return {ok:false};
-  if(env.public_bundle){
-    const h=await sha256Canon(env.public_bundle);
-    if(!h||h!==ann.public_bundle_hash) return {ok:false};
-    const recs=env.public_bundle.records||[];
-    if((env.public_bundle.record_count|0)!==recs.length) return {ok:false};
-    if(recs.some((d)=>d?.record?.visibility_tier!=='public')) return {ok:false};
-  } else if(ann.public_bundle_hash) return {ok:false};
+  if(Object.prototype.hasOwnProperty.call(env,'public_bundle')||ann.public_bundle_hash) return {ok:false};
   return {ok:true,ann};
-}
-async function rowsFromGlobalBundle(env,ann){
-  const bundle=env.public_bundle||{};
-  const keys={}; (bundle.keys?.keys||[]).forEach((k)=>keys[k.key_id]=k.public_key_hex);
-  const rows=[];
-  for(const doc of (bundle.records||[])){
-    if(!doc?.record||doc.record.visibility_tier!=='public') continue;
-    const ok=await verifyRecord(doc,keys);
-    if(!ok) continue;
-    const r=doc.record, k=doc.host_kernel_id||ann.kernel_id||'', b=doc.base||ann.base_url||'';
-    rows.push({...r,_kernel:k,_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:b,
-      _plane:'internet',_net:'global',_broadcastOnly:!ann.base_url,
-      _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
-        public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
-        base:b,links:doc.links||{},access_policy:doc.access_policy||{}}});
-  }
-  return rows;
 }
 async function loadGlobalNodes(){
   const endpoints=globalDiscoveryEndpoints();
@@ -460,7 +432,6 @@ async function loadGlobalNodes(){
       S.kernels.add(kid); noteKernel(kid,'global',ann.base_url||ep);
       for(const ma of (ann.libp2p_multiaddrs||[])) if(ma) S.p2pBootstraps.add(ma);
       if(ann.base_url) freshPeers.add(ann.base_url);
-      rows.push(...await rowsFromGlobalBundle(env,ann));
     }
   }
   S.globalPeers=freshPeers;
