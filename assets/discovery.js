@@ -1264,13 +1264,16 @@ const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
-// RUNNING NOW vs merely live: a persona is "running now" iff its model/coordination activity
-// GREW within the last ~18 s (just over one 15s poll window) — i.e. it is mid model-call this moment. This is
-// the precise signal that distinguishes the ONE persona actually working from the several that are
-// recently-active ("live"). Everything else stays calm so the running one is unmistakable.
+// RUNNING NOW vs merely recent: a persona is "running" iff a MODEL event for
+// that persona grew within the last ~18 s (just over one 15s poll window).
+// Coordination can make a card RECENT, but never RUNNING. This keeps "running"
+// aligned with "actually in / just returned from an LLM call".
 const _RUNNING_WINDOW_MS=18000;
 function _runningNow(sid){ const t=(S.lastActiveAt&&S.lastActiveAt.get(sid))||0;
   return t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
+function _modelFresh(sid,models){
+  return !!(models&&models.length) && (Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
+}
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
 // derive a persona's coordination ROLE from its summary/name (open, emergent —
@@ -1327,8 +1330,8 @@ function renderPersonaCard(pid){
   // HONEST recency: a model-bearing card decays to idle once its model events stop
   // arriving (5-min window) instead of staying green forever via the sticky models[]
   // carry-forward. Liveness = model events seen recently OR a fresh coordination act.
-  const modelFresh=hasModels&&(Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
-  const live=modelFresh||actFresh;
+  const modelFresh=_modelFresh(sid,models);
+  const recent=modelFresh||actFresh;
   const running=_runningNow(sid);   // mid model-call THIS moment — the one truly working
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
@@ -1337,7 +1340,8 @@ function renderPersonaCard(pid){
   // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
   let doingHTML, glance='';
   if(hasModels){
-    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(PURPOSE_VERB[last.purpose]||last.purpose)} <code>${esc(last.model)}</code>`;
+    const verb=recent?(PURPOSE_VERB[last.purpose]||last.purpose):('last '+(PURPOSE_VERB[last.purpose]||last.purpose));
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(verb)} <code>${esc(last.model)}</code>`;
     const byP=new Map();
     for(const m of models){ const k=m.purpose||'model'; byP.set(k,(byP.get(k)||0)+1); }
     glance=[...byP.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4)
@@ -1369,22 +1373,25 @@ function renderPersonaCard(pid){
     +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
     +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
     +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
-  // 3-state presence: RUNNING NOW (pulsing) · active (calm, recently worked) · idle.
-  const dotCls=running?'run':(live?'on':'off');
+  // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
+  // RECENT is public activity; IDLE means available but no recent activity.
+  const dotCls=running?'run':(recent?'on':'off');
   const statusBadge=running
     ? '<span class="pc-run">RUNNING</span>'
-    : (live?'<span class="pc-active">active</span>':'<span class="pc-idle">idle</span>');
+    : (recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>');
+  const lifecycle=(state||'ACTIVE').toUpperCase();
+  const lifecycleBadge=`<span class="pc-life${lifecycle==='ACTIVE'?'':' off'}">${esc(lifecycle==='ACTIVE'?'AVAILABLE':lifecycle.toLowerCase())}</span>`;
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
   const lastSeen=Math.max(S.lastModelSeenAt?.get(sid)||0, recentAct?._t||0, cogMsgs[0]?._t||0, toolAct?._t||0);
   if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
-  return `<div class="pcard role-${role}${running?' running':live?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
+  return `<div class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
     +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
     +statusBadge
-    +(state&&state!=='ACTIVE'?`<span class="pc-state">${esc(state.toLowerCase())}</span>`:'')
+    +lifecycleBadge
     +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
     +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?icon('warn','ico-sm'):icon('tool','ico-sm')} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
@@ -1709,10 +1716,10 @@ function updateVitalsCounters(){
   const box=$('#stats'); if(!box) return;
   if(!box.dataset.built){ box.dataset.built='1';
     box.innerHTML=['auth','personas','active','envs','acts','signed'].map((k)=>{
-      const lbl={auth:'access',personas:'personas',active:'streaming',envs:'envs',acts:'acts/min',signed:'verified'}[k];
+      const lbl={auth:'access',personas:'personas',active:'running',envs:'envs',acts:'acts/min',signed:'verified'}[k];
       const init=k==='auth'?'discover':'0';
-      // the STREAMING counter is the page's hero metric — the already-built .stat.primary
-      // (18px/green when .hot) gives the page a visual anchor when work is live.
+      // the RUNNING counter is the page's hero runtime metric: personas with
+      // fresh model-call growth only. Non-LLM coordination is counted in acts/min.
       return `<div class="stat${k==='active'?' primary':''}" id="st-${k}"><div class="v">${init}</div><div class="k">${lbl}</div></div>`;
     }).join(''); }
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
@@ -1722,14 +1729,11 @@ function updateVitalsCounters(){
   const recPersona=S.order.filter((id)=>S.recs.get(id).kind==='persona').length;
   personasN=Math.max(S.liveByPersona.size,recPersona);
   const now=Date.now();
-  // STREAMING = personas whose activity GREW in the running window (genuinely mid-work
-  // right now) OR with a coordination act in the last 60s — so the headline can't read 0
-  // while the feed is streaming, and a persona that merely once called a model (its
-  // models[] is carried forward forever) is NOT counted as permanently streaming.
-  const streaming=new Set();
-  for(const psid of (S.lastActiveAt?S.lastActiveAt.keys():[])) if(_runningNow(psid)) streaming.add(psid);
-  if(S.ixByPersona) for(const [psid,arr] of S.ixByPersona) if(arr.some((a)=>now-a._t<60000)) streaming.add(psid);
-  const active=streaming.size;
+  // RUNNING = personas whose model-call activity GREW in the running window.
+  // Coordination-only traffic stays in acts/min so "running" always means LLM.
+  const runningSet=new Set();
+  for(const psid of (S.lastActiveAt?S.lastActiveAt.keys():[])) if(_runningNow(psid)) runningSet.add(psid);
+  const active=runningSet.size;
   const acts=(S.interactions||[]).filter((e)=>now-e._t<60000).length;
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
   // unverified live interactions are NOT signed and must never inflate this.
@@ -1939,7 +1943,10 @@ async function refreshSystemView(){
   const graphIds=[...new Set([...envBlocks.flatMap((b)=>b.members),...orphans.filter((o)=>(S.liveByPersona.get(o)||{}).models)])];
   const persons=graphIds.map((sid)=>{ const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
     const models=d.models||[]; const last=models[models.length-1];
-    return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:!!last,
+    const acts=(S.ixByPersona&&S.ixByPersona.get(sid))||[];
+    const recentAct=acts[acts.length-1];
+    const recent=_modelFresh(sid,models)||!!(recentAct&&(Date.now()-recentAct._t)<90000);
+    return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:recent,
       running:_runningNow(sid),
       doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; });
   // graph renders at most 14 nodes, but the caption must report the TRUE population

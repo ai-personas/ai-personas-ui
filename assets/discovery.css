@@ -163,7 +163,7 @@ b{color:var(--bright)}
 .vcounts{display:flex;gap:16px;flex-wrap:wrap}
 .stat{text-align:right;min-width:54px}
 .stat .v{font-size:var(--fs-body);font-weight:var(--w-bold);color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
-/* the ONE primary metric (streaming/active counter) dominates */
+/* the ONE primary metric (personas currently in an LLM call) dominates */
 .stat.primary .v{font-size:var(--fs-display);letter-spacing:var(--tr-tight)}
 .stat.primary.hot .v{color:var(--up)}
 .stat .v.flash{animation:vflash .55s}
@@ -432,10 +432,13 @@ b{color:var(--bright)}
 /* presence badges in the card header — ONE shape (.pill), only color/fill differs */
 .pc-run{font-size:var(--fs-meta);font-weight:var(--w-bold);letter-spacing:var(--tr-caps);color:var(--ink-on-accent);background:var(--up);
   border:1px solid var(--up);border-radius:var(--chip-radius);padding:1px 6px;text-transform:uppercase}
-.pc-active{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--up);text-transform:uppercase;
+.pc-recent{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--up);text-transform:uppercase;
   background:var(--up-weak);border:1px solid color-mix(in srgb,var(--up) 34%,transparent);border-radius:var(--chip-radius);padding:1px 6px}
 .pc-idle{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--mut);text-transform:uppercase;
   background:color-mix(in srgb,var(--mut) 10%,transparent);border:1px solid color-mix(in srgb,var(--mut) 30%,transparent);border-radius:var(--chip-radius);padding:1px 6px}
+.pc-life{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--dim);text-transform:uppercase;
+  background:color-mix(in srgb,var(--surface-well2) 70%,transparent);border:1px solid var(--line2);border-radius:var(--chip-radius);padding:1px 6px}
+.pc-life.off{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 34%,var(--line2));background:var(--amber-weak)}
 .pc-name{font-weight:var(--w-semi);color:var(--off-white);font-size:var(--fs-name);letter-spacing:var(--tr-tight);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pcard.running .pc-role{filter:brightness(1.15)}
 /* role pills — soft tinted idiom (kill the loud solid fill on the most-repeated label) */
