@@ -689,7 +689,8 @@ async function probeBase(base){
     return !!(d&&typeof d==='object'&&/personaos-discovery/.test(d.schema||''));
   }catch(e){ return false; }
 }
-async function discoverLocalNode(){
+async function discoverLocalNode(opts={}){
+  const rediscover = opts.rediscover !== false;
   S.localPeers=S.localPeers||new Set();
   const hosts=location.protocol==='https:'
     ? ['https://localhost','https://127.0.0.1','http://localhost','http://127.0.0.1']
@@ -703,8 +704,10 @@ async function discoverLocalNode(){
   S.localPeers=found;                      // rebuild each cycle: a stopped local node drops off
   if(after!==before){
     if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — operator console works with NO token (loopback)`,true);
+    if(!rediscover) return found;
     discover().then(()=>{ renderMissions(); }).catch(()=>{});
   }
+  return found;
 }
 
 function upsert(r){
@@ -775,10 +778,10 @@ async function discover(){
   if(_discoverBusy) return; _discoverBusy=true;
   try{
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
-  await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
-  const [globalRows]=await Promise.all([
-    loadGlobalNodes(),                                              // signed global rendezvous → peers + broadcast-only records
+  const [_txt,_ipfs,_local]=await Promise.all([
+    loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
+    discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ]);
   const seeds=[...new Set(['', ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
@@ -786,11 +789,23 @@ async function discover(){
   const bases=await resolveKernelBases(seeds);
   const results=await Promise.all(bases.map((b)=>
     discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
-  globalRows.forEach(upsert);
   for(const {b,res} of results){
     res.found.forEach(upsert);
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
+  }
+  if(S.recs.size===0){
+    log('global','no local/manual/IPFS/P2P records found — using fallback rendezvous seed');
+    const globalRows=await loadGlobalNodes();
+    const fallbackBases=await resolveKernelBases([...new Set([...peerList()])]);
+    const fallbackResults=await Promise.all(fallbackBases.map((b)=>
+      discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
+    globalRows.forEach(upsert);
+    for(const {b,res} of fallbackResults){
+      res.found.forEach(upsert);
+      if(res.boot) connectDiscoveryStream(b,res.boot);
+      if(res.boot){ await loadTelemetry(b); }
+    }
   }
   pruneDeadManualPeers();                  // drop +PEER seeds that resolved unreachable
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
