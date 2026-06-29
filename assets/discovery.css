@@ -363,6 +363,14 @@ b{color:var(--bright)}
 .env-name{font-weight:var(--w-semi);color:var(--off-white);font-size:var(--fs-name);letter-spacing:var(--tr-tight);cursor:pointer;
   transition:color var(--dur-fast) var(--ease-out)} .env-name:hover{color:var(--accent)}
 .env-meta{color:var(--dim);font-size:var(--fs-label)}
+.env-live{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 13px;color:var(--dim);font-size:var(--fs-label);
+  border-bottom:1px solid var(--line);background:var(--surface-well)}
+.env-live.hot{background:color-mix(in srgb,var(--envhue,var(--intr)) 10%,var(--surface-well))}
+.env-live-label{font-size:var(--fs-meta);font-weight:var(--w-semi);text-transform:uppercase;color:var(--envhue,var(--intr));letter-spacing:var(--tr-caps)}
+.env-live-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid var(--line2);border-radius:var(--chip-radius);
+  padding:2px 7px;color:var(--dim);background:color-mix(in srgb,var(--surface-well2) 86%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.env-live-chip.ok{border-color:color-mix(in srgb,var(--up) 34%,var(--line2));color:var(--off-white)}
+.env-live-chip.model{border-color:color-mix(in srgb,var(--envhue,var(--intr)) 42%,var(--line2));color:var(--off-white)}
 .env-personas{display:flex;gap:10px;flex-wrap:wrap;padding:var(--space-3) var(--space-3)}
 /* deliverables row — a distinct, prominent band so shipped artifacts stand out */
 .env-arts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 13px;color:var(--dim);font-size:var(--fs-label);

@@ -1165,6 +1165,48 @@ function renderEnvLive(eid){
   return h;
 }
 
+function _spanSummary(s){
+  const a=s&&s.attributes||{};
+  return {
+    kind:String((s&&s.kind)||a['personaos.lineage.event_kind']||(s&&s.name)||'SPAN'),
+    signed:(s&&s.signed)===true || a['personaos.lineage.signed']===true,
+    t:Number((s&&s.t)||Date.parse((s&&s.ended_at)||(s&&s.started_at)||'')||0)
+  };
+}
+function _envLaneLive(b){
+  const sid=_shortId(b&&b.sid||b&&b.envId);
+  const live=S.liveByEnv.get(sid)||{};
+  const seen=new Set(), spans=[];
+  for(const raw of [...(live.spans||[]),...(b&&b.spans||[])]){
+    const s=_spanSummary(raw); if(!s.kind) continue;
+    const k=s.kind+'|'+s.t+'|'+(s.signed?1:0); if(seen.has(k)) continue;
+    seen.add(k); spans.push(s);
+  }
+  spans.sort((a,c)=>a.t-c.t);
+  const mSeen=new Set(), models=[];
+  for(const m of [...(live.models||[]),...feedModels(b&&b.feedDoc||{})]){
+    const key=[m.purpose,m.model,m.role,m.t||''].join('|'); if(mSeen.has(key)) continue;
+    mSeen.add(key); models.push(m);
+  }
+  const lastSpan=spans.length?spans[spans.length-1].t:0;
+  // Model-event rows are intentionally low-detail and may not carry source
+  // timestamps. Use signed lineage span time for "live now" so a historical model
+  // allocation does not keep an env looking active forever.
+  const last=lastSpan;
+  return {spans,models,last,fresh:last&&Date.now()-last<10*60*1000};
+}
+function renderEnvLaneLive(b){
+  const live=_envLaneLive(b);
+  if(!live.spans.length&&!live.models.length) return '';
+  const recent=live.spans.slice(-4).reverse().map((s)=>
+    `<span class="env-live-chip ${s.signed?'ok':''}" title="${s.signed?'signed lineage event':'live event'}">${esc(s.kind.replace(/_/g,' '))}</span>`).join('');
+  const latestModel=live.models.length?live.models[live.models.length-1]:null;
+  const model=latestModel
+    ? `<span class="env-live-chip model"><span class="livedot2"></span>${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
+    : '';
+  return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${live.fresh?'live now':'recent'}</span>${model}${recent}</div>`;
+}
+
 /* ===================== ◫ SYSTEM VIEW — the living representation ===================
    Environments contain their personas; each persona card streams its live
    request/response (model selections = what it ASKED a model to do) and its
@@ -1733,12 +1775,14 @@ async function refreshSystemView(){
       const prev=bySid.get(sid);
       if(prev){   // SAME env discovered via another base/alias (localhost vs 127.0.0.1
                   // vs @origin vs ?peer) — merge into the one lane, never duplicate it.
-        if(members.length>prev.members.length){ prev.members=members; prev.spans=feed.spans||prev.spans; }
+        if(members.length>prev.members.length){ prev.members=members; }
+        prev.spans=feed.spans||prev.spans;
+        prev.feedDoc=feed||prev.feedDoc;
         if(!prev.status) prev.status=feed.status||''; if(!prev.type) prev.type=feed.env_type||'';
         continue; }
       const b={base,kernel,envId:eid,sid,name:feed.name||eid,
         type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[],
-        run:null,recId:null,live:true};
+        feedDoc:feed,run:null,recId:null,live:true};
       bySid.set(sid,b); envBlocks.push(b);
     }
   }
@@ -1826,6 +1870,7 @@ async function refreshSystemView(){
       return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">${icon('box','ico-sm')} ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
     const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
+    const liveRow=renderEnvLaneLive(b);
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
     // have departed; mark it so it reads as "who worked here", not "who is here now".
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
@@ -1838,7 +1883,7 @@ async function refreshSystemView(){
       +`<div class="env-head"><span class="env-badge">ENV</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
       +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
-      +`<div class="env-personas">${cards}</div>${artRow}</div>`;
+      +`${liveRow}<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -1860,7 +1905,8 @@ async function refreshSystemView(){
   }
   // (4) SORT lanes by activity so the hero slot is a running/deliverable-bearing env,
   // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
-  const _score=(b)=> (b.members.some((m)=>_runningNow(m))?4:0)
+  const _score=(b)=> (_envLaneLive(b).fresh?8:0)
+    + (b.members.some((m)=>_runningNow(m))?4:0)
     + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
     + ((b.run&&artByRun.has(b.run))?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
