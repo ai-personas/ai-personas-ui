@@ -385,6 +385,75 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
           public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
           base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
 }
+const GLOBAL_DISCOVERY_DEFAULT='https://discovery.ai-personas.org';
+function globalDiscoveryEndpoints(){
+  const p=new URLSearchParams(location.search);
+  if(p.get('no_global_discovery')==='1') return [];
+  return [...new Set([GLOBAL_DISCOVERY_DEFAULT,...p.getAll('global_discovery')].map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
+}
+async function sha256Canon(v){
+  if(!globalThis.crypto?.subtle) return '';
+  const hash=await crypto.subtle.digest('SHA-256',enc.encode(canon(v)));
+  return 'sha256:'+Array.from(new Uint8Array(hash)).map((b)=>b.toString(16).padStart(2,'0')).join('');
+}
+async function verifyGlobalEnvelope(env){
+  const ann=env?.announcement;
+  if(env?.schema!=='personaos-node-announcement-envelope/1'||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
+  const exp=Date.parse(ann.expires_at||'');
+  if(!Number.isFinite(exp)||exp<=Date.now()) return {ok:false};
+  let ok=false;
+  try{ ok=await ed.verifyAsync(hexToBytes(env.signature_hex),enc.encode(canon(ann)),hexToBytes(env.public_key_hex)); }catch(e){}
+  if(!ok) return {ok:false};
+  if(env.public_bundle){
+    const h=await sha256Canon(env.public_bundle);
+    if(!h||h!==ann.public_bundle_hash) return {ok:false};
+    const recs=env.public_bundle.records||[];
+    if((env.public_bundle.record_count|0)!==recs.length) return {ok:false};
+    if(recs.some((d)=>d?.record?.visibility_tier!=='public')) return {ok:false};
+  } else if(ann.public_bundle_hash) return {ok:false};
+  return {ok:true,ann};
+}
+async function rowsFromGlobalBundle(env,ann){
+  const bundle=env.public_bundle||{};
+  const keys={}; (bundle.keys?.keys||[]).forEach((k)=>keys[k.key_id]=k.public_key_hex);
+  const rows=[];
+  for(const doc of (bundle.records||[])){
+    if(!doc?.record||doc.record.visibility_tier!=='public') continue;
+    const ok=await verifyRecord(doc,keys);
+    if(!ok) continue;
+    const r=doc.record, k=doc.host_kernel_id||ann.kernel_id||'', b=doc.base||ann.base_url||'';
+    rows.push({...r,_kernel:k,_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:b,
+      _plane:'internet',_net:'global',_broadcastOnly:!ann.base_url,
+      _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
+        public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
+        base:b,links:doc.links||{},access_policy:doc.access_policy||{}}});
+  }
+  return rows;
+}
+async function loadGlobalNodes(){
+  const endpoints=globalDiscoveryEndpoints();
+  if(!endpoints.length){ S.globalPeers=new Set(); return []; }
+  const freshPeers=new Set();
+  const rows=[];
+  const docs=await Promise.all(endpoints.map((ep)=>fetchJson(join(ep,'/v1/nodes')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
+  for(const {ep,d} of docs){
+    const nodes=d?.nodes||[];
+    if(!nodes.length) continue;
+    log('global',`${ep}: ${nodes.length} announced node(s)`);
+    for(const env of nodes){
+      const verified=await verifyGlobalEnvelope(env);
+      if(!verified.ok){ log('global','announcement signature/hash failed',false); continue; }
+      const ann=verified.ann, kid=ann.kernel_id||'';
+      S.kernels.add(kid); noteKernel(kid,'global',ann.base_url||ep);
+      for(const ma of (ann.libp2p_multiaddrs||[])) if(ma) S.p2pBootstraps.add(ma);
+      if(ann.base_url) freshPeers.add(ann.base_url);
+      rows.push(...await rowsFromGlobalBundle(env,ann));
+    }
+  }
+  S.globalPeers=freshPeers;
+  if(S.globalPeers.size) log('global',`verified global peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
+  return rows;
+}
 async function discoverFrom(base,plane){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
@@ -438,7 +507,11 @@ async function discoverFrom(base,plane){
     const k=card._originating_kernel||'gossip';
     if(card.kind||card.record_id){ S.kernels.add(k); noteKernel(k,'gossip',''); }
   }
-  if(boot.kernel_id) noteKernel(boot.kernel_id,'http',base||location.origin);
+  if(boot.kernel_id){
+    const sources=peerSourceTags(base);
+    if(sources.length) sources.forEach((src)=>noteKernel(boot.kernel_id,src,base||location.origin));
+    else noteKernel(boot.kernel_id,'http',base||location.origin);
+  }
   S.peerHealth.set(where,{ok:true,records:found.length,kernel:boot.kernel_id||'',t:Date.now()});
   return {boot,found};
 }
@@ -477,7 +550,22 @@ async function loadPeersTxt(){
 }
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
   try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  return [...new Set([...p,...s,...TXT_PEERS,...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
+  return [...new Set([...p,...s,...TXT_PEERS,...(S.globalPeers||[]),...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
+function peerSourceTags(base){
+  const u=String(base||'').replace(/\/$/,'');
+  if(!u) return [];
+  const p=new URLSearchParams(location.search).getAll('peer').map((x)=>String(x||'').replace(/\/$/,''));
+  let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
+  s=(Array.isArray(s)?s:[]).map((x)=>String(x||'').replace(/\/$/,''));
+  const txt=(TXT_PEERS||[]).map((x)=>String(x||'').replace(/\/$/,''));
+  const inSet=(set)=>[...(set||[])].map((x)=>String(x||'').replace(/\/$/,'')).includes(u);
+  const out=[];
+  if(p.includes(u)||s.includes(u)||txt.includes(u)) out.push('manual');
+  if(inSet(S.localPeers)) out.push('local');
+  if(inSet(S.globalPeers)) out.push('global');
+  if(inSet(S.ipfsPeers)) out.push('ipfs');
+  return out;
+}
 
 /* ---------- IPFS discovery plane (content-addressed rendezvous) ----------
    Every PersonaOS kernel pins the SAME deterministic rendezvous block
@@ -543,7 +631,8 @@ async function fetchNodeCard(pid){
   for(const gw of ipfsGateways()){ try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){} }
   return null;
 }
-async function discoverViaIPFS(){
+async function discoverViaIPFS(opts={}){
+  const rediscover = opts.rediscover !== false;
   S.ipfsPeers=S.ipfsPeers||new Set();
   let provs=[];
   try{ const r=await fetch(ipfsRouting()+IPFS_RENDEZVOUS_CID,{headers:{Accept:'application/json'},cache:'no-store'});
@@ -568,7 +657,7 @@ async function discoverViaIPFS(){
         let ok=false;  // in-browser Ed25519 verify against the card's embedded key
         try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.card)),hexToBytes(doc.public_key_hex)); }catch(e){}
         log('ipfs',`node card ${pid.slice(0,12)}… ${ok?'verified':'BAD SIGNATURE'}`,ok);
-        if(ok) url=String(doc.card.peer_url||'');
+        if(ok){ url=String(doc.card.peer_url||''); if(doc.card.kernel_id) noteKernel(doc.card.kernel_id,'ipfs',url); }
       }
     }
     if(url) fresh.add(url);
@@ -576,7 +665,9 @@ async function discoverViaIPFS(){
   const before=[...S.ipfsPeers].sort().join('|'), after=[...fresh].sort().join('|');
   S.ipfsPeers=fresh;                       // replace → stale URLs fall away, latest stays
   if(after!==before){ log('ipfs',`IPFS peers refreshed: ${fresh.size} live kernel(s)`,true);
+    if(!rediscover) return fresh;
     discover().then(()=>{ renderMissions(); }).catch(()=>{}); }
+  return fresh;
 }
 
 // ---- LOCAL probe: is a PersonaOS node running on THIS machine? -----------------
@@ -623,6 +714,7 @@ function upsert(r){
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
+    _broadcastOnly:!!r._broadcastOnly,
     description:r.description||'',
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
 }
@@ -684,12 +776,17 @@ async function discover(){
   try{
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
   await loadPeersTxt();                                            // published peers.txt → TXT_PEERS
+  const [globalRows]=await Promise.all([
+    loadGlobalNodes(),                                              // signed global rendezvous → peers + broadcast-only records
+    discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
+  ]);
   const seeds=[...new Set(['', ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
   // PARALLEL per-base discovery: a dead/slow peer must not serialize the rest.
   const bases=await resolveKernelBases(seeds);
   const results=await Promise.all(bases.map((b)=>
     discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
+  globalRows.forEach(upsert);
   for(const {b,res} of results){
     res.found.forEach(upsert);
     if(res.boot) connectDiscoveryStream(b,res.boot);
