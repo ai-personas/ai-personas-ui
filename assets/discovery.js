@@ -385,7 +385,7 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
           public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
           base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
 }
-const GLOBAL_DISCOVERY_DEFAULT='https://discovery.ai-personas.org';
+const GLOBAL_DISCOVERY_DEFAULT='https://node1.personas.ai';
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
   if(p.get('no_global_discovery')==='1') return [];
