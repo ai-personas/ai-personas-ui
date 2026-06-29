@@ -100,6 +100,19 @@ function _envSid(r){ const sub=(r._links||{}).subject_id;
   if(sub){ const m=String(sub).match(/([0-9A-HJKMNP-TV-Z]{20,})/i); if(m) return m[1]; }
   const m2=String(r.did||r.record_id||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
   return m2?m2[1]:_shortId(r.did||r.record_id||''); }
+function _envSidFromProject(r){ const L=r?._links||{};
+  for(const v of [L.subject_id,L.env,L.export,r?.did,r?.record_id]){
+    const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
+    if(m) return m[1];
+  }
+  return ''; }
+function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
+  const sid=_envSid(r); if(!sid) return null;
+  for(const id of S.order||[]){ const p=S.recs.get(id);
+    if(!p||p.kind!=='project'||p._kernel!==r._kernel) continue;
+    if(_envSidFromProject(p)===sid){ const prun=runOf(p); if(prun) return prun; }
+  }
+  return null; }
 function indexLiveTelemetry(base,live){
   if(!live||typeof live!=='object') return;
   S.liveTel.set(base||'@origin',live);
@@ -1549,13 +1562,12 @@ async function refreshSystemView(){
       bySid.set(sid,b); envBlocks.push(b);
     }
   }
-  // (2) Every DISCOVERED + Ed25519-verified environment record — so EVERY env
-  // shows on the stage (the operator root + federated task workspaces with no
-  // live feed), not only the ones streaming live telemetry this session. A record
+  // (2) Every DISCOVERED + Ed25519-verified environment record — so each public
+  // environment can show on the stage even without a live feed. A record
   // that matches a live env enriches that lane (run id for the deliverable join);
   // one with no live feed becomes its own lane.
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env') continue;
-    const sid=_envSid(r); const run=runOf(r); const exportRel=(r._links||{}).export;
+    const sid=_envSid(r); const run=runForEnv(r); const exportRel=(r._links||{}).export;
     const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
     let b=bySid.get(sid);
     if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
@@ -1613,7 +1625,10 @@ async function refreshSystemView(){
     // headline agrees with the deliverable chip's "N files" instead of overcounting.
     const metaFiles=arts.filter((a)=>{ const L=a._links||{};
       return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
-    const chips=(bundles.length?bundles:arts).slice(0,6).map((a)=>{
+    const chipItems=(bundles.length
+      ? [...bundles, ...arts.filter((a)=>!(a._links&&a._links.bundle))]
+      : arts).slice(0,6);
+    const chips=chipItems.map((a)=>{
       const n=(bundles.length&&a._links&&a._links.bundle)?fileCount:0;
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
       // (records have no .id field), or the click handler's S.recs.has() always misses.
@@ -1637,13 +1652,12 @@ async function refreshSystemView(){
       +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
       +`<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
-  // (3) DE-DUPE lanes that are the SAME mission discovered as several env records
-  // (e.g. 'Power electronics task workspace' ×2 + 'power_electronics…' + 'electrical_engineering…').
-  // bySid keys on exact sid, so these become N full lanes with an identical roster +
+  // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
+  // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
   // deliverable. Group by (kernel + normalized task) — mirroring missionCardList()'s
   // (kernel::task) dedupe — and keep ONE survivor per group (prefer live, then a
   // lane that bears a deliverable, then the one with the most members).
-  const _normTask=(s)=>String(s||'').toLowerCase().trim().replace(/\s+(task\s+)?workspace$/,'').trim();
+  const _normTask=(s)=>String(s||'').toLowerCase().trim();
   const _dgroups=new Map();
   for(const b of envBlocks){ const k=(b.kernel||'')+'::'+_normTask(b.name);
     (_dgroups.get(k)||_dgroups.set(k,[]).get(k)).push(b); }
@@ -1662,8 +1676,7 @@ async function refreshSystemView(){
     + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
     + ((b.run&&artByRun.has(b.run))?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
-  // HIDE empty infrastructure lanes — e.g. the node's operator/governance ROOT, which owns
-  // no personas (every task workspace is composed as its child). An env with no members AND
+  // HIDE empty infrastructure lanes. An env with no members AND
   // no shipped deliverables is plumbing, not a workspace; showing it as an "awaiting members"
   // lane only clutters the personas-at-work view. Fall back to all only if hiding empties the stage.
   const _visible=_kept.filter((b)=>b.members.length>0 || (b.run&&artByRun.has(b.run)));
@@ -2088,7 +2101,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   // Deliverables produced in THIS environment — every signed bundle and every
   // file, joined to the env by its workspace run id. The whole point of clicking
   // an environment: see ALL its artifacts. Each row opens the verified body.
-  const _run=runOf(r);
+  const _run=runForEnv(r);
   const myArts=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&runOf(x)===_run):[];
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
