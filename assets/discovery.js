@@ -152,6 +152,13 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
 // counters, colours, fresh-classes, feed rows — fully live.
 const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Runtime truth comes from the node heartbeat, not from replayed telemetry. A
+// static latest/snapshot doc can contain old model events while the node is idle;
+// those are useful history, but they must not mark personas/envs as running now.
+function _runtimeBusy(){
+  return !!(S.heartbeat && S.heartbeat.running!==false && S.heartbeat.busy);
+}
+
 // Index a live-telemetry doc per-persona and per-env so the detail views can
 // render each entity's OWN activity (model_events carry persona_id +
 // environment_id; spans carry scope + trace_id). Keyed by short persona/env id.
@@ -226,6 +233,7 @@ function indexLiveTelemetry(base,live){
   const sp=(live.kernel&&live.kernel.spans)||[];
   const personas=live.personas||[];
   const t=Date.parse(live.generated_at||'')||Date.now();
+  const runtimeBusy=_runtimeBusy();
   // model selections → per persona and per env
   const byP=new Map(), byE=new Map();
   me.forEach((m,i)=>{
@@ -257,10 +265,17 @@ function indexLiveTelemetry(base,live){
   S.modelCount=S.modelCount||new Map();
   S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of last GENUINE activity growth (running-now signal)
   S.lastModelSeenAt=S.lastModelSeenAt||new Map();   // sid -> frame ts this persona last carried live model events (liveness decay)
+  if(!runtimeBusy){
+    // The node heartbeat says no mission is actively running. Clear only the
+    // model-call liveness indices; historical models/interactions remain visible
+    // as recent/history below, but they cannot keep the "running" state alive.
+    S.lastActiveAt.clear();
+    S.lastModelSeenAt.clear();
+  }
   for(const [pid,models] of byP){
-    S.lastModelSeenAt.set(pid,t);   // byP carries THIS persona this poll → stamp model-recency for the 5-min liveness window
+    if(runtimeBusy) S.lastModelSeenAt.set(pid,t);   // byP carries THIS persona this poll → stamp model-recency only while the node is busy
     const prev=S.modelCount.get(pid); const now2=models.length;
-    if(prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
+    if(runtimeBusy && prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
       S.lastActiveAt.set(pid,Date.now());   // this persona just asked a model → it is RUNNING NOW
       setTimeout(()=>_fireEdge(pid,'produce','out'),60); }   // persona asked a model → outbound spoke pulse
@@ -1166,6 +1181,7 @@ function _spanSummary(s){
 function _envLaneLive(b){
   const sid=_shortId(b&&b.sid||b&&b.envId);
   const live=S.liveByEnv.get(sid)||{};
+  const runtimeBusy=_runtimeBusy();
   const seen=new Set(), spans=[];
   for(const raw of [...(live.spans||[]),...(b&&b.spans||[])]){
     const s=_spanSummary(raw); if(!s.kind) continue;
@@ -1183,16 +1199,18 @@ function _envLaneLive(b){
   // timestamps. Use signed lineage span time for "live now" so a historical model
   // allocation does not keep an env looking active forever.
   const last=lastSpan;
-  return {spans,models,last,fresh:last&&Date.now()-last<10*60*1000};
+  const recent=!!(last&&Date.now()-last<10*60*1000);
+  return {spans,models,last,recent,fresh:runtimeBusy&&recent};
 }
 function renderEnvLaneLive(b){
   const live=_envLaneLive(b);
   if(!live.spans.length&&!live.models.length) return '';
   const recent=live.spans.slice(-4).reverse().map((s)=>
     `<span class="env-live-chip ${s.signed?'ok':''}" title="${s.signed?'signed lineage event':'live event'}">${esc(s.kind.replace(/_/g,' '))}</span>`).join('');
+  const runtimeBusy=_runtimeBusy();
   const latestModel=live.models.length?live.models[live.models.length-1]:null;
   const model=latestModel
-    ? `<span class="env-live-chip model"><span class="livedot2"></span>${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
+    ? `<span class="env-live-chip ${runtimeBusy?'model':''}">${runtimeBusy?'<span class="livedot2"></span>':'last: '}${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
     : '';
   return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${live.fresh?'live now':'recent'}</span>${model}${recent}</div>`;
 }
@@ -1260,9 +1278,9 @@ function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,1
 // aligned with "actually in / just returned from an LLM call".
 const _RUNNING_WINDOW_MS=18000;
 function _runningNow(sid){ const t=(S.lastActiveAt&&S.lastActiveAt.get(sid))||0;
-  return t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
+  return _runtimeBusy() && t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
 function _modelFresh(sid,models){
-  return !!(models&&models.length) && (Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
+  return _runtimeBusy() && !!(models&&models.length) && (Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
 }
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
