@@ -135,7 +135,8 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), boots:new Map(),
-  streams:new Map(), p2pBootstraps:new Set(), views:[], curBase:'',
+  streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(),
+  globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
   // Live per-entity telemetry index: base → latest live telemetry doc, plus
   // derived per-persona / per-env activity. Lets each persona + env view show
@@ -417,9 +418,21 @@ async function verifyGlobalEnvelope(env){
 }
 async function loadGlobalNodes(){
   const endpoints=globalDiscoveryEndpoints();
-  if(!endpoints.length){ S.globalPeers=new Set(); return []; }
+  if(!endpoints.length){
+    S.globalPeers=new Set(); S.globalAnnouncements=new Map(); S.globalAnnouncementByBase=new Map();
+    return [];
+  }
   const freshPeers=new Set();
+  S.globalAnnouncements=new Map(); S.globalAnnouncementByBase=new Map();
   const rows=[];
+  const boots=await Promise.all(endpoints.map((ep)=>
+    fetchJson(join(ep,'/v1/bootstrap')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
+  for(const {ep,d} of boots){
+    if(!d) continue;
+    const addrs=[...(d.libp2p_multiaddrs||[]),...(d.relay_multiaddrs||[])].filter(Boolean);
+    for(const ma of addrs) S.p2pBootstraps.add(ma);
+    if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
+  }
   const docs=await Promise.all(endpoints.map((ep)=>fetchJson(join(ep,'/v1/nodes')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
   for(const {ep,d} of docs){
     const nodes=d?.nodes||[];
@@ -429,13 +442,23 @@ async function loadGlobalNodes(){
       const verified=await verifyGlobalEnvelope(env);
       if(!verified.ok){ log('global','announcement signature/hash failed',false); continue; }
       const ann=verified.ann, kid=ann.kernel_id||'';
-      S.kernels.add(kid); noteKernel(kid,'global',ann.base_url||ep);
+      const base=String(ann.base_url||'').replace(/\/$/,'');
+      const announced={...ann,source_endpoint:ep};
+      if(kid) S.globalAnnouncements.set(kid,announced);
+      if(base) S.globalAnnouncementByBase.set(base,announced);
+      if(kid) S.kernels.add(kid);
+      noteKernel(kid,'global',base||ep,{
+        announced:true,
+        recordCount:ann.record_count||0,
+        reachability:ann.reachability_class||'',
+        publicDiscovery:!!ann.public_discovery,
+      });
       for(const ma of (ann.libp2p_multiaddrs||[])) if(ma) S.p2pBootstraps.add(ma);
-      if(ann.base_url) freshPeers.add(ann.base_url);
+      if(base) freshPeers.add(base);
     }
   }
   S.globalPeers=freshPeers;
-  if(S.globalPeers.size) log('global',`verified global peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
+  if(S.globalPeers.size) log('global',`verified global bootstrap peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
   return rows;
 }
 async function discoverFrom(base,plane){
@@ -444,6 +467,8 @@ async function discoverFrom(base,plane){
   const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
   S.peerHealth=(S.peerHealth||new Map());
   if(!boot){ log('bootstrap',`no endpoint at ${where}`,false);
+    const gb=S.globalAnnouncementByBase?.get(opBaseKey(where))||S.globalAnnouncementByBase?.get(String(where||'').replace(/\/$/,''));
+    if(gb?.kernel_id) noteKernel(gb.kernel_id,'unreachable',where,{reachable:false});
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   if(boot.kernel_id) S.kernels.add(boot.kernel_id);
@@ -493,19 +518,20 @@ async function discoverFrom(base,plane){
   }
   if(boot.kernel_id){
     const sources=peerSourceTags(base);
-    if(sources.length) sources.forEach((src)=>noteKernel(boot.kernel_id,src,base||location.origin));
-    else noteKernel(boot.kernel_id,'http',base||location.origin);
+    if(sources.length) sources.forEach((src)=>noteKernel(boot.kernel_id,src,base||location.origin,{reachable:true}));
+    else noteKernel(boot.kernel_id,'http',base||location.origin,{reachable:true});
   }
   S.peerHealth.set(where,{ok:true,records:found.length,kernel:boot.kernel_id||'',t:Date.now()});
   return {boot,found};
 }
 
 // ---------- global kernel tracker (the "across the globe" strip) ----------
-function noteKernel(kernelId,via,base){
+function noteKernel(kernelId,via,base,meta={}){
   if(!kernelId) return;
   const g=S.globalKernels=(S.globalKernels||new Map());
-  const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),lastSeen:0};
+  const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),lastSeen:0,meta:{}};
   cur.via.add(via); if(base) cur.bases.add(base); cur.lastSeen=Date.now();
+  cur.meta={...(cur.meta||{}),...(meta||{})};
   g.set(kernelId,cur);
 }
 function renderGlobalKernels(){
@@ -515,8 +541,12 @@ function renderGlobalKernels(){
   const now=Date.now();
   el.innerHTML=[...g.entries()].map(([kid,info])=>{
     const fresh=(now-info.lastSeen)<45000;
-    const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'?'m':'k'}">${v.toUpperCase()}</span>`).join('');
-    return `<span class="gk ${fresh?'ok':'dim'}" title="${esc([...info.bases].join(' '))}">`
+    const reachable=info.meta?.reachable===true
+      || [...info.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+    const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
+      +(info.via.has('global')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
+    const title=[...info.bases].join(' ')+((info.meta?.recordCount||info.meta?.reachability)?` records=${info.meta.recordCount||0} reachability=${info.meta.reachability||''}`:'');
+    return `<span class="gk ${fresh?'ok':'dim'}" title="${esc(title)}">`
       +`<span class="dot ${fresh?'live':''}"></span>${esc(kid.replace(/^kernel:/,'').slice(0,12))} ${via}</span>`;
   }).join(' ');
 }
@@ -762,8 +792,9 @@ async function discover(){
   if(_discoverBusy) return; _discoverBusy=true;
   try{
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
-  const [_txt,_ipfs,_local]=await Promise.all([
+  const [_txt,_global,_ipfs,_local]=await Promise.all([
     loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
+    loadGlobalNodes(),                                              // signed node1.personas.ai bootstrap seed → peers/relays
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ]);
@@ -777,19 +808,6 @@ async function discover(){
     res.found.forEach(upsert);
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
-  }
-  if(S.recs.size===0){
-    log('global','no local/manual/IPFS/P2P records found — using fallback rendezvous seed');
-    const globalRows=await loadGlobalNodes();
-    const fallbackBases=await resolveKernelBases([...new Set([...peerList()])]);
-    const fallbackResults=await Promise.all(fallbackBases.map((b)=>
-      discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
-    globalRows.forEach(upsert);
-    for(const {b,res} of fallbackResults){
-      res.found.forEach(upsert);
-      if(res.boot) connectDiscoveryStream(b,res.boot);
-      if(res.boot){ await loadTelemetry(b); }
-    }
   }
   pruneDeadManualPeers();                  // drop +PEER seeds that resolved unreachable
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
@@ -814,8 +832,9 @@ function emptyStateHTML(){
   return `<div class="empty-card">
     <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
-    discovered at runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
-    no reachable node is currently publishing public records.</div>
+	    discovered at runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
+	    no reachable node is currently publishing public records.</div>
+	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed global node announcement(s) were found through <code>${esc(GLOBAL_DISCOVERY_DEFAULT)}</code>, but none produced browser-reachable public records yet.</div>`:''}
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
