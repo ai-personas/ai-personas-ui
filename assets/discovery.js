@@ -142,6 +142,8 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // derived per-persona / per-env activity. Lets each persona + env view show
   // what is happening INSIDE it right now (model selections, evolution, lineage).
   liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null,
+  activeModelCallsByBase:new Map(), activeModelCallsByPersona:new Map(), activeModelCallsByEnv:new Map(),
+  activeModelCallCount:0,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
   heartbeat:null, vitalSpikes:[], nodePos:new Map(), gnodes:new Map(), envCount:0,
@@ -152,11 +154,47 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
 // counters, colours, fresh-classes, feed rows — fully live.
 const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Runtime truth comes from the node heartbeat, not from replayed telemetry. A
-// static latest/snapshot doc can contain old model events while the node is idle;
-// those are useful history, but they must not mark personas/envs as running now.
+// Runtime truth for "in a model call" comes from kernel.active_model_calls, not
+// from replayed model_events or heartbeat.busy. Historical model_events remain
+// useful history, but they must not mark personas/envs as running now.
+function _activeCalls(live){
+  const calls=(live&&live.kernel&&Array.isArray(live.kernel.active_model_calls))
+    ? live.kernel.active_model_calls : [];
+  return calls.filter(Boolean);
+}
+function _indexActiveModelCalls(base,live){
+  (S.activeModelCallsByBase=S.activeModelCallsByBase||new Map()).set(base||'@origin',_activeCalls(live));
+  const byP=new Map(), byE=new Map(); let n=0;
+  for(const calls of S.activeModelCallsByBase.values()) for(const c of calls){
+    n++;
+    const pid=_shortId(c&&c.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(c); }
+    const eid=_shortId(c&&c.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(c); }
+  }
+  S.activeModelCallsByPersona=byP;
+  S.activeModelCallsByEnv=byE;
+  S.activeModelCallCount=n;
+}
+function _activeModelCallsForPersona(sid){
+  return (S.activeModelCallsByPersona&&S.activeModelCallsByPersona.get(_shortId(sid)))||[];
+}
 function _runtimeBusy(){
-  return !!(S.heartbeat && S.heartbeat.running!==false && S.heartbeat.busy);
+  return !!(S.activeModelCallCount>0);
+}
+function _envRunningNow(b){
+  const sid=_shortId((b&&b.sid)||(b&&b.envId));
+  if(sid && S.activeModelCallsByEnv && S.activeModelCallsByEnv.has(sid)) return true;
+  return !!(b&&Array.isArray(b.members)&&b.members.some((m)=>_activeModelCallsForPersona(m).length));
+}
+function _latestSpanTime(spans){
+  let out=0;
+  for(const s of (Array.isArray(spans)?spans:[])){
+    const t=Date.parse((s&&s.ended_at)||(s&&s.started_at)||'')||0;
+    if(t>out) out=t;
+  }
+  return out;
+}
+function _modelEventTime(m,fallback){
+  return Date.parse((m&&m.at)||(m&&m.timestamp)||(m&&m.started_at)||(m&&m.ended_at)||(m&&m.generated_at)||'')||fallback;
 }
 
 // Index a live-telemetry doc per-persona and per-env so the detail views can
@@ -206,6 +244,19 @@ function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
     if(_envSidFromProject(p)===sid){ const prun=runOf(p); if(prun) return prun; }
   }
   return null; }
+function _envSidFromValue(v){ const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
+  return m?m[1]:''; }
+function envSidOfRecord(r){ if(!r) return ''; const L=r._links||{};
+  for(const v of [L.environment_id,L.owning_env_id,L.env,L.artifact_manifest,r.environment_id,r.owning_env_id]){
+    const sid=_envSidFromValue(v); if(sid) return sid;
+  }
+  if(r.kind==='env') return _envSid(r);
+  return ''; }
+function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.artifacts:[];
+  return arts.map((a)=>({ ...a, title:a.title||a.path||a.artifact_id||'',
+    body_published:a.body_published!==undefined?a.body_published:!!a.content,
+    size:a.size??a.size_bytes??a.bytes })); }
+function manifestRun(m){ for(const a of manifestArtifacts(m)){ if(a&&a.run) return String(a.run); } return ''; }
 function indexLiveTelemetry(base,live){
   if(!live||typeof live!=='object') return;
   S.liveTel.set(base||'@origin',live);
@@ -229,16 +280,18 @@ function indexLiveTelemetry(base,live){
     // when nothing is running, keep the last reported interval so the cadence is stable
     S.heartbeat={running:anyRunning,busy:anyBusy,interval_s:(minIv!=null?minIv:(S.heartbeat&&S.heartbeat.interval_s)||live.node.heartbeat.interval_s)};
   }
+  _indexActiveModelCalls(base,live);
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
   const personas=live.personas||[];
   const t=Date.parse(live.generated_at||'')||Date.now();
   const runtimeBusy=_runtimeBusy();
+  const modelBaseT=runtimeBusy?t:(_latestSpanTime(sp)||t);
   // model selections → per persona and per env
   const byP=new Map(), byE=new Map();
   me.forEach((m,i)=>{
     if((m.kind||'')!=='MODEL_SELECTED') return;
-    const rec={t:t-((me.length-i)*200), purpose:String(m.requested_purpose||m.purpose||m.role||'model'),
+    const rec={t:_modelEventTime(m,modelBaseT-((me.length-i)*200)), purpose:String(m.requested_purpose||m.purpose||m.role||'model'),
       model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||'')};
     const pid=_shortId(m.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(rec); }
     const eid=_shortId(m.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(rec); }
@@ -263,7 +316,7 @@ function indexLiveTelemetry(base,live){
   // something. Honest — fires only when a persona's req/resp count GREW since
   // last poll (a static snapshot spikes once on cold load, then rests).
   S.modelCount=S.modelCount||new Map();
-  S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of last GENUINE activity growth (running-now signal)
+  S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of recent model-event growth (animation/history signal)
   S.lastModelSeenAt=S.lastModelSeenAt||new Map();   // sid -> frame ts this persona last carried live model events (liveness decay)
   if(!runtimeBusy){
     // The node heartbeat says no mission is actively running. Clear only the
@@ -277,7 +330,7 @@ function indexLiveTelemetry(base,live){
     const prev=S.modelCount.get(pid); const now2=models.length;
     if(runtimeBusy && prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
-      S.lastActiveAt.set(pid,Date.now());   // this persona just asked a model → it is RUNNING NOW
+      S.lastActiveAt.set(pid,Date.now());   // recent growth; active_model_calls decides whether it is still running
       setTimeout(()=>_fireEdge(pid,'produce','out'),60); }   // persona asked a model → outbound spoke pulse
     S.modelCount.set(pid,now2);
   }
@@ -361,16 +414,18 @@ function indexLiveTelemetry(base,live){
   const me2=(live.kernel&&live.kernel.model_events)||[];
   if(me2.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    const baseT=Date.parse(live.generated_at||'')||t; let addedM=0;
+    const baseT=runtimeBusy?(Date.parse(live.generated_at||'')||t):(_latestSpanTime(live.kernel&&live.kernel.spans)||t);
+    let addedM=0;
     me2.forEach((m,i)=>{
       if(String(m.kind||'')!=='MODEL_SELECTED') return;
       const model=String(m.model_id||'—'), purpose=String(m.requested_purpose||m.purpose||'model');
       const role=String(m.role||''), rationale=String(m.rationale||m.reason||'');
       const key=`${base}|model|${m.persona_id||''}|${model}|${purpose}|${role}|${rationale}|${i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key); addedM++;
+      const mt=_modelEventTime(m,baseT-((me2.length-i)*200));
       S.interactions.push({actor_id:String(m.persona_id||''),actor_kind:m.persona_id?'persona':'kernel',
         affected:[{id:model,kind:'model'}],kind:'MODEL_CALL',scope:'model',scope_id:String(m.environment_id||''),
-        at:'',_base:base,_t:baseT-((me2.length-i)*200),_key:key,
+        at:'',_base:base,_t:mt,_key:key,
         _msg:purpose+(role&&role!=='-'&&role!==''?(' · '+role):''),_model:model,_rationale:rationale});
     });
     if(addedM){
@@ -993,12 +1048,13 @@ async function loadTelemetry(base){
     indexLiveTelemetry(base,live);   // per-persona / per-env activity index
     const modelEvents=live?.kernel?.model_events||[];
     if(!Array.isArray(modelEvents)||!modelEvents.length) return;
-    const baseT=Date.parse(live.generated_at||'')||Date.now();
+    const generatedT=Date.parse(live.generated_at||'')||Date.now();
+    const baseT=_activeCalls(live).length?generatedT:(_latestSpanTime(live?.kernel?.spans)||generatedT);
     modelEvents.forEach((m,i)=>{
       const purpose=String(m.requested_purpose||m.purpose||'model');
       pushEvent({
         key:`live|${kid}|${i}|${m.kind||''}|${m.model_id||''}|${purpose}|${m.role||''}|${m.reason||''}`,
-        t:baseT-((modelEvents.length-i)*220), kernel:kid,
+        t:_modelEventTime(m,baseT-((modelEvents.length-i)*220)), kernel:kid,
         scope:'telemetry',
         kind:String(m.kind||'MODEL_EVENT'),
         trace:String(m.reason||purpose||m.model_id||'live'),
@@ -1181,7 +1237,7 @@ function _spanSummary(s){
 function _envLaneLive(b){
   const sid=_shortId(b&&b.sid||b&&b.envId);
   const live=S.liveByEnv.get(sid)||{};
-  const runtimeBusy=_runtimeBusy();
+  const envRunning=_envRunningNow(b);
   const seen=new Set(), spans=[];
   for(const raw of [...(live.spans||[]),...(b&&b.spans||[])]){
     const s=_spanSummary(raw); if(!s.kind) continue;
@@ -1200,17 +1256,17 @@ function _envLaneLive(b){
   // allocation does not keep an env looking active forever.
   const last=lastSpan;
   const recent=!!(last&&Date.now()-last<10*60*1000);
-  return {spans,models,last,recent,fresh:runtimeBusy&&recent};
+  return {spans,models,last,recent,fresh:envRunning&&recent};
 }
 function renderEnvLaneLive(b){
   const live=_envLaneLive(b);
   if(!live.spans.length&&!live.models.length) return '';
   const recent=live.spans.slice(-4).reverse().map((s)=>
     `<span class="env-live-chip ${s.signed?'ok':''}" title="${s.signed?'signed lineage event':'live event'}">${esc(s.kind.replace(/_/g,' '))}</span>`).join('');
-  const runtimeBusy=_runtimeBusy();
+  const envRunning=_envRunningNow(b);
   const latestModel=live.models.length?live.models[live.models.length-1]:null;
   const model=latestModel
-    ? `<span class="env-live-chip ${runtimeBusy?'model':''}">${runtimeBusy?'<span class="livedot2"></span>':'last: '}${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
+    ? `<span class="env-live-chip ${envRunning?'model':''}">${envRunning?'<span class="livedot2"></span>':'last: '}${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
     : '';
   return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${live.fresh?'live now':'recent'}</span>${model}${recent}</div>`;
 }
@@ -1227,7 +1283,8 @@ const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judg
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
-  'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED']);
+  'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED',
+  'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
   'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
 // VERIFY = independent judgement (reinforces trust = signature). Checked before
@@ -1261,6 +1318,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
   GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
+  ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
   MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
@@ -1272,13 +1330,10 @@ const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
 const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
 function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
-// RUNNING NOW vs merely recent: a persona is "running" iff a MODEL event for
-// that persona grew within the last ~18 s (just over one 15s poll window).
-// Coordination can make a card RECENT, but never RUNNING. This keeps "running"
-// aligned with "actually in / just returned from an LLM call".
-const _RUNNING_WINDOW_MS=18000;
-function _runningNow(sid){ const t=(S.lastActiveAt&&S.lastActiveAt.get(sid))||0;
-  return _runtimeBusy() && t>0 && (Date.now()-t)<_RUNNING_WINDOW_MS; }
+// RUNNING NOW vs merely recent: a persona is "running" iff the node currently
+// reports an active model call for that persona. Coordination/model history can
+// make a card RECENT, but never RUNNING.
+function _runningNow(sid){ return _activeModelCallsForPersona(sid).length>0; }
 function _modelFresh(sid,models){
   return _runtimeBusy() && !!(models&&models.length) && (Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
 }
@@ -1377,7 +1432,10 @@ function renderPersonaCard(pid){
   // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
   // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
   const statHTML=(s.experience_tasks!=null?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
+    +(s.identity_name_pending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'identity name unresolved')}">${icon('warn','ico-sm')} name pending</span>`:'')
     +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
+    +(hasOp&&s.brain_fragment_count!=null?`<span class="tag" title="brain fragments (operator)">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
+    +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
     +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
     +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
     +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
@@ -1568,7 +1626,7 @@ function renderCoordGraph(persons,totalPersons){
   const liveN=persons.filter((p)=>p.live).length;
   svg._core.querySelector('.core-s').textContent=
     runningN ? `${runningN} in a model call · ${popN} personas`
-             : `${liveN} active · ${popN} personas`;
+             : `${liveN} recent · ${popN} personas`;
   // edges (kernel spokes only) — safe to rebuild (no continuous anim). The spoke is
   // calm (live/idle); recent coordination is now carried by the chord layer + the
   // directional spoke PULSE, not by highlighting the hub spoke (that overstated the hub).
@@ -1737,11 +1795,9 @@ function updateVitalsCounters(){
   const recPersona=S.order.filter((id)=>S.recs.get(id).kind==='persona').length;
   personasN=Math.max(S.liveByPersona.size,recPersona);
   const now=Date.now();
-  // RUNNING = personas whose model-call activity GREW in the running window.
+  // RUNNING = personas currently named by active_model_calls.
   // Coordination-only traffic stays in acts/min so "running" always means LLM.
-  const runningSet=new Set();
-  for(const psid of (S.lastActiveAt?S.lastActiveAt.keys():[])) if(_runningNow(psid)) runningSet.add(psid);
-  const active=runningSet.size;
+  const active=(S.activeModelCallsByPersona&&S.activeModelCallsByPersona.size)||0;
   const acts=(S.interactions||[]).filter((e)=>now-e._t<60000).length;
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
   // unverified live interactions are NOT signed and must never inflate this.
@@ -1804,13 +1860,15 @@ async function refreshSystemView(){
   // one with no live feed becomes its own lane.
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env') continue;
     const sid=_envSid(r); const run=runForEnv(r); const exportRel=(r._links||{}).export;
+    const manifestRel=(r._links||{}).artifact_manifest;
     const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
     let b=bySid.get(sid);
     if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
-      if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel; }
+      if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel;
+      if(!b.artifactManifestRel) b.artifactManifestRel=manifestRel; }
     else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
         name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
-        run,recId:id,live:false,exportRel};
+        run,recId:id,live:false,exportRel,artifactManifestRel:manifestRel};
       bySid.set(sid,b); envBlocks.push(b); }
   }
   // (2b) An env whose LIVE feed is absent (a federated env, or any env whose live
@@ -1819,13 +1877,23 @@ async function refreshSystemView(){
   // so the personas that worked in the env still SHOW in the env (members + count),
   // instead of a "no members" lane — the env's people don't vanish on restart.
   await Promise.all(envBlocks.map(async(b)=>{
-    if(b.members.length || !b.exportRel) return;
-    const ed=await fetchEntityFeed(b.base,b.exportRel); if(!ed||!Array.isArray(ed.members)) return;
-    b.roster=ed.members;
-    b.members=ed.members.map((m)=>_shortId(m.persona_id||m.id||'')).filter(Boolean);
-    b.members.forEach((m)=>assigned.add(m));
-    if(!b.status) b.status=ed.status||'';
-    b.fromExport=true;
+    let ed=null;
+    if(b.exportRel) ed=await fetchEntityFeed(b.base,b.exportRel);
+    if(ed&&Array.isArray(ed.members)&&!b.members.length){
+      b.roster=ed.members;
+      b.members=ed.members.map((m)=>_shortId(m.persona_id||m.id||'')).filter(Boolean);
+      b.members.forEach((m)=>assigned.add(m));
+      if(!b.status) b.status=ed.status||'';
+      b.fromExport=true;
+    }
+    const manifestRel=b.artifactManifestRel||(ed&&ed.artifact_manifest)||'';
+    if(manifestRel){
+      const mf=await fetchEntityFeed(b.base,manifestRel);
+      if(mf&&Array.isArray(mf.artifacts)){
+        b.artifactManifestRel=manifestRel;
+        b.artifactManifest=mf;
+      }
+    }
   }));
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
@@ -1833,12 +1901,21 @@ async function refreshSystemView(){
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
     const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(sid,r.label); } }
-  // artifacts joined to their ENVIRONMENT by the workspace run id (not lumped by
-  // kernel) — each lane shows ITS OWN signed deliverables, never another env's.
+  // artifacts joined to their ENVIRONMENT first; run paths remain a compatibility
+  // fallback for older exports that predate env-current artifact manifests.
+  const artByEnv=new Map();
   const artByRun=new Map();
   for(const id of S.order){ const r=S.recs.get(id);
-    if(r.kind!=='artifact') continue; const run=runOf(r); if(!run) continue;
-    (artByRun.get(run)||artByRun.set(run,[]).get(run)).push(r); }
+    if(r.kind!=='artifact') continue;
+    const esid=envSidOfRecord(r); if(esid) (artByEnv.get(esid)||artByEnv.set(esid,[]).get(esid)).push(r);
+    const run=runOf(r); if(run) (artByRun.get(run)||artByRun.set(run,[]).get(run)).push(r); }
+  const envArtifacts=(b)=>{
+    const byEnv=artByEnv.get(b.sid)||[];
+    if(byEnv.length) return byEnv;
+    return b.run?(artByRun.get(b.run)||[]):[];
+  };
+  const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
+  const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
 
   // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
   // so the one persona actually working floats to the top of its lane instead of sitting in
@@ -1851,20 +1928,25 @@ async function refreshSystemView(){
   const laneHTML=(b)=>{
     const cards=b.members.length?[...b.members].sort((a,c)=>_rank(a)-_rank(c)).map(renderPersonaCard).join('')
       :'<div class="l2" style="padding:8px">awaiting members</div>';
-    const arts=b.run?(artByRun.get(b.run)||[]):[];
+    const manifestFiles=envManifestFiles(b);
+    const arts=envArtifacts(b);
     const bundles=arts.filter((a)=>a._links&&a._links.bundle);
     // file cards carry content_stub/content_hash (the public projection), not always a
     // raw `content` link — count any of them so the bundle chip shows a real file count.
-    const fileCount=arts.filter((a)=>{ const L=a._links||{};
+    const fileCount=manifestFiles.length||arts.filter((a)=>{ const L=a._links||{};
       return L.content||L.content_stub||L.content_hash; }).length;
     // env-meta file count EXCLUDES the bundle wrapper (its own content_hash) so the
     // headline agrees with the deliverable chip's "N files" instead of overcounting.
-    const metaFiles=arts.filter((a)=>{ const L=a._links||{};
+    const metaFiles=manifestFiles.length||arts.filter((a)=>{ const L=a._links||{};
       return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
+    const manifestBundleId=(b.artifactManifest&&b.artifactManifest.current_bundle_id)||'';
+    const manifestChip=manifestFiles.length
+      ? `<span class="art-chip" data-envrec="${esc(b.sid)}" role="button" tabindex="0" title="${esc(manifestBundleId||'current workspace artifacts')}">${icon('box','ico-sm')} ${esc((manifestBundleId||'current workspace').slice(0,26))} · ${fileCount} file${fileCount>1?'s':''}</span>`
+      : '';
     const chipItems=(bundles.length
       ? [...bundles, ...arts.filter((a)=>!(a._links&&a._links.bundle))]
       : arts).slice(0,6);
-    const chips=chipItems.map((a)=>{
+    const chips=manifestChip||chipItems.map((a)=>{
       // The signed bundle record's description is '{state} deliverable bundle (N files)'.
       // Parse it for per-BUNDLE state + count: prefer the per-bundle file count over the
       // run-wide fileCount (which is wrong when a run has >1 bundle), and show the state so
@@ -1881,7 +1963,7 @@ async function refreshSystemView(){
       const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
       return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">${icon('box','ico-sm')} ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
     }).join('');
-    const artRow=arts.length?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
+    const artRow=(manifestFiles.length||arts.length)?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
     const liveRow=renderEnvLaneLive(b);
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
     // have departed; mark it so it reads as "who worked here", not "who is here now".
@@ -1910,7 +1992,7 @@ async function refreshSystemView(){
   for(const grp of _dgroups.values()){
     if(grp.length===1){ _kept.push(grp[0]); continue; }
     const survivor=grp.slice().sort((a,b)=>{
-      const sc=(x)=>(x.live?4:0)+((x.run&&artByRun.has(x.run))?2:0)+Math.min(1,x.members.length?1:0);
+      const sc=(x)=>(x.live?4:0)+(envHasArtifacts(x)?2:0)+Math.min(1,x.members.length?1:0);
       const d=sc(b)-sc(a); return d!==0?d:(b.members.length-a.members.length);
     })[0];
     _kept.push(survivor);
@@ -1920,12 +2002,12 @@ async function refreshSystemView(){
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
     + (b.members.some((m)=>_runningNow(m))?4:0)
     + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
-    + ((b.run&&artByRun.has(b.run))?1:0);
+    + (envHasArtifacts(b)?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
   // HIDE empty infrastructure lanes. An env with no members AND
   // no shipped deliverables is plumbing, not a workspace; showing it as an "awaiting members"
   // lane only clutters the personas-at-work view. Fall back to all only if hiding empties the stage.
-  const _visible=_kept.filter((b)=>b.members.length>0 || (b.run&&artByRun.has(b.run)));
+  const _visible=_kept.filter((b)=>b.members.length>0 || envHasArtifacts(b));
   envBlocks.length=0; envBlocks.push(...((_visible.length||orphans.length)?_visible:_kept));
   S.envCount=envBlocks.length;
   let html=envBlocks.map(laneHTML).join('');
@@ -2354,9 +2436,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // reputation_score [0,1] — never raw operator fitness (that lives only in
   // the token-gated operator console). /status is a fallback for liveness.
   const prof=(L.profile?await dfetch(base,L.profile):null)||{};
-  const ns=prof.persona_id?{}:(await fetchNodeStatus(base)||{});
+  const ns=await fetchNodeStatus(base)||{};
   const pid=prof.persona_id||personaIdFromDid(r.did);
-  const ps=prof.persona_id?prof:((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
+  const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
+  const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
   const role=ps.role||(ps.membership||{}).role||'—';
   const state=ps.lifecycle_state||'—';
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
@@ -2366,6 +2449,11 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +kv('Role',`<span class="cap">${esc(role)}</span>`)
     +kv('Archetype',S0(ps.archetype))
     +kv('Disposition',S0(ps.primary_disposition))
+    +(ps.identity_name_state?kv('Identity name',ps.identity_name_pending
+      ?`<span class="amber">pending</span> <span class="l2">${esc(ps.identity_name_pending_reason||'')}</span>`
+      :`<span class="ok">${esc(ps.identity_name_state)}</span>`):'')
+    +(ps.brain_fragment_count!=null?kv('Brain',`fragments ${esc(ps.brain_fragment_count)} · contexts ${esc(ps.brain_context_count??0)} · compiles ${esc(ps.brain_compile_count??0)}`):'')
+    +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
     +kv('Soul version',S0(ps.soul_version))
     +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
@@ -2440,14 +2528,22 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   // the drawer answers "what is this env trying to DO", not only "what did it make".
   const _run=runForEnv(r);
   if(_run) html+=await planSection(base,_run);
-  // Deliverables produced in THIS environment — every signed bundle and every
-  // file, joined to the env by its workspace run id. The whole point of clicking
-  // an environment: see ALL its artifacts. Each row opens the verified body.
-  const myArts=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&runOf(x)===_run):[];
+  // Deliverables produced in THIS environment. New exports publish an env-current
+  // manifest; older exports fall back to signed records joined by env id or run id.
+  const manifestRel=L.artifact_manifest||d.artifact_manifest||'';
+  const manifest=manifestRel?await dfetch(base,manifestRel):null;
+  const manifestFiles=manifestArtifacts(manifest);
+  const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
+  const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'
+    && ((envSidOfRecord(x)&&envSidOfRecord(x)===_sid) || (_run&&runOf(x)===_run)));
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
+  if(manifestFiles.length){
+    html+=H(`Current workspace artifacts — ${manifestFiles.length} file${manifestFiles.length>1?'s':''}`);
+    html+=renderArtifactTree(manifestFiles,manifestRun(manifest));
+  }
   if(myArts.length){
-    html+=H(`Deliverables — ${myArts.length} artifact${myArts.length>1?'s':''}`
+    html+=H(`${manifestFiles.length?'Signed artifact records':'Deliverables'} — ${myArts.length} artifact${myArts.length>1?'s':''}`
       +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
     for(const bnd of myBundles)
       html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
