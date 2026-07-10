@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0e14">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' blob: http: https: ws: wss:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' blob: http: https: ws: wss:; img-src 'self' blob: data:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260710-signed-live">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260710-scalable-workspace-v1">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -58,9 +58,12 @@
     then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
   </div>
 
-  <nav class="globalbar" aria-label="discovered nodes">
-    <span class="globalbar-label" title="every PersonaOS kernel this page has discovered, and how it was reached (HTTP, P2P gossipsub, gossip cards)">NODES</span>
+  <nav class="globalbar" aria-label="network scope and discovered nodes">
+    <button id="networkAll" class="network-scope on" type="button" aria-pressed="true"
+      title="show the activity-prioritized global network overview">ALL NODES</button>
+    <span id="networkScope" class="network-scope-status" role="status" aria-live="polite">discovering network…</span>
     <span id="globalKernels" class="globalbar-list"><span class="dim">discovering kernels…</span></span>
+    <span id="networkOverflow" class="network-overflow" hidden></span>
   </nav>
 
   <section class="missions" id="missions" aria-label="missions" hidden>
@@ -73,8 +76,10 @@
        traveling pulse when a coordination message names that persona. -->
   <section class="constellation" id="constellation" aria-labelledby="conTitle">
     <div class="con-head">
-      <span class="con-title" id="conTitle">COORDINATION&nbsp;CONSTELLATION</span>
-      <span class="dim" id="sysGraphCap">the kernel relays among personas that share a task · curved links connect who coordinates with whom · pulses travel the direction work flows</span>
+      <span class="con-title" id="conTitle">LIVE&nbsp;TOPOLOGY</span>
+      <span class="scope-pill" id="graphScope">GLOBAL NETWORK</span>
+      <span class="dim" id="sysGraphCap">activity-prioritized kernels · select a node to inspect its personas · exact pulses show observed message direction</span>
+      <span class="graph-window" id="graphWindow" role="status"></span>
       <span class="cg-legend" aria-label="constellation status key">
         <span class="lg-cap" aria-hidden="true">status key</span>
         <span class="lg"><span class="lg-dot pulse"></span>running = model call</span>
@@ -93,7 +98,7 @@
       </span>
       <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="true" aria-controls="sysGraph">▾</button>
     </div>
-    <svg id="sysGraph" viewBox="0 0 1000 200" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
+    <svg id="sysGraph" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
 
   <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
@@ -135,6 +140,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260710-signed-live"></script>
+  <script type="module" src="assets/discovery.js?v=20260710-scalable-workspace-v1"></script>
 </body>
 </html>

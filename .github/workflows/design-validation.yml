@@ -42,6 +42,12 @@ jobs:
       - name: Test live artifact state contract
         run: node tools/test-live-artifacts.mjs
 
+      - name: Test bounded network and artifact dispatch contracts
+        run: |
+          node tools/test-network-store.mjs
+          node tools/test-network-view.mjs
+          node tools/test-artifact-types.mjs
+
       - name: Install Playwright
         run: |
           python3 -m pip install 'playwright>=1.50,<2' 'PyNaCl>=1.5,<2'

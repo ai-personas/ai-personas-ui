@@ -20,6 +20,7 @@ ROOT_FILES = ("index.html", "discovery.css", "discovery.js", "peers.txt", "robot
 REQUIRED_BROWSER_ASSETS = {
     "assets/discovery.css",
     "assets/discovery.js",
+    "assets/discovery-authority.mjs",
     "assets/live-artifacts.mjs",
     "assets/live-signatures.mjs",
     "assets/noble-ed25519.js",

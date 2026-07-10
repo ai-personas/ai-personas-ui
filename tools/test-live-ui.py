@@ -13,7 +13,18 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from live_ui_fixture import Handler, STATE, ThreadingHTTPServer
+from live_ui_fixture import (
+    Handler,
+    PROVIDER_DISCOVER_ONLY,
+    PROVIDER_EXPIRED_READ,
+    PROVIDER_P2P_ONLY,
+    PROVIDER_SCOPED_READ,
+    PROVIDER_SSE_LEGACY,
+    STATE,
+    ThreadingHTTPServer,
+    p2p_discover_only_resolution,
+    p2p_provider_resolution,
+)
 
 
 class QuietHandler(Handler):
@@ -58,6 +69,7 @@ def run(args: argparse.Namespace) -> dict:
         screenshots.mkdir(parents=True, exist_ok=True)
 
     result: dict = {}
+    scale_metrics: dict = {}
     try:
         with sync_playwright() as playwright:
             launch = {'headless': True}
@@ -85,6 +97,46 @@ def run(args: argparse.Namespace) -> dict:
               localStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'legacy-token'}}));
             """)
             page.goto(url, wait_until='domcontentloaded')
+            page.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 1""",
+                                   timeout=15_000)
+            page.wait_for_function("""() => document.querySelector('#sysStream')?.textContent
+              .includes('sent message')""", timeout=15_000)
+            require(page.locator('#sysGraph .cl-direct').count() == 1,
+                    'shared environment scope created an inferred persona chord')
+            followed = page.locator('.pcard', has_text='Mara Chen')
+            followed.locator('.pc-follow').click()
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
+                                   timeout=5_000)
+            require(followed.locator('.pc-follow').get_attribute('aria-pressed') == 'true',
+                    'kernel-qualified follow state did not select the requested persona')
+            require(page.locator('.pcard.dimmed').count() == 2,
+                    'following one persona did not scope the other federated cards')
+            page.locator('#cfUnfollow').click()
+            if screenshots:
+                page.screenshot(path=str(screenshots / 'desktop-network-messages.png'), full_page=True)
+            provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
+            require(provider_refused.count() >= 2,
+                    'tampered ProviderRecord document entered browser discovery')
+            log_text = page.locator('#log').text_content()
+            require('Signed provider authority accepted · public read granted' in log_text,
+                    'valid public-read policy was not evaluated truthfully')
+            require(log_text.count('discover-only; read links withheld') >= 3,
+                    'discover-only, expired, or wrong-scope grants retained read links')
+            require('Historical document accepted · public read granted' in log_text,
+                    'registered historical document signature was not accepted')
+            for record_id in (
+                    PROVIDER_DISCOVER_ONLY, PROVIDER_EXPIRED_READ, PROVIDER_SCOPED_READ):
+                raw_document = context.request.get(
+                    f'{node}/discovery/public/records/{record_id}.json').json()
+                require(raw_document.get('projection') == 'discover',
+                        f'{record_id} was not server-projected before HTTP publication')
+                require('links' not in raw_document,
+                        f'{record_id} anonymous HTTP response contained links')
+                for forbidden in ('description', 'content_hash', 'content_locator_ref', 'interfaces'):
+                    require(forbidden not in raw_document.get('record', {}),
+                            f'{record_id} anonymous HTTP response contained {forbidden}')
             open_live_plan(page)
             require(page.locator('#fv-body img').count() == 0, 'Markdown loaded an embedded or remote image')
             require(not any('example.invalid' in item['url'] for item in requests),
@@ -175,6 +227,20 @@ def run(args: argparse.Namespace) -> dict:
             require(image.get_attribute('src') != image_src, 'updated image retained its old blob URL')
             require(page.locator('.live-diff').count() == 0, 'binary viewer claimed a text diff')
 
+            # An unknown hash-bound binary is still useful: it gets a bounded,
+            # non-executable byte inspector rather than an empty drawer.
+            page.locator('#detailback').click()
+            binary_file = page.locator(
+                '[data-act="live-file"][data-path="attachments/controller.bin"]')
+            binary_file.wait_for(timeout=10_000)
+            binary_file.click()
+            hex_view = page.locator('#fv-body .fv-hex')
+            hex_view.wait_for(timeout=10_000)
+            require('00000000' in hex_view.text_content(),
+                    'generic binary viewer did not expose a bounded hex preview')
+            require(page.locator('.live-view-meta .transport-badge.verified').count() == 1,
+                    'generic binary viewer lost byte-integrity verification')
+
             page.locator('#detailback').click()
             page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
             page.locator('.live-diff').wait_for(timeout=10_000)
@@ -254,6 +320,136 @@ def run(args: argparse.Namespace) -> dict:
                     'key-rotation browser console errors: ' + '; '.join(rotation_errors))
             rotation_context.close()
 
+            # A browser with no HTTP provider-index seeds must be able to promote
+            # a raw gossip handle only through current-master ProviderRecord resolution.
+            STATE.reset()
+            p2p_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            p2p_page = p2p_context.new_page()
+            p2p_errors: list[str] = []
+            p2p_page.on('console', lambda msg: p2p_errors.append(f'console {msg.type}: {msg.text}')
+                        if msg.type in {'warning', 'error'} else None)
+            p2p_page.on('pageerror', lambda error: p2p_errors.append(f'pageerror: {error}'))
+            p2p_context.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            p2p_envelope, p2p_document = p2p_provider_resolution(node)
+            p2p_item = {**p2p_envelope, 'document': p2p_document}
+            discover_envelope, discover_document = p2p_discover_only_resolution(node)
+            discover_item = {**discover_envelope, 'document': discover_document}
+            require(discover_document.get('projection') == 'discover'
+                    and 'links' not in discover_document,
+                    'zero-grant P2P document was not projected before transport')
+            for forbidden in ('description', 'content_hash', 'content_locator_ref', 'interfaces'):
+                require(forbidden not in discover_document.get('record', {}),
+                        f'zero-grant P2P response contained {forbidden}')
+            discover_key = discover_document['record']['did']
+            malicious_hint = {
+                'schema': 'discoverable-record/1',
+                'record_id': PROVIDER_P2P_ONLY,
+                'kind': 'artifact',
+                'label': 'MALICIOUS SELF-KEY LABEL MUST NEVER DISPLAY',
+                'handle': 'p2p-only-handle',
+                'visibility_tier': 'public',
+            }
+            stub = f"""
+              const item={json.dumps(p2p_item, separators=(',', ':'))};
+              const discoverItem={json.dumps(discover_item, separators=(',', ':'))};
+              const hint={{record:{json.dumps(malicious_hint, separators=(',', ':'))},
+                public_key_hex:'{'ff' * 32}',signature_hex:'{'00' * 64}',
+                base:'https://attacker.invalid',kernel_id:'kernel:attacker'}};
+              const discoverHint={{record:{{schema:'discoverable-record/1',
+                record_id:'{discover_document['record']['record_id']}',
+                did:'{discover_key}',kind:'artifact',visibility_tier:'public'}}}};
+              export async function startP2P({{onRecord}}){{
+                const node={{peerId:{{toString:()=> '12D3KooWBrowserFixture'}},getPeers:()=>[],
+                  contentRouting:{{provide:async()=>{{}},findProviders:async function*(){{}}}}}};
+                globalThis.__p2pResolvedKeys=[];
+                setTimeout(()=>onRecord(hint),10);
+                setTimeout(()=>onRecord(discoverHint),20);
+                return {{node,announce:async()=>{{}},resolveProvider:async(key)=>{{
+                  globalThis.__p2pResolvedKeys.push(key);
+                  return key==='p2p-only-handle'
+                    ? {{schema:'personaos-browser-provider-resolution/1',key,records:[item]}}
+                    : key==='{discover_key}'
+                    ? {{schema:'personaos-browser-provider-resolution/1',key,records:[discoverItem]}}
+                    : {{schema:'personaos-browser-provider-resolution/1',key,records:[]}};
+                }}}};
+              }}
+            """
+            p2p_page.route('**/node/providers.json', lambda route: route.fulfill(
+                status=200, json={'providers': []}))
+            p2p_page.route('**/assets/p2p-libp2p.js*', lambda route: route.fulfill(
+                status=200, body=stub, content_type='application/javascript'))
+            p2p_page.goto(url, wait_until='domcontentloaded')
+            p2p_page.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('libp2p gossip: 1 current-master ProviderRecord(s) verified')""",
+                timeout=15_000)
+            p2p_log = p2p_page.locator('#log').text_content()
+            require('untrusted lookup hint only; awaiting current-master ProviderRecord' in p2p_log,
+                    'raw gossip was not labelled as an untrusted lookup hint')
+            require('P2P handle resolved by current' in p2p_log
+                    and 'public read granted' in p2p_log,
+                    'P2P-only resolved record did not pass full provider/policy verification')
+            require('P2P discover-only projection · discover-only; read links withheld' in p2p_log,
+                    'zero-grant P2P projection did not verify as discover-only')
+            require('MALICIOUS SELF-KEY LABEL' not in p2p_log,
+                    'raw self-key gossip metadata entered the UI')
+            resolved_keys = p2p_page.evaluate('globalThis.__p2pResolvedKeys')
+            require('p2p-only-handle' in resolved_keys,
+                    'gossip handle was not used as a bounded provider lookup key')
+            require(not p2p_errors, 'P2P-only browser console errors: ' + '; '.join(p2p_errors))
+            p2p_context.close()
+
+            # Large-population integration: selector helpers cover a one-million
+            # generator; this browser pass proves the actual graph/stage keep a
+            # hard DOM window and can search beyond the initial card window.
+            scale_context = browser.new_context(viewport={'width': 1600, 'height': 1000})
+            scale_context.request.get(base + '/node/scale?count=2000')
+            scale = scale_context.new_page()
+            scale_errors: list[str] = []
+            scale.on('console', lambda msg: scale_errors.append(f'console {msg.type}: {msg.text}')
+                     if msg.type in {'warning', 'error'} else None)
+            scale.on('pageerror', lambda error: scale_errors.append(f'pageerror: {error}'))
+            scale.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            scale.goto(url, wait_until='domcontentloaded')
+            scale.locator('.pcard').first.wait_for(timeout=15_000)
+            scale.wait_for_function("""() => document.querySelector('#graphWindow')?.textContent.includes('2K')""",
+                                    timeout=15_000)
+            require(scale.locator('.pcard').count() == 12,
+                    'large stage did not retain its 12-card initial window')
+            scale_graph_personas = scale.locator('#sysGraph [data-gp]').count()
+            require(scale_graph_personas <= 36,
+                    'large graph exceeded its exact-persona cap')
+            require(scale.locator('[data-kernel-core]').count() <= 6,
+                    'large graph exceeded its kernel cap')
+            require(scale.locator('body *').count() < 1_500,
+                    'large population materialized an unbounded DOM')
+            if screenshots:
+                scale.screenshot(path=str(screenshots / 'desktop-scale-window.png'), full_page=True)
+            scale.locator('[data-more-personas]').click()
+            scale.wait_for_function("""() => document.querySelectorAll('.pcard').length === 24""",
+                                    timeout=10_000)
+            scale.locator('#q').fill('Scale Persona 01999')
+            scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
+              .some((card) => card.textContent.includes('Scale Persona 01999'))""", timeout=10_000)
+            require(scale.locator('.pcard').count() <= 24,
+                    'search escaped the progressive persona window')
+            scale_metrics = {
+                'source_personas': 2000,
+                'initial_cards': 12,
+                'expanded_cards': 24,
+                'graph_personas': scale_graph_personas,
+                'dom_nodes_after_search': scale.locator('body *').count(),
+                'deep_search_found': True,
+            }
+            if screenshots:
+                scale.screenshot(path=str(screenshots / 'desktop-scale-search.png'), full_page=True)
+            require(not scale_errors, 'large-population browser errors: ' + '; '.join(scale_errors))
+            scale_context.request.get(base + '/node/scale?count=0')
+            scale_context.close()
+
             STATE.reset()
             mobile_context = browser.new_context(viewport={'width': 390, 'height': 844})
             mobile = mobile_context.new_page()
@@ -275,10 +471,19 @@ def run(args: argparse.Namespace) -> dict:
               for (let i=1; i<rects.length; i++) {
                 if (rects[i-1].bottom > rects[i].top + 1) overlaps.push([rects[i-1], rects[i]]);
               }
+              const clientWidth=document.documentElement.clientWidth;
+              const wide=[...document.body.querySelectorAll('*')].map((el)=>{
+                const r=el.getBoundingClientRect();
+                if (r.right <= clientWidth + 1 && r.left >= -1) return null;
+                const name=el.id ? `#${el.id}`
+                  : `${el.tagName.toLowerCase()}${[...el.classList].slice(0,3).map((c)=>`.${c}`).join('')}`;
+                return {name,left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)};
+              }).filter(Boolean).slice(0,20);
               return {scrollWidth:document.documentElement.scrollWidth,
-                clientWidth:document.documentElement.clientWidth, rects, overlaps};
+                clientWidth, rects, overlaps, wide};
             }""")
-            require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1, 'mobile page overflows horizontally')
+            require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
+                    'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
             require(not metrics['overlaps'], 'mobile page bands overlap')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
@@ -314,11 +519,18 @@ def run(args: argparse.Namespace) -> dict:
             sse.on('request', lambda request: sse_requests.append(request.url))
             sse.on('response', lambda response: sse_failed_responses.append(
                 f'{response.status} {response.url}') if response.status >= 400 else None)
+            sse.route('**/node/providers.json', lambda route: route.fulfill(
+                status=200, json={'providers': []}))
             sse.goto(url, wait_until='domcontentloaded')
+            sse.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('discovery snapshot: 1 current ProviderRecord(s) verified; 1 refused')""",
+                timeout=15_000)
             open_live_plan(sse)
             sse.locator('#fv-body').wait_for(timeout=10_000)
             old_hash = sse.locator('.exact-hash').last.text_content()
             require(any('/node/events' in request for request in sse_requests), 'public SSE stream did not connect')
+            require(not any(PROVIDER_SSE_LEGACY in request for request in sse_requests),
+                    'legacy SSE record pointer bypassed ProviderRecord verification')
             sse_context.request.get(base + '/node/arm-stale-poll')
             deadline = time.time() + 7
             while time.time() < deadline:
@@ -355,15 +567,24 @@ def run(args: argparse.Namespace) -> dict:
                 'download': download.suggested_filename,
                 'tamper_refused': True,
                 'metadata_tamper_refused': True,
+                'provider_authority_verified': True,
+                'historical_provider_document_verified': True,
+                'revoked_unknown_document_keys_refused': True,
+                'discover_only_raw_http_minimal': True,
+                'discover_only_raw_p2p_minimal': True,
+                'p2p_only_provider_resolved': True,
+                'sse_legacy_provider_refused': True,
                 'key_rotation_refreshed': True,
                 'body_requests': len(body_requests),
                 'event_requests': len(event_requests),
                 'hash_changed': before_hash != after_hash,
                 'image_rerendered': True,
+                'generic_binary_inspected': True,
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
+                'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
-                'console_errors': (errors + tamper_errors + rotation_errors
+                'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
                                    + mobile_errors + sse_errors),
             }
     except PlaywrightTimeoutError as error:

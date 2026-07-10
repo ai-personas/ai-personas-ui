@@ -14,6 +14,31 @@ import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
 } from './live-signatures.mjs?v=20260710-kernel-signed-live';
+import {
+  currentMasterKey,
+  evaluatePublicRecordAccess,
+  projectDiscoveryRecord,
+  projectRecordSurface,
+  providerLookupHints,
+  recordVerificationEntries,
+} from './discovery-authority.mjs?v=20260710-provider-authority-v2';
+import {
+  compactCount,
+  nextProgressiveGroupLevel,
+  progressiveGroupLimit,
+  selectMonitoringBases,
+  selectPriorityWindow,
+} from './network-view.mjs?v=20260710-scalable-network-v1';
+import {
+  NetworkStore,
+  TelemetryAdmissionGate,
+  networkEntityKey,
+  splitNetworkKey,
+} from './network-store.mjs?v=20260710-scalable-network-v1';
+import {
+  selectBuiltinArtifactRenderer,
+  selectLocalArtifactModule,
+} from './artifact-types.mjs?v=20260710-universal-artifacts-v1';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -108,10 +133,13 @@ function canon(v){
   if(typeof v==='object')return '{'+Object.keys(v).sort().map((k)=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
   return JSON.stringify(v);
 }
-async function verifyRecord(doc,keys){
-  const pk=keys[doc.signing_key_id]; if(!pk) return false;
-  try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(pk)); }
-  catch(e){ return false; }
+async function verifyRecord(doc,keyEntries){
+  for(const entry of recordVerificationEntries(keyEntries,doc?.signing_key_id)){
+    try{ if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),
+      hexToBytes(entry.public_key_hex))) return {ok:true,entry}; }
+    catch(e){}
+  }
+  return {ok:false,entry:null};
 }
 const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
@@ -233,9 +261,26 @@ async function fetchJson(u,init={}){ try{ const r=await fetch(u,secureFetchInit(
   return JSON.parse(new TextDecoder().decode(bytes)); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
+// Hard UI/backpressure ceilings. Global discovery can describe millions of
+// kernels, but a browser must render and actively monitor a small, explicit
+// window. Selected/running/recent entities outrank idle ones; every omitted
+// population is reported as an aggregate instead of silently disappearing.
+const NETWORK_LIMITS=Object.freeze({
+  kernelChips:10, monitoredBases:12, cachedKernels:4096, cachedRecords:20000,
+  resolverPage:128, resolverPages:4, discoveryLogRows:300, telemetryTapeRows:2000,
+  graphKernels:6, graphPersonasGlobal:30, graphPersonasFocused:36,
+  environmentInitial:10, environmentStep:10, personaInitial:12, personaStep:12,
+  cognitionPersonas:24, interactionRows:120,
+});
+const NETWORK=new NetworkStore({limits:{maxEntities:NETWORK_LIMITS.cachedRecords,
+  maxPresence:NETWORK_LIMITS.cachedRecords,maxGraphExact:96,maxGraphAggregates:24,maxGraphNodes:120}});
+const TELEMETRY_GATE=new TelemetryAdmissionGate({maxSources:128,maxAgeMs:30000,futureSkewMs:30000});
+
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
+  providerKeyRefreshAt:new Map(), providerHintJobs:new Map(), providerHintQueue:[],
+  providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
@@ -253,7 +298,9 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
   heartbeat:null, vitalSpikes:[], nodePos:new Map(), gnodes:new Map(), envCount:0,
-  follow:null, sysFlt:'all' };
+  follow:null, sysFlt:'all', kernelFocus:null, globalTotal:0, kernelOverflow:0,
+  environmentWindow:NETWORK_LIMITS.environmentInitial, personaWindows:new Map(),
+  visiblePersonaIds:new Set(), renderedEnvironmentKeys:new Set(), telemetryRefusals:new Map() };
 
 // honour the viewer's motion preference: freeze the ambient/firing animations
 // (canvas trace, traveling pulses, breathe/heartbeat) while keeping all STATE —
@@ -268,28 +315,88 @@ function _activeCalls(live){
     ? live.kernel.active_model_calls : [];
   return calls.filter(Boolean);
 }
-function _indexActiveModelCalls(base,live){
-  (S.activeModelCallsByBase=S.activeModelCallsByBase||new Map()).set(base||'@origin',_activeCalls(live));
+function _rebuildActiveModelCallIndex(){
   const byP=new Map(), byE=new Map(); let n=0;
-  for(const calls of S.activeModelCallsByBase.values()) for(const c of calls){
+  for(const [baseKey,calls] of S.activeModelCallsByBase) for(const c of calls){
     n++;
-    const pid=_shortId(c&&c.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(c); }
-    const eid=_shortId(c&&c.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(c); }
+    const base=baseKey==='@origin'?'':baseKey;
+    const kernel=String(c?.kernel_id||c?.node_id||kernelForBase(base)||baseKey||'@unknown');
+    const pid=_shortId(c&&c.persona_id); if(pid){ const key=_personaKey(kernel,pid);
+      (byP.get(key)||byP.set(key,[]).get(key)).push({...c,_kernel:kernel,_base:base}); }
+    const eid=_shortId(c&&c.environment_id); if(eid){ const key=_environmentKey(kernel,eid);
+      (byE.get(key)||byE.set(key,[]).get(key)).push({...c,_kernel:kernel,_base:base}); }
   }
   S.activeModelCallsByPersona=byP;
   S.activeModelCallsByEnv=byE;
   S.activeModelCallCount=n;
 }
-function _activeModelCallsForPersona(sid){
-  return (S.activeModelCallsByPersona&&S.activeModelCallsByPersona.get(_shortId(sid)))||[];
+function _indexActiveModelCalls(base,live,{observedAt=Date.now(),kernelId=''}={}){ const key=base||'@origin';
+  const kernel=String(kernelId||live?.kernel?.kernel_id||live?.node?.node_id||kernelForBase(base)||key);
+  const calls=_activeCalls(live).map((call)=>({...call,kernel_id:call?.kernel_id||kernel}));
+  (S.activeModelCallsByBase=S.activeModelCallsByBase||new Map()).set(key,calls);
+  (S.activeModelCallObservedAt=S.activeModelCallObservedAt||new Map()).set(key,observedAt);
+  _rebuildActiveModelCallIndex();
+}
+function _rebuildHeartbeat(){
+  let anyRunning=false, anyBusy=false, minIv=null;
+  for(const hb of (S.heartbeatByBase||new Map()).values()){
+    const r=hb&&hb.running!==false; if(r){ anyRunning=true;
+      const iv=+(hb&&hb.interval_s); if(iv>0) minIv=minIv==null?iv:Math.min(minIv,iv); }
+    if(hb&&hb.busy) anyBusy=true;
+  }
+  S.heartbeat={running:anyRunning,busy:anyBusy,interval_s:minIv||(S.heartbeat&&S.heartbeat.interval_s)||5};
+}
+function heartbeatForScope(){
+  if(!S.kernelFocus) return S.heartbeat||null;
+  let running=false,busy=false,minIv=null,found=false;
+  for(const [baseKey,hb] of (S.heartbeatByBase||new Map())){
+    const base=baseKey==='@origin'?'':baseKey;
+    if(kernelForBase(base)!==S.kernelFocus) continue;
+    found=true; const isRunning=hb&&hb.running!==false;
+    if(isRunning){ running=true; const iv=Number(hb.interval_s); if(iv>0) minIv=minIv==null?iv:Math.min(minIv,iv); }
+    if(hb?.busy) busy=true;
+  }
+  return found?{running,busy,interval_s:minIv||5}:null;
+}
+function expireLivePresence(now=Date.now()){
+  NETWORK.sweepPresence(now);
+  const lease=30000, retention=120000; let callsChanged=false;
+  for(const [base,at] of (S.activeModelCallObservedAt||new Map())) if(now-at>lease){
+    S.activeModelCallObservedAt.delete(base); S.activeModelCallsByBase.delete(base); callsChanged=true; }
+  if(callsChanged) _rebuildActiveModelCallIndex();
+  let hbChanged=false;
+  for(const [base,hb] of (S.heartbeatByBase||new Map())) if(now-(hb?._observedAt||0)>lease){
+    S.heartbeatByBase.delete(base); hbChanged=true; }
+  if(hbChanged) _rebuildHeartbeat();
+  for(const [personaKey,d] of (S.liveByPersona||new Map())) if(now-(d?.receivedAt||0)>lease){
+    if(now-(d?.receivedAt||0)>retention){
+      S.liveByPersona.delete(personaKey); S.personaRuntimeById?.delete(personaKey);
+      S.lastModelSeenAt?.delete(personaKey); S.lastActiveAt?.delete(personaKey);
+      S.modelCount?.delete(personaKey); S.pcardSeen?.delete(personaKey); S.pcCogSeen?.delete(personaKey);
+      S.ixByPersona?.delete(personaKey); S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
+      if(S.follow===personaKey) S.follow=null;
+      continue;
+    }
+    // Keep the durable/discovered card, but its ephemeral presence expires.
+    let effective='stale'; try{ effective=NETWORK.presenceStatus(personaKey,now)?.freshness||effective; }catch(e){}
+    S.liveByPersona.set(personaKey,{...d,models:[],stale:true,presence:effective});
+    S.lastModelSeenAt?.delete(personaKey); S.lastActiveAt?.delete(personaKey);
+  }
+  for(const [envKey,d] of (S.liveByEnv||new Map())) if(now-(d?.receivedAt||0)>retention) S.liveByEnv.delete(envKey);
+  for(const [base,at] of (S.liveTelObservedAt||new Map())) if(now-at>retention){
+    S.liveTelObservedAt.delete(base); S.liveTel.delete(base); S.telLoaded?.delete(base==='@origin'?'':base); }
+}
+function _activeModelCallsForPersona(value,kernel=''){
+  const ref=_personaRef(value,kernel);
+  return (S.activeModelCallsByPersona&&S.activeModelCallsByPersona.get(ref.key))||[];
 }
 function _runtimeBusy(){
   return !!(S.activeModelCallCount>0);
 }
 function _envRunningNow(b){
   const sid=_shortId((b&&b.sid)||(b&&b.envId));
-  if(sid && S.activeModelCallsByEnv && S.activeModelCallsByEnv.has(sid)) return true;
-  return !!(b&&Array.isArray(b.members)&&b.members.some((m)=>_activeModelCallsForPersona(m).length));
+  if(sid && S.activeModelCallsByEnv && S.activeModelCallsByEnv.has(_environmentKey(b?.kernel,sid))) return true;
+  return !!(b&&Array.isArray(b.members)&&b.members.some((m)=>_activeModelCallsForPersona(m,b.kernel).length));
 }
 function _latestSpanTime(spans){
   let out=0;
@@ -305,7 +412,8 @@ function _modelEventTime(m,fallback){
 
 // Index a live-telemetry doc per-persona and per-env so the detail views can
 // render each entity's OWN activity (model_events carry persona_id +
-// environment_id; spans carry scope + trace_id). Keyed by short persona/env id.
+// environment_id; spans carry scope + trace_id). Every Map key is qualified by
+// its kernel; short ids are used only for labels and node-local API paths.
 // Reduce ANY id form to the bare trailing id (ULID / kernel hex) the node's
 // /thinking + per-entity endpoints resolve. Personas/envs ship two DID shapes:
 //   colon  did:personaos:<kernel>:persona:<ULID>
@@ -318,6 +426,45 @@ const _shortId=(s)=>{
   if(v.includes('/')) v=v.slice(v.lastIndexOf('/')+1);   // slash-path DID → trailing id
   return v.replace(/^(persona|env|kernel):/,'');
 };
+function _personaKey(kernel,pid){
+  try{ return networkEntityKey(String(kernel||'@unknown'),'persona',_shortId(pid)); }
+  catch(e){ return networkEntityKey('@unknown','persona',String(pid||'unknown')); }
+}
+function _environmentKey(kernel,eid){
+  try{ return networkEntityKey(String(kernel||'@unknown'),'env',_shortId(eid)); }
+  catch(e){ return networkEntityKey('@unknown','env',String(eid||'unknown')); }
+}
+function _personaRef(value,kernel=''){
+  const parsed=splitNetworkKey(value);
+  if(parsed?.kind==='persona') return {key:String(value),kernel:parsed.kernelId,sid:parsed.identity};
+  const sid=_shortId(value); return {key:_personaKey(kernel,sid),kernel:String(kernel||'@unknown'),sid};
+}
+function _environmentRef(value,kernel=''){
+  const parsed=splitNetworkKey(value);
+  if(parsed?.kind==='env') return {key:String(value),kernel:parsed.kernelId,sid:parsed.identity};
+  const sid=_shortId(value); return {key:_environmentKey(kernel,sid),kernel:String(kernel||'@unknown'),sid};
+}
+const _domEntityKey=(key)=>encodeURIComponent(String(key||''));
+const _entityKeyFromDom=(key)=>{ try{ return decodeURIComponent(String(key||'')); }catch(e){ return ''; } };
+function _eventKernel(event){ return String(event?._kernel||kernelForBase(event?._base)||'@unknown'); }
+function _eventPersonaKey(event,pid){ return _personaKey(_eventKernel(event),pid); }
+
+function ingestLiveTelemetry(base,live,{source='poll',eventId=''}={}){
+  const sourceKey=base||'@origin';
+  const decision=TELEMETRY_GATE.admit(sourceKey,live,{eventId});
+  if(!decision.accepted){
+    const refusalKey=`${sourceKey}\u0000${decision.reason}`;
+    const last=S.telemetryRefusals.get(refusalKey)||0;
+    if(Date.now()-last>10000){
+      S.telemetryRefusals.set(refusalKey,Date.now());
+      log('telemetry',`${sourceKey}: refused ${decision.reason} ${source} frame`,false);
+    }
+    return {accepted:false,decision};
+  }
+  indexLiveTelemetry(base,live,{observedAt:decision.observedAt,
+    receivedAt:decision.receivedAt,sequence:decision.sequence,source});
+  return {accepted:true,decision};
+}
 // The workspace RUN id (k/run-XXXX) every record carries in its resolved links /
 // url. It is the reliable join between an environment and ITS deliverables: an
 // env record and the artifact bundle + files it produced all share one run path.
@@ -363,9 +510,12 @@ function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.arti
     body_published:a.body_published!==undefined?a.body_published:!!a.content,
     size:a.size??a.size_bytes??a.bytes })); }
 function manifestRun(m){ for(const a of manifestArtifacts(m)){ if(a&&a.run) return String(a.run); } return ''; }
-function indexLiveTelemetry(base,live){
+function indexLiveTelemetry(base,live,meta={}){
   if(!live||typeof live!=='object') return;
-  S.liveTel.set(base||'@origin',live);
+  const baseKey=base||'@origin';
+  const kernelId=(S.boots?.get(baseKey)||{}).kernel_id||live?.node?.node_id||live?.kernel?.kernel_id||baseKey;
+  const receivedAt=Number(meta.receivedAt)||Date.now();
+  const t=Number(meta.observedAt)||Date.parse(live.generated_at||'')||receivedAt;
   // the always-on baseline pulse: node.heartbeat is present + running on every
   // node sample, so the page is alive the instant it loads even when both event
   // streams are momentarily quiet — and it NEVER fakes activity.
@@ -374,24 +524,17 @@ function indexLiveTelemetry(base,live){
   // a last-writer-wins overwrite let a later idle node clobber an earlier running one and
   // read the whole page as idle. running = ANY node running; interval = min over running.
   if(live.node&&live.node.heartbeat){
-    (S.heartbeatByBase=S.heartbeatByBase||new Map()).set(base||'@origin',live.node.heartbeat);
-    let anyRunning=false, anyBusy=false, minIv=null;
-    for(const hb of S.heartbeatByBase.values()){
-      const r=hb&&hb.running!==false; if(r){ anyRunning=true;
-        const iv=+(hb&&hb.interval_s); if(iv>0) minIv=(minIv==null?iv:Math.min(minIv,iv)); }
-      // busy is the HONEST distinguisher: node.py sets heartbeat.busy='running run-xxxx'
-      // only while actually producing, '' when idle. OR it across bases so the warming
-      // claim ('producing the first candidate') never shows for an unfunded/idle node.
-      if(hb&&hb.busy) anyBusy=true; }
-    // when nothing is running, keep the last reported interval so the cadence is stable
-    S.heartbeat={running:anyRunning,busy:anyBusy,interval_s:(minIv!=null?minIv:(S.heartbeat&&S.heartbeat.interval_s)||live.node.heartbeat.interval_s)};
+    (S.heartbeatByBase=S.heartbeatByBase||new Map()).set(baseKey,{...live.node.heartbeat,_observedAt:receivedAt});
+    _rebuildHeartbeat();
   }
-  _indexActiveModelCalls(base,live);
+  _indexActiveModelCalls(base,live,{observedAt:receivedAt,kernelId});
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
-  const personas=live.personas||[];
-  const t=Date.parse(live.generated_at||'')||Date.now();
-  const runtimeBusy=_runtimeBusy();
+  const rawPersonas=Array.isArray(live.personas)?live.personas:[];
+  const personas=rawPersonas.slice(0,NETWORK_LIMITS.cachedRecords);
+  S.liveTel.set(baseKey,rawPersonas.length===personas.length?live:{...live,personas});
+  (S.liveTelObservedAt=S.liveTelObservedAt||new Map()).set(baseKey,receivedAt);
+  const runtimeBusy=_activeCalls(live).length>0;
   const modelBaseT=runtimeBusy?t:(_latestSpanTime(sp)||t);
   // model selections → per persona and per env
   const byP=new Map(), byE=new Map();
@@ -410,35 +553,50 @@ function indexLiveTelemetry(base,live){
       kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'),
       signed:a['personaos.lineage.signed']===true,   // fail-CLOSED: only an explicit true counts as signed
       t:Date.parse(s.ended_at||s.started_at||'')||t }); } });
+  const activePersonaIds=new Set(_activeCalls(live).map((call)=>_shortId(call?.persona_id)).filter(Boolean));
   personas.forEach((p)=>{ const pid=_shortId(p.persona_id);
-    const cur=S.liveByPersona.get(pid)||{};
-    S.liveByPersona.set(pid,{...cur,summary:p,models:byP.get(pid)||cur.models||[],generated_at:live.generated_at}); });
-  for(const [pid,models] of byP){ if(!S.liveByPersona.has(pid)) S.liveByPersona.set(pid,{models,generated_at:live.generated_at}); }
-  for(const [eid,models] of byE){ const cur=S.liveByEnv.get(eid)||{};
-    S.liveByEnv.set(eid,{...cur,models,spans:spByE.get(eid)||cur.spans||[],generated_at:live.generated_at}); }
-  for(const [eid,spans] of spByE){ const cur=S.liveByEnv.get(eid)||{};
-    if(!cur.spans) S.liveByEnv.set(eid,{...cur,spans,generated_at:live.generated_at}); }
+    if(!pid) return; const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
+    S.liveByPersona.set(personaKey,{...cur,summary:p,models:byP.get(pid)||cur.models||[],sid:pid,
+      generated_at:live.generated_at,base:baseKey==='@origin'?'':baseKey,kernel:kernelId,
+      observedAt:t,receivedAt,stale:false});
+    try{ NETWORK.upsertPresence({...p,kernel_id:kernelId,kind:'persona',persona_id:pid,
+      observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':(p.task_execution_state||p.lifecycle_state||'idle')}); }catch(e){}
+  });
+  for(const [pid,models] of byP){ const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
+    S.liveByPersona.set(personaKey,{...cur,models,sid:pid,generated_at:live.generated_at,
+      base:baseKey==='@origin'?'':baseKey,kernel:kernelId,observedAt:t,receivedAt,stale:false});
+    try{ NETWORK.upsertPresence({kernel_id:kernelId,kind:'persona',persona_id:pid,
+      observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':'recent'}); }catch(e){}
+  }
+  for(const [eid,models] of byE){ const envKey=_environmentKey(kernelId,eid), cur=S.liveByEnv.get(envKey)||{};
+    S.liveByEnv.set(envKey,{...cur,models,spans:spByE.get(eid)||cur.spans||[],sid:eid,
+      kernel:kernelId,base:baseKey==='@origin'?'':baseKey,generated_at:live.generated_at,
+      observedAt:t,receivedAt}); }
+  for(const [eid,spans] of spByE){ const envKey=_environmentKey(kernelId,eid), cur=S.liveByEnv.get(envKey)||{};
+    if(!cur.spans) S.liveByEnv.set(envKey,{...cur,spans,sid:eid,kernel:kernelId,
+      base:baseKey==='@origin'?'':baseKey,generated_at:live.generated_at,observedAt:t,receivedAt}); }
   // VITAL SPIKES from model_events growth: a persona just asked a model to do
   // something. Honest — fires only when a persona's req/resp count GREW since
   // last poll (a static snapshot spikes once on cold load, then rests).
   S.modelCount=S.modelCount||new Map();
-  S.lastActiveAt=S.lastActiveAt||new Map();   // sid -> ts of recent model-event growth (animation/history signal)
-  S.lastModelSeenAt=S.lastModelSeenAt||new Map();   // sid -> frame ts this persona last carried live model events (liveness decay)
+  S.lastActiveAt=S.lastActiveAt||new Map();   // kernel-qualified persona key -> recent model-event growth
+  S.lastModelSeenAt=S.lastModelSeenAt||new Map();
   if(!runtimeBusy){
     // The node heartbeat says no mission is actively running. Clear only the
     // model-call liveness indices; historical models/interactions remain visible
     // as recent/history below, but they cannot keep the "running" state alive.
-    S.lastActiveAt.clear();
-    S.lastModelSeenAt.clear();
+    for(const key of [...S.lastActiveAt.keys()]) if(splitNetworkKey(key)?.kernelId===kernelId) S.lastActiveAt.delete(key);
+    for(const key of [...S.lastModelSeenAt.keys()]) if(splitNetworkKey(key)?.kernelId===kernelId) S.lastModelSeenAt.delete(key);
   }
   for(const [pid,models] of byP){
-    if(runtimeBusy) S.lastModelSeenAt.set(pid,t);   // byP carries THIS persona this poll → stamp model-recency only while the node is busy
-    const prev=S.modelCount.get(pid); const now2=models.length;
+    const personaKey=_personaKey(kernelId,pid);
+    if(runtimeBusy) S.lastModelSeenAt.set(personaKey,t);
+    const prev=S.modelCount.get(personaKey); const now2=models.length;
     if(runtimeBusy && prev!=null && now2>prev){ const g=Math.min(now2-prev,6);
       for(let k=0;k<g;k++) _pushSpike('produce');
-      S.lastActiveAt.set(pid,Date.now());   // recent growth; active_model_calls decides whether it is still running
-      setTimeout(()=>_fireEdge(pid,'produce','out'),60); }   // persona asked a model → outbound spoke pulse
-    S.modelCount.set(pid,now2);
+      S.lastActiveAt.set(personaKey,receivedAt);
+      setTimeout(()=>_fireEdge(personaKey,'produce','out'),60); }
+    S.modelCount.set(personaKey,now2);
   }
   // WHO→WHOM interaction stream (kernel.interactions): actor → affected : kind.
   // Drives the coordination feed + constellation. Keyed by a stable signature so
@@ -448,13 +606,15 @@ function indexLiveTelemetry(base,live){
   const ix=(live.kernel&&live.kernel.interactions)||[];
   if(ix.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    const cold=!S.ixColdLoaded; let fired=0; const fresh=[];
+    S.ixColdByBase=S.ixColdByBase||new Set();
+    const cold=!S.ixColdByBase.has(baseKey); let fired=0; const fresh=[];
     ix.forEach((e,i)=>{
       const aff=(e.affected||[]).map((a)=>`${a.kind}:${a.id}`).join(',');
       const key=`${base}|${e.scope_id}|${e.actor_id}|${aff}|${e.kind}|${e.at||i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key);
-      const rec={...e, _base:base, _t:Date.parse(e.at||'')||t, _key:key};
+      const rec={...e, _base:base, _kernel:kernelId, _t:Date.parse(e.at||'')||t, _key:key};
       S.interactions.push(rec); fresh.push(rec);
+      try{ NETWORK.ingestEvent({...e,kernel_id:kernelId,event_id:key}); }catch(err){}
     });
     S.interactions.sort((a,b)=>a._t-b._t);
     if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
@@ -464,11 +624,12 @@ function indexLiveTelemetry(base,live){
     if(S.ixSeen) for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
     // index recent coordination acts PER PERSONA (actor + affected) so a persona
     // card can stream its activity in live state A (interactions, no model_events).
-    const _ixSids=(e)=>[e.actor_kind==='persona'?_shortId(e.actor_id):null,
-      ...(e.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id))].filter(Boolean);
+    const _ixPersonaKeys=(e)=>[e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):null,
+      ...(e.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_eventPersonaKey(e,a.id))].filter(Boolean);
     S.ixByPersona=new Map();
-    for(const e of S.interactions) for(const sid of _ixSids(e)){
-      const arr=S.ixByPersona.get(sid)||S.ixByPersona.set(sid,[]).get(sid); arr.push({kind:e.kind,_t:e._t,_cap:e._cap}); }
+    for(const e of S.interactions) for(const personaKey of _ixPersonaKeys(e)){
+      const arr=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
+      arr.push({kind:e.kind,_t:e._t,_cap:e._cap}); }
     for(const [,arr] of S.ixByPersona) if(arr.length>12) arr.splice(0,arr.length-12);
     if(!cold){
       S.ixCountBySid=S.ixCountBySid||new Map();
@@ -478,39 +639,25 @@ function indexLiveTelemetry(base,live){
         // persona 'running': 'running' means actively IN A MODEL CALL (set only on
         // model_events growth above). A persona merely NAMED in a routed message is not
         // itself in an LLM call — conflating the two made every coordinated persona pulse.
-        for(const sid of _ixSids(rec)){ S.ixCountBySid.set(sid,(S.ixCountBySid.get(sid)||0)+1); }
+        for(const personaKey of _ixPersonaKeys(rec)){
+          S.ixCountBySid.set(personaKey,(S.ixCountBySid.get(personaKey)||0)+1); }
         if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
         _pushSpike(_ixClass(rec.kind)); fired++;
         const cls=_ixClass(rec.kind), d=Math.min(fired*120,1500), failed=_ixFailed(rec.kind);
-        // PRIMARY (rare on real data): if a single act names an actor persona AND affected
-        // persona(s), fire the DIRECTIONAL actor→affected chord — that IS the inter-persona message.
-        const from=rec.actor_kind==='persona'?_shortId(rec.actor_id):null;
-        const tos=(rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id)).filter((s)=>s&&s!==from);
+        // Draw persona→persona only when the frame names BOTH endpoints. A shared
+        // environment/scope is not a recipient edge and must never be animated as
+        // one; single-ended kernel relay acts remain honest kernel spokes.
+        const fromSid=rec.actor_kind==='persona'?_shortId(rec.actor_id):null;
+        const from=fromSid?_personaKey(kernelId,fromSid):null;
+        const tos=(rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id))
+          .filter((sid)=>sid&&sid!==fromSid).map((sid)=>_personaKey(kernelId,sid));
         if(from&&tos.length){
           setTimeout(()=>{ _flashNode(from,cls,failed); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls,failed); }); },d);
-        } else {
-          // REAL path (telemetry is 100% kernel-mediated): the act touches ONE persona on an
-          // env scope. Resolve the live peer the kernel relays among that scope and fire the
-          // person→person HOP so a routed message visibly travels between two people, with
-          // honest direction — work routed TO a persona is inbound (kernel→X), a persona's
-          // own result is outbound (X→kernel). Fall back to the kernel spoke only when no
-          // graph peer shares the scope.
-          const onEnv=rec.scope==='environment'&&rec.scope_id;
-          const subj=from || (RELAY_KINDS.has(rec.kind)
-            ? (rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id)).find((s)=>S.nodePos.has(s))
-            : null);
-          const outbound=rec.actor_kind==='persona';   // persona reporting back vs kernel routing in
-          const peer=onEnv&&subj?_scopePeer(rec.scope_id,subj):null;
-          if(peer){
-            const a=outbound?subj:peer, b=outbound?peer:subj;   // M is always the source of the dash
-            setTimeout(()=>{ _fireLink(a,b,cls); _flashNode(subj,cls,failed); },d);
-          } else {
-            _ixSids(rec).forEach((sid)=>setTimeout(()=>_fireEdge(sid,cls,outbound?'out':'in'),d));
-          }
-        }
+        } else { const outbound=rec.actor_kind==='persona';
+          _ixPersonaKeys(rec).forEach((personaKey)=>setTimeout(()=>_fireEdge(personaKey,cls,outbound?'out':'in'),d)); }
       }
     }
-    S.ixColdLoaded=true;
+    S.ixColdByBase.add(baseKey); S.ixColdLoaded=true;
   }
   // PERSONA MESSAGES (live monitor): a persona's model request IS a live message.
   // kernel.model_events carry persona_id + model + purpose + rationale (no timestamp),
@@ -531,7 +678,7 @@ function indexLiveTelemetry(base,live){
       const mt=_modelEventTime(m,baseT-((me2.length-i)*200));
       S.interactions.push({actor_id:String(m.persona_id||''),actor_kind:m.persona_id?'persona':'kernel',
         affected:[{id:model,kind:'model'}],kind:'MODEL_CALL',scope:'model',scope_id:String(m.environment_id||''),
-        at:'',_base:base,_t:mt,_key:key,
+        at:'',_base:base,_kernel:kernelId,_t:mt,_key:key,
         _msg:purpose+(role&&role!=='-'&&role!==''?(' · '+role):''),_model:model,_rationale:rationale});
     });
     if(addedM){
@@ -546,7 +693,8 @@ function indexLiveTelemetry(base,live){
 function log(tag,msg,ok){ const li=document.createElement('li');
   const c=ok===true?'ok':ok===false?'bad':'';
   li.innerHTML=`<span class="tag2">${esc(tag)}</span><span class="${c}">${esc(msg)}</span>`;
-  $('#log').appendChild(li); }
+  const host=$('#log'); if(!host) return; host.appendChild(li);
+  while(host.children.length>NETWORK_LIMITS.discoveryLogRows) host.firstElementChild?.remove(); }
 
 /* ---------- discovery (runtime resolve + in-browser verify) ---------- */
 function collectP2PBootstraps(boot){
@@ -558,35 +706,180 @@ function collectP2PBootstraps(boot){
 }
 async function keysFor(base,boot,{refresh=false}={}){
   const key=base||'@origin';
-  if(!refresh&&S.keys.has(key)) return S.keys.get(key);
+  const cached=S.keyDocs.get(key);
+  if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
+      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
   const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'));
-  const statusRank={current:0,previous:1,archived:2};
-  const keys={},selected={}; const entries=[];
+  const keys={}; const entries=[]; const currentIds=new Set();
+  let valid=keysDoc?.schema==='personaos-keys/1'
+    &&!!String(keysDoc?.kernel_id||'')
+    &&(!boot?.kernel_id||keysDoc.kernel_id===boot.kernel_id);
   for(const raw of (Array.isArray(keysDoc?.keys)?keysDoc.keys:[])){
     const entry={key_id:String(raw?.key_id||''),role:String(raw?.role||''),
       public_key_hex:String(raw?.public_key_hex||''),status:String(raw?.status||''),
       rotated_at:String(raw?.rotated_at||'')};
     if(!entry.key_id||!['current','previous','archived'].includes(entry.status)
-        ||!/^[0-9a-f]{64}$/i.test(entry.public_key_hex)) continue;
+        ||!/^[0-9a-f]{64}$/i.test(entry.public_key_hex)){ valid=false; continue; }
     entries.push(entry);
-    const prior=selected[entry.key_id];
-    if(!prior||statusRank[entry.status]<statusRank[prior.status]){
-      selected[entry.key_id]=entry; keys[entry.key_id]=entry.public_key_hex;
+    if(entry.status==='current'){
+      if(currentIds.has(entry.key_id)){ valid=false; continue; }
+      currentIds.add(entry.key_id); keys[entry.key_id]=entry.public_key_hex;
     }
   }
-  S.keys.set(key,keys); S.keyDocs.set(key,{kernelId:String(keysDoc?.kernel_id||''),entries});
+  const masters=entries.filter((entry)=>entry.key_id==='kernel-master'
+    &&entry.role==='master'&&entry.status==='current');
+  if(masters.length!==1) valid=false;
+  if(!valid){ S.keys.delete(key); S.keyDocs.delete(key);
+    log('keys',`${boot?.kernel_id||key}: current master registry invalid`,false); return {}; }
+  S.keys.set(key,keys); S.keyDocs.set(key,{schema:keysDoc.schema,
+    kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
   return keys;
 }
-async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
+
+function providerPolicyPayload(policy){ const out={};
+  for(const key of ['schema','policy_id','subject_kind','subject_id','owner_persona_id','access_grants','outward_tier','cross_tenant_agreement_ref'])
+    if(Object.prototype.hasOwnProperty.call(policy||{},key)) out[key]=policy[key];
+  return out; }
+function currentProviderMaster(base,boot){
+  const registry=S.keyDocs.get(base||'@origin');
+  if(registry?.schema!=='personaos-keys/1'||registry.kernelId!==boot?.kernel_id) return '';
+  return currentMasterKey(registry.entries||[]);
+}
+async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey=''){
+  const p=envelope?.record, pk=currentProviderMaster(base,boot);
+  if(envelope?.schema!=='provider-record-envelope/1'||p?.schema!=='provider-record/1'||!pk
+    ||keys?.['kernel-master']!==pk||p.signing_key_id!=='kernel-master'
+    ||p.signing_key_role!=='master'||p.signing_key_status!=='current'
+    ||String(p.public_key_hex||'').toLowerCase()!==pk.toLowerCase()
+    ||(expectedKey&&String(p.key||'')!==expectedKey)
+    ||p.visibility_tier!=='public'||p.host_kernel_id!==boot?.kernel_id) return {ok:false,reason:'provider_authority_invalid'};
+  let ok=false; try{ ok=await ed.verifyAsync(hexToBytes(envelope.signature_hex),enc.encode(canon(p)),hexToBytes(pk)); }catch(e){}
+  if(!ok) return {ok:false,reason:'provider_signature_invalid'};
+  if(`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==p.document_hash) return {ok:false,reason:'provider_document_hash_mismatch'};
+  const r=doc?.record||{}, policy=doc?.access_policy||{};
+  if(r.record_id!==p.record_id||r.visibility_tier!=='public'||doc.host_kernel_id!==p.host_kernel_id
+    ||String(doc.base||'')!==String(p.base_url||'')
+    ||r.access_policy_ref!==p.access_policy_ref||policy.policy_id!==p.access_policy_ref
+    ||policy.outward_tier!=='public') return {ok:false,reason:'provider_document_binding_mismatch'};
+  if(!providerLookupHints(r).includes(String(p.key||''))) return {ok:false,reason:'provider_key_alias_mismatch'};
+  const loc=[r.content_locator_ref].filter(Boolean).sort();
+  if(canon(loc)!==canon([...(p.content_locator_refs||[])].filter(Boolean).sort())) return {ok:false,reason:'provider_locator_binding_mismatch'};
+  const registry=S.keyDocs.get(base||'@origin');
+  let candidates=recordVerificationEntries(registry?.entries||[],doc.signing_key_id);
+  const boundId=String(p.document_signing_key_id||''),
+    boundStatus=String(p.document_signing_key_status||''),
+    boundKey=String(p.document_public_key_hex||'').toLowerCase();
+  const hasDocumentKeyBinding=!!(boundId||boundStatus||boundKey);
+  if(hasDocumentKeyBinding){
+    if(boundId!==String(doc.signing_key_id||'')
+      ||!['current','previous','archived'].includes(boundStatus)
+      ||!/^[0-9a-f]{64}$/.test(boundKey)) return {ok:false,reason:'provider_document_key_binding_invalid'};
+    candidates=candidates.filter((entry)=>entry.key_id===boundId&&entry.status===boundStatus
+      &&String(entry.public_key_hex||'').toLowerCase()===boundKey);
+  }else{
+    // Legacy envelopes can verify only current documents. Historical acceptance
+    // requires a current-master-signed generation binding in the ProviderRecord.
+    candidates=candidates.filter((entry)=>entry.status==='current'
+      &&entry.key_id===p.signing_key_id
+      &&String(entry.public_key_hex||'').toLowerCase()===String(pk).toLowerCase());
+  }
+  const recordMatches=[];
+  for(const entry of candidates){ try{
+    if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(r)),
+      hexToBytes(entry.public_key_hex))) recordMatches.push(entry);
+  }catch(e){} }
+  if(recordMatches.length!==1) return {ok:false,reason:'provider_document_signature_invalid'};
+  const documentKey=recordMatches[0];
+  try{ ok=await ed.verifyAsync(hexToBytes(policy.signature_hex),
+    enc.encode(canon(providerPolicyPayload(policy))),hexToBytes(documentKey.public_key_hex)); }catch(e){ ok=false; }
+  if(!ok) return {ok:false,reason:'provider_policy_signature_invalid'};
+  const did=String(r.did||'');
+  if(did.startsWith('did:personaos:')&&did.slice('did:personaos:'.length).split('/')[0]!==p.host_kernel_id) return {ok:false,reason:'provider_did_kernel_mismatch'};
+  const access=evaluatePublicRecordAccess(r,policy,doc.links||{});
+  if(!access.ok||!access.canDiscover) return {ok:false,reason:access.reason||'provider_access_refused'};
+  return {ok:true,access,documentKey};
+}
+async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedKey=''){
+  let keys=await keysFor(base,boot);
+  let verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
+  if(verification.ok) return {...verification,keys};
+  const cacheKey=base||'@origin', last=S.providerKeyRefreshAt.get(cacheKey)||0;
+  if(Date.now()-last<10000) return {...verification,keys:{}};
+  S.providerKeyRefreshAt.set(cacheKey,Date.now());
+  keys=await keysFor(base,boot,{refresh:true});
+  verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
+  return verification.ok?{...verification,keys}:{...verification,keys:{}};
+}
+async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={}){
   if(!doc?.record) return {ok:false,row:null};
-  const ok=await verifyRecord(doc,keys);
-  if(!ok) return {ok:false,row:null};
-  const r=doc.record, k=doc.host_kernel_id||boot?.kernel_id||'', b=doc.base||base||'';
-  return {ok:true,row:{...r,_kernel:k,_url:recordUrl?join(base,recordUrl):(doc._url||''),_access:doc.access_policy||{},
-    _links:doc.links||{},_base:b,_plane:plane,
-    _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
-          public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
-          base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
+  const registry=S.keyDocs.get(base||'@origin')||{};
+  const signature=await verifyRecord(doc,registry.entries||[]);
+  if(!signature.ok) return {ok:false,row:null,reason:'record_signature_invalid'};
+  const access=meta.access||evaluatePublicRecordAccess(doc.record,doc.access_policy||{},doc.links||{});
+  if(!access.ok||!access.canDiscover) return {ok:false,row:null,reason:access.reason||'record_access_refused'};
+  const k=doc.host_kernel_id||boot?.kernel_id||'', rawBase=doc.base||base||'';
+  const rawUrl=recordUrl?join(base,recordUrl):(doc._url||'');
+  const surface=projectRecordSurface(doc.record,doc.access_policy||{},doc.links||{},access,
+    {base:rawBase,url:rawUrl});
+  const r=surface.record, projectedPolicy=surface.policy;
+  const b=surface.base, links=surface.links, url=surface.url;
+  const gossipRecord=projectDiscoveryRecord(doc.record,false);
+  return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
+    _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
+    _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
+    _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
+          signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
+          kernel_id:k,host_kernel_id:doc.host_kernel_id||'',base:b,links,
+          access_policy:projectedPolicy,record_signature_verified:true,
+          policy_signature_verified:true}}};
+}
+function logRecordAccess(row,source){
+  const label=String(row?.label||row?.record_id||'record').slice(0,36);
+  log('access',`${source}: ${label} · ${row?._readAuthorized?'public read granted':'discover-only; read links withheld'}`,true);
+}
+async function verifiedRowsFromProviderIndex(providers,base,boot,plane,source='http'){
+  const rows=[]; let refused=0;
+  const byUrl=new Map();
+  for(const envelope of (Array.isArray(providers)?providers:[])){
+    const url=String(envelope?.record?.record_url||'');
+    if(envelope?.schema!=='provider-record-envelope/1'
+        ||envelope?.record?.schema!=='provider-record/1'
+        ||!/^discovery\/public\/records\/[A-Za-z0-9:_.-]+\.json$/.test(url)){
+      refused++; log('verify',`${source}: legacy or malformed provider pointer refused`,false); continue; }
+    if(!byUrl.has(url)) byUrl.set(url,envelope);
+  }
+  const entries=[...byUrl.entries()];
+  for(let i=0;i<entries.length;i+=24){
+    const batch=entries.slice(i,i+24);
+    const docs=await Promise.all(batch.map(([recordUrl,envelope])=>fetchJson(join(base,recordUrl))
+      .then((doc)=>({envelope,doc,recordUrl})).catch(()=>({envelope,doc:null,recordUrl}))));
+    for(const {envelope,doc,recordUrl} of docs){
+      if(!doc?.record){ refused++; continue; }
+      const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
+      if(!authority.ok){ refused++;
+        log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
+      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,{access:authority.access});
+      if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
+      logRecordAccess(out.row,source); rows.push(out.row);
+    }
+  }
+  return {rows,refused,envelopeCount:entries.length};
+}
+async function verifiedRowsFromP2PResult(result,source='p2p'){
+  const rows=[]; let refused=0;
+  const expectedKey=String(result?.key||'');
+  for(const item of (Array.isArray(result?.records)?result.records:[])){
+    const doc=item?.document, p=item?.record||{};
+    if(!doc?.record||!expectedKey){ refused++; continue; }
+    const pboot={kernel_id:p.host_kernel_id,keys_url:'.well-known/personaos-keys.json'};
+    const base=String(p.base_url||'');
+    const authority=await verifyHttpProviderWithKeyRefresh(item,doc,pboot,base,expectedKey);
+    if(!authority.ok){ refused++; continue; }
+    const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',{access:authority.access});
+    if(!out.ok){ refused++; continue; }
+    out.row._net='p2p'; logRecordAccess(out.row,source); rows.push(out.row);
+  }
+  return {rows,refused};
 }
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
@@ -624,11 +917,36 @@ async function loadGlobalNodes(){
     for(const ma of addrs) S.p2pBootstraps.add(ma);
     if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
   }
-  const docs=await Promise.all(endpoints.map((ep)=>fetchJson(join(ep,'/v1/nodes')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
-  for(const {ep,d} of docs){
-    const nodes=d?.nodes||[];
+  // Feature-detect cursor pagination and traverse only a fixed number of small
+  // pages. In global mode a search is sent to the resolver, allowing a kernel
+  // outside the sampled first page to surface without materialising the fleet.
+  // Legacy resolvers retain one bounded compatibility read.
+  const resolverQuery=!S.kernelFocus?String(S.q||'').trim():'';
+  const docs=await Promise.all(endpoints.map(async(ep)=>{
+    const allNodes=[]; let advertisedTotal=0, cursor='', pages=0, legacy=false;
+    while(pages<NETWORK_LIMITS.resolverPages&&allNodes.length<NETWORK_LIMITS.cachedKernels){
+      const params=new URLSearchParams({limit:String(NETWORK_LIMITS.resolverPage),status:'active'});
+      if(resolverQuery) params.set('q',resolverQuery);
+      if(cursor) params.set('cursor',cursor);
+      let d=await fetchJson(join(ep,`/v1/nodes?${params}`));
+      if(!d&&pages===0){ d=await fetchJson(join(ep,'/v1/nodes')); legacy=true; }
+      if(!d) break;
+      const pageNodes=Array.isArray(d.nodes)?d.nodes:[];
+      allNodes.push(...pageNodes.slice(0,NETWORK_LIMITS.cachedKernels-allNodes.length));
+      advertisedTotal=Math.max(advertisedTotal,
+        Number(d.total??d.total_count??d.node_count??d.count??allNodes.length)||allNodes.length);
+      pages++;
+      if(legacy) break;
+      const next=String(d.next_cursor??d.pagination?.next_cursor??'');
+      if(!next||next===cursor) break; cursor=next;
+    }
+    return {ep,allNodes,advertisedTotal,pages,legacy};
+  }));
+  for(const {ep,allNodes,advertisedTotal,pages,legacy} of docs){
+    S.globalTotal=Math.max(Number(S.globalTotal)||0,advertisedTotal);
+    const nodes=allNodes.slice(0,NETWORK_LIMITS.cachedKernels);
     if(!nodes.length) continue;
-    log('global',`${ep}: ${nodes.length} announced node(s)`);
+    log('global',`${ep}: ${nodes.length}/${advertisedTotal} announced node(s) in ${legacy?'legacy response':`${pages} bounded page(s)`}`);
     for(const env of nodes){
       const verified=await verifyGlobalEnvelope(env);
       if(!verified.ok){ log('global','announcement signature/hash failed',false); continue; }
@@ -637,7 +955,6 @@ async function loadGlobalNodes(){
       const announced={...ann,source_endpoint:ep};
       if(kid) S.globalAnnouncements.set(kid,announced);
       if(base) S.globalAnnouncementByBase.set(base,announced);
-      if(kid) S.kernels.add(kid);
       noteKernel(kid,'resolver',base||ep,{
         announced:true,
         recordCount:ann.record_count||0,
@@ -662,51 +979,39 @@ async function discoverFrom(base,plane){
     if(gb?.kernel_id) noteKernel(gb.kernel_id,'unreachable',where,{reachable:false});
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
-  if(boot.kernel_id) S.kernels.add(boot.kernel_id);
-  const keys=await keysFor(base,boot);
+  await keysFor(base,boot);
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'));
   const providers=prov?.providers||[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
-  const found=[];
-  // PARALLEL record resolution (batches of 24): a node serving hundreds of
-  // records — or reached over a WAN tunnel — must not cost one round-trip per
-  // record. Ed25519 verification stays per-record after each batch lands.
-  for(let i=0;i<providers.length;i+=24){
-    const batch=providers.slice(i,i+24);
-    const docs=await Promise.all(batch.map((p)=>fetchJson(join(base,p.record_url))
-      .then((doc)=>({p,doc})).catch(()=>({p,doc:null}))));
-    for(const {p,doc} of docs){
-      if(!doc?.record) continue;
-      const out=await verifiedRecordFromDoc(doc,keys,boot,base,plane,p.record_url);
-      if(!out.ok){ const r=doc.record;
-        log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — FAIL`,false); continue; }
-      found.push(out.row);
-    }
+  const http=await verifiedRowsFromProviderIndex(providers,base,boot,plane,'http provider');
+  const found=[...http.rows];
+  if(P2P?.resolveProvider){
+    const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
+    const resolved=await Promise.all(aliases.map((key)=>P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+    let authorityVerified=0;
+    for(const result of resolved){ const verified=await verifiedRowsFromP2PResult(result,'p2p index lookup');
+      found.push(...verified.rows); authorityVerified+=verified.rows.length; }
+    if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup(s) current-master verified`,authorityVerified>0);
   }
-  if(found.length) log('verify',`${found.length}/${providers.length} record(s) Ed25519-verified OK`,true);
-  // GLOBAL P2P PLANE: a node running the libp2p bridge serves the verified
-  // records it RECEIVED over gossipsub (discovery/p2p/received.json) — records
-  // from kernels anywhere on the mesh, re-verified here against each record's
-  // embedded key before joining the board (NET = P2P).
+  const uniqueFound=new Map(found.map((row)=>[
+    `${row._kernel||boot.kernel_id||'@unknown'}\u0000${row.record_id||row.did}`,row]));
+  found.length=0; found.push(...uniqueFound.values());
+  if(found.length) log('verify',`${found.length}/${http.envelopeCount} record(s) provider + record + policy verified`,true);
+  // Bridge-cache gossip is untrusted lookup material only. It never becomes a
+  // displayed record or supplies base/links/policy; current-master ProviderRecord
+  // resolution is the sole promotion path into S.recs.
   const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
   const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived)):null;
   for(const doc of (p2pDoc?.records||[])){
-    if(!doc?.record || doc.record.visibility_tier!=='public') continue;
-    let ok=false;
-    try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){}
-    if(!ok) continue;
-    const k=doc.host_kernel_id||doc.kernel_id||'p2p';
-    S.kernels.add(k); noteKernel(k,'p2p',doc.base||'');
-    found.push({...doc.record,_kernel:k,_url:'',_access:doc.access_policy||{},
-      _links:doc.links||{},_base:doc.base||'',_plane:'internet',_net:'p2p',_doc:doc});
+    if(doc?.record?.visibility_tier==='public') queueProviderHints(doc.record,'bridge-cache gossip');
   }
-  // HTTP gossip cache: cards a peer pushed at this node (§3B). Cards marked
-  // unverified by the receiving node are listed but never trusted with links.
+  // HTTP gossip cache is also hint-only. Self-asserted origin/kernel fields never
+  // create a node or record in the UI before current-master provider resolution.
   const gossip=await fetchJson(join(base,'gossip/cache'));
   for(const id in (gossip?.cards||gossip||{})){
     const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
-    const k=card._originating_kernel||'gossip';
-    if(card.kind||card.record_id){ S.kernels.add(k); noteKernel(k,'gossip',''); }
+    const record=card.record||card;
+    if(record?.visibility_tier==='public') queueProviderHints(record,'HTTP gossip cache');
   }
   if(boot.kernel_id){
     const sources=peerSourceTags(base);
@@ -718,29 +1023,92 @@ async function discoverFrom(base,plane){
 }
 
 // ---------- global kernel tracker (the "across the globe" strip) ----------
+function rememberKernel(kernelId){
+  if(!kernelId) return;
+  const kernels=S.kernels;
+  if(kernels.has(kernelId)) kernels.delete(kernelId);
+  kernels.add(kernelId);
+  while(kernels.size>NETWORK_LIMITS.cachedKernels){
+    const victim=[...kernels].find((id)=>id!==S.kernelFocus);
+    if(!victim) break;
+    kernels.delete(victim); S.kernelOverflow++;
+  }
+}
 function noteKernel(kernelId,via,base,meta={}){
   if(!kernelId) return;
+  rememberKernel(kernelId);
   const g=S.globalKernels=(S.globalKernels||new Map());
   const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),lastSeen:0,meta:{}};
   cur.via.add(via); if(base) cur.bases.add(base); cur.lastSeen=Date.now();
   cur.meta={...(cur.meta||{}),...(meta||{})};
+  // Reinsert so Map iteration is an LRU order. Keep the focused kernel pinned;
+  // an old idle aggregate may be rediscovered later without making this tab's
+  // memory grow with global population size.
+  if(g.has(kernelId)) g.delete(kernelId);
   g.set(kernelId,cur);
+  try{ NETWORK.upsertEntity({kernel_id:kernelId,node_id:kernelId,kind:'kernel',
+    status:meta.reachable===false?'offline':'idle',last_seen_at:cur.lastSeen,...meta}); }catch(e){}
+  while(g.size>NETWORK_LIMITS.cachedKernels){
+    const victim=[...g.keys()].find((id)=>id!==S.kernelFocus); if(!victim) break;
+    g.delete(victim); S.kernelOverflow++;
+  }
+}
+function kernelForBase(base){
+  const key=base||'@origin';
+  return (S.boots&&S.boots.get(key)?.kernel_id)
+    ||S.globalAnnouncementByBase?.get(String(base||'').replace(/\/$/,''))?.kernel_id||'';
+}
+function kernelIsFocused(kernel){ return !S.kernelFocus||String(kernel||'')===S.kernelFocus; }
+function baseIsFocused(base){ return !S.kernelFocus||kernelForBase(base)===S.kernelFocus; }
+function kernelActivity(info){
+  let active=0;
+  for(const base of (info?.bases||[])){
+    const calls=S.activeModelCallsByBase?.get(base||'@origin')||[]; active+=calls.length;
+  }
+  return active;
 }
 function renderGlobalKernels(){
   const el=$('#globalKernels'); if(!el) return;
   const g=S.globalKernels||new Map();
-  if(!g.size){ el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>'; return; }
+  const allBtn=$('#networkAll'); if(allBtn){ allBtn.classList.toggle('on',!S.kernelFocus); allBtn.setAttribute('aria-pressed',String(!S.kernelFocus)); }
+  const scope=$('#networkScope'), overflow=$('#networkOverflow');
+  const knownTotal=Math.max(g.size,Number(S.globalTotal)||0,S.kernels?.size||0);
+  if(!g.size){
+    el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>';
+    if(scope) scope.textContent='0 nodes · add a peer or resolver';
+    if(overflow) overflow.hidden=true;
+    return;
+  }
   const now=Date.now();
-  el.innerHTML=[...g.entries()].map(([kid,info])=>{
+  let entries=[...g.entries()].map(([kid,info])=>{
     const fresh=(now-info.lastSeen)<45000;
-    const reachable=info.meta?.reachable===true
-      || [...info.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+    const hasRoute=[...info.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+    const reachable=info.meta?.reachable===false?false:(info.meta?.reachable===true||hasRoute);
+    const active=kernelActivity(info);
+    const score=(kid===S.kernelFocus?1e9:0)+(active?1e7+active:0)+(fresh?1e5:0)+(reachable?1e4:0)
+      +Math.min(9999,Number(info.meta?.recordCount)||0);
+    return {kid,info,fresh,reachable,active,score};
+  }).sort((a,b)=>b.score-a.score||b.info.lastSeen-a.info.lastSeen||a.kid.localeCompare(b.kid));
+  const query=String(S.q||'').trim();
+  if(query){ const matches=entries.filter(({kid,info})=>`${kid} ${[...info.bases].join(' ')}`.toLowerCase().includes(query));
+    if(matches.length) entries=[...matches,...entries.filter((row)=>!matches.includes(row))]; }
+  const visible=entries.slice(0,NETWORK_LIMITS.kernelChips);
+  el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
     const title=[...info.bases].join(' ')+((info.meta?.recordCount||info.meta?.reachability)?` records=${info.meta.recordCount||0} reachability=${info.meta.reachability||''}`:'');
-    return `<span class="gk ${fresh?'ok':'dim'}" title="${esc(title)}">`
-      +`<span class="dot ${fresh?'live':''}"></span>${esc(kid.replace(/^kernel:/,'').slice(0,12))} ${via}</span>`;
-  }).join(' ');
+    const label=kid.replace(/^kernel:/,'');
+    const liveRoute=active>0||(reachable&&fresh);
+    return `<button type="button" class="gk ${liveRoute?'ok':'dim'}${kid===S.kernelFocus?' on':''}" data-kernel="${esc(kid)}"`
+      +` aria-pressed="${kid===S.kernelFocus?'true':'false'}" title="${esc(title)}">`
+      +`<span class="dot ${liveRoute?'live':''}"></span>${esc(label.length>14?label.slice(0,13)+'…':label)}`
+      +(active?` <span class="n k">${active} RUNNING</span>`:via)+`</button>`;
+  }).join('');
+  if(scope) scope.textContent=S.kernelFocus
+    ?`focused node · ${compactCount(Number(g.get(S.kernelFocus)?.meta?.recordCount)||0)} public records`
+    :`${compactCount(knownTotal)} discovered · ${visible.length} activity-prioritized`;
+  const omitted=Math.max(0,knownTotal-visible.length);
+  if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
 // Peers come from three sources, merged + de-duped: the ?peer= query params, the
 // "＋ PEER" localStorage list, and the published peers.txt file (fetched at boot).
@@ -756,7 +1124,21 @@ async function loadPeersTxt(){
 }
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
   try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  return [...new Set([...p,...s,...TXT_PEERS,...(S.globalPeers||[]),...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
+  const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
+  // Explicit and local routes outrank opportunistic/global ones; a focused node
+  // is pinned to the front. This is the active monitoring window, not a claim
+  // that the rest of the discovered population ceased to exist.
+  const all=[...new Set([...focused,...p,...s,...TXT_PEERS,...(S.localPeers||[]),
+    ...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
+  const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
+    .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
+  const window=selectMonitoringBases(all.map((base,index)=>({base,priority:all.length-index})),{
+    focusedBases:focused,activeBases,limit:NETWORK_LIMITS.monitoredBases,hardLimit:64,
+  });
+  const selected=window.bases;
+  S.monitoringWindow=new Set(selected.map((x)=>String(x||'').replace(/\/$/,'')));
+  S.monitoringOmitted=Math.max(0,all.length-selected.length);
+  return selected; }
 function peerSourceTags(base){
   const u=String(base||'').replace(/\/$/,'');
   if(!u) return [];
@@ -923,16 +1305,26 @@ async function discoverLocalNode(opts={}){
   return found;
 }
 
+function recordStoreKey(r){ const raw=r?.record_id||r?.card_id; if(!raw) return '';
+  return `${encodeURIComponent(String(r?._kernel||'@unknown'))}::${encodeURIComponent(String(raw))}`; }
 function upsert(r){
-  const id=r.record_id||r.card_id; if(!id) return;
+  const id=recordStoreKey(r); if(!id) return false;
   let row=S.recs.get(id);
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
-    _broadcastOnly:!!r._broadcastOnly,
+    _broadcastOnly:!!r._broadcastOnly,_effective_level:r._effective_level||'discover',
+    _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
+    _storeKey:id,record_id:r.record_id||r.card_id,
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
+  try{ NETWORK.upsertEntity({...r,kernel_id:r._kernel,record_id:r.record_id||r.card_id}); }catch(e){
+    log('scale',`record identity refused: ${String(e&&e.message||e).slice(0,90)}`,false); }
+  while(S.order.length>NETWORK_LIMITS.cachedRecords){
+    const victim=S.order.shift(); if(victim) S.recs.delete(victim);
+  }
+  return true;
 }
 function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
   S.mapByKernel={}; const byKK={};
@@ -949,7 +1341,7 @@ async function resolveKernelBases(seeds){
   // a multi-run node), and NAME further peers (one hop). Previously only the page's
   // own origin was expanded, so a multi-run peer node yielded zero records.
   const visited=new Set(), kernels=[]; const queue=seeds.map((s)=>({b:s,depth:0}));
-  while(queue.length){
+  while(queue.length&&visited.size<NETWORK_LIMITS.monitoredBases*2){
     const {b,depth}=queue.shift(); const key=b||'@origin';
     if(visited.has(key)) continue; visited.add(key);
     const boot=await fetchJson(join(b,'.well-known/personaos-discovery.json'));
@@ -959,14 +1351,15 @@ async function resolveKernelBases(seeds){
     if(boot.providers_are_aggregate){ kernels.push(b); }   // public node aggregate: do not expand private runs
     else {
       if(boot.providers_url||!fks.length) kernels.push(b); // the base itself is a kernel (or legacy single-run)
-      for(const fk of fks) kernels.push(join(b,fk));       // multi-run node → per-kernel bases
+      for(const fk of fks.slice(0,NETWORK_LIMITS.monitoredBases)) kernels.push(join(b,fk)); // bounded multi-run window
     }
     if(depth<1){
       const httpBoots=[...(boot.peers||[]),...(boot.bootstrap_peers||[])].filter(isHttp);
       for(const rp of httpBoots) queue.push({b:rp,depth:depth+1});
     }
   }
-  return [...new Set(kernels)];
+  const unique=[...new Set(kernels)]; S.monitoringOmitted=(S.monitoringOmitted||0)+Math.max(0,unique.length-NETWORK_LIMITS.monitoredBases);
+  return unique.slice(0,NETWORK_LIMITS.monitoredBases);
 }
 function pruneDeadManualPeers(){
   // +PEER seeds live in this browser's localStorage. With IPFS as the live source of
@@ -1012,11 +1405,13 @@ async function discover(){
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
   pruneDeadManualPeers();                  // drop +PEER seeds that resolved unreachable
+  rebalanceDiscoveryStreams();
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
   const when=new Date();
+  const kernelCount=Math.max(S.kernels.size||0,Number(S.globalTotal)||0);
   $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> signed discovery record(s) Ed25519-verified across `
-    +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
+    +`<span class="ok">${compactCount(kernelCount)}</span> discovered kernel(s) · ${compactCount((S.boots&&S.boots.size)||0)} actively monitored · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
     +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
   }finally{ _discoverBusy=false; }
 }
@@ -1071,7 +1466,8 @@ function isWarming(){
   // client. heartbeat.running alone is true for an unfunded/idle node (the thread is
   // just alive), so requiring busy stops the green 'producing' claim on an idle node.
   if(!isReachableNode()) return false;
-  if(!(S.heartbeat&&S.heartbeat.running&&S.heartbeat.busy)) return false;
+  const heartbeat=heartbeatForScope();
+  if(!(heartbeat&&heartbeat.running&&heartbeat.busy)) return false;
   const noPersonas=!(S.liveByPersona&&S.liveByPersona.size);
   const noActs=!((S.interactions||[]).length);
   return noPersonas&&noActs;
@@ -1081,8 +1477,9 @@ function isWarming(){
 // not claim production.
 function isIdleAlive(){
   if(!isReachableNode()) return false;
-  if(!(S.heartbeat&&S.heartbeat.running)) return false;
-  if(S.heartbeat.busy) return false;
+  const heartbeat=heartbeatForScope();
+  if(!(heartbeat&&heartbeat.running)) return false;
+  if(heartbeat.busy) return false;
   const noPersonas=!(S.liveByPersona&&S.liveByPersona.size);
   const noActs=!((S.interactions||[]).length);
   return noPersonas&&noActs;
@@ -1119,11 +1516,12 @@ function connectDiscoveryStream(base,boot){
   // EventSource cannot set an Authorization header. Never move an operator token
   // into its URL: private nodes use authenticated status/live-artifact polling.
   if(tokenFor(url)){
-    S.streams.set(url,{pollOnly:true});
+    S.streams.set(url,{pollOnly:true,_base:String(base||'').replace(/\/$/,'')});
     log('stream',`${url} uses authenticated polling (token omitted from URL)`,true);
     return;
   }
   const es=new EventSource(url);
+  es._base=String(base||'').replace(/\/$/,'');
   S.streams.set(url,es);
   let liveArtifactQueue=Promise.resolve();
   const enqueueLiveArtifactFrame=(work)=>{
@@ -1133,17 +1531,16 @@ function connectDiscoveryStream(base,boot){
   };
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
   es.addEventListener('hello',(ev)=>{
-    try{ const d=JSON.parse(ev.data||'{}'); if(d.node_id) S.kernels.add(d.node_id); }catch(e){}
+    try{ const d=JSON.parse(ev.data||'{}'); if(d.node_id) noteKernel(d.node_id,'sse',base||location.origin,{reachable:true}); }catch(e){}
   });
   es.addEventListener('discovery_snapshot',async (ev)=>{
     try{
-      const snap=JSON.parse(ev.data||'{}'), keys=await keysFor(base,boot);
+      const snap=JSON.parse(ev.data||'{}');
+      const providers=Array.isArray(snap?.providers?.providers)?snap.providers.providers:[];
+      const verified=await verifiedRowsFromProviderIndex(providers,base,boot,'internet','SSE provider snapshot');
       let added=0;
-      for(const p of (snap.providers?.providers||[])){
-        const doc=await fetchJson(join(base,p.record_url));
-        const out=await verifiedRecordFromDoc(doc,keys,boot,base,'internet',p.record_url);
-        if(out.ok){ upsert(out.row); added++; }
-      }
+      for(const row of verified.rows) if(upsert(row)) added++;
+      log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
       if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
@@ -1151,7 +1548,8 @@ function connectDiscoveryStream(base,boot){
     try{
       const payload=JSON.parse(ev.data||'{}');
       const live=payload.telemetry||payload;
-      indexLiveTelemetry(base,live);   // refresh per-persona / per-env activity
+      const admitted=ingestLiveTelemetry(base,live,{source:'sse',eventId:ev.lastEventId||''});
+      if(!admitted.accepted) return;
       appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
       refreshLiveSection();   // stream into an open persona/env drawer, in place
     }
@@ -1188,6 +1586,17 @@ function connectDiscoveryStream(base,boot){
   });
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
 }
+function rebalanceDiscoveryStreams(){
+  const allowed=new Set(S.monitoringWindow||[]);
+  for(const [base,calls] of (S.activeModelCallsByBase||new Map())) if((calls||[]).length)
+    allowed.add(String(base==='@origin'?'':base).replace(/\/$/,''));
+  for(const [url,stream] of (S.streams||new Map())){
+    const base=String(stream?._base||'').replace(/\/$/,'');
+    if(allowed.has(base)) continue;
+    try{ stream?.close?.(); }catch(e){}
+    S.streams.delete(url);
+  }
+}
 
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
 async function loadTelemetry(base){
@@ -1199,7 +1608,7 @@ async function loadTelemetry(base){
     const key=e.key||`${e.kernel}|${e.trace}|${e.kind}|${e.t}`;
     if(S.eventKeys.has(key)) return;
     S.eventKeys.add(key);
-    delete e.key;
+    delete e.key; e._eventKey=key;
     S.events.push(e);
     added++;
   };
@@ -1218,7 +1627,7 @@ async function loadTelemetry(base){
     });
   };
   const ingestLive=(live)=>{
-    indexLiveTelemetry(base,live);   // per-persona / per-env activity index
+    if(!ingestLiveTelemetry(base,live,{source:'poll'}).accepted) return;
     const modelEvents=live?.kernel?.model_events||[];
     if(!Array.isArray(modelEvents)||!modelEvents.length) return;
     const generatedT=Date.parse(live.generated_at||'')||Date.now();
@@ -1250,6 +1659,8 @@ async function loadTelemetry(base){
   if(!added){ return; }
   // aggregate across kernels, re-sort by time, normalise inter-event gaps to a lively cadence
   S.events=(S.events||[]).sort((a,b)=>a.t-b.t);
+  if(S.events.length>NETWORK_LIMITS.telemetryTapeRows) S.events=S.events.slice(-NETWORK_LIMITS.telemetryTapeRows);
+  S.eventKeys=new Set(S.events.map((event)=>event._eventKey).filter(Boolean));
   let prev=S.events[0]?.t||0;
   S.events.forEach((e)=>{ const g=e.t-prev; prev=e.t; e.gap=Math.max(90,Math.min(900,g||300)); });
   if(S.events.length) S.events[0].gap=0;
@@ -1260,27 +1671,34 @@ async function loadTelemetry(base){
 // ---------- rich, navigable detail drawer (resolves deep docs) ----------
 const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
-  if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v); return v; }
+  if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v);
+  while(dcache.size>512) dcache.delete(dcache.keys().next().value); return v; }
 function indexRuntimeStatus(base,status){
   if(!status||typeof status!=='object') return;
   const baseKey=base||'@origin';
-  for(const [sid,item] of [...S.personaRuntimeById]){
-    if(item&&item._baseKey===baseKey) S.personaRuntimeById.delete(sid);
+  const kernelId=String(status.node_id||status.kernel_id||kernelForBase(base)||baseKey);
+  for(const [personaKey,item] of [...S.personaRuntimeById]){
+    if(item&&item._baseKey===baseKey) S.personaRuntimeById.delete(personaKey);
   }
   const calls=Array.isArray(status.active_model_calls)?status.active_model_calls:[];
   const byPersona=new Map();
   for(const call of calls){ const sid=_shortId(call&&call.persona_id); if(sid) byPersona.set(sid,call); }
   for(const persona of (Array.isArray(status.personas)?status.personas:[])){
     const sid=_shortId(persona&&persona.persona_id); if(!sid) continue;
-    S.personaRuntimeById.set(sid,{...persona,current_model_call:byPersona.get(sid)||null,_baseKey:baseKey});
+    const personaKey=_personaKey(kernelId,sid);
+    S.personaRuntimeById.set(personaKey,{...persona,current_model_call:byPersona.get(sid)||null,
+      _baseKey:baseKey,_kernel:kernelId,_receivedAt:Date.now()});
   }
   // /status is a second authoritative source for calls when the telemetry card is
   // private or delayed. It carries runtime state, not a signed discovery record.
   if(Array.isArray(status.active_model_calls)){
-    _indexActiveModelCalls(base,{kernel:{active_model_calls:status.active_model_calls}});
+    _indexActiveModelCalls(base,{kernel:{kernel_id:kernelId,active_model_calls:status.active_model_calls}},
+      {kernelId});
   }
 }
-function runtimeForPersona(pid){ return S.personaRuntimeById.get(_shortId(pid))||null; }
+function runtimeForPersona(value,kernel=''){ const ref=_personaRef(value,kernel), runtime=S.personaRuntimeById.get(ref.key)||null;
+  if(runtime&&Date.now()-(runtime._receivedAt||0)>30000){ S.personaRuntimeById.delete(ref.key); return null; }
+  return runtime; }
 // Node /status cache — 4s TTL so active calls and run discovery keep the 2-5s live cadence.
 const statusCache=new Map();
 async function fetchNodeStatus(base){
@@ -1320,7 +1738,8 @@ const kv=(l,v)=>`<div class="row"><span class="l2">${esc(l)}</span><span class="
 const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
 const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(txt)}</a>`;
-const findRecByDid=(pid)=>S.order.find((id)=>{ const r=S.recs.get(id); return r.did==='did:personaos:'+pid||r.did===pid; });
+const findRecByDid=(pid,kernel='')=>S.order.find((id)=>{ const r=S.recs.get(id);
+  return (!kernel||r?._kernel===kernel)&&(r?.did==='did:personaos:'+pid||r?.did===pid); });
 
 /* ---------- unsigned live workspace transport + exact-byte integrity ---------- */
 function _liveRunKey(base,run){ return liveArtifactRunKey(base,run,location.origin); }
@@ -1516,7 +1935,8 @@ function liveArtifactsHTML(base,run){
   const byWs=new Map(); for(const file of state.files.values()) (byWs.get(file.workspace_id)||byWs.set(file.workspace_id,[]).get(file.workspace_id)).push(file);
   const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
   const trees=workspaces.map((workspaceId)=>{ const w=wsMeta.get(workspaceId)||{}; const files=byWs.get(workspaceId)||[];
-    const pid=_shortId(w.persona_id||files[0]?.persona_id); const label=_nameFor(pid)||pid||workspaceId;
+    const pid=_shortId(w.persona_id||files[0]?.persona_id), kernel=snap.node_id||kernelForBase(base);
+    const label=_nameFor(pid,kernel)||pid||workspaceId;
     return `<section class="live-workspace"><div class="live-workspace-head"><span><b>${esc(label)}</b> <code>${esc(workspaceId)}</code></span><span class="${w.state==='model_call_active'?'ok':'l2'}">${esc((w.state||'run_active').replace(/_/g,' '))} · ${files.length} file${files.length===1?'':'s'}</span></div>`
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
@@ -1552,13 +1972,13 @@ function trustPanel(r){
     :(r.content_locator_ref?('locator '+esc(String(r.content_locator_ref).slice(0,24))):'— (discover-level metadata only)');
   let html=H('Trust · Ed25519')
     +kv('Verified in browser',`<span class="ok">${icon('check','ico-sm')} signature checked here</span>`)
-    +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}…</span>`:''}`)
+    +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}… · ${esc(doc.signing_key_status||'registry')}</span>`:''}`)
     +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
   // drive min-to-discover/read from the record's REAL access policy, not constants
   const minD=esc(a.min_to_discover||'discover');
   const minR=a.min_to_read?esc(a.min_to_read)
-    :(a.public_read||tier==='public'?'discover (public read)'
-      :a.federated_read?'read (federation grant)':'read (operator token / owner)');
+    :(r._readAuthorized?'read granted to this public viewer'
+      :'read required · current viewer is discover-only');
   html+=H('Access · '+esc(tier))+_ladderBar(r._effective_level||'discover')
     +kv('Visibility tier',`<span class="tier-pill t-${esc(tier)}">${esc(tier)}</span>`)
     +kv('Min to discover',minD)+kv('Min to read',minR);
@@ -1607,11 +2027,11 @@ function _liveFeed(models){
       +`<span><code>${esc(e.model)}</code>${e.role&&e.role!=='-'&&e.role!==p?` <span class="l2">${esc(e.role)}</span>`:''}</span></div>`;
   }).join('');
 }
-function renderPersonaLive(pid,profileFallback){
+function renderPersonaLive(pid,profileFallback,kernel=''){
   // profileFallback (the served persona card) lets the grid render for IDLE personas too
   // (state/tasks/reputation), since the drawer no longer duplicates those as kv rows.
-  const rt=runtimeForPersona(pid);
-  const d=S.liveByPersona.get(_shortId(pid))||(profileFallback||rt?{summary:profileFallback||rt||{},models:[]}:null);
+  const ref=_personaRef(pid,kernel), rt=runtimeForPersona(ref.key);
+  const d=S.liveByPersona.get(ref.key)||(profileFallback||rt?{summary:profileFallback||rt||{},models:[]}:null);
   if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
   const s=d.summary||profileFallback||rt||{}; let h='';
   // PER-04 / 09_PROTOCOLS §4.1: public tiles only (state, tasks, reputation);
@@ -1639,8 +2059,8 @@ function renderPersonaLive(pid,profileFallback){
   h+=`<div class="sublabel">Doing now</div>`+_liveFeed(d.models);
   return h;
 }
-function renderEnvLive(eid){
-  const d=S.liveByEnv.get(_shortId(eid)); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
+function renderEnvLive(eid,kernel=''){
+  const d=S.liveByEnv.get(_environmentRef(eid,kernel).key); if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
   let h='';
   const sp=d.spans||[];
   if(sp.length){
@@ -1663,7 +2083,7 @@ function _spanSummary(s){
 }
 function _envLaneLive(b){
   const sid=_shortId(b&&b.sid||b&&b.envId);
-  const live=S.liveByEnv.get(sid)||{};
+  const live=S.liveByEnv.get(_environmentKey(b?.kernel,sid))||{};
   const envRunning=_envRunningNow(b);
   const seen=new Set(), spans=[];
   for(const raw of [...(live.spans||[]),...(b&&b.spans||[])]){
@@ -1715,7 +2135,7 @@ const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judg
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
   'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED',
-  'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED']);
+  'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED','PERSONA_COMMUNICATION_INTENT_RECORDED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
   'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
 // VERIFY = independent judgement (reinforces trust = signature). Checked before
@@ -1750,6 +2170,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
   GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
   ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
+  PERSONA_COMMUNICATION_INTENT_RECORDED:'sent message',
   MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
@@ -1759,20 +2180,22 @@ const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace
 const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',tool:'tool',crossenv:'arrow',activity:'dot'};
 const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
-const _PERSONA_NAME=new Map();   // short id -> friendly name (filled from live summaries + records)
-function _nameFor(shortId){ return _PERSONA_NAME.get(shortId)||shortId.slice(0,10); }
+const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
+function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
+  return _PERSONA_NAME.get(ref.key)||ref.sid.slice(0,10); }
 // RUNNING NOW vs merely recent: a persona is "running" iff the node currently
 // reports an active model call for that persona. Coordination/model history can
 // make a card RECENT, but never RUNNING.
-function _runningNow(sid){ return _activeModelCallsForPersona(sid).length>0; }
-function _modelFresh(sid,models){
-  return _runtimeBusy() && !!(models&&models.length) && (Date.now()-(S.lastModelSeenAt?.get(sid)||0))<300000;
+function _runningNow(value,kernel=''){ return _activeModelCallsForPersona(value,kernel).length>0; }
+function _modelFresh(value,models,kernel=''){
+  const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
+  return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
 }
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
 // derive a persona's coordination ROLE from its summary/name (open, emergent —
 // no closed enum): verifier / producer-lead / integrator / specialist / member.
-function _coordRole(sid,s){
+function _coordRole(sid,s,kernel=''){
   // a COARSE, presentational coordination hint — derived only from honest signals.
   // The public projection carries no raw role, so we read the persona's declared
   // role/capability when present and otherwise classify by NAME keywords; we NEVER
@@ -1780,7 +2203,7 @@ function _coordRole(sid,s){
   // (that mislabels founders/operator-created personas).
   const declared=String(s.role||(s.capability_summary&&s.capability_summary[0])||'').toLowerCase();
   if(declared==='lead'||declared==='founder'||s.can_lead_cohorts===true) return 'lead';
-  const n=(_nameFor(sid)+' '+declared).toLowerCase();
+  const n=(_nameFor(sid,kernel)+' '+declared).toLowerCase();
   if(n.includes('verif')) return 'verifier';
   if(n.includes('integrat')) return 'integrator';
   if(n.includes('specialist')||s.born_specialist===true||declared==='specialist') return 'specialist';
@@ -1789,29 +2212,31 @@ function _coordRole(sid,s){
 }
 // per-persona "is fresh" detector for realtime streaming: did its model-event
 // count grow since the last render? (drives the slide-in animation + node pulse)
-function _personaGrew(sid,count){
+function _personaGrew(personaKey,count){
   S.pcardSeen=S.pcardSeen||new Map();
-  const prev=S.pcardSeen.get(sid); S.pcardSeen.set(sid,count);
+  const prev=S.pcardSeen.get(personaKey); S.pcardSeen.set(personaKey,count);
   return prev!=null && count>prev;
 }
-function renderPersonaCard(pid){
-  const sid=_shortId(pid); const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
+function renderPersonaCard(pid,kernel=''){
+  const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
+  const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
   const models=d.models||[]; const last=models[models.length-1];
-  const rt=runtimeForPersona(sid)||{};
-  const activeCall=_activeModelCallsForPersona(sid).at(-1)||rt.current_model_call||null;
-  const name=s.name||_nameFor(sid); _PERSONA_NAME.set(sid,name);
-  const role=_coordRole(sid,s);
+  const rt=runtimeForPersona(personaKey)||{};
+  const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
+  const name=s.name||_nameFor(personaKey); _PERSONA_NAME.set(personaKey,name);
+  const role=_coordRole(sid,s,ref.kernel);
   const state=s.lifecycle_state||'';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
   // recent kernel.interactions naming this persona (so the hero stays alive on a
   // node that streams coordination but no model_events). Both are real telemetry.
-  const acts=(S.ixByPersona&&S.ixByPersona.get(sid))||[];
+  const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
   const recentAct=acts[acts.length-1];
   // live persona MESSAGES (cognition): the LLM's own recent outputs + lessons for THIS persona,
   // streamed straight onto the card (newest first) — the same data the THINK feed shows.
   // DEDUP consecutive identical _msg (the fixture/real loops emit identical back-to-back
   // outputs) BEFORE the on-card budget so the wall shows two DISTINCT recent messages.
-  const _cogAll=(S.interactions||[]).filter((e)=>e.scope==='cognition'&&_shortId(e.actor_id)===sid);
+  const _cogAll=(S.interactions||[]).filter((e)=>e.scope==='cognition'
+    &&_eventPersonaKey(e,e.actor_id)===personaKey);
   const _cogDedup=[]; for(const e of _cogAll){ const p=_cogDedup[_cogDedup.length-1]; if(!p||p._msg!==e._msg) _cogDedup.push(e); }
   const cogMsgs=_cogDedup.slice(-2).reverse();
   // CARD/FEED freshness decoupled from token arrival: track the newest cognition _key
@@ -1819,19 +2244,19 @@ function renderPersonaCard(pid){
   // growth no longer false-flashes the unchanged top message).
   S.pcCogSeen=S.pcCogSeen||new Map();
   const _topCogKey=cogMsgs[0]?cogMsgs[0]._key:'';
-  const _cogFresh=!!_topCogKey && S.pcCogSeen.get(sid)!==_topCogKey;
-  S.pcCogSeen.set(sid,_topCogKey);
+  const _cogFresh=!!_topCogKey && S.pcCogSeen.get(personaKey)!==_topCogKey;
+  S.pcCogSeen.set(personaKey,_topCogKey);
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   // HONEST recency: a model-bearing card decays to idle once its model events stop
   // arriving (5-min window) instead of staying green forever via the sticky models[]
   // carry-forward. Liveness = model events seen recently OR a fresh coordination act.
-  const modelFresh=_modelFresh(sid,models);
-  const recent=modelFresh||actFresh;
-  const running=_runningNow(sid);   // mid model-call THIS moment — the one truly working
+  const modelFresh=_modelFresh(personaKey,models);
+  const recent=!d.stale&&(modelFresh||actFresh);
+  const running=!d.stale&&_runningNow(personaKey);   // mid model-call THIS moment — the one truly working
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
-  const actTally=(S.ixCountBySid&&S.ixCountBySid.get(sid))||0;
-  const grew=_personaGrew(sid,models.length+actTally);
+  const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
+  const grew=_personaGrew(personaKey,models.length+actTally);
   // Card content (UX): the useful signal is WHAT it's doing now + WHAT it produced/learned
   // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
   let doingHTML, glance='';
@@ -1881,8 +2306,9 @@ function renderPersonaCard(pid){
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
   const dotCls=running?'run':(recent?'on':'off');
-  const statusBadge=running
-    ? '<span class="pc-run">MODEL CALL</span>'
+  const statusBadge=d.stale
+    ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'STALE'}</span>`
+    : running ? '<span class="pc-run">MODEL CALL</span>'
     : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
       :rt.task_execution_state==='run_participant'?'<span class="pc-recent">RUN ACTIVE</span>'
       :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
@@ -1891,15 +2317,15 @@ function renderPersonaCard(pid){
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
-  const lastSeen=Math.max(S.lastModelSeenAt?.get(sid)||0, recentAct?._t||0, cogMsgs[0]?._t||0, toolAct?._t||0);
+  const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, cogMsgs[0]?._t||0, toolAct?._t||0);
   if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
-  return `<div class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" role="button" tabindex="0" title="open ${esc(name)}">`
+  return `<div class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
     +`<span class="pc-name">${esc(name)}</span>`
     +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
     +statusBadge
     +lifecycleBadge
-    +`<button class="pc-follow" data-follow="${esc(sid)}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
+    +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
     +`<div class="pc-doing">${doingHTML}</div>`
     +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?icon('warn','ico-sm'):icon('tool','ico-sm')} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
     +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>{
@@ -1914,15 +2340,15 @@ function renderPersonaCard(pid){
 
 // ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
 // Honest topology: PersonaOS coordination is KERNEL-MEDIATED (the kernel routes
-// candidate→verify→accept), so the kernel is the hub and personas are spokes; the
-// persona↔persona CHORDS overlay who-coordinates-with-whom, derived from the cohort
-// the kernel relays within one env scope. Edges/nodes PULSE when a fresh interaction
-// names that persona (from kernel.interactions).
+// candidate→verify→accept), so the kernel is the hub and personas are spokes.
+// Persona↔persona chords exist only for events that explicitly name both endpoints.
+// Edges/nodes pulse only for fresh interactions from kernel telemetry.
 function _hotPersonas(){
-  const hot=new Set();
-  for(const e of (S.interactions||[]).slice(-10)){
-    if(e.actor_kind==='persona'&&e.actor_id) hot.add(_shortId(e.actor_id));
-    for(const a of (e.affected||[])) if(a.kind==='persona') hot.add(_shortId(a.id));
+  const hot=new Set(), now=Date.now(), recent=(S.interactions||[])
+    .filter((e)=>e._t>0&&now-e._t<=5*60*1000&&e._t-now<30000).slice(-10);
+  for(const e of recent){
+    if(e.actor_kind==='persona'&&e.actor_id) hot.add(_eventPersonaKey(e,e.actor_id));
+    for(const a of (e.affected||[])) if(a.kind==='persona') hot.add(_eventPersonaKey(e,a.id));
   }
   return hot;
 }
@@ -1932,92 +2358,32 @@ function _hotPersonas(){
 // midpoint lands on the core and that normal collapses — fall back to the chord's own
 // perpendicular so the chord still arcs clear instead of slicing straight through the core.
 function _chordCtl(ax,ay,bx,by,bow){
-  const cx=500,cy=100, mx=(ax+bx)/2, my=(ay+by)/2;
+  const cx=600,cy=120, mx=(ax+bx)/2, my=(ay+by)/2;
   let nx=mx-cx, ny=my-cy; let nl=Math.hypot(nx,ny);
   if(nl<6){ nx=-(by-ay); ny=(bx-ax); nl=Math.hypot(nx,ny)||1; bow=Math.max(bow,84); }   // degenerate (opposite nodes) → chord perpendicular + force a core-clearing bow (apex stays clear of the r=34 ring)
   nx/=nl; ny/=nl;
   return {qx:+(mx+nx*bow).toFixed(1), qy:+(my+ny*bow).toFixed(1)};
 }
-// kernel-RELAY acts: the kernel routing coordination AMONG the personas of one
-// environment scope. These carry exactly ONE affected persona (the relay target), so
-// no single act names two personas — but grouped by scope_id they reveal the cohort the
-// kernel is shuttling messages between. This is the honest persona↔persona channel on a
-// 100%-kernel-mediated substrate (verified: real telemetry emits 0 actor→affected pairs).
-const RELAY_KINDS=new Set(['ATTENTION_ALLOCATED','COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','VERIFIER_VERDICT']);
-const _COORD_WINDOW_MS=900000;   // chords reflect CURRENT relay (≈ active-run span), not all-time membership
-// the graph-persona(s) an act puts on a scope: a kernel relay act → its affected persona;
-// a persona's own act on the scope → that actor. Either way, scoped to personas on the graph.
-function _scopePersonas(e,posOf,out){
-  if(RELAY_KINDS.has(e.kind)) for(const af of (e.affected||[])){
-    if(af.kind!=='persona') continue; const b=_shortId(af.id); if(b&&posOf.has(b)) out.add(b); }
-  if(e.actor_kind==='persona'){ const a=_shortId(e.actor_id); if(a&&posOf.has(a)) out.add(a); }
-}
-// the persona MOST-RECENTLY relayed on `scopeId` other than `exceptSid`, restricted to
-// personas that have a rendered graph position — the live peer a kernel-mediated hop should
-// travel TO/FROM, so a routed message visibly moves person→person, not only person→hub.
-// Scans the WHOLE ring newest-first but only env-scope rows, because the recent tail is
-// dominated by model-call rows that carry no env peer; returns null when none shares the scope.
-function _scopePeer(scopeId,exceptSid){
-  if(!scopeId) return null;
-  const onGraph={has:(sid)=>S.nodePos.has(sid)};
-  const all=(S.interactions||[]);
-  for(let i=all.length-1;i>=0;i--){ const e=all[i];
-    if(e.scope!=='environment'||e.scope_id!==scopeId) continue;
-    const ps=new Set(); _scopePersonas(e,onGraph,ps);
-    for(const sid of ps) if(sid!==exceptSid) return sid;
-  }
-  return null;
-}
-// persona↔persona traffic over the recent interaction window — the standing
-// coordination topology (WHO coordinates with WHOM). TWO honest sources, merged:
-//  (1) DIRECT actor→affected acts (one act naming two graph personas) — the strongest
-//      signal, kept as a HIGHER-WEIGHT overlay for the day the node emits them.
-//  (2) CO-RELAY co-membership: kernel-relay acts (ATTENTION/COORDINATION/VERDICT) +
-//      persona acts on the SAME environment scope_id, grouped over the live window — the
-//      distinct graph-personas the kernel is shuttling among one scope are linked
-//      star-through-the-busiest (the most-relayed persona is the hub of its cohort, the
-//      others spoke off it), n = co-relay count. This is the ONLY channel that renders on
-//      real (fully kernel-mediated) telemetry. Pairs are canonical-keyed ("a|b", a<b) so
-//      both directions sum into one chord. O(ring≤400), filtered by scope, once per render.
+// Exact persona↔persona traffic over the recent interaction window. A chord
+// exists only when one event names an actor persona and a recipient/affected
+// persona. Shared scope/cohort membership is intentionally NOT converted into
+// a message edge; otherwise the UI would claim a flow the telemetry never sent.
 function _personaTraffic(posOf){
   const map=new Map();
-  const bump=(a,b,n,direct)=>{ if(!a||!b||a===b) return;
-    const key=a<b?a+'|'+b:b+'|'+a;
-    const t=map.get(key)||map.set(key,{a:key.slice(0,key.indexOf('|')),b:key.slice(key.indexOf('|')+1),n:0,direct:false}).get(key);
-    t.n+=n; if(direct) t.direct=true; };
-  const now=Date.now();
-  const all=(S.interactions||[]);
-  // (2) co-relay co-membership grouped by environment scope_id. Scan the WHOLE ring for
-  // env-scope rows (the recent tail is all model-call rows that carry no env peer, so a
-  // last-N slice would miss every relay act). The relay BURST happens once at run start, then
-  // the cohort grinds model calls for tens of minutes — so we gate on the SCOPE's own latest
-  // activity (any act on it, incl. the personas' work acts), NOT each relay's age. A cohort
-  // whose env is still producing acts is still coordinating; one gone quiet fades out.
-  const byScope=new Map();    // scope_id -> Map(sid -> relay count)
-  const scopeLast=new Map();  // scope_id -> ts of its most-recent act
-  for(const e of all){
-    if(e.scope!=='environment'||!e.scope_id) continue;
-    const t=e._t||0; if(t>(scopeLast.get(e.scope_id)||0)) scopeLast.set(e.scope_id,t);
-    const ps=new Set(); _scopePersonas(e,posOf,ps); if(!ps.size) continue;
-    const cm=byScope.get(e.scope_id)||byScope.set(e.scope_id,new Map()).get(e.scope_id);
-    for(const sid of ps) cm.set(sid,(cm.get(sid)||0)+1);
-  }
-  for(const [scopeId,cm] of byScope){
-    if((now-(scopeLast.get(scopeId)||0))>_COORD_WINDOW_MS) continue;   // gate: scope still active?
-    const ranked=[...cm.entries()].sort((x,y)=>y[1]-x[1]).map((e)=>e[0]);
-    if(ranked.length<2) continue;
-    const hub=ranked[0];   // busiest persona in the cohort = star centre
-    for(let i=1;i<ranked.length;i++) bump(hub,ranked[i],Math.min(cm.get(hub),cm.get(ranked[i])),false);
-  }
-  // (1) DIRECT actor→affected acts — higher-weight overlay (counts double, marks the channel).
-  // Bounded to the recent tail; these are rare on real data but dominate the chord when present.
-  for(const e of all.slice(-120)){
+  const bump=(a,b,n)=>{ if(!a||!b||a===b) return;
+    const ordered=a<b?[a,b]:[b,a], key=`${ordered[0]}\u0001${ordered[1]}`;
+    const t=map.get(key)||map.set(key,{a:ordered[0],b:ordered[1],n:0,direct:true}).get(key);
+    t.n+=n; };
+  const now=Date.now(), all=(S.interactions||[])
+    .filter((e)=>e._t>0&&now-e._t<=5*60*1000&&e._t-now<30000);
+  for(const e of all.slice(-NETWORK_LIMITS.interactionRows)){
     if(e.actor_kind!=='persona') continue;
-    const a=_shortId(e.actor_id); if(!a||!posOf.has(a)) continue;
-    for(const af of (e.affected||[])){
+    const a=_eventPersonaKey(e,e.actor_id); if(!a||!posOf.has(a)) continue;
+    const endpoints=[...(e.recipients||[]),...(e.affected||[])];
+    for(const af of endpoints){
       if(af.kind!=='persona') continue;
-      const b=_shortId(af.id); if(!b||b===a||!posOf.has(b)) continue;
-      bump(a,b,2,true);
+      const b=_eventPersonaKey(e,af.id); if(!b||b===a||!posOf.has(b)) continue;
+      bump(a,b,1);
     }
   }
   return map;
@@ -2033,41 +2399,96 @@ const _svg=(tag,attrs,cls)=>{ const e=document.createElementNS(SVGNS,tag);
 function renderCoordGraph(persons,totalPersons){
   const svg=$('#sysGraph'); if(!svg) return;
   const popN=(totalPersons!=null?totalPersons:persons.length);
-  const cx=500,cy=100,rx=432,ry=58;
-  // skeleton (created once): edges / axons / core / nodes layers
+  const cx=600,cy=120,rx=520,ry=78;
+  const discoveredKernelTotal=Math.max(S.globalKernels?.size||0,Number(S.globalTotal)||0,S.kernels?.size||0);
+  const implicitSingle=discoveredKernelTotal===1?[...(S.globalKernels||new Map()).keys()][0]||[...(S.kernels||[])][0]||'':null;
+  const effectiveFocus=S.kernelFocus||implicitSingle;
+  // Keyed layers survive the 5s refresh; their DOM cardinality is capped by the
+  // selected projection, never by total global population.
   if(!svg._built){ svg._built=true;
     svg.appendChild(_svg('g',{},'cg-edges'));
-    const links=_svg('g',{},'cg-links');        // persona↔persona layer (above hub spokes, below the core)
-    links.appendChild(_svg('g',{},'cg-chords'));    // resting chords — rebuilt via innerHTML each render
-    links.appendChild(_svg('g',{},'cg-linkfire'));  // directional fire pulses — PERSISTENT (keyed reuse, survive refresh)
+    const links=_svg('g',{},'cg-links');
+    links.appendChild(_svg('g',{},'cg-chords'));
+    links.appendChild(_svg('g',{},'cg-linkfire'));
     svg.appendChild(links);
     svg.appendChild(_svg('g',{},'cg-axons'));
-    const core=_svg('g',{transform:`translate(${cx},${cy})`},'core');
-    core.appendChild(_svg('title',{}));   // native hover tooltip for the kernel hub
-    core.appendChild(_svg('circle',{r:34},'core-ring'));
-    core.appendChild(_svg('circle',{r:28},'core-c'));
-    core.appendChild(_svg('text',{y:-2},'core-t')).textContent='KERNEL';
-    const cs=_svg('text',{y:13},'core-s'); core.appendChild(cs);
-    svg.appendChild(core); svg.appendChild(_svg('g',{},'cg-nodes'));
+    svg.appendChild(_svg('g',{},'cg-cores'));
+    svg.appendChild(_svg('g',{},'cg-nodes'));
     svg._edges=svg.querySelector('.cg-edges'); svg._chords=svg.querySelector('.cg-chords');
     svg._linkfire=svg.querySelector('.cg-linkfire'); svg._axons=svg.querySelector('.cg-axons');
-    svg._core=core; svg._nodes=svg.querySelector('.cg-nodes');
+    svg._cores=svg.querySelector('.cg-cores'); svg._nodes=svg.querySelector('.cg-nodes');
   }
+  const scopedHeartbeat=heartbeatForScope();
+  const beat=scopedHeartbeat?.interval_s?Math.max(2,+scopedHeartbeat.interval_s):5;
+  const upsertCore=(kernel,x,y,summary,{fresh=true,focused=false}={})=>{
+    let core=svg._cores.querySelector(`[data-kernel-core="${cssEsc(kernel)}"]`);
+    if(!core){ core=_svg('g',{},'core'); core.setAttribute('data-kernel-core',kernel);
+      core.setAttribute('role','button'); core.setAttribute('tabindex','0');
+      core.appendChild(_svg('title',{})); core.appendChild(_svg('circle',{r:36},'core-ring'));
+      core.appendChild(_svg('circle',{r:30},'core-c'));
+      core.appendChild(_svg('text',{y:-9},'core-t'));
+      core.appendChild(_svg('text',{y:5},'core-id'));
+      core.appendChild(_svg('text',{y:19},'core-s')); svg._cores.appendChild(core); }
+    core.setAttribute('transform',`translate(${x},${y})`);
+    core.setAttribute('class',`core${focused?' focused':''}${fresh?'':' core-offline'}`);
+    core.style.setProperty('--beat',beat+'s');
+    const short=String(kernel||'kernel').replace(/^kernel:/,'');
+    core.children[0].textContent=`${kernel} · ${summary}`;
+    core.children[3].textContent='NODE';
+    core.children[4].textContent=short.length>15?short.slice(0,14)+'…':short;
+    core.children[5].textContent=summary;
+    core.setAttribute('aria-label',`${kernel} — ${summary}. Select to inspect this node.`);
+    return core;
+  };
+  S.nodePos.clear();
+  const graphScope=$('#graphScope'), graphWindow=$('#graphWindow'), graphCap=$('#sysGraphCap');
+
+  // Global mode is kernel-level aggregation. Rendering even a sample of every
+  // kernel's personas would imply completeness and collapse at large scale;
+  // selecting a kernel drills to the exact persona/message view below.
+  if(!effectiveFocus){
+    const now=Date.now();
+    const rows=[...(S.globalKernels||new Map()).entries()].map(([kernel,info])=>{ const hasRoute=[...info.via]
+      .some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+      return {kernel,info,fresh:now-(info.lastSeen||0)<45000,active:kernelActivity(info),
+        reachable:info.meta?.reachable===false?false:(info.meta?.reachable===true||hasRoute)}; });
+    const window=selectPriorityWindow(rows,{limit:NETWORK_LIMITS.graphKernels,keyOf:(row)=>row.kernel,
+      priorityOf:(row)=>(row.active?1e8+row.active:0)+(row.fresh?1e6:0)+(row.reachable?1e5:0)+(Number(row.info.meta?.recordCount)||0)});
+    const n=window.items.length, coreIds=new Set();
+    window.items.forEach((row,i)=>{ const x=n<=1?cx:80+i*(1040/(n-1));
+      const records=Number(row.info.meta?.recordCount)||0;
+      const summary=row.active?`${row.active} running`:(records?`${compactCount(records)} records`:(row.reachable?'reachable':'no route'));
+      upsertCore(row.kernel,+x.toFixed(1),cy,summary,{fresh:row.fresh||row.reachable}); coreIds.add(row.kernel); });
+    [...svg._cores.children].forEach((core)=>{ if(!coreIds.has(core.getAttribute('data-kernel-core'))) core.remove(); });
+    svg._edges.innerHTML=''; svg._chords.innerHTML=''; svg._axons.innerHTML=''; svg._nodes.innerHTML=''; svg._linkfire.innerHTML='';
+    const total=Math.max(rows.length,Number(S.globalTotal)||0,S.kernels?.size||0);
+    if(graphScope) graphScope.textContent='GLOBAL NETWORK';
+    if(graphWindow) graphWindow.textContent=`${window.returned} of ${compactCount(total)} nodes`;
+    if(graphCap) graphCap.textContent='activity-prioritized node window · select a node to inspect environments, personas, exact status and messages';
+    return;
+  }
+
+  // Focused kernel: rank a bounded exact-persona window, then draw only direct
+  // actor→recipient chords from observed frames. The stage remains the accessible
+  // semantic list and can progressively reveal more cards.
+  const coreIds=new Set([effectiveFocus]);
+  const runningN=persons.filter((p)=>p.running).length, liveN=persons.filter((p)=>p.live).length;
+  const focusedInfo=S.globalKernels?.get(effectiveFocus), now=Date.now();
+  const focusedHasRoute=!!focusedInfo&&[...focusedInfo.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+  const focusedReachable=!!focusedInfo&&focusedInfo.meta?.reachable!==false
+    &&(focusedInfo.meta?.reachable===true||focusedHasRoute)&&now-(focusedInfo.lastSeen||0)<45000;
+  const coreSummary=runningN?`${runningN} running · ${compactCount(popN)} personas`
+    :(focusedReachable?`${liveN} recent · ${compactCount(popN)} personas`:`offline · ${compactCount(popN)} cached personas`);
+  upsertCore(effectiveFocus,cx,cy,coreSummary,{fresh:focusedReachable||runningN>0,focused:!!S.kernelFocus});
+  [...svg._cores.children].forEach((core)=>{ if(!coreIds.has(core.getAttribute('data-kernel-core'))) core.remove(); });
   const hot=_hotPersonas();
   const n=persons.length||1;
   persons.forEach((p,i)=>{ const ang=(-Math.PI/2)+(i*2*Math.PI/n);
     p.x=+(cx+Math.cos(ang)*rx).toFixed(1); p.y=+(cy+Math.sin(ang)*ry).toFixed(1);
-    S.nodePos.set(p.sid,{x:p.x,y:p.y}); });
-  // core: beat cadence from the heartbeat; caption = live/active count
-  const beat=S.heartbeat&&S.heartbeat.interval_s?Math.max(2,+S.heartbeat.interval_s):5;
-  svg._core.style.setProperty('--beat',beat+'s');
-  const _coreTitle=svg._core.querySelector('title');
-  if(_coreTitle) _coreTitle.textContent=`PersonaOS kernel — routes all persona coordination · heartbeat ${beat}s`;
-  const runningN=persons.filter((p)=>p.running).length;
-  const liveN=persons.filter((p)=>p.live).length;
-  svg._core.querySelector('.core-s').textContent=
-    runningN ? `${runningN} in a model call · ${popN} personas`
-             : `${liveN} recent · ${popN} personas`;
+    S.nodePos.set(p.key,{x:p.x,y:p.y,kernel:effectiveFocus}); });
+  if(graphScope) graphScope.textContent=String(effectiveFocus).replace(/^kernel:/,'');
+  if(graphWindow) graphWindow.textContent=`${persons.length} of ${compactCount(popN)} personas`;
+  if(graphCap) graphCap.textContent='exact actor→recipient links only · pulses travel observed direction · select a persona to follow';
   // edges (kernel spokes only) — safe to rebuild (no continuous anim). The spoke is
   // calm (live/idle); recent coordination is now carried by the chord layer + the
   // directional spoke PULSE, not by highlighting the hub spoke (that overstated the hub).
@@ -2080,30 +2501,30 @@ function renderCoordGraph(persons,totalPersons){
   // the graph. Stroke weight + opacity scale with traffic so the busiest channels read
   // loudest; the curve bows AWAY from the kernel (control point pushed outward from the
   // chord midpoint) so it never collides with the radial spokes or the central core.
-  const posOf=new Map(persons.map((p)=>[p.sid,p]));
+  const posOf=new Map(persons.map((p)=>[p.key,p]));
   const traffic=_personaTraffic(posOf);   // "a|b" -> {a,b,n}  (a<b canonical; n = recent acts over this channel)
   let lk='';
   for(const t of traffic.values()){
     const A=posOf.get(t.a), B=posOf.get(t.b); if(!A||!B) continue;
     const {qx,qy}=_chordCtl(A.x,A.y,B.x,B.y,18+Math.min(t.n,6)*4);
-    // DIRECT actor→affected channels (a single act named both) read louder than the
-    // co-relay co-membership channels — when the node ever emits them they dominate.
-    const w=((t.direct?1.4:1.1)+Math.min(t.n,8)*0.5).toFixed(2);   // weight by traffic (clamped)
-    const op=((t.direct?0.40:0.30)+Math.min(t.n,8)*0.06).toFixed(2);
-    lk+=`<path d="M${A.x} ${A.y} Q${qx} ${qy} ${B.x} ${B.y}" class="cl${t.direct?' cl-direct':''}" `
+    const w=(1.4+Math.min(t.n,8)*0.5).toFixed(2);
+    const op=(0.40+Math.min(t.n,8)*0.06).toFixed(2);
+    lk+=`<path d="M${A.x} ${A.y} Q${qx} ${qy} ${B.x} ${B.y}" class="cl cl-direct" `
        +`style="stroke-width:${w};opacity:${op}"/>`;
   }
   svg._chords.innerHTML=lk;   // resting chords only — fire pulses live in the sibling cg-linkfire layer
   // axons (persistent, one per sid kernel→persona) — fired imperatively by _fireEdge
-  const liveSids=new Set(persons.map((p)=>p.sid));
-  persons.forEach((p)=>{ let ax=svg._axons.querySelector(`[data-axon="${cssEsc(p.sid)}"]`);
-    if(!ax){ ax=_svg('line',{},'axon'); ax.setAttribute('data-axon',p.sid);
+  const liveKeys=new Set(persons.map((p)=>_domEntityKey(p.key)));
+  persons.forEach((p)=>{ const domKey=_domEntityKey(p.key);
+    let ax=svg._axons.querySelector(`[data-axon="${cssEsc(domKey)}"]`);
+    if(!ax){ ax=_svg('line',{},'axon'); ax.setAttribute('data-axon',domKey);
       ax.addEventListener('animationend',()=>ax.setAttribute('class','axon')); svg._axons.appendChild(ax); }
     ax.setAttribute('x1',cx); ax.setAttribute('y1',cy); ax.setAttribute('x2',p.x); ax.setAttribute('y2',p.y); });
-  [...svg._axons.children].forEach((ax)=>{ if(!liveSids.has(ax.getAttribute('data-axon'))) ax.remove(); });
+  [...svg._axons.children].forEach((ax)=>{ if(!liveKeys.has(ax.getAttribute('data-axon'))) ax.remove(); });
   // nodes — KEYED upsert so breathing persists; only touch what changed
-  persons.forEach((p)=>{ let g=svg._nodes.querySelector(`[data-gp="${cssEsc(p.sid)}"]`);
-    if(!g){ g=_svg('g',{},''); g.setAttribute('data-gp',p.sid);
+  persons.forEach((p)=>{ const domKey=_domEntityKey(p.key);
+    let g=svg._nodes.querySelector(`[data-gp="${cssEsc(domKey)}"]`);
+    if(!g){ g=_svg('g',{},''); g.setAttribute('data-gp',domKey); g.setAttribute('data-pid',p.sid);
       g.setAttribute('tabindex','0'); g.setAttribute('role','button');   // keyboard-focusable map node
       g.appendChild(_svg('title',{}));   // native SVG hover tooltip (full untruncated name — first child)
       g.appendChild(_svg('circle',{r:11},'gn-c'));
@@ -2112,7 +2533,7 @@ function renderCoordGraph(persons,totalPersons){
       g.appendChild(_svg('text',{y:4},'gn-role'));
       g.appendChild(_svg('text',{y:25},'gn-do'));
       svg._nodes.appendChild(g); }
-    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.sid)?' gn-hot':''}${S.follow===p.sid?' gn-followed':''}`;
+    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.key)?' gn-hot':''}${S.follow===p.key?' gn-followed':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
@@ -2122,11 +2543,11 @@ function renderCoordGraph(persons,totalPersons){
     const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[3].textContent!==nm) g.children[3].textContent=nm;
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[4].textContent!==rl) g.children[4].textContent=rl;
     const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[5].textContent!==dn) g.children[5].textContent=dn; });
-  [...svg._nodes.children].forEach((g)=>{ if(!liveSids.has(g.getAttribute('data-gp'))) g.remove(); });
+  [...svg._nodes.children].forEach((g)=>{ if(!liveKeys.has(g.getAttribute('data-gp'))) g.remove(); });
   // drop reused fire-pulse paths whose endpoints left the graph (keeps the persistent
   // linkfire layer from accumulating orphans referencing positions that no longer exist)
   [...svg._linkfire.children].forEach((p)=>{ const [f,tt]=(p.getAttribute('data-link')||'').split('>');
-    if(!liveSids.has(f)||!liveSids.has(tt)) p.remove(); });
+    if(!liveKeys.has(f)||!liveKeys.has(tt)) p.remove(); });
 }
 const cssEsc=(s)=>(window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).replace(/["\\]/g,'\\$&');
 
@@ -2136,13 +2557,13 @@ const cssEsc=(s)=>(window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s).repla
 // dir makes the honest kernel-mediated flow legible: 'out' = persona reporting BACK to the
 // kernel (dash travels persona→core); else (inbound) the kernel routing work TO the persona
 // (dash travels core→persona, the default). Same axon, opposite keyframe — no new geometry.
-function _fireEdge(sid,cls,dir){
-  if(RM) { _flashNode(sid,cls); return; }
+function _fireEdge(personaKey,cls,dir){
+  if(RM) { _flashNode(personaKey,cls); return; }
   const svg=$('#sysGraph'); if(!svg||!svg._axons) return;
-  const ax=svg._axons.querySelector(`[data-axon="${cssEsc(sid)}"]`); if(!ax) return;
+  const ax=svg._axons.querySelector(`[data-axon="${cssEsc(_domEntityKey(personaKey))}"]`); if(!ax) return;
   ax.setAttribute('class','axon'); void ax.getBoundingClientRect();
   ax.setAttribute('class','axon fire'+(dir==='out'?' out':'')+(cls&&cls!=='coord'?' fire-'+cls:''));
-  _flashNode(sid,cls);
+  _flashNode(personaKey,cls);
 }
 // fire a DIRECTIONAL traveling pulse along the persona→persona chord (actor→affected),
 // so live coordination shows not just THAT two personas talked but WHICH WAY. Reuses one
@@ -2153,7 +2574,7 @@ function _fireLink(fromSid,toSid,cls){
   const svg=$('#sysGraph'); if(!svg||!svg._linkfire) return;
   const A=S.nodePos.get(fromSid), B=S.nodePos.get(toSid); if(!A||!B) return;
   const {qx,qy}=_chordCtl(A.x,A.y,B.x,B.y,26);
-  const id=fromSid+'>'+toSid;
+  const id=_domEntityKey(fromSid)+'>'+_domEntityKey(toSid);
   let p=svg._linkfire.querySelector(`[data-link="${cssEsc(id)}"]`);
   if(!p){ p=_svg('path',{},'cl-fire'); p.setAttribute('data-link',id);
     p.addEventListener('animationend',()=>p.setAttribute('class','cl-fire')); svg._linkfire.appendChild(p); }
@@ -2163,7 +2584,7 @@ function _fireLink(fromSid,toSid,cls){
 }
 function _flashNode(sid,cls,failed){
   const svg=$('#sysGraph'); if(!svg||!svg._nodes) return;
-  const g=svg._nodes.querySelector(`[data-gp="${cssEsc(sid)}"]`); if(!g) return;
+  const g=svg._nodes.querySelector(`[data-gp="${cssEsc(_domEntityKey(sid))}"]`); if(!g) return;
   const base=g.getAttribute('class').replace(/ gn-flash| gn-verdict-\w+/g,'');
   // a VERIFY flash must read PASS-green vs FAIL-red HONESTLY — a rejected verdict
   // flashing green while the same act reads FAIL-red in the feed was a bug.
@@ -2194,11 +2615,12 @@ function drawVital(){
   if(c.width!==Math.round(w*dpr)){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); }
   const N=Math.max(80,Math.round(w));
   if(!_vitalBuf||_vitalBuf.length!==N){ _vitalBuf=new Array(N).fill(0).map(()=>({v:0,col:'#21d07a'})); }
-  const running=!S.heartbeat||S.heartbeat.running!==false;
+  const scopedHeartbeat=heartbeatForScope();
+  const running=!!scopedHeartbeat&&scopedHeartbeat.running!==false;
   // advance one sample/frame: baseline heartbeat blip + the strongest queued spike
   _vitalPhase+=1;
   let sample=0, col='#21d07a';
-  const beatFrames=Math.max(40,Math.round((S.heartbeat&&S.heartbeat.interval_s||5)*60/3)); // visible blip cadence
+  const beatFrames=Math.max(40,Math.round((scopedHeartbeat?.interval_s||5)*60/3)); // visible blip cadence
   if(running && !RM && _vitalPhase-_lastBeatAt>=beatFrames){ _lastBeatAt=_vitalPhase; sample=Math.max(sample,.34); }
   if(S.vitalSpikes.length){ const sp=S.vitalSpikes[S.vitalSpikes.length-1];
     sample=Math.max(sample,.55+sp.a*.4); col=sp.col; sp.a-=.5; if(sp.a<=0) S.vitalSpikes.pop(); }
@@ -2220,6 +2642,7 @@ function drawVital(){
 
 // ---- humane VITALS counters (replaces the exchange board-stats cluster) ----
 function updateVitalsCounters(){
+  expireLivePresence();
   const box=$('#stats'); if(!box) return;
   if(!box.dataset.built){ box.dataset.built='1';
     box.innerHTML=['auth','personas','active','envs','acts','signed'].map((k)=>{
@@ -2231,98 +2654,122 @@ function updateVitalsCounters(){
     }).join(''); }
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
     if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
-  let personasN=S.liveByPersona.size;
-  for(const id of S.order){ if(S.recs.get(id).kind==='persona') personasN=Math.max(personasN,1); }
-  const recPersona=S.order.filter((id)=>S.recs.get(id).kind==='persona').length;
-  personasN=Math.max(S.liveByPersona.size,recPersona);
+  const livePersona=[...S.liveByPersona.values()].filter((d)=>kernelIsFocused(d?.kernel)).length;
+  const recPersona=S.order.filter((id)=>{ const r=S.recs.get(id); return r?.kind==='persona'&&kernelIsFocused(r._kernel); }).length;
+  const personasN=Math.max(livePersona,recPersona);
   const now=Date.now();
   // RUNNING = personas currently named by active_model_calls.
   // Coordination-only traffic stays in acts/min so "running" always means LLM.
-  const active=(S.activeModelCallsByPersona&&S.activeModelCallsByPersona.size)||0;
-  const acts=(S.interactions||[]).filter((e)=>now-e._t<60000).length;
+  const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()].filter(([base])=>baseIsFocused(base==='@origin'?'':base));
+  const active=new Set(activeBases.flatMap(([base,calls])=>{ const kernel=kernelForBase(base==='@origin'?'':base);
+    return (calls||[]).map((call)=>{ const sid=_shortId(call?.persona_id);
+      return sid?_personaKey(call?.kernel_id||kernel,sid):''; }).filter(Boolean); })).size;
+  const acts=(S.interactions||[]).filter((e)=>now-e._t<60000&&kernelIsFocused(e._kernel||kernelForBase(e._base))).length;
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
   // unverified live interactions are NOT signed and must never inflate this.
-  const signed=S.recs.size;
+  const signed=S.order.filter((id)=>kernelIsFocused(S.recs.get(id)?._kernel)).length;
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   setV('#st-auth',hasOp?'read':'discover');
   const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp);
     authEl.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
-  setV('#st-personas',personasN); setV('#st-active',active); setV('#st-envs',S.envCount);
+  setV('#st-personas',compactCount(personasN)); setV('#st-active',compactCount(active)); setV('#st-envs',compactCount(S.envCount));
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
-  setV('#st-acts',acts); setV('#st-signed',signed.toLocaleString());
+  setV('#st-acts',compactCount(acts)); setV('#st-signed',compactCount(signed));
   // verify badge live count
   const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Live frames remain labelled unsigned transport telemetry.`;
   // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
-  const dot=$('#livedot'); if(dot){ const beating=!!(S.heartbeat&&S.heartbeat.running!==false);
+  const dot=$('#livedot'); if(dot){ const heartbeat=heartbeatForScope(); const beating=!!(heartbeat&&heartbeat.running!==false);
     dot.classList.toggle('beating',beating);
     dot.title=beating?'live — node heartbeat running':'no live node heartbeat';
     dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
-let _sysBusy=false;
+let _sysBusy=false, _sysQueued=false;
 async function refreshSystemView(){
-  const host=$('#sysEnvs'); if(!host||_sysBusy) return;
+  const host=$('#sysEnvs'); if(!host) return;
+  if(_sysBusy){ _sysQueued=true; return; }
   // re-entrancy guard (mirrors _cogBusy): the 5s interval fires this unconditionally,
   // and its many serial awaited fetches can overrun the interval on a slow link, so
   // invocations would otherwise overlap and stack duplicate fetches + full rebuilds.
   _sysBusy=true;
   try{
-  // structure: each discovered base → its envs (entities index) → members (env feed).
-  const bases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
+  // Structure: a bounded monitoring window of bases → their visible env feeds.
+  // Selected and actively-running bases rank first; the global population stays
+  // represented by aggregates in the navigator instead of being polled en masse.
+  const allBases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
+  const bases=allBases.filter((key)=>{ const base=key==='@origin'?'':key; return baseIsFocused(base); })
+    .sort((a,b)=>((S.activeModelCallsByBase?.get(b)||[]).length-(S.activeModelCallsByBase?.get(a)||[]).length))
+    .slice(0,NETWORK_LIMITS.monitoredBases);
   const envBlocks=[];          // {kernel, envId, sid, name, type, status, members[], run, recId, live}
   const assigned=new Set();
-  const bySid=new Map();        // sid -> envBlock, so a live feed + its discovered record merge into one lane
+  const bySid=new Map();        // kernel\0sid -> block; short ids alone may collide globally
+  const envKey=(kernel,sid)=>String(kernel||'@unknown')+'\u0000'+String(sid||'');
   // (1) LIVE-telemetry environments — rich: members, status, lineage spans.
-  for(const key of bases){ const base=key==='@origin'?'':key;
-    const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) continue;
+  const liveGroups=await Promise.all(bases.map(async(key)=>{ const base=key==='@origin'?'':key;
+    const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) return [];
     const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
-    for(const [eid,rel] of Object.entries(ent.environments||{})){
-      const feed=await fetchEntityFeed(base,rel); if(!feed) continue;
-      const members=(feed.members||[]).map(_shortId);
-      members.forEach((m)=>assigned.add(m));
+    const rows=Object.entries(ent.environments||{}).slice(0,NETWORK_LIMITS.environmentInitial*4);
+    return (await Promise.all(rows.map(async([eid,rel])=>{
+      const feed=await fetchEntityFeed(base,rel); if(!feed) return null;
+      const members=(feed.members||[]).map((member)=>{
+        const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
+        const memberSid=_shortId(raw); return memberSid?_personaKey(kernel,memberSid):'';
+      }).filter(Boolean);
       const sid=_shortId(eid);
-      const prev=bySid.get(sid);
-      if(prev){   // SAME env discovered via another base/alias (localhost vs 127.0.0.1
-                  // vs @origin vs ?peer) — merge into the one lane, never duplicate it.
-        if(members.length>prev.members.length){ prev.members=members; }
-        prev.spans=feed.spans||prev.spans;
-        prev.feedDoc=feed||prev.feedDoc;
-        if(!prev.status) prev.status=feed.status||''; if(!prev.type) prev.type=feed.env_type||'';
-        continue; }
-      const b={base,kernel,envId:eid,sid,name:feed.name||eid,
-        type:feed.env_type||'',status:feed.status||'',members,spans:feed.spans||[],
-        feedDoc:feed,run:null,recId:null,live:true};
-      bySid.set(sid,b); envBlocks.push(b);
-    }
+      return {base,kernel,envId:eid,sid,name:feed.name||eid,type:feed.env_type||'',
+        status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,recId:null,live:true};
+    }))).filter(Boolean);
+  }));
+  for(const rows of liveGroups) for(const b of rows){ const k=envKey(b.kernel,b.sid), prev=bySid.get(k);
+    b.members.forEach((m)=>assigned.add(m));
+    if(prev){ if(b.members.length>prev.members.length) prev.members=b.members;
+      prev.spans=b.spans||prev.spans; prev.feedDoc=b.feedDoc||prev.feedDoc;
+      if(!prev.status) prev.status=b.status||''; if(!prev.type) prev.type=b.type||''; continue; }
+    bySid.set(k,b); envBlocks.push(b);
   }
   // (2) Every DISCOVERED + Ed25519-verified environment record — so each public
   // environment can show on the stage even without a live feed. A record
   // that matches a live env enriches that lane (run id for the deliverable join);
   // one with no live feed becomes its own lane.
-  for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env') continue;
+  for(const id of S.order){ const r=S.recs.get(id); if(r.kind!=='env'||!kernelIsFocused(r._kernel)) continue;
     const sid=_envSid(r); const run=runForEnv(r); const exportRel=(r._links||{}).export;
     const manifestRel=(r._links||{}).artifact_manifest;
     const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
-    let b=bySid.get(sid);
+    const k=envKey(r._kernel,sid); let b=bySid.get(k);
     if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
       if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel;
       if(!b.artifactManifestRel) b.artifactManifestRel=manifestRel; }
     else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
         name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
         run,recId:id,live:false,exportRel,artifactManifestRel:manifestRel};
-      bySid.set(sid,b); envBlocks.push(b); }
+      bySid.set(k,b); envBlocks.push(b); }
   }
   // (2b) An env whose LIVE feed is absent (a federated env, or any env whose live
   // telemetry dropped after a node RESTART) still has its signed, durable export doc
   // (links.export → environments/<id>.json) carrying its full member ROSTER. Pull it
   // so the personas that worked in the env still SHOW in the env (members + count),
   // instead of a "no members" lane — the env's people don't vanish on restart.
+  S.observedEnvironmentCount=envBlocks.length;
+  const prefetchLimit=Math.min(512,Math.max(40,S.environmentWindow*3));
+  let prefetchWindow=selectPriorityWindow(envBlocks,{
+    query:S.q||'',limit:prefetchLimit,keyOf:(b)=>envKey(b.kernel,b.sid),
+    priorityOf:(b)=>(b.live?1e6:0)+(b.status==='active'?1e5:0)+Math.min(9999,b.members.length),
+    searchTextOf:(b)=>`${b.kernel} ${b.name} ${b.type} ${b.status} ${b.members.map((m)=>_nameFor(m,b.kernel)).join(' ')}`,
+  });
+  // A query may target an export-only persona whose roster is not loaded yet.
+  // Keep a bounded activity window as a legacy fallback; cursor-aware servers
+  // can answer that query directly without this client probing every env.
+  if(S.q&&!prefetchWindow.items.length) prefetchWindow=selectPriorityWindow(envBlocks,{
+    limit:prefetchLimit,keyOf:(b)=>envKey(b.kernel,b.sid),priorityOf:(b)=>(b.live?1e6:0)+b.members.length,
+  });
+  envBlocks.length=0; envBlocks.push(...prefetchWindow.items);
   await Promise.all(envBlocks.map(async(b)=>{
     let ed=null;
     if(b.exportRel) ed=await fetchEntityFeed(b.base,b.exportRel);
     if(ed&&Array.isArray(ed.members)&&!b.members.length){
       b.roster=ed.members;
-      b.members=ed.members.map((m)=>_shortId(m.persona_id||m.id||'')).filter(Boolean);
+      b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
+        return memberSid?_personaKey(b.kernel,memberSid):''; }).filter(Boolean);
       b.members.forEach((m)=>assigned.add(m));
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
@@ -2338,22 +2785,24 @@ async function refreshSystemView(){
   }));
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
-  const orphans=[...S.liveByPersona.keys()].filter((p)=>!assigned.has(p));
+  const orphans=[...S.liveByPersona.entries()].filter(([personaKey,d])=>{ const ref=_personaRef(personaKey);
+    return kernelIsFocused(d?.kernel||ref.kernel)&&!assigned.has(personaKey);
+  }).map(([personaKey])=>personaKey);
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
-    const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(sid,r.label); } }
+    const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(_personaKey(r._kernel,sid),r.label); } }
   // artifacts joined to their ENVIRONMENT first; run paths remain a compatibility
   // fallback for older exports that predate env-current artifact manifests.
   const artByEnv=new Map();
   const artByRun=new Map();
   for(const id of S.order){ const r=S.recs.get(id);
-    if(r.kind!=='artifact') continue;
-    const esid=envSidOfRecord(r); if(esid) (artByEnv.get(esid)||artByEnv.set(esid,[]).get(esid)).push(r);
-    const run=runOf(r); if(run) (artByRun.get(run)||artByRun.set(run,[]).get(run)).push(r); }
+    if(r.kind!=='artifact'||!kernelIsFocused(r._kernel)) continue;
+    const esid=envSidOfRecord(r), ek=envKey(r._kernel,esid); if(esid) (artByEnv.get(ek)||artByEnv.set(ek,[]).get(ek)).push(r);
+    const run=runOf(r), rk=envKey(r._kernel,run); if(run) (artByRun.get(rk)||artByRun.set(rk,[]).get(rk)).push(r); }
   const envArtifacts=(b)=>{
-    const byEnv=artByEnv.get(b.sid)||[];
+    const byEnv=artByEnv.get(envKey(b.kernel,b.sid))||[];
     if(byEnv.length) return byEnv;
-    return b.run?(artByRun.get(b.run)||[]):[];
+    return b.run?(artByRun.get(envKey(b.kernel,b.run))||[]):[];
   };
   const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
   const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
@@ -2361,13 +2810,38 @@ async function refreshSystemView(){
   // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
   // so the one persona actually working floats to the top of its lane instead of sitting in
   // raw roster order. Hoisted so the orphan lane sorts the same way.
-  const _rank=(m)=>{ const live=((S.liveByPersona.get(m)||{}).models||[]).length>0;
-    return _runningNow(m)?0:(live?1:2); };
+  const _rank=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
+    const live=((S.liveByPersona.get(ref.key)||{}).models||[]).length>0;
+    return _runningNow(ref.key)?0:(live?1:2); };
+  const _personaPriority=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
+    const d=S.liveByPersona.get(ref.key)||{}, rt=runtimeForPersona(ref.key)||{};
+    return (_runningNow(ref.key)?1e8:0)+(_rank(ref.key)===1?1e7:0)
+      +(rt.task_execution_state==='paused_participant'?5e6:0)+Math.min(9999,(S.ixCountBySid?.get(ref.key)||0)); };
+  const _personaSearch=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
+    const d=S.liveByPersona.get(ref.key)||{}, s=d.summary||{}, rt=runtimeForPersona(ref.key)||{};
+    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${s.name||''} ${s.role||''} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
   const laneHTML=(b)=>{
-    const cards=b.members.length?[...b.members].sort((a,c)=>_rank(a)-_rank(c)).map(renderPersonaCard).join('')
+    const groupKey=envKey(b.kernel,b.sid), encodedGroup=encodeURIComponent(groupKey);
+    const memberLimit=progressiveGroupLimit(groupKey,S.personaWindows,{
+      initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+    });
+    const query=String(S.q||'').trim();
+    const laneMatches=query&&`${b.kernel} ${b.name} ${b.type} ${b.status}`.toLowerCase().includes(query);
+    let memberWindow=selectPriorityWindow(b.members,{
+      query:laneMatches?'':query,limit:memberLimit,keyOf:(sid)=>sid,
+      priorityOf:(sid)=>_personaPriority(sid,b.kernel),searchTextOf:(sid)=>_personaSearch(sid,b.kernel),
+    });
+    if(query&&laneMatches&&!memberWindow.items.length) memberWindow=selectPriorityWindow(b.members,{
+      limit:memberLimit,keyOf:(sid)=>sid,priorityOf:(sid)=>_personaPriority(sid,b.kernel),
+    });
+    memberWindow.items.forEach((sid)=>S.visiblePersonaIds.add(_personaKey(b.kernel,sid)));
+    const hiddenMembers=Math.max(0,memberWindow.matched-memberWindow.returned);
+    const more=hiddenMembers?`<div class="persona-window-note"><span>showing ${memberWindow.returned} of ${memberWindow.matched} matching personas</span>`
+      +`<button type="button" class="window-more" data-more-personas="${esc(encodedGroup)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenMembers)} more</button></div>`:'';
+    const cards=b.members.length?(memberWindow.items.map((sid)=>renderPersonaCard(sid,b.kernel)).join('')+more)
       :'<div class="l2" style="padding:8px">awaiting members</div>';
     const manifestFiles=envManifestFiles(b);
     const arts=envArtifacts(b);
@@ -2382,7 +2856,7 @@ async function refreshSystemView(){
       return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
     const manifestBundleId=(b.artifactManifest&&b.artifactManifest.current_bundle_id)||'';
     const manifestChip=manifestFiles.length
-      ? `<span class="art-chip" data-envrec="${esc(b.sid)}" role="button" tabindex="0" title="${esc(manifestBundleId||'current workspace artifacts')}">${icon('box','ico-sm')} ${esc((manifestBundleId||'current workspace').slice(0,26))} · ${fileCount} file${fileCount>1?'s':''}</span>`
+      ? `<span class="art-chip" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${esc(manifestBundleId||'current workspace artifacts')}">${icon('box','ico-sm')} ${esc((manifestBundleId||'current workspace').slice(0,26))} · ${fileCount} file${fileCount>1?'s':''}</span>`
       : '';
     const chipItems=(bundles.length
       ? [...bundles, ...arts.filter((a)=>!(a._links&&a._links.bundle))]
@@ -2399,7 +2873,7 @@ async function refreshSystemView(){
       const stCls=isBundle&&stt?((stt==='shipped'||stt==='accepted')?' ds-ok':(stt==='deprecated'||stt==='rejected')?' ds-no':' ds-amber'):'';
       // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
       // (records have no .id field), or the click handler's S.recs.has() always misses.
-      const aid=a.record_id||a.card_id||a.id||'';
+      const aid=a._storeKey||a.record_id||a.card_id||a.id||'';
       const _al=a.label||'artifact';
       const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
       return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">${icon('box','ico-sm')} ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
@@ -2414,9 +2888,9 @@ async function refreshSystemView(){
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
     const memberTxt=b.members.length?` · ${b.members.length} member${b.members.length>1?'s':''}`:'';
-    return `<div class="env-lane" data-envsid="${esc(b.sid)}" style="--envhue:${_envHue(b.sid)}">`
+    return `<div class="env-lane" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
       +`<div class="env-head"><span class="env-badge">ENV</span>`
-      +`<span class="env-name" data-envrec="${esc(b.sid)}" role="button" tabindex="0">${esc(b.name)}</span>`
+      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
       +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
       +`${liveRow}<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
@@ -2441,23 +2915,51 @@ async function refreshSystemView(){
   // (4) SORT lanes by activity so the hero slot is a running/deliverable-bearing env,
   // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
-    + (b.members.some((m)=>_runningNow(m))?4:0)
-    + (b.members.some((m)=>(S.liveByPersona.get(m)||{}).models)?2:0)
+    + (b.members.some((m)=>_runningNow(m,b.kernel))?4:0)
+    + (b.members.some((m)=>(S.liveByPersona.get(_personaKey(b.kernel,m))||{}).models)?2:0)
     + (envHasArtifacts(b)?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
   // HIDE empty infrastructure lanes. An env with no members AND
   // no shipped deliverables is plumbing, not a workspace; showing it as an "awaiting members"
   // lane only clutters the personas-at-work view. Fall back to all only if hiding empties the stage.
   const _visible=_kept.filter((b)=>b.members.length>0 || envHasArtifacts(b));
-  envBlocks.length=0; envBlocks.push(...((_visible.length||orphans.length)?_visible:_kept));
-  S.envCount=envBlocks.length;
-  let html=envBlocks.map(laneHTML).join('');
+  const _baseCandidates=(_visible.length||orphans.length)?_visible:_kept;
+  const query=String(S.q||'').trim();
+  const _envMatches=(b)=>!query||`${b.kernel} ${b.name} ${b.type} ${b.status}`.toLowerCase().includes(query)
+    ||b.members.some((sid)=>_personaSearch(sid,b.kernel).toLowerCase().includes(query))
+    ||envArtifacts(b).some((a)=>`${a.label||''} ${a.description||''}`.toLowerCase().includes(query));
+  const envCandidates=query?_baseCandidates.filter(_envMatches):_baseCandidates;
+  const envWindow=selectPriorityWindow(envCandidates,{
+    limit:Math.min(120,S.environmentWindow),keyOf:(b)=>envKey(b.kernel,b.sid),priorityOf:_score,
+  });
+  envBlocks.length=0; envBlocks.push(...envWindow.items);
+  S.envCount=Math.max(S.observedEnvironmentCount||0,_baseCandidates.length);
+  S.visiblePersonaIds.clear(); S.renderedEnvironmentKeys=new Set(envBlocks.map((b)=>envKey(b.kernel,b.sid)));
+  let bodyHTML=envBlocks.map(laneHTML).join('');
   S.artsColdLoaded=true;   // first full lane pass done → from now on a NEW chip id mints
   if(orphans.length){
-    html+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
+    const orphanKey='@orphans', orphanLimit=progressiveGroupLimit(orphanKey,S.personaWindows,{
+      initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+    });
+    const orphanWindow=selectPriorityWindow(orphans,{
+      query,limit:orphanLimit,keyOf:(personaKey)=>personaKey,priorityOf:(personaKey)=>_personaPriority(personaKey),
+      searchTextOf:(personaKey)=>_personaSearch(personaKey),
+    });
+    orphanWindow.items.forEach((personaKey)=>S.visiblePersonaIds.add(personaKey));
+    const omitted=Math.max(0,orphanWindow.matched-orphanWindow.returned);
+    const more=omitted?`<div class="persona-window-note"><span>showing ${orphanWindow.returned} of ${orphanWindow.matched} matching personas</span>`
+      +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(orphanKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,omitted)} more</button></div>`:'';
+    if(orphanWindow.items.length) bodyHTML+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
       +`<span class="env-meta">personas not currently in a task environment</span></div>`
-      +`<div class="env-personas">${[...orphans].sort((a,c)=>_rank(a)-_rank(c)).map(renderPersonaCard).join('')}</div></div>`;
+      +`<div class="env-personas">${orphanWindow.items.map((personaKey)=>renderPersonaCard(personaKey)).join('')}${more}</div></div>`;
   }
+  const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
+    query?0:(S.observedEnvironmentCount||0)-envBlocks.length);
+  const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(S.visiblePersonaIds.size)} personas on screen</strong>`
+    +` <span class="scope-copy">· ${compactCount(S.envCount)} environments loaded · activity first</span></div>`
+    +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
+    +`</div>`:'';
+  let html=summary+bodyHTML;
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
   // viewer who just started a run sees honest "first candidate is coming", not a blank.
@@ -2470,24 +2972,28 @@ async function refreshSystemView(){
   // their in-flight breathing/flash animations instead of restarting every 5s.
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
   _applyFollow();
-  // build the graph node set from ACTIVE-env members + any live orphan personas
-  const graphIds=[...new Set([...envBlocks.flatMap((b)=>b.members),...orphans.filter((o)=>(S.liveByPersona.get(o)||{}).models)])];
-  const persons=graphIds.map((sid)=>{ const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
+  // Focused graph selection is independent of card pagination: running/recent
+  // personas remain visible even if their card is outside the current window.
+  const graphIds=[...new Set([..._baseCandidates.flatMap((b)=>b.members),...orphans])]
+    .filter((personaKey)=>kernelIsFocused(S.liveByPersona.get(personaKey)?.kernel||splitNetworkKey(personaKey)?.kernelId||S.kernelFocus));
+  const personRows=graphIds.map((personaKey)=>{ const ref=_personaRef(personaKey);
+    const sid=ref.sid, d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
     const models=d.models||[]; const last=models[models.length-1];
-    const acts=(S.ixByPersona&&S.ixByPersona.get(sid))||[];
+    const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
     const recentAct=acts[acts.length-1];
-    const recent=_modelFresh(sid,models)||!!(recentAct&&(Date.now()-recentAct._t)<90000);
-    return {sid,name:s.name||_nameFor(sid),role:_coordRole(sid,s),live:recent,
-      running:_runningNow(sid),
+    const recent=_modelFresh(personaKey,models)||!!(recentAct&&(Date.now()-recentAct._t)<90000);
+    return {key:personaKey,sid,kernel:d.kernel||ref.kernel,name:s.name||_nameFor(personaKey),
+      role:_coordRole(sid,s,ref.kernel),live:recent,running:_runningNow(personaKey),
       doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; });
-  // graph renders at most 14 nodes, but the caption must report the TRUE population
-  // (matching #st-personas), not the rendered cap.
-  const totalPersons=persons.length;
-  renderCoordGraph(persons.slice(0,14),totalPersons);
+  const graphWindow=selectPriorityWindow(personRows,{query:S.q||'',limit:NETWORK_LIMITS.graphPersonasFocused,
+    keyOf:(p)=>p.key,priorityOf:(p)=>(p.running?1e8:0)+(p.live?1e7:0)+(S.ixCountBySid?.get(p.key)||0),
+    searchTextOf:(p)=>`${p.sid} ${p.kernel} ${p.name} ${p.role} ${p.doing}`});
+  renderCoordGraph(graphWindow.items,personRows.length);
   renderInteractionStream();
   updateVitalsCounters();
   if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
-  }finally{ _sysBusy=false; }
+  }finally{ _sysBusy=false;
+    if(_sysQueued){ _sysQueued=false; Promise.resolve().then(()=>refreshSystemView()).catch(()=>{}); } }
 }
 // per-env accent hue (stable, from the design palette) for the lane border/badge
 const _ENV_HUES=['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2'];
@@ -2496,13 +3002,14 @@ function _envHue(sid){ let h=0; const s=String(sid||''); for(let i=0;i<s.length;
 // persona-follow: dim cards + feed rows that aren't the followed persona
 function _applyFollow(){
   const f=S.follow;
-  document.querySelectorAll('.pcard').forEach((el)=>{ el.classList.toggle('dimmed',!!f&&el.dataset.pcard!==f);
-    el.querySelector('.pc-follow')?.setAttribute('aria-pressed',String(el.dataset.pcard===f)); });
+  const fdom=_domEntityKey(f);
+  document.querySelectorAll('.pcard').forEach((el)=>{ el.classList.toggle('dimmed',!!f&&el.dataset.pkey!==fdom);
+    el.querySelector('.pc-follow')?.setAttribute('aria-pressed',String(el.dataset.pkey===fdom)); });
   const ff=$('#cfFollow'); if(ff){ ff.hidden=!f; const lbl=ff.querySelector('.dim'); if(lbl&&f) lbl.textContent='following '+_nameFor(f); }
   // light up the followed node in the constellation too (card/feed-initiated follows
   // should give the graph the same selected feedback as clicking a node directly).
   const g=$('#sysGraph'); if(g){ g.classList.toggle('has-follow',!!f);
-    g.querySelectorAll('[data-gp]').forEach((n)=>n.classList.toggle('gn-followed',n.dataset.gp===f)); }
+    g.querySelectorAll('[data-gp]').forEach((n)=>n.classList.toggle('gn-followed',n.dataset.gp===fdom)); }
 }
 
 // the live COORDINATION FEED — the heartbeat of who→whom:what. Newest slides in
@@ -2513,7 +3020,9 @@ function _applyFollow(){
 function renderInteractionStream(){
   const el=$('#sysStream'); if(!el) return;
   const flt=S.sysFlt||'all';
-  const all=(S.interactions||[]);
+  const now=Date.now(), leaseMs=5*60*1000;
+  const scoped=(S.interactions||[]).filter((e)=>kernelIsFocused(e._kernel||kernelForBase(e._base)));
+  const all=scoped.filter((e)=>e._t>0&&now-e._t<=leaseMs&&e._t-now<30000);
   S.ixSeen=S.ixSeen||new Set();   // _keys already painted (so only genuinely-new rows .fresh in)
   const rows=all.filter((e)=>{ const c=_ixClass(e.kind);
     if(flt==='all') return true;
@@ -2525,8 +3034,8 @@ function renderInteractionStream(){
     if(flt==='tool') return c==='tool';
     return true; }).slice(-120).reverse();
   const f=S.follow;
-  const matches=(e)=>!f|| (e.actor_kind==='persona'&&_shortId(e.actor_id)===f)
-    || (e.affected||[]).some((a)=>a.kind==='persona'&&_shortId(a.id)===f);
+  const matches=(e)=>!f|| (e.actor_kind==='persona'&&_eventPersonaKey(e,e.actor_id)===f)
+    || (e.affected||[]).some((a)=>a.kind==='persona'&&_eventPersonaKey(e,a.id)===f);
   let prevScope=null;
   // preserve the reader's scroll position across the wholesale innerHTML rebuild: newest
   // rows are prepended at top (rows are .reverse()'d), so when not pinned to the top, add
@@ -2534,8 +3043,9 @@ function renderInteractionStream(){
   const atTop=el.scrollTop<=4, prevH=el.scrollHeight, prevTop=el.scrollTop;
   el.innerHTML=rows.map((e)=>{
     const c=_ixClass(e.kind); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
-    const who=e.actor_kind==='persona'?_nameFor(_shortId(e.actor_id)):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
-    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(_shortId(a.id)):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
+    const eventKernel=_eventKernel(e);
+    const who=e.actor_kind==='persona'?_nameFor(e.actor_id,eventKernel):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
+    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(a.id,eventKernel):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
     const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
     const fresh=!S.ixSeen.has(e._key); if(fresh) S.ixSeen.add(e._key);
     // thread spine when this row shares a real scope_id with the one above it
@@ -2579,7 +3089,7 @@ function renderInteractionStream(){
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
-    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity yet — fund a mission to watch personas coordinate.</li>';
+    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity in the last 5 minutes — fund or resume a mission to watch personas coordinate.</li>';
   })();
   if(!atTop) el.scrollTop=prevTop+(el.scrollHeight-prevH);
   // headline count must match what the reader sees: the grand total only for the
@@ -2587,7 +3097,7 @@ function renderInteractionStream(){
   const r=$('#sysStreamRate'); if(r){
     const narrowed=(flt!=='all')||!!f;
     const shown=f?rows.filter(matches).length:rows.length;
-    r.textContent=narrowed?`${shown} of ${all.length} acts`:`${all.length} live acts`;
+    r.textContent=narrowed?`${shown} of ${all.length} recent acts`:`${all.length} recent acts · 5m window`;
   }
   // self-filter so an active search query keeps filtering the feed even when this is
   // called directly (tab-switch / follow toggle / cognition merge), not only via the 5s caller.
@@ -2732,13 +3242,14 @@ function renderThinkingRedacted(doc){
 async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
-  const want=S.drawerThinkPid;
-  const t=await fetchJson(join(S.drawerLiveBase||'',`personas/${encodeURIComponent(_shortId(want))}/thinking`));
-  if(S.drawerThinkPid!==want) return;   // drawer navigated away mid-fetch
+  const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
+  const t=await fetchJson(join(wantBase,`personas/${encodeURIComponent(_shortId(want))}/thinking`));
+  if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
-  if(t&&t.schema==='personaos-persona-thinking/1'){ el2.innerHTML=renderThinking(t); return; }
-  const doc=S.drawerLiveFeed?await fetchEntityFeed(S.drawerLiveBase||'',S.drawerLiveFeed):null;
-  if(S.drawerThinkPid!==want) return;
+  if(t&&t.schema==='personaos-persona-thinking/1'&&(!t.persona_id||_shortId(t.persona_id)===_shortId(want))){
+    el2.innerHTML=renderThinking(t); return; }
+  const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
+  if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el3=$('#thinksec'); if(el3) el3.innerHTML=renderThinkingRedacted(doc);
 }
 // LIVE persona MESSAGES (operator-tier): poll active personas' cognition surface and merge
@@ -2796,32 +3307,53 @@ async function streamPersonaCognition(){
   if(_cogBusy) return;
   _cogBusy=true;
   try{
-    S.cogBaseFor=S.cogBaseFor||new Map();   // sid -> the base that served its thinking (sticky)
+    S.cogBaseFor=S.cogBaseFor||new Map();   // kernel-qualified persona key -> API base
     // The bases that actually serve the personaos API are the ones that streamed LIVE telemetry
     // (the cards render from those) — NOT necessarily a discovery record's _base (which may be an
     // IPFS/alias host that doesn't serve the API). Probe telemetry bases first, then record bases.
-    const apiBases=[...new Set([
-      ...[...(S.liveTel?S.liveTel.keys():[])].map((k)=>k==='@origin'?'':k),
-      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona').map((r)=>r._base||''),
-      '',
-    ])];
-    // Stream for the personas actually SHOWN (live telemetry) plus any discovered persona records.
-    const sids=new Set([...(S.liveByPersona?S.liveByPersona.keys():[])]);
-    for(const id of (S.order||[])){ const r=S.recs.get(id);
-      if(r&&r.kind==='persona') sids.add(_shortId(r.did||r.id||'')); }
-    const list=[...sids].filter(Boolean).slice(0,24);   // cover specialists/born personas, not just the first few
+    const baseCandidates=[
+      ...[...(S.liveTel?S.liveTel.keys():[])].map((k)=>({base:k==='@origin'?'':k,
+        active:(S.activeModelCallsByBase?.get(k)||[]).length>0,focused:!!S.kernelFocus&&baseIsFocused(k==='@origin'?'':k)})),
+      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona'&&kernelIsFocused(r._kernel)).map((r)=>({base:r._base||''})),
+      {base:''},
+    ];
+    const apiBases=selectMonitoringBases(baseCandidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64}).bases;
+    // Visible, running and recent personas outrank the rest. This selector scans
+    // the bounded cache once and retains only the cognition polling window.
+    function* cognitionCandidates(){
+      for(const personaKey of (S.visiblePersonaIds||[])){ const ref=_personaRef(personaKey);
+        yield {...ref,selected:true,base:S.liveByPersona.get(personaKey)?.base||''}; }
+      for(const [personaKey,d] of (S.liveByPersona||new Map())) if(kernelIsFocused(d?.kernel)){
+        const ref=_personaRef(personaKey); yield {...ref,base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
+      for(const id of (S.order||[])){ const r=S.recs.get(id);
+        if(r&&r.kind==='persona'&&kernelIsFocused(r._kernel)){ const ref=_personaRef(r.did||r.id||'',r._kernel);
+          yield {...ref,base:r._base||''}; } }
+    }
+    const list=selectPriorityWindow(cognitionCandidates(),{limit:NETWORK_LIMITS.cognitionPersonas,
+      keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
+      searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items.filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
-    for(const sid of list){
-      // sticky base first (avoids re-probing every poll), then the candidate API bases
-      const order=[...new Set([S.cogBaseFor.get(sid), ...apiBases].filter((b)=>b!==undefined))];
+    for(const candidate of list){ const {key:personaKey,sid,kernel}=candidate;
+      // Never probe another kernel for a colliding short id. A sticky route is
+      // retained only while it still resolves to this persona's owning kernel.
+      const routes=[S.cogBaseFor.get(personaKey),candidate.base,
+        ...apiBases.filter((base)=>kernelForBase(base)===kernel),
+        ...[...(S.globalKernels?.get(kernel)?.bases||[])]];
+      const order=[...new Set(routes.filter((b)=>b!==undefined)
+        .map((b)=>String(b==='@origin'?'':b).replace(/\/$/,'')))]
+        .filter((base)=>kernelForBase(base)===kernel || (!!base&&base===candidate.base));
       let t=null, usedBase='';
       for(const base of order){
         // _shortId strips the did:/persona: PREFIX (it is NOT a length truncation), giving the
         // bare ULID the /thinking endpoint resolves for BOTH founder AND born specialists.
         // Do NOT use the prefixed persona_id: encodeURIComponent turns its ':' into %3A → 404,
         // which is exactly why born ('persona:<ulid>') personas stopped streaming.
-        const r=await fetchJson(join(base,`personas/${encodeURIComponent(sid)}/thinking`));
-        if(r && r.schema==='personaos-persona-thinking/1'){ t=r; usedBase=base; S.cogBaseFor.set(sid,base); break; }
+        const endpoint=join(base,`personas/${encodeURIComponent(sid)}/thinking`);
+        if(!tokenFor(endpoint)) continue;
+        const r=await fetchJson(endpoint);
+        if(r && r.schema==='personaos-persona-thinking/1'
+            && (!r.persona_id||_shortId(r.persona_id)===sid)){
+          t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
       }
       if(!t) continue;
       const rows=[];
@@ -2832,11 +3364,11 @@ async function streamPersonaCognition(){
         // KEY on the OUTPUT TIMESTAMP (not a content prefix) — distinct candidates often
         // share a boilerplate prefix (#!/usr/bin/env python3, imports…), so a prefix key
         // collapsed them into one and the feed never advanced. The timestamp is unique.
-        const key=`cog|${sid}|${row.kind}|${row.at||''}|${msg.length}`;
+        const key=`cog|${personaKey}|${row.kind}|${row.at||''}|${msg.length}`;
         if(S.ixKeys.has(key)) continue; S.ixKeys.add(key); added++;
         const preview=row.kind==='LLM_LESSON'?('learned — '+msg):_cogPreview(msg);
         S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:'cognition',
-          scope_id:'',at:'',_base:usedBase,_t:Date.parse(row.at||'')||Date.now(),_key:key,
+          scope_id:'',at:'',_base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
           _msg:preview.slice(0,200),_rationale:msg,
           _ctype:row.kind==='LLM_LESSON'?'think':_cogType(msg)});
       }
@@ -2857,13 +3389,15 @@ function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
   const fallback=()=>{ const el2=$('#livesec'); if(!el2) return;
-    el2.innerHTML=S.drawerLiveKind==='persona'?renderPersonaLive(S.drawerLiveId):renderEnvLive(S.drawerLiveId); };
+    el2.innerHTML=S.drawerLiveKind==='persona'
+      ?renderPersonaLive(S.drawerLiveId,null,S.drawerLiveKernel)
+      :renderEnvLive(S.drawerLiveId,S.drawerLiveKernel); };
   if(S.drawerLiveFeed){
     // capture the target before the async fetch: if the drawer navigated away
     // meanwhile, a slow response must never paint entity A into entity B's view.
-    const wantFeed=S.drawerLiveFeed, wantId=S.drawerLiveId;
+    const wantFeed=S.drawerLiveFeed, wantId=S.drawerLiveId, wantKernel=S.drawerLiveKernel;
     fetchEntityFeed(S.drawerLiveBase||'',wantFeed).then((doc)=>{
-      if(S.drawerLiveFeed!==wantFeed||S.drawerLiveId!==wantId) return;
+      if(S.drawerLiveFeed!==wantFeed||S.drawerLiveId!==wantId||S.drawerLiveKernel!==wantKernel) return;
       const el2=$('#livesec'); if(!el2) return;
       if(doc&&doc.schema==='personaos-persona-telemetry/1') el2.innerHTML=renderPersonaFeedDoc(doc);
       else if(doc&&doc.schema==='personaos-env-telemetry/1') el2.innerHTML=renderEnvFeedDoc(doc);
@@ -2902,7 +3436,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
-  const _liveModels=(S.liveByPersona.get(_shortId(pid||r.did))||{}).models||[];
+  const _liveModels=(S.liveByPersona.get(_personaKey(r._kernel,pid||r.did))||{}).models||[];
   if(_liveModels.length) html+=kv('Model',_modelSummary(_liveModels));
   if(ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
   if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
@@ -2921,9 +3455,9 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
   // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
-  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveBase=base;
+  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps)}</div>`;
+  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
   // transition timeline for everyone else. Streams on the live cadence.
@@ -2964,7 +3498,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
     +kv('Lineage events',S0(ld.event_count));
   // MODEL-PER-ROLE: the distinct models in use across this environment's personas
   // (the env's own model_events) — what THIS workspace is actually running on.
-  const _envLiveModels=(S.liveByEnv.get(_shortId(d.environment_id||r.did))||{}).models||[];
+  const _envLiveModels=(S.liveByEnv.get(_environmentKey(r._kernel,d.environment_id||r.did))||{}).models||[];
   if(_envLiveModels.length) html+=kv('Models in use',_modelSummary(_envLiveModels));
   if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
   // THE PLAN — the mission charter this environment exists to pursue (objectives,
@@ -3000,12 +3534,12 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   if(roster.length){
     html+=H(`Members (${roster.length})`);
     html+=roster.map((m)=>{
-      const rid=findRecByDid(m.persona_id)||findRecByDid('did:personaos:'+m.persona_id);
+      const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
       const label=rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id);
       const active=m.active!==false;
       // the model this member is running on (its latest live model selection) — so the
       // roster shows WHO is on WHICH model, not just who is a member.
-      const lm=(S.liveByPersona.get(_shortId(m.persona_id))||{}).models;
+      const lm=(S.liveByPersona.get(_personaKey(r._kernel,m.persona_id))||{}).models;
       const mdl=lm&&lm.length?lm[lm.length-1].model:'';
       return `<div class="grant">${label}<span class="l2">${mdl?`<code>${esc(mdl)}</code> · `:''}<span class="${active?'ok':'dim'}">${active?'active':'departed'}</span></span></div>`;
     }).join('');
@@ -3019,9 +3553,9 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   // streamed in place on every telemetry tick. Prefers the env's OWN feed
   // document (links.telemetry → telemetry/environments/<slug>.json).
   const envId=d.environment_id||r.did;
-  S.drawerLiveKind='env'; S.drawerLiveId=envId; S.drawerLiveBase=base;
+  S.drawerLiveKind='env'; S.drawerLiveId=envId; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId)}</div>`;
+  html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   html+=trustPanel(r);
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
@@ -3175,83 +3709,34 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
    --------------------------------------------------------------------
    Each enabled entry is a self-contained ES module under ./renderers/ with
    no runtime executable dependency outside this repository.
-   These OUTRANK the legacy inline EXT_RENDERER/KIND_RENDERER maps for
+   These outrank the built-in text/media renderer families for
    any ext/kind they claim; on ANY throw the host falls back to the
    built-in renderer path (markdown/csv/code/image/pdf/plain/download).
    DISPATCH: extension is authoritative (zero collisions across modules);
    media_kind is the fallback (first-writer-wins, registry ordered most-
    specific → most-generic so 'pcb'→gerber, 'eda'→netlist, 'cad'→cad3d).
    ==================================================================== */
-const LAZY_RENDERERS=[
-  {file:'kicad.mjs',label:'KiCad',exts:['kicad_pcb','kicad_sch','kicad_pro','kicad_mod'],media_kinds:['kicad','schematic'],fetchMode:'text'},
-  {file:'netlist.mjs',label:'netlist / SPICE',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],media_kinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
-  {file:'datatree.mjs',label:'structured data',exts:['json','ndjson'],media_kinds:['json','ndjson','datatree','structured','data'],fetchMode:'text'},
-];
-// Flattened ext → entry index (built once). Extensions are collision-free, so an
-// ext hit is a definitive, unambiguous module choice.
-const _LAZY_BY_EXT=new Map();
-// media_kind → entry index, FIRST-WRITER-WINS over registry order so the
-// deliberate most-specific→most-generic ordering encodes precedence for the
-// resolved kind collisions (gerber>kicad 'pcb'; netlist>kicad 'eda'; cad3d 'cad').
-const _LAZY_BY_KIND=new Map();
-for(const e of LAZY_RENDERERS){
-  for(const x of e.exts){ const xl=String(x).toLowerCase(); if(!_LAZY_BY_EXT.has(xl)) _LAZY_BY_EXT.set(xl,e); }
-  for(const k of e.media_kinds){ const kl=String(k).toLowerCase(); if(!_LAZY_BY_KIND.has(kl)) _LAZY_BY_KIND.set(kl,e); }
-}
-// extOf grabs only the final dot-segment, so it can't see the multi-underscore
-// KiCad suffixes (.kicad_pcb / .kicad_sch / .kicad_pro / .kicad_mod) — match the
-// full filename suffix FIRST, then fall back to the single trailing token.
-function lazyExtOf(title){
-  const t=String(title||'').toLowerCase();
-  for(const x of _LAZY_BY_EXT.keys()){ if(x.includes('_') && t.endsWith('.'+x)) return x; }
-  return extOf(title);
-}
-// Resolve the lazy module entry for a file: EXTENSION first (authoritative),
-// then media_kind (fallback only when the ext is absent/unknown). Returns
-// {entry,ext} or null.
-function pickLazyRenderer(title,kind){
-  const ext=lazyExtOf(title);
-  if(ext && _LAZY_BY_EXT.has(ext)) return {entry:_LAZY_BY_EXT.get(ext),ext};
-  const k=String(kind||'').toLowerCase();
-  if(k && _LAZY_BY_KIND.has(k)) return {entry:_LAZY_BY_KIND.get(k),ext};
-  return null;
-}
+// The registry and its extension/kind precedence live in a data-only module so
+// the complete dispatch matrix can be tested without a browser. Peer metadata
+// can select only repository-owned entries from that manifest.
+const pickLazyRenderer=selectLocalArtifactModule;
 async function _localDependencyOnly(){ throw new Error('external executable renderer dependencies are disabled'); }
 // Cached per-file import of the renderer module itself (lazy on first open).
 const _LAZY_MOD=new Map();
 async function _lazyModule(file){
   if(_LAZY_MOD.has(file)) return _LAZY_MOD.get(file);
-  const p=import(/* @vite-ignore */ './renderers/'+file);
+  const p=import(/* @vite-ignore */ './renderers/'+file+'?v=20260710-universal-artifacts-v1');
   p.catch(()=>_LAZY_MOD.delete(file));
   _LAZY_MOD.set(file,p); return p;
 }
 
-// EXTENSION → renderer id. Drives both binary-detection and dispatch.
-const EXT_RENDERER={
-  md:'markdown', markdown:'markdown',
-  csv:'csv',
-  png:'image', jpg:'image', jpeg:'image', gif:'image', webp:'image', svg:'image',
-  py:'code', js:'code', ts:'code', sh:'code', json:'code', yaml:'code', yml:'code',
-  toml:'code', spice:'code', cir:'code', net:'code', ini:'code', xml:'code', cfg:'code',
-  stl:'model3d', '3mf':'model3d', obj:'model3d', gltf:'model3d', glb:'model3d',
-  step:'descriptor', stp:'descriptor', kicad_pcb:'descriptor', kicad_sch:'descriptor',
-  pdf:'pdf',
-};
-// media_kind → renderer id (fallback when extension is unknown/absent).
-const KIND_RENDERER={ md:'markdown', markdown:'markdown', csv:'csv', image:'image',
-  png:'image', svg:'image', json:'code', code:'code', source:'code', yaml:'code',
-  model:'model3d', cad:'model3d', mesh:'model3d', step:'descriptor', pdf:'pdf' };
 // Renderers that consume binary bytes (blob), not text. Text fetch is skipped.
-const BINARY_RENDERERS=new Set(['image','model3d','pdf']);
-const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','svg']);
+const BINARY_RENDERERS=new Set(['image','audio','video','model3d','descriptor','pdf','generic']);
+const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','svg','avif','bmp','ico','tif','tiff']);
 const TEXTY_DESCRIPTOR_EXT=new Set(['step','stp','kicad_pcb','kicad_sch']);
 
 function pickRenderer(title,kind){
-  const ext=extOf(title);
-  if(ext && EXT_RENDERER[ext]) return {id:EXT_RENDERER[ext],ext};
-  const k=String(kind||'').toLowerCase();
-  if(KIND_RENDERER[k]) return {id:KIND_RENDERER[k],ext};
-  return {id:'plain',ext};
+  return selectBuiltinArtifactRenderer(title,kind);
 }
 
 // Track blob: URLs allocated for the current view so they're revoked on change.
@@ -3263,7 +3748,10 @@ function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
 // never trust a peer-supplied HTML MIME for a same-origin blob URL.
 function safeRenderMime(ext,kind){
   const byExt={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',
-    webp:'image/webp',svg:'image/svg+xml',pdf:'application/pdf'};
+    webp:'image/webp',svg:'image/svg+xml',avif:'image/avif',bmp:'image/bmp',ico:'image/x-icon',
+    tif:'image/tiff',tiff:'image/tiff',pdf:'application/pdf',mp3:'audio/mpeg',wav:'audio/wav',
+    ogg:'audio/ogg',oga:'audio/ogg',m4a:'audio/mp4',flac:'audio/flac',aac:'audio/aac',opus:'audio/ogg',
+    mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',m4v:'video/mp4',ogv:'video/ogg'};
   if(byExt[ext]) return byExt[ext];
   const k=String(kind||'').toLowerCase();
   return Object.values(byExt).includes(k)?k:'application/octet-stream';
@@ -3340,6 +3828,49 @@ async function renderImage(host,ctx){
   img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
   host.appendChild(img);
 }
+async function renderMedia(host,ctx,type){
+  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${type} fetch failed`);
+  ctx.realSize=fb.size; const bytes=await fb.blob.arrayBuffer();
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.ext,ctx.kind)}));
+  host.innerHTML=''; const media=document.createElement(type); media.className=`fv-${type}`;
+  media.controls=true; media.preload='metadata'; media.src=url; media.setAttribute('playsinline','');
+  media.setAttribute('controlslist','nodownload noplaybackrate'); media.setAttribute('disablepictureinpicture','');
+  media.setAttribute('aria-label',ctx.title); host.appendChild(media);
+}
+const renderAudio=(host,ctx)=>renderMedia(host,ctx,'audio');
+const renderVideo=(host,ctx)=>renderMedia(host,ctx,'video');
+
+function bytesLookTextual(bytes){
+  const sample=bytes.subarray(0,Math.min(bytes.length,64*1024)); if(!sample.length) return true;
+  let controls=0; for(const byte of sample){ if(byte===0) return false;
+    if(byte<9||(byte>13&&byte<32)) controls++; }
+  if(controls/sample.length>.02) return false;
+  try{ new TextDecoder('utf-8',{fatal:true}).decode(sample); return true; }catch(e){ return false; }
+}
+function hexPreview(bytes,limit=512){
+  const out=[]; const view=bytes.subarray(0,Math.min(limit,bytes.length));
+  for(let i=0;i<view.length;i+=16){ const row=view.subarray(i,i+16);
+    const hex=[...row].map((b)=>b.toString(16).padStart(2,'0')).join(' ').padEnd(47,' ');
+    const ascii=[...row].map((b)=>b>=32&&b<=126?String.fromCharCode(b):'.').join('');
+    out.push(`${i.toString(16).padStart(8,'0')}  ${hex}  |${ascii}|`); }
+  return out.join('\n');
+}
+async function renderGeneric(host,ctx){
+  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('artifact body unavailable');
+  ctx.realSize=fb.size; const bytes=new Uint8Array(await fb.blob.arrayBuffer()); host.innerHTML='';
+  const integrity=ctx.integrityVerified?'hash-checked':'unhashed';
+  if(bytesLookTextual(bytes)){
+    const text=new TextDecoder().decode(bytes), truncated=text.length>400*1024;
+    host.appendChild(plainPre(text.slice(0,400*1024),truncated?`first 400 KB · ${integrity} generic text`:`generic ${integrity} text`));
+    return;
+  }
+  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${ctx.ext||ctx.kind||'unknown'} · ${integrity} binary artifact`));
+  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); };
+  add('Size',fmtBytes(bytes.length)); add('SHA-256',ctx.contentHash||(ctx.integrityVerified?'checked':'not advertised'));
+  add('Rendering','safe generic inspector · executable content was not run'); host.appendChild(card);
+  host.appendChild(el('div','fv-note',`hex preview · first ${Math.min(512,bytes.length)} bytes`));
+  const pre=el('pre','filview fv-code fv-hex'); pre.textContent=hexPreview(bytes); host.appendChild(pre);
+}
 async function renderCode(host,ctx){
   let body=ctx.text||'';
   const isJson=ctx.ext==='json'||String(ctx.kind||'').toLowerCase()==='json';
@@ -3403,8 +3934,8 @@ async function renderPlain(host,ctx){
   const trunc=body.length>20000;
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
 }
-const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage, code:renderCode,
-  model3d:renderModel3d, descriptor:renderDescriptor, pdf:renderPdf, plain:renderPlain };
+const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
+  code:renderCode,model3d:renderModel3d,descriptor:renderDescriptor,pdf:renderPdf,plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);
@@ -3442,7 +3973,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const pick=pickRenderer(title,kind);
   const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
-  // LAZY .mjs registry takes precedence over the legacy inline maps for any
+  // Repository-owned .mjs registry takes precedence over built-in families for any
   // ext/kind it claims (richer viewers win). Resolved once; only used when this
   // is NOT a forced-plain/raw view (raw always shows the built-in plain text).
   const lazyPick=forcedPlain?null:pickLazyRenderer(title,kind);
@@ -3455,17 +3986,23 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
   let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
-  if(opts.liveFile){
-    verified=await fetchVerifiedLiveBody(sourceUrl,opts.liveFile.sha256);
-    const current=liveArtifactState(base,opts.liveFile.run);
-    if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
-      verified={ok:false,error:'stale live body response discarded'};
+  const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
+  const expectedHash=advertisedHash.replace(/^sha256:/i,'').toLowerCase();
+  const hashAdvertised=!!advertisedHash, validExpectedHash=/^[a-f0-9]{64}$/.test(expectedHash);
+  if(hashAdvertised){
+    verified=validExpectedHash
+      ?await fetchVerifiedLiveBody(sourceUrl,expectedHash)
+      :{ok:false,error:'invalid advertised SHA-256'};
+    if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
+      if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
+        verified={ok:false,error:'stale live body response discarded'};
+      }
     }
     if(verified.ok){
       realSize=verified.size;
       if(!isBinary) text=new TextDecoder().decode(verified.bytes);
-      const cache=S.liveArtifactBodyCache.get(opts.liveFile.bodyKey);
-      if(text!=null){
+      const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
+      if(opts.liveFile&&text!=null){
         let nextCache=cache;
         if(!cache||cache.hash!==opts.liveFile.sha256){
           nextCache={hash:opts.liveFile.sha256,text,
@@ -3483,10 +4020,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     text=await fetchText(url); realSize=text?text.length:null;
   }
   const ctx={ base, path, url,sourceUrl, title, kind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
-    contentHash:opts.contentHash||null };
+    contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
-  const bodyUnavailable=opts.liveFile?!verified?.ok:(!isBinary && !forcedPlain && text===null);
+  const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
@@ -3503,7 +4040,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
       +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">${verified?.ok?'KERNEL-SIGNED METADATA · BYTES CHECKED':'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED'}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
-      +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff:'')
+      +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff
+      :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
+        :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
+        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${verified?.ok?'BYTES CHECKED':'BYTES NOT VERIFIED'}</span></div>`:''))
     +`<div id="fv-body" class="fv-body"></div>`;
   // Built-in renderer path — the fallback used when no local module
   // matches, or when a matched local module throws (parse/empty).
@@ -3588,6 +4128,7 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
     const isP=tel.schema==='personaos-persona-telemetry/1';
     S.drawerLiveKind=isP?'persona':'env';
     S.drawerLiveId=isP?tel.persona_id:tel.environment_id;
+    S.drawerLiveKernel=r._kernel||tel.kernel_id||tel.node_id||kernelForBase(base);
     S.drawerLiveBase=base; S.drawerLiveFeed=L.snapshot||'';
     let html=kv('Feed',S0(r.label))
       +kv('Subject',`<span class="cap">${esc(isP?'persona':'environment')}</span> <code>${esc(S.drawerLiveId)}</code>`)
@@ -3635,7 +4176,8 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
     +kv('Events (this run)',esc(r.events));
   const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
-    +H('Source')+`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
+    +H('Source')+(r._url?`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`
+      :'<div class="row"><span class="l2">withheld · discover-only metadata projection</span></div>');
   return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
@@ -3663,7 +4205,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +kv('Workspace env',S0(d.environment_id))+kv('Members',S0(members.length||'—'))
     +(d.bundle_id?kv('Deliverable bundle',`<code>${esc(d.bundle_id)}</code>`):'');
   if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
-    const rid=findRecByDid(m.persona_id)||findRecByDid('did:personaos:'+m.persona_id);
+    const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
     return `<div class="grant">${rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id)}<span class="l2">${esc(m.role||'')}</span></div>`;
   }).join('');
   html+=trustPanel(r);
@@ -4062,7 +4604,7 @@ async function operatorRunView(b,run){
   html+=H('Live execution · unsigned status telemetry');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
     const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
-    return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid)||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
+    return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
   else html+='<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
@@ -4142,7 +4684,7 @@ function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
   S.openLiveFile=null;
-  S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
+  S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveKernel=''; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
   // monotonic guard: top() awaits the network (file/bundle/body views), and Back /
   // pushView call renderTop without serialization. A stale in-flight render must not
   // write LAST and show a view the user already navigated away from — latest wins.
@@ -4202,7 +4744,7 @@ function missionCardList(){
       if(shippedSeen.has(dedupe)) continue; shippedSeen.add(dedupe);
       // A signed design-history artifact proves publication, not acceptance.
       // Running/paused/terminal state comes from the live node when available.
-      cards.push({key:'rec:'+id,task,state:'published',
+      cards.push({key:'rec:'+id,task,state:'published',kernel:r._kernel||'',
         meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
   // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
@@ -4215,7 +4757,7 @@ function missionCardList(){
     const project=S.order.map((id)=>S.recs.get(id)).find((r)=>r&&r.kind==='project'&&runOf(r)===state.run
       &&(!nodeId||r._kernel===nodeId));
     const calls=(state.snapshot?.active?.calls||[]).length;
-    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.snapshot?.task||state.run,state:'running',
+    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.snapshot?.task||state.run,state:'running',kernel:nodeId||kernelForBase(state.base),
       meta:[state.run.slice(0,26),`${state.files.size} live files`,calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run});
   }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
@@ -4228,19 +4770,23 @@ function missionCardList(){
     for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run); if(seen.has(nodeRun)) continue; seen.add(nodeRun);
       const live=liveArtifactState(base,run); const files=live?.files?.size||0;
       const calls=(live?.snapshot?.active?.calls||[]).length;
-      cards.unshift({key:'run:'+nodeRun,task:busy||run,state:'running',meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
+      cards.unshift({key:'run:'+nodeRun,task:busy||run,state:'running',kernel:kernelForBase(base),meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
     for(const p of (v.paused_missions||[])){
       const run=String(p.run||p.run_id||p); const nodeRun=_liveRunKey(base,run); if(!run||seen.has(nodeRun)) continue; seen.add(nodeRun);
-      cards.push({key:'pause:'+nodeRun,task:String(p.task||run),state:'paused',
+      cards.push({key:'pause:'+nodeRun,task:String(p.task||run),state:'paused',kernel:kernelForBase(base),
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
-  return cards;
+  return S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
 }
 // The strip needs each node's run state (the token-gated part of /status);
 // prefetch statuses for every discovered base so running/paused missions show
 // without first opening a drawer. Anonymous viewers get the public projection
 // (no run state) and the strip stays honest — records only.
 function prefetchNodeStatuses(){
-  for(const key of S.boots.keys()){ const base=key==='@origin'?'':key;
+  const candidates=[...S.boots.keys()].map((key)=>{ const base=key==='@origin'?'':key;
+    return {base,focused:!!S.kernelFocus&&baseIsFocused(base),active:(S.activeModelCallsByBase?.get(key)||[]).length>0,
+      priority:(S.activeModelCallsByBase?.get(key)||[]).length}; }).filter((row)=>!S.kernelFocus||row.focused);
+  const window=selectMonitoringBases(candidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64});
+  for(const base of window.bases){
     fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }
 }
 function renderMissions(){
@@ -4248,7 +4794,10 @@ function renderMissions(){
   const cards=missionCardList();
   box.hidden=!cards.length;
   if(!cards.length) return;
-  const html=cards.slice(0,24).map((c)=>
+  const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
+    priorityOf:(c)=>c.state==='running'?1e6:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
+  const html=window.items.map((c)=>
     `<div class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
     +`<span class="mtask" title="${esc(c.task)}">${esc(c.task)}</span>`
     +`<span class="mmeta"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
@@ -4295,30 +4844,50 @@ function wire(){
     // the ◎ follow button lives INSIDE the card, so Enter/Space would otherwise walk up to
     // the .pc-card and open the drawer — short-circuit it so follow is keyboard-reachable.
     const fb=e.target.closest('[data-follow]'); if(fb){ e.preventDefault(); fb.click(); return; }
-    const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],.mcard'); if(!t) return;
+    const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],[data-kernel-core],.mcard'); if(!t) return;
     e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
   // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
   $('#sysStreamTabs').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
     S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>{ c.classList.toggle('on',c===b); c.setAttribute('aria-pressed',String(c===b)); }); renderInteractionStream(); });
+  // Global navigator: select a kernel to move from aggregate network mode to
+  // its exact env/persona window. ALL NODES clears the scope without discarding
+  // cached signed records.
+  $('#globalKernels')?.addEventListener('click',(e)=>{ const b=e.target.closest('[data-kernel]'); if(!b) return;
+    S.kernelFocus=b.dataset.kernel||null; S.follow=null;
+    S.environmentWindow=NETWORK_LIMITS.environmentInitial; S.personaWindows.clear();
+    renderGlobalKernels(); renderMissions(); refreshSystemView(); discover().catch(()=>{});
+  });
+  $('#networkAll')?.addEventListener('click',()=>{ S.kernelFocus=null; S.follow=null;
+    S.environmentWindow=NETWORK_LIMITS.environmentInitial; S.personaWindows.clear();
+    renderGlobalKernels(); renderMissions(); refreshSystemView(); });
   // stage click: a persona card or env name → open its Ed25519 drawer; deliverable chip → bundle/mission drawer
   $('#sysEnvs').addEventListener('click',(e)=>{
+    const morePersonas=e.target.closest('[data-more-personas]'); if(morePersonas){
+      const key=decodeURIComponent(morePersonas.dataset.morePersonas||'');
+      S.personaWindows.set(key,nextProgressiveGroupLevel(key,S.personaWindows,{
+        initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+      })); refreshSystemView(); return; }
+    if(e.target.closest('[data-more-environments]')){
+      S.environmentWindow=Math.min(120,S.environmentWindow+NETWORK_LIMITS.environmentStep); refreshSystemView(); return; }
     // follow toggle: the card's ◎ button focuses the stage+feed on ONE persona
     // (the only follow trigger reachable at every breakpoint). Stop here so the
     // click doesn't also open the drawer.
-    const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=fb.dataset.follow;
+    const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=_entityKeyFromDom(fb.dataset.follow);
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
     // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
     // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
-    const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard;
+    const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard, kernel=pc.dataset.pkernel||'';
+      const personaKey=_entityKeyFromDom(pc.dataset.pkey)||_personaKey(kernel,sid);
       // clicking a card that is dimmed-out under follow opens its drawer — clear the
       // follow first so the just-inspected card isn't left greyed (looks disabled).
-      if(S.follow&&S.follow!==sid){ S.follow=null; _applyFollow(); renderInteractionStream(); }
+      if(S.follow&&S.follow!==personaKey){ S.follow=null; _applyFollow(); renderInteractionStream(); }
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
-        return r.kind==='persona'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
+        return r.kind==='persona'&&(!kernel||r._kernel===kernel)
+          &&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
       if(rid) openDetail(rid); return; }
-    const ev=e.target.closest('[data-envrec]'); if(ev){ const sid=ev.dataset.envrec;
+    const ev=e.target.closest('[data-envrec]'); if(ev){ const sid=ev.dataset.envrec, kernel=ev.dataset.envkernel||'';
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
-        return r.kind==='env'&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
+        return r.kind==='env'&&(!kernel||r._kernel===kernel)&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
       if(rid) openDetail(rid); return; }
     const ar=e.target.closest('[data-artid]'); if(ar){ const aid=ar.dataset.artid;
       const rid=S.recs.has(aid)?aid:S.order.find((id)=>{ const r=S.recs.get(id);
@@ -4326,14 +4895,26 @@ function wire(){
       if(rid) openDetail(rid); else log('artifact',`no viewable record for ${String(aid).slice(0,16)} (not yet exported)`,false); } });
   // constellation node click → FOLLOW that persona (focus the stage + feed on it);
   // click the same node (or "show all") to clear. The full drawer opens from the card.
-  const g=$('#sysGraph'); if(g) g.addEventListener('click',(e)=>{ const node=e.target.closest('[data-gp]'); if(!node) return;
-    const sid=node.dataset.gp; S.follow=(S.follow===sid)?null:sid; _applyFollow(); renderInteractionStream(); });
+  const g=$('#sysGraph'); if(g) g.addEventListener('click',(e)=>{
+    const core=e.target.closest('[data-kernel-core]'); if(core){ S.kernelFocus=core.getAttribute('data-kernel-core')||null;
+      S.follow=null; S.environmentWindow=NETWORK_LIMITS.environmentInitial; S.personaWindows.clear();
+      renderGlobalKernels(); renderMissions(); refreshSystemView(); discover().catch(()=>{}); return; }
+    const node=e.target.closest('[data-gp]'); if(!node) return;
+    const personaKey=_entityKeyFromDom(node.dataset.gp); S.follow=(S.follow===personaKey)?null:personaKey; _applyFollow(); renderInteractionStream(); });
   $('#cfUnfollow').addEventListener('click',()=>{ S.follow=null; _applyFollow(); renderInteractionStream(); });
   // collapse / expand the constellation rail
   $('#conToggle').addEventListener('click',(e)=>{ $('#constellation').classList.toggle('collapsed');
     e.currentTarget.setAttribute('aria-expanded',String(!$('#constellation').classList.contains('collapsed'))); });
-  // filter the stage + feed (replaces the board's row filter)
-  $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase(); _applyFilter(); });
+  // Search is part of the bounded selector, not just a DOM hide pass: it can
+  // surface a loaded persona/environment that was outside the current window.
+  let searchTimer=null;
+  $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase().slice(0,256); _applyFilter();
+    clearTimeout(searchTimer); searchTimer=setTimeout(()=>{ S.environmentWindow=NETWORK_LIMITS.environmentInitial;
+      renderGlobalKernels(); refreshSystemView(); renderInteractionStream();
+      // A resolver-backed global search must reach beyond the sampled first page.
+      // The discovery pass remains bounded and is ignored while another is active.
+      if(!S.kernelFocus&&globalDiscoveryEndpoints().length) discover().catch(()=>{});
+    },120); });
   $('#addpeer').addEventListener('click',()=>{ let v=$('#peer').value.trim(); if(!v)return;
     // the input is type=url but there's no <form>, so native validation never runs —
     // normalise a bare host ('localhost:8765') to an absolute https URL before storing.
@@ -4496,7 +5077,7 @@ function wire(){
     // Clear the drawer-live keys too, or the 5s loop keeps fetching feed/thinking
     // against the now-hidden drawer forever.
     runViewCleanups();
-    S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveBase=''; S.openLiveFile=null;
+    S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
@@ -4529,23 +5110,66 @@ function wire(){
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
-function _verifiedHttpBase(value){ try{ const u=new URL(String(value||''));
-  if(!/^https?:$/.test(u.protocol)||u.username||u.password) return '';
-  u.search=''; u.hash=''; return u.href.replace(/\/$/,''); }catch(e){ return ''; } }
-async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
-  if(doc.record.visibility_tier!=='public') return;
-  if(doc.public_key_hex){ try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){} }
-  log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
-  const r=doc.record, id=r.record_id||r.card_id;
-  if(ok){
-    const base=_verifiedHttpBase(doc.base);
-    if(base&&!S.gossipPeers.has(base)){
-      S.gossipPeers.add(base); noteKernel(doc.kernel_id||'gossip','gossip',base);
-      Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{});
-    }
-    if(id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:base,_doc:doc});
-      if(P2P) P2P.announce(doc); classifyMap(); updateVitalsCounters(); refreshSystemView(); }
+const PROVIDER_HINT_LIMITS=Object.freeze({maxPending:64,maxQueue:16,maxJobsPerMinute:16,
+  maxConcurrent:2,maxKeysPerHint:5,cooldownMs:30000});
+function _providerHintJobId(record,hints){
+  return String(record?.did||record?.record_id||record?.card_id||hints.join('|')).slice(0,2048);
+}
+function _enqueueProviderHintJob(job){
+  const now=Date.now(), prior=S.providerHintJobs.get(job.id);
+  if(prior&&now-prior.at<PROVIDER_HINT_LIMITS.cooldownMs) return;
+  S.providerHintWindow=S.providerHintWindow.filter((at)=>now-at<60000);
+  if(S.providerHintWindow.length>=PROVIDER_HINT_LIMITS.maxJobsPerMinute
+      ||S.providerHintQueue.length>=PROVIDER_HINT_LIMITS.maxQueue){
+    log('gossip','lookup hint rate limit reached; hint refused',false); return; }
+  S.providerHintWindow.push(now); S.providerHintJobs.set(job.id,{state:'queued',at:now});
+  while(S.providerHintJobs.size>256) S.providerHintJobs.delete(S.providerHintJobs.keys().next().value);
+  S.providerHintQueue.push(job); _pumpProviderHintJobs();
+}
+function queueProviderHints(record,source='gossip'){
+  if(record?.visibility_tier!=='public') return;
+  const hints=providerLookupHints(record,{max:PROVIDER_HINT_LIMITS.maxKeysPerHint});
+  if(!hints.length){ log('gossip',`${source}: no bounded provider lookup key`,false); return; }
+  const job={id:_providerHintJobId(record,hints),hints,source};
+  const prior=S.providerHintJobs.get(job.id);
+  if(prior&&Date.now()-prior.at<PROVIDER_HINT_LIMITS.cooldownMs) return;
+  log('gossip',`${source}: untrusted lookup hint only; awaiting current-master ProviderRecord`);
+  if(!P2P?.resolveProvider){
+    if(S.pendingProviderHints.size>=PROVIDER_HINT_LIMITS.maxPending)
+      S.pendingProviderHints.delete(S.pendingProviderHints.keys().next().value);
+    S.pendingProviderHints.set(job.id,job); return;
   }
+  _enqueueProviderHintJob(job);
+}
+async function _resolveProviderHintJob(job){
+  const results=await Promise.all(job.hints.map((key)=>
+    P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+  const rows=[];
+  for(const result of results){ const verified=await verifiedRowsFromP2PResult(result,`${job.source} lookup`);
+    rows.push(...verified.rows); }
+  const unique=new Map(rows.map((row)=>[`${row._kernel}\u0000${row.record_id||row.did}`,row]));
+  let added=0;
+  for(const row of unique.values()){
+    if(upsert(row)){ added++; noteKernel(row._kernel,'p2p',row._base||''); }
+  }
+  if(added){ log('p2p',`${job.source}: ${added} current-master ProviderRecord(s) verified`,true);
+    classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection(); }
+  else log('p2p',`${job.source}: provider lookup unresolved; nothing displayed`,false);
+}
+function _pumpProviderHintJobs(){
+  while(P2P?.resolveProvider&&S.providerHintActive<PROVIDER_HINT_LIMITS.maxConcurrent
+      &&S.providerHintQueue.length){
+    const job=S.providerHintQueue.shift(); S.providerHintActive++;
+    S.providerHintJobs.set(job.id,{state:'running',at:Date.now()});
+    _resolveProviderHintJob(job).catch((e)=>log('p2p',`${job.source}: lookup failed ${String(e&&e.message||e).slice(0,100)}`,false))
+      .finally(()=>{ S.providerHintActive--;
+        S.providerHintJobs.set(job.id,{state:'done',at:Date.now()}); _pumpProviderHintJobs(); });
+  }
+}
+function onGossipRecord(doc){
+  // A record-supplied public key is self-asserted. Gossip contributes bounded
+  // lookup aliases only and can never insert, display, or overwrite UI records.
+  if(doc?.record) queueProviderHints(doc.record,'libp2p gossip');
 }
 let _p2pRendezvousCid=null;
 async function p2pRendezvousCid(){
@@ -4578,20 +5202,21 @@ async function initP2P(){
   const list=[...S.p2pBootstraps,...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js');
+    const mod=await import('./p2p-libp2p.js?v=20260710-provider-authority-v2');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
     P2P._rendezvousConfigured=list.length>0;
     updateP2PStatus();
     for(const id of S.order){ const r=S.recs.get(id);
-      // `base` is a locator hint, not signed authority. Receivers enroll it only
-      // after the record verifies, then re-fetch and verify that node normally.
-      if(r._doc&&r._doc.record?.visibility_tier==='public') P2P.announce({...r._doc,base:r._base,kernel_id:r._kernel}); }
+      if(r._gossipHint?.record?.visibility_tier==='public') P2P.announce(r._gossipHint); }
+    const pending=[...S.pendingProviderHints.values()]; S.pendingProviderHints.clear();
+    for(const job of pending) _enqueueProviderHintJob(job);
     log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
       : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
     if(list.length){ setTimeout(()=>refreshP2PRendezvous().catch(()=>{}),3000);
       P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000); }
+    if(list.length) Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
     const el=$('#p2p'); if(el) el.textContent='P2P · http-federation'; }
 }
