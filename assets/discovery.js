@@ -113,7 +113,8 @@ const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
 /* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
-   The node mints a per-install token (printed at boot, stored under runs/.../_operator/token).
+   The node mints a process bearer at boot and temporarily stages it under
+   runs/.../_operator/token until the first model call.
    Saved per node base in sessionStorage; every fetch to that base carries it, unlocking owner
    intake (/task /budget /stop), full /status, /runs, /personas and the gated static tree.
    Anonymous viewers keep working — they see each node's public discovery projection only. */
@@ -2996,7 +2997,8 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
       +'<p class="desc2">This node publishes that the deliverable <b>exists</b> (file list, hashes, metadata) '
       +'to anonymous viewers, but serves the actual <b>bytes</b> only at <b>read+</b> tier '
       +'(07_ARTIFACTS §10a). To open the files: click <b>OPERATOR</b> and paste this node\'s '
-      +'bearer token, or open the page on the node\'s own machine (localhost = operator).</p></div>';
+      +'captured process bearer. If HTTPS blocks an HTTP node, open the node\'s own console '
+      +'and paste the same bearer there.</p></div>';
     if(files.length){
       mh+=H(`Files (${files.length}) — published manifest`)+files.slice(0,80).map((r)=>{
         const L2=r._links||{}; const h=String(L2.content_hash||'').replace('sha256:','').slice(0,10);
@@ -3578,7 +3580,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
 }
 async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
   if(!rj0) return {title:`<span class="kind k-persona">BODY · J7</span> codex run`,
-    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
+    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
   const rj=rj0; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
     +kv('Accepted',b.accepted?`<span class="ok">${icon('check','ico-sm')} verified</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
@@ -3590,7 +3592,7 @@ async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(bas
 }
 async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
   if(!rj0) return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`,
-    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; hold an operator token (or open on the node's machine) to view it.</div>`};
+    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
   const rj=rj0; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
   let html=kv('Bundle verified',bv.passed?`<span class="ok">${icon('check','ico-sm')} passed</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
     +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
@@ -3601,7 +3603,7 @@ async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(b
 async function distributionView(base,L){ S.curBase=base;
   const oci0=await dfetch(base,L.oci), dag0=await dfetch(base,L.dag), reg0=await dfetch(base,L.registry);
   if(!oci0&&!dag0&&!reg0) return {title:`<span class="kind k-artifact">DISTRIBUTION</span> OCI + IPLD`,
-    html:`<div class="viewerr">distribution documents could not be loaded — the node may be offline or the bodies are read-gated; hold an operator token (or open on the node's machine) to view them.</div>`};
+    html:`<div class="viewerr">distribution documents could not be loaded — the node may be offline or the bodies are read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
   const oci=oci0||{}, dag=dag0||{}, reg=reg0||{};
   let html=kv('OCI artifactType',esc(oci.artifactType||'—'))+kv('OCI layers',esc((oci.layers||[]).length))
     +kv('IPLD root CID',esc(((dag.root_cid||'')+'').slice(0,32)||'—'))+kv('Addressing','SHA-256 · CIDv1 · content-addressed');
@@ -3675,15 +3677,15 @@ function missionDocHTML(ref){
 // doc operatorRunView + missionDocHTML consume — and runOf() already resolves
 // the run id an env/artifact carries. This surfaces that plan in the drawer the
 // user actually opens (the persona/env), not only the separate MISSION card / op
-// console. Read-gated like the run endpoint itself: operator token or a local
-// node returns the doc; an anonymous viewer gets an honest pointer, never a fake.
+// console. Read-gated like the run endpoint itself: only the operator bearer
+// returns the doc; an anonymous viewer gets an honest pointer, never a fake.
 async function planSection(base,run){
   if(!run) return '';
   const doc=await dfetch(base,'runs/'+encodeURIComponent(run));
   // run_state is operator-tier (09_PROTOCOLS §3G.3): no token (or a tunneled node
   // without one) -> no plan to show. Say WHY + HOW to unlock instead of nothing.
   if(!doc||(!doc.run_state&&!doc.design_history)){
-    return H('Plan')+`<div class="l2">${icon('key','ico-sm')} this mission's charter, objectives and round-by-round trajectory are <b>read-gated</b> (operator tier). Click <b>OPERATOR</b> and paste this node's token, or open the page on the node's own machine (localhost = operator), to see the plan for <code>${esc(run)}</code>.</div>`;
+    return H('Plan')+`<div class="l2">${icon('key','ico-sm')} this mission's charter, objectives and round-by-round trajectory are <b>read-gated</b> (operator tier). Click <b>OPERATOR</b> and paste this node's captured process bearer. If HTTPS blocks its HTTP route, open the node's console and use the same bearer there to see the plan for <code>${esc(run)}</code>.</div>`;
   }
   const rs=doc.run_state||{}, dh=doc.design_history||rs.refinement_mission||{};
   const S0=(v)=>esc((v===''||v==null)?'—':v);
@@ -3777,7 +3779,7 @@ async function opPost(base,path,body){ const u=join(base,path);
     const d=await r.json().catch(()=>({})); return {status:r.status,body:d}; }
   catch(e){ let msg=String(e&&e.message||e);
     if(location.protocol==='https:'&&/^http:\/\//i.test(u))
-      msg+=` — this page is HTTPS and browsers block calls to an HTTP node. Open the node's own console directly at ${opBaseKey(base)}/ (a local node needs no token there).`;
+      msg+=` — this page is HTTPS and browsers block calls to an HTTP node. Open the node's own console directly at ${opBaseKey(base)}/, then paste and use the captured process bearer there.`;
     return {status:0,body:{error:msg}}; } }
 
 async function operatorView(){
@@ -3788,15 +3790,15 @@ async function operatorView(){
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
   const bases=[...new Set([...Object.keys(m),...localBases])];
   let html=H('Operator authority — bearer token')
-    +`<div class="desc2">Each node mints a per-install token (printed at boot; stored at `
-    +`<code>runs/…/_operator/token</code>). Paste it here to unlock a REMOTE node's owner intake `
+    +`<div class="desc2">Each node mints a process bearer at boot and temporarily stages it at `
+    +`<code>runs/…/_operator/token</code> until the first model call. Paste it here to unlock a node's owner intake `
     +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. Loopback is a convenient `
     +`route, not authority: <b>local and remote nodes both require the token</b>.</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<label class="field"><span class="field-label">node base URL</span>`
     +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
     +`<label class="field"><span class="field-label">operator token</span>`
-    +`<input id="op-token" type="password" placeholder="paste the per-install token"></label>`
+    +`<input id="op-token" type="password" placeholder="paste the captured process bearer"></label>`
     +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
   for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
@@ -3819,7 +3821,7 @@ async function operatorNodeView(b){
   if(!reached){
     html+=`<div class="desc2"><span class="no">can't reach this node from this page</span>`
       +(mixed
-        ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's OWN console directly (same-origin, and a local node needs no token): <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
+        ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's own console directly, then paste and use the captured process bearer there: <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
         :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
     return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
   }
@@ -3854,7 +3856,7 @@ async function operatorNodeView(b){
   html+=H(`Human attestation${att.length?` — needed (${att.length}) — mission honest-blocked`:''}`);
   if(!att.length){
     html+=`<div class="l2">`+(pub
-      ?`operator-only — attestation requests appear here once you have owner access (paste the token, or open the node's localhost UI).`
+      ?`operator-only — attestation requests appear here once you have owner access. Paste the captured process bearer; if needed, open the node's localhost UI and use the same bearer there.`
       :`${icon('check','ico-sm')} no mission is blocked on human attestation right now. When a persona honest-blocks on an external capability it cannot self-provision (a hardware instrument, a credential, a paid API…), it appears here with an <b>ATTEST</b> form.`)+`</div>`;
   } else {
     html+=att.map((a)=>{
