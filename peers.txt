@@ -6,3 +6,6 @@
 #
 # A committed HTTPS hostname becomes stale when the backing node/tunnel rotates;
 # stale seeds make the hosted UI look empty even when local nodes are healthy.
+
+# Active public verification node (kept alive for this review session).
+https://boxed-appeals-feat-vegetable.trycloudflare.com
