@@ -1,4 +1,15 @@
 import * as ed from './noble-ed25519.js';
+import {
+  boundedLineDiff,
+  decideLiveArtifactUpdate,
+  endLiveArtifactState,
+  LIVE_ARTIFACT_LIMITS,
+  liveBodyCommitIsCurrent,
+  liveArtifactFileKey,
+  liveArtifactRunKey,
+  sha256Hex,
+  transitionLiveArtifacts,
+} from './live-artifacts.mjs?v=20260710-live-hardening';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -42,6 +53,7 @@ const _ICON_PATHS={
   target:'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', // ◎ follow / watch-one
   box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ deliverable bundle (package)
   copy:'M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z',                  // ⧉ copy (two overlapping sheets)
+  download:'M8 2.5v7M5.5 7L8 9.5 10.5 7M3 11v2h10v-2',       // download to tray
 };
 function icon(name,extra){
   const d=_ICON_PATHS[name]; if(!d) return '';
@@ -102,40 +114,124 @@ const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
 /* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
    The node mints a per-install token (printed at boot, stored under runs/.../_operator/token).
-   Saved per node base in localStorage; every fetch to that base carries it, unlocking owner
+   Saved per node base in sessionStorage; every fetch to that base carries it, unlocking owner
    intake (/task /budget /stop), full /status, /runs, /personas and the gated static tree.
    Anonymous viewers keep working — they see each node's public discovery projection only. */
-function opTokens(){ try{ return JSON.parse(localStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; } }
-function opSaveTokens(m){ localStorage.setItem('personaos_operator',JSON.stringify(m)); updateOpBadge(); }
+function opTokens(){
+  // Clear credentials written by older portal builds instead of silently retaining
+  // durable authority that model-authored same-origin content could have observed.
+  try{ localStorage.removeItem('personaos_operator'); }catch(e){}
+  try{ return JSON.parse(sessionStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; }
+}
+function opSaveTokens(m){
+  try{ localStorage.removeItem('personaos_operator'); }catch(e){}
+  sessionStorage.setItem('personaos_operator',JSON.stringify(m)); updateOpBadge();
+}
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
-// A node reachable on localhost IS the owner's own machine: the node trusts a
-// genuine loopback caller (no tunnel/proxy hop) as operator, so the bearer token
-// is bypassed for it. A tunneled node keeps the public hostname and still needs a
-// token. This only flips operator affordances ON for local nodes — never off.
+// Loopback detection is only a discovery/convenience hint. Network position never
+// grants operator authority; protected calls still require the bearer token.
 const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostname;
   return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'; }catch(e){ return false; } };
-function tokenFor(u){ const m=opTokens(); const abs=isAbs(u)?u:join(location.origin,u);
-  let best='',tok=''; for(const k in m){ if(abs.startsWith(k)&&k.length>best.length){ best=k; tok=m[k]; } }
-  return tok; }
-// In-drawer renderers fetch bytes WITH the operator token (authHeaders), but a plain
-// <a download href> carries none — so for the default federation-tier (read-gated)
-// bodies this UI exists to surface, the node returns 403/404 and the download silently
-// fails. The node accepts ?token= (already used for EventSource), so thread it onto the
-// raw href when we hold a token for that base.
-function dlHref(u){ const t=tokenFor(u); return t?u+(u.includes('?')?'&':'?')+'token='+encodeURIComponent(t):u; }
+function tokenFor(u){
+  let target; try{ target=new URL(isAbs(u)?u:join(location.origin,u),location.href); }catch(e){ return ''; }
+  let best='',tok='';
+  for(const [rawBase,candidate] of Object.entries(opTokens())){
+    let base; try{ base=new URL(rawBase,location.href); }catch(e){ continue; }
+    if(target.origin!==base.origin) continue;
+    const root=base.pathname.replace(/\/+$/,'')||'/';
+    const within=root==='/'||target.pathname===root||target.pathname.startsWith(root+'/');
+    if(within&&rawBase.length>best.length){ best=rawBase; tok=candidate; }
+  }
+  return tok;
+}
 function authHeaders(u){ const t=tokenFor(u); return t?{'Authorization':'Bearer '+t}:{}; }
+function secureFetchInit(u,init={}){
+  return {...init,cache:init.cache||'no-store',credentials:'omit',redirect:'error',
+    referrerPolicy:'no-referrer',headers:{...(init.headers||{}),...authHeaders(u)}};
+}
+async function readBoundedResponseBytes(response,maxBytes){
+  const declared=Number(response.headers.get('content-length'));
+  if(Number.isFinite(declared)&&declared>maxBytes) throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+  if(!response.body||typeof response.body.getReader!=='function'){
+    const bytes=await response.arrayBuffer();
+    if(bytes.byteLength>maxBytes) throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+    return bytes;
+  }
+  const reader=response.body.getReader(), chunks=[]; let total=0;
+  try{
+    for(;;){ const {done,value}=await reader.read(); if(done) break;
+      total+=value.byteLength;
+      if(total>maxBytes){ await reader.cancel(); throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`); }
+      chunks.push(value);
+    }
+  }finally{ try{ reader.releaseLock(); }catch(e){} }
+  const out=new Uint8Array(total); let offset=0;
+  for(const chunk of chunks){ out.set(chunk,offset); offset+=chunk.byteLength; }
+  return out.buffer;
+}
+function _downloadName(name){
+  const leaf=String(name||'artifact.bin').split(/[\\/]/).pop()
+    .replace(/[\x00-\x1f\x7f<>:"|?*]/g,'_').trim().slice(0,180);
+  return leaf||'artifact.bin';
+}
+function secureDownloadMarkup(url,name,expectedHash){
+  const verified=!!String(expectedHash||'').replace(/^sha256:/i,'');
+  const label=verified?'download verified bytes':'download bytes';
+  return `<button class="fv-btn secure-download" type="button" data-act="secure-download" data-url="${esc(url)}" data-name="${esc(_downloadName(name))}" data-hash="${esc(expectedHash||'')}" title="${esc(label)}">`
+    +`${icon('download','ico-sm')}<span aria-live="polite">${label}</span></button>`;
+}
+async function secureDownloadFromButton(btn){
+  if(btn.dataset.busy==='1') return;
+  const label=btn.querySelector('span');
+  const original=label?.textContent||'download bytes';
+  const finish=(state,text)=>{
+    btn.dataset.busy=''; btn.disabled=false; btn.removeAttribute('aria-busy');
+    btn.classList.remove('ok','no'); if(state) btn.classList.add(state);
+    if(label) label.textContent=text;
+    clearTimeout(btn._downloadTimer);
+    btn._downloadTimer=setTimeout(()=>{ btn.classList.remove('ok','no'); if(label) label.textContent=original; },2200);
+  };
+  btn.dataset.busy='1'; btn.disabled=true; btn.setAttribute('aria-busy','true');
+  if(label) label.textContent='checking bytes';
+  try{
+    const target=new URL(btn.dataset.url||'',location.href);
+    if(!/^https?:$/.test(target.protocol)) throw new Error('unsupported download URL');
+    const response=await fetch(target.href,secureFetchInit(target.href));
+    if(!response.ok) throw new Error(`body HTTP ${response.status}`);
+    const bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+    const rawExpected=String(btn.dataset.hash||'').replace(/^sha256:/i,'').toLowerCase();
+    if(rawExpected){
+      if(!/^[a-f0-9]{64}$/.test(rawExpected)) throw new Error('invalid expected SHA-256');
+      const actual=await sha256Hex(bytes);
+      if(actual!==rawExpected) throw new Error('SHA-256 mismatch');
+    }
+    // Model-authored HTML/SVG must never receive a navigable same-origin URL.
+    // Rewrap verified bytes as an attachment-only type and discard the URL at once.
+    const objectUrl=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
+    const anchor=document.createElement('a');
+    anchor.href=objectUrl; anchor.download=_downloadName(btn.dataset.name); anchor.hidden=true;
+    document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(objectUrl),0);
+    finish('ok',rawExpected?'verified download started':'download started');
+  }catch(e){
+    const message=String(e&&e.message||'download failed').slice(0,90);
+    btn.title=message; finish('no',message);
+  }
+}
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   const n=Object.keys(opTokens()).length; b.classList.toggle('on',n>0);
   // stroked key glyph (inherits the button's currentColor; goes green via #opbtn.on)
   // instead of the colour emoji that defeated the token palette.
   b.innerHTML=icon('key')+`<span class="opbtn-label">OPERATOR${n>0?` · ${n}`:''}</span>`; }
-async function fetchJson(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null; return await r.json(); }catch(e){ return null; } }
+async function fetchJson(u,init={}){ try{ const r=await fetch(u,secureFetchInit(u,init)); if(!r.ok)return null;
+  const bytes=await readBoundedResponseBytes(r,init.maxBytes||4*1024*1024);
+  return JSON.parse(new TextDecoder().decode(bytes)); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), boots:new Map(),
-  streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(),
+  streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
   // Live per-entity telemetry index: base → latest live telemetry doc, plus
@@ -144,6 +240,11 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null,
   activeModelCallsByBase:new Map(), activeModelCallsByPersona:new Map(), activeModelCallsByEnv:new Map(),
   activeModelCallCount:0,
+  // Unsigned live transport state is deliberately separate from signed discovery
+  // records. File bytes are independently checked against each advertised sha256.
+  liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
+  liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
+  personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
   heartbeat:null, vitalSpikes:[], nodePos:new Map(), gnodes:new Map(), envCount:0,
@@ -469,11 +570,13 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
           public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
           base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
 }
-const GLOBAL_DISCOVERY_DEFAULT='https://node1.personas.ai';
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
   if(p.get('no_global_discovery')==='1') return [];
-  return [...new Set([GLOBAL_DISCOVERY_DEFAULT,...p.getAll('global_discovery')].map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
+  // Resolver services are optional, query-provided locators. The shell ships no
+  // privileged directory and never silently contacts a hard-coded central index.
+  return [...new Set([...p.getAll('global_discovery'),...p.getAll('resolver')]
+    .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
 async function verifyGlobalEnvelope(env){
   const ann=env?.announcement;
@@ -517,7 +620,7 @@ async function loadGlobalNodes(){
       if(kid) S.globalAnnouncements.set(kid,announced);
       if(base) S.globalAnnouncementByBase.set(base,announced);
       if(kid) S.kernels.add(kid);
-      noteKernel(kid,'global',base||ep,{
+      noteKernel(kid,'resolver',base||ep,{
         announced:true,
         recordCount:ann.record_count||0,
         reachability:ann.reachability_class||'',
@@ -528,7 +631,7 @@ async function loadGlobalNodes(){
     }
   }
   S.globalPeers=freshPeers;
-  if(S.globalPeers.size) log('global',`verified global bootstrap peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
+  if(S.globalPeers.size) log('resolver',`verified optional resolver peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
   return rows;
 }
 async function discoverFrom(base,plane){
@@ -567,7 +670,8 @@ async function discoverFrom(base,plane){
   // records it RECEIVED over gossipsub (discovery/p2p/received.json) — records
   // from kernels anywhere on the mesh, re-verified here against each record's
   // embedded key before joining the board (NET = P2P).
-  const p2pDoc=await fetchJson(join(base,'discovery/p2p/received.json'));
+  const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
+  const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived)):null;
   for(const doc of (p2pDoc?.records||[])){
     if(!doc?.record || doc.record.visibility_tier!=='public') continue;
     let ok=false;
@@ -614,7 +718,7 @@ function renderGlobalKernels(){
     const reachable=info.meta?.reachable===true
       || [...info.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
-      +(info.via.has('global')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
+      +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
     const title=[...info.bases].join(' ')+((info.meta?.recordCount||info.meta?.reachability)?` records=${info.meta.recordCount||0} reachability=${info.meta.reachability||''}`:'');
     return `<span class="gk ${fresh?'ok':'dim'}" title="${esc(title)}">`
       +`<span class="dot ${fresh?'live':''}"></span>${esc(kid.replace(/^kernel:/,'').slice(0,12))} ${via}</span>`;
@@ -634,7 +738,7 @@ async function loadPeersTxt(){
 }
 function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
   try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  return [...new Set([...p,...s,...TXT_PEERS,...(S.globalPeers||[]),...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
+  return [...new Set([...p,...s,...TXT_PEERS,...(S.globalPeers||[]),...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.localPeers||[])])]; }
 function peerSourceTags(base){
   const u=String(base||'').replace(/\/$/,'');
   if(!u) return [];
@@ -646,26 +750,22 @@ function peerSourceTags(base){
   const out=[];
   if(p.includes(u)||s.includes(u)||txt.includes(u)) out.push('manual');
   if(inSet(S.localPeers)) out.push('local');
-  if(inSet(S.globalPeers)) out.push('global');
+  if(inSet(S.globalPeers)) out.push('resolver');
+  if(inSet(S.gossipPeers)) out.push('gossip');
   if(inSet(S.ipfsPeers)) out.push('ipfs');
   return out;
 }
 
-/* ---------- IPFS discovery plane (content-addressed rendezvous) ----------
-   Every PersonaOS kernel pins the SAME deterministic rendezvous block
-   ("personaos-discovery-rendezvous/v1") and publishes a SIGNED node card under
-   its IPNS name. The UI enumerates the rendezvous CID's providers via the
-   delegated-routing HTTP API, resolves each provider's signed node card (via the
-   delegated-routing IPNS record → immutable /ipfs/<card-cid>, falling back to a
-   gateway /ipns/<peer-id>), verifies the card's Ed25519 signature in-browser, and
-   feeds the verified peer URL into the normal discovery plane. Purely additive to
-   ?peer / +PEER / peers.txt / DHT / mDNS / gossipsub — unreachable IPFS infra
-   degrades silently. Override endpoints with ?ipfs_routing= and ?ipfs_gw=. */
+/* ---------- optional IPFS discovery commons (content-addressed rendezvous) ----------
+   When the VIEWER supplies ?ipfs_routing= and one or more ?ipfs_gw= routes, the
+   portal can query the deterministic PersonaOS rendezvous CID and verify signed
+   node cards. No delegated router or gateway is privileged or contacted by
+   default. This is an optional locator commons; record signatures remain trust. */
 const IPFS_RENDEZVOUS_CID='Qmbnw4HfNbSp9YqpNBGoQqZcBgAbfF3reayr79DWxPqJgQ';
 function ipfsRouting(){ const p=new URLSearchParams(location.search).get('ipfs_routing');
-  return p||'https://delegated-ipfs.dev/routing/v1/providers/'; }
+  return String(p||'').trim(); }
 function ipfsGateways(){ const p=new URLSearchParams(location.search).getAll('ipfs_gw');
-  return p.length?p:['https://ipfs.io','https://dweb.link']; }
+  return p.map((item)=>String(item||'').replace(/\/$/,'')).filter(isHttp); }
 // An /dns*/<host>/tcp/<port>/https (or tls/http) multiaddr in a provider record
 // names the node's HTTP front door — kernels announce it via kubo
 // Addresses.AppendAnnounce, so the URL rides the DHT provider record itself and
@@ -706,22 +806,25 @@ function ipnsRoutingBase(){ return ipfsRouting().replace('/providers/','/ipns/')
 async function fetchNodeCard(pid){
   const name=peerIdToIpnsName(pid);
   if(name){ try{
-    const rr=await fetch(ipnsRoutingBase()+name,{headers:{Accept:'application/vnd.ipfs.ipns-record'},cache:'no-store'});
-    if(rr.ok){ const buf=new Uint8Array(await rr.arrayBuffer());
+    const rr=await fetch(ipnsRoutingBase()+name,secureFetchInit(ipnsRoutingBase()+name,{headers:{Accept:'application/vnd.ipfs.ipns-record'}}));
+    if(rr.ok){ const buf=new Uint8Array(await readBoundedResponseBytes(rr,256*1024));
       let txt=''; for(let i=0;i<buf.length;i++) txt+=String.fromCharCode(buf[i]);
       const m=txt.match(/\/ipfs\/(Qm[1-9A-HJ-NP-Za-km-z]{44}|baf[a-z2-7]{20,})/);
-      if(m){ for(const gw of ipfsGateways()){ try{ const cr=await fetch(`${gw}/ipfs/${m[1]}`,{cache:'no-store'}); if(cr.ok) return await cr.json(); }catch(e){} } } }
+      if(m){ for(const gw of ipfsGateways()){ try{ const u=`${gw}/ipfs/${m[1]}`; const doc=await fetchJson(u,{maxBytes:256*1024}); if(doc) return doc; }catch(e){} } } }
   }catch(e){} }
-  for(const gw of ipfsGateways()){ try{ const r=await fetch(`${gw}/ipns/${pid}`,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){} }
+  for(const gw of ipfsGateways()){ try{ const u=`${gw}/ipns/${pid}`; const doc=await fetchJson(u,{maxBytes:256*1024}); if(doc) return doc; }catch(e){} }
   return null;
 }
 async function discoverViaIPFS(opts={}){
   const rediscover = opts.rediscover !== false;
   S.ipfsPeers=S.ipfsPeers||new Set();
+  const routing=ipfsRouting();
+  if(!routing){ if(!S._ipfsConfigNoted){ S._ipfsConfigNoted=true; log('ipfs','optional commons not configured; supply ?ipfs_routing= and ?ipfs_gw= to use one'); }
+    S.ipfsPeers=new Set(); return S.ipfsPeers; }
   let provs=[];
-  try{ const r=await fetch(ipfsRouting()+IPFS_RENDEZVOUS_CID,{headers:{Accept:'application/json'},cache:'no-store'});
+  try{ const u=routing+IPFS_RENDEZVOUS_CID; const r=await fetch(u,secureFetchInit(u,{headers:{Accept:'application/json'}}));
     if(!r.ok){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs',`delegated routing HTTP ${r.status} — IPFS plane idle`,false); } return; }
-    const d=await r.json();
+    const d=JSON.parse(new TextDecoder().decode(await readBoundedResponseBytes(r,1024*1024)));
     provs=(d.Providers||[]).filter((x)=>x&&x.ID);
   }catch(e){ if(!S._ipfsNoted){ S._ipfsNoted=true; log('ipfs','delegated routing unreachable — IPFS plane idle',false); } return; }
   if(provs.length) log('ipfs',`rendezvous providers on the IPFS DHT: ${provs.length}`,true);
@@ -758,7 +861,8 @@ async function discoverViaIPFS(opts={}){
 // A node's PUBLIC url (a tunnel) and its localhost url are the same kernel, but
 // localhost is never globally advertised (every visitor's localhost is their own
 // box). So probe a few well-known ports here; self-register any that answer. That
-// node then appears in the OPERATOR console as a LOCAL node — loopback ⇒ NO token.
+// node then appears in the OPERATOR console as a LOCAL route. The bearer token is
+// still required for operator authority; network position is not a credential.
 // Silent when nothing's running. From an https page: https://localhost works if the
 // node's cert is trusted; plain-http localhost is browser-policy dependent and
 // may fail before CORS, so the empty state points users at the node-served UI.
@@ -766,7 +870,8 @@ const LOCAL_PORTS=[8765,8805,8910];
 async function probeBase(base){
   try{
     const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),2500);
-    const r=await fetch(join(base,'.well-known/personaos-discovery.json'),{signal:ctl.signal,cache:'no-store'});
+    const u=join(base,'.well-known/personaos-discovery.json');
+    const r=await fetch(u,secureFetchInit(u,{signal:ctl.signal}));
     clearTimeout(t);
     if(!r.ok) return false;
     const d=await r.json();
@@ -776,6 +881,9 @@ async function probeBase(base){
 async function discoverLocalNode(opts={}){
   const rediscover = opts.rediscover !== false;
   S.localPeers=S.localPeers||new Set();
+  if(new URLSearchParams(location.search).get('no_local_discovery')==='1'){
+    S.localPeers=new Set(); return S.localPeers;
+  }
   const hosts=location.protocol==='https:'
     ? ['https://localhost','https://127.0.0.1','http://localhost','http://127.0.0.1']
     : ['http://localhost','http://127.0.0.1'];
@@ -787,7 +895,7 @@ async function discoverLocalNode(opts={}){
   const before=[...S.localPeers].sort().join('|'), after=[...found].sort().join('|');
   S.localPeers=found;                      // rebuild each cycle: a stopped local node drops off
   if(after!==before){
-    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — operator console works with NO token (loopback)`,true);
+    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — paste its bearer token for operator controls`,true);
     if(!rediscover) return found;
     discover().then(()=>{ renderMissions(); }).catch(()=>{});
   }
@@ -864,7 +972,7 @@ async function discover(){
   $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
   const [_txt,_global,_ipfs,_local]=await Promise.all([
     loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
-    loadGlobalNodes(),                                              // signed node1.personas.ai bootstrap seed → peers/relays
+    loadGlobalNodes(),                                              // optional ?resolver= signed locator → peers/relays
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ]);
@@ -883,7 +991,7 @@ async function discover(){
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
   const when=new Date();
-  $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> records discovered + Ed25519-verified across `
+  $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> signed discovery record(s) Ed25519-verified across `
     +`<span class="ok">${S.kernels.size||1}</span> kernel(s) · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
     +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
   }finally{ _discoverBusy=false; }
@@ -902,9 +1010,10 @@ function emptyStateHTML(){
   return `<div class="empty-card">
     <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
-	    discovered at runtime from live nodes and Ed25519-verified in your browser. Nothing is showing because
+	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
+	    live execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
 	    no reachable node is currently publishing public records.</div>
-	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed global node announcement(s) were found through <code>${esc(GLOBAL_DISCOVERY_DEFAULT)}</code>, but none produced browser-reachable public records yet.</div>`:''}
+	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through the optional resolver supplied in this page URL, but none produced browser-reachable public records yet.</div>`:''}
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
@@ -983,9 +1092,14 @@ function connectDiscoveryStream(base,boot){
   if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
   if(S.streams.has(url)) return;
-  // EventSource cannot set headers — the operator token rides ?token= instead.
-  const tok=tokenFor(url); const esUrl=tok?url+(url.includes('?')?'&':'?')+'token='+encodeURIComponent(tok):url;
-  const es=new EventSource(esUrl);
+  // EventSource cannot set an Authorization header. Never move an operator token
+  // into its URL: private nodes use authenticated status/live-artifact polling.
+  if(tokenFor(url)){
+    S.streams.set(url,{pollOnly:true});
+    log('stream',`${url} uses authenticated polling (token omitted from URL)`,true);
+    return;
+  }
+  const es=new EventSource(url);
   S.streams.set(url,es);
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
   es.addEventListener('hello',(ev)=>{
@@ -1012,6 +1126,17 @@ function connectDiscoveryStream(base,boot){
       refreshLiveSection();   // stream into an open persona/env drawer, in place
     }
     catch(e){ return; }
+  });
+  es.addEventListener('live_artifact_update',(ev)=>{
+    try{
+      const payload=JSON.parse(ev.data||'{}');
+      if(payload.schema!=='personaos-live-artifact-event/1'||!payload.snapshot) return;
+      ingestLiveArtifactSnapshot(base,payload.snapshot,'sse',{previousRevision:payload.previous_revision});
+    }catch(e){ log('stream','live artifact frame parse failed',false); }
+  });
+  es.addEventListener('run_ended',(ev)=>{
+    try{ const payload=JSON.parse(ev.data||'{}'); if(payload.run) endLiveArtifactRun(base,payload); }
+    catch(e){ log('stream','run-ended frame parse failed',false); }
   });
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
 }
@@ -1088,22 +1213,58 @@ async function loadTelemetry(base){
 const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
   if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v); return v; }
-// Node /status cache — 8s TTL so active runs stay reasonably fresh without hammering
+function indexRuntimeStatus(base,status){
+  if(!status||typeof status!=='object') return;
+  const baseKey=base||'@origin';
+  for(const [sid,item] of [...S.personaRuntimeById]){
+    if(item&&item._baseKey===baseKey) S.personaRuntimeById.delete(sid);
+  }
+  const calls=Array.isArray(status.active_model_calls)?status.active_model_calls:[];
+  const byPersona=new Map();
+  for(const call of calls){ const sid=_shortId(call&&call.persona_id); if(sid) byPersona.set(sid,call); }
+  for(const persona of (Array.isArray(status.personas)?status.personas:[])){
+    const sid=_shortId(persona&&persona.persona_id); if(!sid) continue;
+    S.personaRuntimeById.set(sid,{...persona,current_model_call:byPersona.get(sid)||null,_baseKey:baseKey});
+  }
+  // /status is a second authoritative source for calls when the telemetry card is
+  // private or delayed. It carries runtime state, not a signed discovery record.
+  if(Array.isArray(status.active_model_calls)){
+    _indexActiveModelCalls(base,{kernel:{active_model_calls:status.active_model_calls}});
+  }
+}
+function runtimeForPersona(pid){ return S.personaRuntimeById.get(_shortId(pid))||null; }
+// Node /status cache — 4s TTL so active calls and run discovery keep the 2-5s live cadence.
 const statusCache=new Map();
 async function fetchNodeStatus(base){
   const key=base||'@origin'; const hit=statusCache.get(key);
-  if(hit&&(Date.now()-hit.ts)<8000) return hit.v;
+  if(hit&&(Date.now()-hit.ts)<4000) return hit.v;
   const v=await fetchJson(join(base,'status'));
-  if(v) statusCache.set(key,{v,ts:Date.now()}); return v||null;
+  if(v){ statusCache.set(key,{v,ts:Date.now()}); indexRuntimeStatus(base,v); }
+  return v||null;
 }
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
   return (did||'').replace('did:personaos:',''); }
-async function fetchText(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null; return await r.text(); }catch(e){ return null; } }
+async function fetchText(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
+  return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes)); }catch(e){ return null; } }
 // Binary-safe fetch for images / PDFs / 3D meshes — returns {blob,size,type} or null.
 // Binaries are detected by extension BEFORE this is called so fetchText is never run on them.
-async function fetchBlob(u){ try{ const r=await fetch(u,{cache:'no-store',headers:authHeaders(u)}); if(!r.ok)return null;
-  const b=await r.blob(); return {blob:b,size:b.size,type:b.type}; }catch(e){ return null; } }
+async function fetchBlob(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
+  const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  const type=r.headers.get('content-type')||'application/octet-stream';
+  const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }catch(e){ return null; } }
+async function fetchVerifiedLiveBody(url,expectedHash){
+  try{
+    const r=await fetch(url,secureFetchInit(url));
+    if(!r.ok) return {ok:false,error:`body HTTP ${r.status}`};
+    const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+    const actual=await sha256Hex(bytes);
+    const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
+    if(!expected||actual!==expected) return {ok:false,error:'SHA-256 mismatch',actual,expected};
+    const type=r.headers.get('content-type')||'application/octet-stream';
+    return {ok:true,actual,bytes,blob:new Blob([bytes],{type}),type,size:bytes.byteLength};
+  }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
+}
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
 const extOf=(p)=>{ const m=/\.([a-z0-9_]+)$/i.exec(String(p||'')); return m?m[1].toLowerCase():''; };
@@ -1112,6 +1273,164 @@ const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
 const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(txt)}</a>`;
 const findRecByDid=(pid)=>S.order.find((id)=>{ const r=S.recs.get(id); return r.did==='did:personaos:'+pid||r.did===pid; });
+
+/* ---------- unsigned live workspace transport + exact-byte integrity ---------- */
+function _liveRunKey(base,run){ return liveArtifactRunKey(base,run,location.origin); }
+function _liveRunDomKey(base,run){ return encodeURIComponent(_liveRunKey(base,run)); }
+function liveArtifactState(base,run){ return S.liveArtifacts.get(_liveRunKey(base,run))||null; }
+function _liveFileStateKey(base,run,workspaceId,path){
+  return `${_liveRunKey(base,run)}\u0000${workspaceId}\u0000${path}`;
+}
+function _nodeScopedBodyUrl(base,value){
+  try{
+    const root=new URL(opBaseKey(base||location.origin)+'/',location.href);
+    const target=new URL(join(base,value),location.href);
+    const rootPath=root.pathname.replace(/\/$/,'');
+    if(!/^https?:$/.test(target.protocol)||target.username||target.password||target.origin!==root.origin) return '';
+    if(rootPath&&rootPath!=='/'&&target.pathname!==rootPath&&!target.pathname.startsWith(rootPath+'/')) return '';
+    return target.href;
+  }catch(e){ return ''; }
+}
+function _renderLiveArtifactMount(base,run){
+  const domKey=_liveRunDomKey(base,run);
+  document.querySelectorAll('[data-live-run-key]').forEach((host)=>{
+    if(host.dataset.liveRunKey!==domKey) return;
+    const html=liveArtifactsHTML(base,run);
+    if(host.dataset.h!==html){ host.dataset.h=html; host.innerHTML=html; }
+  });
+}
+function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
+  if(snapshot?.schema!=='personaos-live-artifacts/1'||!snapshot.run||!snapshot.revision) return null;
+  const key=_liveRunKey(base,snapshot.run);
+  const previous=S.liveArtifacts.get(key)||null;
+  const scoped={...snapshot,files:(Array.isArray(snapshot.files)?snapshot.files:[]).map((file)=>
+    ({...file,body_url:_nodeScopedBodyUrl(base,file&&file.body_url)}))};
+  const decision=decideLiveArtifactUpdate(previous,scoped,{...meta,source,
+    ended:S.liveArtifactEnded.has(key),
+    latestRequestGeneration:S.liveArtifactRequestGeneration.get(key)||0});
+  if(!decision.accept){
+    if(!['run_ended'].includes(decision.reason)) log('live',`${snapshot.run}: ignored ${decision.reason}`,false);
+    return previous;
+  }
+  const next=transitionLiveArtifacts(previous,scoped);
+  next.base=base;
+  next.source=source;
+  next.receivedAt=Date.now();
+  if(previous&&decision.refresh){
+    next.changes=previous.changes; next.ended=false;
+    S.liveArtifacts.set(key,next);
+    S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
+    _renderLiveArtifactMount(base,snapshot.run);
+    return next;
+  }
+  S.liveArtifacts.set(key,next);
+  while(S.liveArtifacts.size>48){
+    const oldest=S.liveArtifacts.keys().next().value;
+    if(oldest===S.openLiveFile?.stateKey) break;
+    S.liveArtifacts.delete(oldest);
+  }
+  S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
+  _renderLiveArtifactMount(base,snapshot.run);
+  const open=S.openLiveFile;
+  if(open&&open.stateKey===key){
+    const current=next.files.get(`${open.workspaceId}\u0000${open.path}`);
+    if(!current||current.sha256!==open.hash){
+      // The current view closure resolves the newest record. Re-render in place;
+      // text viewers retain the prior verified body for a bounded diff.
+      Promise.resolve().then(()=>renderTop()).catch(()=>{});
+    }
+  }
+  return next;
+}
+async function fetchLiveArtifacts(base,run){
+  const key=_liveRunKey(base,run);
+  if(S.liveArtifactEnded.has(key)) return S.liveArtifacts.get(key)||null;
+  if(S.liveArtifactPolls.has(key)) return S.liveArtifactPolls.get(key).promise;
+  const generation=(S.liveArtifactRequestGeneration.get(key)||0)+1;
+  S.liveArtifactRequestGeneration.set(key,generation);
+  const startedRevision=S.liveArtifacts.get(key)?.revision||'';
+  const controller=new AbortController(); S.liveArtifactAbort.set(key,controller);
+  const p=(async()=>{
+    const doc=await fetchJson(join(base,`runs/${encodeURIComponent(run)}/live-artifacts`),
+      {signal:controller.signal,maxBytes:LIVE_ARTIFACT_LIMITS.maxSnapshotBytes});
+    if(doc) return ingestLiveArtifactSnapshot(base,doc,'poll',{requestGeneration:generation,startedRevision});
+    return null;
+  })().finally(()=>{ const current=S.liveArtifactPolls.get(key); if(current?.generation===generation) S.liveArtifactPolls.delete(key);
+    if(S.liveArtifactAbort.get(key)===controller) S.liveArtifactAbort.delete(key); });
+  S.liveArtifactPolls.set(key,{promise:p,generation,controller});
+  return p;
+}
+function endLiveArtifactRun(base,event){
+  const run=String(event?.run||''); if(!run) return;
+  const key=_liveRunKey(base,run); S.liveArtifactEnded.set(key,Date.now());
+  while(S.liveArtifactEnded.size>64) S.liveArtifactEnded.delete(S.liveArtifactEnded.keys().next().value);
+  S.liveArtifactRequestGeneration.set(key,(S.liveArtifactRequestGeneration.get(key)||0)+1);
+  S.liveArtifactAbort.get(key)?.abort(); S.liveArtifactAbort.delete(key); S.trackedLiveRuns.delete(key);
+  const previous=S.liveArtifacts.get(key); const ended=endLiveArtifactState(previous,event);
+  if(ended){ ended.receivedAt=Date.now(); S.liveArtifacts.set(key,ended); _renderLiveArtifactMount(base,run);
+    if(S.openLiveFile?.stateKey===key) Promise.resolve().then(()=>renderTop()).catch(()=>{}); }
+  renderMissions();
+}
+function pollLiveArtifacts(){
+  const targets=new Map(); const now=Date.now();
+  for(const [baseKey,hit] of statusCache){
+    if(!hit?.ts||now-hit.ts>15000) continue;
+    const base=baseKey==='@origin'?'':baseKey;
+    for(const run of (hit?.v?.stoppable_runs||[])) targets.set(_liveRunKey(base,run),{base,run});
+  }
+  for(const [key,item] of S.trackedLiveRuns){
+    if(S.liveArtifactEnded.has(key)) S.trackedLiveRuns.delete(key);
+    else if(now-item.lastSeen<60000 || S.openLiveFile?.stateKey===key) targets.set(key,item);
+    else S.trackedLiveRuns.delete(key);
+  }
+  for(const item of targets.values()) fetchLiveArtifacts(item.base,item.run).catch(()=>{});
+}
+function _liveTreeBuild(files){
+  const root={dirs:new Map(),files:[]};
+  for(const file of files){ const parts=String(file.path||'').split('/').filter(Boolean); let node=root;
+    for(let i=0;i<parts.length-1;i++){ const part=parts[i];
+      if(!node.dirs.has(part)) node.dirs.set(part,{dirs:new Map(),files:[]}); node=node.dirs.get(part); }
+    node.files.push({file,name:parts.at(-1)||file.path}); }
+  return root;
+}
+function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
+  let html='';
+  for(const [name,child] of [...node.dirs].sort((a,b)=>a[0].localeCompare(b[0]))){
+    const rel=prefix?`${prefix}/${name}`:name;
+    const dirKey=`live:${state.run}:${workspaceId}:${rel}`; const collapsed=dirCollapsed(dirKey,depth);
+    html+=`<div class="tnode tdir" style="padding-left:${depth*14}px"><a href="#" data-act="tdir" data-key="${esc(dirKey)}" data-collapsed="${collapsed?1:0}"><span class="ttog${collapsed?' collapsed':''}">${icon('chevron','ico-sm')}</span> ${esc(name)}/</a><span class="l2">${child.files.length+child.dirs.size}</span></div>`;
+    if(!collapsed) html+=`<div class="tkids">${_renderLiveTreeNode(child,rel,depth+1,state,workspaceId)}</div>`;
+  }
+  for(const {file,name} of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
+    html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}">${esc(name)}</a>`
+      +`<span class="l2">${esc(extOf(file.path)||file.media_kind||'file')} · ${fmtBytes(file.size_bytes)}</span></div>`;
+  }
+  return html;
+}
+function liveArtifactsHTML(base,run){
+  const state=liveArtifactState(base,run);
+  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">UNSIGNED LIVE TRANSPORT</span></div><div class="l2">Polling every 3 seconds; SSE updates are applied when the node advertises them.</div></div>`;
+  const snap=state.snapshot||{}; const ch=state.changes;
+  const changed=ch.baseline?'<span class="l2">baseline snapshot</span>'
+    : `<span class="live-change c-created">+${ch.created.length} created</span><span class="live-change c-modified">${ch.modified.length} modified</span><span class="live-change c-deleted">-${ch.deleted.length} deleted</span>`;
+  const changeRows=ch.baseline?'':[...ch.created.map((x)=>['created',x]),...ch.modified.map((x)=>['modified',x]),...ch.deleted.map((x)=>['deleted',x])]
+    .slice(0,12).map(([kind,file])=>`<div class="live-change-row ${kind}"><span>${esc(file.path)}</span><code>${esc(String(file.sha256||'').slice(0,12))}</code></div>`).join('');
+  const wsMeta=new Map((snap.workspaces||[]).map((w)=>[w.workspace_id,w]));
+  const byWs=new Map(); for(const file of state.files.values()) (byWs.get(file.workspace_id)||byWs.set(file.workspace_id,[]).get(file.workspace_id)).push(file);
+  const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
+  const trees=workspaces.map((workspaceId)=>{ const w=wsMeta.get(workspaceId)||{}; const files=byWs.get(workspaceId)||[];
+    const pid=_shortId(w.persona_id||files[0]?.persona_id); const label=_nameFor(pid)||pid||workspaceId;
+    return `<section class="live-workspace"><div class="live-workspace-head"><span><b>${esc(label)}</b> <code>${esc(workspaceId)}</code></span><span class="${w.state==='model_call_active'?'ok':'l2'}">${esc((w.state||'run_active').replace(/_/g,' '))} · ${files.length} file${files.length===1?'':'s'}</span></div>`
+      +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
+  }).join('');
+  const revision=String(state.revision||'');
+  return `<div class="live-artifacts${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge">UNSIGNED LIVE TRANSPORT</span></div>`
+    +(state.ended?`<div class="fv-note">Terminal event received${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last accepted revision.</div>`:'')
+    +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
+    +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
+    +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
+    +trees+`<div class="live-integrity-note">File lists and execution frames are unsigned telemetry. Opened file bytes are SHA-256 checked against the exact advertised hash before rendering.</div></div>`;
+}
 
 // ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
 // trust surface: Ed25519 verification + the discover<read<write<admin ladder).
@@ -1158,7 +1477,10 @@ function trustPanel(r){
 // ---------- live per-entity activity (what is happening INSIDE this persona / env) ----------
 const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate',judge:'judging (PoLL)',
   safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
-  domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering'};
+  domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering',
+  pressure:'appraising completion pressure',pressure_appraisal:'appraising completion pressure',
+  peer_pressure_appraisal:'independent pressure review',artifact_review:'reviewing artifact evidence',
+  artifact_generation:'building artifacts',artifact_revision:'revising artifacts'};
 // MODEL-PER-ROLE rollup: PersonaOS resolves a DIFFERENT model per role/purpose
 // (EnvironmentModelRegistry), so summarise the distinct models a persona/env used
 // → the roles/purposes each served, busiest first, as mono <code> chips. Honest:
@@ -1191,9 +1513,10 @@ function _liveFeed(models){
 function renderPersonaLive(pid,profileFallback){
   // profileFallback (the served persona card) lets the grid render for IDLE personas too
   // (state/tasks/reputation), since the drawer no longer duplicates those as kv rows.
-  const d=S.liveByPersona.get(_shortId(pid))||(profileFallback?{summary:profileFallback,models:[]}:null);
+  const rt=runtimeForPersona(pid);
+  const d=S.liveByPersona.get(_shortId(pid))||(profileFallback||rt?{summary:profileFallback||rt||{},models:[]}:null);
   if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
-  const s=d.summary||profileFallback||{}; let h='';
+  const s=d.summary||profileFallback||rt||{}; let h='';
   // PER-04 / 09_PROTOCOLS §4.1: public tiles only (state, tasks, reputation);
   // operator-tier evolution internals (fitness, tactics, lessons, memory) appear
   // only when an operator token is held.
@@ -1208,6 +1531,13 @@ function renderPersonaLive(pid,profileFallback){
         +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
         +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
       +`</div>`;
+  }
+  if(rt){
+    h+=`<div class="sublabel">Runtime state · unsigned status telemetry</div>`
+      +kv('Task execution',esc(rt.task_execution_state||'unmarked'))
+      +kv('LLM execution',esc(rt.llm_execution_state||'unmarked'));
+    const call=rt.current_model_call;
+    if(call) h+=kv('Current model call',`<span class="ok">${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')}</span> · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}`);
   }
   h+=`<div class="sublabel">Doing now</div>`+_liveFeed(d.models);
   return h;
@@ -1276,10 +1606,14 @@ function renderEnvLaneLive(b){
    request/response (model selections = what it ASKED a model to do) and its
    cognition; the right rail streams coordination + cross-env interactions
    (kernel.interactions: actor → affected : kind); artifacts show as deliverables.
-   All from live, signature-verified telemetry — nothing fabricated. */
+   Signed lineage events retain their explicit signed=true marker; model calls,
+   coordination frames and workspace updates are labelled unsigned live transport. */
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
-  domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify'};
+  domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify',
+  pressure:'appraise completion pressure',pressure_appraisal:'appraise completion pressure',
+  peer_pressure_appraisal:'independently appraise pressure',artifact_review:'review artifact evidence',
+  artifact_generation:'build artifacts',artifact_revision:'revise artifacts'};
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
@@ -1366,6 +1700,8 @@ function _personaGrew(sid,count){
 function renderPersonaCard(pid){
   const sid=_shortId(pid); const d=S.liveByPersona.get(sid)||{}; const s=d.summary||{};
   const models=d.models||[]; const last=models[models.length-1];
+  const rt=runtimeForPersona(sid)||{};
+  const activeCall=_activeModelCallsForPersona(sid).at(-1)||rt.current_model_call||null;
   const name=s.name||_nameFor(sid); _PERSONA_NAME.set(sid,name);
   const role=_coordRole(sid,s);
   const state=s.lifecycle_state||'';
@@ -1402,7 +1738,12 @@ function renderPersonaCard(pid){
   // Card content (UX): the useful signal is WHAT it's doing now + WHAT it produced/learned
   // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
   let doingHTML, glance='';
-  if(hasModels){
+  if(activeCall){
+    const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
+    const model=String(activeCall.model_id||activeCall.model||'—');
+    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span> ${esc(PURPOSE_VERB[purpose]||purpose)} <code>${esc(model)}</code>`
+      +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
+  } else if(hasModels){
     const verb=recent?(PURPOSE_VERB[last.purpose]||last.purpose):('last '+(PURPOSE_VERB[last.purpose]||last.purpose));
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(verb)} <code>${esc(last.model)}</code>`;
     const byP=new Map();
@@ -1438,13 +1779,16 @@ function renderPersonaCard(pid){
     +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
     +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
     +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
-    +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'');
+    +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
+    +(rt.task_execution_state?`<span class="tag runtime-tag" title="task execution state from unsigned node status">${icon('task','ico-sm')} ${esc(rt.task_execution_state.replace(/_/g,' '))}</span>`:'');
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
   const dotCls=running?'run':(recent?'on':'off');
   const statusBadge=running
-    ? '<span class="pc-run">RUNNING</span>'
-    : (recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>');
+    ? '<span class="pc-run">MODEL CALL</span>'
+    : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
+      :rt.task_execution_state==='run_participant'?'<span class="pc-recent">RUN ACTIVE</span>'
+      :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
   const lifecycle=(state||'ACTIVE').toUpperCase();
   const lifecycleBadge=`<span class="pc-life${lifecycle==='ACTIVE'?'':' off'}">${esc(lifecycle==='ACTIVE'?'AVAILABLE':lifecycle.toLowerCase())}</span>`;
   // HONEST recency tag on the doing line: when did this persona last actually do
@@ -1782,7 +2126,7 @@ function updateVitalsCounters(){
   const box=$('#stats'); if(!box) return;
   if(!box.dataset.built){ box.dataset.built='1';
     box.innerHTML=['auth','personas','active','envs','acts','signed'].map((k)=>{
-      const lbl={auth:'access',personas:'personas',active:'running',envs:'envs',acts:'acts/min',signed:'verified'}[k];
+      const lbl={auth:'access',personas:'personas',active:'running',envs:'envs',acts:'acts/min',signed:'signed recs'}[k];
       const init=k==='auth'?'discover':'0';
       // the RUNNING counter is the page's hero runtime metric: personas with
       // fresh model-call growth only. Non-LLM coordination is counted in acts/min.
@@ -1810,7 +2154,7 @@ function updateVitalsCounters(){
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',acts); setV('#st-signed',signed.toLocaleString());
   // verify badge live count
-  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed record(s) Ed25519-verified in your browser`;
+  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Live frames remain labelled unsigned transport telemetry.`;
   // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
   const dot=$('#livedot'); if(dot){ const beating=!!(S.heartbeat&&S.heartbeat.running!==false);
     dot.classList.toggle('beating',beating);
@@ -2107,13 +2451,16 @@ function renderInteractionStream(){
     // PLAN reads instantly (the single _ctype computed once in streamPersonaCognition).
     const ct=(e._ctype&&e._ctype!=='think')?`<span class="ix-ct ct-${e._ctype}">${e._ctype}</span>`:'';
     const msg=e._msg?`<span class="ix-msg">${ct}${esc(e._msg)}</span>`:'';
+    const trust=e.signed===true
+      ? `<span class="ix-trust signed" title="lineage signature asserted by the node frame">SIGNED EVENT</span>`
+      : `<span class="ix-trust transport" title="live node transport frame; not independently signature-verified in this browser">LIVE FRAME</span>`;
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
     const ttl=e._rationale?` title="${esc(e._rationale)}"`:(cap&&cap.error?` title="${esc(cap.error)}"`:'');
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
-      +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}`
+      +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
       +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
     // cognition is operator-token-only by design (A-TF2), so an anonymous THINK feed is
@@ -2717,48 +3064,19 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
    MEDIA-AWARE ARTIFACT RENDERING
    --------------------------------------------------------------------
    Renderer is selected by file EXTENSION (primary) then media_kind
-   (fallback). Each heavy library is LAZY-LOADED via dynamic import()
-   from a pinned CDN, ONLY the first time a file of that kind is opened,
-   behind a cached module promise. Every import is wrapped so a CDN
-   failure (offline / intranet node-served page) degrades to the plain
-   <pre> renderer — never a broken pane.
+   (fallback). Executable renderer code is loaded only from this repository;
+   third-party CDN modules are never imported into the operator-token realm.
    SECURITY: artifact bodies are REMOTE PEER content. Markdown is
-   sanitised with DOMPurify; tables / code / descriptors are built with
+   rendered with local textContent-only primitives; tables / code / descriptors are built with
    createElement + textContent (never innerHTML of raw content); SVG and
    images are rendered as blob: <img> (never inline innerHTML). No eval.
    ==================================================================== */
 
-// Pinned CDN modules. esm.sh / jsdelivr +esm both serve ES modules with
-// their own deps bundled. Each entry lists fallbacks tried in order.
-const CDN={
-  marked:   ['https://esm.sh/marked@12.0.2','https://cdn.jsdelivr.net/npm/marked@12.0.2/+esm'],
-  dompurify:['https://esm.sh/dompurify@3.1.6','https://cdn.jsdelivr.net/npm/dompurify@3.1.6/+esm'],
-  papaparse:['https://esm.sh/papaparse@5.4.1','https://cdn.jsdelivr.net/npm/papaparse@5.4.1/+esm'],
-  hljs:     ['https://esm.sh/highlight.js@11.10.0/lib/core','https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core/+esm'],
-  three:    ['https://esm.sh/three@0.160.0','https://cdn.jsdelivr.net/npm/three@0.160.0/+esm'],
-  orbit:    ['https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js/+esm'],
-  stl:      ['https://esm.sh/three@0.160.0/examples/jsm/loaders/STLLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/STLLoader.js/+esm'],
-  obj:      ['https://esm.sh/three@0.160.0/examples/jsm/loaders/OBJLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js/+esm'],
-  gltf:     ['https://esm.sh/three@0.160.0/examples/jsm/loaders/GLTFLoader.js','https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js/+esm'],
-};
-// Per-key cached module promise. lazyLib(key) resolves the module once;
-// on every listed URL failing it REJECTS so the caller falls back to <pre>.
-const LIBS=new Map();
-function lazyLib(key){
-  if(LIBS.has(key)) return LIBS.get(key);
-  const urls=(CDN[key]||[]).slice();
-  const p=(async()=>{ let lastErr;
-    for(const u of urls){ try{ return await import(/* @vite-ignore */ u); }catch(e){ lastErr=e; } }
-    throw lastErr||new Error('no CDN url for '+key); })();
-  p.catch(()=>LIBS.delete(key));   // allow a later retry if the first attempt failed
-  LIBS.set(key,p); return p;
-}
-
 /* ====================================================================
    LAZY .mjs RENDERER REGISTRY (richer deliverable viewers)
    --------------------------------------------------------------------
-   Each entry is a self-contained ES module under ./renderers/ that
-   lazy-loads its own heavy CDN libs (via ctx.lazy) inside render().
+   Each enabled entry is a self-contained ES module under ./renderers/ with
+   no runtime executable dependency outside this repository.
    These OUTRANK the legacy inline EXT_RENDERER/KIND_RENDERER maps for
    any ext/kind they claim; on ANY throw the host falls back to the
    built-in renderer path (markdown/csv/code/image/pdf/plain/download).
@@ -2767,16 +3085,9 @@ function lazyLib(key){
    specific → most-generic so 'pcb'→gerber, 'eda'→netlist, 'cad'→cad3d).
    ==================================================================== */
 const LAZY_RENDERERS=[
-  {file:'gerber.mjs',label:'PCB Gerber',exts:['gbr','ger','gtl','gbl','gto','gts','gko','gm1','drl','xln'],media_kinds:['gerber','excellon','drill','pcb','gerber-layer'],fetchMode:'text'},
   {file:'kicad.mjs',label:'KiCad',exts:['kicad_pcb','kicad_sch','kicad_pro','kicad_mod'],media_kinds:['kicad','schematic'],fetchMode:'text'},
   {file:'netlist.mjs',label:'netlist / SPICE',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],media_kinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
-  {file:'dxf.mjs',label:'DXF drawing',exts:['dxf'],media_kinds:['dxf','drawing','mechanical','mechanical_drawing'],fetchMode:'text'},
-  {file:'cad3d.mjs',label:'3D model',exts:['step','stp','stl','3mf','obj','gltf','glb','ply'],media_kinds:['cad3d','mesh','3d','model','step','stl','gltf','glb','obj','ply','3mf','cad'],fetchMode:'bytes'},
-  {file:'pdf.mjs',label:'PDF',exts:['pdf'],media_kinds:['pdf','application/pdf'],fetchMode:'bytes'},
-  {file:'waveform.mjs',label:'waveform',exts:['vcd','wavedrom','wave','wavejson'],media_kinds:['waveform','vcd','wavedrom','wavejson','timing'],fetchMode:'text'},
-  {file:'table.mjs',label:'table',exts:['csv','tsv','bom'],media_kinds:['table','bom','csv','tsv','tab'],fetchMode:'text'},
-  {file:'mdrich.mjs',label:'Markdown',exts:['md','markdown'],media_kinds:['md','markdown'],fetchMode:'text'},
-  {file:'datatree.mjs',label:'structured data',exts:['json','yaml','yml','toml','ndjson'],media_kinds:['json','yaml','yml','toml','ndjson','datatree','structured','data'],fetchMode:'text'},
+  {file:'datatree.mjs',label:'structured data',exts:['json','ndjson'],media_kinds:['json','ndjson','datatree','structured','data'],fetchMode:'text'},
 ];
 // Flattened ext → entry index (built once). Extensions are collision-free, so an
 // ext hit is a definitive, unambiguous module choice.
@@ -2807,15 +3118,7 @@ function pickLazyRenderer(title,kind){
   if(k && _LAZY_BY_KIND.has(k)) return {entry:_LAZY_BY_KIND.get(k),ext};
   return null;
 }
-// Cached per-URL dynamic import — this is ctx.lazy passed into each module for
-// its heavy CDN libs (esm.sh / jsdelivr), with a per-URL retry on failure.
-const _LAZY_URL=new Map();
-async function _lazy(url){
-  if(_LAZY_URL.has(url)) return _LAZY_URL.get(url);
-  const p=import(/* @vite-ignore */ url);
-  p.catch(()=>_LAZY_URL.delete(url));   // failed load → allow a later retry
-  _LAZY_URL.set(url,p); return p;
-}
+async function _localDependencyOnly(){ throw new Error('external executable renderer dependencies are disabled'); }
 // Cached per-file import of the renderer module itself (lazy on first open).
 const _LAZY_MOD=new Map();
 async function _lazyModule(file){
@@ -2823,22 +3126,6 @@ async function _lazyModule(file){
   const p=import(/* @vite-ignore */ './renderers/'+file);
   p.catch(()=>_LAZY_MOD.delete(file));
   _LAZY_MOD.set(file,p); return p;
-}
-
-// Highlight.js language packs are lazy too (one import per language, cached).
-const HLJS_LANGS={ python:'python', py:'python', js:'javascript', javascript:'javascript',
-  ts:'typescript', typescript:'typescript', sh:'bash', bash:'bash', json:'json',
-  yaml:'yaml', yml:'yaml', toml:'ini', ini:'ini', spice:'plaintext', cir:'plaintext',
-  net:'plaintext', xml:'xml', html:'xml', css:'css' };
-async function loadHljs(lang){
-  const core=(await lazyLib('hljs')).default;
-  const name=HLJS_LANGS[lang]||'plaintext';
-  if(name!=='plaintext' && !core.getLanguage(name)){
-    const urls=[`https://esm.sh/highlight.js@11.10.0/lib/languages/${name}`,
-                `https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/${name}/+esm`];
-    for(const u of urls){ try{ const m=await import(/* @vite-ignore */ u); core.registerLanguage(name,m.default); break; }catch(e){} }
-  }
-  return {core,name};
 }
 
 // EXTENSION → renderer id. Drives both binary-detection and dispatch.
@@ -2873,6 +3160,17 @@ function pickRenderer(title,kind){
 function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
   onViewCleanup(()=>URL.revokeObjectURL(u)); return u; }
 
+// Nodes may deliberately serve live bodies as application/octet-stream. Assign
+// only a small renderer-controlled MIME allowlist after integrity verification;
+// never trust a peer-supplied HTML MIME for a same-origin blob URL.
+function safeRenderMime(ext,kind){
+  const byExt={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',
+    webp:'image/webp',svg:'image/svg+xml',pdf:'application/pdf'};
+  if(byExt[ext]) return byExt[ext];
+  const k=String(kind||'').toLowerCase();
+  return Object.values(byExt).includes(k)?k:'application/octet-stream';
+}
+
 // Small helper: build an element with optional class/text (textContent — safe).
 function el(tag,cls,text){ const e=document.createElement(tag);
   if(cls) e.className=cls; if(text!=null) e.textContent=String(text); return e; }
@@ -2883,26 +3181,46 @@ function plainPre(text,note){ const wrap=document.createElement('div');
 
 /* ---------- individual renderers (each fills `host`, may throw → fallback) ---------- */
 async function renderMarkdown(host,ctx){
-  host.appendChild(loadingNode('loading markdown renderer…'));
-  const [markedMod,puriMod]=await Promise.all([lazyLib('marked'),lazyLib('dompurify')]);
-  const marked=markedMod.marked||markedMod.default||markedMod;
-  const DOMPurify=puriMod.default||puriMod;
-  const raw=typeof marked.parse==='function'?marked.parse(ctx.text||'',{breaks:true}):marked(ctx.text||'');
-  // sanitise EVERY rendered byte; forbid script/style and event handlers.
-  const clean=DOMPurify.sanitize(raw,{FORBID_TAGS:['style','script','iframe','form','object','embed'],
-    FORBID_ATTR:['style','onerror','onload','onclick'],ADD_ATTR:['target','rel']});
-  host.innerHTML='';
-  const md=el('div','fv-md'); md.innerHTML=clean;   // clean is DOMPurify output
-  md.querySelectorAll('a[href]').forEach((a)=>{ a.target='_blank'; a.rel='noopener noreferrer'; });
+  const md=el('div','fv-md');
+  const text=String(ctx.text||'').slice(0,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  let code=null, list=null;
+  const safeLine=(line)=>line
+    .replace(/!\[[^\]]*\]\([^)]*\)/g,'[embedded/remote image omitted]')
+    .replace(/<\/?(?:img|video|audio|source|picture|iframe|object|embed)\b[^>]*>/gi,'[remote resource omitted]');
+  for(const rawLine of text.split(/\r?\n/)){
+    if(/^```/.test(rawLine)){ if(code){ md.appendChild(code); code=null; } else code=el('pre','filview fv-code'); list=null; continue; }
+    if(code){ code.textContent+=(code.textContent?'\n':'')+rawLine; continue; }
+    const line=safeLine(rawLine);
+    const heading=/^(#{1,4})\s+(.*)$/.exec(line);
+    if(heading){ list=null; md.appendChild(el('h'+heading[1].length,null,heading[2])); continue; }
+    const item=/^\s*[-*+]\s+(.*)$/.exec(line);
+    if(item){ if(!list){ list=el('ul'); md.appendChild(list); } list.appendChild(el('li',null,item[1])); continue; }
+    list=null;
+    if(/^>\s?/.test(line)){ md.appendChild(el('blockquote',null,line.replace(/^>\s?/,''))); continue; }
+    if(!line.trim()){ md.appendChild(document.createElement('br')); continue; }
+    md.appendChild(el('p',null,line));
+  }
+  if(code) md.appendChild(code);
   host.appendChild(md);
 }
+function parseCsvBounded(text,delimiter=','){
+  const rows=[]; let row=[],field='',quoted=false;
+  const pushField=()=>{ row.push(field.slice(0,8192)); field=''; };
+  const pushRow=()=>{ pushField(); if(row.some((cell)=>cell!=='')) rows.push(row.slice(0,128)); row=[]; };
+  for(let i=0;i<text.length&&rows.length<501;i++){
+    const ch=text[i];
+    if(quoted){ if(ch==='"'&&text[i+1]==='"'){ field+='"'; i++; } else if(ch==='"') quoted=false; else field+=ch; }
+    else if(ch==='"') quoted=true;
+    else if(ch===delimiter) pushField();
+    else if(ch==='\n'){ pushRow(); }
+    else if(ch!=='\r') field+=ch;
+  }
+  if(field||row.length) pushRow();
+  return rows;
+}
 async function renderCsv(host,ctx){
-  host.appendChild(loadingNode('loading CSV parser…'));
-  const Papa=(await lazyLib('papaparse')).default;
-  const out=Papa.parse((ctx.text||'').trim(),{skipEmptyLines:true});
-  const rows=out.data||[]; const N=500; const shown=rows.slice(0,N);
-  host.innerHTML='';
-  if(rows.length>N) host.appendChild(el('div','fv-note',`showing ${N} of ${rows.length} rows`));
+  const N=500, rows=parseCsvBounded(String(ctx.text||''),ctx.ext==='tsv'?'\t':','); const shown=rows.slice(0,N);
+  if(rows.length>N) host.appendChild(el('div','fv-note',`showing first ${N} rows`));
   const tbl=el('table','fv-table'); const head=shown[0]||[];
   const thead=el('thead'); const htr=el('tr');
   head.forEach((c)=>htr.appendChild(el('th',null,c)));   // textContent — safe
@@ -2917,7 +3235,8 @@ async function renderImage(host,ctx){
   const fb=await fetchBlob(ctx.url);
   if(!fb) throw new Error('image fetch failed');
   ctx.realSize=fb.size;
-  const url=mkBlobURL(fb.blob);
+  const bytes=await fb.blob.arrayBuffer();
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.ext,ctx.kind)}));
   host.innerHTML='';
   const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
   img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
@@ -2936,61 +3255,17 @@ async function renderCode(host,ctx){
   else if((ctx.realSize??body.length)>400*1024){
     host.appendChild(plainPre(body,'code > 400 KB — plain text (perf, no highlight)')); return;
   }
-  host.appendChild(loadingNode('loading syntax highlighter…'));
-  const {core,name}=await loadHljs(isJson?'json':ctx.ext);
-  let out; try{ out=core.highlight(body,{language:name,ignoreIllegals:true}); }
-  catch(e){ out=null; }
-  host.innerHTML='';
   const pre=el('pre','filview fv-code'); const code=document.createElement('code');
-  if(out && out.value){ code.innerHTML=out.value; }   // hljs output is HTML-escaped tokens
-  else { code.textContent=body; }                     // fallback: textContent (safe)
+  code.textContent=body;
   pre.appendChild(code); host.appendChild(pre);
 }
 async function renderModel3d(host,ctx){
-  host.appendChild(loadingNode('loading 3D viewer…'));
-  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('mesh fetch failed');
-  ctx.realSize=fb.size;
-  const ext=ctx.ext;
-  const THREE=(await lazyLib('three'));
-  const {OrbitControls}=await lazyLib('orbit');
-  host.innerHTML='';
-  const canvasWrap=el('div','fv-3d');
-  host.appendChild(canvasWrap);
-  const w=canvasWrap.clientWidth||380, h=260;
-  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
-  renderer.setSize(w,h); renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
-  canvasWrap.appendChild(renderer.domElement);
-  const scene=new THREE.Scene();
-  const camera=new THREE.PerspectiveCamera(45,w/h,0.01,5000);
-  scene.add(new THREE.AmbientLight(0xffffff,0.7));
-  const dir=new THREE.DirectionalLight(0xffffff,0.8); dir.position.set(1,1,1); scene.add(dir);
-  const controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true;
-  const mat=new THREE.MeshStandardMaterial({color:0x9fb4c8,metalness:0.1,roughness:0.8});
-  const buf=await fb.blob.arrayBuffer();
-  let object;
-  if(ext==='stl'){ const {STLLoader}=await lazyLib('stl');
-    const geo=new STLLoader().parse(buf); geo.computeVertexNormals(); object=new THREE.Mesh(geo,mat); }
-  else if(ext==='obj'){ const {OBJLoader}=await lazyLib('obj');
-    object=new OBJLoader().parse(new TextDecoder().decode(buf)); }
-  else if(ext==='gltf'||ext==='glb'){ const {GLTFLoader}=await lazyLib('gltf');
-    const g=await new Promise((res,rej)=>new GLTFLoader().parse(buf,'',res,rej)); object=g.scene; }
-  else { throw new Error('no in-browser loader for .'+ext); }  // .3mf → fallback descriptor
-  scene.add(object);
-  // auto-fit camera to the object's bounding sphere
-  const box=new THREE.Box3().setFromObject(object); const sph=box.getBoundingSphere(new THREE.Sphere());
-  const c=sph.center, rad=sph.radius||1; object.position.sub(c);
-  camera.position.set(0,0,rad*2.6); camera.near=rad/100; camera.far=rad*100; camera.updateProjectionMatrix();
-  controls.target.set(0,0,0); controls.update();
-  let alive=true;
-  (function loop(){ if(!alive)return; controls.update(); renderer.render(scene,camera); requestAnimationFrame(loop); })();
-  // dispose ALL GPU resources on view change
-  onViewCleanup(()=>{ alive=false; controls.dispose();
-    scene.traverse((o)=>{ if(o.geometry)o.geometry.dispose(); if(o.material){ const ms=Array.isArray(o.material)?o.material:[o.material]; ms.forEach((m)=>m.dispose()); } });
-    renderer.dispose(); if(renderer.forceContextLoss)renderer.forceContextLoss(); });
+  await renderDescriptor(host,ctx);
+  host.prepend(el('div','fv-note','Interactive 3D parsing is disabled in the credential-bearing portal. Download the verified bytes for an isolated CAD tool.'));
 }
 async function renderDescriptor(host,ctx){
   // .step / .kicad_* etc: no in-browser renderer → honest descriptor card,
-  // download link, + a plain-text head preview if the body is texty.
+  // byte-download action, + a plain-text head preview if the body is texty.
   host.innerHTML='';
   const card=el('div','fv-card');
   card.appendChild(el('div','fv-cardhd',`No in-browser viewer for .${ctx.ext||ctx.kind||'?'} — descriptor only`));
@@ -3000,9 +3275,9 @@ async function renderDescriptor(host,ctx){
   add('Size',fmtBytes(ctx.realSize!=null?ctx.realSize:ctx.size));
   add('Content hash',ctx.contentHash||'—');
   host.appendChild(card);
-  const dl=el('div','row'); const a=document.createElement('a');
-  a.href=dlHref(ctx.url); a.target='_blank'; a.rel='noopener'; a.setAttribute('download',''); a.textContent='download →';
-  dl.appendChild(a); host.appendChild(dl);
+  const dl=el('div','row');
+  dl.innerHTML=secureDownloadMarkup(ctx.sourceUrl||ctx.url,ctx.title,ctx.contentHash);
+  host.appendChild(dl);
   if(TEXTY_DESCRIPTOR_EXT.has(ctx.ext)){
     const txt=await fetchText(ctx.url);
     if(txt && /[\x09\x0a\x0d\x20-\x7e]/.test(txt.slice(0,200))){
@@ -3013,9 +3288,12 @@ async function renderDescriptor(host,ctx){
 }
 async function renderPdf(host,ctx){
   const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('pdf fetch failed');
-  ctx.realSize=fb.size; const url=mkBlobURL(fb.blob);
+  const bytes=await fb.blob.arrayBuffer();
+  if(new TextDecoder('latin1').decode(bytes.slice(0,5))!=='%PDF-') throw new Error('invalid PDF header');
+  ctx.realSize=fb.size; const url=mkBlobURL(new Blob([bytes],{type:'application/pdf'}));
   host.innerHTML='';
   const obj=document.createElement('iframe'); obj.className='fv-pdf'; obj.src=url; obj.title=ctx.title;
+  obj.setAttribute('sandbox',''); obj.referrerPolicy='no-referrer';
   host.appendChild(obj);
 }
 async function renderPlain(host,ctx){
@@ -3030,11 +3308,41 @@ async function renderPlain(host,ctx){
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage, code:renderCode,
   model3d:renderModel3d, descriptor:renderDescriptor, pdf:renderPdf, plain:renderPlain };
 
+function _lineDiffHTML(prior,current){
+  const diff=boundedLineDiff(prior,current);
+  const rows=diff.rows;
+  // Preserve a little context around edits while keeping the drawer readable.
+  const visible=new Set(); rows.forEach((row,i)=>{ if(row.kind!=='same') for(let j=Math.max(0,i-2);j<=Math.min(rows.length-1,i+2);j++) visible.add(j); });
+  let skipped=false, html='';
+  rows.forEach((row,i)=>{
+    if(!visible.has(i)){ if(!skipped){ html+='<div class="diff-skip">unchanged lines omitted</div>'; skipped=true; } return; }
+    skipped=false;
+    html+=`<div class="diff-row ${row.kind}"><span class="diff-ln">${row.left??''}</span><span class="diff-ln">${row.right??''}</span><span class="diff-mark">${row.kind==='add'?'+':row.kind==='del'?'-':' '}</span><code>${esc(row.text)}</code></div>`;
+  });
+  return `<details class="live-diff" open><summary>Verified prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
+}
+
+async function liveFileView(base,run,workspaceId,path){
+  S.curBase=base;
+  const state=liveArtifactState(base,run); const file=state?.files?.get(`${workspaceId}\u0000${path}`);
+  if(!file){
+    return {title:`<span class="kind k-artifact">LIVE FILE</span> ${esc(path)}`,
+      html:`<div class="viewerr">This file was deleted from the live workspace. The prior hash remains in the run's change list, but there are no current bytes to render.</div>`};
+  }
+  const stateKey=_liveRunKey(base,run); const bodyKey=_liveFileStateKey(base,run,workspaceId,path);
+  S.openLiveFile={stateKey,base,run,workspaceId,path,hash:file.sha256,bodyKey};
+  const raw=!!(S.liveRawModes&&S.liveRawModes.get(bodyKey));
+  return fileView(base,file.body_url,path,file.media_kind,{
+    raw,size:file.size_bytes,contentHash:file.sha256,
+    liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source},
+  });
+}
+
 // fileView builds the header synchronously, then mounts the chosen renderer
 // asynchronously into #fv-body, with a graceful <pre> fallback on any failure.
 async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const pick=pickRenderer(title,kind);
-  const url=join(base,path);
+  const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
   // LAZY .mjs registry takes precedence over the legacy inline maps for any
   // ext/kind it claims (richer viewers win). Resolved once; only used when this
@@ -3048,35 +3356,64 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
   const rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
-  let text=null, realSize=null;
-  if(!isBinary){
+  let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
+  if(opts.liveFile){
+    verified=await fetchVerifiedLiveBody(sourceUrl,opts.liveFile.sha256);
+    const current=liveArtifactState(base,opts.liveFile.run);
+    if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
+      verified={ok:false,error:'stale live body response discarded'};
+    }
+    if(verified.ok){
+      realSize=verified.size;
+      if(!isBinary) text=new TextDecoder().decode(verified.bytes);
+      const cache=S.liveArtifactBodyCache.get(opts.liveFile.bodyKey);
+      if(text!=null){
+        let nextCache=cache;
+        if(!cache||cache.hash!==opts.liveFile.sha256){
+          nextCache={hash:opts.liveFile.sha256,text,
+            previousHash:cache?.hash||'',previousText:cache?.text??null};
+          S.liveArtifactBodyCache.set(opts.liveFile.bodyKey,nextCache);
+          while(S.liveArtifactBodyCache.size>24) S.liveArtifactBodyCache.delete(S.liveArtifactBodyCache.keys().next().value);
+        }
+        if(nextCache?.previousText!=null&&nextCache.previousHash!==nextCache.hash){
+          liveDiff=_lineDiffHTML(nextCache.previousText,nextCache.text);
+        }
+      }
+    }
+  } else if(!isBinary){
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
     text=await fetchText(url); realSize=text?text.length:null;
   }
-  const ctx={ base, path, url, title, kind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
+  const ctx={ base, path, url,sourceUrl, title, kind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
     contentHash:opts.contentHash||null };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
-  const bodyUnavailable=(!isBinary && !forcedPlain && text===null);
+  const bodyUnavailable=opts.liveFile?!verified?.ok:(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
+  const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
-    ? `<a href="#" data-act="fv-rich" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
+    ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
     : (rendId!=='plain'
-        ? `<a href="#" data-act="fv-raw" data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
+        ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
     +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
-    +`<a href="${esc(safeUrl(dlHref(url)))}" target="_blank" rel="noopener" download>download / open raw →</a></span></div>`
+    +`${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}</span></div>`
+    +(opts.liveFile?kv('Live revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
+      +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
+        :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
+      +`<div class="live-view-meta"><span class="transport-badge">UNSIGNED LIVE METADATA</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
+      +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff:'')
     +`<div id="fv-body" class="fv-body"></div>`;
-  // EXISTING (legacy) renderer path — the FALLBACK used when no lazy module
-  // matches, or when a matched lazy module throws (CDN/lib/parse/empty).
+  // Built-in renderer path — the fallback used when no local module
+  // matches, or when a matched local module throws (parse/empty).
   const runLegacy=async(host,lazyErr)=>{
     const legacyId=forcedPlain?'plain':pick.id;
     const r=RENDERERS[legacyId]||renderPlain;
     const legacyBinary=BINARY_RENDERERS.has(legacyId);
-    // A rich .mjs viewer was matched but failed (CDN offline / parse / no export),
+    // A local .mjs viewer was matched but failed (parse / no export),
     // and the only fallback for this ext/kind is bare plain text — say so once, so
     // the downgrade from the expected rich view isn't silent. (When the legacy path
     // is itself a real renderer the user still gets a good view; no note needed.)
@@ -3087,24 +3424,29 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }
     try{ await r(host,ctx);   // size discovered during a binary fetch reflected by caller
     }catch(e){
-      // GRACEFUL FALLBACK: CDN import failed / parse error → plain <pre>, never broken.
+      // Graceful fallback: local renderer/parse error → plain <pre>, never broken.
       host.innerHTML='';
       host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
       let body=ctx.text;
       if(body==null){ body=legacyBinary?null:await fetchText(url); }
-      if(body==null && legacyBinary){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The download/open-raw link above may also be gated; hold an operator token or open this on the node\'s own machine.')); return; }
+      if(body==null && legacyBinary){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The byte-download action above may also be gated; hold an operator token.')); return; }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
   };
   const mount=async(root)=>{
     const host=root.querySelector('#fv-body'); if(!host) return;
-    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the download/open-raw link above, or hold an operator token.')); return; }
+    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note',opts.liveFile
+      ?`live body refused: ${verified?.error||'unavailable'}. Nothing is rendered unless the fetched bytes match the advertised SHA-256.`
+      :'body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the byte-download action above, or hold an operator token.')); return; }
+    if(verified?.ok){
+      const mime=safeRenderMime(ctx.ext,ctx.kind);
+      url=mkBlobURL(new Blob([verified.bytes],{type:mime})); ctx.url=url;
+    }
     // LAZY MODULE FIRST (richer renderer). On ANY throw, clear and fall back to
     // the existing legacy renderer path exactly as before — never broken/blank.
     let lazyErr=null;
     if(lazyPick && !forcedPlain){
-      // Immediate spinner: the .mjs module import (a network round-trip on first
-      // open) AND each module's own fetch/CDN-lib load happen BEFORE its render()
+      // Immediate spinner: the local .mjs module import and body preparation
       // paints. Without this the drawer sits blank for that whole window. Every
       // module clears the host as its first paint, so this is replaced cleanly.
       host.innerHTML='';
@@ -3114,9 +3456,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         if(!mod || typeof mod.render!=='function') throw new Error('no render() export');
         // ctx per the module contract: createElement+textContent-safe el(),
         // authenticated fetchText/fetchBytes against the resolved body url,
-        // version-pinned CDN loader (lazy), and a view-scoped onCleanup.
+        // local-only dependency guard and a view-scoped onCleanup.
         const mctx={ host, title, path, url, ext:ctx.ext, kind, size:opts.size, contentHash:ctx.contentHash,
-          esc, el, lazy:_lazy, onCleanup:onViewCleanup,
+          esc, el, lazy:_localDependencyOnly, onCleanup:onViewCleanup,
           // both provided; honor fetchMode for the default fetch but never deny either.
           text:lazyBytes?null:ctx.text,
           fetchText:async()=>{ if(!lazyBytes && ctx.text!=null) return ctx.text; return await fetchText(url); },
@@ -3409,7 +3751,7 @@ async function missionView(r){
 // common operator failures (bad/missing token; unreachable node), then the raw JSON.
 function showOpResult(out,r,suffix){
   let hint='';
-  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget, then re-paste), or open the node\'s localhost UI where loopback grants access.\n\n';
+  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget, then re-paste).\n\n';
   else if(r.status===0) hint='could not reach the node'+((r.body&&r.body.error)?' — '+String(r.body.error).slice(0,200):'')+'\n\n';
   const head=r.status===0?'HTTP 0 (no response)':`HTTP ${r.status}`;
   out.textContent=hint+head+'\n'+JSON.stringify(r.body,null,1).slice(0,1600)+(suffix||'');
@@ -3430,8 +3772,8 @@ function opInvalid(el){ if(!el) return; el.setAttribute('aria-invalid','true');
   const clear=()=>{ el.removeAttribute('aria-invalid'); el.removeEventListener('input',clear); };
   el.addEventListener('input',clear); el.focus&&el.focus(); }
 async function opPost(base,path,body){ const u=join(base,path);
-  try{ const r=await fetch(u,{method:'POST',
-      headers:{'Content-Type':'application/json',...authHeaders(u)},body:JSON.stringify(body)});
+  try{ const r=await fetch(u,secureFetchInit(u,{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
     const d=await r.json().catch(()=>({})); return {status:r.status,body:d}; }
   catch(e){ let msg=String(e&&e.message||e);
     if(location.protocol==='https:'&&/^http:\/\//i.test(u))
@@ -3440,20 +3782,16 @@ async function opPost(base,path,body){ const u=join(base,path);
 
 async function operatorView(){
   const m=opTokens();
-  // Local (loopback-reachable) nodes are owner-trusted WITHOUT a token, so surface
-  // them in the console automatically alongside any token-saved remote nodes. This
-  // INCLUDES the page's own origin when the UI is served by a local node itself
-  // (open http://localhost:<port>/ and its console is right here, no token).
+  // Surface loopback nodes automatically for convenience, but never treat network
+  // position as authority. The same bearer-token rule applies locally and remotely.
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
   const bases=[...new Set([...Object.keys(m),...localBases])];
-  let html=H('Operator authority — a bearer token, or a local (loopback) node')
+  let html=H('Operator authority — bearer token')
     +`<div class="desc2">Each node mints a per-install token (printed at boot; stored at `
     +`<code>runs/…/_operator/token</code>). Paste it here to unlock a REMOTE node's owner intake `
-    +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. A node reachable on `
-    +`<code>localhost</code> is your own machine — the node trusts the loopback connection as `
-    +`operator, so <b>no token is needed</b> for it (a tunneled node keeps the public host and `
-    +`still requires the token).</div>`;
+    +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. Loopback is a convenient `
+    +`route, not authority: <b>local and remote nodes both require the token</b>.</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<label class="field"><span class="field-label">node base URL</span>`
     +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
@@ -3462,10 +3800,10 @@ async function operatorView(){
     +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
   for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
-    html+=`<div class="grant"><span>${esc(b)}${loc&&!tokd?' <span class="ok">· local · token bypassed (loopback)</span>':''}</span>`
+    html+=`<div class="grant"><span>${esc(b)}${loc?' <span class="l2">· local route</span>':''}</span>`
     +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
     +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ${icon('x','ico-sm')}</a>`:'')+`</span></div>`; }
-  if(!bases.length) html+=`<div class="l2">no operator tokens saved and no local node discovered — this browser is an anonymous public viewer. Run a node locally (it appears here automatically) or paste a remote node's token.</div>`;
+  if(!bases.length) html+=`<div class="l2">no operator tokens saved and no local node discovered — this browser is an anonymous public viewer. Run a node locally (it appears here automatically), then paste its token.</div>`;
   return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
 }
 
@@ -3485,18 +3823,22 @@ async function operatorNodeView(b){
         :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
     return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
   }
-  if(!pub&&loc&&!tokd) html+=`<div class="desc2"><span class="ok">● local node — operator authority via loopback</span>; no token needed (the node trusts the same-machine connection). Set <code>PERSONAOS_TRUST_LOOPBACK=0</code> on the node to require one.</div>`;
-  else if(pub&&loc) html+=`<div class="desc2"><span class="no">loopback trust off or proxied</span> — a local node should grant operator access without a token. If you reached it through a tunnel/proxy the token is still required; otherwise check it isn't started with <code>PERSONAOS_TRUST_LOOPBACK=0</code>.</div>`;
-  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Paste this node's token in the operator console (or open its localhost UI, where loopback grants access).</div>`;
+  if(!pub&&!tokd) html+=`<div class="desc2"><span class="ok">operator projection granted by node policy</span>.</div>`;
+  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Paste this node's bearer token in the operator console.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(pub?'—':'<span class="no">in-memory only</span>'))
     +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
     +kv('Artifact tier',S0(st.artifact_tier))
     +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
   const personas=st.personas||[];
-  if(personas.length) html+=H(`Personas (${personas.length})`)+personas.map((p)=>
-    `<div class="grant"><span>${esc(p.name||p.persona_id)}</span>`
-    +`<span class="l2">${esc(p.lifecycle_state||'')} · ${esc(p.experience_tasks??0)} task(s) · fit ${esc(p.fitness??'—')}</span></div>`).join('');
+  if(personas.length) html+=H(`Personas (${personas.length})`)+personas.map((p)=>{
+    const call=(st.active_model_calls||[]).find((c)=>_shortId(c.persona_id)===_shortId(p.persona_id));
+    const taskState=p.task_execution_state||'unmarked', llmState=p.llm_execution_state||'unmarked';
+    return `<div class="persona-runtime-row"><div><b>${esc(p.name||p.persona_id)}</b>`
+      +`<span class="runtime-pills"><span class="runtime-pill ${taskState==='running_llm'?'hot':''}">${esc(taskState.replace(/_/g,' '))}</span><span class="runtime-pill">LLM ${esc(llmState.replace(/_/g,' '))}</span></span></div>`
+      +(call?`<div class="runtime-call"><span class="livedot2"></span>${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')} · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</div>`
+        :`<div class="l2">${esc(p.lifecycle_state||'')} · ${esc(p.experience_tasks??0)} task(s)</div>`)+`</div>`;
+  }).join('');
   const runs=st.runs||[];
   if(runs.length) html+=H(`Runs (${runs.length})`)+runs.slice(-12).reverse().map((r)=>{
     const id=typeof r==='string'?r:(r.run||r.run_id||'');
@@ -3572,9 +3914,29 @@ async function operatorNodeView(b){
   return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
 }
 
+function _runRuntimeSurfaces(st){
+  const rs=st?.run_state||{}; const durable=st?.durable_run_state||{}; const dh=st?.design_history||{};
+  const candidates=[rs?.runtime,durable?.runtime,dh?.runtime,rs,durable,dh].filter((x)=>x&&typeof x==='object');
+  const take=(...names)=>{ for(const obj of candidates) for(const name of names){
+    if(obj[name]!==undefined&&obj[name]!==null&&obj[name]!=='') return obj[name]; } return null; };
+  const pressure=take('pressure_open','runtime_pressure_open','active_pressure');
+  const block=(pressure&&typeof pressure==='object'&&(pressure.completion_block_reason||pressure.block_reason))
+    ||take('completion_block_reason','block_reason');
+  const review=take('review_eligibility','review_eligible','eligible_for_review','artifact_review_eligibility');
+  const activePressure=take('active_pressure_appraisals','active_pressure_count');
+  return {pressure,block,review,activePressure};
+}
+
 async function operatorRunView(b,run){
-  const st=await fetchJson(join(b,'runs/'+encodeURIComponent(run)))||{};
-  const arts=await fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts'))||{};
+  S.curBase=b;
+  const trackKey=_liveRunKey(b,run); S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
+  const [stRaw,artsRaw,_live,nodeStatus]=await Promise.all([
+    fetchJson(join(b,'runs/'+encodeURIComponent(run))),
+    fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')),
+    fetchLiveArtifacts(b,run),
+    fetchNodeStatus(b),
+  ]);
+  const st=stRaw||{}, arts=artsRaw||{};
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
   const stt=String(rs.status||'—');
@@ -3582,16 +3944,41 @@ async function operatorRunView(b,run){
   // a paused mission card opens this view directly, so give it inline resume/stop
   // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
   // console-level #op-run-target, and read #opr-budget when present.
-  let html='<div class="opform"><div class="oprow">'
+  const canOperate=!!tokenFor(join(b,'status'));
+  let html=canOperate?('<div class="opform"><div class="oprow">'
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
     +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
-    +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>';
+    +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>')
+    :'<div class="l2">Read-only live monitor. Save this node\'s operator bearer token to enable FUND and STOP.</div>';
   html+=kv('Run',`<code>${esc(run)}</code>`)
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
     +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
     +kv('Task',S0((rs.task||'').slice(0,200)));
+  const activeCalls=(nodeStatus?.active_model_calls||[]).filter((call)=>{
+    const current=liveArtifactState(b,run)?.snapshot?.active?.calls||[];
+    return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
+  });
+  const liveCalls=(liveArtifactState(b,run)?.snapshot?.active?.calls||activeCalls);
+  html+=H('Live execution · unsigned status telemetry');
+  if(liveCalls.length) html+=liveCalls.map((call)=>{
+    const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
+    return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid)||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
+      +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
+  }).join('');
+  else html+='<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
+  const runtime=_runRuntimeSurfaces(st);
+  const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
+  const inReview=liveCalls.some((call)=>/review/.test(String(call.requested_purpose||'')));
+  html+=kv('Pressure',runtime.pressure||runtime.activePressure||inPressure
+      ?`<span class="amber">${inPressure?'appraisal in progress':'open / recorded'}</span>`
+      :'<span class="l2">none exposed</span>')
+    +kv('Completion block',runtime.block?`<span class="no">${esc(runtime.block)}</span>`:'<span class="l2">none exposed</span>')
+    +kv('Review eligibility',runtime.review!==null?esc(typeof runtime.review==='object'?JSON.stringify(runtime.review):runtime.review)
+      :(inReview?'<span class="amber">review in progress</span>':'<span class="l2">not exposed</span>'));
+  html+=H('Live workspace artifacts')
+    +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   // GAP #3: surface the ContinuousRefinementMission trajectory from the served
   // design_history (best-so-far never regresses; budget tranches; marginal value).
   const dh=st.design_history||rs.refinement_mission||{};
@@ -3656,6 +4043,7 @@ function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
 function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
+  S.openLiveFile=null;
   S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
   // monotonic guard: top() awaits the network (file/bundle/body views), and Back /
   // pushView call renderTop without serialization. A stale in-flight render must not
@@ -3692,7 +4080,7 @@ function tick(now){
 
 /* ---------- missions strip (every task the discovered nodes work on) ---------- */
 // Cards come from two honest sources: (1) discovered mission/design-history
-// records — shipped/refined missions anyone may see; (2) the node's /status —
+// records — published evidence anyone may see; (2) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
 // A mission document is the run's Design-History-File artifact. Media kinds are
@@ -3708,24 +4096,44 @@ function missionCardList(){
       // the PROJECT record from the same kernel carries the human task text;
       // MANY legs of one mission ship many design-history records — ONE card
       // per (kernel, task), pointing at the newest record discovered.
-      const proj=S.order.map((x)=>S.recs.get(x)).find((p)=>p&&p.kind==='project'&&p._kernel===r._kernel);
+      const missionRun=runOf(r)||id;
+      const proj=S.order.map((x)=>S.recs.get(x)).find((p)=>p&&p.kind==='project'
+        &&p._kernel===r._kernel&&runOf(p)===missionRun);
       const task=(proj&&proj.label)||r.label||'mission';
-      const dedupe=(r._kernel||'')+'::'+task;
+      const dedupe=(r._kernel||r._base||'')+'::'+missionRun;
       if(shippedSeen.has(dedupe)) continue; shippedSeen.add(dedupe);
-      cards.push({key:'rec:'+id,task,state:'shipped',
+      // A signed design-history artifact proves publication, not acceptance.
+      // Running/paused/terminal state comes from the live node when available.
+      cards.push({key:'rec:'+id,task,state:'published',
         meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
+  // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
+  // when /status remains operator-gated. Surface those active runs as read-only
+  // monitors; opening one still verifies every fetched file body against sha256.
+  for(const state of S.liveArtifacts.values()){
+    const nodeRun=_liveRunKey(state.base,state.run);
+    if(state.ended||Date.now()-(state.receivedAt||0)>20000||seen.has(nodeRun)) continue;
+    seen.add(nodeRun);
+    const nodeId=state.snapshot?.node_id||'';
+    const project=S.order.map((id)=>S.recs.get(id)).find((r)=>r&&r.kind==='project'&&runOf(r)===state.run
+      &&(!nodeId||r._kernel===nodeId));
+    const calls=(state.snapshot?.active?.calls||[]).length;
+    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.run,state:'running',
+      meta:[state.run.slice(0,26),`${state.files.size} live files`,calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run});
+  }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
   // on success, so a vanished node's last 'run-X RUNNING' would otherwise linger here as
   // a phantom card forever. Drop entries older than ~4 poll windows of the 8s serve-TTL.
   const fresh=Date.now()-32000;
-  for(const [base,hit] of statusCache){ const v=hit&&hit.v; if(!v) continue;
+  for(const [baseKey,hit] of statusCache){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
     if(!(hit.ts>fresh)) continue;
     const busy=String((v.heartbeat||{}).busy||'');
-    for(const run of (v.stoppable_runs||[])){ if(seen.has(run)) continue; seen.add(run);
-      cards.unshift({key:'run:'+run,task:busy||run,state:'running',meta:[run.slice(0,26)],base,run}); }
+    for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run); if(seen.has(nodeRun)) continue; seen.add(nodeRun);
+      const live=liveArtifactState(base,run); const files=live?.files?.size||0;
+      const calls=(live?.snapshot?.active?.calls||[]).length;
+      cards.unshift({key:'run:'+nodeRun,task:busy||run,state:'running',meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
     for(const p of (v.paused_missions||[])){
-      const run=String(p.run||p.run_id||p); if(!run||seen.has(run)) continue; seen.add(run);
-      cards.push({key:'pause:'+run,task:String(p.task||run),state:'paused',
+      const run=String(p.run||p.run_id||p); const nodeRun=_liveRunKey(base,run); if(!run||seen.has(nodeRun)) continue; seen.add(nodeRun);
+      cards.push({key:'pause:'+nodeRun,task:String(p.task||run),state:'paused',
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   return cards;
 }
@@ -3735,7 +4143,7 @@ function missionCardList(){
 // (no run state) and the strip stays honest — records only.
 function prefetchNodeStatuses(){
   for(const key of S.boots.keys()){ const base=key==='@origin'?'':key;
-    fetchNodeStatus(base).then(()=>renderMissions()).catch(()=>{}); }
+    fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }
 }
 function renderMissions(){
   const box=$('#missions'), wrap=$('#missionCards'); if(!box||!wrap) return;
@@ -3767,13 +4175,14 @@ function wire(){
   // becomes a ghost nav-back button, close/unfollow/collapse join the .ghost-btn family,
   // and their glyph text is swapped to the stroked icon set. Purely presentational +
   // a11y: no data/contract change, and a missing node is tolerated (?. guards).
-  const _adopt=(sel,cls,iconName,label)=>{ const el=$(sel); if(!el) return;
+  const _adopt=(sel,cls,iconName,label,accessibleName)=>{ const el=$(sel); if(!el) return;
     cls.split(' ').forEach((c)=>el.classList.add(c));
-    if(iconName) el.innerHTML=icon(iconName)+(label?`<span>${label}</span>`:''); };
+    if(iconName) el.innerHTML=icon(iconName)+(label?`<span>${label}</span>`:'');
+    if(accessibleName){ el.setAttribute('aria-label',accessibleName); el.title=accessibleName; } };
   _adopt('#detailback','nav-back ghost-btn','back','back');
-  _adopt('#detailclose','ghost-btn','close','');
-  _adopt('#logclose','ghost-btn','close','');
-  _adopt('#introclose','ghost-btn','close','');
+  _adopt('#detailclose','ghost-btn','close','','Close details');
+  _adopt('#logclose','ghost-btn','close','','Close discovery log');
+  _adopt('#introclose','ghost-btn','close','','Close help');
   _adopt('#cfUnfollow','ghost-btn','close','show all');
   // the constellation toggle keeps its rotate transform — only adopt the family class
   // + swap its ▾ for the shared disclosure chevron (CSS rotates it on .collapsed).
@@ -3879,6 +4288,7 @@ function wire(){
     // (the thinking frame's exact prompt, a model output, sandbox stdout) to the
     // clipboard — these are often truncated/scrolled, so reading != copyable.
     if(act==='copy'){ copyFromButton(a); return; }
+    if(act==='secure-download'){ secureDownloadFromButton(a); return; }
     if(act==='tdir'){ const key=a.dataset.key, wasCollapsed=a.dataset.collapsed==='1';
       if(!S.bundleDirs)S.bundleDirs=new Set(); if(!S.bundleDirsOpen)S.bundleDirsOpen=new Set();
       // flip the effective state regardless of depth-default; explicit sets win over the default
@@ -3962,12 +4372,15 @@ function wire(){
         opPending(out,'stopping…'); opPost(b2,'stop',body).then(show); }
       return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
+    else if(act==='live-file') pushView(()=>liveFileView(base,a.dataset.run,a.dataset.workspace,a.dataset.path));
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null};
       pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,o)); }
     else if(act==='fv-raw'){ // swap the CURRENT file view to forced plain text (re-render in place)
-      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true,contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); }
+      if(a.dataset.live==='1'&&S.openLiveFile){ S.liveRawModes=S.liveRawModes||new Map(); S.liveRawModes.set(S.openLiveFile.bodyKey,true); renderTop(); }
+      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true,contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); } }
     else if(act==='fv-rich'){ // swap back to the rich media renderer
-      S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); }
+      if(a.dataset.live==='1'&&S.openLiveFile){ S.liveRawModes=S.liveRawModes||new Map(); S.liveRawModes.set(S.openLiveFile.bodyKey,false); renderTop(); }
+      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null}); renderTop(); } }
     else if(act==='bundle'){ const br=a.dataset.rec?S.recs.get(a.dataset.rec):null; pushView(()=>bundleView(base,a.dataset.url,br?br._links:undefined)); }
     else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
     else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));
@@ -3985,7 +4398,7 @@ function wire(){
     // Clear the drawer-live keys too, or the 5s loop keeps fetching feed/thinking
     // against the now-hidden drawer forever.
     runViewCleanups();
-    S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveBase='';
+    S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
@@ -4012,38 +4425,75 @@ function wire(){
   });
 }
 
-// ---------- real P2P transport: a js-libp2p node in the browser ----------
-// WebRTC + circuit-relay + Kademlia DHT + gossipsub. The HTTP federation above seeds it
-// (and is the fallback); over libp2p the page gossips its signed records and verifies any
-// it receives. Reaching other machines needs a relay/bootstrap peer (browsers can't accept
-// inbound / multicast) — add one with ?relay=<multiaddr>.
+// ---------- real P2P transport: a vendored js-libp2p node in the browser ----------
+// WebRTC + circuit-relay + gossipsub, with Kademlia provider rendezvous only after
+// an explicit/node-advertised bootstrap or relay connects it to a shared routing table.
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
+function _verifiedHttpBase(value){ try{ const u=new URL(String(value||''));
+  if(!/^https?:$/.test(u.protocol)||u.username||u.password) return '';
+  u.search=''; u.hash=''; return u.href.replace(/\/$/,''); }catch(e){ return ''; } }
 async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
   if(doc.record.visibility_tier!=='public') return;
   if(doc.public_key_hex){ try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){} }
   log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
   const r=doc.record, id=r.record_id||r.card_id;
-  if(ok && id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:doc.base||'',_doc:doc});
-    if(P2P) P2P.announce(doc); classifyMap(); updateVitalsCounters(); refreshSystemView(); }
+  if(ok){
+    const base=_verifiedHttpBase(doc.base);
+    if(base&&!S.gossipPeers.has(base)){
+      S.gossipPeers.add(base); noteKernel(doc.kernel_id||'gossip','gossip',base);
+      Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{});
+    }
+    if(id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:base,_doc:doc});
+      if(P2P) P2P.announce(doc); classifyMap(); updateVitalsCounters(); refreshSystemView(); }
+  }
+}
+let _p2pRendezvousCid=null;
+async function p2pRendezvousCid(){
+  if(_p2pRendezvousCid) return _p2pRendezvousCid;
+  const digest=hexToBytes(await sha256Hex(enc.encode('personaos-discovery-rendezvous/v1')));
+  const multihash=new Uint8Array(34); multihash.set([0x12,0x20]); multihash.set(digest,2);
+  _p2pRendezvousCid=Object.freeze({multihash:Object.freeze({bytes:multihash}),
+    toString:()=> 'personaos-discovery-rendezvous/v1'});
+  return _p2pRendezvousCid;
+}
+async function refreshP2PRendezvous(){
+  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting) return;
+  const cid=await p2pRendezvousCid(); const signal=AbortSignal.timeout(8000); let found=0;
+  try{
+    await P2P.node.contentRouting.provide(cid,{signal});
+    for await(const provider of P2P.node.contentRouting.findProviders(cid,{signal})){
+      if(provider?.id?.equals?.(P2P.node.peerId)) continue;
+      found++;
+      const target=provider.multiaddrs?.[0]||provider.id;
+      if(target) P2P.node.dial(target,{signal:AbortSignal.timeout(5000)}).catch(()=>{});
+      if(found>=16) break;
+    }
+    log('p2p',`DHT rendezvous provided; ${found} peer provider(s) resolved`,true);
+  }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
 }
 async function initP2P(){
   const params=new URLSearchParams(location.search);
   const root=await fetchJson('.well-known/personaos-discovery.json')||{};
   collectP2PBootstraps(root);
   const list=[...S.p2pBootstraps,...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
-  log('p2p','starting libp2p node — WebRTC + Kademlia DHT + gossipsub…');
+  log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
     const mod=await import('./p2p-libp2p.js');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
+    P2P._rendezvousConfigured=list.length>0;
     updateP2PStatus();
     for(const id of S.order){ const r=S.recs.get(id);
-      if(r._doc&&r._doc.record?.visibility_tier==='public') P2P.announce(r._doc); }   // gossip public records to the mesh
+      // `base` is a locator hint, not signed authority. Receivers enroll it only
+      // after the record verifies, then re-fetch and verify that node normally.
+      if(r._doc&&r._doc.record?.visibility_tier==='public') P2P.announce({...r._doc,base:r._base,kernel_id:r._kernel}); }
     log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
       : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
+    if(list.length){ setTimeout(()=>refreshP2PRendezvous().catch(()=>{}),3000);
+      P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000); }
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
     const el=$('#p2p'); if(el) el.textContent='P2P · http-federation'; }
 }
@@ -4066,5 +4516,8 @@ async function initP2P(){
   // node's live cadence so the stage, constellation and feed stream without SSE.
   setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
     refreshSystemView(); streamPersonaCognition(); }catch(e){} }, 5000);
+  // Exact live workspace snapshots: SSE is primary; this 3s poll is the bounded
+  // fallback for proxies/browsers that buffer or block EventSource.
+  setInterval(()=>{ try{ pollLiveArtifacts(); }catch(e){} },3000);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
