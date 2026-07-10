@@ -140,8 +140,10 @@ operator explicitly promoted public. Run state, personas, telemetry and the raw 
 **read-gated** (09_PROTOCOLS §3G.3 — `discover < read`).
 
 Authority is a **bearer token, never network position** (not even loopback). Each node mints
-a per-install token at boot (printed on the console; stored at `runs/…/_operator/token`).
-Click **🔑 OPERATOR**, save `node base URL + token`, and the portal unlocks for that node:
+a process bearer at boot and temporarily stages it at `runs/…/_operator/token`. Capture it
+before the first model call: the node then unlinks that same-UID-readable file while retaining
+the bearer in memory; a restart without the file rotates it. Click **OPERATOR**, save
+`node base URL + token`, and the portal unlocks for that node:
 
 - **full node status** — personas, runs, paused missions, budget, lineage durability;
 - **⚡ ASK** — submit a task as the owner (`POST /task`); **💰 FUND** — grant budget to resume

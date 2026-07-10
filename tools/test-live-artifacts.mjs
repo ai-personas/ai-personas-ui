@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {
   boundedLineDiff,
@@ -91,6 +92,7 @@ assert.equal(await sha256Hex(new TextEncoder().encode('abc')), 'ba7816bf8f01cfea
 if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
 
 const portal = await readFile(new URL('../assets/discovery.js', import.meta.url), 'utf8');
+const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.doesNotMatch(portal, /node1\.personas\.ai|GLOBAL_DISCOVERY_DEFAULT/);
 assert.match(portal, /addEventListener\('live_artifact_update'/);
@@ -107,6 +109,7 @@ assert.match(portal, /setAttribute\('sandbox',''\)/);
 assert.doesNotMatch(portal, /function dlHref/);
 assert.match(portal, /sessionStorage\.setItem\('personaos_operator'/);
 assert.doesNotMatch(portal, /localStorage\.setItem\('personaos_operator'/);
+assert.doesNotMatch(portal, /needs no token|localhost\s*=\s*operator|per-install token/i);
 assert.doesNotMatch(portal, /new EventSource\(esUrl\)/);
 assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /UNSIGNED LIVE TRANSPORT/);
@@ -115,6 +118,11 @@ assert.doesNotMatch(portal, /https:\/\/esm\.sh|https:\/\/cdn\.jsdelivr\.net/);
 assert.match(portal, /external executable renderer dependencies are disabled/);
 assert.match(portal, /P2P\.node\.contentRouting\.provide/);
 assert.match(portal, /S\.gossipPeers\.add\(base\)/);
+const rendezvousNamespace = 'personaos-discovery-rendezvous/v1';
+assert.ok(portal.includes(rendezvousNamespace));
+assert.equal(createHash('sha256').update(rendezvousNamespace).digest('hex'),
+  '89d2ce7e05be64fcab15e488a0fe9d052a52be9e0c7ad54aaeecaf6417e5ec87');
+assert.ok(p2pBundle.includes('/personaos/kad/1.0.0'));
 assert.match(portal, /Close details/);
 assert.match(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'published'/);
 assert.doesNotMatch(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'shipped'/);
