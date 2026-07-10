@@ -5,18 +5,8 @@
      .kicad_pcb  .kicad_sch  .kicad_pro  .kicad_mod
    --------------------------------------------------------------------
    LIB DECISION: viable = false (no lazy 3rd-party lib).
-   The best in-browser KiCad renderer is KiCanvas (MIT, theacodes/
-   kicanvas). It is, however, NOT publishable through this contract:
-     - not on npm (package version is 0.0.0, registry 404),
-     - not served by esm.sh (404), no GitHub releases / tags,
-       no jsdelivr-pinnable version,
-     - distributed only as an UNVERSIONED single-host bundle
-       (https://kicanvas.org/kicanvas/kicanvas.js).
-   The contract requires `ctx.lazy('https://esm.sh/<pkg>@<ver>')` with a
-   PINNED version — KiCanvas cannot satisfy that (nothing to pin, esm.sh
-   cannot serve it). Loading an unpinned single-origin bundle would
-   violate the version-pin rule and be fragile / unverifiable.
-   => Per contract: viable=false, but ship a graceful ENHANCED renderer.
+   No third-party renderer is vendored and executable network imports are
+   forbidden in the credential-bearing portal. Ship a local enhanced parser.
 
    WHAT THIS RENDERER DOES (no 3rd-party lib, fully self-contained):
    KiCad files are S-expression text (.kicad_pcb/.kicad_sch/.kicad_mod)

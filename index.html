@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0e14">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' blob: http: https: ws: wss:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260629-runtime-state">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260710-live-hardening">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -22,14 +23,14 @@
     <span class="vgroup vgroup-live">
       <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
       <span class="vsep" aria-hidden="true"></span>
-      <span class="verify-badge" id="verifybadge" title="Every discovered RECORD is resolved from a live node and Ed25519-signature-verified in YOUR browser. Live persona telemetry, coordination and the vital are the node's own signed feed — streamed and shown, not re-verified in-browser.">✓ VERIFIED IN&nbsp;BROWSER</span>
+      <span class="verify-badge" id="verifybadge" title="Signed discovery records are Ed25519-verified in this browser. Live execution, coordination and workspace frames are unsigned transport telemetry and are labelled separately.">SIGNED RECORDS · VERIFIED</span>
       <span class="vsep" aria-hidden="true"></span>
       <span class="vcounts" id="stats" role="status" aria-label="live network counters"></span>
     </span>
     <span class="vsep" aria-hidden="true"></span>
     <span class="vgroup vgroup-tools">
-      <input id="q" type="search" placeholder="filter persona / environment / kind…" aria-label="filter personas, environments and events">
-      <input id="peer" type="url" placeholder="discover peer https://host" aria-label="discover a peer node by URL">
+      <input id="q" type="search" placeholder="filter network…" aria-label="filter personas, environments and events">
+      <input id="peer" type="url" placeholder="peer URL…" aria-label="discover a peer node by URL">
       <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">HELP</button>
       <button id="addpeer" class="btn">PEER</button>
       <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
@@ -39,16 +40,17 @@
   <div class="intro" id="intro" hidden>
     <button class="link" id="introclose" style="float:right">close ✕</button>
     <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
-    and refine a real, verified deliverable
+    and refine a real, evidence-bound deliverable
     round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
-    This page is a <b>live, signature-verified window</b> into those personas at work: it discovers them from
-    live nodes and verifies every record's Ed25519 signature in your browser.</p>
+    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
+    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
     <div class="gloss">
       <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
       <span><b>ENV</b> the shared environment a team of personas works in</span>
       <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
       <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
-      <span><b>VERIFIED</b> Ed25519-checked in your browser — trust is signature, not host</span>
+      <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
+      <span><b>LIVE FRAME</b> unsigned transport telemetry — useful state, not a signed record</span>
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
@@ -98,7 +100,7 @@
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
     <aside class="coordfeed" aria-label="live persona activity">
-      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY</span><span class="dim" id="sysStreamRate" role="status" aria-live="polite"></span></div>
+      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY <span class="transport-badge">UNSIGNED TRANSPORT</span></span><span class="dim" id="sysStreamRate" role="status" aria-live="polite"></span></div>
       <div class="cf-tabs" id="sysStreamTabs" role="group" aria-label="filter the activity feed">
         <button data-flt="all" class="chip on" title="every live event across all personas and environments">ALL</button>
         <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
@@ -122,7 +124,7 @@
   <div class="logmodal" id="logmodal">
     <div class="logcard" role="dialog" aria-modal="true" aria-labelledby="logtitle" tabindex="-1">
       <div class="logcard-head"><b id="logtitle">Discovery log</b> <button id="logclose" class="link">close ✕</button></div>
-      <ol class="log" id="log"></ol>
+      <ol class="log" id="log" role="log" aria-live="polite" aria-relevant="additions"></ol>
     </div>
   </div>
 
@@ -133,6 +135,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260702-active-model-calls"></script>
+  <script type="module" src="assets/discovery.js?v=20260710-live-hardening"></script>
 </body>
 </html>

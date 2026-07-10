@@ -1,0 +1,51 @@
+name: Design reference and live UI validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout UI
+        uses: actions/checkout@v4
+
+      - name: Checkout current design reference
+        uses: actions/checkout@v4
+        with:
+          repository: ai-personas/ai-personas-design
+          ref: master
+          path: design-reference
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check normative design anchors
+        run: python3 tools/check-design-reference.py design-reference
+
+      - name: Test live artifact state contract
+        run: node tools/test-live-artifacts.mjs
+
+      - name: Install Playwright
+        run: |
+          python3 -m pip install 'playwright>=1.50,<2'
+          python3 -m playwright install --with-deps chromium
+
+      - name: Validate live UI and mobile layout
+        run: python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
