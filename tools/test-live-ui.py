@@ -64,7 +64,7 @@ def run(args: argparse.Namespace) -> dict:
     port = server.server_address[1]
     base = f'http://127.0.0.1:{port}'
     node = f'{base}/node'
-    url = f'{base}/?peer={node}&no_local_discovery=1&ipfs_routing={node}/ipfs/'
+    url = f'{base}/?peer={node}&no_local_discovery=1&no_global_discovery=1&ipfs_routing={node}/ipfs/'
     screenshots = Path(args.screenshot_dir).resolve() if args.screenshot_dir else None
     if screenshots:
         screenshots.mkdir(parents=True, exist_ok=True)
