@@ -9,7 +9,11 @@ import {
   liveArtifactRunKey,
   sha256Hex,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260710-live-hardening';
+} from './live-artifacts.mjs?v=20260710-kernel-signed-live';
+import {
+  verifyLiveArtifactEvent,
+  verifyLiveArtifactSnapshot,
+} from './live-signatures.mjs?v=20260710-kernel-signed-live';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -231,7 +235,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
-  map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), boots:new Map(),
+  map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
   streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
@@ -241,8 +245,8 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null,
   activeModelCallsByBase:new Map(), activeModelCallsByPersona:new Map(), activeModelCallsByEnv:new Map(),
   activeModelCallCount:0,
-  // Unsigned live transport state is deliberately separate from signed discovery
-  // records. File bytes are independently checked against each advertised sha256.
+  // Kernel-signed live snapshots/events remain separate from signed discovery
+  // records. File bytes are also checked against each signed advertised sha256.
   liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
   personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
@@ -552,12 +556,25 @@ function collectP2PBootstraps(boot){
     if(v) S.p2pBootstraps.add(v);
   }
 }
-async function keysFor(base,boot){
+async function keysFor(base,boot,{refresh=false}={}){
   const key=base||'@origin';
-  if(S.keys.has(key)) return S.keys.get(key);
+  if(!refresh&&S.keys.has(key)) return S.keys.get(key);
   const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'));
-  const keys={}; (keysDoc?.keys||[]).forEach((k)=>keys[k.key_id]=k.public_key_hex);
-  S.keys.set(key,keys);
+  const statusRank={current:0,previous:1,archived:2};
+  const keys={},selected={}; const entries=[];
+  for(const raw of (Array.isArray(keysDoc?.keys)?keysDoc.keys:[])){
+    const entry={key_id:String(raw?.key_id||''),role:String(raw?.role||''),
+      public_key_hex:String(raw?.public_key_hex||''),status:String(raw?.status||''),
+      rotated_at:String(raw?.rotated_at||'')};
+    if(!entry.key_id||!['current','previous','archived'].includes(entry.status)
+        ||!/^[0-9a-f]{64}$/i.test(entry.public_key_hex)) continue;
+    entries.push(entry);
+    const prior=selected[entry.key_id];
+    if(!prior||statusRank[entry.status]<statusRank[prior.status]){
+      selected[entry.key_id]=entry; keys[entry.key_id]=entry.public_key_hex;
+    }
+  }
+  S.keys.set(key,keys); S.keyDocs.set(key,{kernelId:String(keysDoc?.kernel_id||''),entries});
   return keys;
 }
 async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
@@ -1108,6 +1125,12 @@ function connectDiscoveryStream(base,boot){
   }
   const es=new EventSource(url);
   S.streams.set(url,es);
+  let liveArtifactQueue=Promise.resolve();
+  const enqueueLiveArtifactFrame=(work)=>{
+    liveArtifactQueue=liveArtifactQueue.then(work).catch((e)=>{
+      log('stream','live artifact verification failed: '+String(e&&e.message||e),false);
+    });
+  };
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
   es.addEventListener('hello',(ev)=>{
     try{ const d=JSON.parse(ev.data||'{}'); if(d.node_id) S.kernels.add(d.node_id); }catch(e){}
@@ -1135,15 +1158,33 @@ function connectDiscoveryStream(base,boot){
     catch(e){ return; }
   });
   es.addEventListener('live_artifact_update',(ev)=>{
-    try{
-      const payload=JSON.parse(ev.data||'{}');
-      if(payload.schema!=='personaos-live-artifact-event/1'||!payload.snapshot) return;
-      ingestLiveArtifactSnapshot(base,payload.snapshot,'sse',{previousRevision:payload.previous_revision});
-    }catch(e){ log('stream','live artifact frame parse failed',false); }
+    const raw=ev.data||'{}';
+    enqueueLiveArtifactFrame(async()=>{
+      let payload; try{ payload=JSON.parse(raw); }
+      catch(e){ log('stream','live artifact frame parse failed',false); return; }
+      const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
+        verifyLiveArtifactEvent(payload,{...context,requirePublic:true}));
+      if(!verification.ok||verification.kind!=='snapshot'){
+        _logLiveVerificationRefusal(payload?.run,verification); return;
+      }
+      ingestLiveArtifactSnapshot(base,payload.snapshot,'sse',{
+        previousRevision:payload.previous_revision,verification:verification.snapshot});
+    });
   });
   es.addEventListener('run_ended',(ev)=>{
-    try{ const payload=JSON.parse(ev.data||'{}'); if(payload.run) endLiveArtifactRun(base,payload); }
-    catch(e){ log('stream','run-ended frame parse failed',false); }
+    const raw=ev.data||'{}';
+    enqueueLiveArtifactFrame(async()=>{
+      let payload; try{ payload=JSON.parse(raw); }
+      catch(e){ log('stream','run-ended frame parse failed',false); return; }
+      const previous=liveArtifactState(base,payload?.run);
+      const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
+        verifyLiveArtifactEvent(payload,{...context,requirePublic:true,
+          expectedPreviousRevision:previous?.revision||''}));
+      if(!verification.ok||verification.kind!=='run_ended'){
+        _logLiveVerificationRefusal(payload?.run,verification); return;
+      }
+      endLiveArtifactRun(base,payload,{verification});
+    });
   });
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
 }
@@ -1298,6 +1339,30 @@ function _nodeScopedBodyUrl(base,value){
     return target.href;
   }catch(e){ return ''; }
 }
+async function _liveVerificationContext(base,url,bootHint=null,refresh=false){
+  const key=base||'@origin';
+  let boot=bootHint||S.boots.get(key)||null;
+  if(!boot){ boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
+    if(boot) S.boots.set(key,boot); }
+  if(!boot?.kernel_id) return {ok:false,reason:'missing_kernel_identity'};
+  await keysFor(base,boot,{refresh});
+  const keyDoc=S.keyDocs.get(key)||{};
+  if(keyDoc.kernelId!==boot.kernel_id) return {ok:false,reason:'kernel_key_registry_mismatch'};
+  return {ok:true,keyEntries:keyDoc.entries||[],expectedNodeId:boot.kernel_id,
+    requirePublic:!tokenFor(url)};
+}
+async function _verifyLiveWithKeyRefresh(base,url,bootHint,verify){
+  let last={ok:false,reason:'live_verification_failed'};
+  for(const refresh of [false,true]){
+    const context=await _liveVerificationContext(base,url,bootHint,refresh);
+    if(!context.ok) last=context;
+    else { last=await verify(context); if(last.ok) return last; }
+  }
+  return last;
+}
+function _logLiveVerificationRefusal(run,verification){
+  log('live',`${String(run||'live frame')}: refused ${verification?.reason||'unverified metadata'}`,false);
+}
 function _renderLiveArtifactMount(base,run){
   const domKey=_liveRunDomKey(base,run);
   document.querySelectorAll('[data-live-run-key]').forEach((host)=>{
@@ -1310,6 +1375,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   if(snapshot?.schema!=='personaos-live-artifacts/1'||!snapshot.run||!snapshot.revision) return null;
   const key=_liveRunKey(base,snapshot.run);
   const previous=S.liveArtifacts.get(key)||null;
+  if(!meta.verification?.ok){ _logLiveVerificationRefusal(snapshot.run,meta.verification); return previous; }
   const scoped={...snapshot,files:(Array.isArray(snapshot.files)?snapshot.files:[]).map((file)=>
     ({...file,body_url:_nodeScopedBodyUrl(base,file&&file.body_url)}))};
   const decision=decideLiveArtifactUpdate(previous,scoped,{...meta,source,
@@ -1323,6 +1389,8 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   next.base=base;
   next.source=source;
   next.receivedAt=Date.now();
+  next.verification={verified:true,signingKeyId:meta.verification.signingKeyId,
+    accessPolicyRef:meta.verification.accessPolicyRef,outwardTier:meta.verification.outwardTier};
   if(previous&&decision.refresh){
     next.changes=previous.changes; next.ended=false;
     S.liveArtifacts.set(key,next);
@@ -1358,23 +1426,45 @@ async function fetchLiveArtifacts(base,run){
   const startedRevision=S.liveArtifacts.get(key)?.revision||'';
   const controller=new AbortController(); S.liveArtifactAbort.set(key,controller);
   const p=(async()=>{
-    const doc=await fetchJson(join(base,`runs/${encodeURIComponent(run)}/live-artifacts`),
+    const relative=`runs/${encodeURIComponent(run)}/live-artifacts`
+      +(startedRevision?`?since=${encodeURIComponent(startedRevision)}`:'');
+    const endpoint=join(base,relative);
+    const doc=await fetchJson(endpoint,
       {signal:controller.signal,maxBytes:LIVE_ARTIFACT_LIMITS.maxSnapshotBytes});
-    if(doc) return ingestLiveArtifactSnapshot(base,doc,'poll',{requestGeneration:generation,startedRevision});
+    if(doc){
+      const verification=await _verifyLiveWithKeyRefresh(base,endpoint,null,(context)=>
+        verifyLiveArtifactSnapshot(doc,{...context,expectedRun:run}));
+      if(!verification.ok){ _logLiveVerificationRefusal(run,verification); return S.liveArtifacts.get(key)||null; }
+      const expectedSince=startedRevision||null;
+      if((doc.since_revision??null)!==expectedSince){
+        _logLiveVerificationRefusal(run,{reason:'poll_revision_binding_mismatch'});
+        return S.liveArtifacts.get(key)||null;
+      }
+      return ingestLiveArtifactSnapshot(base,doc,'poll',{
+        requestGeneration:generation,startedRevision,verification});
+    }
     return null;
   })().finally(()=>{ const current=S.liveArtifactPolls.get(key); if(current?.generation===generation) S.liveArtifactPolls.delete(key);
     if(S.liveArtifactAbort.get(key)===controller) S.liveArtifactAbort.delete(key); });
   S.liveArtifactPolls.set(key,{promise:p,generation,controller});
   return p;
 }
-function endLiveArtifactRun(base,event){
+function endLiveArtifactRun(base,event,meta={}){
   const run=String(event?.run||''); if(!run) return;
-  const key=_liveRunKey(base,run); S.liveArtifactEnded.set(key,Date.now());
+  if(!meta.verification?.ok){ _logLiveVerificationRefusal(run,meta.verification); return; }
+  const key=_liveRunKey(base,run); const previous=S.liveArtifacts.get(key);
+  if(!previous||String(event.previous_revision||'')!==String(previous.revision||'')){
+    _logLiveVerificationRefusal(run,{reason:'broken_terminal_revision_chain'}); return;
+  }
+  S.liveArtifactEnded.set(key,Date.now());
   while(S.liveArtifactEnded.size>64) S.liveArtifactEnded.delete(S.liveArtifactEnded.keys().next().value);
   S.liveArtifactRequestGeneration.set(key,(S.liveArtifactRequestGeneration.get(key)||0)+1);
   S.liveArtifactAbort.get(key)?.abort(); S.liveArtifactAbort.delete(key); S.trackedLiveRuns.delete(key);
-  const previous=S.liveArtifacts.get(key); const ended=endLiveArtifactState(previous,event);
-  if(ended){ ended.receivedAt=Date.now(); S.liveArtifacts.set(key,ended); _renderLiveArtifactMount(base,run);
+  const ended=endLiveArtifactState(previous,event);
+  if(ended){ ended.receivedAt=Date.now(); ended.verification={verified:true,
+      signingKeyId:meta.verification.signingKeyId,accessPolicyRef:meta.verification.accessPolicyRef,
+      outwardTier:meta.verification.outwardTier,terminalEventVerified:true};
+    S.liveArtifacts.set(key,ended); _renderLiveArtifactMount(base,run);
     if(S.openLiveFile?.stateKey===key) Promise.resolve().then(()=>renderTop()).catch(()=>{}); }
   renderMissions();
 }
@@ -1416,7 +1506,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
 }
 function liveArtifactsHTML(base,run){
   const state=liveArtifactState(base,run);
-  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">UNSIGNED LIVE TRANSPORT</span></div><div class="l2">Polling every 3 seconds; SSE updates are applied when the node advertises them.</div></div>`;
+  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only Ed25519-verified snapshots and SSE events are applied.</div></div>`;
   const snap=state.snapshot||{}; const ch=state.changes;
   const changed=ch.baseline?'<span class="l2">baseline snapshot</span>'
     : `<span class="live-change c-created">+${ch.created.length} created</span><span class="live-change c-modified">${ch.modified.length} modified</span><span class="live-change c-deleted">-${ch.deleted.length} deleted</span>`;
@@ -1431,12 +1521,12 @@ function liveArtifactsHTML(base,run){
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
-  return `<div class="live-artifacts${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge">UNSIGNED LIVE TRANSPORT</span></div>`
-    +(state.ended?`<div class="fv-note">Terminal event received${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last accepted revision.</div>`:'')
+  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">KERNEL-SIGNED · VERIFIED</span></div>`
+    +(state.ended?`<div class="fv-note">Verified terminal event received${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last accepted revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
-    +trees+`<div class="live-integrity-note">File lists and execution frames are unsigned telemetry. Opened file bytes are SHA-256 checked against the exact advertised hash before rendering.</div></div>`;
+    +trees+`<div class="live-integrity-note">File lists and execution frames are Ed25519-verified against the node kernel key. Opened file bytes are SHA-256 checked against the exact signed hash before rendering.</div></div>`;
 }
 
 // ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
@@ -1613,8 +1703,8 @@ function renderEnvLaneLive(b){
    request/response (model selections = what it ASKED a model to do) and its
    cognition; the right rail streams coordination + cross-env interactions
    (kernel.interactions: actor → affected : kind); artifacts show as deliverables.
-   Signed lineage events retain their explicit signed=true marker; model calls,
-   coordination frames and workspace updates are labelled unsigned live transport. */
+   Signed lineage events retain their explicit signed=true marker; model calls and
+   coordination frames remain unsigned, while workspace snapshots are kernel-signed. */
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
   domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify',
@@ -3412,7 +3502,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +(opts.liveFile?kv('Live revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-      +`<div class="live-view-meta"><span class="transport-badge">UNSIGNED LIVE METADATA</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
+      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">${verified?.ok?'KERNEL-SIGNED METADATA · BYTES CHECKED':'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED'}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
       +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff:'')
     +`<div id="fv-body" class="fv-body"></div>`;
   // Built-in renderer path — the fallback used when no local module

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
+import * as ed from '../assets/noble-ed25519.js';
 import {
   boundedLineDiff,
   decideLiveArtifactUpdate,
@@ -12,6 +13,13 @@ import {
   sha256Hex,
   transitionLiveArtifacts,
 } from '../assets/live-artifacts.mjs';
+import {
+  canonicalJson,
+  liveAccessPolicySigningPayload,
+  liveMetadataSigningPayload,
+  verifyLiveArtifactEvent,
+  verifyLiveArtifactSnapshot,
+} from '../assets/live-signatures.mjs';
 import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
 
 const file = (workspace_id, path, sha256, extra = {}) => ({
@@ -59,7 +67,12 @@ assert.equal(decideLiveArtifactUpdate(orderedFirst, snapshot('sha256:r2', '2026-
 assert.equal(decideLiveArtifactUpdate(orderedFirst, snapshot('sha256:r2', '2026-07-10T12:00:02Z'), {
   source: 'poll', startedRevision: 'sha256:r1', requestGeneration: 2, latestRequestGeneration: 3,
 }).reason, 'stale_request_generation');
-const ended = endLiveArtifactState(orderedFirst, {generated_at: '2026-07-10T12:00:04Z', reason: 'complete'});
+assert.equal(endLiveArtifactState(orderedFirst, {
+  previous_revision: 'sha256:stale', generated_at: '2026-07-10T12:00:04Z',
+}), null);
+const ended = endLiveArtifactState(orderedFirst, {
+  previous_revision: orderedFirst.revision, generated_at: '2026-07-10T12:00:04Z', reason: 'complete',
+});
 assert.equal(ended.ended, true);
 assert.equal(ended.snapshot.active.calls.length, 0);
 assert.equal(decideLiveArtifactUpdate(ended, snapshot('sha256:r2', '2026-07-10T12:00:05Z')).reason, 'run_ended');
@@ -93,6 +106,182 @@ Object.defineProperty(globalThis, 'crypto', {value: undefined, configurable: tru
 assert.equal(await sha256Hex(new TextEncoder().encode('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
 if (cryptoDescriptor) Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
 
+const signingKey = new Uint8Array(32).fill(7);
+const publicKey = await ed.getPublicKeyAsync(signingKey);
+const toHex = (bytes) => [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+const signJson = async (value) => toHex(await ed.signAsync(
+  new TextEncoder().encode(canonicalJson(value)), signingKey));
+const keyEntries = [{key_id: 'kernel-master', role: 'master', status: 'current',
+  public_key_hex: toHex(publicKey), rotated_at: '2026-07-10T00:00:00Z'}];
+async function signedPolicy(nodeId, run, outwardTier = 'public') {
+  const payload = {
+    schema: 'access-policy/1',
+    policy_id: 'acl:live-artifacts:test',
+    subject_kind: 'artifact',
+    subject_id: `${nodeId}:${run}`,
+    owner_persona_id: 'persona-owner',
+    access_grants: outwardTier === 'public' ? [{
+      schema: 'access-grant/1', grantee_kind: 'public', grantee_id: '*', access_level: 'r',
+      scope_kind: '', scope_id: '', reason: '', expires_at: '', attestation_id: '',
+    }] : [],
+    outward_tier: outwardTier,
+    cross_tenant_agreement_ref: null,
+  };
+  return {...payload, signature_hex: await signJson(liveAccessPolicySigningPayload(payload)),
+    signing_key_id: 'kernel-master'};
+}
+async function signedMetadata(document, outwardTier = 'public') {
+  const policy = await signedPolicy(document.node_id, document.run, outwardTier);
+  const out = {...document, access_policy_ref: policy.policy_id, access_policy: policy,
+    signing_key_id: 'kernel-master'};
+  out.signature_hex = await signJson(liveMetadataSigningPayload(out));
+  return out;
+}
+async function resignMetadata(document) {
+  document.signature_hex = await signJson(liveMetadataSigningPayload(document));
+  return document;
+}
+async function resignPolicyAndMetadata(document) {
+  document.access_policy.signature_hex = await signJson(
+    liveAccessPolicySigningPayload(document.access_policy));
+  return resignMetadata(document);
+}
+
+const signedSnapshot = await signedMetadata({
+  schema: 'personaos-live-artifacts/1', node_id: 'kernel:test', run: 'run-signed',
+  generated_at: '2026-07-10T12:00:00Z', revision: `sha256:${a}`, since_revision: null,
+  visibility_tier: 'public', active: {calls: []}, workspaces: [], files: [],
+});
+assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
+  keyEntries, expectedNodeId: 'kernel:test', expectedRun: 'run-signed', requirePublic: true,
+})).ok, true);
+const rotatedKeyEntries = [
+  {key_id: 'kernel-master', role: 'master', status: 'archived', public_key_hex: 'aa'.repeat(32)},
+  ...keyEntries,
+  {key_id: 'kernel-master', role: 'master', status: 'previous', public_key_hex: 'bb'.repeat(32)},
+];
+assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
+  keyEntries: rotatedKeyEntries, requirePublic: true,
+})).ok, true);
+assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
+  keyEntries: keyEntries.map((entry) => ({...entry, role: 'persona_identity'})), requirePublic: true,
+})).reason, 'current_master_key_unavailable');
+const personaKeyIdSnapshot = structuredClone(signedSnapshot);
+personaKeyIdSnapshot.signing_key_id = 'kernel-master/persona:owner';
+personaKeyIdSnapshot.access_policy.signing_key_id = 'kernel-master/persona:owner';
+await resignMetadata(personaKeyIdSnapshot);
+assert.equal((await verifyLiveArtifactSnapshot(personaKeyIdSnapshot, {
+  keyEntries: [{...keyEntries[0], key_id: 'kernel-master/persona:owner', role: 'persona_identity'}],
+  requirePublic: true,
+})).reason, 'non_master_signing_key');
+assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
+  keyEntries: [...keyEntries, {...keyEntries[0], public_key_hex: 'cc'.repeat(32)}], requirePublic: true,
+})).reason, 'current_master_key_unavailable');
+
+const unsignedSnapshot = structuredClone(signedSnapshot);
+delete unsignedSnapshot.signature_hex;
+assert.equal((await verifyLiveArtifactSnapshot(unsignedSnapshot, {keyEntries, requirePublic: true})).ok, false);
+const tamperedSnapshot = structuredClone(signedSnapshot);
+tamperedSnapshot.task = 'tampered after signing';
+assert.equal((await verifyLiveArtifactSnapshot(tamperedSnapshot, {keyEntries, requirePublic: true})).ok, false);
+const mismatchedRef = structuredClone(signedSnapshot);
+mismatchedRef.access_policy_ref = 'acl:wrong';
+await resignMetadata(mismatchedRef);
+assert.equal((await verifyLiveArtifactSnapshot(mismatchedRef, {keyEntries, requirePublic: true})).reason,
+  'access_policy_ref_mismatch');
+const stalePolicySignature = structuredClone(signedSnapshot);
+stalePolicySignature.access_policy.owner_persona_id = 'tampered-owner';
+await resignMetadata(stalePolicySignature);
+assert.equal((await verifyLiveArtifactSnapshot(stalePolicySignature, {keyEntries, requirePublic: true})).reason,
+  'access_policy_signature_invalid');
+const expiredGrant = structuredClone(signedSnapshot);
+expiredGrant.access_policy.access_grants[0].expires_at = '2026-07-09T00:00:00Z';
+await resignPolicyAndMetadata(expiredGrant);
+assert.equal((await verifyLiveArtifactSnapshot(expiredGrant, {
+  keyEntries, requirePublic: true, nowMs: Date.parse('2026-07-10T00:00:00Z'),
+})).reason, 'public_read_not_granted');
+for (const alias of ['read', 'write']) {
+  const aliasedLevel = structuredClone(signedSnapshot);
+  aliasedLevel.access_policy.access_grants[0].access_level = alias;
+  await resignPolicyAndMetadata(aliasedLevel);
+  assert.equal((await verifyLiveArtifactSnapshot(aliasedLevel, {
+    keyEntries, requirePublic: true,
+  })).reason, 'public_read_not_granted');
+}
+for (const invalidExpiry of ['07/11/2026', '2026-02-30T00:00:00Z']) {
+  const invalidExpiryGrant = structuredClone(signedSnapshot);
+  invalidExpiryGrant.access_policy.access_grants[0].expires_at = invalidExpiry;
+  await resignPolicyAndMetadata(invalidExpiryGrant);
+  assert.equal((await verifyLiveArtifactSnapshot(invalidExpiryGrant, {
+    keyEntries, requirePublic: true, nowMs: Date.parse('2026-01-01T00:00:00Z'),
+  })).reason, 'public_read_not_granted');
+}
+const naiveUtcGrant = structuredClone(signedSnapshot);
+naiveUtcGrant.access_policy.access_grants[0].expires_at = '2026-07-10T00:30:00';
+await resignPolicyAndMetadata(naiveUtcGrant);
+assert.equal((await verifyLiveArtifactSnapshot(naiveUtcGrant, {
+  keyEntries, requirePublic: true, nowMs: Date.parse('2026-07-10T00:00:00Z'),
+})).ok, true);
+assert.equal((await verifyLiveArtifactSnapshot(naiveUtcGrant, {
+  keyEntries, requirePublic: true, nowMs: Date.parse('2026-07-10T01:00:00Z'),
+})).reason, 'public_read_not_granted');
+const scopedGrant = structuredClone(signedSnapshot);
+scopedGrant.access_policy.access_grants[0].scope_kind = 'artifact';
+scopedGrant.access_policy.access_grants[0].scope_id = 'some-other-artifact';
+await resignPolicyAndMetadata(scopedGrant);
+assert.equal((await verifyLiveArtifactSnapshot(scopedGrant, {keyEntries, requirePublic: true})).reason,
+  'public_read_not_granted');
+const partialScopeGrant = structuredClone(signedSnapshot);
+partialScopeGrant.access_policy.access_grants[0].scope_kind = 'artifact';
+await resignPolicyAndMetadata(partialScopeGrant);
+assert.equal((await verifyLiveArtifactSnapshot(partialScopeGrant, {
+  keyEntries, requirePublic: true,
+})).reason, 'public_read_not_granted');
+const exactScopeGrant = structuredClone(signedSnapshot);
+exactScopeGrant.access_policy.access_grants[0].scope_kind = exactScopeGrant.access_policy.subject_kind;
+exactScopeGrant.access_policy.access_grants[0].scope_id = exactScopeGrant.access_policy.subject_id;
+await resignPolicyAndMetadata(exactScopeGrant);
+assert.equal((await verifyLiveArtifactSnapshot(exactScopeGrant, {
+  keyEntries, requirePublic: true,
+})).ok, true);
+const operatorSnapshot = await signedMetadata({
+  ...signedSnapshot, signature_hex: undefined, access_policy: undefined, access_policy_ref: undefined,
+  signing_key_id: undefined, visibility_tier: 'operator',
+}, 'persona_only');
+assert.equal((await verifyLiveArtifactSnapshot(operatorSnapshot, {keyEntries, requirePublic: false})).ok, true);
+assert.equal((await verifyLiveArtifactSnapshot(operatorSnapshot, {keyEntries, requirePublic: true})).reason,
+  'public_read_not_granted');
+
+const signedEvent = await signedMetadata({
+  schema: 'personaos-live-artifact-event/1', node_id: 'kernel:test', run: 'run-signed',
+  revision: signedSnapshot.revision, previous_revision: null,
+  generated_at: '2026-07-10T12:00:01Z', endpoint: '/runs/run-signed/live-artifacts',
+  snapshot: signedSnapshot,
+});
+assert.equal((await verifyLiveArtifactEvent(signedEvent, {
+  keyEntries, expectedNodeId: 'kernel:test', requirePublic: true,
+})).kind, 'snapshot');
+const tamperedEvent = structuredClone(signedEvent);
+tamperedEvent.snapshot.task = 'tampered nested snapshot';
+await resignMetadata(tamperedEvent);
+assert.match((await verifyLiveArtifactEvent(tamperedEvent, {keyEntries, requirePublic: true})).reason,
+  /^snapshot_/);
+const endedEvent = await signedMetadata({
+  schema: 'personaos-live-artifact-event/1', node_id: 'kernel:test', run: 'run-signed',
+  revision: null, previous_revision: signedSnapshot.revision,
+  generated_at: '2026-07-10T12:00:02Z', endpoint: '/runs/run-signed/live-artifacts',
+  state: 'run_ended', active: false, snapshot: null,
+});
+assert.equal((await verifyLiveArtifactEvent(endedEvent, {
+  keyEntries, requirePublic: true, expectedPreviousRevision: signedSnapshot.revision,
+})).kind, 'run_ended');
+assert.equal((await verifyLiveArtifactEvent(endedEvent, {
+  keyEntries, requirePublic: true, expectedPreviousRevision: `sha256:${b}`,
+})).reason, 'broken_terminal_revision_chain');
+const unsignedEndedEvent = structuredClone(endedEvent);
+delete unsignedEndedEvent.signature_hex;
+assert.equal((await verifyLiveArtifactEvent(unsignedEndedEvent, {keyEntries, requirePublic: true})).ok, false);
+
 const portal = await readFile(new URL('../assets/discovery.js', import.meta.url), 'utf8');
 const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
@@ -118,7 +307,9 @@ assert.doesNotMatch(portal, /localStorage\.setItem\('personaos_operator'/);
 assert.doesNotMatch(portal, /needs no token|localhost\s*=\s*operator|per-install token/i);
 assert.doesNotMatch(portal, /new EventSource\(esUrl\)/);
 assert.match(portal, /authenticated polling \(token omitted from URL\)/);
-assert.match(portal, /UNSIGNED LIVE TRANSPORT/);
+assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
+assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);
+assert.doesNotMatch(portal, /UNSIGNED LIVE METADATA/);
 assert.doesNotMatch(portal, /delegated-ipfs\.dev|https:\/\/ipfs\.io|https:\/\/dweb\.link/);
 assert.doesNotMatch(portal, /https:\/\/esm\.sh|https:\/\/cdn\.jsdelivr\.net/);
 assert.match(portal, /external executable renderer dependencies are disabled/);

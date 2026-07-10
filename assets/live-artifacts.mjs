@@ -169,6 +169,7 @@ export function decideLiveArtifactUpdate(previous, snapshot, meta = {}) {
 
 export function endLiveArtifactState(previous, event = {}) {
   if (!previous) return null;
+  if (String(event.previous_revision || '') !== String(previous.revision || '')) return null;
   const snapshot = previous.snapshot && typeof previous.snapshot === 'object'
     ? {...previous.snapshot, active: {...(previous.snapshot.active || {}), calls: []}}
     : previous.snapshot;

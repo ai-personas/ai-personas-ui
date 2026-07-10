@@ -164,6 +164,8 @@ b{color:var(--bright)}
 .transport-badge{display:inline-flex;align-items:center;min-height:18px;padding:1px 6px;border:1px solid var(--amber-border);
   border-radius:var(--radius-sm);background:var(--amber-weak);color:var(--amber);font:var(--w-semi) var(--fs-meta)/1.2 var(--sans);
   white-space:nowrap;vertical-align:middle}
+.transport-badge.verified{border-color:var(--up2);background:var(--up-weak);color:var(--up)}
+.transport-badge.failed{border-color:var(--down2);background:var(--down-weak);color:var(--down)}
 .vcounts{display:flex;gap:16px;flex-wrap:wrap}
 .stat{text-align:right;min-width:54px}
 .stat .v{font-size:var(--fs-body);font-weight:var(--w-bold);color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
@@ -683,8 +685,9 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .atree .tfile>a{color:var(--int)}
 .atree .tgated{color:var(--mut)}
 
-/* live workspaces: unsigned transport metadata, hash-verified bytes on open */
+/* live workspaces: kernel-signed metadata, hash-verified bytes on open */
 .live-artifacts{margin:4px 0 10px;border-top:2px solid var(--amber);background:var(--surface-deep)}
+.live-artifacts.verified{border-top-color:var(--up)}
 .live-artifacts.waiting{padding:10px 12px;border:1px solid var(--line2);border-top:2px solid var(--amber)}
 .live-artifacts-head,.live-revision,.live-workspace-head,.live-call,.persona-runtime-row>div{
   display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
