@@ -26,10 +26,12 @@ const a = 'a'.repeat(64);
 const b = 'b'.repeat(64);
 const c = 'c'.repeat(64);
 const first = transitionLiveArtifacts(null, {
-  run: 'run-1', revision: 'sha256:r1', files: [file('ws-1', 'plan.md', a), file('ws-1', 'old.csv', b)],
+  run: 'run-1', task: '  inspect a changing\nworkspace  ', revision: 'sha256:r1',
+  files: [file('ws-1', 'plan.md', a), file('ws-1', 'old.csv', b)],
 });
 assert.equal(first.changes.baseline, true);
 assert.equal(first.files.size, 2);
+assert.equal(first.snapshot.task, 'inspect a changing workspace');
 assert.equal(liveArtifactFileKey(first.files.get('ws-1\0plan.md')), 'ws-1\0plan.md');
 
 const next = transitionLiveArtifacts(first, {
@@ -97,6 +99,10 @@ const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.doesNotMatch(portal, /node1\.personas\.ai|GLOBAL_DISCOVERY_DEFAULT/);
 assert.match(portal, /addEventListener\('live_artifact_update'/);
 assert.match(portal, /addEventListener\('run_ended'/);
+assert.match(portal, /project\?\.label\|\|state\.snapshot\?\.task\|\|state\.run/);
+assert.match(portal, /query\.get\('local_discovery'\)!=='1'/);
+assert.match(portal, /location\.hostname==='ai-personas\.github\.io'/);
+assert.match(portal, /query\.get\('origin_discovery'\)==='1'/);
 assert.match(portal, /setInterval\(\(\)=>\{ try\{ pollLiveArtifacts\(\)/);
 assert.match(portal, /fetchVerifiedLiveBody\(sourceUrl,opts\.liveFile\.sha256\)/);
 assert.match(portal, /data-act="secure-download"/);

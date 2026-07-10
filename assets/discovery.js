@@ -882,7 +882,10 @@ async function probeBase(base){
 async function discoverLocalNode(opts={}){
   const rediscover = opts.rediscover !== false;
   S.localPeers=S.localPeers||new Set();
-  if(new URLSearchParams(location.search).get('no_local_discovery')==='1'){
+  const query=new URLSearchParams(location.search);
+  const localRoute=location.protocol!=='https:'||isLocalBase(location.origin);
+  if(query.get('no_local_discovery')==='1'
+      ||(!localRoute&&query.get('local_discovery')!=='1')){
     S.localPeers=new Set(); return S.localPeers;
   }
   const hosts=location.protocol==='https:'
@@ -977,7 +980,10 @@ async function discover(){
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ]);
-  const seeds=[...new Set(['', ...peerList()])];
+  const query=new URLSearchParams(location.search);
+  const hostedPages=location.hostname==='ai-personas.github.io';
+  const includeOrigin=!hostedPages||query.get('origin_discovery')==='1';
+  const seeds=[...new Set([...(includeOrigin?['']:[]), ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
   // PARALLEL per-base discovery: a dead/slow peer must not serialize the rest.
   const bases=await resolveKernelBases(seeds);
@@ -4119,7 +4125,7 @@ function missionCardList(){
     const project=S.order.map((id)=>S.recs.get(id)).find((r)=>r&&r.kind==='project'&&runOf(r)===state.run
       &&(!nodeId||r._kernel===nodeId));
     const calls=(state.snapshot?.active?.calls||[]).length;
-    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.run,state:'running',
+    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.snapshot?.task||state.run,state:'running',
       meta:[state.run.slice(0,26),`${state.files.size} live files`,calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run});
   }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
