@@ -119,6 +119,7 @@ export function sanitizeLiveArtifactSnapshot(snapshot) {
     schema: String(source.schema || ''),
     node_id: String(source.node_id || ''),
     run: String(source.run || ''),
+    task: String(source.task || '').replace(/\s+/g, ' ').trim().slice(0, 500),
     generated_at: String(source.generated_at || ''),
     revision: String(source.revision || ''),
     visibility_tier: String(source.visibility_tier || ''),
