@@ -88,7 +88,15 @@ def main() -> None:
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
     ui_checks = {
-        'hard-coded privileged discovery host': 'node1.personas.ai' not in portal,
+        'default bootstrap remains an untrusted locator': (
+            "DEFAULT_GLOBAL_DISCOVERY_ENDPOINTS=Object.freeze(['https://node1.personas.ai'])" in portal
+            and "p.get('no_global_discovery')==='1'" in portal
+            and 'async function verifyGlobalEnvelope(env)' in portal
+            and 'exp<=Date.now()' in portal
+            and 'ed.verifyAsync' in portal
+            and "Object.prototype.hasOwnProperty.call(env,'public_bundle')" in portal
+            and 'if(!verified.ok)' in portal
+        ),
         'durable operator credential storage': "localStorage.setItem('personaos_operator'" not in portal,
         'tokenized EventSource URL': 'new EventSource(esUrl)' not in portal,
         'kernel-signed live metadata verification': (

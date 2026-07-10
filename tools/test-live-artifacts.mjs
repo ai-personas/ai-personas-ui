@@ -367,7 +367,8 @@ assert.equal((await verifyLiveArtifactEvent(unsignedEndedEvent, {keyEntries, req
 const portal = await readFile(new URL('../assets/discovery.js', import.meta.url), 'utf8');
 const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-assert.doesNotMatch(portal, /node1\.personas\.ai|GLOBAL_DISCOVERY_DEFAULT/);
+assert.match(portal, /DEFAULT_GLOBAL_DISCOVERY_ENDPOINTS=Object\.freeze\(\['https:\/\/node1\.personas\.ai'\]\)/);
+assert.match(portal, /p\.get\('no_global_discovery'\)==='1'/);
 assert.match(portal, /addEventListener\('live_artifact_update'/);
 assert.match(portal, /addEventListener\('run_ended'/);
 assert.match(portal, /project\?\.label\|\|state\.snapshot\?\.task\|\|state\.run/);
