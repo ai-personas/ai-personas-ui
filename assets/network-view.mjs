@@ -1,0 +1,493 @@
+/*
+ * Bounded, DOM-free helpers for projecting a very large PersonaOS network into
+ * small UI windows.  Every collection helper consumes an iterable in one pass
+ * and retains only O(output limit) items.  Callers may therefore feed these
+ * helpers a generator backed by a million-node index without first materialising
+ * that index as another array.
+ */
+
+export const NETWORK_VIEW_LIMITS = Object.freeze({
+  priorityWindow: 80,
+  searchWindow: 160,
+  maxWindow: 512,
+  maxScan: 1_000_000,
+  groupInitial: 24,
+  groupStep: 24,
+  groupMax: 240,
+  monitoredBases: 12,
+  mandatoryMonitoringBases: 64,
+  maxQueryLength: 256,
+  maxSearchTextLength: 4096,
+  maxKeyLength: 512,
+});
+
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
+function boundedInteger(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(minimum, Math.min(maximum, Math.floor(number)));
+}
+
+function iterableOf(value) {
+  if (value == null) return [];
+  if (typeof value === 'string') return [value];
+  return typeof value[Symbol.iterator] === 'function' ? value : [value];
+}
+
+function boundedText(value, maxLength) {
+  return String(value ?? '').normalize('NFC').slice(0, maxLength);
+}
+
+function defaultKeyOf(item, index) {
+  if (item && typeof item === 'object') {
+    for (const key of ['kernel_id', 'node_id', 'record_id', 'did', 'id', 'base', '_base', 'url']) {
+      if (item[key] != null && String(item[key])) return item[key];
+    }
+  }
+  if (typeof item === 'string' && item) return item;
+  return String(index).padStart(16, '0');
+}
+
+function defaultSearchTextOf(item) {
+  if (item == null) return '';
+  if (typeof item !== 'object') return item;
+  const fields = [];
+  for (const key of [
+    'label', 'name', 'task', 'kind', 'status', 'role', 'kernel_id', 'node_id',
+    'record_id', 'did', 'id', 'base', '_base', 'url', 'description',
+  ]) {
+    const value = item[key];
+    if (value == null) continue;
+    if (Array.isArray(value)) fields.push(value.slice(0, 16).join(' '));
+    else if (typeof value !== 'object') fields.push(String(value));
+  }
+  return fields.join(' ');
+}
+
+function defaultPriorityOf(item) {
+  if (!item || typeof item !== 'object') return 0;
+  const status = String(item.status || item.state || '').toLowerCase();
+  let score = Number(item.priority || item.score || 0);
+  if (!Number.isFinite(score)) score = 0;
+  if (item.focused === true || item.selected === true) score += 1_000_000_000;
+  if (item.running === true || item.active === true || item.busy === true || status === 'running') {
+    score += 100_000_000;
+  } else if (status === 'paused' || status === 'blocked') {
+    score += 70_000_000;
+  } else if (item.live === true || item.recent === true || status === 'live') {
+    score += 50_000_000;
+  }
+  if (item.reachable === true) score += 10_000_000;
+  return score;
+}
+
+function queryTokens(query) {
+  const normalized = boundedText(query, NETWORK_VIEW_LIMITS.maxQueryLength)
+    .trim().toLocaleLowerCase('en-US');
+  if (!normalized) return {query: '', tokens: []};
+  return {
+    query: normalized,
+    tokens: normalized.split(/\s+/).filter(Boolean).slice(0, 8),
+  };
+}
+
+// Negative means `left` belongs before `right` in the final best-first window.
+function compareRank(left, right) {
+  if (left.priority !== right.priority) return left.priority > right.priority ? -1 : 1;
+  if (left.key < right.key) return -1;
+  if (left.key > right.key) return 1;
+  return left.index - right.index;
+}
+
+function insertRanked(window, selectedByKey, candidate, limit, dedupeByKey) {
+  if (limit <= 0) return;
+  if (dedupeByKey) {
+    const prior = selectedByKey.get(candidate.key);
+    if (prior) {
+      if (compareRank(candidate, prior) >= 0) return;
+      const priorIndex = window.indexOf(prior);
+      if (priorIndex >= 0) window.splice(priorIndex, 1);
+      selectedByKey.delete(candidate.key);
+    }
+  }
+  if (window.length === limit && compareRank(candidate, window[window.length - 1]) >= 0) return;
+  let low = 0;
+  let high = window.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (compareRank(candidate, window[middle]) < 0) high = middle;
+    else low = middle + 1;
+  }
+  window.splice(low, 0, candidate);
+  if (dedupeByKey) selectedByKey.set(candidate.key, candidate);
+  if (window.length > limit) {
+    const removed = window.pop();
+    if (dedupeByKey && selectedByKey.get(removed.key) === removed) {
+      selectedByKey.delete(removed.key);
+    }
+  }
+}
+
+/**
+ * Select a deterministic best-first window from an arbitrary iterable.
+ *
+ * Ordering is numeric priority descending, then bounded key ascending, then
+ * source order.  Search is an AND match over at most eight normalized tokens.
+ * The result retains at most `limit` items and never calls Array.from(items).
+ */
+export function selectPriorityWindow(items, options = {}) {
+  const {query, tokens} = queryTokens(options.query || '');
+  const fallbackLimit = query
+    ? NETWORK_VIEW_LIMITS.searchWindow
+    : NETWORK_VIEW_LIMITS.priorityWindow;
+  const limit = boundedInteger(options.limit, fallbackLimit, 0, NETWORK_VIEW_LIMITS.maxWindow);
+  const scanLimit = boundedInteger(
+    options.scanLimit,
+    NETWORK_VIEW_LIMITS.maxScan,
+    0,
+    NETWORK_VIEW_LIMITS.maxScan,
+  );
+  const priorityOf = typeof options.priorityOf === 'function'
+    ? options.priorityOf : defaultPriorityOf;
+  const keyOf = typeof options.keyOf === 'function' ? options.keyOf : defaultKeyOf;
+  const searchTextOf = typeof options.searchTextOf === 'function'
+    ? options.searchTextOf : defaultSearchTextOf;
+  const dedupeByKey = options.dedupeByKey !== false;
+  const ranked = [];
+  const selectedByKey = new Map();
+  let scanned = 0;
+  let matched = 0;
+
+  for (const item of iterableOf(items)) {
+    if (scanned >= scanLimit) break;
+    const index = scanned++;
+    if (tokens.length) {
+      let haystack = '';
+      try {
+        haystack = boundedText(
+          searchTextOf(item, index),
+          NETWORK_VIEW_LIMITS.maxSearchTextLength,
+        ).toLocaleLowerCase('en-US');
+      } catch (_) {
+        continue;
+      }
+      if (!tokens.every((token) => haystack.includes(token))) continue;
+    }
+    matched++;
+    let rawPriority = 0;
+    let rawKey = '';
+    try { rawPriority = Number(priorityOf(item, index)); } catch (_) { rawPriority = 0; }
+    try { rawKey = keyOf(item, index); } catch (_) { rawKey = ''; }
+    const priority = Number.isFinite(rawPriority) ? rawPriority : 0;
+    const key = boundedText(rawKey || String(index).padStart(16, '0'), NETWORK_VIEW_LIMITS.maxKeyLength);
+    insertRanked(ranked, selectedByKey, {item, priority, key, index}, limit, dedupeByKey);
+  }
+
+  return {
+    items: ranked.map((entry) => entry.item),
+    keys: ranked.map((entry) => entry.key),
+    query,
+    scanned,
+    matched,
+    returned: ranked.length,
+    omitted: Math.max(0, matched - ranked.length),
+    limit,
+    scanLimitReached: scanned >= scanLimit,
+  };
+}
+
+export function selectSearchWindow(items, query, options = {}) {
+  return selectPriorityWindow(items, {
+    ...options,
+    query,
+    limit: options.limit ?? NETWORK_VIEW_LIMITS.searchWindow,
+  });
+}
+
+export const selectBoundedNetworkWindow = selectPriorityWindow;
+
+function progressValue(groupKey, progressByGroup) {
+  if (typeof progressByGroup === 'function') return progressByGroup(groupKey);
+  if (progressByGroup instanceof Map) return progressByGroup.get(groupKey);
+  if (progressByGroup && typeof progressByGroup === 'object') return progressByGroup[groupKey];
+  return 0;
+}
+
+/** Return the visible-item limit for one independently expanded group. */
+export function progressiveGroupLimit(groupKey, progressByGroup, options = {}) {
+  const initial = boundedInteger(
+    options.initial,
+    NETWORK_VIEW_LIMITS.groupInitial,
+    1,
+    NETWORK_VIEW_LIMITS.groupMax,
+  );
+  const maximum = boundedInteger(
+    options.max,
+    NETWORK_VIEW_LIMITS.groupMax,
+    initial,
+    NETWORK_VIEW_LIMITS.maxWindow,
+  );
+  const step = boundedInteger(
+    options.step,
+    NETWORK_VIEW_LIMITS.groupStep,
+    1,
+    maximum,
+  );
+  const level = boundedInteger(progressValue(groupKey, progressByGroup), 0, 0,
+    Math.ceil((maximum - initial) / step));
+  return Math.min(maximum, initial + level * step);
+}
+
+export function nextProgressiveGroupLevel(groupKey, progressByGroup, options = {}) {
+  const initial = boundedInteger(options.initial, NETWORK_VIEW_LIMITS.groupInitial, 1,
+    NETWORK_VIEW_LIMITS.groupMax);
+  const maximum = boundedInteger(options.max, NETWORK_VIEW_LIMITS.groupMax, initial,
+    NETWORK_VIEW_LIMITS.maxWindow);
+  const step = boundedInteger(options.step, NETWORK_VIEW_LIMITS.groupStep, 1, maximum);
+  const current = boundedInteger(progressValue(groupKey, progressByGroup), 0, 0,
+    Math.ceil((maximum - initial) / step));
+  return Math.min(Math.ceil((maximum - initial) / step), current + 1);
+}
+
+/** Consume a group iterable while retaining only that group's progressive window. */
+export function takeProgressiveGroupWindow(items, groupKey, progressByGroup, options = {}) {
+  const limit = progressiveGroupLimit(groupKey, progressByGroup, options);
+  const scanLimit = boundedInteger(options.scanLimit, NETWORK_VIEW_LIMITS.maxScan, 0,
+    NETWORK_VIEW_LIMITS.maxScan);
+  const selected = [];
+  let scanned = 0;
+  // One look-ahead is sufficient to render a truthful "show more" control. Do
+  // not walk the remaining 999,000 members of a collapsed group just to count
+  // them. Arrays/Sets may still provide an O(1) exact total.
+  const probeLimit = Math.min(scanLimit, limit + 1);
+  for (const item of iterableOf(items)) {
+    if (scanned >= probeLimit) break;
+    scanned++;
+    if (selected.length < limit) selected.push(item);
+  }
+  const rawKnownTotal = Array.isArray(items) ? items.length
+    : (items && Number.isSafeInteger(items.size) ? items.size : null);
+  const knownTotal = rawKnownTotal == null ? null : safeCount(rawKnownTotal, NETWORK_VIEW_LIMITS.maxScan);
+  const hasMore = knownTotal == null ? scanned > selected.length : knownTotal > selected.length;
+  return {
+    items: selected,
+    groupKey,
+    limit,
+    scanned,
+    total: knownTotal,
+    omitted: knownTotal == null
+      ? (hasMore ? 1 : 0)
+      : Math.max(0, knownTotal - selected.length),
+    omittedIsLowerBound: knownTotal == null && hasMore,
+    hasMore,
+    scanLimitReached: scanned >= scanLimit,
+  };
+}
+
+/**
+ * Normalize a node API base.  Empty string / @origin intentionally mean the
+ * page origin; other values must be credential-free absolute HTTP(S) URLs.
+ */
+export function normalizeMonitoringBase(value) {
+  let raw = value;
+  if (value && typeof value === 'object') {
+    raw = own(value, 'base') ? value.base
+      : own(value, '_base') ? value._base
+      : own(value, 'url') ? value.url
+      : own(value, 'base_url') ? value.base_url
+      : null;
+  }
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (!text || text === '@origin') return '';
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    url.search = '';
+    url.hash = '';
+    const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+    return `${url.origin}${pathname}`;
+  } catch (_) {
+    return null;
+  }
+}
+
+function defaultBaseOf(item) {
+  return normalizeMonitoringBase(item);
+}
+
+function defaultActiveOf(item) {
+  if (!item || typeof item !== 'object') return false;
+  const status = String(item.status || item.state || '').toLowerCase();
+  return item.active === true || item.running === true || item.busy === true
+    || status === 'running' || Number(item.active_calls || item.activeCallCount || 0) > 0;
+}
+
+function defaultFocusedOf(item) {
+  return Boolean(item && typeof item === 'object'
+    && (item.focused === true || item.selected === true));
+}
+
+/**
+ * Choose API bases to poll without ever silently evicting a focused or active
+ * base.  The requested limit expands to fit mandatory bases, up to `hardLimit`;
+ * exceeding that explicit safety ceiling throws instead of reporting a false
+ * monitoring state.  All remaining slots are filled by deterministic priority.
+ */
+export function selectMonitoringBases(candidates, options = {}) {
+  const requestedLimit = boundedInteger(
+    options.limit,
+    NETWORK_VIEW_LIMITS.monitoredBases,
+    0,
+    NETWORK_VIEW_LIMITS.mandatoryMonitoringBases,
+  );
+  const hardLimit = boundedInteger(
+    options.hardLimit,
+    NETWORK_VIEW_LIMITS.mandatoryMonitoringBases,
+    Math.max(1, requestedLimit),
+    NETWORK_VIEW_LIMITS.maxWindow,
+  );
+  const scanLimit = boundedInteger(options.scanLimit, NETWORK_VIEW_LIMITS.maxScan, 0,
+    NETWORK_VIEW_LIMITS.maxScan);
+  const baseOf = typeof options.baseOf === 'function' ? options.baseOf : defaultBaseOf;
+  const activeOf = typeof options.activeOf === 'function' ? options.activeOf : defaultActiveOf;
+  const focusedOf = typeof options.focusedOf === 'function' ? options.focusedOf : defaultFocusedOf;
+  const priorityOf = typeof options.priorityOf === 'function'
+    ? options.priorityOf : defaultPriorityOf;
+  const focused = [];
+  const active = [];
+  const focusedSet = new Set();
+  const activeSet = new Set();
+  const ranked = [];
+  const rankedByKey = new Map();
+
+  const checkedBase = (item, index) => {
+    try { return normalizeMonitoringBase(baseOf(item, index)); } catch (_) { return null; }
+  };
+  const ensureCapacity = () => {
+    if (focusedSet.size + activeSet.size > hardLimit) {
+      throw new RangeError(`focused/active monitoring bases exceed hard limit ${hardLimit}`);
+    }
+  };
+  const addFocused = (base) => {
+    if (base == null || focusedSet.has(base)) return;
+    if (activeSet.delete(base)) {
+      const index = active.indexOf(base);
+      if (index >= 0) active.splice(index, 1);
+    }
+    focusedSet.add(base);
+    focused.push(base);
+    ensureCapacity();
+  };
+  const addActive = (base) => {
+    if (base == null || focusedSet.has(base) || activeSet.has(base)) return;
+    activeSet.add(base);
+    active.push(base);
+    ensureCapacity();
+  };
+
+  if (own(options, 'focusedBase')) addFocused(checkedBase(options.focusedBase, -1));
+  for (const item of iterableOf(options.focusedBases)) addFocused(checkedBase(item, -1));
+  for (const item of iterableOf(options.activeBases)) addActive(checkedBase(item, -1));
+
+  let scanned = 0;
+  for (const item of iterableOf(candidates)) {
+    if (scanned >= scanLimit) break;
+    const index = scanned++;
+    const base = checkedBase(item, index);
+    if (base == null) continue;
+    let isFocused = false;
+    let isActive = false;
+    try { isFocused = focusedOf(item, index) === true; } catch (_) {}
+    try { isActive = activeOf(item, index) === true; } catch (_) {}
+    if (isFocused) addFocused(base);
+    else if (isActive) addActive(base);
+    let rawPriority = 0;
+    try { rawPriority = Number(priorityOf(item, index)); } catch (_) {}
+    insertRanked(ranked, rankedByKey, {
+      item: base,
+      key: base || '@origin',
+      priority: Number.isFinite(rawPriority) ? rawPriority : 0,
+      index,
+    }, hardLimit, true);
+  }
+
+  ensureCapacity();
+  const mandatoryCount = focused.length + active.length;
+  const limit = Math.min(hardLimit, Math.max(requestedLimit, mandatoryCount));
+  const bases = [...focused, ...active];
+  const selected = new Set(bases);
+  for (const entry of ranked) {
+    if (bases.length >= limit) break;
+    if (selected.has(entry.item)) continue;
+    selected.add(entry.item);
+    bases.push(entry.item);
+  }
+  return {
+    bases,
+    focused: [...focused],
+    active: [...active],
+    requestedLimit,
+    limit,
+    hardLimit,
+    mandatoryCount,
+    scanned,
+    scanLimitReached: scanned >= scanLimit,
+  };
+}
+
+function countBigInt(value) {
+  if (typeof value === 'bigint') return value > 0n ? value : 0n;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) return 0n;
+    return BigInt(Math.floor(Math.min(value, Number.MAX_SAFE_INTEGER)));
+  }
+  const text = String(value ?? '').trim();
+  if (/^\d+$/.test(text)) {
+    try { return BigInt(text); } catch (_) { return 0n; }
+  }
+  if (/^\d+\.\d+$/.test(text)) {
+    const number = Number(text);
+    if (Number.isFinite(number) && number > 0) {
+      return BigInt(Math.floor(Math.min(number, Number.MAX_SAFE_INTEGER)));
+    }
+  }
+  return 0n;
+}
+
+/** Clamp untrusted counts to an exact non-negative safe JS integer. */
+export function safeCount(value, maximum = Number.MAX_SAFE_INTEGER) {
+  const max = boundedInteger(maximum, Number.MAX_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER);
+  const count = countBigInt(value);
+  const cap = BigInt(max);
+  return Number(count > cap ? cap : count);
+}
+
+/**
+ * Compact, deterministic count text without Intl/locale variance or unsafe
+ * floating-point conversion. Values beyond 999 quadrillion are explicitly
+ * capped instead of emitting an attacker-sized decimal string.
+ */
+export function compactCount(value) {
+  const count = countBigInt(value);
+  if (count < 1000n) return count.toString();
+  const units = [
+    ['Q', 1_000_000_000_000_000n],
+    ['T', 1_000_000_000_000n],
+    ['B', 1_000_000_000n],
+    ['M', 1_000_000n],
+    ['K', 1_000n],
+  ];
+  if (count >= 1_000_000_000_000_000_000n) return '999Q+';
+  for (const [suffix, unit] of units) {
+    if (count < unit) continue;
+    const tenths = (count * 10n) / unit;
+    const whole = tenths / 10n;
+    const decimal = tenths % 10n;
+    return decimal && whole < 100n
+      ? `${whole}.${decimal}${suffix}`
+      : `${whole}${suffix}`;
+  }
+  return count.toString();
+}

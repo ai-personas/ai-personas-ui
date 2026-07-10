@@ -69,6 +69,7 @@ def run(args: argparse.Namespace) -> dict:
         screenshots.mkdir(parents=True, exist_ok=True)
 
     result: dict = {}
+    scale_metrics: dict = {}
     try:
         with sync_playwright() as playwright:
             launch = {'headless': True}
@@ -98,6 +99,23 @@ def run(args: argparse.Namespace) -> dict:
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
               .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 1""",
+                                   timeout=15_000)
+            page.wait_for_function("""() => document.querySelector('#sysStream')?.textContent
+              .includes('sent message')""", timeout=15_000)
+            require(page.locator('#sysGraph .cl-direct').count() == 1,
+                    'shared environment scope created an inferred persona chord')
+            followed = page.locator('.pcard', has_text='Mara Chen')
+            followed.locator('.pc-follow').click()
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
+                                   timeout=5_000)
+            require(followed.locator('.pc-follow').get_attribute('aria-pressed') == 'true',
+                    'kernel-qualified follow state did not select the requested persona')
+            require(page.locator('.pcard.dimmed').count() == 2,
+                    'following one persona did not scope the other federated cards')
+            page.locator('#cfUnfollow').click()
+            if screenshots:
+                page.screenshot(path=str(screenshots / 'desktop-network-messages.png'), full_page=True)
             provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
             require(provider_refused.count() >= 2,
                     'tampered ProviderRecord document entered browser discovery')
@@ -208,6 +226,20 @@ def run(args: argparse.Namespace) -> dict:
             require(image.evaluate('(img) => img.naturalWidth > 0'), 'updated SVG did not rerender')
             require(image.get_attribute('src') != image_src, 'updated image retained its old blob URL')
             require(page.locator('.live-diff').count() == 0, 'binary viewer claimed a text diff')
+
+            # An unknown hash-bound binary is still useful: it gets a bounded,
+            # non-executable byte inspector rather than an empty drawer.
+            page.locator('#detailback').click()
+            binary_file = page.locator(
+                '[data-act="live-file"][data-path="attachments/controller.bin"]')
+            binary_file.wait_for(timeout=10_000)
+            binary_file.click()
+            hex_view = page.locator('#fv-body .fv-hex')
+            hex_view.wait_for(timeout=10_000)
+            require('00000000' in hex_view.text_content(),
+                    'generic binary viewer did not expose a bounded hex preview')
+            require(page.locator('.live-view-meta .transport-badge.verified').count() == 1,
+                    'generic binary viewer lost byte-integrity verification')
 
             page.locator('#detailback').click()
             page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
@@ -368,6 +400,56 @@ def run(args: argparse.Namespace) -> dict:
             require(not p2p_errors, 'P2P-only browser console errors: ' + '; '.join(p2p_errors))
             p2p_context.close()
 
+            # Large-population integration: selector helpers cover a one-million
+            # generator; this browser pass proves the actual graph/stage keep a
+            # hard DOM window and can search beyond the initial card window.
+            scale_context = browser.new_context(viewport={'width': 1600, 'height': 1000})
+            scale_context.request.get(base + '/node/scale?count=2000')
+            scale = scale_context.new_page()
+            scale_errors: list[str] = []
+            scale.on('console', lambda msg: scale_errors.append(f'console {msg.type}: {msg.text}')
+                     if msg.type in {'warning', 'error'} else None)
+            scale.on('pageerror', lambda error: scale_errors.append(f'pageerror: {error}'))
+            scale.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            scale.goto(url, wait_until='domcontentloaded')
+            scale.locator('.pcard').first.wait_for(timeout=15_000)
+            scale.wait_for_function("""() => document.querySelector('#graphWindow')?.textContent.includes('2K')""",
+                                    timeout=15_000)
+            require(scale.locator('.pcard').count() == 12,
+                    'large stage did not retain its 12-card initial window')
+            scale_graph_personas = scale.locator('#sysGraph [data-gp]').count()
+            require(scale_graph_personas <= 36,
+                    'large graph exceeded its exact-persona cap')
+            require(scale.locator('[data-kernel-core]').count() <= 6,
+                    'large graph exceeded its kernel cap')
+            require(scale.locator('body *').count() < 1_500,
+                    'large population materialized an unbounded DOM')
+            if screenshots:
+                scale.screenshot(path=str(screenshots / 'desktop-scale-window.png'), full_page=True)
+            scale.locator('[data-more-personas]').click()
+            scale.wait_for_function("""() => document.querySelectorAll('.pcard').length === 24""",
+                                    timeout=10_000)
+            scale.locator('#q').fill('Scale Persona 01999')
+            scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
+              .some((card) => card.textContent.includes('Scale Persona 01999'))""", timeout=10_000)
+            require(scale.locator('.pcard').count() <= 24,
+                    'search escaped the progressive persona window')
+            scale_metrics = {
+                'source_personas': 2000,
+                'initial_cards': 12,
+                'expanded_cards': 24,
+                'graph_personas': scale_graph_personas,
+                'dom_nodes_after_search': scale.locator('body *').count(),
+                'deep_search_found': True,
+            }
+            if screenshots:
+                scale.screenshot(path=str(screenshots / 'desktop-scale-search.png'), full_page=True)
+            require(not scale_errors, 'large-population browser errors: ' + '; '.join(scale_errors))
+            scale_context.request.get(base + '/node/scale?count=0')
+            scale_context.close()
+
             STATE.reset()
             mobile_context = browser.new_context(viewport={'width': 390, 'height': 844})
             mobile = mobile_context.new_page()
@@ -389,10 +471,19 @@ def run(args: argparse.Namespace) -> dict:
               for (let i=1; i<rects.length; i++) {
                 if (rects[i-1].bottom > rects[i].top + 1) overlaps.push([rects[i-1], rects[i]]);
               }
+              const clientWidth=document.documentElement.clientWidth;
+              const wide=[...document.body.querySelectorAll('*')].map((el)=>{
+                const r=el.getBoundingClientRect();
+                if (r.right <= clientWidth + 1 && r.left >= -1) return null;
+                const name=el.id ? `#${el.id}`
+                  : `${el.tagName.toLowerCase()}${[...el.classList].slice(0,3).map((c)=>`.${c}`).join('')}`;
+                return {name,left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)};
+              }).filter(Boolean).slice(0,20);
               return {scrollWidth:document.documentElement.scrollWidth,
-                clientWidth:document.documentElement.clientWidth, rects, overlaps};
+                clientWidth, rects, overlaps, wide};
             }""")
-            require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1, 'mobile page overflows horizontally')
+            require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
+                    'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
             require(not metrics['overlaps'], 'mobile page bands overlap')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
@@ -488,8 +579,10 @@ def run(args: argparse.Namespace) -> dict:
                 'event_requests': len(event_requests),
                 'hash_changed': before_hash != after_hash,
                 'image_rerendered': True,
+                'generic_binary_inspected': True,
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
+                'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
                 'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
                                    + mobile_errors + sse_errors),

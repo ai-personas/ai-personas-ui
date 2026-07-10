@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 RUN = "run-fixture-live"
 WORKSPACE = "ws-0123456789abcdef01234567"
 PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
+PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
+PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
 NODE_ID = "kernel:fixture"
 KEY_ID = "kernel-master"
@@ -49,11 +51,13 @@ SIGNING_KEYS = {
 
 FILES = {
     1: {
+        "attachments/controller.bin": b"\x00\xffPERSONAOS\x01\x02\x03\x7f\x80\xfe",
         "design/plan.md": b"# Four bedroom concept\n\n- Entry opens to the living hall.\n- Kitchen faces the garden.\n- Bedroom count: 4\n\n![remote tracker](https://example.invalid/pixel.png)\n<img src=\"https://example.invalid/raw.png\">\n",
         "design/old-notes.csv": b"issue,status\nsite fit,open\n",
         "drawings/concept.svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#f6f7f9"/><path d="M70 60h500v240H70zM300 60v240M70 180h500" fill="none" stroke="#151b24" stroke-width="8"/><text x="95" y="120" font-family="sans-serif" font-size="24">Living</text><text x="350" y="120" font-family="sans-serif" font-size="24">Bedrooms</text></svg>',
     },
     2: {
+        "attachments/controller.bin": b"\x00\xffPERSONAOS\x01\x02\x04\x7f\x80\xfe",
         "design/plan.md": b"# Four bedroom concept\n\n- Sheltered entry opens to a defined foyer.\n- Kitchen and dining face the garden.\n- Bedroom count: 4, with a ground-floor accessible suite.\n- Egress and storage are marked on the current plan.\n",
         "design/room-schedule.csv": b"room,area_m2\nprimary bedroom,17.5\nbedroom 2,12.0\nbedroom 3,11.8\nbedroom 4,11.5\n",
         "drawings/concept.svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#f6f7f9"/><path d="M55 45h530v270H55zM285 45v270M55 170h530M430 170v145" fill="none" stroke="#151b24" stroke-width="8"/><path d="M270 65a28 28 0 0 0 28 28M415 190a28 28 0 0 0 28 28" fill="none" stroke="#2783d8" stroke-width="4"/><text x="80" y="105" font-family="sans-serif" font-size="22">Living / dining</text><text x="330" y="105" font-family="sans-serif" font-size="22">Kitchen</text><text x="80" y="235" font-family="sans-serif" font-size="22">Accessible suite</text><text x="455" y="235" font-family="sans-serif" font-size="22">Bed 2</text></svg>',
@@ -484,6 +488,7 @@ class State:
         self.tamper_poll_served = False
         self.key_generation = 1
         self.key_requests = 0
+        self.scale_count = 0
 
     def set(self, value: int) -> None:
         with self.lock:
@@ -504,6 +509,15 @@ class State:
             self.tamper_poll_served = False
             self.key_generation = 1
             self.key_requests = 0
+            self.scale_count = 0
+
+    def set_scale(self, count: int) -> None:
+        with self.lock:
+            self.scale_count = max(0, min(10_000, int(count)))
+
+    def get_scale(self) -> int:
+        with self.lock:
+            return self.scale_count
 
     def arm_stale(self) -> None:
         with self.lock:
@@ -626,6 +640,25 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
 
 def telemetry() -> dict:
     call = snapshot()["active"]["calls"][0]
+    scale_count = STATE.get_scale()
+    personas = [
+        {"persona_id": PERSONA, "name": "Orin Vale", "lifecycle_state": "ACTIVE",
+         "experience_tasks": 3, "reputation_score": 0.91},
+        {"persona_id": PERSONA_PEER, "name": "Mara Chen", "lifecycle_state": "ACTIVE",
+         "experience_tasks": 7, "reputation_score": 0.88},
+        {"persona_id": PERSONA_THIRD, "name": "Ivo Reed", "lifecycle_state": "ACTIVE",
+         "experience_tasks": 4, "reputation_score": 0.84},
+    ]
+    if scale_count:
+        personas = [{
+            "persona_id": f"scale-persona-{index:05d}",
+            "name": f"Scale Persona {index:05d}",
+            "lifecycle_state": "ACTIVE",
+            "experience_tasks": index % 17,
+            "reputation_score": round((index % 100) / 100, 2),
+        } for index in range(scale_count)]
+        # Preserve the one real active-call endpoint in the large population.
+        personas[0].update({"persona_id": PERSONA, "name": "Orin Vale"})
     return {
         "schema": "personaos-live-telemetry/1",
         "generated_at": now(),
@@ -637,16 +670,21 @@ def telemetry() -> dict:
                 "model_id": "gpt-5.5", "requested_purpose": call["requested_purpose"], "role": "lead",
             }],
             "spans": [],
-            "interactions": [{
-                "actor_id": PERSONA, "actor_kind": "persona", "affected": [],
-                "kind": "TASK_PROGRESS_REPORTED", "scope": "environment", "scope_id": ENV,
-                "at": now(), "signed": False,
-            }],
+            "interactions": [
+                {"actor_id": PERSONA, "actor_kind": "persona",
+                 "affected": [{"id": PERSONA_PEER, "kind": "persona"}],
+                 "kind": "PERSONA_COMMUNICATION_INTENT_RECORDED",
+                 "scope": "environment", "scope_id": ENV, "at": now(), "signed": False},
+                {"actor_id": NODE_ID, "actor_kind": "kernel",
+                 "affected": [{"id": PERSONA_THIRD, "kind": "persona"}],
+                 "kind": "ATTENTION_ALLOCATED", "scope": "environment", "scope_id": ENV,
+                 "at": now(), "signed": False},
+                {"actor_id": PERSONA_THIRD, "actor_kind": "persona", "affected": [],
+                 "kind": "TASK_PROGRESS_REPORTED", "scope": "environment", "scope_id": ENV,
+                 "at": now(), "signed": False},
+            ],
         },
-        "personas": [{
-            "persona_id": PERSONA, "name": "Orin Vale", "lifecycle_state": "ACTIVE",
-            "experience_tasks": 3, "reputation_score": 0.91,
-        }],
+        "personas": personas,
     }
 
 
@@ -758,6 +796,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"environments": {}, "personas": {}})
         if path == "/node/telemetry.json":
             return self.json(200, telemetry())
+        if path == "/node/scale":
+            count = int((parse_qs(parsed.query).get("count") or ["0"])[0])
+            STATE.set_scale(count)
+            return self.json(200, {"scale_count": STATE.get_scale()})
         if ((path.startswith("/node/personas/") or path.startswith("/personas/"))
                 and path.endswith("/thinking")):
             return self.json(200, {

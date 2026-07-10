@@ -82,6 +82,24 @@ current-kernel-master-only.
 peers; add any other kernel with `?peer=https://its-host`, advertise it through libp2p/IPFS, or
 save it with the PEER control. Every route enters the same record-resolution and signature check.
 
+**The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
+window of at most six kernel cores and ten navigator chips, with explicit “shown of total” and
+aggregated-overflow counts. Selecting a kernel drills into that node's environments and personas:
+the graph shows at most 36 prioritised personas, while the accessible stage starts with ten
+environments and twelve personas per environment and expands through search or **SHOW MORE**.
+The monitoring window normally polls at most twelve bases; focused and actively-running routes
+are mandatory and may expand it only up to an explicit 64-base safety ceiling, rather than
+starting a poll loop for every discovered node.
+
+Discovery caches are likewise capped at 4,096 kernels and 20,000 kernel-qualified records;
+presence and event history use bounded leases and rings. A large resolver should honour `limit`,
+opaque `cursor`, optional `q`/`status`, and return an aggregate `total` (also accepted as
+`total_count` or `node_count`). The browser traverses at most four 128-node pages per refresh and
+sends global search to the resolver, then reports the aggregate while retaining only its bounded
+verified window. A directory can therefore describe millions of nodes without creating millions
+of DOM nodes, live connections, or ambiguous short-ID keys. The legacy whole-list response remains
+a compatibility path, not the recommended interface for a million-node directory.
+
 **Honest transport note (§3H.3).** The libp2p node is real and runs in your browser, but a
 browser can't accept inbound connections or multicast, so to actually **reach other machines** it
 needs a **relay / bootstrap peer** to dial through. Offline artifact availability similarly needs
@@ -115,13 +133,19 @@ Live files are clickable. The browser fetches their body URL with bearer authent
 request header, never in the URL, and computes SHA-256 before passing bytes to any renderer.
 Downloads use the same check, then create a short-lived `application/octet-stream` attachment;
 there is no authenticated "open raw" navigation surface.
+Non-live manifest files that advertise a SHA-256 use the same fail-closed byte check before any
+repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
 Markdown, text, JSON, and CSV retain one prior verified revision and show a bounded line diff when
-an open file changes. Image/PDF and local KiCad/netlist viewers rerender the new verified bytes;
-other CAD/3D formats receive an exact hash-bound descriptor and verified download for an isolated
-CAD tool. The credential-bearing page imports no executable CDN modules. Markdown cannot fetch
-remote media, and glTF with non-data `uri` dependencies is rejected. Client limits cap snapshots
-at 2 MiB, workspaces at 64, active calls at 64, files at 256, paths at 16 levels/512 characters,
-rendered bodies at 8 MiB, and downloads at 32 MiB.
+an open file changes. Repository-owned adapters cover Gerber/drill, KiCad, netlist/SPICE,
+waveforms, DXF, CAD/3D, PDF, tables, structured data, and Markdown; built-ins cover verified
+images, audio/video controls, source code, tabular text, and safe download descriptors. Unknown
+content never produces a blank viewer: textual bytes get a bounded plain-text view and binary
+bytes get metadata plus a bounded hex preview. HTML is displayed as source, archive/office
+formats are descriptors, and executable peer content is never run. The credential-bearing page
+imports no executable CDN modules. Markdown cannot fetch remote media, and glTF with non-data
+`uri` dependencies is rejected. Client limits cap snapshots at 2 MiB, workspaces at 64, active
+calls at 64, files at 256, paths at 16 levels/512 characters, rendered bodies at 8 MiB, and
+downloads at 32 MiB.
 
 The distinction is intentional:
 
@@ -164,6 +188,21 @@ fires as messages flow; a who→whom coordination feed threads each task's produ
 heartbeat-driven system vital keeps the page alive. Persona cards expose task/LLM execution state,
 the current model/purpose, and run pressure/review/block state when the node API provides it.
 
+Persona→persona graph edges are exact claims, not inferred social links. A standing chord and its
+directional pulse exist only when one observed telemetry event names both an actor persona and an
+explicit persona recipient/affected endpoint. Shared environment, scope, or cohort membership
+never creates an edge. A single-ended kernel-mediated act remains a kernel↔persona spoke; the feed
+may visually thread rows that share a real scope ID, but that thread is not presented as a recipient
+claim. Historical coordination rows have a five-minute display lease and cannot make a persona look
+currently busy; only a current `active_model_calls` entry does that.
+
+Realtime presence is leased rather than inferred from durable discovery. The bounded presence
+store defaults to stale after ten seconds and offline when its 30-second lease expires; duplicate
+or out-of-order sequence updates are rejected. The UI also expires heartbeat, active-model-call,
+persona telemetry, and persona runtime-status entries after 30 seconds without a refresh, clears
+their ephemeral model/running state, and leaves the durable discovered card visible as
+stale/offline.
+
 ## Operator console — drive your own node from the portal
 
 Anonymous visitors see each node's **public discovery projection only**: the public status
@@ -204,6 +243,9 @@ Deterministic validation (the Playwright check starts its own local fixture):
 
 ```bash
 node tools/test-live-artifacts.mjs
+node tools/test-artifact-types.mjs
+node tools/test-network-view.mjs
+node tools/test-network-store.mjs
 python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
 python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
   --commit local --screenshot /tmp/personaos-hosted-smoke.png
@@ -218,6 +260,9 @@ The browser test requires Python Playwright, PyNaCl, and an installed Chromium. 
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
 assets/discovery-authority.mjs             # provider hints, historical keys, AccessPolicy projection
+assets/network-view.mjs                    # bounded priority/search/progressive network projections
+assets/network-store.mjs                   # kernel-qualified entities, presence leases, event rings
+assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
 assets/noble-ed25519.js                    # vendored verifier (MIT)
@@ -225,6 +270,9 @@ assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay 
 peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
 tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a node); NOT needed at runtime
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
+tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknown-content fallback
+tools/test-network-view.mjs                # million-node bounded-window regression
+tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression
 tools/live_ui_fixture.py                    # canonical live API fixture for browser validation
 tools/test-live-ui.py                       # Playwright security, live-update, and mobile regression
 tools/test-hosted-deploy.py                 # exact deployed-byte + hosted Chromium smoke
