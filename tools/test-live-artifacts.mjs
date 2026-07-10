@@ -124,6 +124,8 @@ assert.equal(liveArtifactRunKey('https://node.example/', 'run-1'), 'https://node
 
 const snapshot = (revision, generated_at, files = [file('ws-1', 'plan.md', a)]) => ({
   schema: 'personaos-live-artifacts/1', run: 'run-1', revision, generated_at, files,
+  active: {calls: [{call_id: 'call-1'}], persona_ids: ['persona-1'], environment_ids: ['env-1']},
+  workspaces: [{workspace_id: 'ws-1', active_call_ids: ['call-1'], state: 'model_call_active'}],
 });
 const orderedFirst = transitionLiveArtifacts(null, snapshot('sha256:r1', '2026-07-10T12:00:01Z'));
 assert.deepEqual(decideLiveArtifactUpdate(orderedFirst, snapshot('sha256:r2', '2026-07-10T12:00:02Z'), {
@@ -146,10 +148,19 @@ const ended = endLiveArtifactState(orderedFirst, {
 });
 assert.equal(ended.ended, true);
 assert.equal(ended.snapshot.active.calls.length, 0);
+assert.deepEqual(ended.snapshot.active.persona_ids, []);
+assert.deepEqual(ended.snapshot.active.environment_ids, []);
+assert.equal(ended.snapshot.workspaces[0].state, 'run_ended');
+assert.deepEqual(ended.snapshot.workspaces[0].active_call_ids, []);
 assert.equal(decideLiveArtifactUpdate(ended, snapshot('sha256:r2', '2026-07-10T12:00:05Z')).reason, 'run_ended');
 const expectedBody = {...orderedFirst.files.get('ws-1\0plan.md'), revision: orderedFirst.revision, bodyKey: 'body-1'};
 assert.equal(liveBodyCommitIsCurrent(expectedBody, orderedFirst, {bodyKey: 'body-1', hash: a}), true);
 assert.equal(liveBodyCommitIsCurrent({...expectedBody, sha256: b}, orderedFirst, {bodyKey: 'body-1', hash: b}), false);
+assert.equal(liveBodyCommitIsCurrent(expectedBody, ended, {bodyKey: 'body-1', hash: a}), false);
+const finalExpectedBody = {...expectedBody, terminalAtStart: true, endedAt: ended.endedAt};
+assert.equal(liveBodyCommitIsCurrent(finalExpectedBody, ended, {bodyKey: 'body-1', hash: a}), true);
+assert.equal(liveBodyCommitIsCurrent({...finalExpectedBody, endedAt: 'different'}, ended,
+  {bodyKey: 'body-1', hash: a}), false);
 
 const many = Array.from({length: LIVE_ARTIFACT_LIMITS.maxFiles + 30}, (_, i) =>
   file('ws-limit', `dir/f-${i}.txt`, a));

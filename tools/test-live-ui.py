@@ -20,6 +20,7 @@ from live_ui_fixture import (
     PROVIDER_P2P_ONLY,
     PROVIDER_SCOPED_READ,
     PROVIDER_SSE_LEGACY,
+    RUN,
     STATE,
     ThreadingHTTPServer,
     p2p_discover_only_resolution,
@@ -99,12 +100,19 @@ def run(args: argparse.Namespace) -> dict:
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
               .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
-            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 1""",
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
             page.wait_for_function("""() => document.querySelector('#sysStream')?.textContent
-              .includes('sent message')""", timeout=15_000)
-            require(page.locator('#sysGraph .cl-direct').count() == 1,
+              .includes('recorded message intent')""", timeout=15_000)
+            require(page.locator('#sysGraph .cl-direct').count() == 2,
                     'shared environment scope created an inferred persona chord')
+            recipients_row = page.locator('#sysStream .ix', has_text='Mara Chen').filter(has_text='Ivo Reed')
+            require(recipients_row.count() >= 1,
+                    'recipients-only persona endpoint was omitted from the live feed')
+            require('recorded message intent' in recipients_row.first.text_content(),
+                    'communication intent was overstated as delivered content')
+            require('live' in (page.locator('.pcard', has_text='Ivo Reed').get_attribute('class') or ''),
+                    'recipients-only persona endpoint was omitted from recent activity')
             followed = page.locator('.pcard', has_text='Mara Chen')
             followed.locator('.pc-follow').click()
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
@@ -552,12 +560,38 @@ def run(args: argparse.Namespace) -> dict:
             sse.locator('.live-artifacts').wait_for(timeout=10_000)
             sse_context.request.get(base + '/node/end')
             sse.locator('.live-artifacts.ended').wait_for(timeout=10_000)
+            sse.wait_for_function("""() => [...document.querySelectorAll('#detailbody .row')]
+              .some((row) => row.querySelector('.l2')?.textContent === 'Status'
+                && row.querySelector('.v2')?.textContent.trim().endsWith('ended'))""",
+                timeout=10_000)
+            require(sse.locator('#detailbody .live-call').count() == 0,
+                    'verified terminal state retained an active model call')
+            terminal_text = sse.locator('#detailbody').text_content().lower()
+            require('model call active' not in terminal_text,
+                    'verified final workspace retained model-call-active state')
+            require('independent plan review is still open' not in terminal_text,
+                    'verified terminal state retained a stale completion block')
+            sse.wait_for_function("""() => document.querySelector('#st-active .v')?.textContent === '0'""",
+                                  timeout=10_000)
+            require(sse.locator(f'[data-mrun="{RUN}"] .ms-running').count() == 0,
+                    'stale node status resurrected a terminal mission card')
             requests_at_end = len([item for item in sse_requests if item.endswith('/live-artifacts')])
             sse.wait_for_timeout(3_500)
             require(len([item for item in sse_requests if item.endswith('/live-artifacts')]) == requests_at_end,
                     'live polling continued after run_ended')
+            require(sse.locator('#st-active .v').text_content() == '0',
+                    'stale telemetry resurrected a terminal model call')
             if screenshots:
                 sse.screenshot(path=str(screenshots / 'desktop-sse-ended.png'), full_page=True)
+            sse.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
+            sse.locator('.live-view-meta .transport-badge.verified').wait_for(timeout=15_000)
+            require(sse.locator('.live-view-meta .transport-badge').text_content()
+                    == 'KERNEL-SIGNED METADATA · BYTES CHECKED',
+                    'verified final workspace file bytes were not accepted')
+            require(sse.locator('#fv-body').text_content().strip(),
+                    'verified final workspace renderer is blank')
+            if screenshots:
+                sse.screenshot(path=str(screenshots / 'desktop-sse-final-file.png'), full_page=True)
             require(not sse_errors, 'SSE console errors: ' + '; '.join(sse_errors)
                     + '; failed responses: ' + '; '.join(sse_failed_responses))
             sse_context.close()
@@ -582,6 +616,8 @@ def run(args: argparse.Namespace) -> dict:
                 'generic_binary_inspected': True,
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
+                'run_ended_cleared_runtime': True,
+                'run_ended_file_verified': True,
                 'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
                 'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
