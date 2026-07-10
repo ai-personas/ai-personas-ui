@@ -171,7 +171,15 @@ export function endLiveArtifactState(previous, event = {}) {
   if (!previous) return null;
   if (String(event.previous_revision || '') !== String(previous.revision || '')) return null;
   const snapshot = previous.snapshot && typeof previous.snapshot === 'object'
-    ? {...previous.snapshot, active: {...(previous.snapshot.active || {}), calls: []}}
+    ? {
+      ...previous.snapshot,
+      active: {...(previous.snapshot.active || {}), calls: [], persona_ids: [], environment_ids: []},
+      workspaces: Array.isArray(previous.snapshot.workspaces)
+        ? previous.snapshot.workspaces.map((workspace) => ({
+          ...workspace, active_call_ids: [], state: 'run_ended',
+        }))
+        : previous.snapshot.workspaces,
+    }
     : previous.snapshot;
   return {...previous, snapshot, ended: true,
     endedAt: String(event.generated_at || event.ended_at || ''),
@@ -179,7 +187,14 @@ export function endLiveArtifactState(previous, event = {}) {
 }
 
 export function liveBodyCommitIsCurrent(expected, current, openFile) {
-  if (!expected || !current || current.ended) return false;
+  if (!expected || !current) return false;
+  // A body request started while the run was active must never commit after a
+  // terminal event, even if the final revision retained the same hash. A new
+  // request started from the verified final revision is safe: terminal states
+  // are immutable and still bind the exact advertised file bytes.
+  if (current.ended && (!expected.terminalAtStart
+      || String(expected.endedAt || '') !== String(current.endedAt || ''))) return false;
+  if (!current.ended && expected.terminalAtStart) return false;
   const key = `${String(expected.workspace_id || '')}\u0000${String(expected.path || '')}`;
   const file = current.files instanceof Map ? current.files.get(key) : null;
   return Boolean(file && file.sha256 === expected.sha256

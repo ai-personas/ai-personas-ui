@@ -9,7 +9,7 @@ import {
   liveArtifactRunKey,
   sha256Hex,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260710-kernel-signed-live';
+} from './live-artifacts.mjs?v=20260710-terminal-truth-v2';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
@@ -294,6 +294,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // records. File bytes are also checked against each signed advertised sha256.
   liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
+  terminalCallTombstones:new Map(),
   personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
@@ -315,6 +316,25 @@ function _activeCalls(live){
     ? live.kernel.active_model_calls : [];
   return calls.filter(Boolean);
 }
+function _terminalCallKey(base,call){
+  const id=String(call?.call_id||'');
+  return id?`${base||'@origin'}\u0000${id}`:'';
+}
+function _pruneTerminalCallTombstones(now=Date.now()){
+  for(const [key,expiresAt] of (S.terminalCallTombstones||new Map())){
+    if(expiresAt<=now) S.terminalCallTombstones.delete(key);
+  }
+}
+function _terminalCallIsBlocked(base,call,now=Date.now()){
+  const key=_terminalCallKey(base,call); if(!key) return false;
+  const expiresAt=S.terminalCallTombstones?.get(key)||0;
+  if(expiresAt<=now){ if(expiresAt) S.terminalCallTombstones.delete(key); return false; }
+  return true;
+}
+function _filterTerminalCalls(base,calls,now=Date.now()){
+  _pruneTerminalCallTombstones(now);
+  return (Array.isArray(calls)?calls:[]).filter((call)=>!_terminalCallIsBlocked(base,call,now));
+}
 function _rebuildActiveModelCallIndex(){
   const byP=new Map(), byE=new Map(); let n=0;
   for(const [baseKey,calls] of S.activeModelCallsByBase) for(const c of calls){
@@ -332,10 +352,12 @@ function _rebuildActiveModelCallIndex(){
 }
 function _indexActiveModelCalls(base,live,{observedAt=Date.now(),kernelId=''}={}){ const key=base||'@origin';
   const kernel=String(kernelId||live?.kernel?.kernel_id||live?.node?.node_id||kernelForBase(base)||key);
-  const calls=_activeCalls(live).map((call)=>({...call,kernel_id:call?.kernel_id||kernel}));
+  const calls=_filterTerminalCalls(base,_activeCalls(live),observedAt)
+    .map((call)=>({...call,kernel_id:call?.kernel_id||kernel}));
   (S.activeModelCallsByBase=S.activeModelCallsByBase||new Map()).set(key,calls);
   (S.activeModelCallObservedAt=S.activeModelCallObservedAt||new Map()).set(key,observedAt);
   _rebuildActiveModelCallIndex();
+  return calls;
 }
 function _rebuildHeartbeat(){
   let anyRunning=false, anyBusy=false, minIv=null;
@@ -448,6 +470,19 @@ const _domEntityKey=(key)=>encodeURIComponent(String(key||''));
 const _entityKeyFromDom=(key)=>{ try{ return decodeURIComponent(String(key||'')); }catch(e){ return ''; } };
 function _eventKernel(event){ return String(event?._kernel||kernelForBase(event?._base)||'@unknown'); }
 function _eventPersonaKey(event,pid){ return _personaKey(_eventKernel(event),pid); }
+function _eventEndpoints(event){
+  const out=[], seen=new Set();
+  const recipients=Array.isArray(event?.recipients)?event.recipients.slice(0,64):[];
+  const affected=Array.isArray(event?.affected)?event.affected.slice(0,64):[];
+  for(const endpoint of [...recipients,...affected]){
+    const kind=String(endpoint?.kind||''), id=String(endpoint?.id||'');
+    if(!kind||!id) continue;
+    const key=`${kind}\u0000${id}`; if(seen.has(key)) continue; seen.add(key);
+    out.push({...endpoint,kind,id});
+  }
+  return out;
+}
+function _personaEndpoints(event){ return _eventEndpoints(event).filter((endpoint)=>endpoint.kind==='persona'); }
 
 function ingestLiveTelemetry(base,live,{source='poll',eventId=''}={}){
   const sourceKey=base||'@origin';
@@ -527,14 +562,18 @@ function indexLiveTelemetry(base,live,meta={}){
     (S.heartbeatByBase=S.heartbeatByBase||new Map()).set(baseKey,{...live.node.heartbeat,_observedAt:receivedAt});
     _rebuildHeartbeat();
   }
-  _indexActiveModelCalls(base,live,{observedAt:receivedAt,kernelId});
+  const rawActiveCalls=_activeCalls(live);
+  const activeCalls=_indexActiveModelCalls(base,live,{observedAt:receivedAt,kernelId});
+  const terminalPersonaIds=new Set(rawActiveCalls
+    .filter((call)=>_terminalCallIsBlocked(base,call,receivedAt))
+    .map((call)=>_shortId(call?.persona_id)).filter(Boolean));
   const me=(live.kernel&&live.kernel.model_events)||[];
   const sp=(live.kernel&&live.kernel.spans)||[];
   const rawPersonas=Array.isArray(live.personas)?live.personas:[];
   const personas=rawPersonas.slice(0,NETWORK_LIMITS.cachedRecords);
   S.liveTel.set(baseKey,rawPersonas.length===personas.length?live:{...live,personas});
   (S.liveTelObservedAt=S.liveTelObservedAt||new Map()).set(baseKey,receivedAt);
-  const runtimeBusy=_activeCalls(live).length>0;
+  const runtimeBusy=activeCalls.length>0;
   const modelBaseT=runtimeBusy?t:(_latestSpanTime(sp)||t);
   // model selections → per persona and per env
   const byP=new Map(), byE=new Map();
@@ -553,14 +592,16 @@ function indexLiveTelemetry(base,live,meta={}){
       kind:String(a['personaos.lineage.event_kind']||s.name||'SPAN'),
       signed:a['personaos.lineage.signed']===true,   // fail-CLOSED: only an explicit true counts as signed
       t:Date.parse(s.ended_at||s.started_at||'')||t }); } });
-  const activePersonaIds=new Set(_activeCalls(live).map((call)=>_shortId(call?.persona_id)).filter(Boolean));
+  const activePersonaIds=new Set(activeCalls.map((call)=>_shortId(call?.persona_id)).filter(Boolean));
   personas.forEach((p)=>{ const pid=_shortId(p.persona_id);
     if(!pid) return; const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
-    S.liveByPersona.set(personaKey,{...cur,summary:p,models:byP.get(pid)||cur.models||[],sid:pid,
+    const terminalized=terminalPersonaIds.has(pid)&&!activePersonaIds.has(pid);
+    const summary=terminalized?{...p,running_llm:false,llm_execution_state:'idle',task_execution_state:'idle'}:p;
+    S.liveByPersona.set(personaKey,{...cur,summary,models:byP.get(pid)||cur.models||[],sid:pid,
       generated_at:live.generated_at,base:baseKey==='@origin'?'':baseKey,kernel:kernelId,
       observedAt:t,receivedAt,stale:false});
-    try{ NETWORK.upsertPresence({...p,kernel_id:kernelId,kind:'persona',persona_id:pid,
-      observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':(p.task_execution_state||p.lifecycle_state||'idle')}); }catch(e){}
+    try{ NETWORK.upsertPresence({...summary,kernel_id:kernelId,kind:'persona',persona_id:pid,
+      observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':(summary.task_execution_state||summary.lifecycle_state||'idle')}); }catch(e){}
   });
   for(const [pid,models] of byP){ const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
     S.liveByPersona.set(personaKey,{...cur,models,sid:pid,generated_at:live.generated_at,
@@ -609,7 +650,7 @@ function indexLiveTelemetry(base,live,meta={}){
     S.ixColdByBase=S.ixColdByBase||new Set();
     const cold=!S.ixColdByBase.has(baseKey); let fired=0; const fresh=[];
     ix.forEach((e,i)=>{
-      const aff=(e.affected||[]).map((a)=>`${a.kind}:${a.id}`).join(',');
+      const aff=_eventEndpoints(e).map((a)=>`${a.kind}:${a.id}`).join(',');
       const key=`${base}|${e.scope_id}|${e.actor_id}|${aff}|${e.kind}|${e.at||i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key);
       const rec={...e, _base:base, _kernel:kernelId, _t:Date.parse(e.at||'')||t, _key:key};
@@ -622,10 +663,10 @@ function indexLiveTelemetry(base,live,meta={}){
     // leak (the node never re-sends an evicted event, so this can't re-fire one).
     const liveKeys=new Set(S.interactions.map((e)=>e._key)); S.ixKeys=liveKeys;
     if(S.ixSeen) for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
-    // index recent coordination acts PER PERSONA (actor + affected) so a persona
+    // index recent coordination acts PER PERSONA (actor + explicit endpoints) so a persona
     // card can stream its activity in live state A (interactions, no model_events).
     const _ixPersonaKeys=(e)=>[e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):null,
-      ...(e.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_eventPersonaKey(e,a.id))].filter(Boolean);
+      ..._personaEndpoints(e).map((a)=>_eventPersonaKey(e,a.id))].filter(Boolean);
     S.ixByPersona=new Map();
     for(const e of S.interactions) for(const personaKey of _ixPersonaKeys(e)){
       const arr=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
@@ -649,7 +690,7 @@ function indexLiveTelemetry(base,live,meta={}){
         // one; single-ended kernel relay acts remain honest kernel spokes.
         const fromSid=rec.actor_kind==='persona'?_shortId(rec.actor_id):null;
         const from=fromSid?_personaKey(kernelId,fromSid):null;
-        const tos=(rec.affected||[]).filter((a)=>a.kind==='persona').map((a)=>_shortId(a.id))
+        const tos=_personaEndpoints(rec).map((a)=>_shortId(a.id))
           .filter((sid)=>sid&&sid!==fromSid).map((sid)=>_personaKey(kernelId,sid));
         if(from&&tos.length){
           setTimeout(()=>{ _flashNode(from,cls,failed); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls,failed); }); },d);
@@ -1680,19 +1721,25 @@ function indexRuntimeStatus(base,status){
   for(const [personaKey,item] of [...S.personaRuntimeById]){
     if(item&&item._baseKey===baseKey) S.personaRuntimeById.delete(personaKey);
   }
-  const calls=Array.isArray(status.active_model_calls)?status.active_model_calls:[];
+  const rawCalls=Array.isArray(status.active_model_calls)?status.active_model_calls:[];
+  const calls=_filterTerminalCalls(base,rawCalls);
+  const terminalPersonaIds=new Set(rawCalls.filter((call)=>_terminalCallIsBlocked(base,call))
+    .map((call)=>_shortId(call?.persona_id)).filter(Boolean));
   const byPersona=new Map();
   for(const call of calls){ const sid=_shortId(call&&call.persona_id); if(sid) byPersona.set(sid,call); }
   for(const persona of (Array.isArray(status.personas)?status.personas:[])){
     const sid=_shortId(persona&&persona.persona_id); if(!sid) continue;
     const personaKey=_personaKey(kernelId,sid);
-    S.personaRuntimeById.set(personaKey,{...persona,current_model_call:byPersona.get(sid)||null,
+    const terminalized=terminalPersonaIds.has(sid)&&!byPersona.has(sid);
+    const runtime=terminalized
+      ?{...persona,running_llm:false,llm_execution_state:'idle',task_execution_state:'idle'}:persona;
+    S.personaRuntimeById.set(personaKey,{...runtime,current_model_call:byPersona.get(sid)||null,
       _baseKey:baseKey,_kernel:kernelId,_receivedAt:Date.now()});
   }
   // /status is a second authoritative source for calls when the telemetry card is
   // private or delayed. It carries runtime state, not a signed discovery record.
   if(Array.isArray(status.active_model_calls)){
-    _indexActiveModelCalls(base,{kernel:{kernel_id:kernelId,active_model_calls:status.active_model_calls}},
+    _indexActiveModelCalls(base,{kernel:{kernel_id:kernelId,active_model_calls:calls}},
       {kernelId});
   }
 }
@@ -1875,6 +1922,23 @@ function endLiveArtifactRun(base,event,meta={}){
   if(!previous||String(event.previous_revision||'')!==String(previous.revision||'')){
     _logLiveVerificationRefusal(run,{reason:'broken_terminal_revision_chain'}); return;
   }
+  const now=Date.now(), baseKey=base||'@origin';
+  const endedCalls=Array.isArray(previous?.snapshot?.active?.calls)
+    ?previous.snapshot.active.calls:[];
+  for(const call of endedCalls){ const tombstoneKey=_terminalCallKey(base,call);
+    if(tombstoneKey) S.terminalCallTombstones.set(tombstoneKey,now+120000); }
+  while(S.terminalCallTombstones.size>256){
+    S.terminalCallTombstones.delete(S.terminalCallTombstones.keys().next().value);
+  }
+  const currentCalls=S.activeModelCallsByBase?.get(baseKey)||[];
+  S.activeModelCallsByBase?.set(baseKey,_filterTerminalCalls(base,currentCalls,now));
+  S.activeModelCallObservedAt?.set(baseKey,now);
+  _rebuildActiveModelCallIndex();
+  for(const [personaKey,item] of (S.personaRuntimeById||new Map())){
+    if(item?._baseKey!==baseKey||!_terminalCallIsBlocked(base,item.current_model_call,now)) continue;
+    S.personaRuntimeById.set(personaKey,{...item,current_model_call:null,running_llm:false,
+      llm_execution_state:'idle',task_execution_state:'idle',_receivedAt:now});
+  }
   S.liveArtifactEnded.set(key,Date.now());
   while(S.liveArtifactEnded.size>64) S.liveArtifactEnded.delete(S.liveArtifactEnded.keys().next().value);
   S.liveArtifactRequestGeneration.set(key,(S.liveArtifactRequestGeneration.get(key)||0)+1);
@@ -1884,8 +1948,14 @@ function endLiveArtifactRun(base,event,meta={}){
       signingKeyId:meta.verification.signingKeyId,accessPolicyRef:meta.verification.accessPolicyRef,
       outwardTier:meta.verification.outwardTier,terminalEventVerified:true};
     S.liveArtifacts.set(key,ended); _renderLiveArtifactMount(base,run);
-    if(S.openLiveFile?.stateKey===key) Promise.resolve().then(()=>renderTop()).catch(()=>{}); }
-  renderMissions();
+    const runDrawerVisible=[...document.querySelectorAll('[data-live-run-key]')]
+      .some((host)=>host.dataset.liveRunKey===_liveRunDomKey(base,run));
+    if(runDrawerVisible||S.openLiveFile?.stateKey===key){
+      Promise.resolve().then(()=>renderTop()).catch(()=>{});
+    }
+  }
+  renderMissions(); updateVitalsCounters(); renderGlobalKernels(); refreshLiveSection();
+  Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
 }
 function pollLiveArtifacts(){
   const targets=new Map(); const now=Date.now();
@@ -1937,7 +2007,8 @@ function liveArtifactsHTML(base,run){
   const trees=workspaces.map((workspaceId)=>{ const w=wsMeta.get(workspaceId)||{}; const files=byWs.get(workspaceId)||[];
     const pid=_shortId(w.persona_id||files[0]?.persona_id), kernel=snap.node_id||kernelForBase(base);
     const label=_nameFor(pid,kernel)||pid||workspaceId;
-    return `<section class="live-workspace"><div class="live-workspace-head"><span><b>${esc(label)}</b> <code>${esc(workspaceId)}</code></span><span class="${w.state==='model_call_active'?'ok':'l2'}">${esc((w.state||'run_active').replace(/_/g,' '))} · ${files.length} file${files.length===1?'':'s'}</span></div>`
+    const workspaceState=state.ended?'final snapshot':(w.state||'run_active').replace(/_/g,' ');
+    return `<section class="live-workspace"><div class="live-workspace-head"><span><b>${esc(label)}</b> <code>${esc(workspaceId)}</code></span><span class="${!state.ended&&w.state==='model_call_active'?'ok':'l2'}">${esc(workspaceState)} · ${files.length} file${files.length===1?'':'s'}</span></div>`
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
@@ -2170,7 +2241,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
   GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
   ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
-  PERSONA_COMMUNICATION_INTENT_RECORDED:'sent message',
+  PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
   MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
@@ -2348,7 +2419,7 @@ function _hotPersonas(){
     .filter((e)=>e._t>0&&now-e._t<=5*60*1000&&e._t-now<30000).slice(-10);
   for(const e of recent){
     if(e.actor_kind==='persona'&&e.actor_id) hot.add(_eventPersonaKey(e,e.actor_id));
-    for(const a of (e.affected||[])) if(a.kind==='persona') hot.add(_eventPersonaKey(e,a.id));
+    for(const endpoint of _personaEndpoints(e)) hot.add(_eventPersonaKey(e,endpoint.id));
   }
   return hot;
 }
@@ -2379,9 +2450,7 @@ function _personaTraffic(posOf){
   for(const e of all.slice(-NETWORK_LIMITS.interactionRows)){
     if(e.actor_kind!=='persona') continue;
     const a=_eventPersonaKey(e,e.actor_id); if(!a||!posOf.has(a)) continue;
-    const endpoints=[...(e.recipients||[]),...(e.affected||[])];
-    for(const af of endpoints){
-      if(af.kind!=='persona') continue;
+    for(const af of _personaEndpoints(e)){
       const b=_eventPersonaKey(e,af.id); if(!b||b===a||!posOf.has(b)) continue;
       bump(a,b,1);
     }
@@ -2483,6 +2552,13 @@ function renderCoordGraph(persons,totalPersons){
   [...svg._cores.children].forEach((core)=>{ if(!coreIds.has(core.getAttribute('data-kernel-core'))) core.remove(); });
   const hot=_hotPersonas();
   const n=persons.length||1;
+  // In a dense projection, keep roughly ten evenly-spaced labels plus every
+  // active/recent/followed endpoint. The remaining exact nodes stay keyboard
+  // focusable and retain their full native tooltip; hiding colliding text does
+  // not hide a persona or imply the bounded graph is complete.
+  const labelStride=Math.max(1,Math.ceil(n/10));
+  const labeledKeys=new Set(persons.filter((p,i)=>n<=18||i%labelStride===0
+    ||p.running||p.live||hot.has(p.key)||S.follow===p.key).map((p)=>p.key));
   persons.forEach((p,i)=>{ const ang=(-Math.PI/2)+(i*2*Math.PI/n);
     p.x=+(cx+Math.cos(ang)*rx).toFixed(1); p.y=+(cy+Math.sin(ang)*ry).toFixed(1);
     S.nodePos.set(p.key,{x:p.x,y:p.y,kernel:effectiveFocus}); });
@@ -2540,7 +2616,9 @@ function renderCoordGraph(persons,totalPersons){
     // full untruncated hover tooltip — the on-screen name is clipped to 10 chars
     const ttl=`${p.name||'persona'} — ${p.role} · ${p.running?(p.doing||'active'):(p.live?'active':'idle')}`;
     if(g.children[0].textContent!==ttl) g.children[0].textContent=ttl;
-    const nm=p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||''); if(g.children[3].textContent!==nm) g.children[3].textContent=nm;
+    const nm=labeledKeys.has(p.key)
+      ?(p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||'')):'';
+    if(g.children[3].textContent!==nm) g.children[3].textContent=nm;
     const rl=(p.role[0]||'?').toUpperCase(); if(g.children[4].textContent!==rl) g.children[4].textContent=rl;
     const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[5].textContent!==dn) g.children[5].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveKeys.has(g.getAttribute('data-gp'))) g.remove(); });
@@ -3016,7 +3094,7 @@ function _applyFollow(){
 // at the top (.fresh); adjacent acts sharing a real scope_id get a per-task
 // THREAD SPINE so you can watch one task ripple produce→verify→ship. The kernel
 // is rendered as the honest mediator — we NEVER draw a persona→persona arrow the
-// data doesn't contain; the only honest persona↔persona link is the scope_id join.
+// data doesn't contain; only explicit recipient/affected endpoints create a link.
 function renderInteractionStream(){
   const el=$('#sysStream'); if(!el) return;
   const flt=S.sysFlt||'all';
@@ -3035,7 +3113,7 @@ function renderInteractionStream(){
     return true; }).slice(-120).reverse();
   const f=S.follow;
   const matches=(e)=>!f|| (e.actor_kind==='persona'&&_eventPersonaKey(e,e.actor_id)===f)
-    || (e.affected||[]).some((a)=>a.kind==='persona'&&_eventPersonaKey(e,a.id)===f);
+    || _personaEndpoints(e).some((a)=>_eventPersonaKey(e,a.id)===f);
   let prevScope=null;
   // preserve the reader's scroll position across the wholesale innerHTML rebuild: newest
   // rows are prepended at top (rows are .reverse()'d), so when not pinned to the top, add
@@ -3045,7 +3123,7 @@ function renderInteractionStream(){
     const c=_ixClass(e.kind); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
     const eventKernel=_eventKernel(e);
     const who=e.actor_kind==='persona'?_nameFor(e.actor_id,eventKernel):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
-    const aff=(e.affected||[]).map((a)=>a.kind==='persona'?_nameFor(a.id,eventKernel):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
+    const aff=_eventEndpoints(e).map((a)=>a.kind==='persona'?_nameFor(a.id,eventKernel):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
     const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
     const fresh=!S.ixSeen.has(e._key); if(fresh) S.ixSeen.add(e._key);
     // thread spine when this row shares a real scope_id with the one above it
@@ -3963,7 +4041,8 @@ async function liveFileView(base,run,workspaceId,path){
   const raw=!!(S.liveRawModes&&S.liveRawModes.get(bodyKey));
   return fileView(base,file.body_url,path,file.media_kind,{
     raw,size:file.size_bytes,contentHash:file.sha256,
-    liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source},
+    liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source,
+      terminalAtStart:Boolean(state.ended),endedAt:String(state.endedAt||'')},
   });
 }
 
@@ -4579,12 +4658,14 @@ async function operatorRunView(b,run){
   const st=stRaw||{}, arts=artsRaw||{};
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
-  const stt=String(rs.status||'—');
-  const stClass=(stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no');
+  const liveState=liveArtifactState(b,run)||_live;
+  const terminal=Boolean(liveState?.ended&&liveState?.verification?.terminalEventVerified);
+  const stt=terminal?'ended':String(rs.status||'—');
+  const stClass=terminal?'l2':((stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no'));
   // a paused mission card opens this view directly, so give it inline resume/stop
   // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
   // console-level #op-run-target, and read #opr-budget when present.
-  const canOperate=!!tokenFor(join(b,'status'));
+  const canOperate=!terminal&&!!tokenFor(join(b,'status'));
   let html=canOperate?('<div class="opform"><div class="oprow">'
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
@@ -4596,19 +4677,21 @@ async function operatorRunView(b,run){
     +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
     +kv('Task',S0((rs.task||'').slice(0,200)));
-  const activeCalls=(nodeStatus?.active_model_calls||[]).filter((call)=>{
-    const current=liveArtifactState(b,run)?.snapshot?.active?.calls||[];
+  const activeCalls=terminal?[]:(nodeStatus?.active_model_calls||[]).filter((call)=>{
+    const current=liveState?.snapshot?.active?.calls||[];
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
   });
-  const liveCalls=(liveArtifactState(b,run)?.snapshot?.active?.calls||activeCalls);
-  html+=H('Live execution · unsigned status telemetry');
+  const liveCalls=terminal?[]:(liveState?.snapshot?.active?.calls||activeCalls);
+  html+=H(terminal?'Execution · verified terminal state':'Live execution · unsigned status telemetry');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
     const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
     return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
-  else html+='<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
-  const runtime=_runRuntimeSurfaces(st);
+  else html+=terminal
+    ?'<div class="l2">The verified run-ended event cleared active execution; no model call remains active.</div>'
+    :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
+  const runtime=terminal?{pressure:null,block:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
   const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
   const inReview=liveCalls.some((call)=>/review/.test(String(call.requested_purpose||'')));
   html+=kv('Pressure',runtime.pressure||runtime.activePressure||inPressure
@@ -4767,7 +4850,8 @@ function missionCardList(){
   for(const [baseKey,hit] of statusCache){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
     if(!(hit.ts>fresh)) continue;
     const busy=String((v.heartbeat||{}).busy||'');
-    for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run); if(seen.has(nodeRun)) continue; seen.add(nodeRun);
+    for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run);
+      if(seen.has(nodeRun)||S.liveArtifactEnded.has(nodeRun)) continue; seen.add(nodeRun);
       const live=liveArtifactState(base,run); const files=live?.files?.size||0;
       const calls=(live?.snapshot?.active?.calls||[]).length;
       cards.unshift({key:'run:'+nodeRun,task:busy||run,state:'running',kernel:kernelForBase(base),meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
@@ -4793,7 +4877,7 @@ function renderMissions(){
   const box=$('#missions'), wrap=$('#missionCards'); if(!box||!wrap) return;
   const cards=missionCardList();
   box.hidden=!cards.length;
-  if(!cards.length) return;
+  if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
     priorityOf:(c)=>c.state==='running'?1e6:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});

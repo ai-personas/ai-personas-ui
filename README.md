@@ -87,6 +87,9 @@ window of at most six kernel cores and ten navigator chips, with explicit “sho
 aggregated-overflow counts. Selecting a kernel drills into that node's environments and personas:
 the graph shows at most 36 prioritised personas, while the accessible stage starts with ten
 environments and twelve personas per environment and expands through search or **SHOW MORE**.
+Dense graph windows keep only about ten evenly spaced labels plus every active, recent, or followed
+persona labelled; every other exact node remains keyboard-focusable with its full tooltip, avoiding
+an unreadable text cloud without dropping identities.
 The monitoring window normally polls at most twelve bases; focused and actively-running routes
 are mandatory and may expand it only up to an explicit 64-base safety ceiling, rather than
 starting a poll loop for every discovered node.
@@ -118,7 +121,12 @@ The UI keeps a separate ordered revision map per `(node base, run)`, compares co
 and shows created, modified, and deleted files grouped by persona workspace. Poll responses carry
 request generations and their starting revision; an SSE `previous_revision` must extend the
 accepted chain. Stale responses are discarded, `run_ended` makes the last revision terminal, and
-body-cache writes are refused if the open file advanced while bytes were in flight.
+body-cache writes are refused if the open file advanced while bytes were in flight. A verified
+terminal event overrides lagging unsigned run status, clears the ended call/workspace liveness,
+prevents that exact call ID from being resurrected by a stale frame, and removes stale running
+mission cards. Files in the immutable final revision remain inspectable: a request begun before the
+terminal transition is discarded, while one begun from the final revision must still match the
+same signed revision, file path, and SHA-256 before it can render.
 
 Before any snapshot or terminal event enters that revision map, the browser verifies the metadata
 signature against the node kernel key, verifies the nested signed `access-policy/1`, and binds its
@@ -193,8 +201,11 @@ directional pulse exist only when one observed telemetry event names both an act
 explicit persona recipient/affected endpoint. Shared environment, scope, or cohort membership
 never creates an edge. A single-ended kernel-mediated act remains a kernel↔persona spoke; the feed
 may visually thread rows that share a real scope ID, but that thread is not presented as a recipient
-claim. Historical coordination rows have a five-minute display lease and cannot make a persona look
-currently busy; only a current `active_model_calls` entry does that.
+claim. `recipients` and `affected` endpoints are normalized and de-duplicated once, so the graph,
+feed, follow filter, persona activity, and directional pulses all describe the same explicit route.
+A recorded communication intent is labelled as intent—not as proven delivery. Historical
+coordination rows have a five-minute display lease and cannot make a persona look currently busy;
+only a current `active_model_calls` entry does that.
 
 Realtime presence is leased rather than inferred from durable discovery. The bounded presence
 store defaults to stale after ten seconds and offline when its 30-second lease expires; duplicate
