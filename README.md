@@ -4,7 +4,8 @@ A static web portal to **discover and explore PersonaOS personas**, their enviro
 missions, artifacts, and telemetry across a P2P network. The shell has **no central index and
 no privileged default node**. It resolves signed discovery records from whatever peers the
 browser can reach and verifies those records with Ed25519 in-browser. Live execution and
-workspace updates are useful but separate **unsigned transport telemetry**, labelled as such.
+workspace snapshots and terminal events are separately **kernel-signed and Ed25519-verified**;
+other transient execution telemetry remains explicitly labelled as unsigned transport data.
 
 ## Realtime discovery — the page ships **no** data
 
@@ -80,6 +81,15 @@ request generations and their starting revision; an SSE `previous_revision` must
 accepted chain. Stale responses are discarded, `run_ended` makes the last revision terminal, and
 body-cache writes are refused if the open file advanced while bytes were in flight.
 
+Before any snapshot or terminal event enters that revision map, the browser verifies the metadata
+signature against the node kernel key, verifies the nested signed `access-policy/1`, and binds its
+policy ref, subject, node, run, revision, and visibility tier. An SSE update must have a valid
+signed wrapper and a separately valid signed snapshot. Anonymous streams additionally require a
+signed, unexpired public read grant whose scope is empty or exactly matches the artifact subject.
+Live verification selects only the current `kernel-master` entry with role `master` and refreshes
+the key registry once after a verification failure so an in-flight browser follows key rotation.
+Unsigned, tampered, cross-run, incorrectly tiered, and policy-mismatched frames fail closed.
+
 Live files are clickable. The browser fetches their body URL with bearer authentication in the
 request header, never in the URL, and computes SHA-256 before passing bytes to any renderer.
 Downloads use the same check, then create a short-lived `application/octet-stream` attachment;
@@ -96,8 +106,9 @@ The distinction is intentional:
 
 - **signed discovery record**: Ed25519 verified in-browser;
 - **signed lineage event**: shown as signed only when the feed explicitly marks it signed;
-- **live execution/workspace frame**: unsigned node transport telemetry;
-- **opened live file body**: bytes independently checked against the advertised SHA-256.
+- **live workspace snapshot / terminal event**: Ed25519 verified against the node kernel key;
+- **other live execution frame**: unsigned node transport telemetry, labelled separately;
+- **opened live file body**: bytes independently checked against the signed advertised SHA-256.
 
 ## Design reference validation
 
@@ -173,9 +184,11 @@ Deterministic validation (the Playwright check starts its own local fixture):
 ```bash
 node tools/test-live-artifacts.mjs
 python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
+python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
+  --commit local --screenshot /tmp/personaos-hosted-smoke.png
 ```
 
-The browser test requires Python Playwright and an installed Chromium. Set
+The browser test requires Python Playwright, PyNaCl, and an installed Chromium. Set
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when the browser is installed outside Playwright's default cache.
 
 ## Layout
@@ -184,6 +197,7 @@ The browser test requires Python Playwright and an installed Chromium. Set
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
+assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
 peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
@@ -191,6 +205,7 @@ tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a no
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
 tools/live_ui_fixture.py                    # canonical live API fixture for browser validation
 tools/test-live-ui.py                       # Playwright security, live-update, and mobile regression
+tools/test-hosted-deploy.py                 # exact deployed-byte + hosted Chromium smoke
 tools/check-design-reference.py             # scheduled normative-design drift guard
 ```
 

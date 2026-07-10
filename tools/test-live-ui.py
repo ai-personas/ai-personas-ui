@@ -30,11 +30,18 @@ def open_live_plan(page) -> None:
     mission = page.locator('.mcard[data-mrun="run-fixture-live"]')
     mission.wait_for(timeout=15_000)
     mission.click()
+    badge = page.locator('.live-artifacts .transport-badge')
+    badge.wait_for(timeout=15_000)
+    require(badge.text_content() == 'KERNEL-SIGNED · VERIFIED',
+            'live workspace snapshot was not labelled kernel-signed and verified')
     live_file = page.locator('[data-act="live-file"][data-path="design/plan.md"]')
     live_file.wait_for(timeout=15_000)
     live_file.click()
     page.locator('#detailbody [data-act="secure-download"]').wait_for(timeout=15_000)
     page.locator('#fv-body').wait_for(timeout=15_000)
+    require(page.locator('.live-view-meta .transport-badge').text_content()
+            == 'KERNEL-SIGNED METADATA · BYTES CHECKED',
+            'live file viewer lost its signed metadata and byte-integrity label')
 
 
 def run(args: argparse.Namespace) -> dict:
@@ -84,6 +91,26 @@ def run(args: argparse.Namespace) -> dict:
                     'peer-authored Markdown fetched a remote resource')
             require(page.locator('#detailclose').get_attribute('aria-label') == 'Close details',
                     'icon-only detail close button lost its accessible name')
+
+            # A body that fails its advertised hash keeps the signed metadata but
+            # must not claim that bytes were checked successfully.
+            page.locator('#detailback').click()
+            page.route('**/live-artifacts/body/**', lambda route: route.fulfill(
+                status=200, body='tampered initial viewer body', content_type='text/plain'))
+            page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
+            failed_badge = page.locator('.live-view-meta .transport-badge.failed')
+            failed_badge.wait_for(timeout=10_000)
+            require(failed_badge.text_content() == 'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED',
+                    'failed body verification was labelled as bytes checked')
+            require('SHA-256 mismatch' in page.locator('#detailbody').inner_text(),
+                    'initial body hash mismatch was not surfaced')
+            if screenshots:
+                page.screenshot(path=str(screenshots / 'desktop-live-body-refused.png'),
+                                full_page=True)
+            page.unroute('**/live-artifacts/body/**')
+            page.locator('#detailback').click()
+            page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
+            page.locator('.live-view-meta .transport-badge.verified').wait_for(timeout=10_000)
 
             button = page.locator('#detailbody [data-act="secure-download"]')
             hrefs = page.locator('#detailbody a').evaluate_all('(els) => els.map((el) => el.href)')
@@ -158,6 +185,75 @@ def run(args: argparse.Namespace) -> dict:
             require(not errors, 'desktop console errors: ' + '; '.join(errors))
             context.close()
 
+            # A valid HTTP response with metadata changed after signing must not
+            # enter the live state. The following untampered poll may then advance it.
+            STATE.reset()
+            tamper_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            tamper = tamper_context.new_page()
+            tamper_errors: list[str] = []
+            tamper.on('console', lambda msg: tamper_errors.append(f'console {msg.type}: {msg.text}')
+                      if msg.type in {'warning', 'error'} else None)
+            tamper.on('pageerror', lambda error: tamper_errors.append(f'pageerror: {error}'))
+            tamper.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            tamper.goto(url, wait_until='domcontentloaded')
+            open_live_plan(tamper)
+            signed_hash = tamper.locator('.exact-hash').last.text_content()
+            tamper_context.request.get(base + '/node/advance-with-tampered-poll')
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                if tamper_context.request.get(base + '/node/tampered-poll-served').json().get('served'):
+                    break
+                time.sleep(0.1)
+            else:
+                raise AssertionError('fixture did not serve the tampered signed snapshot')
+            tamper.wait_for_timeout(500)
+            require(tamper.locator('.exact-hash').last.text_content() == signed_hash,
+                    'snapshot changed after its signature was tampered')
+            tamper.wait_for_function("""(previous) => {
+              const hashes=[...document.querySelectorAll('.exact-hash')];
+              return hashes.length && hashes[hashes.length-1].textContent !== previous;
+            }""", arg=signed_hash, timeout=10_000)
+            tamper.locator('#detailback').click()
+            require(tamper.locator('.live-artifacts .transport-badge').text_content()
+                    == 'KERNEL-SIGNED · VERIFIED',
+                    'verified trust label was lost after tamper recovery')
+            if screenshots:
+                tamper.screenshot(path=str(screenshots / 'desktop-live-signature-tamper.png'),
+                                  full_page=True)
+            require(not tamper_errors, 'tamper browser console errors: ' + '; '.join(tamper_errors))
+            tamper_context.close()
+
+            # Current master-key rotation must refresh the registry and must not
+            # let the previous entry overwrite the current key with the same id.
+            STATE.reset()
+            rotation_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            rotation = rotation_context.new_page()
+            rotation_errors: list[str] = []
+            rotation.on('console', lambda msg: rotation_errors.append(f'console {msg.type}: {msg.text}')
+                        if msg.type in {'warning', 'error'} else None)
+            rotation.on('pageerror', lambda error: rotation_errors.append(f'pageerror: {error}'))
+            rotation.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            rotation.goto(url, wait_until='domcontentloaded')
+            open_live_plan(rotation)
+            pre_rotation_hash = rotation.locator('.exact-hash').last.text_content()
+            rotation_context.request.get(base + '/node/rotate-and-advance')
+            rotation.wait_for_function("""(previous) => {
+              const hashes=[...document.querySelectorAll('.exact-hash')];
+              return hashes.length && hashes[hashes.length-1].textContent !== previous;
+            }""", arg=pre_rotation_hash, timeout=12_000)
+            key_requests = rotation_context.request.get(base + '/node/key-requests').json()['requests']
+            require(key_requests >= 2, 'live verification did not refresh keys after master rotation')
+            if screenshots:
+                rotation.screenshot(path=str(screenshots / 'desktop-live-key-rotation.png'),
+                                    full_page=True)
+            require(not rotation_errors,
+                    'key-rotation browser console errors: ' + '; '.join(rotation_errors))
+            rotation_context.close()
+
             STATE.reset()
             mobile_context = browser.new_context(viewport={'width': 390, 'height': 844})
             mobile = mobile_context.new_page()
@@ -191,6 +287,14 @@ def run(args: argparse.Namespace) -> dict:
               return {scrollWidth:el.scrollWidth, clientWidth:el.clientWidth};
             }""")
             require(drawer['scrollWidth'] <= drawer['clientWidth'] + 1, 'mobile live drawer overflows')
+            mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
+            mobile.locator('.live-view-meta .transport-badge.verified').wait_for(timeout=15_000)
+            file_drawer = mobile.evaluate("""() => {
+              const el=document.querySelector('#detailbody');
+              return {scrollWidth:el.scrollWidth, clientWidth:el.clientWidth};
+            }""")
+            require(file_drawer['scrollWidth'] <= file_drawer['clientWidth'] + 1,
+                    'mobile signed live-file viewer overflows')
             if screenshots:
                 mobile.screenshot(path=str(screenshots / 'mobile-live-run.png'), full_page=True)
             require(not mobile_errors, 'mobile console errors: ' + '; '.join(mobile_errors))
@@ -250,14 +354,17 @@ def run(args: argparse.Namespace) -> dict:
             result = {
                 'download': download.suggested_filename,
                 'tamper_refused': True,
+                'metadata_tamper_refused': True,
+                'key_rotation_refreshed': True,
                 'body_requests': len(body_requests),
                 'event_requests': len(event_requests),
                 'hash_changed': before_hash != after_hash,
                 'image_rerendered': True,
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
-                'mobile': metrics,
-                'console_errors': errors + mobile_errors + sse_errors,
+                'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
+                'console_errors': (errors + tamper_errors + rotation_errors
+                                   + mobile_errors + sse_errors),
             }
     except PlaywrightTimeoutError as error:
         raise AssertionError(f'Playwright timed out: {error}') from error

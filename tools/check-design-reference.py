@@ -84,13 +84,31 @@ def main() -> None:
                 failures.append(f'{relative}: normative anchor changed or disappeared: {anchor!r}')
 
     portal = (ui_root / 'assets/discovery.js').read_text(encoding='utf-8')
+    live_signatures = (ui_root / 'assets/live-signatures.mjs').read_text(encoding='utf-8')
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
     ui_checks = {
         'hard-coded privileged discovery host': 'node1.personas.ai' not in portal,
         'durable operator credential storage': "localStorage.setItem('personaos_operator'" not in portal,
         'tokenized EventSource URL': 'new EventSource(esUrl)' not in portal,
-        'unsigned live transport label': 'UNSIGNED LIVE TRANSPORT' in portal,
+        'kernel-signed live metadata verification': (
+            'verifyLiveArtifactSnapshot' in portal
+            and 'verifyLiveArtifactEvent' in portal
+            and 'KERNEL-SIGNED · VERIFIED' in portal
+        ),
+        'signed live AccessPolicy verification': (
+            'access_policy_signature_invalid' in live_signatures
+            and 'public_read_not_granted' in live_signatures
+        ),
+        'current kernel master live key': (
+            "entry?.role === 'master'" in live_signatures
+            and "entry?.status === 'current'" in live_signatures
+            and "keyId !== 'kernel-master'" in live_signatures
+            and '_verifyLiveWithKeyRefresh' in portal
+        ),
+        'terminal live revision binding': 'broken_terminal_revision_chain' in portal,
+        'failed live body honesty': 'BYTES NOT VERIFIED' in portal,
+        'unsigned non-artifact telemetry label': 'UNSIGNED TRANSPORT' in index,
         'exact-byte integrity check': 'fetchVerifiedLiveBody' in portal and 'safeRenderMime' in portal,
         'remote executable renderer import': 'https://esm.sh' not in portal and 'cdn.jsdelivr.net' not in portal,
         'hard-coded delegated IPFS commons': 'delegated-ipfs.dev' not in portal and 'https://ipfs.io' not in portal,

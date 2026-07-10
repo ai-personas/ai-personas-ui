@@ -14,12 +14,20 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from nacl.signing import SigningKey
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUN = "run-fixture-live"
 WORKSPACE = "ws-0123456789abcdef01234567"
 PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
+NODE_ID = "kernel:fixture"
+KEY_ID = "kernel-master"
+SIGNING_KEYS = {
+    1: SigningKey(bytes.fromhex("07" * 32)),
+    2: SigningKey(bytes.fromhex("08" * 32)),
+}
 
 FILES = {
     1: {
@@ -39,6 +47,61 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def canonical_bytes(value: dict) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def signature_hex(value: dict, signing_key: SigningKey) -> str:
+    return signing_key.sign(canonical_bytes(value)).signature.hex()
+
+
+def access_policy(signing_key: SigningKey) -> dict:
+    payload = {
+        "schema": "access-policy/1",
+        "policy_id": "acl:live-artifacts:fixture",
+        "subject_kind": "artifact",
+        "subject_id": f"{NODE_ID}:{RUN}",
+        "owner_persona_id": PERSONA,
+        "access_grants": [{
+            "schema": "access-grant/1",
+            "grantee_kind": "public",
+            "grantee_id": "*",
+            "access_level": "r",
+            "scope_kind": "",
+            "scope_id": "",
+            "reason": "",
+            "expires_at": "",
+            "attestation_id": "",
+        }],
+        "outward_tier": "public",
+        "cross_tenant_agreement_ref": None,
+    }
+    return {
+        **payload,
+        "signature_hex": signature_hex(payload, signing_key),
+        "signing_key_id": KEY_ID,
+    }
+
+
+def signed_metadata(document: dict) -> dict:
+    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    policy = access_policy(signing_key)
+    result = {
+        **document,
+        "access_policy_ref": policy["policy_id"],
+        "access_policy": policy,
+        "signing_key_id": KEY_ID,
+    }
+    result["signature_hex"] = signature_hex(result, signing_key)
+    return result
+
+
 class State:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -46,6 +109,10 @@ class State:
         self.ended = False
         self.stale_next = False
         self.stale_started = False
+        self.tamper_next_poll = False
+        self.tamper_poll_served = False
+        self.key_generation = 1
+        self.key_requests = 0
 
     def set(self, value: int) -> None:
         with self.lock:
@@ -62,6 +129,10 @@ class State:
             self.ended = False
             self.stale_next = False
             self.stale_started = False
+            self.tamper_next_poll = False
+            self.tamper_poll_served = False
+            self.key_generation = 1
+            self.key_requests = 0
 
     def arm_stale(self) -> None:
         with self.lock:
@@ -84,6 +155,36 @@ class State:
         with self.lock:
             return self.ended
 
+    def advance_with_tampered_poll(self) -> None:
+        with self.lock:
+            self.revision = 2
+            self.ended = False
+            self.tamper_next_poll = True
+            self.tamper_poll_served = False
+
+    def rotate_and_advance(self) -> None:
+        with self.lock:
+            self.key_generation = 2
+            self.revision = 2
+            self.ended = False
+
+    def signing_key_generation(self) -> int:
+        with self.lock:
+            return self.key_generation
+
+    def note_key_request(self) -> tuple[int, int]:
+        with self.lock:
+            self.key_requests += 1
+            return self.key_generation, self.key_requests
+
+    def consume_tampered_poll(self) -> bool:
+        with self.lock:
+            if not self.tamper_next_poll:
+                return False
+            self.tamper_next_poll = False
+            self.tamper_poll_served = True
+            return True
+
 
 STATE = State()
 
@@ -103,17 +204,19 @@ def file_record(path: str, body: bytes, revision: int) -> dict:
     }
 
 
-def snapshot(revision: int | None = None) -> dict:
+def snapshot(revision: int | None = None, since_revision: str | None = None) -> dict:
     revision = STATE.get() if revision is None else revision
     files = [file_record(path, body, revision) for path, body in sorted(FILES[revision].items())]
     manifest = [{"workspace_id": item["workspace_id"], "path": item["path"], "sha256": item["sha256"]} for item in files]
     digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return {
+    return signed_metadata({
         "schema": "personaos-live-artifacts/1",
-        "node_id": "kernel:fixture",
+        "node_id": NODE_ID,
         "run": RUN,
+        "task": "design 4 bedroom house",
         "generated_at": now(),
         "revision": f"sha256:{digest}",
+        "since_revision": since_revision,
         "visibility_tier": "public",
         "active": {
             "calls": [{
@@ -147,7 +250,7 @@ def snapshot(revision: int | None = None) -> dict:
         "truncated": False,
         "omitted_file_count": 0,
         "omitted_reasons": {},
-    }
+    })
 
 
 def telemetry() -> dict:
@@ -222,14 +325,38 @@ class Handler(SimpleHTTPRequestHandler):
             return self.empty()
         if path == "/node/.well-known/personaos-discovery.json":
             return self.json(200, {
-                "schema": "personaos-discovery/1.1", "kernel_id": "kernel:fixture",
+                "schema": "personaos-discovery/1.1", "kernel_id": NODE_ID,
                 "providers_are_aggregate": True, "providers_url": "providers.json",
                 "live_telemetry_url": "telemetry.json", "discovery_stream_url": "events",
                 "keys_url": "keys.json", "p2p_received_url": "discovery/p2p/received.json",
                 "public_discovery": True,
             })
-        if path in {"/node/providers.json", "/node/keys.json"}:
-            return self.json(200, {"providers": []} if path.endswith("providers.json") else {"keys": []})
+        if path == "/node/providers.json":
+            return self.json(200, {"providers": []})
+        if path == "/node/keys.json":
+            generation, _requests = STATE.note_key_request()
+            entries = [{
+                "key_id": KEY_ID,
+                "role": "master",
+                "public_key_hex": SIGNING_KEYS[generation].verify_key.encode().hex(),
+                "status": "current",
+                "rotated_at": "2026-07-10T00:10:00+00:00" if generation == 2
+                else "2026-07-10T00:00:00+00:00",
+            }]
+            if generation == 2:
+                entries.append({
+                    "key_id": KEY_ID,
+                    "role": "master",
+                    "public_key_hex": SIGNING_KEYS[1].verify_key.encode().hex(),
+                    "status": "previous",
+                    "rotated_at": "2026-07-10T00:10:00+00:00",
+                })
+            return self.json(200, {
+                "schema": "personaos-keys/1",
+                "kernel_id": NODE_ID,
+                "keys": entries,
+                "rotation_schedule": {"master_period_days": 30, "operational_period_days": 7},
+            })
         if path.startswith("/node/ipfs/"):
             return self.json(200, {"Providers": []})
         if path == "/node/discovery/p2p/received.json":
@@ -252,7 +379,7 @@ class Handler(SimpleHTTPRequestHandler):
             call = snapshot()["active"]["calls"][0]
             ended = STATE.is_ended()
             return self.json(200, {
-                "schema": "personaos-node-status/1", "node_id": "kernel:fixture", "backend": "codex",
+                "schema": "personaos-node-status/1", "node_id": NODE_ID, "backend": "codex",
                 "active_model": "gpt-5.5", "lineage_durable": True, "artifact_tier": "public",
                 "public_discovery": True, "budget_candidates": 8, "pending_budget": 0,
                 "heartbeat": {"running": not ended, "busy": "complete" if ended else f"running {RUN}"},
@@ -277,11 +404,15 @@ class Handler(SimpleHTTPRequestHandler):
         if path == f"/node/runs/{RUN}/artifacts":
             return self.json(200, {"schema": "personaos-run-artifacts/1", "package": [], "bundles": []})
         if path == f"/node/runs/{RUN}/live-artifacts":
+            since_revision = (parse_qs(parsed.query).get("since") or [None])[0]
             stale_revision = STATE.consume_stale()
             if stale_revision is not None:
                 time.sleep(2.0)
-                return self.json(200, snapshot(stale_revision))
-            return self.json(200, snapshot())
+                return self.json(200, snapshot(stale_revision, since_revision))
+            document = snapshot(since_revision=since_revision)
+            if STATE.consume_tampered_poll():
+                document["task"] = "tampered after signing"
+            return self.json(200, document)
         prefix = f"/node/runs/{RUN}/live-artifacts/body/{WORKSPACE}/"
         if path.startswith(prefix):
             rel = unquote(path[len(prefix):])
@@ -303,18 +434,21 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 for _ in range(90):
                     if STATE.is_ended():
-                        payload = {"schema": "personaos-run-ended-event/1", "node_id": "kernel:fixture",
-                            "run": RUN, "revision": last or snapshot()["revision"], "generated_at": now(),
-                            "status": "completed", "reason": "fixture complete"}
+                        payload = signed_metadata({
+                            "schema": "personaos-live-artifact-event/1", "node_id": NODE_ID,
+                            "run": RUN, "revision": None, "previous_revision": last or snapshot()["revision"],
+                            "generated_at": now(), "endpoint": f"/runs/{RUN}/live-artifacts",
+                            "state": "run_ended", "active": False, "snapshot": None,
+                        })
                         raw = f"event: run_ended\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n".encode()
                         self.wfile.write(raw)
                         self.wfile.flush()
                         break
-                    snap = snapshot()
+                    snap = snapshot(since_revision=last or None)
                     if snap["revision"] != last:
-                        payload = {"schema": "personaos-live-artifact-event/1", "node_id": "kernel:fixture",
+                        payload = signed_metadata({"schema": "personaos-live-artifact-event/1", "node_id": NODE_ID,
                             "run": RUN, "revision": snap["revision"], "previous_revision": last or None,
-                            "generated_at": now(), "endpoint": f"/runs/{RUN}/live-artifacts", "snapshot": snap}
+                            "generated_at": now(), "endpoint": f"/runs/{RUN}/live-artifacts", "snapshot": snap})
                         raw = f"event: live_artifact_update\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n".encode()
                         self.wfile.write(raw)
                         self.wfile.flush()
@@ -331,6 +465,18 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"armed": True})
         if path == "/node/stale-started":
             return self.json(200, {"started": STATE.stale_started})
+        if path == "/node/advance-with-tampered-poll":
+            STATE.advance_with_tampered_poll()
+            return self.json(200, {"revision": 2, "tamper_armed": True})
+        if path == "/node/rotate-and-advance":
+            STATE.rotate_and_advance()
+            return self.json(200, {"revision": 2, "key_generation": 2})
+        if path == "/node/key-requests":
+            with STATE.lock:
+                requests = STATE.key_requests
+            return self.json(200, {"requests": requests})
+        if path == "/node/tampered-poll-served":
+            return self.json(200, {"served": STATE.tamper_poll_served})
         if path == "/node/end":
             STATE.end()
             return self.json(200, {"ended": True})
