@@ -39,11 +39,12 @@ Discovery is **signed + content-addressed** (09_PROTOCOLS §3G/§3H). For
 every node it knows or is told about, the page:
 
 1. **bootstraps** from that node's `.well-known/personaos-discovery.json`;
-2. does a **Kademlia-DHT-style provider lookup** (`discovery/providers.json`) — a list of opaque
-   `key → record` pointers, *not* the data;
-3. **resolves each record and verifies its Ed25519 signature** against the owning kernel's
-   published key (in-browser, via vendored [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)).
-   An unsigned or forged record is dropped.
+2. resolves signed `provider-record/1` envelopes from `discovery/providers.json`, each binding a
+   DID/hash/handle key, record hash, host locators, access policy, and current kernel master key;
+3. **resolves each record and verifies the ProviderRecord, record, and AccessPolicy Ed25519
+   signatures** against the owning kernel's current published master key (in-browser, via vendored
+   [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)). An unsigned, stale-key, forged,
+   policy-mismatched, or hash-mismatched record is dropped.
 
 Planes (09_PROTOCOLS §3G.2): **internet** = `.well-known` + gossip + Kademlia DHT; **intranet** =
 mDNS at the kernel, plus direct/local routes the browser can use. Records are access-gated
@@ -51,11 +52,31 @@ mDNS at the kernel, plus direct/local routes the browser can use. Records are ac
 
 **Real libp2p P2P in the browser.** The page boots a vendored **js-libp2p** node
 (`assets/p2p-libp2p.js`: WebRTC + circuit-relay + gossipsub + a Kademlia client). It gossips
-signed records on `personaos/discovery/v1`; a locator from a verified card is enrolled into the
-normal HTTP discovery/polling path, where records are fetched and verified again. When an explicit
-or node-advertised bootstrap/relay is configured, the browser provides and finds the shared
-PersonaOS rendezvous multihash through that peer's Kademlia routing table. With no connected
-bootstrap/relay there is no shared DHT to query, and the UI does not claim otherwise.
+signed records on `personaos/discovery/v1` without trusting their unsigned outer locator metadata.
+For each DID/hash key, it finds providers in the DHT, requests the signed envelope and exact record
+over `/personaos/provider-record/1.0.0`, verifies the ProviderRecord against the sole current master,
+then verifies the hash-bound document against its current, previous, or archived registry generation.
+Only then may it follow a bound locator. When an explicit or node-advertised bootstrap/relay is configured,
+the browser also provides and finds the shared PersonaOS rendezvous multihash through that peer's
+Kademlia routing table. With no connected bootstrap/relay there is no shared DHT to query, and the
+UI does not claim otherwise.
+
+Raw gossip is **lookup-only**: a record's embedded key, label, base, links, and policy never enter
+the UI directly. The browser extracts at most five bounded content-hash/DID/global-handle/handle/id
+aliases, rate-limits their DHT queries, and displays the record only after `resolveProvider` returns
+a current-master-signed ProviderRecord whose document hash, record signature, policy signature,
+subject, scope, and host binding all verify. This lets a gossip-only handle discover a previously
+unknown node without an HTTP provider-index seed while preventing self-signed gossip from
+overwriting displayed state.
+
+Public visibility grants strangers **discover**, not read. A matching, unexpired public `r`/`rw`/
+`admin` grant whose optional scope matches the signed policy subject is required before an anonymous
+publisher may send record links, content hashes, locators, interfaces, or read-gated descriptions.
+Discover-only HTTP, gossip, and provider-protocol payloads are kernel-signed minimal projections;
+the full signed record remains on the authenticated read path. The UI independently enforces the
+same rule as defense in depth and labels the row discover-only. General record signatures may verify
+against current, previous, or archived registry entries; live frames and ProviderRecords remain
+current-kernel-master-only.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
 peers; add any other kernel with `?peer=https://its-host`, advertise it through libp2p/IPFS, or
@@ -196,6 +217,7 @@ The browser test requires Python Playwright, PyNaCl, and an installed Chromium. 
 ```
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
+assets/discovery-authority.mjs             # provider hints, historical keys, AccessPolicy projection
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
 assets/noble-ed25519.js                    # vendored verifier (MIT)

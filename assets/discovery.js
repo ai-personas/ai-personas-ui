@@ -14,6 +14,14 @@ import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
 } from './live-signatures.mjs?v=20260710-kernel-signed-live';
+import {
+  currentMasterKey,
+  evaluatePublicRecordAccess,
+  projectDiscoveryRecord,
+  projectRecordSurface,
+  providerLookupHints,
+  recordVerificationEntries,
+} from './discovery-authority.mjs?v=20260710-provider-authority-v2';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -108,10 +116,13 @@ function canon(v){
   if(typeof v==='object')return '{'+Object.keys(v).sort().map((k)=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
   return JSON.stringify(v);
 }
-async function verifyRecord(doc,keys){
-  const pk=keys[doc.signing_key_id]; if(!pk) return false;
-  try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(pk)); }
-  catch(e){ return false; }
+async function verifyRecord(doc,keyEntries){
+  for(const entry of recordVerificationEntries(keyEntries,doc?.signing_key_id)){
+    try{ if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),
+      hexToBytes(entry.public_key_hex))) return {ok:true,entry}; }
+    catch(e){}
+  }
+  return {ok:false,entry:null};
 }
 const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
@@ -236,6 +247,8 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
+  providerKeyRefreshAt:new Map(), providerHintJobs:new Map(), providerHintQueue:[],
+  providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
@@ -558,35 +571,180 @@ function collectP2PBootstraps(boot){
 }
 async function keysFor(base,boot,{refresh=false}={}){
   const key=base||'@origin';
-  if(!refresh&&S.keys.has(key)) return S.keys.get(key);
+  const cached=S.keyDocs.get(key);
+  if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
+      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
   const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'));
-  const statusRank={current:0,previous:1,archived:2};
-  const keys={},selected={}; const entries=[];
+  const keys={}; const entries=[]; const currentIds=new Set();
+  let valid=keysDoc?.schema==='personaos-keys/1'
+    &&!!String(keysDoc?.kernel_id||'')
+    &&(!boot?.kernel_id||keysDoc.kernel_id===boot.kernel_id);
   for(const raw of (Array.isArray(keysDoc?.keys)?keysDoc.keys:[])){
     const entry={key_id:String(raw?.key_id||''),role:String(raw?.role||''),
       public_key_hex:String(raw?.public_key_hex||''),status:String(raw?.status||''),
       rotated_at:String(raw?.rotated_at||'')};
     if(!entry.key_id||!['current','previous','archived'].includes(entry.status)
-        ||!/^[0-9a-f]{64}$/i.test(entry.public_key_hex)) continue;
+        ||!/^[0-9a-f]{64}$/i.test(entry.public_key_hex)){ valid=false; continue; }
     entries.push(entry);
-    const prior=selected[entry.key_id];
-    if(!prior||statusRank[entry.status]<statusRank[prior.status]){
-      selected[entry.key_id]=entry; keys[entry.key_id]=entry.public_key_hex;
+    if(entry.status==='current'){
+      if(currentIds.has(entry.key_id)){ valid=false; continue; }
+      currentIds.add(entry.key_id); keys[entry.key_id]=entry.public_key_hex;
     }
   }
-  S.keys.set(key,keys); S.keyDocs.set(key,{kernelId:String(keysDoc?.kernel_id||''),entries});
+  const masters=entries.filter((entry)=>entry.key_id==='kernel-master'
+    &&entry.role==='master'&&entry.status==='current');
+  if(masters.length!==1) valid=false;
+  if(!valid){ S.keys.delete(key); S.keyDocs.delete(key);
+    log('keys',`${boot?.kernel_id||key}: current master registry invalid`,false); return {}; }
+  S.keys.set(key,keys); S.keyDocs.set(key,{schema:keysDoc.schema,
+    kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
   return keys;
 }
-async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl){
+
+function providerPolicyPayload(policy){ const out={};
+  for(const key of ['schema','policy_id','subject_kind','subject_id','owner_persona_id','access_grants','outward_tier','cross_tenant_agreement_ref'])
+    if(Object.prototype.hasOwnProperty.call(policy||{},key)) out[key]=policy[key];
+  return out; }
+function currentProviderMaster(base,boot){
+  const registry=S.keyDocs.get(base||'@origin');
+  if(registry?.schema!=='personaos-keys/1'||registry.kernelId!==boot?.kernel_id) return '';
+  return currentMasterKey(registry.entries||[]);
+}
+async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey=''){
+  const p=envelope?.record, pk=currentProviderMaster(base,boot);
+  if(envelope?.schema!=='provider-record-envelope/1'||p?.schema!=='provider-record/1'||!pk
+    ||keys?.['kernel-master']!==pk||p.signing_key_id!=='kernel-master'
+    ||p.signing_key_role!=='master'||p.signing_key_status!=='current'
+    ||String(p.public_key_hex||'').toLowerCase()!==pk.toLowerCase()
+    ||(expectedKey&&String(p.key||'')!==expectedKey)
+    ||p.visibility_tier!=='public'||p.host_kernel_id!==boot?.kernel_id) return {ok:false,reason:'provider_authority_invalid'};
+  let ok=false; try{ ok=await ed.verifyAsync(hexToBytes(envelope.signature_hex),enc.encode(canon(p)),hexToBytes(pk)); }catch(e){}
+  if(!ok) return {ok:false,reason:'provider_signature_invalid'};
+  if(`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==p.document_hash) return {ok:false,reason:'provider_document_hash_mismatch'};
+  const r=doc?.record||{}, policy=doc?.access_policy||{};
+  if(r.record_id!==p.record_id||r.visibility_tier!=='public'||doc.host_kernel_id!==p.host_kernel_id
+    ||String(doc.base||'')!==String(p.base_url||'')
+    ||r.access_policy_ref!==p.access_policy_ref||policy.policy_id!==p.access_policy_ref
+    ||policy.outward_tier!=='public') return {ok:false,reason:'provider_document_binding_mismatch'};
+  if(!providerLookupHints(r).includes(String(p.key||''))) return {ok:false,reason:'provider_key_alias_mismatch'};
+  const loc=[r.content_locator_ref].filter(Boolean).sort();
+  if(canon(loc)!==canon([...(p.content_locator_refs||[])].filter(Boolean).sort())) return {ok:false,reason:'provider_locator_binding_mismatch'};
+  const registry=S.keyDocs.get(base||'@origin');
+  let candidates=recordVerificationEntries(registry?.entries||[],doc.signing_key_id);
+  const boundId=String(p.document_signing_key_id||''),
+    boundStatus=String(p.document_signing_key_status||''),
+    boundKey=String(p.document_public_key_hex||'').toLowerCase();
+  const hasDocumentKeyBinding=!!(boundId||boundStatus||boundKey);
+  if(hasDocumentKeyBinding){
+    if(boundId!==String(doc.signing_key_id||'')
+      ||!['current','previous','archived'].includes(boundStatus)
+      ||!/^[0-9a-f]{64}$/.test(boundKey)) return {ok:false,reason:'provider_document_key_binding_invalid'};
+    candidates=candidates.filter((entry)=>entry.key_id===boundId&&entry.status===boundStatus
+      &&String(entry.public_key_hex||'').toLowerCase()===boundKey);
+  }else{
+    // Legacy envelopes can verify only current documents. Historical acceptance
+    // requires a current-master-signed generation binding in the ProviderRecord.
+    candidates=candidates.filter((entry)=>entry.status==='current'
+      &&entry.key_id===p.signing_key_id
+      &&String(entry.public_key_hex||'').toLowerCase()===String(pk).toLowerCase());
+  }
+  const recordMatches=[];
+  for(const entry of candidates){ try{
+    if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(r)),
+      hexToBytes(entry.public_key_hex))) recordMatches.push(entry);
+  }catch(e){} }
+  if(recordMatches.length!==1) return {ok:false,reason:'provider_document_signature_invalid'};
+  const documentKey=recordMatches[0];
+  try{ ok=await ed.verifyAsync(hexToBytes(policy.signature_hex),
+    enc.encode(canon(providerPolicyPayload(policy))),hexToBytes(documentKey.public_key_hex)); }catch(e){ ok=false; }
+  if(!ok) return {ok:false,reason:'provider_policy_signature_invalid'};
+  const did=String(r.did||'');
+  if(did.startsWith('did:personaos:')&&did.slice('did:personaos:'.length).split('/')[0]!==p.host_kernel_id) return {ok:false,reason:'provider_did_kernel_mismatch'};
+  const access=evaluatePublicRecordAccess(r,policy,doc.links||{});
+  if(!access.ok||!access.canDiscover) return {ok:false,reason:access.reason||'provider_access_refused'};
+  return {ok:true,access,documentKey};
+}
+async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedKey=''){
+  let keys=await keysFor(base,boot);
+  let verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
+  if(verification.ok) return {...verification,keys};
+  const cacheKey=base||'@origin', last=S.providerKeyRefreshAt.get(cacheKey)||0;
+  if(Date.now()-last<10000) return {...verification,keys:{}};
+  S.providerKeyRefreshAt.set(cacheKey,Date.now());
+  keys=await keysFor(base,boot,{refresh:true});
+  verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
+  return verification.ok?{...verification,keys}:{...verification,keys:{}};
+}
+async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={}){
   if(!doc?.record) return {ok:false,row:null};
-  const ok=await verifyRecord(doc,keys);
-  if(!ok) return {ok:false,row:null};
-  const r=doc.record, k=doc.host_kernel_id||boot?.kernel_id||'', b=doc.base||base||'';
-  return {ok:true,row:{...r,_kernel:k,_url:recordUrl?join(base,recordUrl):(doc._url||''),_access:doc.access_policy||{},
-    _links:doc.links||{},_base:b,_plane:plane,
-    _doc:{record:doc.record,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
-          public_key_hex:keys[doc.signing_key_id]||'',kernel_id:k,host_kernel_id:doc.host_kernel_id||'',
-          base:b,links:doc.links||{},access_policy:doc.access_policy||{}}}};
+  const registry=S.keyDocs.get(base||'@origin')||{};
+  const signature=await verifyRecord(doc,registry.entries||[]);
+  if(!signature.ok) return {ok:false,row:null,reason:'record_signature_invalid'};
+  const access=meta.access||evaluatePublicRecordAccess(doc.record,doc.access_policy||{},doc.links||{});
+  if(!access.ok||!access.canDiscover) return {ok:false,row:null,reason:access.reason||'record_access_refused'};
+  const k=doc.host_kernel_id||boot?.kernel_id||'', rawBase=doc.base||base||'';
+  const rawUrl=recordUrl?join(base,recordUrl):(doc._url||'');
+  const surface=projectRecordSurface(doc.record,doc.access_policy||{},doc.links||{},access,
+    {base:rawBase,url:rawUrl});
+  const r=surface.record, projectedPolicy=surface.policy;
+  const b=surface.base, links=surface.links, url=surface.url;
+  const gossipRecord=projectDiscoveryRecord(doc.record,false);
+  return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
+    _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
+    _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
+    _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
+          signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
+          kernel_id:k,host_kernel_id:doc.host_kernel_id||'',base:b,links,
+          access_policy:projectedPolicy,record_signature_verified:true,
+          policy_signature_verified:true}}};
+}
+function logRecordAccess(row,source){
+  const label=String(row?.label||row?.record_id||'record').slice(0,36);
+  log('access',`${source}: ${label} · ${row?._readAuthorized?'public read granted':'discover-only; read links withheld'}`,true);
+}
+async function verifiedRowsFromProviderIndex(providers,base,boot,plane,source='http'){
+  const rows=[]; let refused=0;
+  const byUrl=new Map();
+  for(const envelope of (Array.isArray(providers)?providers:[])){
+    const url=String(envelope?.record?.record_url||'');
+    if(envelope?.schema!=='provider-record-envelope/1'
+        ||envelope?.record?.schema!=='provider-record/1'
+        ||!/^discovery\/public\/records\/[A-Za-z0-9:_.-]+\.json$/.test(url)){
+      refused++; log('verify',`${source}: legacy or malformed provider pointer refused`,false); continue; }
+    if(!byUrl.has(url)) byUrl.set(url,envelope);
+  }
+  const entries=[...byUrl.entries()];
+  for(let i=0;i<entries.length;i+=24){
+    const batch=entries.slice(i,i+24);
+    const docs=await Promise.all(batch.map(([recordUrl,envelope])=>fetchJson(join(base,recordUrl))
+      .then((doc)=>({envelope,doc,recordUrl})).catch(()=>({envelope,doc:null,recordUrl}))));
+    for(const {envelope,doc,recordUrl} of docs){
+      if(!doc?.record){ refused++; continue; }
+      const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
+      if(!authority.ok){ refused++;
+        log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
+      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,{access:authority.access});
+      if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
+      logRecordAccess(out.row,source); rows.push(out.row);
+    }
+  }
+  return {rows,refused,envelopeCount:entries.length};
+}
+async function verifiedRowsFromP2PResult(result,source='p2p'){
+  const rows=[]; let refused=0;
+  const expectedKey=String(result?.key||'');
+  for(const item of (Array.isArray(result?.records)?result.records:[])){
+    const doc=item?.document, p=item?.record||{};
+    if(!doc?.record||!expectedKey){ refused++; continue; }
+    const pboot={kernel_id:p.host_kernel_id,keys_url:'.well-known/personaos-keys.json'};
+    const base=String(p.base_url||'');
+    const authority=await verifyHttpProviderWithKeyRefresh(item,doc,pboot,base,expectedKey);
+    if(!authority.ok){ refused++; continue; }
+    const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',{access:authority.access});
+    if(!out.ok){ refused++; continue; }
+    out.row._net='p2p'; logRecordAccess(out.row,source); rows.push(out.row);
+  }
+  return {rows,refused};
 }
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
@@ -663,50 +821,38 @@ async function discoverFrom(base,plane){
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   if(boot.kernel_id) S.kernels.add(boot.kernel_id);
-  const keys=await keysFor(base,boot);
+  await keysFor(base,boot);
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'));
   const providers=prov?.providers||[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
-  const found=[];
-  // PARALLEL record resolution (batches of 24): a node serving hundreds of
-  // records — or reached over a WAN tunnel — must not cost one round-trip per
-  // record. Ed25519 verification stays per-record after each batch lands.
-  for(let i=0;i<providers.length;i+=24){
-    const batch=providers.slice(i,i+24);
-    const docs=await Promise.all(batch.map((p)=>fetchJson(join(base,p.record_url))
-      .then((doc)=>({p,doc})).catch(()=>({p,doc:null}))));
-    for(const {p,doc} of docs){
-      if(!doc?.record) continue;
-      const out=await verifiedRecordFromDoc(doc,keys,boot,base,plane,p.record_url);
-      if(!out.ok){ const r=doc.record;
-        log('verify',`${r.kind}: ${(r.label||p.did||'').slice(0,28)} — FAIL`,false); continue; }
-      found.push(out.row);
-    }
+  const http=await verifiedRowsFromProviderIndex(providers,base,boot,plane,'http provider');
+  const found=[...http.rows];
+  if(P2P?.resolveProvider){
+    const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
+    const resolved=await Promise.all(aliases.map((key)=>P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+    let authorityVerified=0;
+    for(const result of resolved){ const verified=await verifiedRowsFromP2PResult(result,'p2p index lookup');
+      found.push(...verified.rows); authorityVerified+=verified.rows.length; }
+    if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup(s) current-master verified`,authorityVerified>0);
   }
-  if(found.length) log('verify',`${found.length}/${providers.length} record(s) Ed25519-verified OK`,true);
-  // GLOBAL P2P PLANE: a node running the libp2p bridge serves the verified
-  // records it RECEIVED over gossipsub (discovery/p2p/received.json) — records
-  // from kernels anywhere on the mesh, re-verified here against each record's
-  // embedded key before joining the board (NET = P2P).
+  const uniqueFound=new Map(found.map((row)=>[row.record_id||row.did,row]));
+  found.length=0; found.push(...uniqueFound.values());
+  if(found.length) log('verify',`${found.length}/${http.envelopeCount} record(s) provider + record + policy verified`,true);
+  // Bridge-cache gossip is untrusted lookup material only. It never becomes a
+  // displayed record or supplies base/links/policy; current-master ProviderRecord
+  // resolution is the sole promotion path into S.recs.
   const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
   const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived)):null;
   for(const doc of (p2pDoc?.records||[])){
-    if(!doc?.record || doc.record.visibility_tier!=='public') continue;
-    let ok=false;
-    try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){}
-    if(!ok) continue;
-    const k=doc.host_kernel_id||doc.kernel_id||'p2p';
-    S.kernels.add(k); noteKernel(k,'p2p',doc.base||'');
-    found.push({...doc.record,_kernel:k,_url:'',_access:doc.access_policy||{},
-      _links:doc.links||{},_base:doc.base||'',_plane:'internet',_net:'p2p',_doc:doc});
+    if(doc?.record?.visibility_tier==='public') queueProviderHints(doc.record,'bridge-cache gossip');
   }
-  // HTTP gossip cache: cards a peer pushed at this node (§3B). Cards marked
-  // unverified by the receiving node are listed but never trusted with links.
+  // HTTP gossip cache is also hint-only. Self-asserted origin/kernel fields never
+  // create a node or record in the UI before current-master provider resolution.
   const gossip=await fetchJson(join(base,'gossip/cache'));
   for(const id in (gossip?.cards||gossip||{})){
     const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
-    const k=card._originating_kernel||'gossip';
-    if(card.kind||card.record_id){ S.kernels.add(k); noteKernel(k,'gossip',''); }
+    const record=card.record||card;
+    if(record?.visibility_tier==='public') queueProviderHints(record,'HTTP gossip cache');
   }
   if(boot.kernel_id){
     const sources=peerSourceTags(base);
@@ -924,15 +1070,19 @@ async function discoverLocalNode(opts={}){
 }
 
 function upsert(r){
-  const id=r.record_id||r.card_id; if(!id) return;
+  const id=r.record_id||r.card_id; if(!id) return false;
   let row=S.recs.get(id);
+  if(row&&row._kernel&&r._kernel&&row._kernel!==r._kernel&&row.did!==r.did){
+    log('verify',`${id}: cross-kernel record id collision refused`,false); return false; }
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
-    _broadcastOnly:!!r._broadcastOnly,
+    _broadcastOnly:!!r._broadcastOnly,_effective_level:r._effective_level||'discover',
+    _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
+  return true;
 }
 function classifyMap(){ // per-kernel scope → record map so each kernel's events tick its own rows
   S.mapByKernel={}; const byKK={};
@@ -1137,13 +1287,12 @@ function connectDiscoveryStream(base,boot){
   });
   es.addEventListener('discovery_snapshot',async (ev)=>{
     try{
-      const snap=JSON.parse(ev.data||'{}'), keys=await keysFor(base,boot);
+      const snap=JSON.parse(ev.data||'{}');
+      const providers=Array.isArray(snap?.providers?.providers)?snap.providers.providers:[];
+      const verified=await verifiedRowsFromProviderIndex(providers,base,boot,'internet','SSE provider snapshot');
       let added=0;
-      for(const p of (snap.providers?.providers||[])){
-        const doc=await fetchJson(join(base,p.record_url));
-        const out=await verifiedRecordFromDoc(doc,keys,boot,base,'internet',p.record_url);
-        if(out.ok){ upsert(out.row); added++; }
-      }
+      for(const row of verified.rows) if(upsert(row)) added++;
+      log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
       if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
@@ -1552,13 +1701,13 @@ function trustPanel(r){
     :(r.content_locator_ref?('locator '+esc(String(r.content_locator_ref).slice(0,24))):'— (discover-level metadata only)');
   let html=H('Trust · Ed25519')
     +kv('Verified in browser',`<span class="ok">${icon('check','ico-sm')} signature checked here</span>`)
-    +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}…</span>`:''}`)
+    +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}… · ${esc(doc.signing_key_status||'registry')}</span>`:''}`)
     +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
   // drive min-to-discover/read from the record's REAL access policy, not constants
   const minD=esc(a.min_to_discover||'discover');
   const minR=a.min_to_read?esc(a.min_to_read)
-    :(a.public_read||tier==='public'?'discover (public read)'
-      :a.federated_read?'read (federation grant)':'read (operator token / owner)');
+    :(r._readAuthorized?'read granted to this public viewer'
+      :'read required · current viewer is discover-only');
   html+=H('Access · '+esc(tier))+_ladderBar(r._effective_level||'discover')
     +kv('Visibility tier',`<span class="tier-pill t-${esc(tier)}">${esc(tier)}</span>`)
     +kv('Min to discover',minD)+kv('Min to read',minR);
@@ -3635,7 +3784,8 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
     +kv('Events (this run)',esc(r.events));
   const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
-    +H('Source')+`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`;
+    +H('Source')+(r._url?`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`
+      :'<div class="row"><span class="l2">withheld · discover-only metadata projection</span></div>');
   return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
@@ -4529,23 +4679,66 @@ function wire(){
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
-function _verifiedHttpBase(value){ try{ const u=new URL(String(value||''));
-  if(!/^https?:$/.test(u.protocol)||u.username||u.password) return '';
-  u.search=''; u.hash=''; return u.href.replace(/\/$/,''); }catch(e){ return ''; } }
-async function onGossipRecord(doc){ if(!doc||!doc.record) return; let ok=false;
-  if(doc.record.visibility_tier!=='public') return;
-  if(doc.public_key_hex){ try{ ok=await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),hexToBytes(doc.public_key_hex)); }catch(e){} }
-  log('gossip',`${doc.record.kind}: ${(doc.record.label||'').slice(0,24)} — ${ok?'verified':'unverified'}`, ok);
-  const r=doc.record, id=r.record_id||r.card_id;
-  if(ok){
-    const base=_verifiedHttpBase(doc.base);
-    if(base&&!S.gossipPeers.has(base)){
-      S.gossipPeers.add(base); noteKernel(doc.kernel_id||'gossip','gossip',base);
-      Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{});
-    }
-    if(id && !S.recs.has(id)){ upsert({...r,_kernel:doc.kernel_id||'gossip',_url:'',_access:doc.access_policy||{},_links:doc.links||{},_base:base,_doc:doc});
-      if(P2P) P2P.announce(doc); classifyMap(); updateVitalsCounters(); refreshSystemView(); }
+const PROVIDER_HINT_LIMITS=Object.freeze({maxPending:64,maxQueue:16,maxJobsPerMinute:16,
+  maxConcurrent:2,maxKeysPerHint:5,cooldownMs:30000});
+function _providerHintJobId(record,hints){
+  return String(record?.did||record?.record_id||record?.card_id||hints.join('|')).slice(0,2048);
+}
+function _enqueueProviderHintJob(job){
+  const now=Date.now(), prior=S.providerHintJobs.get(job.id);
+  if(prior&&now-prior.at<PROVIDER_HINT_LIMITS.cooldownMs) return;
+  S.providerHintWindow=S.providerHintWindow.filter((at)=>now-at<60000);
+  if(S.providerHintWindow.length>=PROVIDER_HINT_LIMITS.maxJobsPerMinute
+      ||S.providerHintQueue.length>=PROVIDER_HINT_LIMITS.maxQueue){
+    log('gossip','lookup hint rate limit reached; hint refused',false); return; }
+  S.providerHintWindow.push(now); S.providerHintJobs.set(job.id,{state:'queued',at:now});
+  while(S.providerHintJobs.size>256) S.providerHintJobs.delete(S.providerHintJobs.keys().next().value);
+  S.providerHintQueue.push(job); _pumpProviderHintJobs();
+}
+function queueProviderHints(record,source='gossip'){
+  if(record?.visibility_tier!=='public') return;
+  const hints=providerLookupHints(record,{max:PROVIDER_HINT_LIMITS.maxKeysPerHint});
+  if(!hints.length){ log('gossip',`${source}: no bounded provider lookup key`,false); return; }
+  const job={id:_providerHintJobId(record,hints),hints,source};
+  const prior=S.providerHintJobs.get(job.id);
+  if(prior&&Date.now()-prior.at<PROVIDER_HINT_LIMITS.cooldownMs) return;
+  log('gossip',`${source}: untrusted lookup hint only; awaiting current-master ProviderRecord`);
+  if(!P2P?.resolveProvider){
+    if(S.pendingProviderHints.size>=PROVIDER_HINT_LIMITS.maxPending)
+      S.pendingProviderHints.delete(S.pendingProviderHints.keys().next().value);
+    S.pendingProviderHints.set(job.id,job); return;
   }
+  _enqueueProviderHintJob(job);
+}
+async function _resolveProviderHintJob(job){
+  const results=await Promise.all(job.hints.map((key)=>
+    P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+  const rows=[];
+  for(const result of results){ const verified=await verifiedRowsFromP2PResult(result,`${job.source} lookup`);
+    rows.push(...verified.rows); }
+  const unique=new Map(rows.map((row)=>[`${row._kernel}\u0000${row.record_id||row.did}`,row]));
+  let added=0;
+  for(const row of unique.values()){
+    if(upsert(row)){ added++; S.kernels.add(row._kernel); noteKernel(row._kernel,'p2p',row._base||''); }
+  }
+  if(added){ log('p2p',`${job.source}: ${added} current-master ProviderRecord(s) verified`,true);
+    classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection(); }
+  else log('p2p',`${job.source}: provider lookup unresolved; nothing displayed`,false);
+}
+function _pumpProviderHintJobs(){
+  while(P2P?.resolveProvider&&S.providerHintActive<PROVIDER_HINT_LIMITS.maxConcurrent
+      &&S.providerHintQueue.length){
+    const job=S.providerHintQueue.shift(); S.providerHintActive++;
+    S.providerHintJobs.set(job.id,{state:'running',at:Date.now()});
+    _resolveProviderHintJob(job).catch((e)=>log('p2p',`${job.source}: lookup failed ${String(e&&e.message||e).slice(0,100)}`,false))
+      .finally(()=>{ S.providerHintActive--;
+        S.providerHintJobs.set(job.id,{state:'done',at:Date.now()}); _pumpProviderHintJobs(); });
+  }
+}
+function onGossipRecord(doc){
+  // A record-supplied public key is self-asserted. Gossip contributes bounded
+  // lookup aliases only and can never insert, display, or overwrite UI records.
+  if(doc?.record) queueProviderHints(doc.record,'libp2p gossip');
 }
 let _p2pRendezvousCid=null;
 async function p2pRendezvousCid(){
@@ -4578,20 +4771,21 @@ async function initP2P(){
   const list=[...S.p2pBootstraps,...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js');
+    const mod=await import('./p2p-libp2p.js?v=20260710-provider-authority-v2');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
     P2P._rendezvousConfigured=list.length>0;
     updateP2PStatus();
     for(const id of S.order){ const r=S.recs.get(id);
-      // `base` is a locator hint, not signed authority. Receivers enroll it only
-      // after the record verifies, then re-fetch and verify that node normally.
-      if(r._doc&&r._doc.record?.visibility_tier==='public') P2P.announce({...r._doc,base:r._base,kernel_id:r._kernel}); }
+      if(r._gossipHint?.record?.visibility_tier==='public') P2P.announce(r._gossipHint); }
+    const pending=[...S.pendingProviderHints.values()]; S.pendingProviderHints.clear();
+    for(const job of pending) _enqueueProviderHintJob(job);
     log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
       : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
     if(list.length){ setTimeout(()=>refreshP2PRendezvous().catch(()=>{}),3000);
       P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000); }
+    if(list.length) Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
     const el=$('#p2p'); if(el) el.textContent='P2P · http-federation'; }
 }

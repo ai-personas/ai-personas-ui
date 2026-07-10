@@ -20,7 +20,78 @@ import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
 } from '../assets/live-signatures.mjs';
+import {
+  currentMasterKey,
+  evaluatePublicRecordAccess,
+  projectAccessPolicy,
+  projectDiscoveryRecord,
+  projectRecordSurface,
+  providerLookupHints,
+  recordVerificationEntries,
+} from '../assets/discovery-authority.mjs';
 import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
+
+const authorityRecord = {
+  schema: 'discoverable-record/1', record_id: 'rec-a',
+  did: 'did:personaos:kernel:test/artifact/rec-a', kind: 'artifact',
+  label: 'minimal label', description: 'read-gated description',
+  capability_summary: ['inspect'], handle: 'house-plan',
+  content_hash: `sha256:${'ab'.repeat(32)}`, content_locator_ref: 'locator:private',
+  access_policy_ref: 'acl-a', visibility_tier: 'public',
+};
+const publicGrant = (extra = {}) => ({
+  schema: 'access-grant/1', grantee_kind: 'public', grantee_id: '*', access_level: 'r',
+  scope_kind: '', scope_id: '', reason: '', expires_at: '', attestation_id: '', ...extra,
+});
+const authorityPolicy = (grants = [], extra = {}) => ({
+  schema: 'access-policy/1', policy_id: 'acl-a', subject_kind: 'artifact',
+  subject_id: 'rec-a', owner_persona_id: 'owner', access_grants: grants,
+  outward_tier: 'public', cross_tenant_agreement_ref: null, ...extra,
+});
+assert.deepEqual(providerLookupHints(authorityRecord), [
+  authorityRecord.content_hash, authorityRecord.did, authorityRecord.handle, authorityRecord.record_id,
+]);
+const historyEntries = [
+  {key_id: 'kernel-master', role: 'master', status: 'archived', public_key_hex: '33'.repeat(32)},
+  {key_id: 'kernel-master', role: 'master', status: 'current', public_key_hex: '11'.repeat(32)},
+  {key_id: 'kernel-master', role: 'master', status: 'previous', public_key_hex: '22'.repeat(32)},
+];
+assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map((entry) => entry.status),
+  ['current', 'previous', 'archived']);
+assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
+assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+const discoverOnly = evaluatePublicRecordAccess(authorityRecord, authorityPolicy());
+assert.deepEqual({ok: discoverOnly.ok, level: discoverOnly.level, canRead: discoverOnly.canRead},
+  {ok: true, level: 'discover', canRead: false});
+const minimal = projectDiscoveryRecord(authorityRecord, discoverOnly.canRead);
+assert.equal(minimal.label, authorityRecord.label);
+assert.equal(minimal.content_locator_ref, undefined);
+assert.equal(minimal.content_hash, undefined);
+assert.equal(minimal.description, undefined);
+const minimalPolicy = projectAccessPolicy(authorityPolicy([publicGrant()]), false);
+assert.deepEqual(minimalPolicy.access_grants, []);
+assert.equal(minimalPolicy.owner_persona_id, undefined);
+const discoverSurface = projectRecordSurface(authorityRecord, authorityPolicy(), {
+  content: 'private/body.bin', profile: 'private/profile.json',
+}, discoverOnly, {base: 'https://node.example', url: 'https://node.example/record.json'});
+assert.deepEqual(discoverSurface.links, {});
+assert.equal(discoverSurface.base, '');
+assert.equal(discoverSurface.url, '');
+assert.equal(evaluatePublicRecordAccess(authorityRecord, authorityPolicy([publicGrant()])).canRead, true);
+assert.equal(evaluatePublicRecordAccess(authorityRecord, authorityPolicy([publicGrant({
+  expires_at: '2020-01-01T00:00:00Z',
+})]), {}, {nowMs: Date.parse('2026-07-10T00:00:00Z')}).canRead, false);
+assert.equal(evaluatePublicRecordAccess(authorityRecord, authorityPolicy([publicGrant({
+  expires_at: '2027-02-30T00:00:00Z',
+})]), {}, {nowMs: Date.parse('2026-07-10T00:00:00Z')}).canRead, false);
+assert.equal(evaluatePublicRecordAccess(authorityRecord, authorityPolicy([publicGrant({
+  scope_kind: 'artifact', scope_id: 'different-record',
+})])).canRead, false);
+assert.equal(evaluatePublicRecordAccess(authorityRecord, authorityPolicy([publicGrant({
+  scope_kind: 'artifact', scope_id: 'rec-a',
+})])).canRead, true);
+assert.equal(evaluatePublicRecordAccess(authorityRecord,
+  authorityPolicy([], {subject_id: 'other'})).ok, false);
 
 const file = (workspace_id, path, sha256, extra = {}) => ({
   workspace_id,
@@ -314,12 +385,25 @@ assert.doesNotMatch(portal, /delegated-ipfs\.dev|https:\/\/ipfs\.io|https:\/\/dw
 assert.doesNotMatch(portal, /https:\/\/esm\.sh|https:\/\/cdn\.jsdelivr\.net/);
 assert.match(portal, /external executable renderer dependencies are disabled/);
 assert.match(portal, /P2P\.node\.contentRouting\.provide/);
-assert.match(portal, /S\.gossipPeers\.add\(base\)/);
+assert.match(portal, /verifyHttpProviderEnvelope\(envelope,doc,keys,boot,base,expectedKey=''/);
+assert.match(portal, /P2P\.resolveProvider\(key,\{timeoutMs:5000\}\)/);
+assert.match(portal, /signing_key_status!=='current'/);
+assert.match(portal, /legacy or malformed provider pointer refused/);
+assert.match(portal, /recordVerificationEntries\(keyEntries,doc\?\.signing_key_id\)/);
+assert.match(portal, /untrusted lookup hint only; awaiting current-master ProviderRecord/);
+const gossipHandler = portal.slice(portal.indexOf('function onGossipRecord'),
+  portal.indexOf('let _p2pRendezvousCid'));
+assert.match(gossipHandler, /queueProviderHints\(doc\.record/);
+assert.doesNotMatch(gossipHandler, /upsert\(|S\.recs/);
+assert.doesNotMatch(portal, /S\.gossipPeers\.add\(base\)/);
+assert.doesNotMatch(portal, /tier==='public'\?'discover \(public read\)'/);
 const rendezvousNamespace = 'personaos-discovery-rendezvous/v1';
 assert.ok(portal.includes(rendezvousNamespace));
 assert.equal(createHash('sha256').update(rendezvousNamespace).digest('hex'),
   '89d2ce7e05be64fcab15e488a0fe9d052a52be9e0c7ad54aaeecaf6417e5ec87');
 assert.ok(p2pBundle.includes('/personaos/kad/1.0.0'));
+assert.ok(p2pBundle.includes('/personaos/provider-record/1.0.0'));
+assert.ok(p2pBundle.includes('personaos-browser-provider-resolution/1'));
 assert.match(portal, /Close details/);
 assert.match(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'published'/);
 assert.doesNotMatch(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'shipped'/);

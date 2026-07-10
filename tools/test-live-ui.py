@@ -13,7 +13,18 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from live_ui_fixture import Handler, STATE, ThreadingHTTPServer
+from live_ui_fixture import (
+    Handler,
+    PROVIDER_DISCOVER_ONLY,
+    PROVIDER_EXPIRED_READ,
+    PROVIDER_P2P_ONLY,
+    PROVIDER_SCOPED_READ,
+    PROVIDER_SSE_LEGACY,
+    STATE,
+    ThreadingHTTPServer,
+    p2p_discover_only_resolution,
+    p2p_provider_resolution,
+)
 
 
 class QuietHandler(Handler):
@@ -85,6 +96,29 @@ def run(args: argparse.Namespace) -> dict:
               localStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'legacy-token'}}));
             """)
             page.goto(url, wait_until='domcontentloaded')
+            page.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
+            provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
+            require(provider_refused.count() >= 2,
+                    'tampered ProviderRecord document entered browser discovery')
+            log_text = page.locator('#log').text_content()
+            require('Signed provider authority accepted · public read granted' in log_text,
+                    'valid public-read policy was not evaluated truthfully')
+            require(log_text.count('discover-only; read links withheld') >= 3,
+                    'discover-only, expired, or wrong-scope grants retained read links')
+            require('Historical document accepted · public read granted' in log_text,
+                    'registered historical document signature was not accepted')
+            for record_id in (
+                    PROVIDER_DISCOVER_ONLY, PROVIDER_EXPIRED_READ, PROVIDER_SCOPED_READ):
+                raw_document = context.request.get(
+                    f'{node}/discovery/public/records/{record_id}.json').json()
+                require(raw_document.get('projection') == 'discover',
+                        f'{record_id} was not server-projected before HTTP publication')
+                require('links' not in raw_document,
+                        f'{record_id} anonymous HTTP response contained links')
+                for forbidden in ('description', 'content_hash', 'content_locator_ref', 'interfaces'):
+                    require(forbidden not in raw_document.get('record', {}),
+                            f'{record_id} anonymous HTTP response contained {forbidden}')
             open_live_plan(page)
             require(page.locator('#fv-body img').count() == 0, 'Markdown loaded an embedded or remote image')
             require(not any('example.invalid' in item['url'] for item in requests),
@@ -254,6 +288,86 @@ def run(args: argparse.Namespace) -> dict:
                     'key-rotation browser console errors: ' + '; '.join(rotation_errors))
             rotation_context.close()
 
+            # A browser with no HTTP provider-index seeds must be able to promote
+            # a raw gossip handle only through current-master ProviderRecord resolution.
+            STATE.reset()
+            p2p_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            p2p_page = p2p_context.new_page()
+            p2p_errors: list[str] = []
+            p2p_page.on('console', lambda msg: p2p_errors.append(f'console {msg.type}: {msg.text}')
+                        if msg.type in {'warning', 'error'} else None)
+            p2p_page.on('pageerror', lambda error: p2p_errors.append(f'pageerror: {error}'))
+            p2p_context.add_init_script(f"""
+              sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
+            """)
+            p2p_envelope, p2p_document = p2p_provider_resolution(node)
+            p2p_item = {**p2p_envelope, 'document': p2p_document}
+            discover_envelope, discover_document = p2p_discover_only_resolution(node)
+            discover_item = {**discover_envelope, 'document': discover_document}
+            require(discover_document.get('projection') == 'discover'
+                    and 'links' not in discover_document,
+                    'zero-grant P2P document was not projected before transport')
+            for forbidden in ('description', 'content_hash', 'content_locator_ref', 'interfaces'):
+                require(forbidden not in discover_document.get('record', {}),
+                        f'zero-grant P2P response contained {forbidden}')
+            discover_key = discover_document['record']['did']
+            malicious_hint = {
+                'schema': 'discoverable-record/1',
+                'record_id': PROVIDER_P2P_ONLY,
+                'kind': 'artifact',
+                'label': 'MALICIOUS SELF-KEY LABEL MUST NEVER DISPLAY',
+                'handle': 'p2p-only-handle',
+                'visibility_tier': 'public',
+            }
+            stub = f"""
+              const item={json.dumps(p2p_item, separators=(',', ':'))};
+              const discoverItem={json.dumps(discover_item, separators=(',', ':'))};
+              const hint={{record:{json.dumps(malicious_hint, separators=(',', ':'))},
+                public_key_hex:'{'ff' * 32}',signature_hex:'{'00' * 64}',
+                base:'https://attacker.invalid',kernel_id:'kernel:attacker'}};
+              const discoverHint={{record:{{schema:'discoverable-record/1',
+                record_id:'{discover_document['record']['record_id']}',
+                did:'{discover_key}',kind:'artifact',visibility_tier:'public'}}}};
+              export async function startP2P({{onRecord}}){{
+                const node={{peerId:{{toString:()=> '12D3KooWBrowserFixture'}},getPeers:()=>[],
+                  contentRouting:{{provide:async()=>{{}},findProviders:async function*(){{}}}}}};
+                globalThis.__p2pResolvedKeys=[];
+                setTimeout(()=>onRecord(hint),10);
+                setTimeout(()=>onRecord(discoverHint),20);
+                return {{node,announce:async()=>{{}},resolveProvider:async(key)=>{{
+                  globalThis.__p2pResolvedKeys.push(key);
+                  return key==='p2p-only-handle'
+                    ? {{schema:'personaos-browser-provider-resolution/1',key,records:[item]}}
+                    : key==='{discover_key}'
+                    ? {{schema:'personaos-browser-provider-resolution/1',key,records:[discoverItem]}}
+                    : {{schema:'personaos-browser-provider-resolution/1',key,records:[]}};
+                }}}};
+              }}
+            """
+            p2p_page.route('**/node/providers.json', lambda route: route.fulfill(
+                status=200, json={'providers': []}))
+            p2p_page.route('**/assets/p2p-libp2p.js*', lambda route: route.fulfill(
+                status=200, body=stub, content_type='application/javascript'))
+            p2p_page.goto(url, wait_until='domcontentloaded')
+            p2p_page.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('libp2p gossip: 1 current-master ProviderRecord(s) verified')""",
+                timeout=15_000)
+            p2p_log = p2p_page.locator('#log').text_content()
+            require('untrusted lookup hint only; awaiting current-master ProviderRecord' in p2p_log,
+                    'raw gossip was not labelled as an untrusted lookup hint')
+            require('P2P handle resolved by current' in p2p_log
+                    and 'public read granted' in p2p_log,
+                    'P2P-only resolved record did not pass full provider/policy verification')
+            require('P2P discover-only projection · discover-only; read links withheld' in p2p_log,
+                    'zero-grant P2P projection did not verify as discover-only')
+            require('MALICIOUS SELF-KEY LABEL' not in p2p_log,
+                    'raw self-key gossip metadata entered the UI')
+            resolved_keys = p2p_page.evaluate('globalThis.__p2pResolvedKeys')
+            require('p2p-only-handle' in resolved_keys,
+                    'gossip handle was not used as a bounded provider lookup key')
+            require(not p2p_errors, 'P2P-only browser console errors: ' + '; '.join(p2p_errors))
+            p2p_context.close()
+
             STATE.reset()
             mobile_context = browser.new_context(viewport={'width': 390, 'height': 844})
             mobile = mobile_context.new_page()
@@ -314,11 +428,18 @@ def run(args: argparse.Namespace) -> dict:
             sse.on('request', lambda request: sse_requests.append(request.url))
             sse.on('response', lambda response: sse_failed_responses.append(
                 f'{response.status} {response.url}') if response.status >= 400 else None)
+            sse.route('**/node/providers.json', lambda route: route.fulfill(
+                status=200, json={'providers': []}))
             sse.goto(url, wait_until='domcontentloaded')
+            sse.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('discovery snapshot: 1 current ProviderRecord(s) verified; 1 refused')""",
+                timeout=15_000)
             open_live_plan(sse)
             sse.locator('#fv-body').wait_for(timeout=10_000)
             old_hash = sse.locator('.exact-hash').last.text_content()
             require(any('/node/events' in request for request in sse_requests), 'public SSE stream did not connect')
+            require(not any(PROVIDER_SSE_LEGACY in request for request in sse_requests),
+                    'legacy SSE record pointer bypassed ProviderRecord verification')
             sse_context.request.get(base + '/node/arm-stale-poll')
             deadline = time.time() + 7
             while time.time() < deadline:
@@ -355,6 +476,13 @@ def run(args: argparse.Namespace) -> dict:
                 'download': download.suggested_filename,
                 'tamper_refused': True,
                 'metadata_tamper_refused': True,
+                'provider_authority_verified': True,
+                'historical_provider_document_verified': True,
+                'revoked_unknown_document_keys_refused': True,
+                'discover_only_raw_http_minimal': True,
+                'discover_only_raw_p2p_minimal': True,
+                'p2p_only_provider_resolved': True,
+                'sse_legacy_provider_refused': True,
                 'key_rotation_refreshed': True,
                 'body_requests': len(body_requests),
                 'event_requests': len(event_requests),
@@ -363,7 +491,7 @@ def run(args: argparse.Namespace) -> dict:
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
-                'console_errors': (errors + tamper_errors + rotation_errors
+                'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
                                    + mobile_errors + sse_errors),
             }
     except PlaywrightTimeoutError as error:
