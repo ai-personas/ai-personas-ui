@@ -39,6 +39,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def open_live_plan(page) -> None:
+    page.locator('#missions').evaluate('(element) => { element.open = true; }')
     mission = page.locator('.mcard[data-mrun="run-fixture-live"]')
     mission.wait_for(timeout=15_000)
     mission.click()
@@ -102,18 +103,30 @@ def run(args: argparse.Namespace) -> dict:
               .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
-            page.wait_for_function("""() => document.querySelector('#sysStream')?.textContent
-              .includes('recorded message intent')""", timeout=15_000)
+            page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
+              .some((node) => node.textContent.includes('recorded message intent'))""", timeout=15_000)
             require(page.locator('#sysGraph .cl-direct').count() == 2,
                     'shared environment scope created an inferred persona chord')
-            recipients_row = page.locator('#sysStream .ix', has_text='Mara Chen').filter(has_text='Ivo Reed')
+            recipients_row = page.locator('.pcard[title="open Ivo Reed"]').locator(
+                '.pc-activity-row', has_text='Mara Chen')
             require(recipients_row.count() >= 1,
                     'recipients-only persona endpoint was omitted from the live feed')
             require('recorded message intent' in recipients_row.first.text_content(),
                     'communication intent was overstated as delivered content')
-            require('live' in (page.locator('.pcard', has_text='Ivo Reed').get_attribute('class') or ''),
+            require(page.locator('.coordfeed').count() == 0,
+                    'detached global persona activity rail remains in the layout')
+            require('LIVE · PERSONA ACTIVITY' not in page.locator('body').inner_text(),
+                    'legacy global activity headline remains visible')
+            require(page.locator('.mcard .mtask').filter(has_text='.json').count() == 0,
+                    'artifact JSON filename was presented as a mission task')
+            require(page.locator('.env-lane .owned-outputs').count() >= 1,
+                    'environment-scoped deliverable was not placed with its environment')
+            require(page.locator('.pcard[title="open Orin Vale"]').locator(
+                '.live-owned-outputs').count() >= 1,
+                    'persona-owned live worktree was not placed with its persona')
+            require('live' in (page.locator('.pcard[title="open Ivo Reed"]').get_attribute('class') or ''),
                     'recipients-only persona endpoint was omitted from recent activity')
-            followed = page.locator('.pcard', has_text='Mara Chen')
+            followed = page.locator('.pcard[title="open Mara Chen"]')
             followed.locator('.pc-follow').click()
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
                                    timeout=5_000)
@@ -121,7 +134,7 @@ def run(args: argparse.Namespace) -> dict:
                     'kernel-qualified follow state did not select the requested persona')
             require(page.locator('.pcard.dimmed').count() == 2,
                     'following one persona did not scope the other federated cards')
-            page.locator('#cfUnfollow').click()
+            followed.locator('.pc-follow').click()
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-network-messages.png'), full_page=True)
             provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
@@ -466,7 +479,8 @@ def run(args: argparse.Namespace) -> dict:
                       if msg.type in {'warning', 'error'} else None)
             mobile.on('pageerror', lambda error: mobile_errors.append(f'pageerror: {error}'))
             mobile.goto(url, wait_until='domcontentloaded')
-            mobile.locator('.mcard[data-mrun="run-fixture-live"]').wait_for(timeout=15_000)
+            mobile.locator('.mcard[data-mrun="run-fixture-live"]').wait_for(
+                state='attached', timeout=15_000)
             metrics = mobile.evaluate("""() => {
               const selectors = ['.vitals','.globalbar','.missions','.constellation','.stage-wrap','footer'];
               const rects = selectors.map((selector) => {
@@ -493,6 +507,7 @@ def run(args: argparse.Namespace) -> dict:
             require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
                     'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
             require(not metrics['overlaps'], 'mobile page bands overlap')
+            mobile.locator('#missions').evaluate('(element) => { element.open = true; }')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
             drawer = mobile.evaluate("""() => {

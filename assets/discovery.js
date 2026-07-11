@@ -580,7 +580,7 @@ function indexLiveTelemetry(base,live,meta={}){
   me.forEach((m,i)=>{
     if((m.kind||'')!=='MODEL_SELECTED') return;
     const rec={t:_modelEventTime(m,modelBaseT-((me.length-i)*200)), purpose:String(m.requested_purpose||m.purpose||m.role||'model'),
-      model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||'')};
+      model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||''),environment:_shortId(m.environment_id)};
     const pid=_shortId(m.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(rec); }
     const eid=_shortId(m.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(rec); }
   });
@@ -670,7 +670,9 @@ function indexLiveTelemetry(base,live,meta={}){
     S.ixByPersona=new Map();
     for(const e of S.interactions) for(const personaKey of _ixPersonaKeys(e)){
       const arr=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
-      arr.push({kind:e.kind,_t:e._t,_cap:e._cap}); }
+      // Keep the complete bounded event so the owning persona card can show
+      // honest actor, recipient, scope and detail—not a detached generic verb.
+      arr.push(e); }
     for(const [,arr] of S.ixByPersona) if(arr.length>12) arr.splice(0,arr.length-12);
     if(!cold){
       S.ixCountBySid=S.ixCountBySid||new Map();
@@ -1893,6 +1895,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     S.liveArtifacts.set(key,next);
     S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
     _renderLiveArtifactMount(base,snapshot.run);
+    Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
     return next;
   }
   S.liveArtifacts.set(key,next);
@@ -1912,6 +1915,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
       Promise.resolve().then(()=>renderTop()).catch(()=>{});
     }
   }
+  Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
   return next;
 }
 async function fetchLiveArtifacts(base,run){
@@ -2319,7 +2323,61 @@ function _personaGrew(personaKey,count){
   const prev=S.pcardSeen.get(personaKey); S.pcardSeen.set(personaKey,count);
   return prev!=null && count>prev;
 }
-function renderPersonaCard(pid,kernel=''){
+function _personaInitials(name){
+  const parts=String(name||'persona').trim().split(/\s+/).filter(Boolean);
+  return (parts.length>1?(parts[0][0]+parts[parts.length-1][0]):parts[0].slice(0,2)).toUpperCase();
+}
+function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=(h*31+c.charCodeAt(0))%360; return h; }
+function _artifactStateInfo(r){
+  const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
+  const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
+  const cls=(state==='shipped'||state==='accepted')?'ds-ok'
+    :(state==='deprecated'||state==='rejected')?'ds-no':'ds-amber';
+  return {state,files,cls};
+}
+function _artifactActionHTML(r,{scope='output'}={}){
+  if(!r) return '';
+  const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
+  const info=_artifactStateInfo(r), label=String(r.label||'deliverable');
+  return `<button type="button" class="owned-output ${info.cls}" data-artid="${esc(aid)}" title="open ${esc(label)}">`
+    +`<span class="owned-output-icon">${icon('box','ico-sm')}</span><span class="owned-output-copy"><b>${esc(label)}</b>`
+    +`<small>${esc(scope)}${info.state?` · ${esc(info.state.replace(/_/g,' '))}`:''}${info.files?` · ${info.files} files`:''}</small></span>${icon('chevron','ico-sm')}</button>`;
+}
+function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona worktree'}={}){
+  const rows=[...(artifacts||[])], bundles=rows.filter((r)=>r?._links?.bundle);
+  const selected=bundles.length?[bundles[bundles.length-1]]:rows.slice(-2).reverse();
+  if(!selected.length) return '';
+  const earlier=Math.max(0,bundles.length-1);
+  return `<section class="owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${esc(scope)}</small></div>`
+    +selected.map((r)=>_artifactActionHTML(r,{scope})).join('')
+    +(earlier?`<div class="owned-output-history">${earlier} earlier revision${earlier===1?'':'s'} retained in signed history</div>`:'')+`</section>`;
+}
+function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
+  if(!(rows||[]).length) return '';
+  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>kernel-signed · verified</small></div>`
+    +rows.slice(0,2).map((row)=>`<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
+      +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
+      +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
+}
+function _personaActivityHTML(acts,personaKey){
+  const rows=[]; const seen=new Set();
+  for(const e of [...(acts||[])].reverse()){
+    const key=e?._key||`${e?.kind}:${e?._t}`; if(seen.has(key)) continue; seen.add(key); rows.push(e); if(rows.length===4) break;
+  }
+  if(!rows.length) return `<section class="pc-activity"><div class="pc-section-head"><span>Recent activity</span><small>quiet now</small></div><div class="pc-activity-empty">No persona activity in the current five-minute window.</div></section>`;
+  return `<section class="pc-activity"><div class="pc-section-head"><span>Recent activity</span><small>live telemetry</small></div><ol>`
+    +rows.map((e)=>{ const cls=_ixClass(e.kind), kernel=_eventKernel(e);
+      const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
+      const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
+      const mine=actorKey===personaKey;
+      const peers=_personaEndpoints(e).map((x)=>_eventPersonaKey(e,x.id)).filter((x)=>x&&x!==personaKey)
+        .map((x)=>_nameFor(x)).slice(0,2);
+      const relation=mine?(peers.length?` → ${peers.join(', ')}`:''):` · from ${actor}`;
+      const detail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').replace(/\s+/g,' ').trim();
+      return `<li class="pc-activity-row ix-${cls}"><span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><b>${esc(_ixVerb(e.kind))}${esc(relation)}</b>`
+        +(detail?`<span>${esc(detail)}</span>`:'')+`</span><time>${esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
+}
+function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
   const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
   const models=d.models||[]; const last=models[models.length-1];
@@ -2333,21 +2391,6 @@ function renderPersonaCard(pid,kernel=''){
   // node that streams coordination but no model_events). Both are real telemetry.
   const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
   const recentAct=acts[acts.length-1];
-  // live persona MESSAGES (cognition): the LLM's own recent outputs + lessons for THIS persona,
-  // streamed straight onto the card (newest first) — the same data the THINK feed shows.
-  // DEDUP consecutive identical _msg (the fixture/real loops emit identical back-to-back
-  // outputs) BEFORE the on-card budget so the wall shows two DISTINCT recent messages.
-  const _cogAll=(S.interactions||[]).filter((e)=>e.scope==='cognition'
-    &&_eventPersonaKey(e,e.actor_id)===personaKey);
-  const _cogDedup=[]; for(const e of _cogAll){ const p=_cogDedup[_cogDedup.length-1]; if(!p||p._msg!==e._msg) _cogDedup.push(e); }
-  const cogMsgs=_cogDedup.slice(-2).reverse();
-  // CARD/FEED freshness decoupled from token arrival: track the newest cognition _key
-  // seen per persona, so only an actually-new top cognition message slides in (model-count
-  // growth no longer false-flashes the unchanged top message).
-  S.pcCogSeen=S.pcCogSeen||new Map();
-  const _topCogKey=cogMsgs[0]?cogMsgs[0]._key:'';
-  const _cogFresh=!!_topCogKey && S.pcCogSeen.get(personaKey)!==_topCogKey;
-  S.pcCogSeen.set(personaKey,_topCogKey);
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   // HONEST recency: a model-bearing card decays to idle once its model events stop
@@ -2359,25 +2402,19 @@ function renderPersonaCard(pid,kernel=''){
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
-  // Card content (UX): the useful signal is WHAT it's doing now + WHAT it produced/learned
-  // (the message stream) + a clean grouped ACTIVITY GLANCE — not a raw per-call list.
-  let doingHTML, glance='';
+  let doingHTML, focusLabel='Current focus';
   if(activeCall){
     const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
     const model=String(activeCall.model_id||activeCall.model||'—');
-    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span> ${esc(PURPOSE_VERB[purpose]||purpose)} <code>${esc(model)}</code>`
+    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(PURPOSE_VERB[purpose]||purpose)}</strong><code>${esc(model)}</code>`
       +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
   } else if(hasModels){
     const verb=recent?(PURPOSE_VERB[last.purpose]||last.purpose):('last '+(PURPOSE_VERB[last.purpose]||last.purpose));
-    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(verb)} <code>${esc(last.model)}</code>`;
-    const byP=new Map();
-    for(const m of models){ const k=m.purpose||'model'; byP.set(k,(byP.get(k)||0)+1); }
-    glance=[...byP.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4)
-      .map(([p,n])=>`<span class="pc-g">${esc(PURPOSE_VERB[p]||p)}${n>1?` <b>×${n}</b>`:''}</span>`).join('');
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(verb)}</strong><code>${esc(last.model)}</code>`;
   } else if(actFresh){
-    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'} ${esc(_ixVerb(recentAct.kind))}`;
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixVerb(recentAct.kind))}</strong>`;
   } else {
-    doingHTML='<span class="l2">idle — awaiting a mission</span>';
+    focusLabel='Availability'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
   }
   // TOOL chip: the persona's headline self-extension act (provision / acquire / use /
   // block) within the live window. doingHTML is model-purpose-only when hasModels, so a
@@ -2385,8 +2422,6 @@ function renderPersonaCard(pid,kernel=''){
   // Strictly additive — does NOT touch pc-msgs/pc-glance/pc-stats. The client projection
   // strips payload, so only the verb is available (no capability name / error).
   const toolAct=[...acts].reverse().find((a)=>TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
-  const toolFail=toolAct&&(_ixFailed(toolAct.kind)||(toolAct._cap&&toolAct._cap.ok===false));
-  const toolCap=toolAct&&toolAct._cap?(toolAct._cap.capability||toolAct._cap.tool_name||''):'';
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
   // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
@@ -2419,25 +2454,20 @@ function renderPersonaCard(pid,kernel=''){
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
-  const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, cogMsgs[0]?._t||0, toolAct?._t||0);
+  const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, toolAct?._t||0);
   if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
-  return `<div class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pcard-top"><span class="pc-dot ${dotCls}"></span>`
-    +`<span class="pc-name">${esc(name)}</span>`
-    +(name.toLowerCase()!==role?`<span class="pc-role">${esc(role)}</span>`:'')
-    +statusBadge
-    +lifecycleBadge
-    +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="watch only this persona" aria-pressed="false">${icon('target','ico-sm')}</button></div>`
-    +`<div class="pc-doing">${doingHTML}</div>`
-    +(toolAct?`<div class="pc-tool${toolFail?' fail':''}">${toolFail?icon('warn','ico-sm'):icon('tool','ico-sm')} ${esc(_ixVerb(toolAct.kind))}${toolCap?` · ${esc(toolCap)}`:''}</div>`:'')
-    +(cogMsgs.length?`<div class="pc-msgs">`+cogMsgs.map((m,i)=>{
-        const ct=(m._ctype&&m._ctype!=='think')?`<span class="pc-ct ct-${m._ctype}">${m._ctype}</span>`:'';
-        return `<div class="pc-msg ${m.kind==='LLM_LESSON'?'lesson':'out'}${_cogFresh&&i===0?' fresh':''}">`
-        +`<span class="pc-msg-g">${m.kind==='LLM_LESSON'?icon('lesson','ico-sm'):icon('play','ico-sm')}</span>${ct}${esc(m._msg||'')}</div>`; }).join('')
-      +`</div>`:'')
-    +(glance?`<div class="pc-glance">${glance}</div>`:'')
+  const initials=_personaInitials(name), hue=_personaAvatarHue(personaKey);
+  return `<article class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<header class="pc-profile"><div class="pc-avatar"><span>${esc(initials)}</span><i class="pc-dot ${dotCls}"></i></div>`
+    +`<div class="pc-identity"><span class="pc-name">${esc(name)}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
+    +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
+    +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
+    +`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +_personaActivityHTML(acts,personaKey)
+    +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My live worktree',scope:'persona worktree'})
+    +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
-    +'</div>';
+    +'</article>';
 }
 
 // ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
@@ -2892,6 +2922,18 @@ async function refreshSystemView(){
       }
     }
   }));
+  // Redacted environment feeds may intentionally omit their roster. Associate a
+  // persona with a shared environment only when live model or interaction
+  // telemetry explicitly names that environment; this is observed ownership,
+  // not a guessed join from display names.
+  for(const [personaKey,d] of S.liveByPersona){
+    let sid=String([...(d.models||[])].reverse().find((m)=>m.environment)?.environment||'');
+    if(!sid){ const hit=[...(S.ixByPersona?.get(personaKey)||[])].reverse().find((e)=>e.scope==='environment'&&e.scope_id);
+      sid=_shortId(hit?.scope_id||''); }
+    if(!sid) continue;
+    const ref=_personaRef(personaKey), block=bySid.get(envKey(d.kernel||ref.kernel,sid));
+    if(block&&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
+  }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.entries()].filter(([personaKey,d])=>{ const ref=_personaRef(personaKey);
@@ -2904,9 +2946,12 @@ async function refreshSystemView(){
   // fallback for older exports that predate env-current artifact manifests.
   const artByEnv=new Map();
   const artByRun=new Map();
+  const artByPersona=new Map();
   for(const id of S.order){ const r=S.recs.get(id);
     if(r.kind!=='artifact'||!kernelIsFocused(r._kernel)) continue;
     const esid=envSidOfRecord(r), ek=envKey(r._kernel,esid); if(esid) (artByEnv.get(ek)||artByEnv.set(ek,[]).get(ek)).push(r);
+    const owner=_shortId(r._access?.owner_persona_id||'');
+    if(owner&&!esid){ const pk=_personaKey(r._kernel,owner); (artByPersona.get(pk)||artByPersona.set(pk,[]).get(pk)).push(r); }
     const run=runOf(r), rk=envKey(r._kernel,run); if(run) (artByRun.get(rk)||artByRun.set(rk,[]).get(rk)).push(r); }
   const envArtifacts=(b)=>{
     const byEnv=artByEnv.get(envKey(b.kernel,b.sid))||[];
@@ -2915,6 +2960,19 @@ async function refreshSystemView(){
   };
   const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
   const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
+  const liveWorkspacesByPersona=new Map(), liveWorkspacesByEnv=new Map();
+  for(const state of S.liveArtifacts.values()){
+    const snap=state?.snapshot||{};
+    for(const ws of (snap.workspaces||[])){
+      const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=_shortId(ws.environment_id||'');
+      const fileCount=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId).length;
+      const row={base:state.base,run:state.run,workspaceId,fileCount,state:ws.state||'live'};
+      if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
+        (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
+      else if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
+        (liveWorkspacesByEnv.get(ek)||liveWorkspacesByEnv.set(ek,[]).get(ek)).push(row); }
+    }
+  }
 
   // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
   // so the one persona actually working floats to the top of its lane instead of sitting in
@@ -2954,7 +3012,8 @@ async function refreshSystemView(){
     const hiddenMembers=Math.max(0,memberWindow.matched-memberWindow.returned);
     const more=hiddenMembers?`<div class="persona-window-note"><span>showing ${memberWindow.returned} of ${memberWindow.matched} matching personas</span>`
       +`<button type="button" class="window-more" data-more-personas="${esc(encodedGroup)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenMembers)} more</button></div>`:'';
-    const cards=b.members.length?(memberWindow.items.map((sid)=>renderPersonaCard(sid,b.kernel)).join('')+more)
+    const cards=b.members.length?(memberWindow.items.map((sid)=>{ const key=_personaRef(sid,b.kernel).key;
+      return renderPersonaCard(sid,b.kernel,{artifacts:artByPersona.get(key)||[],liveWorkspaces:liveWorkspacesByPersona.get(key)||[]}); }).join('')+more)
       :'<div class="l2" style="padding:8px">awaiting members</div>';
     const manifestFiles=envManifestFiles(b);
     const arts=envArtifacts(b);
@@ -2968,30 +3027,13 @@ async function refreshSystemView(){
     const metaFiles=manifestFiles.length||arts.filter((a)=>{ const L=a._links||{};
       return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
     const manifestBundleId=(b.artifactManifest&&b.artifactManifest.current_bundle_id)||'';
-    const manifestChip=manifestFiles.length
-      ? `<span class="art-chip" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${esc(manifestBundleId||'current workspace artifacts')}">${icon('box','ico-sm')} ${esc((manifestBundleId||'current workspace').slice(0,26))} · ${fileCount} file${fileCount>1?'s':''}</span>`
-      : '';
-    const chipItems=(bundles.length
-      ? [...bundles, ...arts.filter((a)=>!(a._links&&a._links.bundle))]
-      : arts).slice(0,6);
-    const chips=manifestChip||chipItems.map((a)=>{
-      // The signed bundle record's description is '{state} deliverable bundle (N files)'.
-      // Parse it for per-BUNDLE state + count: prefer the per-bundle file count over the
-      // run-wide fileCount (which is wrong when a run has >1 bundle), and show the state so
-      // the chip distinguishes draft from shipped.
-      const m=String(a.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
-      const stt=m?m[1].toLowerCase():''; const bn=m?+m[2]:0;
-      const isBundle=bundles.length&&a._links&&a._links.bundle;
-      const n=isBundle?(bn||fileCount):0;
-      const stCls=isBundle&&stt?((stt==='shipped'||stt==='accepted')?' ds-ok':(stt==='deprecated'||stt==='rejected')?' ds-no':' ds-amber'):'';
-      // data-artid MUST be the S.recs key (record_id/card_id — see upsert), not a.id
-      // (records have no .id field), or the click handler's S.recs.has() always misses.
-      const aid=a._storeKey||a.record_id||a.card_id||a.id||'';
-      const _al=a.label||'artifact';
-      const isNew=S.artsColdLoaded && !S.seenArts.has(aid); S.seenArts.add(aid);
-      return `<span class="art-chip${isNew?' mint':''}${stCls}" data-artid="${esc(aid)}" role="button" tabindex="0" title="${esc(a.label||'')}">${icon('box','ico-sm')} ${esc(_al.length>26?_al.slice(0,24)+'…':_al)}${stt?` · <b>${esc(stt)}</b>`:''}${n?` · ${n} file${n>1?'s':''}`:''}</span>`;
-    }).join('');
-    const artRow=(manifestFiles.length||arts.length)?`<div class="env-arts"><span class="l2">deliverables:</span>${chips}</div>`:'';
+    const artifactRows=bundles.length?bundles:arts;
+    const liveEnvOutputs=_liveWorkspacesHTML(liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[],{label:'Live shared worktree',scope:'environment worktree'});
+    const artRow=liveEnvOutputs||(artifactRows.length
+      ?_ownedOutputsHTML(artifactRows,{label:'Shared outputs',scope:'environment worktree'})
+      :(manifestFiles.length?`<section class="owned-outputs env-owned-outputs"><div class="owned-outputs-head"><span>Shared outputs</span><small>environment worktree</small></div>`
+        +`<button type="button" class="owned-output ds-amber" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"><span class="owned-output-icon">${icon('box','ico-sm')}</span>`
+        +`<span class="owned-output-copy"><b>${esc(manifestBundleId||'Current workspace')}</b><small>${fileCount} file${fileCount===1?'':'s'}</small></span>${icon('chevron','ico-sm')}</button></section>`:''));
     const liveRow=renderEnvLaneLive(b);
     // roster pulled from the durable export (no live feed) is HISTORICAL — its members
     // have departed; mark it so it reads as "who worked here", not "who is here now".
@@ -3000,12 +3042,12 @@ async function refreshSystemView(){
     // never the strongest positive green that says "people working here now".
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
-    const memberTxt=b.members.length?` · ${b.members.length} member${b.members.length>1?'s':''}`:'';
-    return `<div class="env-lane" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
-      +`<div class="env-head"><span class="env-badge">ENV</span>`
-      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
-      +`${liveRow}<div class="env-personas">${cards}</div>${artRow}</div>`;
+    return `<section class="env-lane" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
+      +`<header class="env-head"><div class="env-symbol">${icon('box')}</div><div class="env-identity"><span class="env-kicker">SHARED ENVIRONMENT</span>`
+      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span></div>`
+      +`<div class="env-meta"><span class="env-state ${statusOk?'ok':''}">${esc(statusTxt)}</span><span>${esc((b.type||'workspace').replace(/_/g,' '))}</span>`
+      +(b.members.length?`<span>${b.members.length} ${departed?'contributors':'people'}</span>`:'')+(metaFiles?`<span>${metaFiles} files</span>`:'')+`</div></header>`
+      +`${liveRow}<div class="env-team-head"><span>People</span><small>activity and outputs stay with their owner</small></div><div class="env-personas">${cards}</div>${artRow}</section>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -3029,7 +3071,7 @@ async function refreshSystemView(){
   // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
     + (b.members.some((m)=>_runningNow(m,b.kernel))?4:0)
-    + (b.members.some((m)=>(S.liveByPersona.get(_personaKey(b.kernel,m))||{}).models)?2:0)
+    + (b.members.some((m)=>(S.liveByPersona.get(_personaRef(m,b.kernel).key)||{}).models)?2:0)
     + (envHasArtifacts(b)?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
   // HIDE empty infrastructure lanes. An env with no members AND
@@ -3062,9 +3104,11 @@ async function refreshSystemView(){
     const omitted=Math.max(0,orphanWindow.matched-orphanWindow.returned);
     const more=omitted?`<div class="persona-window-note"><span>showing ${orphanWindow.returned} of ${orphanWindow.matched} matching personas</span>`
       +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(orphanKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,omitted)} more</button></div>`:'';
-    if(orphanWindow.items.length) bodyHTML+=`<div class="env-lane orphan"><div class="env-head"><span class="env-badge alt">NODE ROSTER</span>`
-      +`<span class="env-meta">personas not currently in a task environment</span></div>`
-      +`<div class="env-personas">${orphanWindow.items.map((personaKey)=>renderPersonaCard(personaKey)).join('')}${more}</div></div>`;
+    if(orphanWindow.items.length) bodyHTML+=`<section class="env-lane orphan"><header class="env-head"><div class="env-symbol independent">${icon('persona')}</div>`
+      +`<div class="env-identity"><span class="env-kicker">INDEPENDENT PERSONAS</span><span class="env-name">Available talent</span></div>`
+      +`<div class="env-meta"><span>${orphanWindow.items.length} people</span><span>outside a shared environment</span></div></header>`
+      +`<div class="env-team-head"><span>People</span><small>ready or working independently</small></div>`
+      +`<div class="env-personas">${orphanWindow.items.map((personaKey)=>renderPersonaCard(personaKey,'',{artifacts:artByPersona.get(personaKey)||[],liveWorkspaces:liveWorkspacesByPersona.get(personaKey)||[]})).join('')}${more}</div></section>`;
   }
   const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
     query?0:(S.observedEnvironmentCount||0)-envBlocks.length);
@@ -4848,22 +4892,21 @@ function _isMissionDoc(r,L){ return L.media_kind==='design_history'
   || /(^|\/)design_history\.json$/i.test(r.label||''); }
 function missionCardList(){
   const cards=[]; const seen=new Set();
-  const shippedSeen=new Set();
-  for(const id of S.order){ const r=S.recs.get(id); const L=r._links||{};
-    if(r.kind==='mission'||(r.kind==='artifact'&&_isMissionDoc(r,L))){
-      // the PROJECT record from the same kernel carries the human task text;
-      // MANY legs of one mission ship many design-history records — ONE card
-      // per (kernel, task), pointing at the newest record discovered.
-      const missionRun=runOf(r)||id;
-      const proj=S.order.map((x)=>S.recs.get(x)).find((p)=>p&&p.kind==='project'
-        &&p._kernel===r._kernel&&runOf(p)===missionRun);
-      const task=(proj&&proj.label)||r.label||'mission';
-      const dedupe=(r._kernel||r._base||'')+'::'+missionRun;
-      if(shippedSeen.has(dedupe)) continue; shippedSeen.add(dedupe);
-      // A signed design-history artifact proves publication, not acceptance.
-      // Running/paused/terminal state comes from the live node when available.
-      cards.push({key:'rec:'+id,task,state:'published',kernel:r._kernel||'',
-        meta:[(r._kernel||'').slice(0,16)],recId:id}); } }
+  const records=S.order.map((id)=>S.recs.get(id)).filter(Boolean);
+  const projects=records.filter((r)=>r.kind==='project');
+  const projectFor=(kernel,run='')=>projects.find((p)=>p._kernel===kernel&&run&&runOf(p)===run)
+    ||[...projects].reverse().find((p)=>p._kernel===kernel);
+  const humanTask=(value,kernel,run='')=>{ const raw=String(value||'').trim();
+    if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw)) return projectFor(kernel,run)?.label||'Untitled mission';
+    return raw; };
+  // Project/mission records carry the actual task. Design-history JSON is evidence
+  // owned by the mission, never a second mission card.
+  for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
+    if(!r||!['project','mission'].includes(r.kind)) continue;
+    const run=runOf(r)||'';
+    cards.push({key:`record:${r._kernel}:${run||id}`,task:humanTask(r.label,r._kernel,run),state:'published',
+      kernel:r._kernel||'',meta:[run?run.slice(0,26):'signed mission record'],recId:id,run});
+  }
   // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
   // monitors; opening one still verifies every fetched file body against sha256.
@@ -4872,10 +4915,9 @@ function missionCardList(){
     if(state.ended||Date.now()-(state.receivedAt||0)>20000||seen.has(nodeRun)) continue;
     seen.add(nodeRun);
     const nodeId=state.snapshot?.node_id||'';
-    const project=S.order.map((id)=>S.recs.get(id)).find((r)=>r&&r.kind==='project'&&runOf(r)===state.run
-      &&(!nodeId||r._kernel===nodeId));
+    const project=projectFor(nodeId,state.run);
     const calls=(state.snapshot?.active?.calls||[]).length;
-    cards.unshift({key:'live:'+nodeRun,task:project?.label||state.snapshot?.task||state.run,state:'running',kernel:nodeId||kernelForBase(state.base),
+    cards.unshift({key:'live:'+nodeRun,task:humanTask(project?.label||state.snapshot?.task,nodeId,state.run),state:'running',kernel:nodeId||kernelForBase(state.base),
       meta:[state.run.slice(0,26),`${state.files.size} live files`,calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run});
   }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
@@ -4889,12 +4931,20 @@ function missionCardList(){
       if(seen.has(nodeRun)||S.liveArtifactEnded.has(nodeRun)) continue; seen.add(nodeRun);
       const live=liveArtifactState(base,run); const files=live?.files?.size||0;
       const calls=(live?.snapshot?.active?.calls||[]).length;
-      cards.unshift({key:'run:'+nodeRun,task:busy||run,state:'running',kernel:kernelForBase(base),meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
+      const kernel=kernelForBase(base);
+      cards.unshift({key:'run:'+nodeRun,task:humanTask(busy,kernel,run),state:'running',kernel,meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
     for(const p of (v.paused_missions||[])){
       const run=String(p.run||p.run_id||p); const nodeRun=_liveRunKey(base,run); if(!run||seen.has(nodeRun)) continue; seen.add(nodeRun);
-      cards.push({key:'pause:'+nodeRun,task:String(p.task||run),state:'paused',kernel:kernelForBase(base),
+      const kernel=kernelForBase(base);
+      cards.push({key:'pause:'+nodeRun,task:humanTask(p.task,kernel,run),state:'paused',kernel,
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
-  return S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
+  const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
+  const grouped=new Map(), rank={running:4,paused:3,published:1};
+  for(const card of scoped){ const key=`${card.kernel}::${String(card.task).toLowerCase().replace(/\s+/g,' ').trim()}`;
+    const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
+    const winner=(rank[card.state]||0)>(rank[prev.state]||0)?card:prev;
+    grouped.set(key,{...prev,...winner,key,meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,4)}); }
+  return [...grouped.values()];
 }
 // The strip needs each node's run state (the token-gated part of /status);
 // prefetch statuses for every discovered base so running/paused missions show
@@ -4909,18 +4959,22 @@ function prefetchNodeStatuses(){
     fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }
 }
 function renderMissions(){
-  const box=$('#missions'), wrap=$('#missionCards'); if(!box||!wrap) return;
+  const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'); if(!box||!wrap) return;
   const cards=missionCardList();
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
     priorityOf:(c)=>c.state==='running'?1e6:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
+  const active=window.items.find((c)=>c.state==='running')||window.items[0];
+  if(count) count.textContent=`${cards.length} mission${cards.length===1?'':'s'} · ${active.state}`;
+  if(headline) headline.textContent=active.task;
+  if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const html=window.items.map((c)=>
-    `<div class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
-    +`<span class="mtask" title="${esc(c.task)}">${esc(c.task)}</span>`
-    +`<span class="mmeta"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
-    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</span></div>`).join('');
+    `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
+    +`<div class="mission-state-dot ms-${esc(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
+    +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
+    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('');
   if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
 }
 
@@ -4966,7 +5020,7 @@ function wire(){
     const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],[data-kernel-core],.mcard'); if(!t) return;
     e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
   // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
-  $('#sysStreamTabs').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
+  $('#sysStreamTabs')?.addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
     S.sysFlt=b.dataset.flt; [...e.currentTarget.children].forEach((c)=>{ c.classList.toggle('on',c===b); c.setAttribute('aria-pressed',String(c===b)); }); renderInteractionStream(); });
   // Global navigator: select a kernel to move from aggregate network mode to
   // its exact env/persona window. ALL NODES clears the scope without discarding
@@ -4993,6 +5047,16 @@ function wire(){
     // click doesn't also open the drawer.
     const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=_entityKeyFromDom(fb.dataset.follow);
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
+    const liveOutput=e.target.closest('[data-live-output-run]'); if(liveOutput){ e.stopPropagation();
+      S._lastFocus=document.activeElement; S.views=[()=>operatorRunView(liveOutput.dataset.liveOutputBase||'',liveOutput.dataset.liveOutputRun)];
+      $('#detailwrap').classList.add('open'); renderTop(); return; }
+    // Owned outputs live inside their persona/environment card. Resolve the
+    // output before the enclosing card so clicking a deliverable opens that
+    // deliverable rather than its owner.
+    const ar=e.target.closest('[data-artid]'); if(ar){ e.stopPropagation(); const aid=ar.dataset.artid;
+      const rid=S.recs.has(aid)?aid:S.order.find((id)=>{ const r=S.recs.get(id);
+        return r&&((r.record_id||r.card_id)===aid||(r.did||'').includes(aid)); });
+      if(rid) openDetail(rid); else log('artifact',`no viewable record for ${String(aid).slice(0,16)} (not yet exported)`,false); return; }
     // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
     // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
     const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard, kernel=pc.dataset.pkernel||'';
@@ -5008,10 +5072,7 @@ function wire(){
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
         return r.kind==='env'&&(!kernel||r._kernel===kernel)&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
       if(rid) openDetail(rid); return; }
-    const ar=e.target.closest('[data-artid]'); if(ar){ const aid=ar.dataset.artid;
-      const rid=S.recs.has(aid)?aid:S.order.find((id)=>{ const r=S.recs.get(id);
-        return r&&((r.record_id||r.card_id)===aid||(r.did||'').includes(aid)); });
-      if(rid) openDetail(rid); else log('artifact',`no viewable record for ${String(aid).slice(0,16)} (not yet exported)`,false); } });
+    });
   // constellation node click → FOLLOW that persona (focus the stage + feed on it);
   // click the same node (or "show all") to clear. The full drawer opens from the card.
   const g=$('#sysGraph'); if(g) g.addEventListener('click',(e)=>{
@@ -5020,7 +5081,7 @@ function wire(){
       renderGlobalKernels(); renderMissions(); refreshSystemView(); discover().catch(()=>{}); return; }
     const node=e.target.closest('[data-gp]'); if(!node) return;
     const personaKey=_entityKeyFromDom(node.dataset.gp); S.follow=(S.follow===personaKey)?null:personaKey; _applyFollow(); renderInteractionStream(); });
-  $('#cfUnfollow').addEventListener('click',()=>{ S.follow=null; _applyFollow(); renderInteractionStream(); });
+  $('#cfUnfollow')?.addEventListener('click',()=>{ S.follow=null; _applyFollow(); renderInteractionStream(); });
   // collapse / expand the constellation rail
   $('#conToggle').addEventListener('click',(e)=>{ $('#constellation').classList.toggle('collapsed');
     e.currentTarget.setAttribute('aria-expanded',String(!$('#constellation').classList.contains('collapsed'))); });
