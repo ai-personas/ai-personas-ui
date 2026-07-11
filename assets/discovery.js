@@ -1451,7 +1451,11 @@ async function discover(){
   // on a slow tunnel (each run does parallel per-base fetches + telemetry loads).
   if(_discoverBusy) return; _discoverBusy=true;
   try{
-  $('#log').innerHTML=''; $('#status').textContent='bootstrapping discovery…';
+  $('#log').innerHTML='';
+  // A periodic refresh may wait on a slow public tunnel. Keep the last fully
+  // verified count and timestamp visible while that happens; "bootstrapping"
+  // is truthful only before this tab has verified any node or record at all.
+  if(!S.recs.size&&!(S.globalAnnouncements?.size)) $('#status').textContent='bootstrapping discovery…';
   const [_txt,_global,_ipfs,_local]=await Promise.all([
     loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
     loadGlobalNodes(),                                              // optional ?resolver= signed locator → peers/relays
