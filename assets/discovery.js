@@ -1012,6 +1012,29 @@ async function loadGlobalNodes(){
   }
   S.globalPeers=freshPeers;
   if(S.globalPeers.size) log('resolver',`verified optional resolver peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
+  // Paint verified announcements immediately. A public tunnel can take longer to
+  // deliver its provider index and record documents; hiding an already-verified
+  // node until that entire second phase finishes makes a healthy bootstrap look
+  // like an empty network.
+  const announced=[...S.globalAnnouncements.values()];
+  if(announced.length){
+    renderGlobalKernels(); renderCoordGraph([],0); updateVitalsCounters();
+    if(!S.recs.size){
+      const expected=announced.reduce((n,a)=>n+(Number(a.record_count)||0),0);
+      const sample=String(announced[0]?.kernel_id||'node').replace(/^kernel:/,'');
+      const host=$('#sysEnvs');
+      if(host) host.innerHTML=`<section class="discovery-progress" role="status" aria-live="polite">
+        <div class="discovery-orbit" aria-hidden="true"><span></span><i></i></div>
+        <div><span class="discovery-kicker">SIGNED NODE ANNOUNCEMENT VERIFIED</span>
+          <h2>${esc(sample.length>18?sample.slice(0,17)+'…':sample)}</h2>
+          <p>Node identity and lease verified. Fetching and checking ${compactCount(expected)} signed public record${expected===1?'':'s'}…</p>
+          <div class="discovery-steps"><span class="done">01 · locate</span><span class="done">02 · verify node</span><span class="active">03 · verify records</span></div>
+        </div>
+      </section>`;
+      const status=$('#status');
+      if(status) status.innerHTML=`<span class="ok">${announced.length}</span> signed node announcement${announced.length===1?'':'s'} verified · fetching ${compactCount(expected)} public record${expected===1?'':'s'}…`;
+    }
+  }
   return rows;
 }
 async function discoverFrom(base,plane){
