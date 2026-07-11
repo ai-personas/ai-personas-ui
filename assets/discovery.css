@@ -1,9 +1,9 @@
 :root{
   color-scheme:dark;
-  --bg:#0a0e14; --bg2:#0d131c; --panel:#0f1620; --line:#1c2733; --line2:#233040;
+  --bg:#070b12; --bg2:#0a111b; --panel:#0d1622; --line:#182536; --line2:#26384e;
   /* --dim/--mut lifted to clear WCAG-AA contrast (≥4.5:1) on the dark substrate
      while keeping the ink > dim > mut legibility hierarchy. */
-  --ink:#cdd9e5; --dim:#90a0b2; --mut:#7d8ea2;
+  --ink:#d9e6f2; --dim:#9fb0c3; --mut:#71849a;
   /* Re-roled to a BIOLOGICAL / ACT language (not stock up/down):
      --up  = RESERVED for Ed25519-verified + the heartbeat (so "verified" and "alive" stay unmistakable)
      --int = COORDINATE   --purple = PRODUCE / persona-lead   --intr = VERIFY
@@ -12,7 +12,7 @@
      accents RETUNED to a Linear/Vercel-grade restrained palette (slight desaturation),
      all re-verified AA (>6:1) on --bg with legible --ink-on-accent. */
   --up:#21d07a; --up2:#0f7a45; --down:#f06a7e; --down2:#7a1f33;
-  --int:#4c9ff0; --intr:#19c39a; --amber:#f0a73a; --purple:#a081e0; --pink:#e86aa6;
+  --int:#56b5ff; --intr:#25d6b0; --amber:#ffb84d; --purple:#ad8cff; --pink:#ff72b6;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   /* Humanist grotesque for ALL chrome/prose/labels (system-ui = zero network dep). */
   --sans:'Inter var','Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
@@ -34,7 +34,7 @@
   /* ---- spacing ladder (2/4/8/12/16/20/24/32) + semantic aliases ---- */
   --space-0:2px; --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-7:32px;
   --gutter:clamp(12px,2vw,20px); --band-py:10px; --card-pad:12px; --section-gap:8px;
-  --radius-sm:4px; --radius-md:6px; --radius-lg:8px; --radius-pill:999px;
+  --radius-sm:6px; --radius-md:9px; --radius-lg:14px; --radius-pill:999px;
   --chip-h:18px; --chip-px:7px; --chip-radius:5px;
   --stroke-base:1.5px; --stroke-bold:2px; --stroke-heavy:2.5px;
   /* ---- type scale + weight/leading/tracking ladders ---- */
@@ -956,6 +956,109 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap;overflow-w
   font:var(--w-semi) var(--fs-meta)/1.6 var(--sans);color:var(--think-col-hi);letter-spacing:var(--tr-caps);
   background:linear-gradient(90deg,transparent,var(--think-bg) 40%)}
 .opout{font-family:var(--mono)}
+
+/* ===================== VISUAL REFRESH · NETWORK OBSERVATORY =====================
+   This layer gives the dense live workspace a clear depth hierarchy without
+   changing its information architecture or the meaning of any state colour. */
+body{
+  background:
+    radial-gradient(900px 520px at 12% -12%,rgba(86,181,255,.13),transparent 62%),
+    radial-gradient(760px 500px at 88% 8%,rgba(173,140,255,.09),transparent 66%),
+    linear-gradient(180deg,#080d15 0%,var(--bg) 46%,#05080d 100%);
+}
+.vitals{
+  min-height:58px;padding:9px var(--gutter);gap:14px;
+  background:linear-gradient(110deg,rgba(13,24,38,.97),rgba(7,13,22,.94));
+  border-bottom-color:rgba(86,181,255,.22);
+  box-shadow:0 14px 38px rgba(0,0,0,.28),inset 0 -1px 0 rgba(255,255,255,.025);
+}
+.brandmark{align-items:center;gap:9px}
+.brandmark::before{
+  content:'';width:29px;height:29px;flex:0 0 auto;border-radius:9px;
+  background:
+    radial-gradient(circle at 50% 50%,#07121b 0 24%,transparent 26%),
+    conic-gradient(from 215deg,var(--up),var(--int),var(--purple),var(--up));
+  box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 0 22px rgba(86,181,255,.22);
+  transform:rotate(-8deg);
+}
+.mark{font-size:17px;letter-spacing:-.03em}
+.vsub{color:#7f97ae;letter-spacing:.14em}
+.livedot{width:7px;height:7px;margin-right:-5px}
+.vgroup-live{padding:5px 8px 5px 12px;border:1px solid rgba(86,181,255,.12);border-radius:12px;background:rgba(4,10,17,.42)}
+.vgroup-tools{padding:5px;border:1px solid rgba(159,176,195,.12);border-radius:12px;background:rgba(3,8,14,.42)}
+.stat{padding:3px 7px;border-left:1px solid var(--divider)}
+.stat:first-child{border-left:0}
+.stat .k{letter-spacing:.09em}
+.verify-badge{border-radius:var(--radius-pill);padding:4px 10px;box-shadow:0 0 18px rgba(33,208,122,.08)}
+.vitals input,.chip,.btn{background:rgba(12,22,34,.9)}
+.btn{border-color:#2b4058}
+.globalbar{
+  min-height:42px;padding-block:7px;
+  background:linear-gradient(90deg,rgba(9,17,28,.96),rgba(7,13,22,.9));
+  border-bottom-color:rgba(86,181,255,.12);
+}
+.network-scope,.gk{border-radius:var(--radius-pill);padding-inline:10px}
+.network-scope.on,.gk.on{box-shadow:0 0 0 1px rgba(86,181,255,.12) inset,0 0 20px rgba(86,181,255,.07)}
+.missions{padding-block:12px;background:rgba(7,13,22,.76);border-bottom:0}
+.missions>.globalbar-label{padding-top:10px;color:#8ea6bd;letter-spacing:.14em}
+.mission-cards{gap:10px}
+.mcard{
+  min-width:260px;padding:12px 14px;border-radius:12px;border-left-width:3px;
+  background:linear-gradient(145deg,rgba(16,28,43,.96),rgba(10,18,29,.96));
+  box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.035);
+}
+.mcard .mtask{font-size:13px}
+.constellation{
+  margin:0 var(--gutter) 10px;padding:10px 14px 8px;
+  background:
+    linear-gradient(rgba(86,181,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(86,181,255,.025) 1px,transparent 1px),
+    linear-gradient(145deg,rgba(8,15,25,.98),rgba(4,9,15,.98));
+  background-size:28px 28px,28px 28px,auto;
+  border:1px solid #1e3146;border-radius:var(--radius-lg);
+  box-shadow:0 12px 32px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.025);
+}
+.con-head{padding:2px 1px 6px}
+.con-title{color:#b7c9d9;letter-spacing:.13em}
+.scope-pill{border-radius:var(--radius-pill);padding:3px 9px}
+#sysGraph{filter:drop-shadow(0 8px 18px rgba(0,0,0,.24))}
+.stage-wrap{gap:12px;padding:0 var(--gutter) 10px}
+.stage{padding:0;scrollbar-gutter:stable}
+.stage-summary{
+  top:0;margin:0 0 12px;padding:10px 2px;
+  background:linear-gradient(180deg,rgba(7,11,18,.98),rgba(7,11,18,.88));
+  border-bottom-color:rgba(86,181,255,.12);
+}
+.env-lane{
+  margin-bottom:18px;border-radius:16px;border-left-width:3px;
+  background:linear-gradient(145deg,rgba(14,25,39,.98),rgba(9,17,28,.98));
+  box-shadow:0 14px 34px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.035);
+}
+.env-head{padding:13px 16px;background:linear-gradient(90deg,rgba(19,34,51,.96),rgba(11,21,34,.96))}
+.env-badge{padding:3px 8px;border-radius:var(--radius-pill)}
+.env-name{font-size:17px}
+.env-live{padding:9px 16px;background:rgba(5,11,18,.52)}
+.env-personas{gap:12px;padding:14px}
+.env-arts{padding:11px 16px;background:linear-gradient(90deg,rgba(255,184,77,.075),rgba(255,184,77,.025))}
+.art-chip{border-radius:var(--radius-pill)}
+.pcard{
+  padding:14px;border-radius:13px;background:linear-gradient(150deg,rgba(17,31,47,.98),rgba(10,19,30,.98));
+  box-shadow:0 8px 20px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);
+}
+.pcard:hover{transform:translateY(-2px);box-shadow:0 16px 30px rgba(0,0,0,.3),0 0 0 1px var(--accent-weak)}
+.pcard-top{padding-bottom:9px;margin-bottom:10px}
+.pc-name{font-size:16px;letter-spacing:-.015em}
+.pc-stats span{padding:3px 7px;background:rgba(4,10,17,.52)}
+.coordfeed{
+  border:1px solid #203249!important;border-radius:var(--radius-lg);overflow:hidden;
+  background:linear-gradient(180deg,rgba(10,18,29,.98),rgba(5,10,17,.98));
+  box-shadow:0 14px 34px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.03);
+}
+.cf-head{min-height:48px;padding:11px 13px;background:linear-gradient(90deg,rgba(18,31,47,.9),rgba(9,17,28,.9))}
+.cf-tabs{margin:9px 10px;padding:5px;border-radius:10px;background:rgba(3,8,14,.72)}
+.ix{padding-block:6px;background-image:linear-gradient(90deg,color-mix(in srgb,var(--lane,transparent) 9%,transparent),transparent 150px)}
+footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding-block:8px}
+.drawer,.logcard{background:linear-gradient(155deg,#111d2b,#09111b)}
 
 /* ===================== RESPONSIVE LADDER (mobile-first) =====================
    BASE = phone (<=639): single column, feed stacks below the stage, no constellation.
