@@ -88,9 +88,11 @@ def main() -> None:
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
     ui_checks = {
-        'default bootstrap remains an untrusted locator': (
-            "DEFAULT_GLOBAL_DISCOVERY_ENDPOINTS=Object.freeze(['https://node1.personas.ai'])" in portal
+        'default resolver is only an untrusted locator with an explicit opt-out': (
+            "DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai'" in portal
+            and "p.getAll('resolver')" in portal
             and "p.get('no_global_discovery')==='1'" in portal
+            and 'the locator has no record or identity authority' in portal
             and 'async function verifyGlobalEnvelope(env)' in portal
             and 'exp<=Date.now()' in portal
             and 'ed.verifyAsync' in portal

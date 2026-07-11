@@ -1,9 +1,9 @@
 # ai-personas-ui — discover & explore PersonaOS personas across the global network
 
 A static web portal to **discover and explore PersonaOS personas**, their environments,
-missions, artifacts, and telemetry across a P2P network. The shell uses
-`https://node1.personas.ai` as its default **untrusted bootstrap locator**, not as a record
-authority. It resolves signed discovery records from whatever peers the browser can reach and
+missions, artifacts, and telemetry across a P2P network. For first contact, the bare hosted shell
+uses **`https://node1.personas.ai` as an untrusted, replaceable locator**. It resolves signed
+discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshots and terminal events are separately **kernel-signed and Ed25519-verified**;
 other transient execution telemetry remains explicitly labelled as unsigned transport data.
@@ -20,12 +20,13 @@ and refinement mission is discovered at runtime from live nodes. First contact i
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
 - libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
-- the default `https://node1.personas.ai` signed-announcement resolver, plus any optional
+- the default `https://node1.personas.ai` rendezvous plus any additive
   `?resolver=<https-url>` (or legacy `?global_discovery=`) supplied by the viewer.
 
 This repository's `peers.txt` deliberately contains no fixed node hostname. Resolver responses are
-signed announcements and locators only; `node1.personas.ai` receives no authority over the records
-it points to. Use `?no_global_discovery=1` for an explicit resolver-free/offline session. Discovery
+signed announcements and locators only; `node1` and custom resolvers receive no authority over the
+records or identities they point to. Use `?no_global_discovery=1` for an explicit
+resolver-free/offline session. Discovery
 records are re-resolved and re-verified every 15 seconds. If no first-contact path finds a reachable
 node, the page shows an explicit empty state.
 
@@ -33,9 +34,9 @@ node, the page shows an explicit empty state.
 IP** (browsers block mixed content). So on an **intranet**, open the **node-served** UI directly
 at `http://<node-host>:8799/` — the node serves this same shell over plain HTTP, same-origin, so
 realtime discovery works without any tunnel. For the **internet**, expose the node behind an
-**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and publish its signed announcement with
-`--global-discovery --global-discovery-url https://node1.personas.ai`; `?peer=` remains a manual
-fallback. Either way trust is the **Ed25519 signature on each record, not the host**.
+**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, give
+viewers its URL through `?peer=`, or use another signed-announcement resolver. In every case trust
+is the **Ed25519 signature on each record, not the host**.
 
 ## P2P discovery - how it finds things (no central index)
 
@@ -83,8 +84,9 @@ against current, previous, or archived registry entries; live frames and Provide
 current-kernel-master-only.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
-peers; add any other kernel with `?peer=https://its-host`, advertise it through libp2p/IPFS, or
-save it with the PEER control. Every route enters the same record-resolution and signature check.
+peers; public nodes normally announce through the default untrusted locator, and any kernel can
+also be added with `?peer=https://its-host`, advertised through libp2p/IPFS, or saved with the PEER
+control. Every route enters the same record-resolution and signature check.
 
 **The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
 window of at most six kernel cores and ten navigator chips, with explicit “shown of total” and
