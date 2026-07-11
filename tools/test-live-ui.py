@@ -39,9 +39,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def open_live_plan(page) -> None:
-    page.locator('#missions').evaluate('(element) => { element.open = true; }')
     mission = page.locator('.mcard[data-mrun="run-fixture-live"]')
-    mission.wait_for(timeout=15_000)
+    mission.wait_for(state='attached', timeout=15_000)
+    page.locator('#missions').evaluate('(element) => { element.open = true; }')
+    mission.wait_for(state='visible', timeout=5_000)
     mission.click()
     badge = page.locator('.live-artifacts .transport-badge')
     badge.wait_for(timeout=15_000)
