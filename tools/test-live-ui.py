@@ -145,6 +145,8 @@ def run(args: argparse.Namespace) -> dict:
                                    timeout=5_000)
             require(page.locator('#headerToggle').get_attribute('aria-expanded') == 'false',
                     'collapsed header disclosure state is inaccurate')
+            require(page.locator('.globalbar > #headerToggle').count() == 1,
+                    'collapsed header control overlaps content instead of joining the live navigator')
             page.locator('#headerToggle').click()
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
                                    timeout=5_000)

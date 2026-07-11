@@ -5047,6 +5047,7 @@ function wire(){
   const header=$('#appHeader'), headerToggle=$('#headerToggle');
   const setHeaderCollapsed=(collapsed)=>{ if(!header||!headerToggle) return;
     header.classList.toggle('collapsed',collapsed); document.body.classList.toggle('header-collapsed',collapsed);
+    if(collapsed) document.querySelector('.globalbar')?.prepend(headerToggle); else header.after(headerToggle);
     headerToggle.classList.toggle('collapsed',collapsed); headerToggle.setAttribute('aria-expanded',String(!collapsed));
     headerToggle.setAttribute('aria-label',collapsed?'expand status and controls':'collapse status and controls');
     headerToggle.title=collapsed?'expand status and controls':'collapse status and controls';
