@@ -1410,3 +1410,88 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   .pcard:hover,.mcard:hover{transform:none}
   .drawer-wrap.open .drawer{transform:none}
 }
+
+/* ===================== CONTEXTUAL COMMAND ISLANDS =====================
+   One application control surface replaces the old stack of full-width bars.
+   Mission and topology remain useful, but read as compact workspace cards in
+   the document flow instead of permanent page headers. */
+.workspace-rail{
+  position:relative;z-index:8;display:grid;grid-template-columns:minmax(600px,1.18fr) minmax(540px,.82fr);
+  gap:10px;align-items:start;margin:8px var(--gutter) 12px
+}
+.command-shell{
+  position:relative;z-index:8;min-height:48px;margin:0;
+  border:1px solid rgba(86,181,255,.22);border-radius:16px;overflow:visible;
+  background:linear-gradient(110deg,rgba(14,26,40,.97),rgba(7,14,23,.95));
+  box-shadow:0 12px 32px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.035)
+}
+.command-shell .vitals{min-height:46px;border:0;border-radius:inherit;background:transparent;box-shadow:none}
+.command-shell .globalbar{
+  position:absolute;z-index:7;top:0;left:225px;right:285px;width:auto;min-height:46px;height:46px;
+  padding:5px 10px;border:0;background:transparent;mask-image:linear-gradient(90deg,transparent,#000 12px,#000 calc(100% - 18px),transparent)
+}
+.command-shell .network-scope-status{overflow:hidden;text-overflow:ellipsis}
+.command-shell:has(.vitals.tools-open) .globalbar{display:none}
+.command-shell:has(.vitals.collapsed){min-height:36px}
+.command-shell:has(.vitals.collapsed) .globalbar{left:104px;right:6px;height:34px;min-height:34px;padding-block:4px;mask-image:none}
+.command-shell .header-toggle{position:absolute;top:8px;right:8px}
+.command-shell .header-toggle.collapsed{position:relative;z-index:9;margin:4px 3px 4px 4px}
+.command-shell .header-tools-toggle{top:8px;right:78px}
+.command-shell .vitals:not(.tools-open){padding-left:12px;padding-right:168px}
+.command-shell .vitals:not(.tools-open) .vgroup-live{position:absolute;right:165px}
+
+.context-dock{
+  display:grid;grid-template-columns:minmax(290px,.95fr) minmax(240px,1.05fr);gap:10px;
+  align-items:start;margin:0
+}
+.context-dock .missions{min-width:0;margin:0;padding:0}
+.context-dock .mission-summary{min-height:48px;height:48px;border-radius:14px;box-shadow:none}
+.context-dock .mission-cards{position:absolute;z-index:12;left:var(--gutter);right:var(--gutter);margin-top:6px;padding:12px;
+  border:1px solid #263b53;border-radius:16px;background:rgba(7,15,25,.985);box-shadow:0 22px 60px rgba(0,0,0,.5)}
+.context-dock .constellation{min-width:0;margin:0;padding:7px 10px;border-radius:14px;box-shadow:none}
+.context-dock .constellation.collapsed{height:48px;padding:7px 10px}
+.context-dock .con-head{height:32px;padding:0}
+.context-dock .con-title{white-space:nowrap}
+.context-dock .constellation.collapsed #sysGraphCap,
+.context-dock .constellation.collapsed .graph-window,
+.context-dock .constellation.collapsed .cg-legend{display:none}
+.context-dock .constellation.collapsed .con-toggle{margin-left:auto;flex:0 0 auto}
+.context-dock .scope-pill{min-width:0}
+.context-dock #sysGraph{margin-top:6px}
+.context-dock:has(.constellation:not(.collapsed)){grid-template-columns:1fr}
+.context-dock:has(.constellation:not(.collapsed)) .missions{max-width:560px}
+.stage-wrap{padding-top:0}
+.stage-summary{position:static!important}
+
+@media(max-width:1199px){
+  .workspace-rail{grid-template-columns:minmax(0,1fr);margin:7px var(--gutter) 12px}
+  .command-shell .globalbar{left:205px;right:265px}
+  .command-shell .network-scope-status{display:none}
+  .context-dock{grid-template-columns:minmax(270px,.8fr) minmax(350px,1.2fr)}
+  .context-dock #sysGraphCap{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+@media(max-width:719px){
+  .workspace-rail{gap:8px;margin:6px var(--gutter) 9px}
+  .command-shell .globalbar{display:none}
+  .command-shell .vitals:not(.tools-open){padding-right:84px}
+  .command-shell .vitals:not(.tools-open) .vgroup-live{right:80px}
+  .command-shell .header-toggle{top:8px;right:7px}
+  .command-shell .header-tools-toggle{top:8px;right:43px}
+  .context-dock{grid-template-columns:minmax(0,1fr) 46px;gap:7px;margin-bottom:0}
+  .context-dock .constellation{display:block}
+  .context-dock .mission-summary{height:46px;min-height:46px}
+  .context-dock .mission-summary-meta{display:none}
+  .context-dock .constellation.collapsed{width:46px;height:46px;padding:6px}
+  .context-dock .constellation.collapsed .con-head>*:not(.con-toggle){display:none}
+  .context-dock .constellation.collapsed .con-head{display:grid;place-items:center;height:32px}
+  .context-dock .constellation.collapsed .con-toggle{margin:0;width:32px;height:32px;padding:0}
+  .context-dock:has(.constellation:not(.collapsed)){display:block}
+  .context-dock:has(.constellation:not(.collapsed)) .missions{margin-bottom:7px;max-width:none}
+  .context-dock .mission-cards{left:var(--gutter);right:var(--gutter)}
+}
+@media(max-width:419px){
+  .command-shell .vitals:not(.tools-open) .vcounts #st-active{display:none}
+  .command-shell .vitals:not(.tools-open) .vgroup-live{right:76px}
+  .command-shell .brandmark::before{width:27px;height:27px}
+  .command-shell .mark{font-size:16px}
+}
