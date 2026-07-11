@@ -122,6 +122,12 @@ def run(args: argparse.Namespace) -> dict:
                     'artifact JSON filename was presented as a mission task')
             require(page.locator('.env-card .owned-outputs').count() >= 1,
                     'environment-scoped deliverable was not placed with its environment')
+            require(page.locator('.env-card .env-card-avatar').count() >= 1,
+                    'environment did not receive collectible card identity artwork')
+            require(page.locator('.env-card .env-card-stats > span').count() >= 3,
+                    'environment card omitted useful workspace facts')
+            require(page.locator('.env-card .env-card-footer').count() >= 1,
+                    'environment card omitted ownership context')
             require(page.locator('.env-card .pcard').count() == 0,
                     'persona cards remain nested inside environment cards')
             require(page.locator('.persona-deck > .pcard').count() == 3,
@@ -157,6 +163,8 @@ def run(args: argparse.Namespace) -> dict:
             followed.locator('.pc-follow').click()
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-network-messages.png'), full_page=True)
+                page.locator('.environment-section').screenshot(
+                    path=str(screenshots / 'desktop-environment-cards.png'))
             provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
             require(provider_refused.count() >= 2,
                     'tampered ProviderRecord document entered browser discovery')
@@ -526,7 +534,7 @@ def run(args: argparse.Namespace) -> dict:
             }""")
             require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
                     'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
-            require(not metrics['overlaps'], 'mobile page bands overlap')
+            require(not metrics['overlaps'], 'mobile page bands overlap: ' + json.dumps(metrics['overlaps']))
             mobile.locator('#missions').evaluate('(element) => { element.open = true; }')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
