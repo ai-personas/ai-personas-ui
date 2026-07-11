@@ -1387,7 +1387,7 @@ function upsert(r){
     _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
-    capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
+    capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
   try{ NETWORK.upsertEntity({...r,kernel_id:r._kernel,record_id:r.record_id||r.card_id}); }catch(e){
     log('scale',`record identity refused: ${String(e&&e.message||e).slice(0,90)}`,false); }
   while(S.order.length>NETWORK_LIMITS.cachedRecords){
@@ -2327,6 +2327,39 @@ function _personaInitials(name){
   return (parts.length>1?(parts[0][0]+parts[parts.length-1][0]):parts[0].slice(0,2)).toUpperCase();
 }
 function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=(h*31+c.charCodeAt(0))%360; return h; }
+const _avatarBlobURLs=new Map(), _avatarPending=new Map();
+function _personaRecordFor(personaKey){ const ref=_personaRef(personaKey);
+  for(let i=S.order.length-1;i>=0;i--){ const r=S.recs.get(S.order[i]); if(!r||r.kind!=='persona') continue;
+    if(_personaKey(r._kernel,_shortId(r.did||r.record_id))===ref.key) return r; }
+  return null;
+}
+function _personaAvatarDescriptor(personaKey){ const record=_personaRecordFor(personaKey);
+  const item=(record?.interfaces||[]).find((entry)=>String(entry?.kind||'').toUpperCase()==='AVATAR');
+  const endpoint=String(item?.endpoint||''), hash=String(item?.sha256||'').replace(/^sha256:/,'').toLowerCase();
+  if(!record||!endpoint||!/^[0-9a-f]{64}$/.test(hash)) return null;
+  const url=join(record._base||'',endpoint); return {url,hash,key:`${url}|${hash}`};
+}
+function _personaAvatarHTML(personaKey,name,initials){ const avatar=_personaAvatarDescriptor(personaKey);
+  const cached=avatar&&_avatarBlobURLs.get(avatar.key); const src=cached||'assets/persona-avatar-fallback.webp';
+  return `<div class="pc-avatar ${avatar?(cached?'stored verified':'stored loading'):'fallback'}"><img class="pc-avatar-img" src="${esc(src)}" alt="${esc(name)} portrait" loading="lazy" decoding="async"`
+    +(avatar&&!cached?` data-avatar-url="${esc(avatar.url)}" data-avatar-hash="${esc(avatar.hash)}" data-avatar-key="${esc(avatar.key)}"`:'')+`>`
+    +`<span class="pc-avatar-initials">${esc(initials)}</span></div>`;
+}
+async function _hydratePersonaAvatar(img){ const key=img.dataset.avatarKey, url=img.dataset.avatarUrl, expected=img.dataset.avatarHash;
+  if(!key||!url||!expected) return; let pending=_avatarPending.get(key);
+  if(!pending){ pending=(async()=>{ const response=await fetch(url,secureFetchInit(url)); if(!response.ok) throw new Error(`avatar ${response.status}`);
+      const bytes=new Uint8Array(await readBoundedResponseBytes(response,4*1024*1024));
+      if((await sha256Hex(bytes)).toLowerCase()!==expected) throw new Error('avatar hash mismatch');
+      const type=String(response.headers.get('content-type')||'image/png').split(';')[0];
+      if(!type.startsWith('image/')) throw new Error('avatar media type refused');
+      const blobURL=URL.createObjectURL(new Blob([bytes],{type})); _avatarBlobURLs.set(key,blobURL); return blobURL;
+    })().catch(()=>null).finally(()=>_avatarPending.delete(key)); _avatarPending.set(key,pending); }
+  const blobURL=await pending; if(!blobURL) return;
+  document.querySelectorAll('.pc-avatar-img[data-avatar-key]').forEach((node)=>{ if(node.dataset.avatarKey===key){ node.src=blobURL;
+    const frame=node.closest('.pc-avatar'); frame?.classList.remove('fallback','loading'); frame?.classList.add('stored','verified');
+    node.removeAttribute('data-avatar-url'); node.removeAttribute('data-avatar-hash'); node.removeAttribute('data-avatar-key'); } });
+}
+function hydratePersonaAvatars(){ document.querySelectorAll('.pc-avatar-img[data-avatar-key]').forEach((img)=>_hydratePersonaAvatar(img)); }
 function _artifactStateInfo(r){
   const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
   const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
@@ -2456,12 +2489,18 @@ function renderPersonaCard(pid,kernel='',context={}){
   const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, toolAct?._t||0);
   if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
   const initials=_personaInitials(name), hue=_personaAvatarHue(personaKey);
+  const environments=(context.environments||[]).filter(Boolean);
+  const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
+    +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
+    +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
+    :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<header class="pc-profile"><div class="pc-avatar"><span>${esc(initials)}</span><i class="pc-dot ${dotCls}"></i></div>`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey,name,initials)}`
+    +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
     +`<div class="pc-identity"><span class="pc-name">${esc(name)}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +environmentHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
     +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My live worktree',scope:'persona worktree'})
     +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
@@ -2989,31 +3028,7 @@ async function refreshSystemView(){
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
-  const laneHTML=(b)=>{
-    const groupKey=envKey(b.kernel,b.sid), encodedGroup=encodeURIComponent(groupKey);
-    const memberLimit=progressiveGroupLimit(groupKey,S.personaWindows,{
-      initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
-    });
-    const query=String(S.q||'').trim();
-    const laneMatches=query&&`${b.kernel} ${b.name} ${b.type} ${b.status}`.toLowerCase().includes(query);
-    let memberWindow=selectPriorityWindow(b.members,{
-      query:laneMatches?'':query,limit:memberLimit,keyOf:(sid)=>sid,
-      priorityOf:(sid)=>_personaPriority(sid,b.kernel),searchTextOf:(sid)=>_personaSearch(sid,b.kernel),
-    });
-    if(query&&laneMatches&&!memberWindow.items.length) memberWindow=selectPriorityWindow(b.members,{
-      limit:memberLimit,keyOf:(sid)=>sid,priorityOf:(sid)=>_personaPriority(sid,b.kernel),
-    });
-    // Telemetry lanes already store kernel-qualified persona keys. Resolve both
-    // those and record-only short ids through the same idempotent parser instead
-    // of qualifying an existing key a second time (which embeds the reserved NUL
-    // separator inside the identity and breaks later refreshes).
-    memberWindow.items.forEach((sid)=>S.visiblePersonaIds.add(_personaRef(sid,b.kernel).key));
-    const hiddenMembers=Math.max(0,memberWindow.matched-memberWindow.returned);
-    const more=hiddenMembers?`<div class="persona-window-note"><span>showing ${memberWindow.returned} of ${memberWindow.matched} matching personas</span>`
-      +`<button type="button" class="window-more" data-more-personas="${esc(encodedGroup)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenMembers)} more</button></div>`:'';
-    const cards=b.members.length?(memberWindow.items.map((sid)=>{ const key=_personaRef(sid,b.kernel).key;
-      return renderPersonaCard(sid,b.kernel,{artifacts:artByPersona.get(key)||[],liveWorkspaces:liveWorkspacesByPersona.get(key)||[]}); }).join('')+more)
-      :'<div class="l2" style="padding:8px">awaiting members</div>';
+  const envOutputContext=(b)=>{
     const manifestFiles=envManifestFiles(b);
     const arts=envArtifacts(b);
     const bundles=arts.filter((a)=>a._links&&a._links.bundle);
@@ -3033,20 +3048,18 @@ async function refreshSystemView(){
       :(manifestFiles.length?`<section class="owned-outputs env-owned-outputs"><div class="owned-outputs-head"><span>Shared outputs</span><small>environment worktree</small></div>`
         +`<button type="button" class="owned-output ds-amber" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"><span class="owned-output-icon">${icon('box','ico-sm')}</span>`
         +`<span class="owned-output-copy"><b>${esc(manifestBundleId||'Current workspace')}</b><small>${fileCount} file${fileCount===1?'':'s'}</small></span>${icon('chevron','ico-sm')}</button></section>`:''));
-    const liveRow=renderEnvLaneLive(b);
-    // roster pulled from the durable export (no live feed) is HISTORICAL — its members
-    // have departed; mark it so it reads as "who worked here", not "who is here now".
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
-    // a fully-departed env is not "active" anymore — read it as archived (muted),
-    // never the strongest positive green that says "people working here now".
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
-    return `<section class="env-lane" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
-      +`<header class="env-head"><div class="env-symbol">${icon('box')}</div><div class="env-identity"><span class="env-kicker">SHARED ENVIRONMENT</span>`
+    return {artRow,departed,statusTxt,statusOk,metaFiles};
+  };
+  const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
+    return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
+      +`<header class="env-head"><div class="env-symbol">${icon('box')}</div><div class="env-identity"><span class="env-kicker">WORKSPACE</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span></div>`
-      +`<div class="env-meta"><span class="env-state ${statusOk?'ok':''}">${esc(statusTxt)}</span><span>${esc((b.type||'workspace').replace(/_/g,' '))}</span>`
-      +(b.members.length?`<span>${b.members.length} ${departed?'contributors':'people'}</span>`:'')+(metaFiles?`<span>${metaFiles} files</span>`:'')+`</div></header>`
-      +`${liveRow}<div class="env-team-head"><span>People</span><small>activity and outputs stay with their owner</small></div><div class="env-personas">${cards}</div>${artRow}</section>`;
+      +`<div class="env-meta"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span><span>${esc((b.type||'workspace').replace(/_/g,' '))}</span>`
+      +(b.members.length?`<span>${b.members.length} ${output.departed?'contributors':'people'}</span>`:'')+(output.metaFiles?`<span>${output.metaFiles} files</span>`:'')+`</div></header>`
+      +`${liveRow}${output.artRow}</article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -3088,29 +3101,45 @@ async function refreshSystemView(){
   });
   envBlocks.length=0; envBlocks.push(...envWindow.items);
   S.envCount=Math.max(S.observedEnvironmentCount||0,_baseCandidates.length);
-  S.visiblePersonaIds.clear(); S.renderedEnvironmentKeys=new Set(envBlocks.map((b)=>envKey(b.kernel,b.sid)));
-  let bodyHTML=envBlocks.map(laneHTML).join('');
-  S.artsColdLoaded=true;   // first full lane pass done → from now on a NEW chip id mints
-  if(orphans.length){
-    const orphanKey='@orphans', orphanLimit=progressiveGroupLimit(orphanKey,S.personaWindows,{
-      initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
-    });
-    const orphanWindow=selectPriorityWindow(orphans,{
-      query,limit:orphanLimit,keyOf:(personaKey)=>personaKey,priorityOf:(personaKey)=>_personaPriority(personaKey),
-      searchTextOf:(personaKey)=>_personaSearch(personaKey),
-    });
-    orphanWindow.items.forEach((personaKey)=>S.visiblePersonaIds.add(personaKey));
-    const omitted=Math.max(0,orphanWindow.matched-orphanWindow.returned);
-    const more=omitted?`<div class="persona-window-note"><span>showing ${orphanWindow.returned} of ${orphanWindow.matched} matching personas</span>`
-      +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(orphanKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,omitted)} more</button></div>`:'';
-    if(orphanWindow.items.length) bodyHTML+=`<section class="env-lane orphan"><header class="env-head"><div class="env-symbol independent">${icon('persona')}</div>`
-      +`<div class="env-identity"><span class="env-kicker">INDEPENDENT PERSONAS</span><span class="env-name">Available talent</span></div>`
-      +`<div class="env-meta"><span>${orphanWindow.items.length} people</span><span>outside a shared environment</span></div></header>`
-      +`<div class="env-team-head"><span>People</span><small>ready or working independently</small></div>`
-      +`<div class="env-personas">${orphanWindow.items.map((personaKey)=>renderPersonaCard(personaKey,'',{artifacts:artByPersona.get(personaKey)||[],liveWorkspaces:liveWorkspacesByPersona.get(personaKey)||[]})).join('')}${more}</div></section>`;
-  }
+  S.renderedEnvironmentKeys=new Set(envBlocks.map((b)=>envKey(b.kernel,b.sid)));
+  // Personas are a primary deck, never children of environment cards. Each
+  // persona receives the exact environments whose roster or telemetry names it.
+  const personaContexts=new Map();
+  const ensurePersona=(value,kernel='')=>{ const ref=_personaRef(value,kernel); if(!ref.sid) return null;
+    let context=personaContexts.get(ref.key); if(!context){ context={key:ref.key,kernel:ref.kernel,environments:[]}; personaContexts.set(ref.key,context); }
+    return context; };
+  for(const b of _baseCandidates) for(const member of b.members){ const context=ensurePersona(member,b.kernel); if(!context) continue;
+    if(!context.environments.some((env)=>envKey(env.kernel,env.sid)===envKey(b.kernel,b.sid)))
+      context.environments.push({sid:b.sid,kernel:b.kernel,name:b.name,status:b.status,live:b.live,score:_score(b)}); }
+  for(const personaKey of orphans) ensurePersona(personaKey);
+  const personaCandidates=[...personaContexts.values()].filter((context)=>!query
+    ||_personaSearch(context.key).toLowerCase().includes(query)
+    ||context.environments.some((env)=>`${env.name} ${env.status}`.toLowerCase().includes(query)));
+  const deckKey='@persona-deck', deckLimit=progressiveGroupLimit(deckKey,S.personaWindows,{
+    initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+  });
+  const personaWindow=selectPriorityWindow(personaCandidates,{
+    limit:deckLimit,keyOf:(context)=>context.key,priorityOf:(context)=>_personaPriority(context.key),
+  });
+  S.visiblePersonaIds.clear(); personaWindow.items.forEach((context)=>S.visiblePersonaIds.add(context.key));
+  const personaCards=personaWindow.items.map((context)=>renderPersonaCard(context.key,context.kernel,{
+    environments:context.environments.slice().sort((a,b)=>b.score-a.score),
+    artifacts:artByPersona.get(context.key)||[],liveWorkspaces:liveWorkspacesByPersona.get(context.key)||[],
+  })).join('');
+  const hiddenPersonas=Math.max(0,personaWindow.matched-personaWindow.returned);
+  const morePersonas=hiddenPersonas?`<div class="persona-window-note"><span>showing ${personaWindow.returned} of ${personaWindow.matched} matching personas</span>`
+    +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(deckKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenPersonas)} more</button></div>`:'';
+  const personaSection=personaCards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
+    +`<h2>People doing the work</h2></div><p>Each card owns its identity, portrait, activity and personal worktree.</p></header>`
+    +`<div class="persona-deck">${personaCards}</div>${morePersonas}</section>`:'';
+  const environmentCards=envBlocks.map(environmentCardHTML).join('');
+  const environmentSection=environmentCards?`<section class="environment-section"><header class="stage-section-head compact"><div><span class="section-kicker">ENVIRONMENT INDEX</span>`
+    +`<h2>Shared workspaces</h2></div><p>Open a workspace for its shared state and environment-scoped outputs.</p></header>`
+    +`<div class="environment-grid">${environmentCards}</div></section>`:'';
+  S.artsColdLoaded=true;
   const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
     query?0:(S.observedEnvironmentCount||0)-envBlocks.length);
+  const bodyHTML=personaSection+environmentSection;
   const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(S.visiblePersonaIds.size)} personas on screen</strong>`
     +` <span class="scope-copy">· ${compactCount(S.envCount)} environments loaded · activity first</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
@@ -3127,6 +3156,7 @@ async function refreshSystemView(){
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
+  hydratePersonaAvatars();
   _applyFollow();
   // Focused graph selection is independent of card pagination: running/recent
   // personas remain visible even if their card is outside the current window.
@@ -4991,7 +5021,7 @@ function renderMissions(){
 function _applyFilter(){
   const q=(S.q||'').trim();
   document.querySelectorAll('.pcard').forEach((el)=>{ el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none'; });
-  document.querySelectorAll('.env-lane').forEach((lane)=>{
+  document.querySelectorAll('.env-card').forEach((lane)=>{
     const hay=lane.textContent.toLowerCase();
     lane.style.display=(!q||hay.includes(q))?'':'none'; });
   document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||li.textContent.toLowerCase().includes(q))?'':'none'; });
@@ -5014,6 +5044,16 @@ function wire(){
   // the constellation toggle keeps its rotate transform — only adopt the family class
   // + swap its ▾ for the shared disclosure chevron (CSS rotates it on .collapsed).
   const ct=$('#conToggle'); if(ct){ ct.classList.add('ghost-btn'); ct.innerHTML=icon('chevron'); }
+  const header=$('#appHeader'), headerToggle=$('#headerToggle');
+  const setHeaderCollapsed=(collapsed)=>{ if(!header||!headerToggle) return;
+    header.classList.toggle('collapsed',collapsed); document.body.classList.toggle('header-collapsed',collapsed);
+    headerToggle.classList.toggle('collapsed',collapsed); headerToggle.setAttribute('aria-expanded',String(!collapsed));
+    headerToggle.setAttribute('aria-label',collapsed?'expand status and controls':'collapse status and controls');
+    headerToggle.title=collapsed?'expand status and controls':'collapse status and controls';
+    headerToggle.innerHTML=icon('chevron','ico-sm')+`<span>${collapsed?'controls':'collapse'}</span>`;
+    try{ localStorage.setItem('personaos_header_collapsed',collapsed?'1':'0'); }catch(e){} };
+  let headerCollapsed=false; try{ headerCollapsed=localStorage.getItem('personaos_header_collapsed')==='1'; }catch(e){}
+  setHeaderCollapsed(headerCollapsed); headerToggle?.addEventListener('click',()=>setHeaderCollapsed(!header.classList.contains('collapsed')));
   // the help button (？) → stroked help-circle (keeps its aria-label/title text).
   const hbtn=$('#helpbtn'); if(hbtn) hbtn.innerHTML=icon('help');
   // ＋ PEER → stroked plus + label (keeps the button's accessible text on the label span).
@@ -5066,6 +5106,10 @@ function wire(){
       if(rid) openDetail(rid); else log('artifact',`no viewable record for ${String(aid).slice(0,16)} (not yet exported)`,false); return; }
     // the card/lane carry a SHORT id (a ULID); a discovered record's canonical
     // DID contains it (…/persona/<ULID>) — match by containment, tolerant of did form.
+    const ev=e.target.closest('[data-envrec]'); if(ev){ e.stopPropagation(); const sid=ev.dataset.envrec, kernel=ev.dataset.envkernel||'';
+      const rid=S.order.find((id)=>{ const r=S.recs.get(id);
+        return r.kind==='env'&&(!kernel||r._kernel===kernel)&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
+      if(rid) openDetail(rid); return; }
     const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard, kernel=pc.dataset.pkernel||'';
       const personaKey=_entityKeyFromDom(pc.dataset.pkey)||_personaKey(kernel,sid);
       // clicking a card that is dimmed-out under follow opens its drawer — clear the
@@ -5074,10 +5118,6 @@ function wire(){
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
         return r.kind==='persona'&&(!kernel||r._kernel===kernel)
           &&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
-      if(rid) openDetail(rid); return; }
-    const ev=e.target.closest('[data-envrec]'); if(ev){ const sid=ev.dataset.envrec, kernel=ev.dataset.envkernel||'';
-      const rid=S.order.find((id)=>{ const r=S.recs.get(id);
-        return r.kind==='env'&&(!kernel||r._kernel===kernel)&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
       if(rid) openDetail(rid); return; }
     });
   // constellation node click → FOLLOW that persona (focus the stage + feed on it);

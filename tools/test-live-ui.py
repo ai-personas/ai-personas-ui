@@ -101,7 +101,7 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('5/9 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('7/11 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
             page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
@@ -120,8 +120,19 @@ def run(args: argparse.Namespace) -> dict:
                     'legacy global activity headline remains visible')
             require(page.locator('.mcard .mtask').filter(has_text='.json').count() == 0,
                     'artifact JSON filename was presented as a mission task')
-            require(page.locator('.env-lane .owned-outputs').count() >= 1,
+            require(page.locator('.env-card .owned-outputs').count() >= 1,
                     'environment-scoped deliverable was not placed with its environment')
+            require(page.locator('.env-card .pcard').count() == 0,
+                    'persona cards remain nested inside environment cards')
+            require(page.locator('.persona-deck > .pcard').count() == 3,
+                    'persona-first deck did not render the live roster once')
+            orin = page.locator('.pcard[title="open Orin Vale"]')
+            require(orin.locator('.pc-env-chip').count() >= 1,
+                    'persona card did not name its current environment')
+            page.wait_for_function("""() => document.querySelector('.pcard[title="open Orin Vale"] .pc-avatar')
+              ?.classList.contains('verified')""", timeout=10_000)
+            require((orin.locator('.pc-avatar-img').get_attribute('src') or '').startswith('blob:'),
+                    'signed characteristic avatar was not hash-verified before rendering')
             require(page.locator('.pcard[title="open Orin Vale"]').locator(
                 '.live-owned-outputs').count() >= 1,
                     'persona-owned live worktree was not placed with its persona')
@@ -129,6 +140,12 @@ def run(args: argparse.Namespace) -> dict:
                     'recipients-only persona endpoint was omitted from recent activity')
             followed = page.locator('.pcard[title="open Mara Chen"]')
             followed.locator('.pc-follow').click()
+            page.locator('#headerToggle').click()
+            page.wait_for_function("""() => document.querySelector('#appHeader')?.offsetHeight === 0""",
+                                   timeout=5_000)
+            require(page.locator('#headerToggle').get_attribute('aria-expanded') == 'false',
+                    'collapsed header disclosure state is inaccurate')
+            page.locator('#headerToggle').click()
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
                                    timeout=5_000)
             require(followed.locator('.pc-follow').get_attribute('aria-pressed') == 'true',

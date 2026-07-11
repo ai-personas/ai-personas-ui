@@ -21,6 +21,7 @@ from nacl.signing import SigningKey
 ROOT = Path(__file__).resolve().parents[1]
 RUN = "run-fixture-live"
 WORKSPACE = "ws-0123456789abcdef01234567"
+ENV_WORKSPACE = "ws-shared-0123456789abcdef"
 PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
@@ -28,6 +29,8 @@ ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
 NODE_ID = "kernel:fixture"
 KEY_ID = "kernel-master"
 PROVIDER_OK = "provider-authority-ok"
+PROVIDER_PERSONA = "provider-persona-avatar"
+PROVIDER_ENV = "provider-environment"
 PROVIDER_DISCOVER_ONLY = "provider-discover-only"
 PROVIDER_EXPIRED_READ = "provider-expired-read"
 PROVIDER_SCOPED_READ = "provider-scoped-read"
@@ -120,6 +123,7 @@ def provider_policy(
     scope_kind: str = "",
     scope_id: str = "",
     subject_id: str | None = None,
+    subject_kind: str = "artifact",
 ) -> dict:
     grants = []
     if access_level is not None:
@@ -137,7 +141,7 @@ def provider_policy(
     payload = {
         "schema": "access-policy/1",
         "policy_id": f"acl:provider:{record_id}",
-        "subject_kind": "artifact",
+        "subject_kind": subject_kind,
         "subject_id": subject_id or record_id,
         "owner_persona_id": PERSONA,
         "access_grants": grants,
@@ -163,6 +167,11 @@ def provider_document(
     policy_subject_id: str | None = None,
     handle: str = "",
     signing_key_generation: int | None = None,
+    kind: str = "artifact",
+    did: str = "",
+    interfaces: list[dict] | None = None,
+    capability_summary: list[str] | None = None,
+    links: dict | None = None,
 ) -> dict:
     signing_key = SIGNING_KEYS[
         STATE.signing_key_generation()
@@ -176,19 +185,22 @@ def provider_document(
         scope_kind=scope_kind,
         scope_id=scope_id,
         subject_id=policy_subject_id,
+        subject_kind=kind,
     )
     record = {
         "schema": "discoverable-record/1",
         "record_id": record_id,
-        "did": f"did:personaos:{NODE_ID}/artifact/{record_id}",
-        "kind": "artifact",
+        "did": did or f"did:personaos:{NODE_ID}/{kind}/{record_id}",
+        "kind": kind,
         "label": label,
         "description": f"read-gated detail for {record_id}",
-        "capability_summary": ["provider-authority-fixture"],
+        "capability_summary": capability_summary or ["provider-authority-fixture"],
         "visibility_tier": "public",
         "access_policy_ref": policy["policy_id"],
         "content_locator_ref": f"locator:{record_id}",
     }
+    if interfaces:
+        record["interfaces"] = interfaces
     if handle:
         record["handle"] = handle
     document = {
@@ -197,7 +209,7 @@ def provider_document(
         "signature_hex": signature_hex(record, signing_key),
         "signing_key_id": KEY_ID,
         "access_policy": policy,
-        "links": {"content": f"private/{record_id}.bin", "subject_id": record_id},
+        "links": links if links is not None else {"content": f"private/{record_id}.bin", "subject_id": record_id},
         "kernel_id": NODE_ID,
         "host_kernel_id": NODE_ID,
         "base": base,
@@ -321,6 +333,8 @@ def provider_envelope(
 def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     record_ids = (
         PROVIDER_OK,
+        PROVIDER_PERSONA,
+        PROVIDER_ENV,
         PROVIDER_DISCOVER_ONLY,
         PROVIDER_EXPIRED_READ,
         PROVIDER_SCOPED_READ,
@@ -337,6 +351,34 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     urls = {record_id: f"discovery/public/records/{record_id}.json"
             for record_id in record_ids}
     valid = provider_document(base, PROVIDER_OK, "Signed provider authority accepted")
+    avatar_bytes = (ROOT / "assets" / "persona-avatar-fallback.webp").read_bytes()
+    avatar_hash = hashlib.sha256(avatar_bytes).hexdigest()
+    avatar_url = f"personas/{PERSONA}/avatar.webp"
+    persona = provider_document(
+        base,
+        PROVIDER_PERSONA,
+        "Orin Vale",
+        kind="persona",
+        did=f"did:personaos:{NODE_ID}/persona/{PERSONA}",
+        interfaces=[{
+            "kind": "AVATAR",
+            "endpoint": avatar_url,
+            "media_type": "image/webp",
+            "sha256": avatar_hash,
+            "generator": "personaos-character-avatar-fixture/1",
+        }],
+        capability_summary=["active_persona", "characteristic_avatar"],
+        links={"avatar": avatar_url},
+    )
+    environment = provider_document(
+        base,
+        PROVIDER_ENV,
+        "Four Bedroom Design Studio",
+        kind="env",
+        did=f"did:personaos:{NODE_ID}/env/{ENV}",
+        capability_summary=["workspace", "residential_design"],
+        links={},
+    )
     discover_only = provider_document(
         base, PROVIDER_DISCOVER_ONLY, "Discover-only provider", access_level=None)
     expired_read = provider_document(
@@ -395,6 +437,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     )
     envelopes = [
         provider_envelope(valid, urls[PROVIDER_OK]),
+        provider_envelope(persona, urls[PROVIDER_PERSONA]),
+        provider_envelope(environment, urls[PROVIDER_ENV]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
         provider_envelope(expired_read, urls[PROVIDER_EXPIRED_READ]),
         provider_envelope(scoped_read, urls[PROVIDER_SCOPED_READ]),
@@ -411,6 +455,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     tampered["record"]["label"] = "Tampered provider metadata must be rejected"
     return envelopes, {
         PROVIDER_OK: valid,
+        PROVIDER_PERSONA: persona,
+        PROVIDER_ENV: environment,
         PROVIDER_DISCOVER_ONLY: discover_only,
         PROVIDER_EXPIRED_READ: expired_read,
         PROVIDER_SCOPED_READ: scoped_read,
@@ -574,24 +620,32 @@ class State:
 STATE = State()
 
 
-def file_record(path: str, body: bytes, revision: int) -> dict:
+def file_record(path: str, body: bytes, revision: int, *, workspace_id: str = WORKSPACE,
+                persona_id: str = PERSONA) -> dict:
     digest = hashlib.sha256(body).hexdigest()
     return {
-        "workspace_id": WORKSPACE,
+        "workspace_id": workspace_id,
         "environment_id": ENV,
-        "persona_id": PERSONA,
+        "persona_id": persona_id,
         "path": path,
         "size_bytes": len(body),
         "sha256": digest,
         "mtime": f"2026-07-10T12:00:0{revision}+00:00",
         "media_kind": mimetypes.guess_type(path)[0] or "application/octet-stream",
-        "body_url": f"/runs/{RUN}/live-artifacts/body/{WORKSPACE}/{path}?sha256={digest}",
+        "body_url": f"/runs/{RUN}/live-artifacts/body/{workspace_id}/{path}?sha256={digest}",
     }
 
 
 def snapshot(revision: int | None = None, since_revision: str | None = None) -> dict:
     revision = STATE.get() if revision is None else revision
     files = [file_record(path, body, revision) for path, body in sorted(FILES[revision].items())]
+    files.append(file_record(
+        "shared/environment-brief.md",
+        b"# Shared environment brief\n\nCurrent constraints and team decisions.\n",
+        revision,
+        workspace_id=ENV_WORKSPACE,
+        persona_id="",
+    ))
     manifest = [{"workspace_id": item["workspace_id"], "path": item["path"], "sha256": item["sha256"]} for item in files]
     digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return signed_metadata({
@@ -625,6 +679,12 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
             "persona_id": PERSONA,
             "active_call_ids": ["call-fixture"],
             "state": "model_call_active",
+        }, {
+            "workspace_id": ENV_WORKSPACE,
+            "environment_id": ENV,
+            "persona_id": "",
+            "active_call_ids": [],
+            "state": "shared_environment_active",
         }],
         "file_count": len(files),
         "indexed_file_count": len(files),
@@ -800,6 +860,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"environments": {}, "personas": {}})
         if path == "/node/telemetry.json":
             return self.json(200, telemetry())
+        if path == f"/node/personas/{PERSONA}/avatar.webp":
+            body = (ROOT / "assets" / "persona-avatar-fallback.webp").read_bytes()
+            return self.bytes(
+                body,
+                "image/webp",
+                hashlib.sha256(body).hexdigest(),
+                name="avatar.webp",
+            )
         if path == "/node/scale":
             count = int((parse_qs(parsed.query).get("count") or ["0"])[0])
             STATE.set_scale(count)
@@ -850,10 +918,13 @@ class Handler(SimpleHTTPRequestHandler):
             if STATE.consume_tampered_poll():
                 document["task"] = "tampered after signing"
             return self.json(200, document)
-        prefix = f"/node/runs/{RUN}/live-artifacts/body/{WORKSPACE}/"
-        if path.startswith(prefix):
-            rel = unquote(path[len(prefix):])
-            body = FILES[STATE.get()].get(rel)
+        body_prefix = f"/node/runs/{RUN}/live-artifacts/body/"
+        if path.startswith(body_prefix):
+            workspace_id, _, encoded_rel = path[len(body_prefix):].partition("/")
+            rel = unquote(encoded_rel)
+            body = (b"# Shared environment brief\n\nCurrent constraints and team decisions.\n"
+                    if workspace_id == ENV_WORKSPACE and rel == "shared/environment-brief.md"
+                    else FILES[STATE.get()].get(rel) if workspace_id == WORKSPACE else None)
             if body is None:
                 return self.json(404, {"error": "not_found"})
             digest = hashlib.sha256(body).hexdigest()
