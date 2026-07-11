@@ -1095,6 +1095,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .mission-chevron{color:var(--mut);font-size:20px;transition:transform var(--dur-base) var(--ease-out)}
 .missions[open] .mission-chevron{transform:rotate(180deg)}
 .mission-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:10px;padding:10px 2px 2px;overflow:visible}
+.mission-no-match{padding:18px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:12px;text-align:center}
 .mcard{min-width:0;max-width:none;display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:12px;align-items:start;
   padding:14px 15px;border:1px solid #22364d;border-left:1px solid #22364d;border-radius:14px;
   background:linear-gradient(145deg,rgba(16,29,44,.98),rgba(9,17,28,.98))}

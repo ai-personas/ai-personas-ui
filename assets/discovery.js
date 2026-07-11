@@ -4965,15 +4965,23 @@ function renderMissions(){
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
     priorityOf:(c)=>c.state==='running'?1e6:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
-  const active=window.items.find((c)=>c.state==='running')||window.items[0];
-  if(count) count.textContent=`${cards.length} mission${cards.length===1?'':'s'} · ${active.state}`;
+  // A network-wide search can match a persona without matching its mission text.
+  // Keep the compact mission summary useful in that case and render an explicit
+  // empty filtered view instead of dereferencing an empty priority window.
+  const active=window.items.find((c)=>c.state==='running')
+    ||cards.find((c)=>c.state==='running')||window.items[0]||cards[0];
+  const matching=window.items.length===cards.length
+    ?`${cards.length} mission${cards.length===1?'':'s'}`
+    :`${window.items.length} matching · ${cards.length} total`;
+  if(count) count.textContent=`${matching} · ${active.state}`;
   if(headline) headline.textContent=active.task;
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
-  const html=window.items.map((c)=>
+  const html=window.items.length?window.items.map((c)=>
     `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
     +`<div class="mission-state-dot ms-${esc(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
     +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
-    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('');
+    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('')
+    :`<div class="mission-no-match">No missions match this network filter.</div>`;
   if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
 }
 
