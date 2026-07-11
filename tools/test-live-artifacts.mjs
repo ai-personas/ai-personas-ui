@@ -375,6 +375,8 @@ assert.match(portal, /project\?\.label\|\|state\.snapshot\?\.task\|\|state\.run/
 assert.match(portal, /query\.get\('local_discovery'\)!=='1'/);
 assert.match(portal, /location\.hostname==='ai-personas\.github\.io'/);
 assert.match(portal, /query\.get\('origin_discovery'\)==='1'/);
+assert.match(portal, /visiblePersonaIds\.add\(_personaRef\(sid,b\.kernel\)\.key\)/);
+assert.doesNotMatch(portal, /visiblePersonaIds\.add\(_personaKey\(b\.kernel,sid\)\)/);
 assert.match(portal, /setInterval\(\(\)=>\{ try\{ pollLiveArtifacts\(\)/);
 assert.match(portal, /opts\.liveFile\?\.sha256\|\|opts\.contentHash/);
 assert.match(portal, /fetchVerifiedLiveBody\(sourceUrl,expectedHash\)/);

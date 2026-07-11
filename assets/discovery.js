@@ -2942,7 +2942,11 @@ async function refreshSystemView(){
     if(query&&laneMatches&&!memberWindow.items.length) memberWindow=selectPriorityWindow(b.members,{
       limit:memberLimit,keyOf:(sid)=>sid,priorityOf:(sid)=>_personaPriority(sid,b.kernel),
     });
-    memberWindow.items.forEach((sid)=>S.visiblePersonaIds.add(_personaKey(b.kernel,sid)));
+    // Telemetry lanes already store kernel-qualified persona keys. Resolve both
+    // those and record-only short ids through the same idempotent parser instead
+    // of qualifying an existing key a second time (which embeds the reserved NUL
+    // separator inside the identity and breaks later refreshes).
+    memberWindow.items.forEach((sid)=>S.visiblePersonaIds.add(_personaRef(sid,b.kernel).key));
     const hiddenMembers=Math.max(0,memberWindow.matched-memberWindow.returned);
     const more=hiddenMembers?`<div class="persona-window-note"><span>showing ${memberWindow.returned} of ${memberWindow.matched} matching personas</span>`
       +`<button type="button" class="window-more" data-more-personas="${esc(encodedGroup)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenMembers)} more</button></div>`:'';
