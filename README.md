@@ -95,6 +95,8 @@ the graph shows at most 36 prioritised personas, while the accessible stage star
 twelve-persona deck plus a compact ten-environment workspace index and expands through search or
 **SHOW MORE**. Personas are never nested under environments; each card names the exact environments
 whose roster or live telemetry associates it with them.
+Environment records render as their own collectible workspace cards with stable identity sigils,
+live state, people/file/source facts, activity, and environment-owned outputs.
 Dense graph windows keep only about ten evenly spaced labels plus every active, recent, or followed
 persona labelled; every other exact node remains keyboard-focusable with its full tooltip, avoiding
 an unreadable text cloud without dropping identities.

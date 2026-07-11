@@ -3054,12 +3054,21 @@ async function refreshSystemView(){
     return {artRow,departed,statusTxt,statusOk,metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
+    const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
+    const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
+    const cardId=String(b.sid||b.envId||'').replace(/^env:/,'').slice(-10).toUpperCase();
     return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
-      +`<header class="env-head"><div class="env-symbol">${icon('box')}</div><div class="env-identity"><span class="env-kicker">WORKSPACE</span>`
-      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span></div>`
-      +`<div class="env-meta"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span><span>${esc((b.type||'workspace').replace(/_/g,' '))}</span>`
-      +(b.members.length?`<span>${b.members.length} ${output.departed?'contributors':'people'}</span>`:'')+(output.metaFiles?`<span>${output.metaFiles} files</span>`:'')+`</div></header>`
-      +`${liveRow}${output.artRow}</article>`;
+      +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
+      +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
+      +`<div class="env-identity"><span class="env-kicker">ENVIRONMENT CARD · ${esc(type)}</span>`
+      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
+      +`<span class="env-card-id">${esc(cardId||'WORKSPACE')}</span></div>`
+      +`<span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span></header>`
+      +`<section class="env-card-stats" aria-label="workspace facts">`
+      +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
+      +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
+      +`<span>${icon('task','ico-sm')}<b>${b.live?'live':'signed'}</b><small>source</small></span></section>`
+      +`${liveRow}${output.artRow}<div class="env-card-footer"><span>shared workspace</span><span>outputs stay environment-owned</span></div></article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
