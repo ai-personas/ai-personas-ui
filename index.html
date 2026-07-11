@@ -50,7 +50,7 @@
       <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
       <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
       <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
-      <span><b>LIVE FRAME</b> unsigned transport telemetry — useful state, not a signed record</span>
+      <span><b>UNSIGNED TRANSPORT</b> live execution telemetry — useful state, not a signed record</span>
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
@@ -66,15 +66,20 @@
     <span id="networkOverflow" class="network-overflow" hidden></span>
   </nav>
 
-  <section class="missions" id="missions" aria-label="missions" hidden>
-    <span class="globalbar-label" title="every task the discovered personas are working on, paused on, or have shipped — click a card for the full mission record">MISSIONS</span>
+  <details class="missions" id="missions" hidden>
+    <summary class="mission-summary">
+      <span class="mission-summary-icon" aria-hidden="true">◎</span>
+      <span><span class="mission-eyebrow">MISSION CONTROL</span><strong id="missionHeadline">Current work</strong></span>
+      <span class="mission-summary-meta" id="missionCount"></span>
+      <span class="mission-chevron" aria-hidden="true">⌄</span>
+    </summary>
     <div id="missionCards" class="mission-cards"></div>
-  </section>
+  </details>
 
   <!-- R1 · CONSTELLATION RAIL — supporting minimap of the node: the kernel core
        beats on the heartbeat; persona nodes breathe when live; an edge fires a
        traveling pulse when a coordination message names that persona. -->
-  <section class="constellation" id="constellation" aria-labelledby="conTitle">
+  <section class="constellation collapsed" id="constellation" aria-labelledby="conTitle">
     <div class="con-head">
       <span class="con-title" id="conTitle">LIVE&nbsp;TOPOLOGY</span>
       <span class="scope-pill" id="graphScope">GLOBAL NETWORK</span>
@@ -96,28 +101,15 @@
         <span class="lg"><span class="lg-ring r-specialist"></span>specialist</span>
         <span class="lg"><span class="lg-ring r-member"></span>member</span>
       </span>
-      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="true" aria-controls="sysGraph">▾</button>
+      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="false" aria-controls="sysGraph">▾</button>
     </div>
     <svg id="sysGraph" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
 
-  <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
+  <!-- R2 · THE STAGE — environments are shared rooms; each persona owns its
+       identity, current focus, recent activity and persona-scoped outputs. -->
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
-    <aside class="coordfeed" aria-label="live persona activity">
-      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY <span class="transport-badge">UNSIGNED TRANSPORT</span></span><span class="dim" id="sysStreamRate" role="status" aria-live="polite"></span></div>
-      <div class="cf-tabs" id="sysStreamTabs" role="group" aria-label="filter the activity feed">
-        <button data-flt="all" class="chip on" title="every live event across all personas and environments">ALL</button>
-        <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
-        <button data-flt="coord" class="chip" title="who→whom coordination messages the kernel routes between personas">COORD</button>
-        <button data-flt="verify" class="chip" title="signature and acceptance checks on each claim">VERIFY</button>
-        <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
-        <button data-flt="tool" class="chip" title="a persona reaching for / acquiring / using a tool">TOOLS</button>
-        <button data-flt="crossenv" class="chip" title="coordination that crosses from one environment into another">CROSS-ENV</button>
-      </div>
-      <ol class="cf-body" id="sysStream" role="log" aria-label="live persona coordination"></ol>
-      <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link ghost-btn" id="cfUnfollow">show all ✕</button></div>
-    </aside>
   </main>
 
   <footer>
@@ -140,6 +132,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260711-stable-refresh-status-v1"></script>
+  <script type="module" src="assets/discovery.js?v=20260711-persona-centered-v1"></script>
 </body>
 </html>
