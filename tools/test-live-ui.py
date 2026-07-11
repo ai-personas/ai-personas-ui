@@ -106,6 +106,24 @@ def run(args: argparse.Namespace) -> dict:
                                    timeout=15_000)
             page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
               .some((node) => node.textContent.includes('recorded message intent'))""", timeout=15_000)
+            compact_header_height = page.locator('#appHeader').evaluate('(element) => element.offsetHeight')
+            require(compact_header_height <= 60,
+                    f'default command dock is not compact: {compact_header_height}px')
+            require(page.locator('.vgroup-tools').evaluate(
+                '(element) => getComputedStyle(element).display') == 'none',
+                    'advanced header controls occupy permanent space')
+            require(page.locator('#missions').get_attribute('open') is None,
+                    'mission history is expanded by default')
+            require(page.locator('.mission-summary').evaluate(
+                '(element) => element.getBoundingClientRect().height') <= 52,
+                    'collapsed mission ribbon is taller than its useful content')
+            page.locator('#headerToolsToggle').click()
+            require(page.locator('.vgroup-tools').evaluate(
+                '(element) => getComputedStyle(element).display') != 'none',
+                    'command dock did not reveal search and network controls')
+            require(page.locator('#appHeader').evaluate('(element) => element.offsetHeight') > compact_header_height,
+                    'expanded command dock did not expose its control surface')
+            page.locator('#headerToolsToggle').click()
             require(page.locator('#sysGraph .cl-direct').count() == 2,
                     'shared environment scope created an inferred persona chord')
             recipients_row = page.locator('.pcard[title="open Ivo Reed"]').locator(
@@ -480,6 +498,7 @@ def run(args: argparse.Namespace) -> dict:
             scale.locator('[data-more-personas]').click()
             scale.wait_for_function("""() => document.querySelectorAll('.pcard').length === 24""",
                                     timeout=10_000)
+            scale.locator('#headerToolsToggle').click()
             scale.locator('#q').fill('Scale Persona 01999')
             scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
               .some((card) => card.textContent.includes('Scale Persona 01999'))""", timeout=10_000)
@@ -535,6 +554,11 @@ def run(args: argparse.Namespace) -> dict:
             require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
                     'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
             require(not metrics['overlaps'], 'mobile page bands overlap: ' + json.dumps(metrics['overlaps']))
+            mobile_bands = {item['selector']: item['bottom'] - item['top'] for item in metrics['rects']}
+            require(mobile_bands.get('.vitals', 999) <= 60,
+                    'mobile command dock occupies permanent expanded height')
+            require(mobile_bands.get('.missions', 999) <= 55,
+                    f"mobile mission ribbon occupies permanent expanded height: {mobile_bands.get('.missions')}px")
             mobile.locator('#missions').evaluate('(element) => { element.open = true; }')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)

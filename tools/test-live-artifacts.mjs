@@ -386,6 +386,8 @@ assert.match(portal, /class="persona-deck"/);
 assert.match(portal, /class="environment-grid"/);
 assert.match(portal, /ENVIRONMENT CARD ·/);
 assert.match(portal, /class="env-card-stats"/);
+assert.match(portal, /setHeaderToolsOpen\(false\)/);
+assert.match(portal, /headerToolsToggle/);
 assert.doesNotMatch(portal, /<div class="env-personas">\$\{cards\}/);
 assert.match(portal, /appHeader'\)\?\.offsetHeight === 0|appHeader/);
 assert.match(portal, /if\(!S\.recs\.size&&!\(S\.globalAnnouncements\?\.size\)\) \$\('#status'\)\.textContent='bootstrapping discovery…'/);

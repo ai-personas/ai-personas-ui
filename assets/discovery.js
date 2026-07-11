@@ -5053,7 +5053,13 @@ function wire(){
   // the constellation toggle keeps its rotate transform — only adopt the family class
   // + swap its ▾ for the shared disclosure chevron (CSS rotates it on .collapsed).
   const ct=$('#conToggle'); if(ct){ ct.classList.add('ghost-btn'); ct.innerHTML=icon('chevron'); }
-  const header=$('#appHeader'), headerToggle=$('#headerToggle');
+  const header=$('#appHeader'), headerToggle=$('#headerToggle'), headerToolsToggle=$('#headerToolsToggle');
+  const setHeaderToolsOpen=(open)=>{ if(!header||!headerToolsToggle) return;
+    header.classList.toggle('tools-open',open); headerToolsToggle.setAttribute('aria-expanded',String(open));
+    headerToolsToggle.setAttribute('aria-label',open?'hide search and network controls':'show search and network controls');
+    headerToolsToggle.title=open?'hide search and network controls':'show search and network controls';
+    headerToolsToggle.innerHTML=icon('chevron','ico-sm')+'<span>controls</span>'; };
+  setHeaderToolsOpen(false); headerToolsToggle?.addEventListener('click',()=>setHeaderToolsOpen(!header.classList.contains('tools-open')));
   const setHeaderCollapsed=(collapsed)=>{ if(!header||!headerToggle) return;
     header.classList.toggle('collapsed',collapsed); document.body.classList.toggle('header-collapsed',collapsed);
     if(collapsed) document.querySelector('.globalbar')?.prepend(headerToggle); else header.after(headerToggle);
