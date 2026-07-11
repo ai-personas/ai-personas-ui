@@ -2107,10 +2107,12 @@ const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate
 // (EnvironmentModelRegistry), so summarise the distinct models a persona/env used
 // → the roles/purposes each served, busiest first, as mono <code> chips. Honest:
 // pure live telemetry; renders nothing when idle.
+const _modelLabel=(value)=>{ const v=String(value||'').trim(); return /^[a-z0-9][a-z0-9._:/+@-]{0,95}$/i.test(v)?v:'model unavailable'; };
+const _modelFacet=(value)=>{ const v=String(value||'').trim(); return v.length<=64&&/^[a-z0-9][a-z0-9 _./:+-]*$/i.test(v)?v:''; };
 function _modelSummary(models){
   if(!models||!models.length) return '';
   const byM=new Map();
-  for(const m of models){ const mdl=String(m.model||'—'); const r=String(m.role||m.purpose||'');
+  for(const m of models){ const mdl=_modelLabel(m.model); const r=_modelFacet(m.role)||_modelFacet(m.purpose);
     const e=byM.get(mdl)||{n:0,roles:new Set()}; e.n++; if(r&&r!=='-') e.roles.add(PURPOSE_LABEL[r]||r); byM.set(mdl,e); }
   return [...byM.entries()].sort((a,b)=>b[1].n-a[1].n).map(([mdl,e])=>
     `<div class="grant"><span><code>${esc(mdl)}</code></span>`
@@ -2122,8 +2124,8 @@ function _liveFeed(models){
   // its recent model calls by PURPOSE with a count (newest purpose first), instead of a
   // repeating row per call that reads like a glitch ("repairing candidate" ×6 in a row).
   const byP=new Map(); let i=0;
-  for(const m of models){ const k=m.purpose||'model';
-    const e=byP.get(k)||{n:0,model:m.model,role:m.role||'',seen:i}; e.n++; e.model=m.model||e.model; if(m.role) e.role=m.role; e.seen=i++; byP.set(k,e); }
+  for(const m of models){ const k=_modelFacet(m.purpose)||'model';
+    const e=byP.get(k)||{n:0,model:_modelLabel(m.model),role:_modelFacet(m.role),seen:i}; e.n++; e.model=_modelLabel(m.model); if(_modelFacet(m.role)) e.role=_modelFacet(m.role); e.seen=i++; byP.set(k,e); }
   const order=[...byP.entries()].sort((a,b)=>b[1].seen-a[1].seen);   // most-recently-used purpose first
   return order.map(([p,e])=>{
     const lbl=PURPOSE_LABEL[p]||p;
@@ -4903,7 +4905,13 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} if(gen!==S._renderGen) return; }
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
-function openDetail(id){ S._topIsOp=false; S._lastFocus=document.activeElement;
+function markInspectionSource(source){
+  if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); }
+  const card=source?.closest?.('.pcard,.env-card')||null; S._detailSource=card;
+  if(card){ card.classList.add('inspecting'); card.setAttribute('aria-expanded','true'); card.setAttribute('aria-controls','detailwrap'); }
+  document.body.classList.add('detail-open');
+}
+function openDetail(id,source){ S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(source||document.activeElement);
   // focus moves into the drawer in renderTop(), AFTER the title (accessible name) is painted.
   S.views=[()=>viewFor(id)]; $('#detailwrap').classList.add('open'); renderTop(); }
 
@@ -5112,7 +5120,7 @@ function wire(){
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
     const liveOutput=e.target.closest('[data-live-output-run]'); if(liveOutput){ e.stopPropagation();
       S._lastFocus=document.activeElement; S.views=[()=>operatorRunView(liveOutput.dataset.liveOutputBase||'',liveOutput.dataset.liveOutputRun)];
-      $('#detailwrap').classList.add('open'); renderTop(); return; }
+      markInspectionSource(liveOutput); $('#detailwrap').classList.add('open'); renderTop(); return; }
     // Owned outputs live inside their persona/environment card. Resolve the
     // output before the enclosing card so clicking a deliverable opens that
     // deliverable rather than its owner.
@@ -5125,7 +5133,7 @@ function wire(){
     const ev=e.target.closest('[data-envrec]'); if(ev){ e.stopPropagation(); const sid=ev.dataset.envrec, kernel=ev.dataset.envkernel||'';
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
         return r.kind==='env'&&(!kernel||r._kernel===kernel)&&((r.did||'').includes(sid)||_shortId(r.did||'')===sid); });
-      if(rid) openDetail(rid); return; }
+      if(rid) openDetail(rid,ev); return; }
     const pc=e.target.closest('[data-pcard]'); if(pc){ const sid=pc.dataset.pcard, kernel=pc.dataset.pkernel||'';
       const personaKey=_entityKeyFromDom(pc.dataset.pkey)||_personaKey(kernel,sid);
       // clicking a card that is dimmed-out under follow opens its drawer — clear the
@@ -5134,7 +5142,7 @@ function wire(){
       const rid=S.order.find((id)=>{ const r=S.recs.get(id);
         return r.kind==='persona'&&(!kernel||r._kernel===kernel)
           &&((r.did||'').includes(sid)||_shortId(r.did||'')===sid||(r.record_id||'').includes(sid)); });
-      if(rid) openDetail(rid); return; }
+      if(rid) openDetail(rid,pc); return; }
     });
   // constellation node click → FOLLOW that persona (focus the stage + feed on it);
   // click the same node (or "show all") to clear. The full drawer opens from the card.
@@ -5178,7 +5186,7 @@ function wire(){
     if(open && S._topIsOp){ closeDetail(); return; }   // closeDetail clears _topIsOp, restores focus, and tears down the active view
     S._lastFocus=document.activeElement;
     S.views=[()=>operatorView()]; S._topIsOp=true;
-    $('#detailwrap').classList.add('open'); renderTop(); });   // focus moves in via renderTop() after the title paints
+    markInspectionSource($('#opbtn')); $('#detailwrap').classList.add('open'); renderTop(); });   // focus moves in via renderTop() after the title paints
   updateOpBadge();
   // "what is this" intro + setup instructions: HIDDEN by default (the living network is
   // the page — instructions don't eat real estate); the ？ button toggles them on demand.
@@ -5194,10 +5202,10 @@ function wire(){
   // the card came from a token-gated /status (running/paused mission).
   const mc=$('#missionCards');
   if(mc) mc.addEventListener('click',(e)=>{ const c=e.target.closest('.mcard'); if(!c) return;
-    if(c.dataset.mrec){ openDetail(c.dataset.mrec); return; }
+    if(c.dataset.mrec){ openDetail(c.dataset.mrec,c); return; }
     if(c.dataset.mrun){ S._lastFocus=document.activeElement;
       S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
-      $('#detailwrap').classList.add('open'); renderTop(); } });   // focus moves in via renderTop() after the title paints
+      markInspectionSource(c); $('#detailwrap').classList.add('open'); renderTop(); } });   // focus moves in via renderTop() after the title paints
   // in-drawer navigation: follow links to other records / bundles / artifact files
   $('#detailbody').addEventListener('click',(e)=>{
     // click a collapsed model-output to expand it in place (no nav). Guard against the
@@ -5322,6 +5330,8 @@ function wire(){
     runViewCleanups();
     S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
+    document.body.classList.remove('detail-open');
+    if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); S._detailSource=null; }
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
     $('#logmodal').classList.add('open'); $('.logcard')?.focus(); });

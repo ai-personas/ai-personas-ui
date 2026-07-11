@@ -9,7 +9,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v6">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v7">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -137,11 +137,15 @@
 
   <div class="drawer-wrap" id="detailwrap">
     <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
-      <div class="drawer-head"><b id="detail-title">—</b><span><button id="detailback" class="link nav-back" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span></div>
+      <div class="drawer-accent" aria-hidden="true"></div>
+      <div class="drawer-head">
+        <div class="drawer-head-copy"><span class="drawer-eyebrow">INSPECTING LIVE RECORD</span><b id="detail-title">—</b></div>
+        <span><button id="detailback" class="link nav-back" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span>
+      </div>
       <div class="drawer-body" id="detailbody"></div>
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v6"></script>
+  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v7"></script>
 </body>
 </html>
