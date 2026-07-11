@@ -117,6 +117,9 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.mission-summary').evaluate(
                 '(element) => element.getBoundingClientRect().height') <= 52,
                     'collapsed mission ribbon is taller than its useful content')
+            require(page.locator('.mission-summary > span:nth-child(2)').evaluate(
+                '(element) => element.getBoundingClientRect().width') >= 140,
+                    'compact desktop mission island squeezes its useful title')
             rail = page.locator('.workspace-rail').evaluate("""(element) => {
               const shell=element.querySelector('.command-shell').getBoundingClientRect();
               const context=element.querySelector('.context-dock').getBoundingClientRect();
