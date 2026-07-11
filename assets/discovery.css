@@ -1446,6 +1446,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 }
 .context-dock .missions{min-width:0;margin:0;padding:0}
 .context-dock .mission-summary{min-height:48px;height:48px;border-radius:14px;box-shadow:none}
+.context-dock .mission-summary-meta{display:none}
 .context-dock .mission-cards{position:absolute;z-index:12;left:var(--gutter);right:var(--gutter);margin-top:6px;padding:12px;
   border:1px solid #263b53;border-radius:16px;background:rgba(7,15,25,.985);box-shadow:0 22px 60px rgba(0,0,0,.5)}
 .context-dock .constellation{min-width:0;margin:0;padding:7px 10px;border-radius:14px;box-shadow:none}
