@@ -1060,6 +1060,25 @@ body{
 .ix{padding-block:6px;background-image:linear-gradient(90deg,color-mix(in srgb,var(--lane,transparent) 9%,transparent),transparent 150px)}
 footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding-block:8px}
 .drawer,.logcard{background:linear-gradient(155deg,#111d2b,#09111b)}
+.discovery-progress{
+  min-height:260px;display:flex;align-items:center;justify-content:center;gap:28px;
+  margin:18px auto;padding:34px;max-width:760px;border:1px solid rgba(86,181,255,.2);border-radius:18px;
+  background:linear-gradient(145deg,rgba(16,29,44,.92),rgba(7,14,23,.94));
+  box-shadow:0 22px 60px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.035);
+}
+.discovery-orbit{position:relative;width:88px;height:88px;flex:0 0 auto;border:1px solid rgba(86,181,255,.24);border-radius:50%}
+.discovery-orbit::before,.discovery-orbit::after{content:'';position:absolute;inset:12px;border:1px solid rgba(173,140,255,.22);border-radius:50%}
+.discovery-orbit::after{inset:28px;background:radial-gradient(circle,var(--up) 0 22%,rgba(33,208,122,.18) 24% 58%,transparent 60%);border-color:var(--up)}
+.discovery-orbit span{position:absolute;inset:-1px;border-radius:50%;border-top:2px solid var(--int);animation:discoveryspin 1.6s linear infinite}
+.discovery-orbit i{position:absolute;width:9px;height:9px;right:5px;top:12px;border-radius:50%;background:var(--int);box-shadow:0 0 14px var(--int)}
+@keyframes discoveryspin{to{transform:rotate(360deg)}}
+.discovery-kicker{color:var(--up);font-size:var(--fs-meta);font-weight:var(--w-bold);letter-spacing:.14em}
+.discovery-progress h2{margin:5px 0 7px;color:var(--bright);font-size:24px;letter-spacing:-.035em}
+.discovery-progress p{margin:0;max-width:470px;color:var(--dim);font-size:var(--fs-ui)}
+.discovery-steps{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px;font:var(--w-semi) var(--fs-meta)/1 var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.discovery-steps span{padding:5px 8px;border:1px solid var(--line2);border-radius:var(--radius-pill);color:var(--mut);background:rgba(3,8,14,.45)}
+.discovery-steps .done{color:var(--up);border-color:rgba(33,208,122,.3)}
+.discovery-steps .active{color:var(--int);border-color:rgba(86,181,255,.45);box-shadow:0 0 16px rgba(86,181,255,.1)}
 
 /* ===================== RESPONSIVE LADDER (mobile-first) =====================
    BASE = phone (<=639): single column, feed stacks below the stage, no constellation.
@@ -1102,6 +1121,10 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   .env-live-chip{white-space:normal;overflow-wrap:anywhere}
   .env-personas{display:grid;grid-template-columns:minmax(0,1fr);padding:8px;gap:8px}
   .pcard{width:100%;min-width:0;max-width:none;overflow:hidden}
+  .discovery-progress{min-height:220px;flex-direction:column;align-items:flex-start;gap:18px;margin:8px 0;padding:24px}
+  .discovery-orbit{width:64px;height:64px}
+  .discovery-orbit::after{inset:21px}
+  .discovery-progress h2{font-size:20px}
   .pcard-top{flex-wrap:wrap}
   .pc-name{flex:1 1 calc(100% - 68px);min-width:0;overflow-wrap:anywhere}
   .pc-follow{order:1;margin-left:auto}
