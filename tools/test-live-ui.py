@@ -171,6 +171,35 @@ def run(args: argparse.Namespace) -> dict:
               ?.classList.contains('verified')""", timeout=10_000)
             require((orin.locator('.pc-avatar-img').get_attribute('src') or '').startswith('blob:'),
                     'signed characteristic avatar was not hash-verified before rendering')
+            orin.click()
+            page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
+            inspector = page.evaluate("""() => {
+              const panel=document.querySelector('.drawer').getBoundingClientRect();
+              return {left:panel.left,right:panel.right,width:panel.width,
+                mask:getComputedStyle(document.querySelector('#detailwrap')).backgroundImage,
+                bodyOpen:document.body.classList.contains('detail-open'),
+                focusInside:document.querySelector('#detailwrap').contains(document.activeElement)};
+            }""")
+            require(480 <= inspector['width'] <= 680 and inspector['right'] >= 1426,
+                    'persona inspector is not a usable right-side panel')
+            require('linear-gradient' in inspector['mask'] and inspector['bodyOpen'],
+                    'persona inspector did not apply the directional workspace mask')
+            require(inspector['focusInside'] and orin.get_attribute('aria-expanded') == 'true',
+                    'persona inspector lost focus or source-card context')
+            require(not page.locator('#detailback').is_visible(),
+                    'initial entity inspector exposes a misleading back action')
+            model_row = page.locator('#detailbody .row', has_text='Model').first
+            require(len(model_row.inner_text()) < 120,
+                    'persona inspector rendered unbounded telemetry prose as a model role')
+            page.locator('#detailclose').click()
+            env_source = page.locator('.env-card').first
+            env_source.locator('.env-name').click()
+            page.locator('#detailwrap.open .kind.k-env').wait_for(timeout=15_000)
+            require(env_source.get_attribute('aria-expanded') == 'true',
+                    'environment inspector did not retain its source-card context')
+            page.locator('#detailwrap').click(position={'x': 24, 'y': 220})
+            require(not page.locator('#detailwrap').evaluate('(element) => element.classList.contains("open")'),
+                    'clicking the inspection mask did not close the environment panel')
             require(page.locator('.pcard[title="open Orin Vale"]').locator(
                 '.live-owned-outputs').count() >= 1,
                     'persona-owned live worktree was not placed with its persona')
