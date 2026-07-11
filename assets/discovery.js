@@ -922,16 +922,15 @@ async function verifiedRowsFromP2PResult(result,source='p2p'){
   }
   return {rows,refused};
 }
-const DEFAULT_GLOBAL_DISCOVERY_ENDPOINTS=Object.freeze(['https://node1.personas.ai']);
+const DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai';
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
   if(p.get('no_global_discovery')==='1') return [];
-  // node1 is an untrusted bootstrap locator, not a record authority: every
-  // announcement and every reached discovery record is still verified here.
-  // Query-provided resolvers are additive; no_global_discovery=1 is the explicit
-  // offline/privacy opt-out.
-  return [...new Set([...DEFAULT_GLOBAL_DISCOVERY_ENDPOINTS,
-    ...p.getAll('global_discovery'),...p.getAll('resolver')]
+  // node1 is only an untrusted first-contact locator. Every announcement and
+  // every reached discovery record is independently signature/hash verified;
+  // the locator has no record or identity authority.
+  return [...new Set([...p.getAll('global_discovery'),...p.getAll('resolver'),
+    DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
     .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
 async function verifyGlobalEnvelope(env){
