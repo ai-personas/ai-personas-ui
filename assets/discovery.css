@@ -961,7 +961,8 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap;overflow-w
    This layer gives the dense live workspace a clear depth hierarchy without
    changing its information architecture or the meaning of any state colour. */
 body{
-  background:
+  background-color:var(--bg);
+  background-image:
     radial-gradient(900px 520px at 12% -12%,rgba(86,181,255,.13),transparent 62%),
     radial-gradient(760px 500px at 88% 8%,rgba(173,140,255,.09),transparent 66%),
     linear-gradient(180deg,#080d15 0%,var(--bg) 46%,#05080d 100%);
