@@ -9,7 +9,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v3">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v4">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -35,6 +35,8 @@
       <button id="addpeer" class="btn">PEER</button>
       <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
     </span>
+    <button id="headerToolsToggle" class="header-tools-toggle" type="button" aria-controls="appHeader"
+      aria-expanded="false" title="show search and network controls">controls</button>
   </header>
   <button id="headerToggle" class="header-toggle" type="button" aria-controls="appHeader"
     aria-expanded="true" title="collapse status and controls">collapse header</button>
@@ -70,8 +72,8 @@
 
   <details class="missions" id="missions" hidden>
     <summary class="mission-summary">
-      <span class="mission-summary-icon" aria-hidden="true">◎</span>
-      <span><span class="mission-eyebrow">MISSION CONTROL</span><strong id="missionHeadline">Current work</strong></span>
+      <span class="mission-summary-icon" aria-hidden="true">●</span>
+      <span><span class="mission-eyebrow">NOW WORKING ON</span><strong id="missionHeadline">Current work</strong></span>
       <span class="mission-summary-meta" id="missionCount"></span>
       <span class="mission-chevron" aria-hidden="true">⌄</span>
     </summary>
@@ -134,6 +136,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v3"></script>
+  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v4"></script>
 </body>
 </html>
