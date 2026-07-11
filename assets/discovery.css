@@ -1174,7 +1174,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   border:1px solid var(--line2);border-radius:9px;background:rgba(8,15,25,.92);color:var(--mut);font:var(--w-semi) 9px/1 var(--sans);text-transform:uppercase;letter-spacing:.06em;cursor:pointer;backdrop-filter:blur(8px)}
 .header-toggle:hover{color:var(--bright);border-color:var(--accent)}
 .header-toggle .ico{transition:transform var(--dur-base) var(--ease-out)}
-.header-toggle.collapsed{top:5px;background:rgba(11,22,35,.96);color:var(--int);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.header-toggle.collapsed{position:static;flex:0 0 auto;order:-1;height:26px;background:rgba(11,22,35,.96);color:var(--int);box-shadow:none}
 .header-toggle.collapsed .ico{transform:rotate(180deg)}
 .vgroup-tools{padding-right:80px}
 
