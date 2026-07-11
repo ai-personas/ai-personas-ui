@@ -9,11 +9,13 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v4">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v5">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
+  <div class="workspace-rail">
+  <div class="command-shell" id="commandShell">
   <header class="vitals" id="appHeader">
     <span class="vgroup vgroup-identity">
       <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
@@ -41,27 +43,6 @@
   <button id="headerToggle" class="header-toggle" type="button" aria-controls="appHeader"
     aria-expanded="true" title="collapse status and controls">collapse header</button>
 
-  <div class="intro" id="intro" hidden>
-    <button class="link" id="introclose" style="float:right">close ✕</button>
-    <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
-    and refine a real, evidence-bound deliverable
-    round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
-    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
-    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
-    <div class="gloss">
-      <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
-      <span><b>ENV</b> the shared environment a team of personas works in</span>
-      <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
-      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
-      <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
-      <span><b>UNSIGNED TRANSPORT</b> live execution telemetry — useful state, not a signed record</span>
-      <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
-      <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
-    </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>
-    then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
-  </div>
-
   <nav class="globalbar" aria-label="network scope and discovered nodes">
     <button id="networkAll" class="network-scope on" type="button" aria-pressed="true"
       title="show the activity-prioritized global network overview">ALL NODES</button>
@@ -69,7 +50,9 @@
     <span id="globalKernels" class="globalbar-list"><span class="dim">discovering kernels…</span></span>
     <span id="networkOverflow" class="network-overflow" hidden></span>
   </nav>
+  </div>
 
+  <div class="context-dock" aria-label="current mission and network map">
   <details class="missions" id="missions" hidden>
     <summary class="mission-summary">
       <span class="mission-summary-icon" aria-hidden="true">●</span>
@@ -109,6 +92,29 @@
     </div>
     <svg id="sysGraph" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
+  </div>
+  </div>
+
+  <div class="intro" id="intro" hidden>
+    <button class="link" id="introclose" style="float:right">close ✕</button>
+    <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
+    and refine a real, evidence-bound deliverable
+    round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
+    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
+    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
+    <div class="gloss">
+      <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
+      <span><b>ENV</b> the shared environment a team of personas works in</span>
+      <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
+      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
+      <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
+      <span><b>UNSIGNED TRANSPORT</b> live execution telemetry — useful state, not a signed record</span>
+      <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
+      <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
+    </div>
+    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>
+    then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
+  </div>
 
   <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
        compact workspace index and each persona card names its current rooms. -->
@@ -136,6 +142,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v4"></script>
+  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v5"></script>
 </body>
 </html>

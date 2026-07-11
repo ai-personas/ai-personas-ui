@@ -117,6 +117,17 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.mission-summary').evaluate(
                 '(element) => element.getBoundingClientRect().height') <= 52,
                     'collapsed mission ribbon is taller than its useful content')
+            rail = page.locator('.workspace-rail').evaluate("""(element) => {
+              const shell=element.querySelector('.command-shell').getBoundingClientRect();
+              const context=element.querySelector('.context-dock').getBoundingClientRect();
+              return {height:element.getBoundingClientRect().height,
+                shellTop:shell.top,contextTop:context.top};
+            }""")
+            require(rail['height'] <= 60 and abs(rail['shellTop'] - rail['contextTop']) <= 1,
+                    'desktop command, mission, and topology controls still stack as permanent headers')
+            require(page.locator('.stage-wrap').evaluate(
+                '(element) => element.getBoundingClientRect().top') <= 90,
+                    'desktop workspace begins below oversized application chrome')
             page.locator('#headerToolsToggle').click()
             require(page.locator('.vgroup-tools').evaluate(
                 '(element) => getComputedStyle(element).display') != 'none',
@@ -169,8 +180,8 @@ def run(args: argparse.Namespace) -> dict:
                                    timeout=5_000)
             require(page.locator('#headerToggle').get_attribute('aria-expanded') == 'false',
                     'collapsed header disclosure state is inaccurate')
-            require(page.locator('.globalbar > #headerToggle').count() == 1,
-                    'collapsed header control overlaps content instead of joining the live navigator')
+            require(page.locator('.command-shell > #headerToggle').count() == 1,
+                    'collapsed header control escaped the unified command island')
             page.locator('#headerToggle').click()
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .gn-followed').length === 1""",
                                    timeout=5_000)
@@ -529,7 +540,7 @@ def run(args: argparse.Namespace) -> dict:
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').wait_for(
                 state='attached', timeout=15_000)
             metrics = mobile.evaluate("""() => {
-              const selectors = ['.vitals','.globalbar','.missions','.constellation','.stage-wrap','footer'];
+              const selectors = ['.workspace-rail','.stage-wrap','footer'];
               const rects = selectors.map((selector) => {
                 const el = document.querySelector(selector);
                 if (!el || getComputedStyle(el).display === 'none') return null;
@@ -548,17 +559,30 @@ def run(args: argparse.Namespace) -> dict:
                   : `${el.tagName.toLowerCase()}${[...el.classList].slice(0,3).map((c)=>`.${c}`).join('')}`;
                 return {name,left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width)};
               }).filter(Boolean).slice(0,20);
+              const componentHeight=(selector) => {
+                const el=document.querySelector(selector); return el ? el.getBoundingClientRect().height : 999;
+              };
               return {scrollWidth:document.documentElement.scrollWidth,
-                clientWidth, rects, overlaps, wide};
+                clientWidth, rects, overlaps, wide, components:{
+                  header:componentHeight('.vitals'),mission:componentHeight('.missions'),
+                  rail:componentHeight('.workspace-rail'),stageTop:document.querySelector('.stage-wrap')?.getBoundingClientRect().top ?? 999
+                }};
             }""")
             require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
                     'mobile page overflows horizontally: ' + json.dumps(metrics['wide']))
             require(not metrics['overlaps'], 'mobile page bands overlap: ' + json.dumps(metrics['overlaps']))
-            mobile_bands = {item['selector']: item['bottom'] - item['top'] for item in metrics['rects']}
-            require(mobile_bands.get('.vitals', 999) <= 60,
+            require(metrics['components']['header'] <= 60,
                     'mobile command dock occupies permanent expanded height')
-            require(mobile_bands.get('.missions', 999) <= 55,
-                    f"mobile mission ribbon occupies permanent expanded height: {mobile_bands.get('.missions')}px")
+            require(metrics['components']['mission'] <= 55,
+                    f"mobile mission ribbon occupies permanent expanded height: {metrics['components']['mission']}px")
+            require(metrics['components']['rail'] <= 110 and metrics['components']['stageTop'] <= 125,
+                    'mobile workspace is still pushed down by stacked permanent headers')
+            mobile.locator('#headerToggle').click()
+            mobile.wait_for_function("""() => document.querySelector('#appHeader')?.offsetHeight === 0""",
+                                     timeout=5_000)
+            require(mobile.locator('#headerToggle').is_visible(),
+                    'mobile full-collapse control disappeared with the hidden network navigator')
+            mobile.locator('#headerToggle').click()
             mobile.locator('#missions').evaluate('(element) => { element.open = true; }')
             mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
