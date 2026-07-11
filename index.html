@@ -9,12 +9,12 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260711-observatory-progress-v1">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260711-persona-deck-v2">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
-  <header class="vitals">
+  <header class="vitals" id="appHeader">
     <span class="vgroup vgroup-identity">
       <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
       <h1 class="brandmark"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
@@ -36,6 +36,8 @@
       <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
     </span>
   </header>
+  <button id="headerToggle" class="header-toggle" type="button" aria-controls="appHeader"
+    aria-expanded="true" title="collapse status and controls">collapse header</button>
 
   <div class="intro" id="intro" hidden>
     <button class="link" id="introclose" style="float:right">close ✕</button>
@@ -106,8 +108,8 @@
     <svg id="sysGraph" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
 
-  <!-- R2 · THE STAGE — environments are shared rooms; each persona owns its
-       identity, current focus, recent activity and persona-scoped outputs. -->
+  <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
+       compact workspace index and each persona card names its current rooms. -->
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
   </main>
@@ -132,6 +134,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260711-persona-centered-v1"></script>
+  <script type="module" src="assets/discovery.js?v=20260711-persona-deck-v2"></script>
 </body>
 </html>

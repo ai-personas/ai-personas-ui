@@ -90,9 +90,11 @@ control. Every route enters the same record-resolution and signature check.
 
 **The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
 window of at most six kernel cores and ten navigator chips, with explicit “shown of total” and
-aggregated-overflow counts. Selecting a kernel drills into that node's environments and personas:
-the graph shows at most 36 prioritised personas, while the accessible stage starts with ten
-environments and twelve personas per environment and expands through search or **SHOW MORE**.
+aggregated-overflow counts. Selecting a kernel drills into that node's personas and environments:
+the graph shows at most 36 prioritised personas, while the accessible stage starts with one flat
+twelve-persona deck plus a compact ten-environment workspace index and expands through search or
+**SHOW MORE**. Personas are never nested under environments; each card names the exact environments
+whose roster or live telemetry associates it with them.
 Dense graph windows keep only about ten evenly spaced labels plus every active, recent, or followed
 persona labelled; every other exact node remains keyboard-focusable with its full tooltip, avoiding
 an unreadable text cloud without dropping identities.
@@ -117,6 +119,13 @@ central index, but they are still infrastructure. Without bootstrap/relay/rendez
 peer URL, unrelated browsers cannot discover each other through NAT; without replication/pinning,
 an offline origin's bytes are unavailable. Trust still comes from signatures and content hashes,
 not from the commons carrying them.
+
+**Persona portraits are identity assets, not UI guesses.** A current persona record may advertise
+a signed `AVATAR` interface with an endpoint, media type, generator and SHA-256. The portal fetches
+at most 4 MiB, verifies that exact hash, checks the image media type, and only then renders a local
+blob URL in the persona card. Older personas without that interface use the bundled, clearly marked
+legacy portrait fallback. The top status/control header is independently collapsible and consumes
+zero layout height while closed.
 
 ## Realtime execution and live artifacts
 
