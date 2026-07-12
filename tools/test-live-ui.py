@@ -101,7 +101,7 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('8/12 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('11/15 record(s) provider + record + policy verified')""", timeout=15_000)
             signed_live_task = page.locator(
                 '.mcard[data-mrec]', has_text='prepare the site approval package'
             )
@@ -179,24 +179,50 @@ def run(args: argparse.Namespace) -> dict:
                     'persona cards remain nested inside environment cards')
             require(page.locator('.persona-deck > .pcard').count() == 3,
                     'persona-first deck did not render the live roster once')
+            persona_cards = page.locator('.persona-deck > .pcard')
+            for signed_name in ('Orin Vale', 'Mara Chen', 'Ivo Reed'):
+                require(page.locator('.pcard .pc-name', has_text=signed_name).count() == 1,
+                        f'signed persona label was not rendered exactly once: {signed_name}')
+            require('Unsigned ' not in ' '.join(persona_cards.all_text_contents()),
+                    'unsigned telemetry alias overrode a signed persona label')
+            empty_env = page.locator('.env-card', has_text='House Planning Commons')
+            require(empty_env.count() == 1,
+                    'verified environment without roster or artifacts was hidden')
+            require('awaiting members' in empty_env.text_content(),
+                    'empty environment card omitted its neutral membership state')
             orin = page.locator('.pcard[title="open Orin Vale"]')
             require(orin.locator('.pc-env-chip').count() >= 1,
                     'persona card did not name its current environment')
-            persona_cards = page.locator('.persona-deck > .pcard')
             require(page.locator('.pcard .pc-avatar').count() == persona_cards.count(),
                     'not every actual persona received exactly one avatar')
             orin_avatar = orin.locator('.pc-avatar')
-            require(orin_avatar.get_attribute('data-avatar-source') == 'signed',
-                    'signed PersonaCard avatar descriptor was not rendered')
-            require(orin_avatar.locator('.pc-avatar-initials').text_content() == 'OV',
-                    'signed avatar initials were not preserved')
+            page.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
+              .find((card) => card.textContent.includes('Orin Vale'))
+              ?.querySelector('.pc-avatar')?.dataset.avatarState === 'ready'""", timeout=15_000)
+            require(orin_avatar.get_attribute('data-avatar-state') == 'ready',
+                    'persona-signed raster bytes did not pass the browser verifier')
+            require(orin_avatar.locator('img').count() == 1,
+                    'verified raster avatar was not rendered')
+            require((orin_avatar.locator('img').get_attribute('src') or '').startswith('blob:'),
+                    'avatar rendered a provider URL instead of a temporary blob URL')
             require(page.locator(
-                '.pcard .pc-avatar[data-avatar-source="legacy-fallback"]').count() == 2,
-                    'personas without a valid signed descriptor lack deterministic fallbacks')
-            require(page.locator('.pcard .pc-avatar svg').count() == persona_cards.count(),
-                    'persona avatars were not rendered as one local SVG per persona')
-            require(page.locator('.pcard .pc-avatar img').count() == 0,
-                    'persona avatar rendering introduced a fetchable image surface')
+                '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 2,
+                    'missing avatars did not remain neutral absence placeholders')
+            require(page.locator('.pcard .pc-avatar-placeholder', has_text='no image').count() == 2,
+                    'missing avatars did not show the neutral text placeholder')
+            require(page.locator('.pcard .pc-avatar svg').count() == 0,
+                    'persona avatar rendering retained generated SVG art')
+            require(page.locator('.pcard [data-avatar-source]').count() == 0,
+                    'persona avatar rendering retained a synthetic source marker')
+            require(page.locator('.pcard .pc-avatar img[src^="http"]').count() == 0,
+                    'persona avatar exposed a provider body URL to the DOM')
+            require(all((text or '').startswith('role not declared ·')
+                        for text in page.locator('.pcard .pc-idline').all_text_contents()),
+                    'names, capabilities, or unsigned telemetry fabricated a persona role')
+            require(page.locator(
+                '.pcard.role-lead,.pcard.role-verifier,.pcard.role-integrator,'
+                '.pcard.role-specialist,.pcard.role-member').count() == 0,
+                    'legacy inferred coordination-role classes remain on persona cards')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             inspector = page.evaluate("""() => {
@@ -342,14 +368,14 @@ def run(args: argparse.Namespace) -> dict:
                              and item['url'].startswith(('http://', 'https://'))
                              and not item['url'].startswith(base + '/')]
             require(not external_exec, 'external executable code loaded: ' + ', '.join(external_exec))
-            avatar_requests = [item['url'] for item in requests
-                               if ('persona-avatar-fallback' in item['url'].lower()
-                                   or ('/personas/' in item['url'].lower()
-                                       and '/avatar.' in item['url'].lower())
-                                   or (item['resource_type'] == 'image'
-                                       and 'avatar' in item['url'].lower()))]
-            require(not avatar_requests,
-                    'persona avatar rendering fetched image bytes: ' + ', '.join(avatar_requests))
+            avatar_requests = [item for item in requests
+                               if '/assets/persona-avatars/sha256/' in item['url']]
+            require(len(avatar_requests) == 1,
+                    'verified content-addressed avatar body was not fetched exactly once')
+            require(not avatar_requests[0]['authorization'],
+                    'public avatar fetch leaked the operator bearer token')
+            require(not avatar_requests[0]['referer'],
+                    'public avatar fetch leaked a referrer')
 
             before_hash = page.locator('.exact-hash').last.text_content()
             page.locator('#detailback').click()
@@ -576,9 +602,10 @@ def run(args: argparse.Namespace) -> dict:
             scale.wait_for_function("""() => document.querySelectorAll('.pcard').length === 24""",
                                     timeout=10_000)
             scale.locator('#headerToolsToggle').click()
-            scale.locator('#q').fill('Scale Persona 01999')
+            scale.locator('#q').fill('scale-persona-01999')
             scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
-              .some((card) => card.textContent.includes('Scale Persona 01999'))""", timeout=10_000)
+              .some((card) => card.dataset.pcard === 'scale-persona-01999'
+                && card.textContent.includes('name not published'))""", timeout=10_000)
             require(scale.locator('.pcard').count() <= 24,
                     'search escaped the progressive persona window')
             scale_metrics = {

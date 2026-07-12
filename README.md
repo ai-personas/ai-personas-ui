@@ -132,13 +132,14 @@ legacy state capability is unambiguously corroborated by its signed description;
 supplies a missing state. Unsigned telemetry, project/mission evidence, and operator-only run state
 remain additive sources.
 
-**Persona avatars are signed identity descriptors, never fetchable media.** A persona record may
-carry a bounded `persona-avatar/1` identicon descriptor containing a seed, two colours, and safe
-initials. The portal validates that signed descriptor and renders its SVG locally. Every real
-persona without a valid descriptor receives a deterministic local fallback derived from its
-kernel-qualified identity and name. URL/data/image fields are refused, no avatar bytes are fetched,
-and avatar data never creates a persona card. The top status/control header is independently
-collapsible and consumes zero layout height while closed.
+**Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
+the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies
+the descriptor's persona signature, resolves only its exact provider-relative content-addressed
+path, rejects redirects, and checks raster MIME, byte length, SHA-256, and dimensions before
+rendering the bytes through a temporary blob URL. Missing or invalid avatars remain neutral text
+placeholders; the UI generates no identity art, and an avatar descriptor never creates another
+persona or projection card. The top status/control header is independently collapsible and consumes
+zero layout height while closed.
 
 ## Realtime execution and live artifacts
 
@@ -300,7 +301,7 @@ The browser test requires Python Playwright, PyNaCl, and an installed Chromium. 
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
 assets/discovery-authority.mjs             # provider hints, historical keys, AccessPolicy projection
-assets/persona-avatar.mjs                  # signed descriptor validation + deterministic local SVG data
+assets/persona-avatar.mjs                  # persona-signature + raster-byte/hash/MIME/dimension verification
 assets/network-view.mjs                    # bounded priority/search/progressive network projections
 assets/network-store.mjs                   # kernel-qualified entities, presence leases, event rings
 assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
@@ -311,7 +312,7 @@ assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay 
 peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
 tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a node); NOT needed at runtime
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
-tools/test-persona-avatar.mjs              # signed-avatar validation and safe-fallback regression
+tools/test-persona-avatar.mjs              # signed, content-addressed raster avatar regression
 tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknown-content fallback
 tools/test-network-view.mjs                # million-node bounded-window regression
 tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression
