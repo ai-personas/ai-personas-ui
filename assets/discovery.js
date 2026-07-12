@@ -22,14 +22,16 @@ import {
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
-} from './discovery-authority.mjs?v=20260710-provider-authority-v2';
+} from './discovery-authority.mjs?v=20260712-local-persona-avatar-v1';
 import {
+  collectLibp2pBootstraps,
   compactCount,
+  liveTaskMissionProjection,
   nextProgressiveGroupLevel,
   progressiveGroupLimit,
   selectMonitoringBases,
   selectPriorityWindow,
-} from './network-view.mjs?v=20260710-scalable-network-v1';
+} from './network-view.mjs?v=20260712-public-task-routes-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -40,6 +42,10 @@ import {
   selectBuiltinArtifactRenderer,
   selectLocalArtifactModule,
 } from './artifact-types.mjs?v=20260710-universal-artifacts-v1';
+import {
+  personaAvatarCells,
+  resolvePersonaAvatar,
+} from './persona-avatar.mjs?v=20260712-local-identicon-v1';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -754,11 +760,10 @@ function log(tag,msg,ok){ const li=document.createElement('li');
 
 /* ---------- discovery (runtime resolve + in-browser verify) ---------- */
 function collectP2PBootstraps(boot){
-  for(const v of [...(boot?.bootstrap_peers||[]),...(boot?.relay_peers||[]),
+  const observed=[...(boot?.bootstrap_peers||[]),...(boot?.relay_peers||[]),
     ...((boot?.reachability_profile||{}).bootstrap_peers||[]),
-    ...((boot?.reachability_profile||{}).relay_peers||[])]){
-    if(v) S.p2pBootstraps.add(v);
-  }
+    ...((boot?.reachability_profile||{}).relay_peers||[])];
+  for(const multiaddr of collectLibp2pBootstraps(observed)) S.p2pBootstraps.add(multiaddr);
 }
 async function keysFor(base,boot,{refresh=false}={}){
   const key=base||'@origin';
@@ -972,7 +977,7 @@ async function loadGlobalNodes(){
     fetchJson(join(ep,'/v1/bootstrap')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
   for(const {ep,d} of boots){
     if(!d) continue;
-    const addrs=[...(d.libp2p_multiaddrs||[]),...(d.relay_multiaddrs||[])].filter(Boolean);
+    const addrs=collectLibp2pBootstraps(d.libp2p_multiaddrs,d.relay_multiaddrs);
     for(const ma of addrs) S.p2pBootstraps.add(ma);
     if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
   }
@@ -1020,7 +1025,7 @@ async function loadGlobalNodes(){
         reachability:ann.reachability_class||'',
         publicDiscovery:!!ann.public_discovery,
       });
-      for(const ma of (ann.libp2p_multiaddrs||[])) if(ma) S.p2pBootstraps.add(ma);
+      for(const ma of collectLibp2pBootstraps(ann.libp2p_multiaddrs)) S.p2pBootstraps.add(ma);
       if(base) freshPeers.add(base);
     }
   }
@@ -1400,7 +1405,8 @@ function upsert(r){
     _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
-    capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||''});
+    capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||'',
+    avatar:r.kind==='persona'&&Object.hasOwn(r,'avatar')?r.avatar:null});
   try{ NETWORK.upsertEntity({...r,kernel_id:r._kernel,record_id:r.record_id||r.card_id}); }catch(e){
     log('scale',`record identity refused: ${String(e&&e.message||e).slice(0,90)}`,false); }
   while(S.order.length>NETWORK_LIMITS.cachedRecords){
@@ -2338,44 +2344,26 @@ function _personaGrew(personaKey,count){
   const prev=S.pcardSeen.get(personaKey); S.pcardSeen.set(personaKey,count);
   return prev!=null && count>prev;
 }
-function _personaInitials(name){
-  const parts=String(name||'persona').trim().split(/\s+/).filter(Boolean);
-  return (parts.length>1?(parts[0][0]+parts[parts.length-1][0]):parts[0].slice(0,2)).toUpperCase();
-}
 function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=(h*31+c.charCodeAt(0))%360; return h; }
-const _avatarBlobURLs=new Map(), _avatarPending=new Map();
 function _personaRecordFor(personaKey){ const ref=_personaRef(personaKey);
   for(let i=S.order.length-1;i>=0;i--){ const r=S.recs.get(S.order[i]); if(!r||r.kind!=='persona') continue;
     if(_personaKey(r._kernel,_shortId(r.did||r.record_id))===ref.key) return r; }
   return null;
 }
-function _personaAvatarDescriptor(personaKey){ const record=_personaRecordFor(personaKey);
-  const item=(record?.interfaces||[]).find((entry)=>String(entry?.kind||'').toUpperCase()==='AVATAR');
-  const endpoint=String(item?.endpoint||''), hash=String(item?.sha256||'').replace(/^sha256:/,'').toLowerCase();
-  if(!record||!endpoint||!/^[0-9a-f]{64}$/.test(hash)) return null;
-  const url=join(record._base||'',endpoint); return {url,hash,key:`${url}|${hash}`};
+function _personaAvatar(personaKey,name){ const ref=_personaRef(personaKey);
+  // _personaRecordFor returns only records admitted through signature + access
+  // verification. Unsigned status/telemetry can never supply identity artwork.
+  return resolvePersonaAvatar(_personaRecordFor(ref.key)?.avatar,{personaId:ref.sid,name});
 }
-function _personaAvatarHTML(personaKey,name,initials){ const avatar=_personaAvatarDescriptor(personaKey);
-  const cached=avatar&&_avatarBlobURLs.get(avatar.key); const src=cached||'assets/persona-avatar-fallback.webp';
-  return `<div class="pc-avatar ${avatar?(cached?'stored verified':'stored loading'):'fallback'}"><img class="pc-avatar-img" src="${esc(src)}" alt="${esc(name)} portrait" loading="lazy" decoding="async"`
-    +(avatar&&!cached?` data-avatar-url="${esc(avatar.url)}" data-avatar-hash="${esc(avatar.hash)}" data-avatar-key="${esc(avatar.key)}"`:'')+`>`
-    +`<span class="pc-avatar-initials">${esc(initials)}</span></div>`;
+function _personaAvatarHTML(personaKey,name){ const avatar=_personaAvatar(personaKey,name);
+  const cells=personaAvatarCells(avatar).map(({row,column})=>
+    `<rect x="${column}" y="${row}" width="1" height="1" fill="${avatar.primary_color}"/>`).join('');
+  const source=avatar.source==='signed'?'signed':'legacy-fallback';
+  return `<div class="pc-avatar ${source==='signed'?'verified':'fallback'}" data-avatar-source="${source}" aria-hidden="true">`
+    +`<svg viewBox="0 0 5 5" preserveAspectRatio="xMidYMid slice" shape-rendering="crispEdges" focusable="false">`
+    +`<rect width="5" height="5" fill="${avatar.secondary_color}"/>${cells}</svg>`
+    +`<span class="pc-avatar-initials">${esc(avatar.initials)}</span></div>`;
 }
-async function _hydratePersonaAvatar(img){ const key=img.dataset.avatarKey, url=img.dataset.avatarUrl, expected=img.dataset.avatarHash;
-  if(!key||!url||!expected) return; let pending=_avatarPending.get(key);
-  if(!pending){ pending=(async()=>{ const response=await fetch(url,secureFetchInit(url)); if(!response.ok) throw new Error(`avatar ${response.status}`);
-      const bytes=new Uint8Array(await readBoundedResponseBytes(response,4*1024*1024));
-      if((await sha256Hex(bytes)).toLowerCase()!==expected) throw new Error('avatar hash mismatch');
-      const type=String(response.headers.get('content-type')||'image/png').split(';')[0];
-      if(!type.startsWith('image/')) throw new Error('avatar media type refused');
-      const blobURL=URL.createObjectURL(new Blob([bytes],{type})); _avatarBlobURLs.set(key,blobURL); return blobURL;
-    })().catch(()=>null).finally(()=>_avatarPending.delete(key)); _avatarPending.set(key,pending); }
-  const blobURL=await pending; if(!blobURL) return;
-  document.querySelectorAll('.pc-avatar-img[data-avatar-key]').forEach((node)=>{ if(node.dataset.avatarKey===key){ node.src=blobURL;
-    const frame=node.closest('.pc-avatar'); frame?.classList.remove('fallback','loading'); frame?.classList.add('stored','verified');
-    node.removeAttribute('data-avatar-url'); node.removeAttribute('data-avatar-hash'); node.removeAttribute('data-avatar-key'); } });
-}
-function hydratePersonaAvatars(){ document.querySelectorAll('.pc-avatar-img[data-avatar-key]').forEach((img)=>_hydratePersonaAvatar(img)); }
 function _artifactStateInfo(r){
   const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
   const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
@@ -2507,14 +2495,14 @@ function renderPersonaCard(pid,kernel='',context={}){
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
   const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, toolAct?._t||0);
   if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
-  const initials=_personaInitials(name), hue=_personaAvatarHue(personaKey);
+  const hue=_personaAvatarHue(personaKey);
   const environments=(context.environments||[]).filter(Boolean);
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey,name,initials)}`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey,name)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
     +`<div class="pc-identity"><span class="pc-name">${esc(name)}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
@@ -3191,7 +3179,6 @@ async function refreshSystemView(){
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
-  hydratePersonaAvatars();
   _applyFollow();
   // Focused graph selection is independent of card pagination: running/recent
   // personas remain visible even if their card is outside the current window.
@@ -4962,8 +4949,9 @@ function tick(now){
 }
 
 /* ---------- missions strip (every task the discovered nodes work on) ---------- */
-// Cards come from two honest sources: (1) discovered mission/design-history
-// records — published evidence anyone may see; (2) the node's /status —
+// Cards come from three honest sources: (1) signed public live-task records,
+// including a signed exact queue/runtime state; (2) discovered project/mission
+// records — published evidence anyone may see; (3) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
 // A mission document is the run's Design-History-File artifact. Media kinds are
@@ -4987,6 +4975,16 @@ function missionCardList(){
     const run=runOf(r)||'';
     cards.push({key:`record:${r._kernel}:${run||id}`,task:humanTask(r.label,r._kernel,run),state:'published',
       kernel:r._kernel||'',meta:[run?run.slice(0,26):'signed mission record'],recId:id,run});
+  }
+  // S.recs contains only records that passed the browser's signature + access
+  // checks. Preserve the exact signed live state and task label; never infer a
+  // state from telemetry, prose, task vocabulary, or array position alone.
+  for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
+    const projected=liveTaskMissionProjection(r); if(!projected) continue;
+    const run=projected.run||runOf(r)||'';
+    cards.unshift({key:`task:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
+      kernel:r._kernel||'',meta:[run?run.slice(0,26):'signed public task','signed live task'],
+      recId:id,run,liveTask:true});
   }
   // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
@@ -5020,10 +5018,11 @@ function missionCardList(){
       cards.push({key:'pause:'+nodeRun,task:humanTask(p.task,kernel,run),state:'paused',kernel,
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
-  const grouped=new Map(), rank={running:4,paused:3,published:1};
+  const grouped=new Map();
+  const rank=(card)=>card.state==='running'?6:card.liveTask?5:card.state==='paused'?3:card.state==='published'?1:0;
   for(const card of scoped){ const key=`${card.kernel}::${String(card.task).toLowerCase().replace(/\s+/g,' ').trim()}`;
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
-    const winner=(rank[card.state]||0)>(rank[prev.state]||0)?card:prev;
+    const winner=rank(card)>rank(prev)?card:prev;
     grouped.set(key,{...prev,...winner,key,meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,4)}); }
   return [...grouped.values()];
 }
@@ -5045,12 +5044,12 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>c.state==='running'?1e6:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>c.state==='running'?1e6:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its mission text.
   // Keep the compact mission summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
-  const active=window.items.find((c)=>c.state==='running')
+  const active=window.items.find((c)=>c.state==='running')||window.items.find((c)=>c.liveTask)
     ||cards.find((c)=>c.state==='running')||window.items[0]||cards[0];
   const matching=window.items.length===cards.length
     ?`${cards.length} mission${cards.length===1?'':'s'}`
@@ -5488,7 +5487,8 @@ async function initP2P(){
   const params=new URLSearchParams(location.search);
   const root=await fetchJson('.well-known/personaos-discovery.json')||{};
   collectP2PBootstraps(root);
-  const list=[...S.p2pBootstraps,...params.getAll('relay'),...params.getAll('bootstrap')].filter(Boolean);
+  const list=collectLibp2pBootstraps(S.p2pBootstraps,
+    params.getAll('relay'),params.getAll('bootstrap'));
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
     const mod=await import('./p2p-libp2p.js?v=20260710-provider-authority-v2');

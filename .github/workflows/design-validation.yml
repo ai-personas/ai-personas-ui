@@ -40,7 +40,9 @@ jobs:
         run: python3 tools/check-design-reference.py design-reference
 
       - name: Test live artifact state contract
-        run: node tools/test-live-artifacts.mjs
+        run: |
+          node tools/test-live-artifacts.mjs
+          node tools/test-persona-avatar.mjs
 
       - name: Test bounded network and artifact dispatch contracts
         run: |

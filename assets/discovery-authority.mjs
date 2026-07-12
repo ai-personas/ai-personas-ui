@@ -157,6 +157,11 @@ export function projectDiscoveryRecord(record, canRead) {
   ]) {
     if (Object.hasOwn(record || {}, key)) out[key] = record[key];
   }
+  // The descriptor is signed public identity data, not a fetchable locator.
+  // Rendering validates its bounded shape and never follows URL/data fields.
+  if (record?.kind === 'persona' && Object.hasOwn(record, 'avatar')) {
+    out.avatar = record.avatar;
+  }
   return out;
 }
 

@@ -25,6 +25,7 @@ REQUIRED_BROWSER_ASSETS = {
     "assets/live-signatures.mjs",
     "assets/noble-ed25519.js",
     "assets/p2p-libp2p.js",
+    "assets/persona-avatar.mjs",
     "peers.txt",
 }
 

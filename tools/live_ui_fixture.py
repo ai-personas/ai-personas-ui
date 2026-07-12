@@ -31,6 +31,7 @@ KEY_ID = "kernel-master"
 PROVIDER_OK = "provider-authority-ok"
 PROVIDER_PERSONA = "provider-persona-avatar"
 PROVIDER_ENV = "provider-environment"
+PROVIDER_TASK = "provider-live-public-task"
 PROVIDER_DISCOVER_ONLY = "provider-discover-only"
 PROVIDER_EXPIRED_READ = "provider-expired-read"
 PROVIDER_SCOPED_READ = "provider-scoped-read"
@@ -170,6 +171,7 @@ def provider_document(
     kind: str = "artifact",
     did: str = "",
     interfaces: list[dict] | None = None,
+    avatar: dict | None = None,
     capability_summary: list[str] | None = None,
     links: dict | None = None,
 ) -> dict:
@@ -201,6 +203,8 @@ def provider_document(
     }
     if interfaces:
         record["interfaces"] = interfaces
+    if avatar is not None:
+        record["avatar"] = avatar
     if handle:
         record["handle"] = handle
     document = {
@@ -240,6 +244,8 @@ def provider_document(
         "access_policy_ref": record["access_policy_ref"],
         "signing_key_id": KEY_ID,
     }
+    if kind == "persona" and avatar is not None:
+        projected_record["avatar"] = avatar
     projected_policy = {
         "schema": "access-policy/1",
         "policy_id": policy["policy_id"],
@@ -335,6 +341,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_OK,
         PROVIDER_PERSONA,
         PROVIDER_ENV,
+        PROVIDER_TASK,
         PROVIDER_DISCOVER_ONLY,
         PROVIDER_EXPIRED_READ,
         PROVIDER_SCOPED_READ,
@@ -351,24 +358,22 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     urls = {record_id: f"discovery/public/records/{record_id}.json"
             for record_id in record_ids}
     valid = provider_document(base, PROVIDER_OK, "Signed provider authority accepted")
-    avatar_bytes = (ROOT / "assets" / "persona-avatar-fallback.webp").read_bytes()
-    avatar_hash = hashlib.sha256(avatar_bytes).hexdigest()
-    avatar_url = f"personas/{PERSONA}/avatar.webp"
     persona = provider_document(
         base,
         PROVIDER_PERSONA,
         "Orin Vale",
         kind="persona",
         did=f"did:personaos:{NODE_ID}/persona/{PERSONA}",
-        interfaces=[{
-            "kind": "AVATAR",
-            "endpoint": avatar_url,
-            "media_type": "image/webp",
-            "sha256": avatar_hash,
-            "generator": "personaos-character-avatar-fixture/1",
-        }],
-        capability_summary=["active_persona", "characteristic_avatar"],
-        links={"avatar": avatar_url},
+        avatar={
+            "schema": "persona-avatar/1",
+            "kind": "identicon",
+            "seed": "0123456789abcdef" * 4,
+            "primary_color": "#D8E9FF",
+            "secondary_color": "#17365D",
+            "initials": "OV",
+        },
+        capability_summary=["active_persona"],
+        links={},
     )
     environment = provider_document(
         base,
@@ -378,6 +383,15 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         did=f"did:personaos:{NODE_ID}/env/{ENV}",
         capability_summary=["workspace", "residential_design"],
         links={},
+    )
+    live_task = provider_document(
+        base,
+        PROVIDER_TASK,
+        "prepare the site approval package",
+        kind="task",
+        did=f"did:personaos:{NODE_ID}/task/run-public-intake",
+        capability_summary=["live_task", "queued"],
+        links={"live": "telemetry/live/latest.json"},
     )
     discover_only = provider_document(
         base, PROVIDER_DISCOVER_ONLY, "Discover-only provider", access_level=None)
@@ -439,6 +453,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(valid, urls[PROVIDER_OK]),
         provider_envelope(persona, urls[PROVIDER_PERSONA]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
+        provider_envelope(live_task, urls[PROVIDER_TASK]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
         provider_envelope(expired_read, urls[PROVIDER_EXPIRED_READ]),
         provider_envelope(scoped_read, urls[PROVIDER_SCOPED_READ]),
@@ -457,6 +472,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_OK: valid,
         PROVIDER_PERSONA: persona,
         PROVIDER_ENV: environment,
+        PROVIDER_TASK: live_task,
         PROVIDER_DISCOVER_ONLY: discover_only,
         PROVIDER_EXPIRED_READ: expired_read,
         PROVIDER_SCOPED_READ: scoped_read,
@@ -806,6 +822,12 @@ class Handler(SimpleHTTPRequestHandler):
                 "providers_are_aggregate": True, "providers_url": "providers.json",
                 "live_telemetry_url": "telemetry.json", "discovery_stream_url": "events",
                 "keys_url": "keys.json", "p2p_received_url": "discovery/p2p/received.json",
+                # Legacy node bootstrap arrays may carry HTTP federation URLs.
+                # The browser must never pass this value into js-libp2p's
+                # multiaddr-only bootstrap parser.
+                "bootstrap_peers": [
+                    self.node_base(),
+                ],
                 "public_discovery": True,
             })
         if path == "/node/providers.json":
@@ -860,14 +882,6 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"environments": {}, "personas": {}})
         if path == "/node/telemetry.json":
             return self.json(200, telemetry())
-        if path == f"/node/personas/{PERSONA}/avatar.webp":
-            body = (ROOT / "assets" / "persona-avatar-fallback.webp").read_bytes()
-            return self.bytes(
-                body,
-                "image/webp",
-                hashlib.sha256(body).hexdigest(),
-                name="avatar.webp",
-            )
         if path == "/node/scale":
             count = int((parse_qs(parsed.query).get("count") or ["0"])[0])
             STATE.set_scale(count)
