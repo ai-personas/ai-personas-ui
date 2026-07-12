@@ -25,11 +25,13 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  personaAuthoredRole,
   projectAccessPolicy,
   projectDiscoveryRecord,
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
+  signedPersonaLabel,
 } from '../assets/discovery-authority.mjs';
 import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
 
@@ -62,6 +64,25 @@ assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map(
   ['current', 'previous', 'archived']);
 assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
 assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', role: 'Site systems coordinator',
+  label: 'Verifier Specialist', capability_summary: ['lead'], can_lead_cohorts: true,
+}), 'Site systems coordinator');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', membership: {role: 'Open-vocabulary reviewer'},
+}), 'Open-vocabulary reviewer');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', label: 'Lead Verifier Integrator',
+  capability_summary: ['specialist', 'lead'], can_lead_cohorts: true, born_specialist: true,
+}), '');
+assert.equal(personaAuthoredRole({kind: 'env', role: 'lead'}), '');
+assert.equal(personaAuthoredRole({kind: 'persona', role: `invalid\u0000role`}), '');
+assert.equal(signedPersonaLabel({
+  kind: 'persona', label: 'Signed Open Name', name: 'unsigned summary name',
+}), 'Signed Open Name');
+assert.equal(signedPersonaLabel({kind: 'persona', name: 'inferred name only'}), '');
+assert.equal(signedPersonaLabel({kind: 'env', label: 'Not a persona'}), '');
+assert.equal(signedPersonaLabel({kind: 'persona', label: `bad\u0000name`}), '');
 const discoverOnly = evaluatePublicRecordAccess(authorityRecord, authorityPolicy());
 assert.deepEqual({ok: discoverOnly.ok, level: discoverOnly.level, canRead: discoverOnly.canRead},
   {ok: true, level: 'discover', canRead: false});
@@ -71,8 +92,14 @@ assert.equal(minimal.content_locator_ref, undefined);
 assert.equal(minimal.content_hash, undefined);
 assert.equal(minimal.description, undefined);
 const signedPersonaAvatar = {
-  schema: 'persona-avatar/1', kind: 'identicon', seed: '01'.repeat(32),
-  primary_color: '#D8E9FF', secondary_color: '#17365D', initials: 'OV',
+  schema: 'persona-avatar/2', kind: 'raster',
+  body_path: `assets/persona-avatars/sha256/${'01'.repeat(32)}.png`,
+  content_ref: `sha256:${'01'.repeat(32)}`, sha256: '01'.repeat(32),
+  mime_type: 'image/png', byte_length: 68, width: 1, height: 1,
+  character_prompt_hash: `sha256:${'02'.repeat(32)}`,
+  provenance_hash: `sha256:${'03'.repeat(32)}`,
+  persona_id: 'persona-open-avatar', identity_signing_key_id: 'persona:persona-open-avatar',
+  identity_public_key_hex: '04'.repeat(32), identity_signature_hex: '05'.repeat(64),
 };
 const minimalPersona = projectDiscoveryRecord({
   ...authorityRecord,
@@ -429,12 +456,13 @@ assert.match(portal, /location\.hostname==='ai-personas\.github\.io'/);
 assert.match(portal, /query\.get\('origin_discovery'\)==='1'/);
 assert.match(portal, /personaWindow\.items\.forEach\(\(context\)=>S\.visiblePersonaIds\.add\(context\.key\)\)/);
 assert.doesNotMatch(portal, /visiblePersonaIds\.add\(_personaKey\(b\.kernel,sid\)\)/);
-assert.match(portal, /personaAvatarCells/);
-assert.match(portal, /data-avatar-source/);
+assert.match(portal, /fetchVerifiedPersonaAvatar/);
+assert.match(portal, /data-avatar-state/);
 assert.doesNotMatch(portal, /kind\|\|''\)\.toUpperCase\(\)==='AVATAR'/);
-assert.doesNotMatch(portal, /avatar hash mismatch/);
+assert.match(portal, /URL\.createObjectURL\(blob\)/);
 assert.doesNotMatch(portal, /persona-avatar-fallback/);
-assert.doesNotMatch(portal, /pc-avatar-img/);
+assert.doesNotMatch(portal, /legacy-fallback/);
+assert.doesNotMatch(portal, /personaAvatarCells/);
 assert.match(portal, /class="persona-deck"/);
 assert.match(portal, /class="environment-grid"/);
 assert.match(portal, /ENVIRONMENT CARD ·/);
@@ -466,7 +494,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260712-public-task-routes-v1/);
+assert.match(index, /discovery\.js\?v=20260712-public-task-persona-raster-v2/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
 assert.match(portal, /envManifestFiles\(b\).*authoredArtifactLabelText\(a\)/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);

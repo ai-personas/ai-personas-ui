@@ -18,11 +18,13 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  personaAuthoredRole,
   projectDiscoveryRecord,
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
-} from './discovery-authority.mjs?v=20260712-local-persona-avatar-v1';
+  signedPersonaLabel,
+} from './discovery-authority.mjs?v=20260712-persona-raster-v2';
 import {
   collectLibp2pBootstraps,
   compactCount,
@@ -43,9 +45,10 @@ import {
   selectLocalArtifactModule,
 } from './artifact-types.mjs?v=20260710-universal-artifacts-v1';
 import {
-  personaAvatarCells,
-  resolvePersonaAvatar,
-} from './persona-avatar.mjs?v=20260712-local-identicon-v1';
+  fetchVerifiedPersonaAvatar,
+  normalizePersonaAvatar,
+  personaIdentityKeyPin,
+} from './persona-avatar.mjs?v=20260712-persona-raster-v2';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -295,6 +298,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // derived per-persona / per-env activity. Lets each persona + env view show
   // what is happening INSIDE it right now (model selections, evolution, lineage).
   liveTel:new Map(), liveByPersona:new Map(), liveByEnv:new Map(), drawerTimer:null,
+  personaDiscoveryByKey:new Map(), personaIdentityKeys:new Map(),
   activeModelCallsByBase:new Map(), activeModelCallsByPersona:new Map(), activeModelCallsByEnv:new Map(),
   activeModelCallCount:0,
   // Kernel-signed live snapshots/events remain separate from signed discovery
@@ -885,8 +889,15 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   const r=surface.record, projectedPolicy=surface.policy;
   const b=surface.base, links=surface.links, url=surface.url;
   const gossipRecord=projectDiscoveryRecord(doc.record,false);
+  const personaId=r.kind==='persona'?_shortId(r.did||r.record_id):'';
+  // An independently published persona-key claim is useful only because this
+  // exact source record has already passed the kernel/document signature gate.
+  // Keep the pin internal; absence is normal and never invents one.
+  const identityPublicKeyHex=personaId?personaIdentityKeyPin(doc.record,personaId):'';
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
+    _providerBase:meta.providerBaseVerified===true?rawBase:'',
+    _personaIdentityPublicKeyHex:identityPublicKeyHex,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -919,7 +930,8 @@ async function verifiedRowsFromProviderIndex(providers,base,boot,plane,source='h
       const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
       if(!authority.ok){ refused++;
         log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
-      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,{access:authority.access});
+      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
+        {access:authority.access,providerBaseVerified:true});
       if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
       logRecordAccess(out.row,source); rows.push(out.row);
     }
@@ -936,7 +948,8 @@ async function verifiedRowsFromP2PResult(result,source='p2p'){
     const base=String(p.base_url||'');
     const authority=await verifyHttpProviderWithKeyRefresh(item,doc,pboot,base,expectedKey);
     if(!authority.ok){ refused++; continue; }
-    const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',{access:authority.access});
+    const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',
+      {access:authority.access,providerBaseVerified:true});
     if(!out.ok){ refused++; continue; }
     out.row._net='p2p'; logRecordAccess(out.row,source); rows.push(out.row);
   }
@@ -1401,16 +1414,29 @@ function upsert(r){
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
+    _providerBase:r._providerBase||'',
     _broadcastOnly:!!r._broadcastOnly,_effective_level:r._effective_level||'discover',
     _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
     capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||'',
+    _personaAuthoredRole:r.kind==='persona'?personaAuthoredRole(r):'',
+    _personaSignedName:r.kind==='persona'?signedPersonaLabel(r):'',
+    _personaIdentityPublicKeyHex:r.kind==='persona'?(r._personaIdentityPublicKeyHex||''):'',
     avatar:r.kind==='persona'&&Object.hasOwn(r,'avatar')?r.avatar:null});
+  if(row.kind==='persona'){
+    const sid=_shortId(row.did||row.record_id);
+    if(sid) S.personaDiscoveryByKey.set(_personaKey(row._kernel,sid),row);
+  }
   try{ NETWORK.upsertEntity({...r,kernel_id:r._kernel,record_id:r.record_id||r.card_id}); }catch(e){
     log('scale',`record identity refused: ${String(e&&e.message||e).slice(0,90)}`,false); }
   while(S.order.length>NETWORK_LIMITS.cachedRecords){
-    const victim=S.order.shift(); if(victim) S.recs.delete(victim);
+    const victim=S.order.shift(); if(victim){ const victimRow=S.recs.get(victim);
+      if(victimRow?.kind==='persona'){
+        const sid=_shortId(victimRow.did||victimRow.record_id), key=_personaKey(victimRow._kernel,sid);
+        if(S.personaDiscoveryByKey.get(key)===victimRow) S.personaDiscoveryByKey.delete(key);
+      }
+      S.recs.delete(victim); }
   }
   return true;
 }
@@ -2310,6 +2336,8 @@ const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60
 const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   return _PERSONA_NAME.get(ref.key)||ref.sid.slice(0,10); }
+function _signedPersonaNameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
+  return S.personaDiscoveryByKey.get(ref.key)?._personaSignedName||'name not published'; }
 // RUNNING NOW vs merely recent: a persona is "running" iff the node currently
 // reports an active model call for that persona. Coordination/model history can
 // make a card RECENT, but never RUNNING.
@@ -2320,23 +2348,16 @@ function _modelFresh(value,models,kernel=''){
 }
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
-// derive a persona's coordination ROLE from its summary/name (open, emergent —
-// no closed enum): verifier / producer-lead / integrator / specialist / member.
-function _coordRole(sid,s,kernel=''){
-  // a COARSE, presentational coordination hint — derived only from honest signals.
-  // The public projection carries no raw role, so we read the persona's declared
-  // role/capability when present and otherwise classify by NAME keywords; we NEVER
-  // use raw operator fitness (PER-04) and never map the word "persona" → lead
-  // (that mislabels founders/operator-created personas).
-  const declared=String(s.role||(s.capability_summary&&s.capability_summary[0])||'').toLowerCase();
-  if(declared==='lead'||declared==='founder'||s.can_lead_cohorts===true) return 'lead';
-  const n=(_nameFor(sid,kernel)+' '+declared).toLowerCase();
-  if(n.includes('verif')) return 'verifier';
-  if(n.includes('integrat')) return 'integrator';
-  if(n.includes('specialist')||s.born_specialist===true||declared==='specialist') return 'specialist';
-  if(declared.includes('lead')) return 'lead';
-  return 'member';
+const _ROLE_NOT_DECLARED='role not declared';
+function _coordRole(sid,_summary,kernel=''){
+  const ref=_personaRef(sid,kernel);
+  // S.personaDiscoveryByKey contains only Ed25519-verified discovery rows.
+  // Never turn a name, capability, origin, lifecycle flag, or operator fitness
+  // into a role. An explicit signed/persona-authored role stays open vocabulary.
+  const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
+  return signedCard?._personaAuthoredRole||_ROLE_NOT_DECLARED;
 }
+const _coordRoleClass=(role)=>role===_ROLE_NOT_DECLARED?'role-undesignated':'role-declared';
 // per-persona "is fresh" detector for realtime streaming: did its model-event
 // count grow since the last render? (drives the slide-in animation + node pulse)
 function _personaGrew(personaKey,count){
@@ -2345,25 +2366,138 @@ function _personaGrew(personaKey,count){
   return prev!=null && count>prev;
 }
 function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=(h*31+c.charCodeAt(0))%360; return h; }
-function _personaRecordFor(personaKey){ const ref=_personaRef(personaKey);
-  for(let i=S.order.length-1;i>=0;i--){ const r=S.recs.get(S.order[i]); if(!r||r.kind!=='persona') continue;
-    if(_personaKey(r._kernel,_shortId(r.did||r.record_id))===ref.key) return r; }
-  return null;
+// The hue is decorative card chrome only. Identity imagery is admitted below
+// exclusively from a persona-signed raster descriptor and verified bytes.
+const _PERSONA_AVATAR_CACHE_MAX_ENTRIES=96;
+const _PERSONA_AVATAR_CACHE_MAX_BYTES=64*1024*1024;
+const _personaAvatarAssets=new Map();
+const _personaAvatarJobs=new Map();
+const _personaAvatarFailures=new Set();
+let _personaAvatarCacheBytes=0;
+function _rememberPersonaAvatarFailure(key){
+  _personaAvatarFailures.delete(key); _personaAvatarFailures.add(key);
+  while(_personaAvatarFailures.size>512) _personaAvatarFailures.delete(_personaAvatarFailures.values().next().value);
 }
-function _personaAvatar(personaKey,name){ const ref=_personaRef(personaKey);
-  // _personaRecordFor returns only records admitted through signature + access
-  // verification. Unsigned status/telemetry can never supply identity artwork.
-  return resolvePersonaAvatar(_personaRecordFor(ref.key)?.avatar,{personaId:ref.sid,name});
+function _personaAvatarRevision(descriptor){
+  return descriptor?`${descriptor.sha256}:${descriptor.identity_signature_hex}`:'';
 }
-function _personaAvatarHTML(personaKey,name){ const avatar=_personaAvatar(personaKey,name);
-  const cells=personaAvatarCells(avatar).map(({row,column})=>
-    `<rect x="${column}" y="${row}" width="1" height="1" fill="${avatar.primary_color}"/>`).join('');
-  const source=avatar.source==='signed'?'signed':'legacy-fallback';
-  return `<div class="pc-avatar ${source==='signed'?'verified':'fallback'}" data-avatar-source="${source}" aria-hidden="true">`
-    +`<svg viewBox="0 0 5 5" preserveAspectRatio="xMidYMid slice" shape-rendering="crispEdges" focusable="false">`
-    +`<rect width="5" height="5" fill="${avatar.secondary_color}"/>${cells}</svg>`
-    +`<span class="pc-avatar-initials">${esc(avatar.initials)}</span></div>`;
+function _personaAvatarMountRevision(descriptor,signedCard){
+  return descriptor?`${_personaAvatarRevision(descriptor)}:${String(signedCard?._personaIdentityPublicKeyHex||'')}`:'';
 }
+function _personaAvatarHTML(personaKey){
+  const ref=_personaRef(personaKey);
+  // Avatar shape is inspected synchronously only to make signed descriptor
+  // changes observable to the keyed stage diff. No image appears until the
+  // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
+  const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
+  const descriptor=normalizePersonaAvatar(signedCard?.avatar);
+  const state=descriptor?'pending':(signedCard?.avatar?'failed':'absent');
+  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="avatar unavailable">`
+    +`<span class="pc-avatar-placeholder" aria-hidden="true">no image</span></span>`;
+}
+async function _decodePersonaAvatarBlob(blob,descriptor){
+  if(typeof createImageBitmap==='function'){
+    const bitmap=await createImageBitmap(blob);
+    try{
+      if(bitmap.width!==descriptor.width||bitmap.height!==descriptor.height)
+        throw new Error('decoded avatar dimensions mismatch');
+    }finally{ try{ bitmap.close(); }catch(e){} }
+    return;
+  }
+  if(typeof Image!=='function') throw new Error('raster decoder unavailable');
+  const probeUrl=URL.createObjectURL(blob);
+  try{
+    const probe=new Image();
+    await new Promise((resolve,reject)=>{ probe.onload=resolve; probe.onerror=()=>reject(new Error('avatar decode failed'));
+      probe.src=probeUrl; });
+    if(probe.naturalWidth!==descriptor.width||probe.naturalHeight!==descriptor.height)
+      throw new Error('decoded avatar dimensions mismatch');
+  }finally{ URL.revokeObjectURL(probeUrl); }
+}
+function _rememberPersonaAvatarAsset(key,asset){
+  const prior=_personaAvatarAssets.get(key);
+  if(prior){ _personaAvatarCacheBytes-=prior.byteLength; URL.revokeObjectURL(prior.url); }
+  _personaAvatarAssets.delete(key); _personaAvatarAssets.set(key,asset);
+  _personaAvatarCacheBytes+=asset.byteLength;
+  while(_personaAvatarAssets.size>_PERSONA_AVATAR_CACHE_MAX_ENTRIES
+      ||_personaAvatarCacheBytes>_PERSONA_AVATAR_CACHE_MAX_BYTES){
+    const oldestKey=_personaAvatarAssets.keys().next().value;
+    if(oldestKey===undefined||(_personaAvatarAssets.size===1&&oldestKey===key)) break;
+    const oldest=_personaAvatarAssets.get(oldestKey); _personaAvatarAssets.delete(oldestKey);
+    _personaAvatarCacheBytes-=oldest.byteLength; URL.revokeObjectURL(oldest.url);
+  }
+  return asset;
+}
+async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
+  const ref=_personaRef(personaKey);
+  const assertedPin=String(signedCard?._personaIdentityPublicKeyHex||'');
+  const rememberedPin=String(S.personaIdentityKeys.get(ref.key)||'');
+  if(assertedPin&&rememberedPin&&assertedPin!==rememberedPin)
+    throw new Error('persona identity key pin changed');
+  const pin=assertedPin||rememberedPin;
+  const providerBase=String(signedCard?._providerBase||signedCard?._base||'');
+  const cacheKey=[ref.key,_personaAvatarRevision(descriptor),providerBase,pin].join('\u0000');
+  const cached=_personaAvatarAssets.get(cacheKey);
+  if(cached){ _personaAvatarAssets.delete(cacheKey); _personaAvatarAssets.set(cacheKey,cached); return cached; }
+  if(_personaAvatarFailures.has(cacheKey)) throw new Error('avatar previously refused');
+  let job=_personaAvatarJobs.get(cacheKey);
+  if(!job){
+    job=(async()=>{
+      const loaded=await fetchVerifiedPersonaAvatar(descriptor,{
+        expectedPersonaId:ref.sid,pinnedPublicKeyHex:pin,providerBase,pageUrl:location.href,
+      });
+      const observedKey=loaded.descriptor.identity_public_key_hex;
+      const currentPin=S.personaIdentityKeys.get(ref.key)||'';
+      if(currentPin&&currentPin!==observedKey) throw new Error('persona identity key pin mismatch');
+      S.personaIdentityKeys.set(ref.key,observedKey);
+      const blob=new Blob([loaded.bytes],{type:loaded.descriptor.mime_type});
+      await _decodePersonaAvatarBlob(blob,loaded.descriptor);
+      return _rememberPersonaAvatarAsset(cacheKey,Object.freeze({
+        url:URL.createObjectURL(blob),byteLength:loaded.descriptor.byte_length,
+        width:loaded.descriptor.width,height:loaded.descriptor.height,
+      }));
+    })().catch((error)=>{ _rememberPersonaAvatarFailure(cacheKey); throw error; })
+      .finally(()=>_personaAvatarJobs.delete(cacheKey));
+    _personaAvatarJobs.set(cacheKey,job);
+  }
+  return job;
+}
+function _neutralPersonaAvatar(mount,state='failed'){
+  mount.dataset.avatarState=state;
+  mount.setAttribute('aria-label','avatar unavailable');
+  const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
+  placeholder.setAttribute('aria-hidden','true'); placeholder.textContent='no image';
+  mount.replaceChildren(placeholder);
+}
+async function _hydratePersonaAvatarMount(mount){
+  if(!mount?.isConnected||mount.dataset.avatarState!=='pending') return;
+  const personaKey=_entityKeyFromDom(mount.dataset.avatarKey||'');
+  const signedCard=S.personaDiscoveryByKey.get(personaKey)||null;
+  const descriptor=normalizePersonaAvatar(signedCard?.avatar);
+  const revision=_personaAvatarMountRevision(descriptor,signedCard);
+  if(!descriptor||mount.dataset.avatarRevision!==revision){
+    _neutralPersonaAvatar(mount,signedCard?.avatar?'failed':'absent'); return;
+  }
+  mount.dataset.avatarState='loading';
+  try{
+    const asset=await _loadPersonaAvatarAsset(personaKey,signedCard,descriptor);
+    if(!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
+    const img=document.createElement('img'); img.alt=''; img.setAttribute('aria-hidden','true');
+    img.decoding='async'; img.draggable=false; img.width=asset.width; img.height=asset.height;
+    img.addEventListener('error',()=>{ if(mount.isConnected&&mount.contains(img)) _neutralPersonaAvatar(mount); },{once:true});
+    img.src=asset.url;
+    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.setAttribute('aria-label','verified persona avatar');
+  }catch(e){ if(mount.isConnected&&mount.dataset.avatarRevision===revision) _neutralPersonaAvatar(mount); }
+}
+function _hydratePersonaAvatars(){
+  document.querySelectorAll('.pc-avatar[data-avatar-key]').forEach((mount)=>{
+    if(mount.dataset.avatarState==='pending') _hydratePersonaAvatarMount(mount).catch(()=>{});
+  });
+}
+window.addEventListener('pagehide',()=>{
+  for(const asset of _personaAvatarAssets.values()) URL.revokeObjectURL(asset.url);
+  _personaAvatarAssets.clear(); _personaAvatarCacheBytes=0;
+},{once:true});
 function _artifactStateInfo(r){
   const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
   const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
@@ -2422,7 +2556,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const models=d.models||[]; const last=models[models.length-1];
   const rt=runtimeForPersona(personaKey)||{};
   const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
-  const name=s.name||_nameFor(personaKey); _PERSONA_NAME.set(personaKey,name);
+  const name=_signedPersonaNameFor(personaKey);
   const role=_coordRole(sid,s,ref.kernel);
   const state=s.lifecycle_state||'';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
@@ -2501,8 +2635,8 @@ function renderPersonaCard(pid,kernel='',context={}){
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard role-${role}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey,name)}`
+  return `<article class="pcard ${_coordRoleClass(role)}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
     +`<div class="pc-identity"><span class="pc-name">${esc(name)}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
@@ -2715,7 +2849,7 @@ function renderCoordGraph(persons,totalPersons){
       g.appendChild(_svg('text',{y:4},'gn-role'));
       g.appendChild(_svg('text',{y:25},'gn-do'));
       svg._nodes.appendChild(g); }
-    const cls=`gnode role-${p.role}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.key)?' gn-hot':''}${S.follow===p.key?' gn-followed':''}`;
+    const cls=`gnode ${_coordRoleClass(p.role)}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.key)?' gn-hot':''}${S.follow===p.key?' gn-followed':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
@@ -2725,7 +2859,7 @@ function renderCoordGraph(persons,totalPersons){
     const nm=labeledKeys.has(p.key)
       ?(p.name&&p.name.length>11?p.name.slice(0,10)+'…':(p.name||'')):'';
     if(g.children[3].textContent!==nm) g.children[3].textContent=nm;
-    const rl=(p.role[0]||'?').toUpperCase(); if(g.children[4].textContent!==rl) g.children[4].textContent=rl;
+    const rl=p.role===_ROLE_NOT_DECLARED?'?':(p.role[0]||'?').toUpperCase(); if(g.children[4].textContent!==rl) g.children[4].textContent=rl;
     const dn=p.running?(p.doing||'').slice(0,16):''; if(g.children[5].textContent!==dn) g.children[5].textContent=dn; });
   [...svg._nodes.children].forEach((g)=>{ if(!liveKeys.has(g.getAttribute('data-gp'))) g.remove(); });
   // drop reused fire-pulse paths whose endpoints left the graph (keeps the persistent
@@ -3064,6 +3198,7 @@ async function refreshSystemView(){
     return {artRow,departed,statusTxt,statusOk,metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
+    const membershipRow=b.members.length?'':'<div class="env-card-empty">awaiting members</div>';
     const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
     const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
     const cardId=String(b.sid||b.envId||'').replace(/^env:/,'').slice(-10).toUpperCase();
@@ -3078,7 +3213,7 @@ async function refreshSystemView(){
       +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
       +`<span>${icon('task','ico-sm')}<b>${b.live?'live':'signed'}</b><small>source</small></span></section>`
-      +`${liveRow}${output.artRow}<div class="env-card-footer"><span>shared workspace</span><span>outputs stay environment-owned</span></div></article>`;
+      +`${membershipRow}${liveRow}${output.artRow}<div class="env-card-footer"><span>shared workspace</span><span>outputs stay environment-owned</span></div></article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -3098,18 +3233,17 @@ async function refreshSystemView(){
     })[0];
     _kept.push(survivor);
   }
-  // (4) SORT lanes by activity so the hero slot is a running/deliverable-bearing env,
-  // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
+  // (4) SORT lanes by activity so running/deliverable-bearing environments lead.
+  // Stable sort keeps signed empty environments visible while placing them last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
     + (b.members.some((m)=>_runningNow(m,b.kernel))?4:0)
     + (b.members.some((m)=>(S.liveByPersona.get(_personaRef(m,b.kernel).key)||{}).models)?2:0)
     + (envHasArtifacts(b)?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
-  // HIDE empty infrastructure lanes. An env with no members AND
-  // no shipped deliverables is plumbing, not a workspace; showing it as an "awaiting members"
-  // lane only clutters the personas-at-work view. Fall back to all only if hiding empties the stage.
-  const _visible=_kept.filter((b)=>b.members.length>0 || envHasArtifacts(b));
-  const _baseCandidates=(_visible.length||orphans.length)?_visible:_kept;
+  // Every verified environment record is an authoritative workspace identity.
+  // Missing live roster/artifact telemetry means "not observed yet", never
+  // permission to erase the signed environment card from the stage.
+  const _baseCandidates=_kept;
   const query=String(S.q||'').trim();
   const _envMatches=(b)=>!query||`${b.kernel} ${b.name} ${b.type} ${b.status}`.toLowerCase().includes(query)
     ||b.members.some((sid)=>_personaSearch(sid,b.kernel).toLowerCase().includes(query))
@@ -3179,6 +3313,7 @@ async function refreshSystemView(){
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
+  _hydratePersonaAvatars();
   _applyFollow();
   // Focused graph selection is independent of card pagination: running/recent
   // personas remain visible even if their card is outside the current window.
@@ -3190,7 +3325,7 @@ async function refreshSystemView(){
     const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
     const recentAct=acts[acts.length-1];
     const recent=_modelFresh(personaKey,models)||!!(recentAct&&(Date.now()-recentAct._t)<90000);
-    return {key:personaKey,sid,kernel:d.kernel||ref.kernel,name:s.name||_nameFor(personaKey),
+    return {key:personaKey,sid,kernel:d.kernel||ref.kernel,name:_signedPersonaNameFor(personaKey),
       role:_coordRole(sid,s,ref.kernel),live:recent,running:_runningNow(personaKey),
       doing:last?(PURPOSE_VERB[last.purpose]||last.purpose):''}; });
   const graphWindow=selectPriorityWindow(personRows,{query:S.q||'',limit:NETWORK_LIMITS.graphPersonasFocused,
