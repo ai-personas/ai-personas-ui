@@ -494,7 +494,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260712-public-task-persona-raster-v2/);
+assert.match(index, /discovery\.js\?v=20260712-living-card-network-v1/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
 assert.match(portal, /envManifestFiles\(b\).*authoredArtifactLabelText\(a\)/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);
