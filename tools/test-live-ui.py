@@ -101,7 +101,22 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('7/11 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('8/12 record(s) provider + record + policy verified')""", timeout=15_000)
+            signed_live_task = page.locator(
+                '.mcard[data-mrec]', has_text='prepare the site approval package'
+            )
+            signed_live_task.wait_for(state='attached', timeout=15_000)
+            signed_live_task_text = signed_live_task.text_content() or ''
+            require('QUEUED' in signed_live_task_text,
+                    'signed public live task did not preserve its exact queued state')
+            require('signed live task' in signed_live_task_text,
+                    'signed public live task lacks explicit signed-source context')
+            page.wait_for_function(
+                """() => document.querySelector('#p2p')?.textContent.startsWith('P2P · libp2p ')""",
+                timeout=15_000,
+            )
+            require('String multiaddr must start with' not in (page.locator('#log').text_content() or ''),
+                    'HTTP federation URL escaped into the libp2p bootstrap list')
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
             page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
@@ -167,10 +182,21 @@ def run(args: argparse.Namespace) -> dict:
             orin = page.locator('.pcard[title="open Orin Vale"]')
             require(orin.locator('.pc-env-chip').count() >= 1,
                     'persona card did not name its current environment')
-            page.wait_for_function("""() => document.querySelector('.pcard[title="open Orin Vale"] .pc-avatar')
-              ?.classList.contains('verified')""", timeout=10_000)
-            require((orin.locator('.pc-avatar-img').get_attribute('src') or '').startswith('blob:'),
-                    'signed characteristic avatar was not hash-verified before rendering')
+            persona_cards = page.locator('.persona-deck > .pcard')
+            require(page.locator('.pcard .pc-avatar').count() == persona_cards.count(),
+                    'not every actual persona received exactly one avatar')
+            orin_avatar = orin.locator('.pc-avatar')
+            require(orin_avatar.get_attribute('data-avatar-source') == 'signed',
+                    'signed PersonaCard avatar descriptor was not rendered')
+            require(orin_avatar.locator('.pc-avatar-initials').text_content() == 'OV',
+                    'signed avatar initials were not preserved')
+            require(page.locator(
+                '.pcard .pc-avatar[data-avatar-source="legacy-fallback"]').count() == 2,
+                    'personas without a valid signed descriptor lack deterministic fallbacks')
+            require(page.locator('.pcard .pc-avatar svg').count() == persona_cards.count(),
+                    'persona avatars were not rendered as one local SVG per persona')
+            require(page.locator('.pcard .pc-avatar img').count() == 0,
+                    'persona avatar rendering introduced a fetchable image surface')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             inspector = page.evaluate("""() => {
@@ -316,6 +342,14 @@ def run(args: argparse.Namespace) -> dict:
                              and item['url'].startswith(('http://', 'https://'))
                              and not item['url'].startswith(base + '/')]
             require(not external_exec, 'external executable code loaded: ' + ', '.join(external_exec))
+            avatar_requests = [item['url'] for item in requests
+                               if ('persona-avatar-fallback' in item['url'].lower()
+                                   or ('/personas/' in item['url'].lower()
+                                       and '/avatar.' in item['url'].lower())
+                                   or (item['resource_type'] == 'image'
+                                       and 'avatar' in item['url'].lower()))]
+            require(not avatar_requests,
+                    'persona avatar rendering fetched image bytes: ' + ', '.join(avatar_requests))
 
             before_hash = page.locator('.exact-hash').last.text_content()
             page.locator('#detailback').click()

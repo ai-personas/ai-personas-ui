@@ -120,14 +120,22 @@ a willing replica or pin provider. These are optional, replaceable **commons**, 
 central index, but they are still infrastructure. Without bootstrap/relay/rendezvous or a direct
 peer URL, unrelated browsers cannot discover each other through NAT; without replication/pinning,
 an offline origin's bytes are unavailable. Trust still comes from signatures and content hashes,
-not from the commons carrying them.
+not from the commons carrying them. Mixed node bootstrap documents are split at the browser
+boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
+js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
 
-**Persona portraits are identity assets, not UI guesses.** A current persona record may advertise
-a signed `AVATAR` interface with an endpoint, media type, generator and SHA-256. The portal fetches
-at most 4 MiB, verifies that exact hash, checks the image media type, and only then renders a local
-blob URL in the persona card. Older personas without that interface use the bundled, clearly marked
-legacy portrait fallback. The top status/control header is independently collapsible and consumes
-zero layout height while closed.
+**Live tasks are visible from their signed public record at intake.** The mission surface renders
+the exact task label and exact bounded state that follow the signed `live_task` capability marker.
+It does not infer a task state from prose or unsigned telemetry; project/mission evidence and
+operator-only run state remain additive sources.
+
+**Persona avatars are signed identity descriptors, never fetchable media.** A persona record may
+carry a bounded `persona-avatar/1` identicon descriptor containing a seed, two colours, and safe
+initials. The portal validates that signed descriptor and renders its SVG locally. Every real
+persona without a valid descriptor receives a deterministic local fallback derived from its
+kernel-qualified identity and name. URL/data/image fields are refused, no avatar bytes are fetched,
+and avatar data never creates a persona card. The top status/control header is independently
+collapsible and consumes zero layout height while closed.
 
 ## Realtime execution and live artifacts
 
@@ -271,6 +279,7 @@ Deterministic validation (the Playwright check starts its own local fixture):
 
 ```bash
 node tools/test-live-artifacts.mjs
+node tools/test-persona-avatar.mjs
 node tools/test-artifact-types.mjs
 node tools/test-network-view.mjs
 node tools/test-network-store.mjs
@@ -288,6 +297,7 @@ The browser test requires Python Playwright, PyNaCl, and an installed Chromium. 
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
 assets/discovery-authority.mjs             # provider hints, historical keys, AccessPolicy projection
+assets/persona-avatar.mjs                  # signed descriptor validation + deterministic local SVG data
 assets/network-view.mjs                    # bounded priority/search/progressive network projections
 assets/network-store.mjs                   # kernel-qualified entities, presence leases, event rings
 assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
@@ -298,6 +308,7 @@ assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay 
 peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
 tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a node); NOT needed at runtime
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
+tools/test-persona-avatar.mjs              # signed-avatar validation and safe-fallback regression
 tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknown-content fallback
 tools/test-network-view.mjs                # million-node bounded-window regression
 tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression

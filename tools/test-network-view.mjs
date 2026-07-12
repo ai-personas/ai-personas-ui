@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 
 import {
   NETWORK_VIEW_LIMITS,
+  collectLibp2pBootstraps,
   compactCount,
+  liveTaskMissionProjection,
   nextProgressiveGroupLevel,
+  normalizeLibp2pBootstrap,
   normalizeMonitoringBase,
   progressiveGroupLimit,
   safeCount,
@@ -12,6 +15,57 @@ import {
   selectSearchWindow,
   takeProgressiveGroupWindow,
 } from '../assets/network-view.mjs';
+
+const announcedMultiaddr = '/dns4/personas.example/tcp/443/wss/p2p/12D3KooWTest';
+assert.equal(normalizeLibp2pBootstrap(announcedMultiaddr), announcedMultiaddr);
+assert.equal(normalizeLibp2pBootstrap(`  ${announcedMultiaddr}  `), announcedMultiaddr);
+for (const invalid of [
+  'https://peer.example',
+  'http://127.0.0.1:8765',
+  '//dns4/peer.example/tcp/443/wss',
+  '/dns4/peer.example/tcp/443/wss?token=secret',
+  '/dns4/peer.example/tcp/443/wss\n/p2p/other',
+  null,
+]) {
+  assert.equal(normalizeLibp2pBootstrap(invalid), null);
+}
+assert.deepEqual(collectLibp2pBootstraps(
+  ['https://federation.example', announcedMultiaddr],
+  new Set([announcedMultiaddr, '/dns4/relay.example/tcp/443/wss/p2p/relay']),
+), [announcedMultiaddr, '/dns4/relay.example/tcp/443/wss/p2p/relay']);
+
+const signedLiveTask = {
+  kind: 'task',
+  label: 'design a complete four-bedroom house',
+  did: 'did:personaos:kernel:test/task/run-01KTEST',
+  description: 'queued live task',
+  capability_summary: [
+    'live_task',
+    'queued',
+    'available_model:gpt-5.4',
+  ],
+};
+assert.deepEqual(liveTaskMissionProjection(signedLiveTask), {
+  task: 'design a complete four-bedroom house',
+  state: 'queued',
+  run: 'run-01KTEST',
+  liveTask: true,
+});
+assert.equal(liveTaskMissionProjection({
+  ...signedLiveTask,
+  capability_summary: ['live_task', 'waiting_for_persona'],
+}).state, 'waiting_for_persona', 'persona-authored bounded states must not be hardcoded away');
+for (const refused of [
+  {...signedLiveTask, capability_summary: []},
+  {...signedLiveTask, capability_summary: ['live_task']},
+  {...signedLiveTask, capability_summary: ['live_task', 'queued onclick=alert(1)']},
+  {...signedLiveTask, capability_summary: ['queued', 'live_task']},
+  {...signedLiveTask, kind: 'project'},
+  {...signedLiveTask, label: ''},
+]) {
+  assert.equal(liveTaskMissionProjection(refused), null,
+    'mission surface must not infer an unsigned or malformed live-task state');
+}
 
 function* millionNodes() {
   for (let index = 0; index < 1_000_000; index++) {

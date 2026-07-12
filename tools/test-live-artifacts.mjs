@@ -70,6 +70,19 @@ assert.equal(minimal.label, authorityRecord.label);
 assert.equal(minimal.content_locator_ref, undefined);
 assert.equal(minimal.content_hash, undefined);
 assert.equal(minimal.description, undefined);
+const signedPersonaAvatar = {
+  schema: 'persona-avatar/1', kind: 'identicon', seed: '01'.repeat(32),
+  primary_color: '#D8E9FF', secondary_color: '#17365D', initials: 'OV',
+};
+const minimalPersona = projectDiscoveryRecord({
+  ...authorityRecord,
+  kind: 'persona',
+  avatar: signedPersonaAvatar,
+}, false);
+assert.deepEqual(minimalPersona.avatar, signedPersonaAvatar,
+  'signed persona avatar must remain visible at discover tier');
+assert.equal(projectDiscoveryRecord({...authorityRecord, avatar: signedPersonaAvatar}, false).avatar,
+  undefined, 'non-persona records must not gain a persona identity surface');
 const minimalPolicy = projectAccessPolicy(authorityPolicy([publicGrant()]), false);
 assert.deepEqual(minimalPolicy.access_grants, []);
 assert.equal(minimalPolicy.owner_persona_id, undefined);
@@ -416,8 +429,12 @@ assert.match(portal, /location\.hostname==='ai-personas\.github\.io'/);
 assert.match(portal, /query\.get\('origin_discovery'\)==='1'/);
 assert.match(portal, /personaWindow\.items\.forEach\(\(context\)=>S\.visiblePersonaIds\.add\(context\.key\)\)/);
 assert.doesNotMatch(portal, /visiblePersonaIds\.add\(_personaKey\(b\.kernel,sid\)\)/);
-assert.match(portal, /kind\|\|''\)\.toUpperCase\(\)==='AVATAR'/);
-assert.match(portal, /avatar hash mismatch/);
+assert.match(portal, /personaAvatarCells/);
+assert.match(portal, /data-avatar-source/);
+assert.doesNotMatch(portal, /kind\|\|''\)\.toUpperCase\(\)==='AVATAR'/);
+assert.doesNotMatch(portal, /avatar hash mismatch/);
+assert.doesNotMatch(portal, /persona-avatar-fallback/);
+assert.doesNotMatch(portal, /pc-avatar-img/);
 assert.match(portal, /class="persona-deck"/);
 assert.match(portal, /class="environment-grid"/);
 assert.match(portal, /ENVIRONMENT CARD ·/);
@@ -449,7 +466,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260712-artifact-semantics-v1/);
+assert.match(index, /discovery\.js\?v=20260712-public-task-routes-v1/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
 assert.match(portal, /envManifestFiles\(b\).*authoredArtifactLabelText\(a\)/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);

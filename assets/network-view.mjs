@@ -35,6 +35,65 @@ function iterableOf(value) {
   return typeof value[Symbol.iterator] === 'function' ? value : [value];
 }
 
+/**
+ * Keep only browser-dialable libp2p multiaddr-shaped bootstrap values.
+ *
+ * Node bootstrap documents intentionally carry both HTTP federation URLs and
+ * libp2p routes in some legacy arrays.  Passing the HTTP values to js-libp2p's
+ * bootstrap discovery aborts the whole P2P node before it can dial the valid
+ * entries.  This boundary is deliberately structural: it does not choose a
+ * transport or peer, it only keeps bounded multiaddr strings and deduplicates
+ * them in observation order.
+ */
+export function normalizeLibp2pBootstrap(value) {
+  if (typeof value !== 'string') return null;
+  const exact = value.normalize('NFC').trim();
+  if (!exact || exact.length > 2048 || exact[0] !== '/' || exact[1] === '/') return null;
+  if (!/^\/[!-~]+$/.test(exact) || /[?#]/.test(exact)) return null;
+  return exact;
+}
+
+export function collectLibp2pBootstraps(...sources) {
+  const seen = new Set();
+  const out = [];
+  for (const source of sources) {
+    for (const value of iterableOf(source)) {
+      const normalized = normalizeLibp2pBootstrap(value);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  return out;
+}
+
+/**
+ * Project one already-verified public task record into the mission surface.
+ *
+ * The caller owns signature/access verification.  This helper refuses to infer
+ * execution state from prose: a task is live only when its signed capability
+ * list contains `live_task` followed immediately by the exact bounded state.
+ */
+export function liveTaskMissionProjection(record) {
+  if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
+  const capabilities = Array.isArray(record.capability_summary)
+    ? record.capability_summary.map((value) => String(value ?? '').trim()).slice(0, 64)
+    : [];
+  const marker = capabilities.indexOf('live_task');
+  const state = marker >= 0 ? capabilities[marker + 1] || '' : '';
+  if (!/^[a-z][a-z0-9_-]{0,39}$/.test(state)) return null;
+  const task = String(record.label ?? '').normalize('NFC').trim().slice(0, 256);
+  if (!task) return null;
+  const did = String(record.did ?? '').trim();
+  const match = did.match(/\/task\/(run-[0-9A-Za-z_-]{1,180})$/);
+  return Object.freeze({
+    task,
+    state,
+    run: match ? match[1] : '',
+    liveTask: true,
+  });
+}
+
 function boundedText(value, maxLength) {
   return String(value ?? '').normalize('NFC').slice(0, maxLength);
 }
