@@ -38,28 +38,45 @@ const signedLiveTask = {
   kind: 'task',
   label: 'design a complete four-bedroom house',
   did: 'did:personaos:kernel:test/task/run-01KTEST',
-  description: 'queued live task',
+  description: 'awaiting peer sense-making live task',
   capability_summary: [
-    'live_task',
-    'queued',
     'available_model:gpt-5.4',
-  ],
+    'live_task',
+    'model_pool_hash:fixture-pool',
+    'task_state:awaiting peer sense-making',
+  ].sort(),
 };
 assert.deepEqual(liveTaskMissionProjection(signedLiveTask), {
   task: 'design a complete four-bedroom house',
-  state: 'queued',
+  state: 'awaiting peer sense-making',
   run: 'run-01KTEST',
   liveTask: true,
 });
-assert.equal(liveTaskMissionProjection({
+const legacySortedLiveTask = {
   ...signedLiveTask,
-  capability_summary: ['live_task', 'waiting_for_persona'],
-}).state, 'waiting_for_persona', 'persona-authored bounded states must not be hardcoded away');
+  description: 'waiting_for_persona live task',
+  capability_summary: [
+    'live_task',
+    'waiting_for_persona',
+    'model_pool_hash:legacy-pool',
+  ].sort(),
+};
+assert.equal(liveTaskMissionProjection(legacySortedLiveTask).state, 'waiting_for_persona',
+  'unambiguous signed raw-state records must remain visible after canonical sorting');
 for (const refused of [
   {...signedLiveTask, capability_summary: []},
   {...signedLiveTask, capability_summary: ['live_task']},
-  {...signedLiveTask, capability_summary: ['live_task', 'queued onclick=alert(1)']},
-  {...signedLiveTask, capability_summary: ['queued', 'live_task']},
+  {...signedLiveTask, capability_summary: ['live_task', 'task_state:']},
+  {...signedLiveTask, capability_summary: ['live_task', 'task_state: queued']},
+  {...signedLiveTask, capability_summary: ['live_task', `task_state:${'x'.repeat(41)}`]},
+  {...signedLiveTask, capability_summary: ['live_task', 'task_state:queued\nforged']},
+  {...signedLiveTask, capability_summary: [
+    'live_task', 'task_state:queued', 'task_state:running',
+  ]},
+  {...legacySortedLiveTask, description: 'some other signed description'},
+  {...legacySortedLiveTask, capability_summary: [
+    'live_task', 'waiting_for_persona', 'waiting_for_persona',
+  ]},
   {...signedLiveTask, kind: 'project'},
   {...signedLiveTask, label: ''},
 ]) {
