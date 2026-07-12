@@ -146,6 +146,9 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.stage-wrap').evaluate(
                 '(element) => element.getBoundingClientRect().top') <= 90,
                     'desktop workspace begins below oversized application chrome')
+            require(page.locator('footer').evaluate(
+                '(element) => element.getBoundingClientRect().height') <= 36,
+                    'desktop discovery status consumes a permanent content band')
             page.locator('#headerToolsToggle').click()
             require(page.locator('.vgroup-tools').evaluate(
                 '(element) => getComputedStyle(element).display') != 'none',
@@ -240,8 +243,10 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator(
                 '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 2,
                     'missing avatars did not remain neutral absence placeholders')
-            require(page.locator('.pcard .pc-avatar-placeholder', has_text='no image').count() == 2,
-                    'missing avatars did not show the neutral text placeholder')
+            require(page.locator('.pcard .pc-avatar-placeholder', has_text='portrait pending').count() == 2,
+                    'missing avatars did not explain their pending portrait state')
+            require(page.locator('.pcard .pc-avatar-placeholder strong').count() == 2,
+                    'missing avatars did not retain a recognizable persona monogram')
             require(page.locator('.pcard .pc-avatar svg').count() == 0,
                     'persona avatar rendering retained generated SVG art')
             require(page.locator('.pcard [data-avatar-source]').count() == 0,
@@ -637,7 +642,8 @@ def run(args: argparse.Namespace) -> dict:
             scale.locator('#q').fill('scale-persona-01999')
             scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
               .some((card) => card.dataset.pcard === 'scale-persona-01999'
-                && card.textContent.includes('name not published'))""", timeout=10_000)
+                && card.textContent.includes('Persona')
+                && card.textContent.includes('signed name unavailable'))""", timeout=10_000)
             require(scale.locator('.pcard').count() <= 24,
                     'search escaped the progressive persona window')
             scale_metrics = {
@@ -690,7 +696,8 @@ def run(args: argparse.Namespace) -> dict:
               return {scrollWidth:document.documentElement.scrollWidth,
                 clientWidth, rects, overlaps, wide, components:{
                   header:componentHeight('.vitals'),mission:componentHeight('.missions'),
-                  rail:componentHeight('.workspace-rail'),stageTop:document.querySelector('.stage-wrap')?.getBoundingClientRect().top ?? 999
+                  rail:componentHeight('.workspace-rail'),footer:componentHeight('footer'),
+                  stageTop:document.querySelector('.stage-wrap')?.getBoundingClientRect().top ?? 999
                 }};
             }""")
             require(metrics['scrollWidth'] <= metrics['clientWidth'] + 1,
@@ -702,6 +709,8 @@ def run(args: argparse.Namespace) -> dict:
                     f"mobile mission ribbon occupies permanent expanded height: {metrics['components']['mission']}px")
             require(metrics['components']['rail'] <= 110 and metrics['components']['stageTop'] <= 125,
                     'mobile workspace is still pushed down by stacked permanent headers')
+            require(metrics['components']['footer'] <= 100,
+                    'mobile discovery diagnostics consume excessive vertical space')
             mobile.locator('#headerToggle').click()
             mobile.wait_for_function("""() => document.querySelector('#appHeader')?.offsetHeight === 0""",
                                      timeout=5_000)

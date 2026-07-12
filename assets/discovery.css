@@ -1608,3 +1608,32 @@ body.detail-open{overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .drawer-wrap,.drawer{transition:none!important}
 }
+
+/* ===================== UI AUDIT · DENSITY + READABILITY ===================== */
+.pc-avatar-placeholder{position:relative;isolation:isolate;grid-template-rows:auto auto;align-content:center;gap:7px;
+  background:
+    radial-gradient(circle at 32% 24%,color-mix(in srgb,hsl(var(--avatar-hue) 82% 64%) 28%,transparent),transparent 42%),
+    linear-gradient(145deg,color-mix(in srgb,hsl(var(--avatar-hue) 64% 45%) 20%,#0a1724),#06101b)}
+.pc-avatar-placeholder::before,.pc-avatar-placeholder::after{content:'';position:absolute;z-index:-1;inset:17%;border:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 80% 70%) 30%,transparent);border-radius:18px;transform:rotate(45deg)}
+.pc-avatar-placeholder::after{inset:30%;border-radius:50%;transform:none}
+.pc-avatar-placeholder strong{color:var(--bright);font:800 22px/1 var(--sans);letter-spacing:-.06em;text-shadow:0 3px 16px rgba(0,0,0,.45)}
+.pc-avatar-placeholder small{color:color-mix(in srgb,hsl(var(--avatar-hue) 72% 74%) 45%,var(--mut));font:700 6px/1.15 var(--mono);letter-spacing:.08em}
+.env-persona-node .pc-avatar-placeholder strong{font-size:12px}.env-persona-node .pc-avatar-placeholder small{display:none}
+.pc-message-count{display:inline-flex!important;margin-left:3px;padding:1px 5px;border:1px solid var(--line2);border-radius:var(--radius-pill);color:var(--int)!important;font:700 8px/1 var(--mono)}
+.kind{white-space:nowrap;flex:0 0 auto}
+.drawer-body .v2>.grant{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px}
+.drawer-body .v2>.grant>span:last-child{text-align:right;overflow-wrap:anywhere}
+.window-more{min-height:34px}
+footer{min-height:34px;max-height:34px;flex-wrap:nowrap;padding-block:5px}
+footer #status{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+footer .p2p-stat{white-space:nowrap}
+
+@media(max-width:719px){
+  .header-tools-toggle,.header-toggle{width:34px!important;height:34px;top:6px!important}
+  .header-tools-toggle{right:45px!important}.header-toggle{right:7px!important}
+  .window-more{min-height:36px}
+  footer{max-height:none;min-height:72px;padding-block:8px}
+  footer #status{display:-webkit-box;white-space:normal;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}
+  .drawer-body .v2>.grant{grid-template-columns:1fr;gap:4px;padding-block:5px}
+  .drawer-body .v2>.grant>span:last-child{text-align:left}
+}
