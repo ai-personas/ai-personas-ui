@@ -173,6 +173,8 @@ def run(args: argparse.Namespace) -> dict:
                     'environment did not receive collectible card identity artwork')
             require(page.locator('.env-card .env-card-stats > span').count() >= 3,
                     'environment card omitted useful workspace facts')
+            require(page.locator('.env-card .env-card-stats > span').count() >= 4,
+                    'environment card omitted people, active, signal, or output facts')
             require(page.locator('.env-card .env-card-footer').count() >= 1,
                     'environment card omitted ownership context')
             require(page.locator('.env-card .pcard').count() == 0,
@@ -183,6 +185,12 @@ def run(args: argparse.Namespace) -> dict:
             for signed_name in ('Orin Vale', 'Mara Chen', 'Ivo Reed'):
                 require(page.locator('.pcard .pc-name', has_text=signed_name).count() == 1,
                         f'signed persona label was not rendered exactly once: {signed_name}')
+            require(page.locator('.pcard .pc-name-proof', has_text='signed display name').count() == 3,
+                    'persona cards did not make the signed display-name source prominent')
+            require(page.locator('.pcard .pc-message-stream').count() == 3,
+                    'each persona card did not receive its own live message stream')
+            require(page.locator('.pcard[title="open Orin Vale"] .pc-message[data-message-kind="MODEL_CALL"]').count() >= 1,
+                    'current model request did not stream into the owning persona card')
             require('Unsigned ' not in ' '.join(persona_cards.all_text_contents()),
                     'unsigned telemetry alias overrode a signed persona label')
             empty_env = page.locator('.env-card', has_text='House Planning Commons')
@@ -190,6 +198,24 @@ def run(args: argparse.Namespace) -> dict:
                     'verified environment without roster or artifacts was hidden')
             require('awaiting members' in empty_env.text_content(),
                     'empty environment card omitted its neutral membership state')
+            require(empty_env.locator('.env-network.empty').count() == 1
+                    and empty_env.locator('.env-persona-node').count() == 0,
+                    'empty signed environment fabricated a social graph')
+            active_env = page.locator('.env-card', has_text='Four Bedroom Design Studio').first
+            require(active_env.locator('.env-network').count() == 1,
+                    'active environment card omitted its compact social graph')
+            require(active_env.locator('.env-persona-node').count() == 3,
+                    'environment graph omitted verified-roster persona nodes')
+            require(active_env.locator('.env-persona-node .pc-avatar').count() == 3,
+                    'environment graph did not reuse verified raster avatar mounts')
+            require(active_env.locator('.env-comm-edge').count() == 2,
+                    'environment graph inferred an edge or omitted an exact actor-recipient channel')
+            require(active_env.locator('.env-comm-feed li').count() >= 2,
+                    'environment communication summaries did not stream inside the card')
+            edge_titles = active_env.locator('.env-comm-edge title').all_text_contents()
+            require(any('Orin Vale to Mara Chen' in title for title in edge_titles)
+                    and any('Mara Chen to Ivo Reed' in title for title in edge_titles),
+                    'environment graph lost exact signed persona names or observed direction')
             orin = page.locator('.pcard[title="open Orin Vale"]')
             require(orin.locator('.pc-env-chip').count() >= 1,
                     'persona card did not name its current environment')
@@ -205,6 +231,12 @@ def run(args: argparse.Namespace) -> dict:
                     'verified raster avatar was not rendered')
             require((orin_avatar.locator('img').get_attribute('src') or '').startswith('blob:'),
                     'avatar rendered a provider URL instead of a temporary blob URL')
+            page.wait_for_function("""() => [...document.querySelectorAll('.env-persona-node')]
+              .find((node) => node.textContent.includes('Orin Vale'))
+              ?.querySelector('.pc-avatar')?.dataset.avatarState === 'ready'""", timeout=15_000)
+            env_orin_avatar = active_env.locator('.env-persona-node', has_text='Orin Vale').locator('.pc-avatar')
+            require(env_orin_avatar.locator('img[src^="blob:"]').count() == 1,
+                    'environment graph bypassed verified raster avatar hydration')
             require(page.locator(
                 '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 2,
                     'missing avatars did not remain neutral absence placeholders')

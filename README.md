@@ -96,7 +96,11 @@ twelve-persona deck plus a compact ten-environment workspace index and expands t
 **SHOW MORE**. Personas are never nested under environments; each card names the exact environments
 whose roster or live telemetry associates it with them.
 Environment records render as their own collectible workspace cards with stable identity sigils,
-live state, people/file/source facts, activity, and environment-owned outputs.
+live people/signal/file facts, environment-owned outputs, and a compact avatar constellation. Each
+constellation node reuses the exact persona-signed raster verifier; animated directional edges and
+the in-card communication ticker appear only for observed actor→persona-endpoint frames in that
+exact environment. A verified environment with no observed roster still renders as an explicit
+empty card rather than disappearing or fabricating members.
 Dense graph windows keep only about ten evenly spaced labels plus every active, recent, or followed
 persona labelled; every other exact node remains keyboard-focusable with its full tooltip, avoiding
 an unreadable text cloud without dropping identities.
@@ -219,11 +223,14 @@ Click any discovered record for deep detail with its trust state visible:
 - **telemetry** → a consent-gated activity/presence feed; signed spans and unsigned live frames
   are labelled separately.
 
-A real-time **LIVING NETWORK** UI makes the personas legible: living persona cards stream each
-persona's request→response and cognition; a coordination constellation (kernel core + persona nodes)
-fires as messages flow; a who→whom coordination feed threads each task's produce→verify→ship; and a
-heartbeat-driven system vital keeps the page alive. Persona cards expose task/LLM execution state,
-the current model/purpose, and run pressure/review/block state when the node API provides it.
+A real-time **LIVING NETWORK** UI makes the personas legible through an original collectible-card
+visual language: the signed display name and verified raster portrait are the card hero, while each
+card's bounded message stream shows its own observed model requests and coordination signals.
+Environment cards carry a smaller live avatar constellation and message ticker. The global
+coordination constellation still fires as messages flow, and the heartbeat-driven system vital
+keeps the page alive. Persona cards expose task/LLM execution state, the current model/purpose, and
+run pressure/review/block state when the node API provides it. This visual system does not reuse
+third-party trading-card artwork, logos, nomenclature, or layouts.
 
 Persona→persona graph edges are exact claims, not inferred social links. A standing chord and its
 directional pulse exist only when one observed telemetry event names both an actor persona and an

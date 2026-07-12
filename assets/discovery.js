@@ -494,6 +494,18 @@ function _eventEndpoints(event){
   return out;
 }
 function _personaEndpoints(event){ return _eventEndpoints(event).filter((endpoint)=>endpoint.kind==='persona'); }
+function _interactionPersonaKeys(event){
+  return [event?.actor_kind==='persona'?_eventPersonaKey(event,event.actor_id):null,
+    ..._personaEndpoints(event).map((endpoint)=>_eventPersonaKey(event,endpoint.id))].filter(Boolean);
+}
+function _refreshPersonaInteractionIndex(){
+  S.ixByPersona=new Map();
+  for(const event of (S.interactions||[])) for(const personaKey of _interactionPersonaKeys(event)){
+    const rows=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
+    rows.push(event);
+  }
+  for(const [,rows] of S.ixByPersona) if(rows.length>12) rows.splice(0,rows.length-12);
+}
 
 function ingestLiveTelemetry(base,live,{source='poll',eventId=''}={}){
   const sourceKey=base||'@origin';
@@ -688,15 +700,9 @@ function indexLiveTelemetry(base,live,meta={}){
     if(S.ixSeen) for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
     // index recent coordination acts PER PERSONA (actor + explicit endpoints) so a persona
     // card can stream its activity in live state A (interactions, no model_events).
-    const _ixPersonaKeys=(e)=>[e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):null,
-      ..._personaEndpoints(e).map((a)=>_eventPersonaKey(e,a.id))].filter(Boolean);
-    S.ixByPersona=new Map();
-    for(const e of S.interactions) for(const personaKey of _ixPersonaKeys(e)){
-      const arr=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
-      // Keep the complete bounded event so the owning persona card can show
-      // honest actor, recipient, scope and detail—not a detached generic verb.
-      arr.push(e); }
-    for(const [,arr] of S.ixByPersona) if(arr.length>12) arr.splice(0,arr.length-12);
+    // Keep complete bounded events so each owning persona card can show honest
+    // actor, recipient, scope and detail—not a detached generic verb.
+    _refreshPersonaInteractionIndex();
     if(!cold){
       S.ixCountBySid=S.ixCountBySid||new Map();
       for(const rec of fresh){
@@ -705,7 +711,7 @@ function indexLiveTelemetry(base,live,meta={}){
         // persona 'running': 'running' means actively IN A MODEL CALL (set only on
         // model_events growth above). A persona merely NAMED in a routed message is not
         // itself in an LLM call — conflating the two made every coordinated persona pulse.
-        for(const personaKey of _ixPersonaKeys(rec)){
+        for(const personaKey of _interactionPersonaKeys(rec)){
           S.ixCountBySid.set(personaKey,(S.ixCountBySid.get(personaKey)||0)+1); }
         if(fired>=12) continue;               // vital spike + edge fire are capped/staggered
         _pushSpike(_ixClass(rec.kind)); fired++;
@@ -720,7 +726,7 @@ function indexLiveTelemetry(base,live,meta={}){
         if(from&&tos.length){
           setTimeout(()=>{ _flashNode(from,cls,failed); tos.forEach((to)=>{ _fireLink(from,to,cls); _flashNode(to,cls,failed); }); },d);
         } else { const outbound=rec.actor_kind==='persona';
-          _ixPersonaKeys(rec).forEach((personaKey)=>setTimeout(()=>_fireEdge(personaKey,cls,outbound?'out':'in'),d)); }
+          _interactionPersonaKeys(rec).forEach((personaKey)=>setTimeout(()=>_fireEdge(personaKey,cls,outbound?'out':'in'),d)); }
       }
     }
     S.ixColdByBase.add(baseKey); S.ixColdLoaded=true;
@@ -751,6 +757,9 @@ function indexLiveTelemetry(base,live,meta={}){
       S.interactions.sort((a,b)=>a._t-b._t);
       if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
       S.ixKeys=new Set(S.interactions.map((e)=>e._key));
+      // A model request is itself a live persona message. Re-index after it
+      // joins the bounded ring so its card streams it on this render.
+      _refreshPersonaInteractionIndex();
     }
   }
 }
@@ -2537,18 +2546,25 @@ function _personaActivityHTML(acts,personaKey){
   for(const e of [...(acts||[])].reverse()){
     const key=e?._key||`${e?.kind}:${e?._t}`; if(seen.has(key)) continue; seen.add(key); rows.push(e); if(rows.length===4) break;
   }
-  if(!rows.length) return `<section class="pc-activity"><div class="pc-section-head"><span>Recent activity</span><small>quiet now</small></div><div class="pc-activity-empty">No persona activity in the current five-minute window.</div></section>`;
-  return `<section class="pc-activity"><div class="pc-section-head"><span>Recent activity</span><small>live telemetry</small></div><ol>`
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small>quiet now</small></div><div class="pc-activity-empty">No observed persona messages in the current five-minute window.</div></section>`;
+  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small><i></i> observed telemetry</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
     +rows.map((e)=>{ const cls=_ixClass(e.kind), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
       const mine=actorKey===personaKey;
-      const peers=_personaEndpoints(e).map((x)=>_eventPersonaKey(e,x.id)).filter((x)=>x&&x!==personaKey)
-        .map((x)=>_nameFor(x)).slice(0,2);
-      const relation=mine?(peers.length?` → ${peers.join(', ')}`:''):` · from ${actor}`;
+      const targets=_eventEndpoints(e).map((endpoint)=>endpoint.kind==='persona'
+        ?_nameFor(_eventPersonaKey(e,endpoint.id))
+        :(endpoint.kind==='model'?String(endpoint.id||'model'):`${endpoint.kind}:${String(endpoint.id||'').slice(0,10)}`)).slice(0,3);
+      const selfName=_nameFor(personaKey);
+      const route=mine
+        ?`${selfName}${targets.length?` → ${targets.join(', ')}`:''}`
+        :`${actor}${targets.length?` → ${targets.join(', ')}`:` → ${selfName}`}`;
       const detail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').replace(/\s+/g,' ').trim();
-      return `<li class="pc-activity-row ix-${cls}"><span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><b>${esc(_ixVerb(e.kind))}${esc(relation)}</b>`
-        +(detail?`<span>${esc(detail)}</span>`:'')+`</span><time>${esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
+      const direction=mine?'outbound':(actorKey?'inbound':'observed');
+      return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
+        +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(route)}</span>`
+        +`<b>${esc(_ixVerb(e.kind))}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
+        +`</span><time>${esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
@@ -2556,7 +2572,9 @@ function renderPersonaCard(pid,kernel='',context={}){
   const models=d.models||[]; const last=models[models.length-1];
   const rt=runtimeForPersona(personaKey)||{};
   const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
+  const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
   const name=_signedPersonaNameFor(personaKey);
+  const hasSignedName=!!signedIdentity?._personaSignedName;
   const role=_coordRole(sid,s,ref.kernel);
   const state=s.lifecycle_state||'';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
@@ -2635,10 +2653,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard ${_coordRoleClass(role)}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><header class="pc-profile">${_personaAvatarHTML(personaKey)}`
+  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedName?' identity-signed':' identity-unpublished'}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'signed':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedName?icon('check','ico-sm')+' SIGNED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE DECK · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
+    +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><span class="pc-name">${esc(name)}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +environmentHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -2647,6 +2666,82 @@ function renderPersonaCard(pid,kernel='',context={}){
     +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +'</article>';
+}
+
+// A compact environment-local social graph. Membership comes only from the
+// verified environment roster or explicit live environment telemetry. Edges
+// come only from one observed frame naming both an actor persona and a persona
+// endpoint in this exact environment; shared membership never invents a link.
+function _environmentScopedEvents(b){
+  const sid=_shortId(b?.sid||b?.envId), kernel=String(b?.kernel||'');
+  const now=Date.now(), lease=5*60*1000;
+  return (S.interactions||[]).filter((event)=>_eventKernel(event)===kernel
+    &&_shortId(event?.scope_id||'')===sid
+    &&event?._t>0&&now-event._t<=lease&&event._t-now<30000);
+}
+function _environmentGraphId(b){
+  let value=2166136261;
+  for(const char of `${b?.kernel||''}\u0000${b?.sid||b?.envId||''}`){ value^=char.charCodeAt(0); value=Math.imul(value,16777619); }
+  return `env-arrow-${(value>>>0).toString(36)}`;
+}
+function _environmentCommunicationGraphHTML(b){
+  const refs=[...new Set((b?.members||[]).map((value)=>_personaRef(value,b?.kernel).key).filter(Boolean))];
+  const scopedEvents=_environmentScopedEvents(b);
+  const memberState=(personaKey)=>{ const d=S.liveByPersona.get(personaKey)||{}, models=d.models||[];
+    const acts=S.ixByPersona?.get(personaKey)||[], latest=acts[acts.length-1];
+    const recent=_modelFresh(personaKey,models)||!!(latest&&Date.now()-latest._t<90000);
+    return {running:_runningNow(personaKey),recent}; };
+  refs.sort((a,c)=>{ const sa=memberState(a), sc=memberState(c);
+    return Number(sc.running)-Number(sa.running)||Number(sc.recent)-Number(sa.recent)
+      ||_signedPersonaNameFor(a).localeCompare(_signedPersonaNameFor(c)); });
+  const shown=refs.slice(0,6), shownSet=new Set(shown), hidden=Math.max(0,refs.length-shown.length);
+  const states=new Map(refs.map((key)=>[key,memberState(key)]));
+  const activeCount=[...states.values()].filter((state)=>state.running).length;
+  if(!shown.length) return {activeCount,eventCount:scopedEvents.length,directCount:0,
+    html:`<section class="env-network empty"><div class="env-network-head"><span>Active constellation</span><small>0 observed members</small></div>`
+      +`<div class="env-network-empty">No persona roster has been observed for this signed environment yet.</div></section>`};
+
+  const positions=new Map();
+  shown.forEach((key,index)=>{ const count=shown.length;
+    if(count===1){ positions.set(key,{x:50,y:50}); return; }
+    if(count===2){ positions.set(key,{x:index?73:27,y:50}); return; }
+    const angle=(-Math.PI/2)+(index*2*Math.PI/count);
+    positions.set(key,{x:50+36*Math.cos(angle),y:50+32*Math.sin(angle)}); });
+  const edges=new Map();
+  for(const event of scopedEvents){
+    if(event.actor_kind!=='persona') continue;
+    const from=_eventPersonaKey(event,event.actor_id); if(!shownSet.has(from)) continue;
+    for(const endpoint of _personaEndpoints(event)){
+      const to=_eventPersonaKey(event,endpoint.id); if(!shownSet.has(to)||to===from) continue;
+      const key=`${from}\u0000${to}`, prior=edges.get(key);
+      if(prior){ prior.count++; if(event._t>=prior.latest._t) prior.latest=event; }
+      else edges.set(key,{from,to,count:1,latest:event});
+    }
+  }
+  const markerId=_environmentGraphId(b);
+  const edgeHTML=[...edges.values()].map((edge)=>{ const from=positions.get(edge.from), to=positions.get(edge.to);
+    const dx=to.x-from.x, dy=to.y-from.y, len=Math.max(1,Math.hypot(dx,dy));
+    const reciprocal=edges.has(`${edge.to}\u0000${edge.from}`), bend=reciprocal?(edge.from<edge.to?5:-5):0;
+    const mx=(from.x+to.x)/2-(dy/len)*bend, my=(from.y+to.y)/2+(dx/len)*bend;
+    const cls=_ixClass(edge.latest.kind), label=`${_nameFor(edge.from)} to ${_nameFor(edge.to)}: ${_ixVerb(edge.latest.kind)}${edge.count>1?`, ${edge.count} observed frames`:''}`;
+    return `<path class="env-comm-edge edge-${esc(cls)}" d="M ${from.x.toFixed(2)} ${from.y.toFixed(2)} Q ${mx.toFixed(2)} ${my.toFixed(2)} ${to.x.toFixed(2)} ${to.y.toFixed(2)}" marker-end="url(#${markerId})"><title>${esc(label)}</title></path>`;
+  }).join('');
+  const nodes=shown.map((personaKey)=>{ const ref=_personaRef(personaKey), state=states.get(personaKey)||{};
+    const stateLabel=state.running?'model call':(state.recent?'recent':'ready');
+    return `<button type="button" class="env-persona-node ${state.running?'running':state.recent?'recent':'idle'}" style="--node-x:${positions.get(personaKey).x}%;--node-y:${positions.get(personaKey).y}%" data-pcard="${esc(ref.sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" title="open ${esc(_signedPersonaNameFor(personaKey))}">`
+      +`<span class="env-node-portrait">${_personaAvatarHTML(personaKey)}<i aria-hidden="true"></i></span>`
+      +`<strong>${esc(_signedPersonaNameFor(personaKey))}</strong><small>${esc(stateLabel)}</small></button>`;
+  }).join('');
+  const directEvents=scopedEvents.filter((event)=>event.actor_kind==='persona'&&_personaEndpoints(event).length).slice(-3).reverse();
+  const feed=directEvents.length?`<ol class="env-comm-feed" aria-live="polite" aria-relevant="additions text">${directEvents.map((event)=>{
+    const actor=_nameFor(_eventPersonaKey(event,event.actor_id));
+    const recipients=_personaEndpoints(event).map((endpoint)=>_nameFor(_eventPersonaKey(event,endpoint.id))).slice(0,3);
+    return `<li><span>${esc(actor)} <b>→</b> ${esc(recipients.join(', '))}</span><small>${esc(_ixVerb(event.kind))} · ${esc(_ago(event._t))}</small></li>`;
+  }).join('')}</ol>`:`<div class="env-comm-quiet">No explicit persona→persona message observed in the last five minutes.</div>`;
+  return {activeCount,eventCount:scopedEvents.length,directCount:edges.size,
+    html:`<section class="env-network"><div class="env-network-head"><span>Active constellation</span><small>${activeCount} working · ${edges.size} direct channel${edges.size===1?'':'s'}</small></div>`
+      +`<div class="env-network-canvas"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="${markerId}" markerWidth="5" markerHeight="5" refX="4.3" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z"></path></marker></defs>${edgeHTML}</svg>${nodes}</div>`
+      +(hidden?`<div class="env-network-more">+${hidden} additional member${hidden===1?'':'s'} in the verified roster</div>`:'')+feed+`</section>`};
 }
 
 // ---- live coordination GRAPH (SVG): kernel hub + persona nodes + pulsing edges --
@@ -3198,11 +3293,12 @@ async function refreshSystemView(){
     return {artRow,departed,statusTxt,statusOk,metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
+    const network=_environmentCommunicationGraphHTML(b);
     const membershipRow=b.members.length?'':'<div class="env-card-empty">awaiting members</div>';
     const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
     const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
     const cardId=String(b.sid||b.envId||'').replace(/^env:/,'').slice(-10).toUpperCase();
-    return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}">`
+    return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
       +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
       +`<div class="env-identity"><span class="env-kicker">ENVIRONMENT CARD · ${esc(type)}</span>`
@@ -3211,9 +3307,10 @@ async function refreshSystemView(){
       +`<span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span></header>`
       +`<section class="env-card-stats" aria-label="workspace facts">`
       +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
+      +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
+      +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>signals · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`<span>${icon('task','ico-sm')}<b>${b.live?'live':'signed'}</b><small>source</small></span></section>`
-      +`${membershipRow}${liveRow}${output.artRow}<div class="env-card-footer"><span>shared workspace</span><span>outputs stay environment-owned</span></div></article>`;
+      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'live telemetry + signed identity':'signed discovery record'}</span><span>outputs stay environment-owned</span></div></article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
