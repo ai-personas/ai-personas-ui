@@ -2343,10 +2343,18 @@ const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',too
 const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s':s<3600?(s/60|0)+'m':(s/3600|0)+'h';};
 const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
+const _isMechanicalPersonaName=(value,sid='')=>{ const v=String(value||'').trim(), id=_shortId(sid||'');
+  return !v||v===id||new RegExp(`^(?:identity|persona)\\s+${id.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}$`,'i').test(v)
+    ||/^(?:identity|persona)\s+[A-Z0-9]{16,}$/i.test(v); };
+const _personaAlias=(sid)=>{ const id=_shortId(sid||''); return id?`Persona ${id.slice(0,4)}…${id.slice(-4)}`:'Unnamed persona'; };
+const _displayPersonaName=(value,sid='')=>_isMechanicalPersonaName(value,sid)?_personaAlias(sid):String(value).trim();
+const _personaMonogram=(value,sid='')=>{ const name=_displayPersonaName(value,sid), id=_shortId(sid||'');
+  if(!_isMechanicalPersonaName(value,sid)){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
+  return (id.slice(-2)||'AI').toUpperCase(); };
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
-  return _PERSONA_NAME.get(ref.key)||ref.sid.slice(0,10); }
+  return _displayPersonaName(_PERSONA_NAME.get(ref.key),ref.sid); }
 function _signedPersonaNameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
-  return S.personaDiscoveryByKey.get(ref.key)?._personaSignedName||'name not published'; }
+  return _displayPersonaName(S.personaDiscoveryByKey.get(ref.key)?._personaSignedName,ref.sid); }
 // RUNNING NOW vs merely recent: a persona is "running" iff the node currently
 // reports an active model call for that persona. Coordination/model history can
 // make a card RECENT, but never RUNNING.
@@ -2401,8 +2409,10 @@ function _personaAvatarHTML(personaKey){
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'absent');
+  const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
+  const placeholderLabel=state==='absent'?'portrait pending':state==='failed'?'portrait unavailable':'verifying portrait';
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="avatar unavailable">`
-    +`<span class="pc-avatar-placeholder" aria-hidden="true">no image</span></span>`;
+    +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor){
   if(typeof createImageBitmap==='function'){
@@ -2475,7 +2485,11 @@ function _neutralPersonaAvatar(mount,state='failed'){
   mount.dataset.avatarState=state;
   mount.setAttribute('aria-label','avatar unavailable');
   const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
-  placeholder.setAttribute('aria-hidden','true'); placeholder.textContent='no image';
+  placeholder.setAttribute('aria-hidden','true');
+  const ref=_personaRef(_entityKeyFromDom(mount.dataset.avatarKey||''));
+  const monogram=document.createElement('strong'); monogram.textContent=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
+  const label=document.createElement('small'); label.textContent=state==='absent'?'portrait pending':'portrait unavailable';
+  placeholder.append(monogram,label);
   mount.replaceChildren(placeholder);
 }
 async function _hydratePersonaAvatarMount(mount){
@@ -2542,13 +2556,18 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
 }
 function _personaActivityHTML(acts,personaKey){
-  const rows=[]; const seen=new Set();
+  const rows=[]; const seen=new Map();
   for(const e of [...(acts||[])].reverse()){
-    const key=e?._key||`${e?.kind}:${e?._t}`; if(seen.has(key)) continue; seen.add(key); rows.push(e); if(rows.length===4) break;
+    const endpoints=_eventEndpoints(e).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).sort().join(',');
+    const detail=String(e?._msg||e?._cap?.capability||e?._cap?.tool_name||'').replace(/\s+/g,' ').trim();
+    const key=[e?.kind,e?.actor_kind,e?.actor_id,endpoints,detail].join('|');
+    const prior=seen.get(key); if(prior){ prior.count++; continue; }
+    if(rows.length===4) continue;
+    const row={event:e,count:1}; seen.set(key,row); rows.push(row);
   }
   if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small>quiet now</small></div><div class="pc-activity-empty">No observed persona messages in the current five-minute window.</div></section>`;
   return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small><i></i> observed telemetry</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
-    +rows.map((e)=>{ const cls=_ixClass(e.kind), kernel=_eventKernel(e);
+    +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
       const mine=actorKey===personaKey;
@@ -2563,7 +2582,7 @@ function _personaActivityHTML(acts,personaKey){
       const direction=mine?'outbound':(actorKey?'inbound':'observed');
       return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
         +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(route)}</span>`
-        +`<b>${esc(_ixVerb(e.kind))}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
+        +`<b>${esc(_ixVerb(e.kind))}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
         +`</span><time>${esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
 }
 function renderPersonaCard(pid,kernel='',context={}){
@@ -2573,8 +2592,10 @@ function renderPersonaCard(pid,kernel='',context={}){
   const rt=runtimeForPersona(personaKey)||{};
   const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
   const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
-  const name=_signedPersonaNameFor(personaKey);
-  const hasSignedName=!!signedIdentity?._personaSignedName;
+  const signedName=String(signedIdentity?._personaSignedName||'');
+  const hasSignedIdentity=!!signedIdentity;
+  const hasSignedName=hasSignedIdentity&&!_isMechanicalPersonaName(signedName,sid);
+  const name=_displayPersonaName(signedName,sid);
   const role=_coordRole(sid,s,ref.kernel);
   const state=s.lifecycle_state||'';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
@@ -2653,11 +2674,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedName?' identity-signed':' identity-unpublished'}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'signed':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedName?icon('check','ico-sm')+' SIGNED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE DECK · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
+  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' SIGNED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE DECK · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +environmentHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -3394,7 +3415,8 @@ async function refreshSystemView(){
   const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
     query?0:(S.observedEnvironmentCount||0)-envBlocks.length);
   const bodyHTML=personaSection+environmentSection;
-  const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(S.visiblePersonaIds.size)} personas on screen</strong>`
+  const visiblePersonaCount=S.visiblePersonaIds.size;
+  const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(visiblePersonaCount)} ${visiblePersonaCount===1?'persona':'personas'} on screen</strong>`
     +` <span class="scope-copy">· ${compactCount(S.envCount)} environments loaded · activity first</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
     +`</div>`:'';
@@ -3858,6 +3880,8 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   const pid=prof.persona_id||personaIdFromDid(r.did);
   const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
   const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
+  const rawDisplayName=String(ps.name||r.label||'');
+  const displayName=_displayPersonaName(rawDisplayName,pid||r.did);
   const role=ps.role||(ps.membership||{}).role||'—';
   const state=ps.lifecycle_state||'—';
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
@@ -3874,6 +3898,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
     +kv('Soul version',S0(ps.soul_version))
     +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
+  if(rawDisplayName&&rawDisplayName!==displayName) html+=kv('Published identity label',esc(rawDisplayName));
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
   const _liveModels=(S.liveByPersona.get(_personaKey(r._kernel,pid||r.did))||{}).models||[];
@@ -3920,7 +3945,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(base,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
-  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(ps.name||r.label)}`, html};
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(displayName)}`, html};
 }
 async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // EnvironmentInstance export (05_ENVIRONMENT): bind the SERVED env doc
