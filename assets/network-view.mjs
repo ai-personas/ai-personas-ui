@@ -21,6 +21,11 @@ export const NETWORK_VIEW_LIMITS = Object.freeze({
   maxKeyLength: 512,
 });
 
+const LIVE_TASK_CAPABILITY_LIMIT = 128;
+const LIVE_TASK_STATE_LIMIT = 40;
+const LIVE_TASK_MARKER = 'live_task';
+const TASK_STATE_PREFIX = 'task_state:';
+
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 function boundedInteger(value, fallback, minimum, maximum) {
@@ -70,18 +75,45 @@ export function collectLibp2pBootstraps(...sources) {
 /**
  * Project one already-verified public task record into the mission surface.
  *
- * The caller owns signature/access verification.  This helper refuses to infer
- * execution state from prose: a task is live only when its signed capability
- * list contains `live_task` followed immediately by the exact bounded state.
+ * The caller owns signature/access verification. New records bind their exact,
+ * bounded, persona-authored state with `task_state:`; capability ordering is not
+ * semantic because the signed discovery payload canonicalises the list. For a
+ * prior raw-state record, the signed description may only disambiguate one
+ * already-present legacy state capability; it can never supply the state.
  */
 export function liveTaskMissionProjection(record) {
   if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
-  const capabilities = Array.isArray(record.capability_summary)
-    ? record.capability_summary.map((value) => String(value ?? '').trim()).slice(0, 64)
-    : [];
-  const marker = capabilities.indexOf('live_task');
-  const state = marker >= 0 ? capabilities[marker + 1] || '' : '';
-  if (!/^[a-z][a-z0-9_-]{0,39}$/.test(state)) return null;
+  if (!Array.isArray(record.capability_summary)
+      || record.capability_summary.length > LIVE_TASK_CAPABILITY_LIMIT) return null;
+  const capabilities = record.capability_summary.map((value) => (
+    typeof value === 'string' ? value : ''
+  ));
+  if (capabilities.filter((value) => value === LIVE_TASK_MARKER).length !== 1) return null;
+
+  const boundedState = (value) => {
+    if (!value || value !== value.trim() || [...value].length > LIVE_TASK_STATE_LIMIT) return '';
+    return /[\u0000-\u001f\u007f]/u.test(value) ? '' : value;
+  };
+  const bindings = capabilities.filter((value) => value.startsWith(TASK_STATE_PREFIX));
+  let state = '';
+  if (bindings.length === 1) {
+    state = boundedState(bindings[0].slice(TASK_STATE_PREFIX.length));
+  } else if (bindings.length > 1) {
+    return null;
+  } else {
+    // Before task_state:/1 the producer emitted one raw identifier state. Its
+    // signed description repeated that value. Requiring both fields keeps the
+    // compatibility path unambiguous even beside other bare capabilities.
+    const description = typeof record.description === 'string' ? record.description : '';
+    const legacy = capabilities.filter((value) => (
+      value !== LIVE_TASK_MARKER
+      && /^[a-z][a-z0-9_-]{0,39}$/.test(value)
+      && description === `${value} live task`
+    ));
+    if (legacy.length !== 1) return null;
+    [state] = legacy;
+  }
+  if (!state) return null;
   const task = String(record.label ?? '').normalize('NFC').trim().slice(0, 256);
   if (!task) return null;
   const did = String(record.did ?? '').trim();

@@ -196,7 +196,12 @@ def provider_document(
         "kind": kind,
         "label": label,
         "description": f"read-gated detail for {record_id}",
-        "capability_summary": capability_summary or ["provider-authority-fixture"],
+        # DiscoverableRecord.signing_payload() canonicalises this signed field.
+        # Keep the fixture wire shape faithful so consumers cannot rely on an
+        # authored insertion order that production never preserves.
+        "capability_summary": sorted(
+            capability_summary or ["provider-authority-fixture"]
+        ),
         "visibility_tier": "public",
         "access_policy_ref": policy["policy_id"],
         "content_locator_ref": f"locator:{record_id}",
@@ -390,7 +395,11 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         "prepare the site approval package",
         kind="task",
         did=f"did:personaos:{NODE_ID}/task/run-public-intake",
-        capability_summary=["live_task", "queued"],
+        capability_summary=[
+            "live_task",
+            "model_pool_hash:fixture-pool",
+            "task_state:awaiting peer synthesis",
+        ],
         links={"live": "telemetry/live/latest.json"},
     )
     discover_only = provider_document(

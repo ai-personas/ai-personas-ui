@@ -107,8 +107,8 @@ def run(args: argparse.Namespace) -> dict:
             )
             signed_live_task.wait_for(state='attached', timeout=15_000)
             signed_live_task_text = signed_live_task.text_content() or ''
-            require('QUEUED' in signed_live_task_text,
-                    'signed public live task did not preserve its exact queued state')
+            require('AWAITING PEER SYNTHESIS' in signed_live_task_text,
+                    'signed public live task did not preserve its exact arbitrary state')
             require('signed live task' in signed_live_task_text,
                     'signed public live task lacks explicit signed-source context')
             page.wait_for_function(

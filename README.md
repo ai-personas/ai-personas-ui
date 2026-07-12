@@ -125,9 +125,12 @@ boundary: HTTPS values remain federation routes, while only bounded `/...` multi
 js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
 
 **Live tasks are visible from their signed public record at intake.** The mission surface renders
-the exact task label and exact bounded state that follow the signed `live_task` capability marker.
-It does not infer a task state from prose or unsigned telemetry; project/mission evidence and
-operator-only run state remain additive sources.
+the exact task label and the exact bounded value of the signed `task_state:` capability whenever
+the record also carries `live_task`. Capability order is deliberately irrelevant because the
+signed payload canonicalises that list. A prior raw-state record is accepted only when one signed
+legacy state capability is unambiguously corroborated by its signed description; prose never
+supplies a missing state. Unsigned telemetry, project/mission evidence, and operator-only run state
+remain additive sources.
 
 **Persona avatars are signed identity descriptors, never fetchable media.** A persona record may
 carry a bounded `persona-avatar/1` identicon descriptor containing a seed, two colours, and safe
