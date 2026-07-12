@@ -10,6 +10,9 @@ export const LIVE_ARTIFACT_LIMITS = Object.freeze({
   maxFileBytes: 8 * 1024 * 1024,
   maxSnapshotBytes: 2 * 1024 * 1024,
   maxDownloadBytes: 32 * 1024 * 1024,
+  maxArtifactRoles: 16,
+  maxArtifactCapabilities: 24,
+  maxArtifactSemanticLength: 160,
 });
 const SHA256_K = new Uint32Array([
   0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -79,6 +82,57 @@ export function liveArtifactRunKey(base, run, origin = '') {
   return `${resolved}\u0000${String(run || '')}`;
 }
 
+function semanticText(value) {
+  if (typeof value !== 'string' || value.length > LIVE_ARTIFACT_LIMITS.maxArtifactSemanticLength * 4) return '';
+  const text=value.replace(/[\u0000-\u001f\u007f-\u009f]/g,' ').replace(/\s+/g,' ').trim();
+  return text && text.length <= LIVE_ARTIFACT_LIMITS.maxArtifactSemanticLength ? text : '';
+}
+
+function semanticList(value, limit) {
+  if (value === undefined || value === null) return {values: [], valid: true};
+  if (!Array.isArray(value) || value.length > limit) return {values: [], valid: false};
+  const values=[];
+  for (const raw of value) {
+    const text=semanticText(raw);
+    if (!text) return {values: [], valid: false};
+    if (!values.includes(text)) values.push(text);
+  }
+  return {values, valid: true};
+}
+
+export function sanitizeArtifactSemantics(value) {
+  const source=value && typeof value==='object' ? value : {};
+  const rolePresent=Object.prototype.hasOwnProperty.call(source,'role_in_bundle');
+  const role=rolePresent?semanticText(source.role_in_bundle):'';
+  if (rolePresent && source.role_in_bundle !== '' && !role) return {};
+  const roles=semanticList(source.artifact_roles,LIVE_ARTIFACT_LIMITS.maxArtifactRoles);
+  const capabilities=semanticList(source.capability_summary,LIVE_ARTIFACT_LIMITS.maxArtifactCapabilities);
+  if (!roles.valid || !capabilities.valid) return {};
+  if (role && roles.values.length && !roles.values.includes(role)) return {};
+  const artifactRoles=[...roles.values];
+  if (role && !artifactRoles.includes(role)) artifactRoles.unshift(role);
+  const capabilitySummary=[...capabilities.values];
+  for (const item of artifactRoles) if (!capabilitySummary.includes(item)) capabilitySummary.push(item);
+  const out={};
+  if (role || artifactRoles.length) out.role_in_bundle=role||artifactRoles[0];
+  if (artifactRoles.length) out.artifact_roles=artifactRoles;
+  if (capabilitySummary.length) out.capability_summary=capabilitySummary;
+  return out;
+}
+
+export function artifactSemanticLabels(value) {
+  const clean=sanitizeArtifactSemantics(value);
+  const out=[];
+  for (const item of [clean.role_in_bundle,...(clean.artifact_roles||[]),...(clean.capability_summary||[])]) {
+    if (item && !out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
+function artifactSemanticKey(value) {
+  return JSON.stringify(sanitizeArtifactSemantics(value));
+}
+
 function publicFile(file) {
   if (!file || typeof file !== 'object') return null;
   const workspaceId = String(file.workspace_id || '');
@@ -93,8 +147,11 @@ function publicFile(file) {
       || !bodyUrl || bodyUrl.length > LIVE_ARTIFACT_LIMITS.maxBodyUrlLength
       || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > LIVE_ARTIFACT_LIMITS.maxFileBytes
       || !/^[0-9a-f]{64}$/.test(sha256)) return null;
-  return {...file, workspace_id: workspaceId, path, body_url: bodyUrl,
+  const clean={...file, workspace_id: workspaceId, path, body_url: bodyUrl,
     size_bytes: sizeBytes, sha256};
+  delete clean.role_in_bundle; delete clean.artifact_roles; delete clean.capability_summary;
+  Object.assign(clean,sanitizeArtifactSemantics(file));
+  return clean;
 }
 
 export function sanitizeLiveArtifactSnapshot(snapshot) {
@@ -213,7 +270,8 @@ export function transitionLiveArtifacts(previous, snapshot) {
   for (const [key, file] of files) {
     const old = prior.get(key);
     if (!old) created.push(file);
-    else if (old.sha256 !== file.sha256 || old.size_bytes !== file.size_bytes || old.mtime !== file.mtime) {
+    else if (old.sha256 !== file.sha256 || old.size_bytes !== file.size_bytes || old.mtime !== file.mtime
+        || artifactSemanticKey(old) !== artifactSemanticKey(file)) {
       modified.push({...file, previous: old, contentChanged: old.sha256 !== file.sha256});
     }
   }
