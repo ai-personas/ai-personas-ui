@@ -17,4 +17,5 @@ assert.equal(artifactDispatch('payload.bin','application/x-private').adapterId,'
 assert.equal(artifactDispatch('payload.bin','application/x-private').fetchMode,'bytes');
 assert.equal(artifactDispatch('no-extension','table').module,'table.mjs');
 assert.ok(!artifactDispatch('payload.bin','application/x-private').module);
+assert.equal(artifactDispatch('opaque.payload','authored arbitrary role').adapterId,'builtin:generic');
 console.log('artifact renderer dispatch matrix: ok');

@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import * as ed from '../assets/noble-ed25519.js';
 import {
+  artifactSemanticLabels,
   boundedLineDiff,
   decideLiveArtifactUpdate,
   endLiveArtifactState,
@@ -10,6 +11,7 @@ import {
   liveBodyCommitIsCurrent,
   liveArtifactFileKey,
   liveArtifactRunKey,
+  sanitizeArtifactSemantics,
   sha256Hex,
   transitionLiveArtifacts,
 } from '../assets/live-artifacts.mjs';
@@ -113,6 +115,26 @@ assert.equal(first.files.size, 2);
 assert.equal(first.snapshot.task, 'inspect a changing workspace');
 assert.equal(liveArtifactFileKey(first.files.get('ws-1\0plan.md')), 'ws-1\0plan.md');
 
+assert.deepEqual(sanitizeArtifactSemantics({
+  role_in_bundle: '  authored purpose\n',
+  artifact_roles: ['authored purpose', 'secondary purpose'],
+  capability_summary: ['authored purpose', 'inspectable output'],
+}), {
+  role_in_bundle: 'authored purpose',
+  artifact_roles: ['authored purpose', 'secondary purpose'],
+  capability_summary: ['authored purpose', 'inspectable output', 'secondary purpose'],
+});
+assert.deepEqual(artifactSemanticLabels({
+  role_in_bundle: 'authored purpose', capability_summary: ['authored purpose', 'inspectable output'],
+}), ['authored purpose', 'inspectable output']);
+assert.deepEqual(sanitizeArtifactSemantics({
+  role_in_bundle: 'x'.repeat(LIVE_ARTIFACT_LIMITS.maxArtifactSemanticLength + 1),
+  capability_summary: ['must not partially survive'],
+}), {});
+assert.deepEqual(sanitizeArtifactSemantics({
+  artifact_roles: Array.from({length: LIVE_ARTIFACT_LIMITS.maxArtifactRoles + 1}, (_,i)=>`role-${i}`),
+}), {});
+
 const next = transitionLiveArtifacts(first, {
   run: 'run-1', revision: 'sha256:r2', files: [file('ws-1', 'plan.md', c), file('ws-2', 'model.step', b)],
 });
@@ -121,6 +143,20 @@ assert.deepEqual(next.changes.modified.map((x) => [x.path, x.previous.sha256]), 
 assert.equal(next.changes.modified[0].contentChanged, true);
 assert.deepEqual(next.changes.deleted.map((x) => x.path), ['old.csv']);
 assert.equal(liveArtifactRunKey('https://node.example/', 'run-1'), 'https://node.example\0run-1');
+
+const semanticBaseline=transitionLiveArtifacts(null,{
+  run:'run-semantic',revision:'sha256:s1',files:[file('ws-1','opaque.bin',a,{
+    role_in_bundle:'authored alpha',artifact_roles:['authored alpha'],capability_summary:['authored alpha'],
+  })],
+});
+const semanticChanged=transitionLiveArtifacts(semanticBaseline,{
+  run:'run-semantic',revision:'sha256:s2',files:[file('ws-1','opaque.bin',a,{
+    role_in_bundle:'authored beta',artifact_roles:['authored beta'],capability_summary:['authored beta'],
+  })],
+});
+assert.equal(semanticChanged.changes.modified.length,1);
+assert.equal(semanticChanged.changes.modified[0].contentChanged,false);
+assert.deepEqual(artifactSemanticLabels(semanticChanged.changes.modified[0]),['authored beta']);
 
 const snapshot = (revision, generated_at, files = [file('ws-1', 'plan.md', a)]) => ({
   schema: 'personaos-live-artifacts/1', run: 'run-1', revision, generated_at, files,
@@ -411,6 +447,11 @@ assert.doesNotMatch(portal, /needs no token|localhost\s*=\s*operator|per-install
 assert.doesNotMatch(portal, /new EventSource\(esUrl\)/);
 assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
+assert.match(portal, /Authored role claims/);
+assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
+assert.match(index, /discovery\.js\?v=20260712-artifact-semantics-v1/);
+assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
+assert.match(portal, /envManifestFiles\(b\).*authoredArtifactLabelText\(a\)/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE METADATA/);
 assert.doesNotMatch(portal, /delegated-ipfs\.dev|https:\/\/ipfs\.io|https:\/\/dweb\.link/);
