@@ -2974,6 +2974,7 @@ function renderCoordGraph(persons,totalPersons){
       svg._nodes.appendChild(g); }
     const cls=`gnode ${_coordRoleClass(p.role)}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.key)?' gn-hot':''}${S.follow===p.key?' gn-followed':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
+    g.style.setProperty('--persona-hue',String(_personaAvatarHue(p.key)));
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
     // full untruncated hover tooltip — the on-screen name is clipped to 10 chars

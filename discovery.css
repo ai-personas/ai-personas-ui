@@ -127,9 +127,7 @@ b{color:var(--bright)}
 .cg-legend .lg-dot.idle{background:transparent;border:1.5px solid var(--mut)}
 .cg-legend .lg-link{width:16px;height:0;display:inline-block;border-top:2px solid var(--int);border-radius:2px;opacity:.8}
 .cg-legend .lg-ring{width:9px;height:9px;border-radius:50%;display:inline-block;background:transparent;border:2px solid var(--mut)}
-.cg-legend .lg-ring.r-lead{border-color:var(--purple)} .cg-legend .lg-ring.r-verifier{border-color:var(--intr)}
-.cg-legend .lg-ring.r-integrator{border-color:var(--int)} .cg-legend .lg-ring.r-specialist{border-color:var(--amber)}
-.cg-legend .lg-ring.r-member{border-color:var(--mut)}
+.cg-legend .lg-ring.r-authored{border-color:var(--accent)}
 .con-toggle{margin-left:auto;background:none;border:1px solid var(--line2);color:var(--dim);border-radius:4px;
   cursor:pointer;font-size:11px;padding:0 7px;line-height:18px;transition:transform .25s ease,border-color .2s,color .2s}
 .con-toggle:hover{border-color:var(--int);color:var(--int)}
@@ -164,9 +162,8 @@ b{color:var(--bright)}
 .cl-fire.fire-verify{stroke:var(--intr)} .cl-fire.fire-artifact{stroke:var(--amber)} .cl-fire.fire-crossenv{stroke:var(--pink)}
 /* graph nodes */
 .gnode{cursor:pointer} .gn-c{fill:#0d131c;stroke:var(--idle);stroke-width:var(--stroke-base);transform-box:fill-box;transform-origin:center}
-.gnode.role-verifier .gn-c{stroke:var(--intr)} .gnode.role-lead .gn-c{stroke:var(--purple)}
-.gnode.role-integrator .gn-c{stroke:var(--int)} .gnode.role-specialist .gn-c{stroke:var(--amber)}
-.gnode.role-member .gn-c{stroke:var(--mut)}
+.gnode.role-declared .gn-c{stroke:hsl(var(--persona-hue) 68% 62%)}
+.gnode.role-undesignated .gn-c{stroke:var(--mut)}
 /* active (recently worked) — CALM: filled, no animation, so it never competes for attention */
 .gnode.gn-live .gn-c{fill:var(--fill-live);stroke:var(--up)}
 /* RUNNING NOW — the one persona mid model-call: it alone breathes + ring-pulses */
@@ -237,8 +234,8 @@ b{color:var(--bright)}
 @keyframes runglow{0%,100%{box-shadow:0 0 0 1px rgba(33,208,122,.42) inset,0 0 16px rgba(33,208,122,.12)}
   50%{box-shadow:0 0 0 1px rgba(33,208,122,.7) inset,0 0 26px rgba(33,208,122,.26)}}
 .pcard.dimmed{opacity:.32}
-.pcard.role-verifier{border-top:2px solid var(--intr)} .pcard.role-lead{border-top:2px solid var(--purple)}
-.pcard.role-integrator{border-top:2px solid var(--int)} .pcard.role-specialist{border-top:2px solid var(--amber)}
+.pcard.role-declared{border-top:2px solid hsl(var(--avatar-hue) 68% 62%)}
+.pcard.role-undesignated{border-top-color:var(--mut)}
 .pcard.flashcard{animation:cardflash 1s ease-out}
 @keyframes cardflash{0%{box-shadow:0 0 0 2px var(--up) inset,0 0 22px rgba(33,208,122,.25)}100%{box-shadow:none}}
 .pcard-top{display:flex;align-items:center;gap:7px;margin-bottom:5px}
@@ -258,9 +255,7 @@ b{color:var(--bright)}
 .pc-idle{font-size:9px;font-weight:700;letter-spacing:.3px;color:var(--mut);text-transform:uppercase;border:1px solid var(--line2);border-radius:3px;padding:1px 6px}
 .pc-name{font-weight:700;color:var(--off-white);font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pcard.running .pc-role{filter:brightness(1.15)}
-.pc-role{font-size:9.5px;font-weight:700;letter-spacing:.4px;color:var(--ink-on-accent);background:var(--purple);border-radius:3px;padding:1px 5px;text-transform:uppercase}
-.role-verifier .pc-role{background:var(--intr)} .role-integrator .pc-role{background:var(--int)}
-.role-specialist .pc-role{background:var(--amber)} .role-member .pc-role{background:var(--mut);color:var(--ink-on-accent)}
+.pc-role{font-size:9.5px;font-weight:700;letter-spacing:.4px;color:hsl(var(--avatar-hue) 68% 62%);background:transparent;border:1px solid currentColor;border-radius:3px;padding:1px 5px;text-transform:uppercase}
 .pc-state{font-size:10px;color:var(--amber)}
 .pc-doing{font-size:11.5px;color:var(--ink);margin-bottom:6px;min-height:16px}
 /* live persona MESSAGES streamed onto the card (LLM outputs + lessons) */

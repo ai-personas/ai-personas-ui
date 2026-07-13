@@ -339,6 +339,17 @@ def run(args: argparse.Namespace) -> dict:
                 '.pcard.role-lead,.pcard.role-verifier,.pcard.role-integrator,'
                 '.pcard.role-specialist,.pcard.role-member').count() == 0,
                     'legacy inferred coordination-role classes remain on persona cards')
+            require('persona-authored characteristic' in page.locator('.cg-legend').inner_text(),
+                    'constellation legend did not explain open persona-authored characteristics')
+            require(not any(label in page.locator('.cg-legend').inner_text().lower()
+                            for label in ('lead', 'verifier', 'integrator', 'specialist', 'member')),
+                    'constellation legend reintroduced a host-defined role catalog')
+            legacy_role_selectors = page.evaluate("""() => [...document.styleSheets].flatMap((sheet) => {
+              try { return [...sheet.cssRules].map((rule) => rule.selectorText || ''); }
+              catch (_) { return []; }
+            }).filter((selector) => /role-(lead|verifier|integrator|specialist|member)/.test(selector))""")
+            require(not legacy_role_selectors,
+                    'stylesheet reintroduced host-defined persona-role selectors')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             trust = page.locator('#detailbody .trust-details')
