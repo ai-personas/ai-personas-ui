@@ -971,8 +971,7 @@ function globalDiscoveryEndpoints(){
   // node1 is only an untrusted first-contact locator. Every announcement and
   // every reached discovery record is independently signature/hash verified;
   // the locator has no record or identity authority.
-  return [...new Set([...p.getAll('global_discovery'),...p.getAll('resolver'),
-    DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
+  return [...new Set([...p.getAll('resolver'),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
     .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
 async function verifyGlobalEnvelope(env){
@@ -1003,36 +1002,34 @@ async function loadGlobalNodes(){
     for(const ma of addrs) S.p2pBootstraps.add(ma);
     if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
   }
-  // Feature-detect cursor pagination and traverse only a fixed number of small
-  // pages. In global mode a search is sent to the resolver, allowing a kernel
-  // outside the sampled first page to surface without materialising the fleet.
-  // Legacy resolvers retain one bounded compatibility read.
+  // Traverse only a fixed number of small cursor pages. In global mode a search
+  // is sent to the resolver, allowing a kernel outside the sampled first page to
+  // surface without materialising the fleet. The paged contract is mandatory;
+  // an unpaged legacy response is intentionally not interpreted.
   const resolverQuery=!S.kernelFocus?String(S.q||'').trim():'';
   const docs=await Promise.all(endpoints.map(async(ep)=>{
-    const allNodes=[]; let advertisedTotal=0, cursor='', pages=0, legacy=false;
+    const allNodes=[]; let advertisedTotal=0, cursor='', pages=0;
     while(pages<NETWORK_LIMITS.resolverPages&&allNodes.length<NETWORK_LIMITS.cachedKernels){
       const params=new URLSearchParams({limit:String(NETWORK_LIMITS.resolverPage),status:'active'});
       if(resolverQuery) params.set('q',resolverQuery);
       if(cursor) params.set('cursor',cursor);
-      let d=await fetchJson(join(ep,`/v1/nodes?${params}`));
-      if(!d&&pages===0){ d=await fetchJson(join(ep,'/v1/nodes')); legacy=true; }
+      const d=await fetchJson(join(ep,`/v1/nodes?${params}`));
       if(!d) break;
       const pageNodes=Array.isArray(d.nodes)?d.nodes:[];
       allNodes.push(...pageNodes.slice(0,NETWORK_LIMITS.cachedKernels-allNodes.length));
       advertisedTotal=Math.max(advertisedTotal,
         Number(d.total??d.total_count??d.node_count??d.count??allNodes.length)||allNodes.length);
       pages++;
-      if(legacy) break;
       const next=String(d.next_cursor??d.pagination?.next_cursor??'');
       if(!next||next===cursor) break; cursor=next;
     }
-    return {ep,allNodes,advertisedTotal,pages,legacy};
+    return {ep,allNodes,advertisedTotal,pages};
   }));
-  for(const {ep,allNodes,advertisedTotal,pages,legacy} of docs){
+  for(const {ep,allNodes,advertisedTotal,pages} of docs){
     S.globalTotal=Math.max(Number(S.globalTotal)||0,advertisedTotal);
     const nodes=allNodes.slice(0,NETWORK_LIMITS.cachedKernels);
     if(!nodes.length) continue;
-    log('global',`${ep}: ${nodes.length}/${advertisedTotal} announced node(s) in ${legacy?'legacy response':`${pages} bounded page(s)`}`);
+    log('global',`${ep}: ${nodes.length}/${advertisedTotal} announced node(s) in ${pages} bounded page(s)`);
     for(const env of nodes){
       const verified=await verifyGlobalEnvelope(env);
       if(!verified.ok){ log('global','announcement signature/hash failed',false); continue; }
@@ -1220,25 +1217,26 @@ function renderGlobalKernels(){
   const omitted=Math.max(0,knownTotal-visible.length);
   if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
-// Peers come from three sources, merged + de-duped: the ?peer= query params, the
-// "＋ PEER" localStorage list, and the published peers.txt file (fetched at boot).
+// Peers come from the signed locator, the "＋ PEER" local fallback, and the
+// published peers.txt file. The public URL has no peer-routing parameter: a bare
+// hosted URL discovers announced nodes through node1.personas.ai automatically.
 let TXT_PEERS=[];
 async function loadPeersTxt(){
   // peers.txt — one node URL per line; '#' comments + blank lines ignored. Each
-  // listed node is bootstrapped + resolved + Ed25519-verified exactly like ?peer=.
+  // listed node is bootstrapped + resolved + Ed25519-verified like any other route.
   const t=await fetchText('peers.txt');
   TXT_PEERS = t ? t.split(/\r?\n/).map((s)=>s.trim()).filter((s)=>s && !s.startsWith('#')) : [];
   if(TXT_PEERS.length) log('peers.txt',`${TXT_PEERS.length} peer(s): ${TXT_PEERS.join(', ').slice(0,90)}`);
   else log('peers.txt','none listed');
   return TXT_PEERS;
 }
-function peerList(){ const p=new URLSearchParams(location.search).getAll('peer'); let s=[];
+function peerList(){ let s=[];
   try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
   const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
   // Explicit and local routes outrank opportunistic/global ones; a focused node
   // is pinned to the front. This is the active monitoring window, not a claim
   // that the rest of the discovered population ceased to exist.
-  const all=[...new Set([...focused,...p,...s,...TXT_PEERS,...(S.localPeers||[]),
+  const all=[...new Set([...focused,...s,...TXT_PEERS,...(S.localPeers||[]),
     ...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
@@ -1252,13 +1250,12 @@ function peerList(){ const p=new URLSearchParams(location.search).getAll('peer')
 function peerSourceTags(base){
   const u=String(base||'').replace(/\/$/,'');
   if(!u) return [];
-  const p=new URLSearchParams(location.search).getAll('peer').map((x)=>String(x||'').replace(/\/$/,''));
   let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
   s=(Array.isArray(s)?s:[]).map((x)=>String(x||'').replace(/\/$/,''));
   const txt=(TXT_PEERS||[]).map((x)=>String(x||'').replace(/\/$/,''));
   const inSet=(set)=>[...(set||[])].map((x)=>String(x||'').replace(/\/$/,'')).includes(u);
   const out=[];
-  if(p.includes(u)||s.includes(u)||txt.includes(u)) out.push('manual');
+  if(s.includes(u)||txt.includes(u)) out.push('manual');
   if(inSet(S.localPeers)) out.push('local');
   if(inSet(S.globalPeers)) out.push('resolver');
   if(inSet(S.gossipPeers)) out.push('gossip');
@@ -1460,7 +1457,7 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
       bundle,artifact:bundle,telemetry:first('telemetry'),mission:first('mission')}; }
 }
 async function resolveKernelBases(seeds){
-  // Every seed (this origin, peers.txt, ?peer, ＋PEER) is resolved the SAME way:
+  // Every seed (this origin, peers.txt, ＋PEER, signed locator) is resolved the SAME way:
   // its bootstrap may BE a kernel (providers_url), LIST kernels (federated_kernels —
   // a multi-run node), and NAME further peers (one hop). Previously only the page's
   // own origin was expanded, so a multi-run peer node yielded zero records.
@@ -1489,8 +1486,8 @@ function pruneDeadManualPeers(){
   // +PEER seeds live in this browser's localStorage. With IPFS as the live source of
   // truth, a manually-added node that's now unreachable shouldn't linger and keep
   // erroring. Drop only entries we ATTEMPTED this cycle and found unreachable —
-  // never untried or reachable ones. (?peer= query seeds and IPFS peers aren't
-  // touched; re-add a node any time with ＋PEER.)
+  // never untried or reachable ones. IPFS peers are not touched; re-add a node
+  // any time with ＋PEER.
   let s; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){ return; }
   if(!Array.isArray(s)||!s.length) return;
   const ph=S.peerHealth||new Map();
@@ -1514,7 +1511,7 @@ async function discover(){
   if(!S.recs.size&&!(S.globalAnnouncements?.size)) $('#status').textContent='bootstrapping discovery…';
   const [_txt,_global,_ipfs,_local]=await Promise.all([
     loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
-    loadGlobalNodes(),                                              // optional ?resolver= signed locator → peers/relays
+    loadGlobalNodes(),                                              // node1/additive ?resolver= signed locator → peers/relays
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ]);
@@ -1564,7 +1561,7 @@ function emptyStateHTML(){
 	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
 	    live execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
 	    no reachable node is currently publishing public records.</div>
-	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through the optional resolver supplied in this page URL, but none produced browser-reachable public records yet.</div>`:''}
+	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through a configured resolver, but none produced browser-reachable public records yet.</div>`:''}
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
@@ -1573,8 +1570,9 @@ function emptyStateHTML(){
     LAN/localhost node. Either open the <b>node-served UI</b> at
     <code>http://localhost:8765/</code> (same-origin), or expose the
     node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
-    and add the tunnel URL with <b>＋ PEER</b>.`:`2 · Add your node's URL with <b>＋ PEER</b>
-    (or <code>?peer=&lt;url&gt;</code>).`}<br>
+    and let the node announce its tunnel through <code>node1.personas.ai</code>. The
+    <b>＋ PEER</b> control remains a local diagnostic fallback.`:`2 · The node announces
+    itself through <code>node1.personas.ai</code>; <b>＋ PEER</b> is a local diagnostic fallback.`}<br>
     3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
     4 · Your own node? Click <b>OPERATOR</b>, paste its token
     (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
@@ -2976,6 +2974,7 @@ function renderCoordGraph(persons,totalPersons){
       svg._nodes.appendChild(g); }
     const cls=`gnode ${_coordRoleClass(p.role)}${p.running?' gn-running':p.live?' gn-live':''}${hot.has(p.key)?' gn-hot':''}${S.follow===p.key?' gn-followed':''}`;
     if(g.getAttribute('class')!==cls) g.setAttribute('class',cls);   // toggle only on change → no anim restart
+    g.style.setProperty('--persona-hue',String(_personaAvatarHue(p.key)));
     g.setAttribute('transform',`translate(${p.x},${p.y})`);
     g.setAttribute('aria-label',`${p.name||'persona'} — ${p.role}${p.live?', live: '+(p.doing||''):', idle'} (press Enter to follow)`);
     // full untruncated hover tooltip — the on-screen name is clipped to 10 chars
@@ -4685,20 +4684,45 @@ async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc
   return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(d.name||r.label)}`, html};
 }
 async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
-  // Project export (04_PROJECT): direct document (projects/<id>.json: project_id,
-  // name, environment_id, members, domain_context_ref, bundle_id).
+  // Project export (04_PROJECT): project/3 has open multi-environment hosting.
+  // Only export/2's canonical hosts + primary designation are rendered as
+  // topology; the removed singular environment_id/env_id aliases never regain
+  // presentation authority through an old document.
   const d=(L.export?await dfetch(base,L.export):null)||{};
-  const members=d.members||[];
+  const rawMembers=d.members||{};
+  const members=Array.isArray(rawMembers)
+    ?rawMembers.map((m)=>typeof m==='string'?{persona_id:m,role:''}:m).filter((m)=>m&&m.persona_id)
+    :Object.entries(rawMembers).map(([personaId,value])=>typeof value==='object'&&value!==null
+      ?{...value,persona_id:value.persona_id||personaId}
+      :{persona_id:personaId,role:String(value||'')});
+  const hasCanonicalTopology=d.schema==='personaos-project-export/2'&&Array.isArray(d.environments);
+  const hostValues=hasCanonicalTopology
+    ?d.environments.map((value)=>String(value||'').trim()).filter(Boolean):[];
+  const hosts=[...new Set(hostValues)];
+  const primary=String(d.primary_environment_id||'').trim();
+  const topologyValid=hasCanonicalTopology&&hostValues.length===hosts.length
+    &&((hosts.length===0&&!primary)||(hosts.length>0&&hosts.includes(primary)));
   let html=kv('Project',S0(d.project_id||r.did))+kv('Name',S0(d.name||r.label))
-    +kv('Workspace env',S0(d.environment_id))+kv('Members',S0(members.length||'—'))
+    +kv('Hosted environments',topologyValid?S0(hosts.length):'<span class="no">invalid / unavailable</span>')
+    +(topologyValid&&hosts.length?kv('Primary environment',`<code>${esc(primary)}</code>`):'')
+    +kv('Members',S0(members.length||'—'))
     +(d.bundle_id?kv('Deliverable bundle',`<code>${esc(d.bundle_id)}</code>`):'');
+  if(topologyValid&&hosts.length) html+=H(`Environments (${hosts.length})`)+hosts.map((environmentId)=>{
+    const rid=S.order.find((id)=>{ const candidate=S.recs.get(id);
+      return candidate&&candidate.kind==='env'&&candidate._kernel===r._kernel
+        &&(_envSid(candidate)===_envSidFromValue(environmentId)
+          ||String(candidate.did||'').includes(environmentId)); });
+    const label=environmentId===primary?`${environmentId} · primary`:environmentId;
+    return `<div class="grant"><span>${rid?recLink(rid,label):`<code>${esc(label)}</code>`}</span>`
+      +`<span class="l2">${environmentId===primary?'PRIMARY':'HOST'}</span></div>`;
+  }).join('');
+  else if(d.schema&&d.schema!=='personaos-project-export/2') html+=`<div class="viewerr">${icon('warn','ico-sm')} Legacy singular project-host topology was refused; republish this project with export/2.</div>`;
   if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
     const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
     return `<div class="grant">${rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id)}<span class="l2">${esc(m.role||'')}</span></div>`;
   }).join('');
   html+=trustPanel(r);
-  let nav=''; const eid=kernelRec(r._kernel,'env'), did=kernelRec(r._kernel,'domain');
-  if(eid) nav+=`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  let nav=''; const did=kernelRec(r._kernel,'domain');
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;

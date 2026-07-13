@@ -5,8 +5,8 @@ runtime, in the browser**: it bootstraps from ``.well-known/personaos-discovery.
 Kademlia-style provider-index lookup, then **resolves and cryptographically verifies each
 record live** (Ed25519, in-browser via vendored ``noble-ed25519`` over WebCrypto SHA-512)
 before showing it. Records are never trusted from a blob — they are discovered, fetched, and
-verified one by one, with a visible discovery log. Point it at another kernel
-(``?peer=https://host``) and it discovers + verifies that kernel's personas the same way.
+verified one by one, with a visible discovery log. Additional diagnostic peer
+routes may be saved locally without encoding routing state into a public URL.
 
 Honest transport note (09_PROTOCOLS §3H.3): a static page cannot open raw UDP/TCP, so true
 libp2p Kademlia/mDNS need the native runtime or a js-libp2p bootstrap. The browser profile
@@ -137,7 +137,7 @@ _PORTAL_HTML = """<!doctype html>
       <code>discover &lt; read &lt; write &lt; admin</code>.</p>
     <div class="stats" id="stats"></div>
     <div class="peerbar">
-      <input id="peer" type="url" placeholder="Discover another kernel: https://host (or ?peer=)" aria-label="Peer URL">
+      <input id="peer" type="url" placeholder="Diagnostic peer route: https://host" aria-label="Peer URL">
       <button id="addpeer">Discover peer</button>
       <button id="rescan">Re-run discovery</button>
     </div>
@@ -297,10 +297,8 @@ async function discoverFrom(base, sourceLabel){
 }
 
 function peerList(){
-  const params = new URLSearchParams(location.search);
-  const fromUrl = params.getAll('peer');
   let saved=[]; try{ saved = JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  return [...new Set([...fromUrl, ...saved])];
+  return [...new Set(saved)];
 }
 
 async function discover(){
@@ -310,7 +308,7 @@ async function discover(){
   let recs = await discoverFrom('', 'internet');
   // Intranet plane: probe configured LAN peer kernels (browser equivalent of mDNS).
   const peers = peerList();
-  if(peers.length===0) log('mdns', 'no LAN peer configured — add ?peer=https://host for cross-host intranet discovery');
+  if(peers.length===0) log('mdns', 'no local diagnostic peer route configured');
   for(const base of peers){ recs = recs.concat(await discoverFrom(base, 'intranet')); }
   // Dedup by record id across sources.
   const byId = new Map();

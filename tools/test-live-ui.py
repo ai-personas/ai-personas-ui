@@ -66,7 +66,7 @@ def run(args: argparse.Namespace) -> dict:
     port = server.server_address[1]
     base = f'http://127.0.0.1:{port}'
     node = f'{base}/node'
-    url = f'{base}/?peer={node}&no_local_discovery=1&no_global_discovery=1&ipfs_routing={node}/ipfs/'
+    url = f'{base}/?resolver={base}&no_local_discovery=1&ipfs_routing={node}/ipfs/'
     screenshots = Path(args.screenshot_dir).resolve() if args.screenshot_dir else None
     if screenshots:
         screenshots.mkdir(parents=True, exist_ok=True)
@@ -82,6 +82,24 @@ def run(args: argparse.Namespace) -> dict:
             browser = playwright.chromium.launch(**launch)
             context = browser.new_context(viewport={'width': 1440, 'height': 900}, accept_downloads=True)
             page = context.new_page()
+            def empty_default_locator(route) -> None:
+                body = ({
+                    'schema': 'personaos-global-discovery-bootstrap/1',
+                    'libp2p_multiaddrs': [],
+                    'relay_multiaddrs': [],
+                } if '/v1/bootstrap' in route.request.url else {
+                    'schema': 'personaos-node-announcement-page/1',
+                    'nodes': [],
+                    'total': 0,
+                    'next_cursor': '',
+                })
+                route.fulfill(
+                    status=200,
+                    content_type='application/json',
+                    body=json.dumps(body),
+                )
+
+            page.route('https://node1.personas.ai/**', empty_default_locator)
             errors: list[str] = []
             requests: list[dict] = []
             downloads: list[str] = []
@@ -101,7 +119,45 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('11/15 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('13/17 record(s) provider + record + policy verified')""", timeout=15_000)
+            page.wait_for_function("""() => document.querySelector('#status')?.textContent
+              .includes('13 verified records')""", timeout=30_000)
+            project_card = page.locator(
+                '.mcard[data-mrec]', has_text='Open host topology'
+            )
+            project_card.wait_for(state='attached', timeout=15_000)
+            page.locator('#missions').evaluate('(element) => { element.open = true; }')
+            project_card.wait_for(state='visible', timeout=5_000)
+            project_card.click()
+            page.locator('#detailwrap.open .kind.k-project').wait_for(timeout=15_000)
+            project_html = page.locator('#detailbody').inner_html()
+            require('Hosted environments' in project_html and '2' in project_html,
+                    'project/3 multi-environment topology was not rendered')
+            require('PRIMARY' in project_html and 'Members (2)' in project_html,
+                    'project/3 primary host or dict member projection was lost')
+            page.locator('#detailclose').click()
+            # The live run card intentionally coalesces with the most recent project
+            # label. Retarget the already-wired signed-record card to exercise the
+            # second verified project without reaching into module-scoped functions.
+            project_card.evaluate("""(element) => {
+              element.dataset.mrec = `${encodeURIComponent('kernel:fixture')}::${
+                encodeURIComponent('provider-project-legacy')}`;
+              element.click();
+            }""")
+            page.locator('#detailwrap.open .kind.k-project').wait_for(timeout=15_000)
+            page.locator('#detail-title', has_text='Legacy singular topology').wait_for(
+                timeout=15_000
+            )
+            legacy_project_html = page.locator('#detailbody').inner_html()
+            require('Legacy singular project-host topology was refused'
+                    in legacy_project_html,
+                    'legacy singular project host unexpectedly regained authority')
+            require('invalid / unavailable' in legacy_project_html,
+                    'legacy project topology was presented as structurally valid')
+            require('must-not-render-as-authority' not in legacy_project_html,
+                    'legacy environment_id leaked into project topology rendering')
+            page.locator('#detailclose').click()
+            page.locator('#missions').evaluate('(element) => { element.open = false; }')
             signed_live_task = page.locator(
                 '.mcard[data-mrec]', has_text='prepare the site approval package'
             )
@@ -283,6 +339,17 @@ def run(args: argparse.Namespace) -> dict:
                 '.pcard.role-lead,.pcard.role-verifier,.pcard.role-integrator,'
                 '.pcard.role-specialist,.pcard.role-member').count() == 0,
                     'legacy inferred coordination-role classes remain on persona cards')
+            require('persona-authored characteristic' in page.locator('.cg-legend').inner_text(),
+                    'constellation legend did not explain open persona-authored characteristics')
+            require(not any(label in page.locator('.cg-legend').inner_text().lower()
+                            for label in ('lead', 'verifier', 'integrator', 'specialist', 'member')),
+                    'constellation legend reintroduced a host-defined role catalog')
+            legacy_role_selectors = page.evaluate("""() => [...document.styleSheets].flatMap((sheet) => {
+              try { return [...sheet.cssRules].map((rule) => rule.selectorText || ''); }
+              catch (_) { return []; }
+            }).filter((selector) => /role-(lead|verifier|integrator|specialist|member)/.test(selector))""")
+            require(not legacy_role_selectors,
+                    'stylesheet reintroduced host-defined persona-role selectors')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             trust = page.locator('#detailbody .trust-details')

@@ -444,9 +444,15 @@ const portal = await readFile(new URL('../assets/discovery.js', import.meta.url)
 const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(portal, /DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https:\/\/node1\.personas\.ai'/);
-assert.match(portal, /\.\.\.p\.getAll\('global_discovery'\),\.\.\.p\.getAll\('resolver'\)/);
+assert.match(portal, /\.\.\.p\.getAll\('resolver'\),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT/);
+assert.doesNotMatch(portal, /getAll\('global_discovery'\)/);
+assert.doesNotMatch(portal, /getAll\('peer'\)/);
+assert.doesNotMatch(portal, /fetchJson\(join\(ep,'\/v1\/nodes'\)\)/);
 assert.match(portal, /the locator has no record or identity authority/);
 assert.match(portal, /p\.get\('no_global_discovery'\)==='1'/);
+assert.match(portal, /d\.schema==='personaos-project-export\/2'/);
+assert.match(portal, /d\.primary_environment_id/);
+assert.doesNotMatch(portal, /kv\('Workspace env',S0\(d\.environment_id\)\)/);
 assert.match(portal, /addEventListener\('live_artifact_update'/);
 assert.match(portal, /addEventListener\('run_ended'/);
 assert.match(portal, /humanTask\(project\?\.label\|\|state\.snapshot\?\.task,nodeId,state\.run\)/);
