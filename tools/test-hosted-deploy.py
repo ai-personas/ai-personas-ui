@@ -172,8 +172,17 @@ def browser_smoke(
             """() => document.querySelector('#status')?.textContent !== 'booting discovery…'""",
             timeout=30_000,
         )
+        # `initP2P()` is intentionally non-blocking. The initial label is
+        # "connecting…", so merely waiting for the absence of an intermediate
+        # "starting" label can pass before the dynamic import is requested.
+        # Wait for either successful libp2p initialization (`peer(s)`) or its
+        # explicit graceful HTTP fallback (`web discovery`). Both states prove
+        # that the vendored module load was attempted before asset accounting.
         page.wait_for_function(
-            """() => !document.querySelector('#p2p')?.textContent.includes('starting libp2p')""",
+            r"""() => {
+              const text=document.querySelector('#p2p')?.textContent || '';
+              return /Network · (?:\d+ peers?|web discovery)$/.test(text);
+            }""",
             timeout=30_000,
         )
         metrics = page.evaluate(
