@@ -2625,10 +2625,12 @@ function renderPersonaCard(pid,kernel='',context={}){
   if(activeCall){
     const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
     const model=String(activeCall.model_id||activeCall.model||'—');
-    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(PURPOSE_VERB[purpose]||purpose)}</strong><code>${esc(model)}</code>`
+    const purposeLabel=PURPOSE_VERB[purpose]||purpose.replace(/_/g,' ');
+    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(purposeLabel)}</strong><code>${esc(model)}</code>`
       +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
   } else if(hasModels){
-    const verb=recent?(PURPOSE_VERB[last.purpose]||last.purpose):('last '+(PURPOSE_VERB[last.purpose]||last.purpose));
+    const purposeLabel=PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
+    const verb=recent?purposeLabel:('last '+purposeLabel);
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(verb)}</strong><code>${esc(last.model)}</code>`;
   } else if(actFresh){
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixVerb(recentAct.kind))}</strong>`;
