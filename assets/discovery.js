@@ -1205,7 +1205,8 @@ function renderGlobalKernels(){
   el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
-    const title=[...info.bases].join(' ')+((info.meta?.recordCount||info.meta?.reachability)?` records=${info.meta.recordCount||0} reachability=${info.meta.reachability||''}`:'');
+    const title=[...info.bases].join(' ')+` · via ${[...info.via].join(', ')||'unknown'}`
+      +((info.meta?.recordCount||info.meta?.reachability)?` · records=${info.meta.recordCount||0} · reachability=${info.meta.reachability||''}`:'');
     const label=kid.replace(/^kernel:/,'');
     const liveRoute=active>0||(reachable&&fresh);
     return `<button type="button" class="gk ${liveRoute?'ok':'dim'}${kid===S.kernelFocus?' on':''}" data-kernel="${esc(kid)}"`
@@ -1537,9 +1538,13 @@ async function discover(){
   refreshSystemView();
   const when=new Date();
   const kernelCount=Math.max(S.kernels.size||0,Number(S.globalTotal)||0);
-  $('#status').innerHTML=`<span class="ok">${S.recs.size}</span> signed discovery record(s) Ed25519-verified across `
-    +`<span class="ok">${compactCount(kernelCount)}</span> discovered kernel(s) · ${compactCount((S.boots&&S.boots.size)||0)} actively monitored · internet (.well-known + Kademlia DHT) + intranet (mDNS) · access-gated`
-    +` · refreshed ${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')}:${String(when.getUTCSeconds()).padStart(2,'0')}Z (re-polls every 15 s)`;
+  const monitored=(S.boots&&S.boots.size)||0;
+  const refreshed=`${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} UTC`;
+  const status=$('#status');
+  status.title=`${S.recs.size} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. Discovery uses .well-known, Kademlia DHT and mDNS and refreshes every 15 seconds.`;
+  status.setAttribute('aria-label',`${S.recs.size} verified records across ${kernelCount} nodes; updated ${refreshed}`);
+  status.innerHTML=`<span class="ok">${S.recs.size}</span> verified record${S.recs.size===1?'':'s'} · `
+    +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
   }finally{ _discoverBusy=false; }
 }
 
@@ -2130,7 +2135,7 @@ function trustPanel(r){
   const grants=a.access_grants||[];
   const anchor=r.content_hash?('sha256 '+String(r.content_hash).replace('sha256:','').slice(0,20)+'…')
     :(r.content_locator_ref?('locator '+esc(String(r.content_locator_ref).slice(0,24))):'— (discover-level metadata only)');
-  let html=H('Trust · Ed25519')
+  let html=H('Signature details')
     +kv('Verified in browser',`<span class="ok">${icon('check','ico-sm')} signature checked here</span>`)
     +kv('Signing key',`<code>${esc(keyId)}</code>${keyHex?` <span class="l2">${esc(keyHex)}… · ${esc(doc.signing_key_status||'registry')}</span>`:''}`)
     +kv('Key source','<span class="l2">.well-known/personaos-keys.json</span>');
@@ -2139,7 +2144,7 @@ function trustPanel(r){
   const minR=a.min_to_read?esc(a.min_to_read)
     :(r._readAuthorized?'read granted to this public viewer'
       :'read required · current viewer is discover-only');
-  html+=H('Access · '+esc(tier))+_ladderBar(r._effective_level||'discover')
+  html+=H('Access policy · '+esc(tier))+_ladderBar(r._effective_level||'discover')
     +kv('Visibility tier',`<span class="tier-pill t-${esc(tier)}">${esc(tier)}</span>`)
     +kv('Min to discover',minD)+kv('Min to read',minR);
   if(r.promoted_from_tier) html+=kv('Bridged from',`<span class="amber">${esc(r.promoted_from_tier)} → public</span>`
@@ -2148,7 +2153,9 @@ function trustPanel(r){
   if(grants.length) html+=H(`Grants (${grants.length})`)+grants.slice(0,8).map((g)=>
     `<div class="grant"><span>${esc(g.grantee_kind||'?')}:${esc((g.grantee_id||'*').slice(0,18))}</span>`
     +`<span class="ok">${esc(g.access_level||'discover')}</span></div>`).join('');
-  return html;
+  return `<details class="trust-details"><summary><span>${icon('check','ico-sm')} Verified record</span>`
+    +`<small>signature checked here · ${esc(String(tier).replace(/_/g,' '))} metadata</small>`
+    +`${icon('chevron','ico-sm')}</summary><div class="trust-details-body">${html}</div></details>`;
 }
 
 // ---------- live per-entity activity (what is happening INSIDE this persona / env) ----------
@@ -2643,7 +2650,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   // doesn't render an EMPTY pc-stats div whose border-top draws a stray separator bar.
   // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
   // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
-  const statHTML=(s.experience_tasks!=null?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
+  const statHTML=(Number(s.experience_tasks)>0?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
     +(s.identity_name_pending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'identity name unresolved')}">${icon('warn','ico-sm')} name pending</span>`:'')
     +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
     +(hasOp&&s.brain_fragment_count!=null?`<span class="tag" title="brain fragments (operator)">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
@@ -3331,7 +3338,7 @@ async function refreshSystemView(){
       +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
       +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>signals · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'live telemetry + signed identity':'signed discovery record'}</span><span>outputs stay environment-owned</span></div></article>`;
+      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'live + verified':'verified record'}</span><span>environment-owned outputs</span></div></article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -3417,7 +3424,7 @@ async function refreshSystemView(){
   const bodyHTML=personaSection+environmentSection;
   const visiblePersonaCount=S.visiblePersonaIds.size;
   const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(visiblePersonaCount)} ${visiblePersonaCount===1?'persona':'personas'} on screen</strong>`
-    +` <span class="scope-copy">· ${compactCount(S.envCount)} environments loaded · activity first</span></div>`
+    +` <span class="scope-copy">· ${compactCount(S.envCount)} environments</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
     +`</div>`:'';
   let html=summary+bodyHTML;
@@ -3689,7 +3696,7 @@ function renderThinking(t){
   return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
 }
 function renderThinkingRedacted(doc){
-  let h='<div class="l2">public tier shows TRANSITIONS only (A-TF2) — the operator token unlocks lessons, tactics and the thinking frame</div>';
+  let h='<div class="privacy-note">Detailed cognition is private. This view shows verified state transitions only.</div>';
   const mp=(doc&&doc.summary&&doc.summary.mode_proficiencies)||{};
   if(Object.keys(mp).length)
     h+=Object.entries(mp).sort((a,b)=>b[1]-a[1]).map(([m,v])=>
@@ -3887,7 +3894,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
   // and the title already shows (name): keep only rows the grid does NOT carry.
-  let html=kv('Persona id',S0(pid||r.did))
+  const personaIdentity=String(pid||r.did||'');
+  const compactPersonaIdentity=personaIdentity.length>16
+    ?`${personaIdentity.slice(0,6)}…${personaIdentity.slice(-6)}`:personaIdentity;
+  let html=kv('Persona id',`<code title="${esc(personaIdentity)}">${esc(compactPersonaIdentity||'—')}</code>`)
     +kv('Role',`<span class="cap">${esc(role)}</span>`)
     +kv('Archetype',S0(ps.archetype))
     +kv('Disposition',S0(ps.primary_disposition))
@@ -3898,7 +3908,6 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
     +kv('Soul version',S0(ps.soul_version))
     +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'');
-  if(rawDisplayName&&rawDisplayName!==displayName) html+=kv('Published identity label',esc(rawDisplayName));
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
   const _liveModels=(S.liveByPersona.get(_personaKey(r._kernel,pid||r.did))||{}).models||[];
@@ -3957,7 +3966,10 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const ld=d.lineage_digest||{};
   // de-dup scalars the live tiles + the 'Members (N)' header already carry
   // (name is in the title; status + member count are live tiles): keep only the rest.
-  let html=kv('Environment',S0(d.environment_id||r.did||r.label))
+  const environmentIdentity=String(d.environment_id||r.did||r.label||'');
+  const compactEnvironmentIdentity=environmentIdentity.length>20
+    ?`${environmentIdentity.slice(0,8)}…${environmentIdentity.slice(-7)}`:environmentIdentity;
+  let html=kv('Environment',`<code title="${esc(environmentIdentity)}">${esc(compactEnvironmentIdentity||'—')}</code>`)
     +kv('Type',`<span class="cap">${esc(d.env_type||'—')}</span>`)
     +kv('Env rules',S0(d.rule_count))
     +kv('Lineage events',S0(ld.event_count));
@@ -3982,18 +3994,18 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
   if(manifestFiles.length){
-    html+=H(`Current workspace artifacts — ${manifestFiles.length} file${manifestFiles.length>1?'s':''}`);
-    html+=renderArtifactTree(manifestFiles,manifestRun(manifest));
+    html+=H('Workspace files');
+    html+=`<details class="artifact-index"><summary><span>Browse ${manifestFiles.length} workspace file${manifestFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
+      +`<div class="artifact-index-body">${renderArtifactTree(manifestFiles,manifestRun(manifest))}</div></details>`;
   }
-  if(myArts.length){
-    html+=H(`${manifestFiles.length?'Signed artifact records':'Deliverables'} — ${myArts.length} artifact${myArts.length>1?'s':''}`
-      +(myBundles.length?` · ${myBundles.length} bundle${myBundles.length>1?'s':''}`:'')+' (click to view)');
+  if(myArts.length&&(myBundles.length||!manifestFiles.length)){
+    html+=H('Deliverables');
     for(const bnd of myBundles)
       html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
-    if(myFiles.length)
-      html+=`<div class="atree">`+myFiles.map((a)=>
+    if(myFiles.length&&!manifestFiles.length)
+      html+=`<details class="artifact-index"><summary><span>Browse ${myFiles.length} signed file record${myFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary><div class="artifact-index-body atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
-        +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc((a._links||{}).media_kind||'')}</span></div>`).join('')+`</div>`;
+        +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc((a._links||{}).media_kind||'')}</span></div>`).join('')+`</div></details>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
   if(roster.length){
@@ -5654,7 +5666,10 @@ function wire(){
 // an explicit/node-advertised bootstrap or relay connects it to a shared routing table.
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
-  el.textContent = n ? `P2P · libp2p ${n.peerId.toString().slice(0,10)}… · ${(n.getPeers?n.getPeers().length:0)} peer(s)` : 'P2P · http-federation'; }
+  const peers=n&&n.getPeers?n.getPeers().length:0;
+  const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'}`:'HTTP federation discovery';
+  el.title=detail; el.setAttribute('aria-label',`Network connectivity: ${detail}`);
+  el.textContent=n?`Network · ${peers} peer${peers===1?'':'s'}`:'Network · web discovery'; }
 const PROVIDER_HINT_LIMITS=Object.freeze({maxPending:64,maxQueue:16,maxJobsPerMinute:16,
   maxConcurrent:2,maxKeysPerHint:5,cooldownMs:30000});
 function _providerHintJobId(record,hints){
@@ -5764,7 +5779,7 @@ async function initP2P(){
       P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000); }
     if(list.length) Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
-    const el=$('#p2p'); if(el) el.textContent='P2P · http-federation'; }
+    updateP2PStatus(); }
 }
 
 (async ()=>{

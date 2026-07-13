@@ -1637,3 +1637,49 @@ footer .p2p-stat{white-space:nowrap}
   .drawer-body .v2>.grant{grid-template-columns:1fr;gap:4px;padding-block:5px}
   .drawer-body .v2>.grant>span:last-child{text-align:left}
 }
+
+/* ===================== WALKTHROUGH CLEANUP · FLOW + DISCLOSURE ===================== */
+/* The stage is content, not a dashboard viewport. One page scrollbar keeps the
+   persona deck and environment index in the same reading flow at every width. */
+html,body{height:auto;min-height:100%}
+html{scrollbar-width:thin;scrollbar-color:#29415a #060b12}
+html::-webkit-scrollbar{width:10px}
+html::-webkit-scrollbar-track{background:#060b12}
+html::-webkit-scrollbar-thumb{border:2px solid #060b12;border-radius:10px;background:#29415a}
+body{overflow-x:hidden;overflow-y:auto}
+.stage-wrap{flex:0 0 auto!important;min-height:0!important;overflow:visible!important}
+.stage{min-height:0;overflow:visible!important}
+
+/* The compact node navigator is a locator. Route/debug badges remain in each
+   button's title, without forcing a nested horizontal scrollbar. */
+.command-shell .globalbar{overflow-x:hidden;scrollbar-width:none}
+.command-shell .globalbar::-webkit-scrollbar{display:none}
+.command-shell .network-scope-status,.command-shell .gk .n{display:none}
+.command-shell .gk{max-width:172px;overflow:hidden;text-overflow:ellipsis}
+.command-shell .globalbar-list{min-width:0;overflow:hidden}
+
+/* Details that are valuable during an audit no longer dominate everyday use. */
+.trust-details,.artifact-index{margin-top:10px;border:1px solid var(--line2);border-radius:12px;background:rgba(4,11,19,.42);overflow:hidden}
+.trust-details>summary,.artifact-index>summary{display:flex;min-height:42px;align-items:center;gap:9px;padding:9px 11px;color:var(--ink);cursor:pointer;list-style:none}
+.trust-details>summary::-webkit-details-marker,.artifact-index>summary::-webkit-details-marker{display:none}
+.trust-details>summary>span:first-child{display:inline-flex;align-items:center;gap:6px;color:var(--bright);font-weight:700}
+.trust-details>summary small{min-width:0;margin-left:auto;color:var(--mut);font-size:10px;text-align:right}
+.trust-details>summary>.ico,.artifact-index>summary>.ico{flex:0 0 auto;color:var(--mut);transition:transform var(--dur-fast) var(--ease-out)}
+.trust-details[open]>summary>.ico,.artifact-index[open]>summary>.ico{transform:rotate(90deg)}
+.trust-details-body,.artifact-index-body{padding:0 11px 12px;border-top:1px solid var(--line)}
+.trust-details-body>h4:first-child{margin-top:12px}
+.artifact-index>summary span:first-child{color:var(--bright);font-weight:650}
+.artifact-index>summary>.ico{margin-left:auto}
+.artifact-index-body.atree{margin:0;padding-top:9px}
+.privacy-note{margin:3px 0 9px;padding:9px 10px;border-left:2px solid var(--purple);border-radius:0 8px 8px 0;background:rgba(173,140,255,.06);color:var(--mut);font-size:12px;line-height:1.45}
+
+/* Compact controls still need a reliable pointer/touch target. */
+.network-scope,.gk,.pc-follow,.pc-env-chip,#logbtn,.con-toggle{min-height:34px}
+.con-toggle{min-width:34px}
+
+@media(max-width:719px){
+  .network-scope,.gk,.pc-follow,.pc-env-chip,#logbtn,.con-toggle{min-height:36px}
+  .con-toggle{min-width:36px}
+  .trust-details>summary{align-items:flex-start;flex-wrap:wrap}
+  .trust-details>summary small{order:3;width:100%;margin-left:24px;text-align:left}
+}

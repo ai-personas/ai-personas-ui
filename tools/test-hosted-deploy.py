@@ -222,7 +222,7 @@ def browser_smoke(
         )
     if metrics["title"] != "PersonaOS · Living Network":
         raise AssertionError(f"unexpected title: {metrics['title']!r}")
-    if not metrics["p2p"].startswith("P2P · libp2p "):
+    if not metrics["p2p"].startswith("Network · "):
         raise AssertionError(f"hosted libp2p module did not initialize: {metrics['p2p']!r}")
     if metrics["background"] in {"rgba(0, 0, 0, 0)", "transparent"}:
         raise AssertionError("hosted stylesheet did not apply")

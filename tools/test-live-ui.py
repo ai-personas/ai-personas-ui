@@ -112,9 +112,11 @@ def run(args: argparse.Namespace) -> dict:
             require('signed live task' in signed_live_task_text,
                     'signed public live task lacks explicit signed-source context')
             page.wait_for_function(
-                """() => document.querySelector('#p2p')?.textContent.startsWith('P2P · libp2p ')""",
+                """() => document.querySelector('#p2p')?.textContent.startsWith('Network · ')""",
                 timeout=15_000,
             )
+            require('libp2p ' in (page.locator('#p2p').get_attribute('title') or ''),
+                    'network transport detail was not preserved outside the visible footer copy')
             require('String multiaddr must start with' not in (page.locator('#log').text_content() or ''),
                     'HTTP federation URL escaped into the libp2p bootstrap list')
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
@@ -149,6 +151,18 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('footer').evaluate(
                 '(element) => element.getBoundingClientRect().height') <= 36,
                     'desktop discovery status consumes a permanent content band')
+            visible_status = page.locator('#status').inner_text()
+            require(all(term not in visible_status for term in ('.well-known', 'Kademlia', 'mDNS', 're-polls')),
+                    'transport implementation copy remains permanently visible in the footer')
+            require(page.locator('.stage').evaluate(
+                "(element) => getComputedStyle(element).overflowY") == 'visible',
+                    'desktop content is still trapped inside a nested stage scrollbar')
+            require(page.locator('body').evaluate(
+                "(element) => getComputedStyle(element).overflowY") == 'auto',
+                    'desktop page did not receive the primary content scrollbar')
+            require(page.locator('.command-shell .globalbar').evaluate(
+                "(element) => getComputedStyle(element).overflowX") == 'hidden',
+                    'compact node navigator still exposes a horizontal scrollbar')
             page.locator('#headerToolsToggle').click()
             require(page.locator('.vgroup-tools').evaluate(
                 '(element) => getComputedStyle(element).display') != 'none',
@@ -262,6 +276,12 @@ def run(args: argparse.Namespace) -> dict:
                     'legacy inferred coordination-role classes remain on persona cards')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
+            trust = page.locator('#detailbody .trust-details')
+            trust.wait_for(state='attached', timeout=15_000)
+            require(trust.get_attribute('open') is None,
+                    'signature and access diagnostics are expanded by default')
+            require('Published identity label' not in page.locator('#detailbody').inner_text(),
+                    'raw published persona label remains in the primary inspector')
             inspector = page.evaluate("""() => {
               const panel=document.querySelector('.drawer').getBoundingClientRect();
               return {left:panel.left,right:panel.right,width:panel.width,
