@@ -1683,3 +1683,16 @@ body{overflow-x:hidden;overflow-y:auto}
   .trust-details>summary{align-items:flex-start;flex-wrap:wrap}
   .trust-details>summary small{order:3;width:100%;margin-left:24px;text-align:left}
 }
+
+/* Sparse networks should use the canvas too: when exactly one persona and one
+   environment are visible, present them as complementary primary surfaces. */
+@media(min-width:1100px){
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child){
+    display:grid;grid-template-columns:minmax(390px,.82fr) minmax(520px,1.18fr);gap:18px;align-items:start
+  }
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child)>.stage-summary{grid-column:1/-1}
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .persona-deck,
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .environment-grid{grid-template-columns:minmax(0,1fr)}
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .pcard,
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .env-card{width:100%;max-width:none}
+}
