@@ -2621,7 +2621,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
-  let doingHTML, focusLabel='Current focus';
+  let doingHTML, focusLabel='Current move';
   if(activeCall){
     const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
     const model=String(activeCall.model_id||activeCall.model||'—');
@@ -2633,7 +2633,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   } else if(actFresh){
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixVerb(recentAct.kind))}</strong>`;
   } else {
-    focusLabel='Availability'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
+    focusLabel='Next move'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
   }
   // TOOL chip: the persona's headline self-extension act (provision / acquire / use /
   // block) within the live window. doingHTML is model-purpose-only when hasModels, so a
@@ -2682,7 +2682,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' SIGNED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE DECK · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE CARD · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
     +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
@@ -3329,7 +3329,7 @@ async function refreshSystemView(){
     return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
       +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
-      +`<div class="env-identity"><span class="env-kicker">ENVIRONMENT CARD · ${esc(type)}</span>`
+      +`<div class="env-identity"><span class="env-kicker">WORKSPACE LOCATION · ${esc(type)}</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
       +`<span class="env-card-id">${esc(cardId||'WORKSPACE')}</span></div>`
       +`<span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span></header>`

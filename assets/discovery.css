@@ -1696,3 +1696,63 @@ body{overflow-x:hidden;overflow-y:auto}
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .pcard,
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .env-card{width:100%;max-width:none}
 }
+
+/* ===================== COLLECTIBLE PERSONA CARDS ===================== */
+/* Character hue acts as the card element. The visual grammar borrows from
+   trading cards—outer foil frame, portrait window, energy/move panels—while
+   every number and label remains actual PersonaOS state. */
+.pcard{
+  border:4px solid color-mix(in srgb,hsl(var(--avatar-hue) 88% 68%) 68%,#d7c47a);
+  border-radius:24px;
+  background:
+    linear-gradient(145deg,color-mix(in srgb,hsl(var(--avatar-hue) 62% 34%) 32%,#14283d),#07101b 72%);
+  box-shadow:0 24px 65px rgba(0,0,0,.46),inset 0 0 0 2px rgba(255,255,255,.16),inset 0 0 28px color-mix(in srgb,hsl(var(--avatar-hue) 90% 62%) 10%,transparent)
+}
+.pcard::before{inset:5px;border:2px solid rgba(3,9,16,.76);border-radius:17px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.pcard::after{left:48px;right:48px;top:6px;height:3px;opacity:1;filter:drop-shadow(0 0 8px hsl(var(--avatar-hue) 80% 64%))}
+.pc-card-shine::before{width:34%;height:150%;top:-30%;right:7%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent)}
+.pc-card-shine::after{opacity:.16;background:
+  conic-gradient(from 205deg at 52% 34%,transparent 0 13%,hsl(var(--avatar-hue) 94% 72%) 20%,transparent 29% 52%,hsl(calc(var(--avatar-hue) + 82) 90% 70%) 61%,transparent 72%),
+  repeating-linear-gradient(118deg,transparent 0 22px,rgba(255,255,255,.025) 23px 24px)}
+.pc-card-edition{min-height:34px;padding:9px 15px 8px;border-bottom:2px solid rgba(2,8,14,.7);
+  background:linear-gradient(90deg,color-mix(in srgb,hsl(var(--avatar-hue) 86% 62%) 30%,#101b28),#07101a 72%)}
+.pc-card-edition>span:first-child{padding:4px 8px;border:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 88% 72%) 48%,transparent);border-radius:999px;background:rgba(2,8,14,.48)}
+.pc-card-edition>span:last-child{font-weight:700;color:color-mix(in srgb,hsl(var(--avatar-hue) 78% 76%) 60%,var(--mut))}
+.pc-profile{margin:10px 10px 0;padding:12px;border:2px solid color-mix(in srgb,hsl(var(--avatar-hue) 76% 68%) 36%,#263b50);border-radius:15px;
+  background:linear-gradient(135deg,color-mix(in srgb,hsl(var(--avatar-hue) 70% 38%) 24%,rgba(9,20,33,.97)),rgba(4,11,19,.94));box-shadow:inset 0 1px rgba(255,255,255,.08)}
+.pc-avatar{border:3px solid color-mix(in srgb,hsl(var(--avatar-hue) 86% 72%) 70%,#b8a863);border-radius:13px;box-shadow:0 11px 24px rgba(0,0,0,.46),inset 0 0 0 2px rgba(4,10,18,.8)}
+.pc-profile>.pc-dot{left:106px;top:102px;border-color:#07111d}
+.pc-name{font-size:21px;text-shadow:0 2px 16px rgba(0,0,0,.55)}
+.pc-name-proof{color:color-mix(in srgb,hsl(var(--avatar-hue) 82% 72%) 72%,var(--up))}
+.pc-environments{border-width:2px;background:linear-gradient(90deg,color-mix(in srgb,hsl(var(--avatar-hue) 70% 42%) 12%,rgba(3,10,17,.86)),rgba(3,10,17,.72))}
+.pc-current{position:relative;min-height:70px;padding:13px 12px 13px 51px;border:2px solid color-mix(in srgb,hsl(var(--avatar-hue) 82% 66%) 42%,#263b50);
+  background:linear-gradient(105deg,color-mix(in srgb,hsl(var(--avatar-hue) 72% 44%) 22%,#07121f),rgba(3,9,16,.9))}
+.pc-current::before{content:'';position:absolute;left:14px;top:50%;width:24px;height:24px;transform:translateY(-50%);border:3px solid color-mix(in srgb,hsl(var(--avatar-hue) 88% 72%) 72%,#cbb66c);border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#fff 0 7%,hsl(var(--avatar-hue) 86% 68%) 11% 34%,hsl(var(--avatar-hue) 66% 30%) 36% 64%,#040b13 66%);box-shadow:0 0 14px color-mix(in srgb,hsl(var(--avatar-hue) 90% 64%) 45%,transparent)}
+.pc-current-label{color:color-mix(in srgb,hsl(var(--avatar-hue) 80% 74%) 62%,var(--mut))}
+.pc-doing{font-size:13px}.pc-doing strong{font-weight:750}
+.pc-message-stream .pc-section-head>span:first-child::before{content:'MOVE LOG · ';color:color-mix(in srgb,hsl(var(--avatar-hue) 80% 72%) 66%,var(--int))}
+.pc-message-stream ol{border-width:2px;border-color:color-mix(in srgb,hsl(var(--avatar-hue) 74% 62%) 26%,var(--line))}
+.pc-stats{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 72% 62%) 22%,var(--line))}
+.pc-stats span{min-height:29px;border:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 72% 64%) 28%,var(--line2));border-radius:999px;background:color-mix(in srgb,hsl(var(--avatar-hue) 64% 38%) 14%,rgba(3,9,16,.86))}
+
+/* Environment cards use a broader location-card frame and map-like foil. */
+.env-card{border:4px solid color-mix(in srgb,var(--envhue,var(--intr)) 70%,#b9a86d);border-radius:24px;
+  box-shadow:0 24px 65px rgba(0,0,0,.44),inset 0 0 0 2px rgba(255,255,255,.12)}
+.env-card::before{inset:5px;border:2px solid rgba(3,9,16,.72);border-radius:17px}
+.env-card-foil::after{content:'';position:absolute;inset:-20%;opacity:.11;background:
+  repeating-radial-gradient(ellipse at 20% 70%,transparent 0 28px,color-mix(in srgb,var(--envhue,var(--intr)) 60%,transparent) 30px 31px),
+  linear-gradient(120deg,transparent 28%,rgba(255,255,255,.14) 42%,transparent 56%);transform:rotate(-7deg)}
+.env-card-profile{margin:10px 10px 0;border:2px solid color-mix(in srgb,var(--envhue,var(--intr)) 42%,#263b50);border-radius:15px;
+  background:linear-gradient(120deg,color-mix(in srgb,var(--envhue,var(--intr)) 20%,#102236),rgba(4,11,19,.92))}
+.env-card-avatar{border:3px solid color-mix(in srgb,var(--envhue,var(--intr)) 68%,#c4b575);border-radius:13px}
+.env-card-stats{margin-top:10px;border-block:2px solid color-mix(in srgb,var(--envhue,var(--intr)) 24%,var(--line));background:rgba(3,9,16,.72)}
+.env-card-stats>span{position:relative;padding-block:12px}
+.env-card-stats b{font-size:15px;color:color-mix(in srgb,var(--envhue,var(--intr)) 72%,var(--bright))}
+.env-network{border-width:2px}
+
+@media(max-width:639px){
+  .pcard,.env-card{border-width:3px}
+  .pc-profile,.env-card-profile{margin:8px 8px 0}
+  .pc-current{padding-left:46px}.pc-current::before{left:12px}
+}
