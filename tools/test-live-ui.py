@@ -199,6 +199,15 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.persona-deck > .pcard').count() == 3,
                     'persona-first deck did not render the live roster once')
             persona_cards = page.locator('.persona-deck > .pcard')
+            require(max(persona_cards.evaluate_all(
+                '(cards) => cards.map((card) => card.getBoundingClientRect().width)')) <= 412,
+                    'desktop persona card expanded beyond its collectible-card width')
+            require(max(page.locator('.environment-grid > .env-card').evaluate_all(
+                '(cards) => cards.map((card) => card.getBoundingClientRect().width)')) <= 502,
+                    'desktop environment card expanded beyond its location-card width')
+            require(all(count <= 2 for count in persona_cards.evaluate_all(
+                "(cards) => cards.map((card) => [...card.querySelectorAll('.pc-message')].filter((row) => getComputedStyle(row).display !== 'none').length)")),
+                    'persona card face exposes more than two activity rows by default')
             for signed_name in ('Orin Vale', 'Mara Chen', 'Ivo Reed'):
                 require(page.locator('.pcard .pc-name', has_text=signed_name).count() == 1,
                         f'signed persona label was not rendered exactly once: {signed_name}')

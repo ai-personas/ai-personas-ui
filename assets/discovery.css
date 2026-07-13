@@ -1688,13 +1688,13 @@ body{overflow-x:hidden;overflow-y:auto}
    environment are visible, present them as complementary primary surfaces. */
 @media(min-width:1100px){
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child){
-    display:grid;grid-template-columns:minmax(390px,.82fr) minmax(520px,1.18fr);gap:18px;align-items:start
+    display:grid;grid-template-columns:410px 500px;gap:22px;align-items:start;justify-content:start
   }
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child)>.stage-summary{grid-column:1/-1}
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .persona-deck,
   .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .environment-grid{grid-template-columns:minmax(0,1fr)}
-  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .pcard,
-  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .env-card{width:100%;max-width:none}
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .pcard{width:100%;max-width:410px}
+  .stage:has(.persona-deck>.pcard:only-child):has(.environment-grid>.env-card:only-child) .env-card{width:100%;max-width:500px}
 }
 
 /* ===================== COLLECTIBLE PERSONA CARDS ===================== */
@@ -1733,6 +1733,10 @@ body{overflow-x:hidden;overflow-y:auto}
 .pc-doing{font-size:13px}.pc-doing strong{font-weight:750}
 .pc-message-stream .pc-section-head>span:first-child::before{content:'MOVE LOG · ';color:color-mix(in srgb,hsl(var(--avatar-hue) 80% 72%) 66%,var(--int))}
 .pc-message-stream ol{border-width:2px;border-color:color-mix(in srgb,hsl(var(--avatar-hue) 74% 62%) 26%,var(--line))}
+.pc-message-stream .pc-message:nth-child(n+3){display:none}
+.pc-message-stream ol:has(.pc-message:nth-child(3))::after{content:'Open card for full activity';display:block;padding:7px 10px;border-top:1px solid var(--line);color:var(--mut);font:700 8px/1 var(--mono);letter-spacing:.08em;text-align:center;text-transform:uppercase}
+.pcard .owned-output~.owned-output{display:none}
+.pcard .owned-output-history{display:none}
 .pc-stats{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 72% 62%) 22%,var(--line))}
 .pc-stats span{min-height:29px;border:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 72% 64%) 28%,var(--line2));border-radius:999px;background:color-mix(in srgb,hsl(var(--avatar-hue) 64% 38%) 14%,rgba(3,9,16,.86))}
 
@@ -1750,6 +1754,13 @@ body{overflow-x:hidden;overflow-y:auto}
 .env-card-stats>span{position:relative;padding-block:12px}
 .env-card-stats b{font-size:15px;color:color-mix(in srgb,var(--envhue,var(--intr)) 72%,var(--bright))}
 .env-network{border-width:2px}
+
+@media(min-width:720px){
+  .persona-deck{grid-template-columns:repeat(auto-fill,minmax(330px,410px));justify-content:start}
+  .environment-grid{grid-template-columns:repeat(auto-fill,minmax(360px,500px));justify-content:start}
+  .pcard{width:100%;max-width:410px}
+  .env-card{width:100%;max-width:500px}
+}
 
 @media(max-width:639px){
   .pcard,.env-card{border-width:3px}
