@@ -35,6 +35,8 @@ PROVIDER_PERSONA_PEER = "provider-persona-peer"
 PROVIDER_PERSONA_THIRD = "provider-persona-third"
 PROVIDER_ENV = "provider-environment"
 PROVIDER_ENV_EMPTY = "provider-environment-empty"
+PROVIDER_PROJECT = "provider-project"
+PROVIDER_PROJECT_LEGACY = "provider-project-legacy"
 PROVIDER_TASK = "provider-live-public-task"
 PROVIDER_DISCOVER_ONLY = "provider-discover-only"
 PROVIDER_EXPIRED_READ = "provider-expired-read"
@@ -93,6 +95,28 @@ def canonical_bytes(value: dict) -> bytes:
 
 def signature_hex(value: dict, signing_key: SigningKey) -> str:
     return signing_key.sign(canonical_bytes(value)).signature.hex()
+
+
+def node_announcement_envelope(base_url: str) -> dict:
+    """Return a signed locator hint for the fixture's exact node route."""
+
+    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    announcement = {
+        "schema": "personaos-node-announcement/1",
+        "kernel_id": NODE_ID,
+        "base_url": base_url,
+        "reachability_class": "public",
+        "public_discovery": True,
+        "record_count": 17,
+        "issued_at": now(),
+        "expires_at": "2099-01-01T00:00:00+00:00",
+    }
+    return {
+        "schema": "personaos-node-announcement-envelope/1",
+        "announcement": announcement,
+        "public_key_hex": signing_key.verify_key.encode().hex(),
+        "signature_hex": signature_hex(announcement, signing_key),
+    }
 
 
 def access_policy(signing_key: SigningKey) -> dict:
@@ -396,6 +420,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PERSONA_THIRD,
         PROVIDER_ENV,
         PROVIDER_ENV_EMPTY,
+        PROVIDER_PROJECT,
+        PROVIDER_PROJECT_LEGACY,
         PROVIDER_TASK,
         PROVIDER_DISCOVER_ONLY,
         PROVIDER_EXPIRED_READ,
@@ -462,6 +488,22 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         did=f"did:personaos:{NODE_ID}/env/{ENV_EMPTY}",
         capability_summary=["workspace"],
         links={},
+    )
+    project = provider_document(
+        base,
+        PROVIDER_PROJECT,
+        "Open host topology",
+        kind="project",
+        did=f"did:personaos:{NODE_ID}/project/project:fixture",
+        links={"export": "projects/project-fixture.json"},
+    )
+    legacy_project = provider_document(
+        base,
+        PROVIDER_PROJECT_LEGACY,
+        "Legacy singular topology",
+        kind="project",
+        did=f"did:personaos:{NODE_ID}/project/project:legacy",
+        links={"export": "projects/project-legacy.json"},
     )
     live_task = provider_document(
         base,
@@ -539,6 +581,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(persona_third, urls[PROVIDER_PERSONA_THIRD]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
         provider_envelope(empty_environment, urls[PROVIDER_ENV_EMPTY]),
+        provider_envelope(project, urls[PROVIDER_PROJECT]),
+        provider_envelope(legacy_project, urls[PROVIDER_PROJECT_LEGACY]),
         provider_envelope(live_task, urls[PROVIDER_TASK]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
         provider_envelope(expired_read, urls[PROVIDER_EXPIRED_READ]),
@@ -561,6 +605,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PERSONA_THIRD: persona_third,
         PROVIDER_ENV: environment,
         PROVIDER_ENV_EMPTY: empty_environment,
+        PROVIDER_PROJECT: project,
+        PROVIDER_PROJECT_LEGACY: legacy_project,
         PROVIDER_TASK: live_task,
         PROVIDER_DISCOVER_ONLY: discover_only,
         PROVIDER_EXPIRED_READ: expired_read,
@@ -903,6 +949,20 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlsplit(self.path)
         path = parsed.path.rstrip("/") or "/"
+        if path == "/v1/bootstrap":
+            return self.json(200, {
+                "schema": "personaos-global-discovery-bootstrap/1",
+                "libp2p_multiaddrs": [],
+                "relay_multiaddrs": [],
+            })
+        if path == "/v1/nodes":
+            envelope = node_announcement_envelope(self.node_base())
+            return self.json(200, {
+                "schema": "personaos-node-announcement-page/1",
+                "nodes": [envelope],
+                "total": 1,
+                "next_cursor": "",
+            })
         if path in {"/.well-known/personaos-discovery.json", "/favicon.ico"}:
             return self.empty()
         if path == "/node/.well-known/personaos-discovery.json":
@@ -922,6 +982,26 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/node/providers.json":
             providers, _documents = provider_fixtures(self.node_base())
             return self.json(200, {"providers": providers})
+        if path == "/node/projects/project-fixture.json":
+            return self.json(200, {
+                "schema": "personaos-project-export/2",
+                "project_id": "project:fixture",
+                "name": "Open host topology",
+                "environments": [ENV, ENV_EMPTY],
+                "primary_environment_id": ENV,
+                "members": {
+                    PERSONA: "originator",
+                    PERSONA_PEER: "reviewing peer",
+                },
+            })
+        if path == "/node/projects/project-legacy.json":
+            return self.json(200, {
+                "schema": "personaos-project-export/1",
+                "project_id": "project:legacy",
+                "name": "Legacy singular topology",
+                "environment_id": "env:must-not-render-as-authority",
+                "members": {},
+            })
         provider_prefix = "/node/discovery/public/records/"
         if path.startswith(provider_prefix) and path.endswith(".json"):
             record_id = path[len(provider_prefix):-len(".json")]

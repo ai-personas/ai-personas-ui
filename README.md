@@ -15,27 +15,28 @@ contains **no run data at all**. Every persona, environment, project, artifact, 
 and refinement mission is discovered at runtime from live nodes. First contact is merged from:
 
 - the page origin when a PersonaOS node serves this shell;
-- **`?peer=<url>`**, peers saved by the **PEER** control in `localStorage`, and `peers.txt`;
+- peers saved by the **PEER** diagnostic control in `localStorage`, and `peers.txt`;
 - bounded localhost probes for a node running on the viewer's machine;
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
 - libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
 - the default `https://node1.personas.ai` rendezvous plus any additive
-  `?resolver=<https-url>` (or legacy `?global_discovery=`) supplied by the viewer.
+  `?resolver=<https-url>` supplied by the viewer.
 
 This repository's `peers.txt` deliberately contains no fixed node hostname. Resolver responses are
 signed announcements and locators only; `node1` and custom resolvers receive no authority over the
 records or identities they point to. Use `?no_global_discovery=1` for an explicit
 resolver-free/offline session. Discovery
 records are re-resolved and re-verified every 15 seconds. If no first-contact path finds a reachable
-node, the page shows an explicit empty state.
+node, the page shows an explicit empty state. The hosted URL never needs or interprets a
+peer-routing query parameter.
 
 **Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
 IP** (browsers block mixed content). So on an **intranet**, open the **node-served** UI directly
 at `http://<node-host>:8799/` — the node serves this same shell over plain HTTP, same-origin, so
 realtime discovery works without any tunnel. For the **internet**, expose the node behind an
-**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, give
-viewers its URL through `?peer=`, or use another signed-announcement resolver. In every case trust
+**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, or use
+another signed-announcement resolver. In every case trust
 is the **Ed25519 signature on each record, not the host**.
 
 ## P2P discovery - how it finds things (no central index)
@@ -85,8 +86,8 @@ current-kernel-master-only.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
 peers; public nodes normally announce through the default untrusted locator, and any kernel can
-also be added with `?peer=https://its-host`, advertised through libp2p/IPFS, or saved with the PEER
-control. Every route enters the same record-resolution and signature check.
+also be advertised through libp2p/IPFS or saved with the local PEER diagnostic control. Every route
+enters the same record-resolution and signature check.
 
 **The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
 window of at most six kernel cores and ten navigator chips, with explicit “shown of total” and
