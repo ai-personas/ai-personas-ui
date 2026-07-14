@@ -32,10 +32,11 @@ import {
   liveTaskMissionProjection,
   nextProgressiveGroupLevel,
   publishedMissionEvidenceProjection,
+  projectTerminalModelFailures,
   progressiveGroupLimit,
   selectMonitoringBases,
   selectPriorityWindow,
-} from './network-view.mjs?v=20260714-browser-transport-v1';
+} from './network-view.mjs?v=20260714-live-truth-v2';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -308,6 +309,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
   terminalCallTombstones:new Map(),
+  terminalModelFailureByKernel:new Map(),
   personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
@@ -420,6 +422,8 @@ function expireLivePresence(now=Date.now()){
   for(const [envKey,d] of (S.liveByEnv||new Map())) if(now-(d?.receivedAt||0)>retention) S.liveByEnv.delete(envKey);
   for(const [base,at] of (S.liveTelObservedAt||new Map())) if(now-at>retention){
     S.liveTelObservedAt.delete(base); S.liveTel.delete(base); S.telLoaded?.delete(base==='@origin'?'':base); }
+  for(const [kernel,failure] of (S.terminalModelFailureByKernel||new Map()))
+    if(now-(failure?.receivedAt||0)>retention) S.terminalModelFailureByKernel.delete(kernel);
 }
 function _activeModelCallsForPersona(value,kernel=''){
   const ref=_personaRef(value,kernel);
@@ -605,6 +609,15 @@ function indexLiveTelemetry(base,live,meta={}){
     .filter((call)=>_terminalCallIsBlocked(base,call,receivedAt))
     .map((call)=>_shortId(call?.persona_id)).filter(Boolean));
   const me=(live.kernel&&live.kernel.model_events)||[];
+  const projectedFailures=projectTerminalModelFailures(me);
+  const terminalFailuresByPersona=new Map([...projectedFailures.byPersona]
+    .map(([pid,failure])=>[_shortId(pid),failure]).filter(([pid])=>pid));
+  const terminalFailuresByEnvironment=new Map([...projectedFailures.byEnvironment]
+    .map(([eid,failure])=>[_shortId(eid),failure]).filter(([eid])=>eid));
+  if(projectedFailures.latest) S.terminalModelFailureByKernel.set(kernelId,{
+    ...projectedFailures.latest,observedAt:t,receivedAt,base:baseKey==='@origin'?'':baseKey,kernel:kernelId,
+  });
+  else S.terminalModelFailureByKernel.delete(kernelId);
   const sp=(live.kernel&&live.kernel.spans)||[];
   const rawPersonas=Array.isArray(live.personas)?live.personas:[];
   const personas=rawPersonas.slice(0,NETWORK_LIMITS.cachedRecords);
@@ -633,21 +646,25 @@ function indexLiveTelemetry(base,live,meta={}){
   personas.forEach((p)=>{ const pid=_shortId(p.persona_id);
     if(!pid) return; const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
     const terminalized=terminalPersonaIds.has(pid)&&!activePersonaIds.has(pid);
+    const terminalFailure=activePersonaIds.has(pid)?null:(terminalFailuresByPersona.get(pid)||null);
     const summary=terminalized?{...p,running_llm:false,llm_execution_state:'idle',task_execution_state:'idle'}:p;
-    S.liveByPersona.set(personaKey,{...cur,summary,models:byP.get(pid)||cur.models||[],sid:pid,
+    S.liveByPersona.set(personaKey,{...cur,summary,models:byP.get(pid)||cur.models||[],terminalFailure,sid:pid,
       generated_at:live.generated_at,base:baseKey==='@origin'?'':baseKey,kernel:kernelId,
       observedAt:t,receivedAt,stale:false});
     try{ NETWORK.upsertPresence({...summary,kernel_id:kernelId,kind:'persona',persona_id:pid,
       observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':(summary.task_execution_state||summary.lifecycle_state||'idle')}); }catch(e){}
   });
   for(const [pid,models] of byP){ const personaKey=_personaKey(kernelId,pid), cur=S.liveByPersona.get(personaKey)||{};
-    S.liveByPersona.set(personaKey,{...cur,models,sid:pid,generated_at:live.generated_at,
+    const terminalFailure=activePersonaIds.has(pid)?null:(terminalFailuresByPersona.get(pid)||null);
+    S.liveByPersona.set(personaKey,{...cur,models,terminalFailure,sid:pid,generated_at:live.generated_at,
       base:baseKey==='@origin'?'':baseKey,kernel:kernelId,observedAt:t,receivedAt,stale:false});
     try{ NETWORK.upsertPresence({kernel_id:kernelId,kind:'persona',persona_id:pid,
       observed_at_ms:t,state:activePersonaIds.has(pid)?'running_llm':'recent'}); }catch(e){}
   }
   for(const [eid,models] of byE){ const envKey=_environmentKey(kernelId,eid), cur=S.liveByEnv.get(envKey)||{};
-    S.liveByEnv.set(envKey,{...cur,models,spans:spByE.get(eid)||cur.spans||[],sid:eid,
+    const terminalFailure=activeCalls.some((call)=>_shortId(call?.environment_id)===eid)
+      ?null:(terminalFailuresByEnvironment.get(eid)||null);
+    S.liveByEnv.set(envKey,{...cur,models,terminalFailure,spans:spByE.get(eid)||cur.spans||[],sid:eid,
       kernel:kernelId,base:baseKey==='@origin'?'':baseKey,generated_at:live.generated_at,
       observedAt:t,receivedAt}); }
   for(const [eid,spans] of spByE){ const envKey=_environmentKey(kernelId,eid), cur=S.liveByEnv.get(envKey)||{};
@@ -1071,7 +1088,18 @@ async function loadGlobalNodes(){
   // like an empty network.
   const announced=[...S.globalAnnouncements.values()];
   if(announced.length){
-    renderGlobalKernels(); renderCoordGraph([],0); updateVitalsCounters();
+    renderGlobalKernels();
+    // A resolver announcement has kernel identity/lease data but no persona
+    // topology. Keep an already-rendered focused persona projection until the
+    // authoritative entity-feed refresh below replaces it. That refresh still
+    // sends an exact empty projection when the final persona departs; this only
+    // prevents the locator phase from creating a transient 1→0→1 race.
+    const graph=$('#sysGraph');
+    const focusedProjectionRendered=!!graph?._nodes?.childElementCount
+      &&(!!S.kernelFocus||Math.max(S.globalKernels?.size||0,S.kernels?.size||0,
+        Number(S.globalTotal)||0)<=1);
+    if(!focusedProjectionRendered) renderCoordGraph([],0);
+    updateVitalsCounters();
     if(!S.recs.size){
       const expected=announced.reduce((n,a)=>n+(Number(a.record_count)||0),0);
       const sample=String(announced[0]?.kernel_id||'node').replace(/^kernel:/,'');
@@ -2193,7 +2221,7 @@ function _modelSummary(models){
     `<div class="grant"><span><code>${esc(mdl)}</code></span>`
     +`<span class="l2">${esc([...e.roles].slice(0,4).join(', ')||'model')}${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span></div>`).join('');
 }
-function _liveFeed(models){
+function _liveFeed(models,{historical=false}={}){
   if(!models||!models.length) return '<div class="l2">idle — no recent model calls</div>';
   // A persona legitimately produces, repairs AND evolves its own tactics — so SUMMARISE
   // its recent model calls by PURPOSE with a count (newest purpose first), instead of a
@@ -2204,10 +2232,20 @@ function _liveFeed(models){
   const order=[...byP.entries()].sort((a,b)=>b[1].seen-a[1].seen);   // most-recently-used purpose first
   return order.map(([p,e])=>{
     const lbl=PURPOSE_LABEL[p]||p;
-    return `<div class="grant"><span class="l2"><span class="livedot2"></span>${esc(lbl)}`
+    return `<div class="grant"><span class="l2">${historical?'':'<span class="livedot2"></span>'}${esc(lbl)}`
       +`${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span>`
       +`<span><code>${esc(e.model)}</code>${e.role&&e.role!=='-'&&e.role!==p?` <span class="l2">${esc(e.role)}</span>`:''}</span></div>`;
   }).join('');
+}
+function _terminalModelFailureHTML(failure){
+  if(!failure) return '';
+  const purpose=PURPOSE_LABEL[failure.purpose]||String(failure.purpose||'model call').replace(/_/g,' ');
+  const detail=[failure.model?`model ${failure.model}`:'',failure.status?`HTTP ${failure.status}`:'']
+    .filter(Boolean).join(' · ');
+  return `<div class="model-failure" role="status"><div><span>${icon('warn','ico-sm')}</span>`
+    +`<b>Model call failed</b><small>${esc(purpose)}${detail?` · ${esc(detail)}`:''}</small></div>`
+    +(failure.reason?`<p>${esc(failure.reason)}</p>`:'')
+    +`<span class="ix-trust transport">UNSIGNED LIVE TELEMETRY</span></div>`;
 }
 function renderPersonaLive(pid,profileFallback,kernel=''){
   // profileFallback (the served persona card) lets the grid render for IDLE personas too
@@ -2231,6 +2269,8 @@ function renderPersonaLive(pid,profileFallback,kernel=''){
         +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
       +`</div>`;
   }
+  const running=_activeModelCallsForPersona(ref.key).length>0;
+  const terminalFailure=running?null:(d.terminalFailure||null);
   if(rt){
     h+=`<div class="sublabel">Runtime state · unsigned status telemetry</div>`
       +kv('Task execution',esc(rt.task_execution_state||'unmarked'))
@@ -2238,7 +2278,10 @@ function renderPersonaLive(pid,profileFallback,kernel=''){
     const call=rt.current_model_call;
     if(call) h+=kv('Current model call',`<span class="ok">${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')}</span> · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}`);
   }
-  h+=`<div class="sublabel">Doing now</div>`+_liveFeed(d.models);
+  if(terminalFailure) h+=`<div class="sublabel">Terminal execution status</div>`
+    +_terminalModelFailureHTML(terminalFailure);
+  h+=`<div class="sublabel">${running?'Doing now':'Model selection history'}</div>`
+    +_liveFeed(d.models,{historical:!running});
   return h;
 }
 function renderEnvLive(eid,kernel=''){
@@ -2631,6 +2674,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const modelFresh=_modelFresh(personaKey,models);
   const recent=!d.stale&&(modelFresh||actFresh);
   const running=!d.stale&&_runningNow(personaKey);   // mid model-call THIS moment — the one truly working
+  const terminalFailure=running?null:(d.terminalFailure||null);
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
@@ -2641,9 +2685,17 @@ function renderPersonaCard(pid,kernel='',context={}){
     const purposeLabel=PURPOSE_VERB[purpose]||purpose.replace(/_/g,' ');
     doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(purposeLabel)}</strong><code>${esc(model)}</code>`
       +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
+  } else if(terminalFailure){
+    focusLabel='Execution status';
+    const purpose=PURPOSE_VERB[terminalFailure.purpose]
+      ||String(terminalFailure.purpose||'model call').replace(/_/g,' ');
+    doingHTML=`<span class="pc-failure-mark">${icon('warn','ico-sm')}</span><strong>Model call failed</strong>`
+      +(terminalFailure.model?`<code>${esc(terminalFailure.model)}</code>`:'')
+      +`<span class="pc-when">${esc(purpose)}${terminalFailure.status?` · HTTP ${esc(terminalFailure.status)}`:''}</span>`;
   } else if(hasModels){
     const purposeLabel=PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
-    const verb=recent?purposeLabel:('last '+purposeLabel);
+    focusLabel=modelFresh?'Recent model activity':'Last model activity';
+    const verb=modelFresh?purposeLabel:('last '+purposeLabel);
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(verb)}</strong><code>${esc(last.model)}</code>`;
   } else if(actFresh){
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixVerb(recentAct.kind))}</strong>`;
@@ -2676,10 +2728,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +(rt.task_execution_state?`<span class="tag runtime-tag" title="task execution state from unsigned node status">${icon('task','ico-sm')} ${esc(rt.task_execution_state.replace(/_/g,' '))}</span>`:'');
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
-  const dotCls=running?'run':(recent?'on':'off');
+  const dotCls=running?'run':(terminalFailure?'error':(recent?'on':'off'));
   const statusBadge=d.stale
     ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'STALE'}</span>`
     : running ? '<span class="pc-run">MODEL CALL</span>'
+    : terminalFailure ? '<span class="pc-failed">MODEL FAILED</span>'
     : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
       :rt.task_execution_state==='run_participant'?'<span class="pc-recent">RUN ACTIVE</span>'
       :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
@@ -2689,14 +2742,14 @@ function renderPersonaCard(pid,kernel='',context={}){
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
   const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, toolAct?._t||0);
-  if(!running && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
+  if(!running && !terminalFailure && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
   const hue=_personaAvatarHue(personaKey);
   const environments=(context.environments||[]).filter(Boolean);
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${running?' running':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
+  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE CARD · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
@@ -3611,7 +3664,7 @@ async function fetchEntityFeed(base,rel){
 }
 function feedModels(doc){ return ((doc&&doc.model_events)||[]).filter((m)=>(m.kind||'')==='MODEL_SELECTED')
   .map((m)=>({purpose:String(m.requested_purpose||m.role||'model'),model:String(m.model_id||'—'),role:String(m.role||'')})); }
-function renderPersonaFeedDoc(doc){
+function renderPersonaFeedDoc(doc,personaKey=''){
   const s=doc.summary||{}; let h='';
   // PER-04 / §4.1: public tiles (state, tasks, reputation); operator-tier evolution
   // internals + GEPA cohort only with an operator token.
@@ -3627,7 +3680,21 @@ function renderPersonaFeedDoc(doc){
     +`</div>`;
   if(hasOp&&(s.evolution_trace_count!=null||s.accepted_trace_count!=null))
     h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials${s.gepa_cohort_id?' · cohort '+esc(String(s.gepa_cohort_id).slice(0,18)):''}</div>`;
-  h+=`<div class="sublabel">Doing now</div>`+_liveFeed(feedModels(doc));
+  if(s.task_execution_state||s.llm_execution_state){
+    h+=`<div class="sublabel">Runtime state · unsigned status telemetry</div>`
+      +kv('Task execution',esc(s.task_execution_state||'unmarked'))
+      +kv('LLM execution',esc(s.llm_execution_state||'unmarked'));
+  }
+  const ref=_personaRef(personaKey||doc.persona_id||'');
+  const running=_activeModelCallsForPersona(ref.key).length>0;
+  const projected=projectTerminalModelFailures(doc.model_events||[]);
+  const feedFailure=projected.byPersona.get(doc.persona_id)||projected.latest;
+  const indexedFailure=S.liveByPersona.get(ref.key)?.terminalFailure||null;
+  const terminalFailure=running?null:(indexedFailure||feedFailure||null);
+  if(terminalFailure) h+=`<div class="sublabel">Terminal execution status</div>`
+    +_terminalModelFailureHTML(terminalFailure);
+  h+=`<div class="sublabel">${running?'Doing now':'Model selection history'}</div>`
+    +_liveFeed(feedModels(doc),{historical:!running});
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
     h+=`<div class="sublabel">Lifecycle / lineage</div>`
@@ -3894,7 +3961,8 @@ function refreshLiveSection(){
     fetchEntityFeed(S.drawerLiveBase||'',wantFeed).then((doc)=>{
       if(S.drawerLiveFeed!==wantFeed||S.drawerLiveId!==wantId||S.drawerLiveKernel!==wantKernel) return;
       const el2=$('#livesec'); if(!el2) return;
-      if(doc&&doc.schema==='personaos-persona-telemetry/1') el2.innerHTML=renderPersonaFeedDoc(doc);
+      if(doc&&doc.schema==='personaos-persona-telemetry/1')
+        el2.innerHTML=renderPersonaFeedDoc(doc,_personaKey(wantKernel,wantId));
       else if(doc&&doc.schema==='personaos-env-telemetry/1') el2.innerHTML=renderEnvFeedDoc(doc);
       else fallback();
     }).catch(fallback);
@@ -5343,7 +5411,29 @@ function missionCardList(){
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
     const winner=rank(card)>rank(prev)?card:prev;
     grouped.set(key,{...prev,...winner,key,meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,4)}); }
-  return [...grouped.values()];
+  const result=[...grouped.values()];
+  const byKernel=new Map();
+  for(const card of result) (byKernel.get(card.kernel)||byKernel.set(card.kernel,[]).get(card.kernel)).push(card);
+  for(const [kernel,kernelCards] of byKernel){
+    // A kernel-wide terminal event can be bound to a mission headline only when
+    // there is exactly one published task candidate on that kernel. With
+    // multiple tasks, keep the failure on its exact persona/environment cards
+    // instead of guessing which signed task it belongs to.
+    const publishedCards=kernelCards.filter((card)=>
+      card.state==='published'&&card.recordKind==='task');
+    if(publishedCards.length!==1) continue;
+    const failure=S.terminalModelFailureByKernel?.get(kernel); if(!failure) continue;
+    const active=[...(S.activeModelCallsByPersona||new Map()).entries()].some(([key,calls])=>
+      splitNetworkKey(key)?.kernelId===kernel&&(calls||[]).length>0);
+    if(active) continue;
+    const card=publishedCards[0], detail=[failure.model||'',failure.status?`HTTP ${failure.status}`:'']
+      .filter(Boolean).join(' · ');
+    card.state='failed'; card.terminalFailure=true;
+    const failureMeta=`unsigned live telemetry · model call failed${detail?` · ${detail}`:''}`;
+    card.meta=[failureMeta,...(card.meta||[]).filter((value)=>value!==failureMeta)]
+      .filter(Boolean).slice(0,4);
+  }
+  return result;
 }
 // The strip needs each node's run state (the token-gated part of /status);
 // prefetch statuses for every discovered base so running/paused missions show
@@ -5358,27 +5448,31 @@ function prefetchNodeStatuses(){
     fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }
 }
 function renderMissions(){
-  const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'); if(!box||!wrap) return;
+  const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'),
+    eyebrow=$('#missionEyebrow'); if(!box||!wrap) return;
   const cards=missionCardList();
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>c.state==='running'?1e6:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>c.state==='running'?1e6:c.state==='failed'?9e5:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its mission text.
   // Keep the compact mission summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
-  const active=window.items.find((c)=>c.state==='running')||window.items.find((c)=>c.liveTask)
-    ||cards.find((c)=>c.state==='running')||window.items[0]||cards[0];
+  const active=window.items.find((c)=>c.state==='running')||window.items.find((c)=>c.state==='failed')
+    ||window.items.find((c)=>c.liveTask)||cards.find((c)=>c.state==='running')
+    ||cards.find((c)=>c.state==='failed')||window.items[0]||cards[0];
   const matching=window.items.length===cards.length
     ?`${cards.length} mission${cards.length===1?'':'s'}`
     :`${window.items.length} matching · ${cards.length} total`;
   if(count) count.textContent=`${matching} · ${active.state}`;
   if(headline) headline.textContent=active.task;
+  if(eyebrow) eyebrow.textContent=cards.some((card)=>card.state==='running')?'NOW WORKING ON'
+    :cards.some((card)=>card.state==='failed')?'EXECUTION NEEDS ATTENTION':'MISSION EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const html=window.items.length?window.items.map((c)=>
     `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
-    +`<div class="mission-state-dot ms-${esc(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase())}</span>`
+    +`<div class="mission-state-dot ms-${esc(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
     +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
     +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('')
     :`<div class="mission-no-match">No missions match this network filter.</div>`;

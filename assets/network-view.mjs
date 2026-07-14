@@ -28,6 +28,9 @@ const TASK_STATE_PREFIX = 'task_state:';
 const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
 const MISSION_EVIDENCE_LABEL_LIMIT = 256;
 const MISSION_EVIDENCE_DID_LIMIT = 512;
+const MODEL_EVENT_SCAN_LIMIT = 8_192;
+const MODEL_FAILURE_REASON_LIMIT = 240;
+const MODEL_EVENT_FIELD_LIMIT = 128;
 
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
@@ -185,6 +188,64 @@ export function liveTaskMissionProjection(record) {
     run: signedMissionRun(record),
     liveTask: true,
   });
+}
+
+function boundedTelemetryField(value, maximum = MODEL_EVENT_FIELD_LIMIT) {
+  if (typeof value !== 'string' && typeof value !== 'number') return '';
+  const exact = String(value).normalize('NFC').replace(/\s+/gu, ' ').trim();
+  if (!exact || /[\u0000-\u001f\u007f]/u.test(exact)) return '';
+  return [...exact].slice(0, maximum).join('');
+}
+
+function terminalFailureProjection(event, index) {
+  const statusValue = Number(event?.status);
+  return Object.freeze({
+    kind: 'MODEL_CALL_FAILED',
+    index,
+    personaId: boundedTelemetryField(event?.persona_id, 512),
+    environmentId: boundedTelemetryField(event?.environment_id, 512),
+    model: boundedTelemetryField(event?.model_id),
+    purpose: boundedTelemetryField(event?.requested_purpose ?? event?.purpose),
+    status: Number.isSafeInteger(statusValue) && statusValue >= 100 && statusValue <= 599
+      ? statusValue : null,
+    reason: boundedTelemetryField(event?.reason, MODEL_FAILURE_REASON_LIMIT),
+  });
+}
+
+/**
+ * Project the latest terminal model-call failure from an ordered telemetry ring.
+ *
+ * MODEL_SELECTED begins a new execution attempt and therefore clears an older
+ * failure for its exact persona/environment. MODEL_CALL_FAILED closes that
+ * attempt. Transport/fallback diagnostics are intentionally ignored: they may
+ * be followed by a successful fallback and are not themselves terminal state.
+ * The returned entity maps and kernel-wide `latest` value let callers surface
+ * failure without treating historical MODEL_SELECTED rows as current work.
+ */
+export function projectTerminalModelFailures(modelEvents) {
+  const source = Array.isArray(modelEvents)
+    ? modelEvents.slice(-MODEL_EVENT_SCAN_LIMIT)
+    : [...iterableOf(modelEvents)].slice(-MODEL_EVENT_SCAN_LIMIT);
+  const byPersona = new Map();
+  const byEnvironment = new Map();
+  let latest = null;
+  source.forEach((event, index) => {
+    const kind = boundedTelemetryField(event?.kind);
+    if (kind !== 'MODEL_SELECTED' && kind !== 'MODEL_CALL_FAILED') return;
+    const personaId = boundedTelemetryField(event?.persona_id, 512);
+    const environmentId = boundedTelemetryField(event?.environment_id, 512);
+    if (kind === 'MODEL_SELECTED') {
+      if (personaId) byPersona.delete(personaId);
+      if (environmentId) byEnvironment.delete(environmentId);
+      latest = null;
+      return;
+    }
+    const failure = terminalFailureProjection(event, index);
+    if (personaId) byPersona.set(personaId, failure);
+    if (environmentId) byEnvironment.set(environmentId, failure);
+    latest = failure;
+  });
+  return Object.freeze({byPersona, byEnvironment, latest});
 }
 
 function boundedText(value, maxLength) {

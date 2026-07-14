@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
@@ -201,6 +202,17 @@ def run(args: argparse.Namespace) -> dict:
                     'HTTP federation URL escaped into the libp2p bootstrap list')
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
+            page.evaluate("""() => {
+              const target=document.querySelector('#graphWindow');
+              window.__topologyTruthStartedAt=Date.now();
+              window.__topologyTruthSamples=[target?.textContent || ''];
+              window.__topologyTruthObserver=new MutationObserver(() => {
+                window.__topologyTruthSamples.push(target?.textContent || '');
+              });
+              if(target) window.__topologyTruthObserver.observe(target, {
+                childList:true,subtree:true,characterData:true
+              });
+            }""")
             page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
               .some((node) => node.textContent.includes('recorded message intent'))""", timeout=15_000)
             compact_header_height = page.locator('#appHeader').evaluate('(element) => element.offsetHeight')
@@ -374,6 +386,16 @@ def run(args: argparse.Namespace) -> dict:
             }).filter((selector) => /role-(lead|verifier|integrator|specialist|member)/.test(selector))""")
             require(not legacy_role_selectors,
                     'stylesheet reintroduced host-defined persona-role selectors')
+            page.wait_for_function(
+                """() => Date.now() - (window.__topologyTruthStartedAt || Date.now()) >= 16_000""",
+                timeout=18_000,
+            )
+            topology_samples = page.evaluate("""() => {
+              window.__topologyTruthObserver?.disconnect();
+              return window.__topologyTruthSamples || [];
+            }""")
+            require(not any(sample.strip() == '0 of 0 personas' for sample in topology_samples),
+                    'non-authoritative locator refresh erased a focused persona topology')
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             trust = page.locator('#detailbody .trust-details')
@@ -433,8 +455,18 @@ def run(args: argparse.Namespace) -> dict:
             followed.locator('.pc-follow').click()
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-network-messages.png'), full_page=True)
-                page.locator('.environment-section').screenshot(
-                    path=str(screenshots / 'desktop-environment-cards.png'))
+                environment_capture_error = None
+                for _ in range(3):
+                    try:
+                        page.locator('.environment-section').screenshot(
+                            path=str(screenshots / 'desktop-environment-cards.png'))
+                        environment_capture_error = None
+                        break
+                    except PlaywrightError as error:
+                        environment_capture_error = error
+                        page.wait_for_timeout(250)
+                if environment_capture_error is not None:
+                    raise environment_capture_error
             provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
             require(provider_refused.count() >= 2,
                     'tampered ProviderRecord document entered browser discovery')
@@ -1077,6 +1109,66 @@ def run(args: argparse.Namespace) -> dict:
                         unexpected_sse_errors + unexpected_sse_responses
                     ))
             sse_context.close()
+
+            # Historical MODEL_SELECTED rows are not current work. With no active
+            # run/call and a latest terminal MODEL_CALL_FAILED, the mission,
+            # persona card, and inspector must all expose the failure truthfully.
+            STATE.reset()
+            STATE.fail_model()
+            failure_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            failure_context.route('https://node1.personas.ai/**', empty_default_locator)
+            failure_context.route('**/node/events', lambda route: route.fulfill(
+                status=200, content_type='text/event-stream', body=''
+            ))
+            failure = failure_context.new_page()
+            failure_errors: list[str] = []
+            failure.on('console', lambda msg: failure_errors.append(
+                f'console {msg.type}: {msg.text}'
+            ) if msg.type in {'warning', 'error'} else None)
+            failure.on('pageerror', lambda error: failure_errors.append(f'pageerror: {error}'))
+            failure.goto(url, wait_until='domcontentloaded')
+            failure.wait_for_function("""() => document.querySelector('#status')?.textContent
+              .includes('14 verified records')""", timeout=30_000)
+            failed_persona = failure.locator('.pcard[title="open Orin Vale"]')
+            failed_persona.locator('.pc-failed').wait_for(timeout=15_000)
+            require(failed_persona.locator('.pc-run').count() == 0,
+                    'terminal model failure retained a running persona badge')
+            require('Model call failed' in failed_persona.locator('.pc-current').inner_text(),
+                    'persona card hid the terminal model-call failure')
+            require(failure.locator('#st-active .v').text_content() == '0',
+                    'terminal model failure inflated the running counter')
+            failure.wait_for_function("""() => [...document.querySelectorAll('.mcard')]
+              .some((card) => card.textContent.includes('design 4 bedroom house')
+                && card.textContent.includes('FAILED'))""", timeout=15_000)
+            failed_mission = failure.locator(
+                '.mcard[data-mrec]:has(.ms-failed)', has_text='design 4 bedroom house'
+            ).first
+            failed_mission.wait_for(state='attached', timeout=15_000)
+            failed_mission_text = failed_mission.text_content() or ''
+            require('unsigned live telemetry · model call failed' in failed_mission_text,
+                    'mission failure omitted its unsigned live-telemetry source: '
+                    + repr(failed_mission_text))
+            require(failure.locator('#missionEyebrow').text_content()
+                    == 'EXECUTION NEEDS ATTENTION',
+                    'idle failed mission retained the NOW WORKING ON headline')
+            failed_persona.click()
+            failure.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
+            failure.locator('#livesec .model-failure').wait_for(timeout=15_000)
+            live_text = failure.locator('#livesec').inner_text()
+            live_text_lower = live_text.lower()
+            require('terminal execution status' in live_text_lower
+                    and 'model returned malformed structured output' in live_text,
+                    'persona inspector did not surface terminal failure diagnostics')
+            require('model selection history' in live_text_lower
+                    and 'doing now' not in live_text_lower,
+                    'historical model selection was still labelled as current work')
+            unexpected_failure_errors = [
+                item for item in failure_errors
+                if 'Failed to load resource' not in item or '404 (Not Found)' not in item
+            ]
+            require(not unexpected_failure_errors,
+                    'terminal-state application errors: ' + '; '.join(unexpected_failure_errors))
+            failure_context.close()
             browser.close()
 
             result = {
@@ -1104,6 +1196,7 @@ def run(args: argparse.Namespace) -> dict:
                 'run_ended_stopped_polling': True,
                 'run_ended_cleared_runtime': True,
                 'run_ended_file_verified': True,
+                'terminal_model_failure_truthful': True,
                 'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
                 'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors

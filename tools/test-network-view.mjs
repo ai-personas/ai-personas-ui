@@ -11,6 +11,7 @@ import {
   normalizeBrowserLibp2pBootstrap,
   normalizeMonitoringBase,
   publishedMissionEvidenceProjection,
+  projectTerminalModelFailures,
   progressiveGroupLimit,
   safeCount,
   selectMonitoringBases,
@@ -146,6 +147,35 @@ for (const refused of [
   assert.equal(liveTaskMissionProjection(refused), null,
     'mission surface must not infer an unsigned or malformed live-task state');
 }
+
+const terminalFailures = projectTerminalModelFailures([
+  {kind: 'MODEL_SELECTED', persona_id: 'persona-a', environment_id: 'env-a',
+    model_id: 'model-a', requested_purpose: 'draft'},
+  {kind: 'MODEL_TRANSPORT_NO_RETRY', persona_id: 'persona-a', environment_id: 'env-a',
+    status: 504, reason: 'fallback remains possible'},
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a',
+    model_id: 'model-a', requested_purpose: 'draft', status: 400,
+    reason: ' invalid structured output\nfrom transport '},
+  {kind: 'MODEL_SELECTED', persona_id: 'persona-b', environment_id: 'env-b',
+    model_id: 'model-b', requested_purpose: 'review'},
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-b', environment_id: 'env-b',
+    model_id: 'model-b', requested_purpose: 'review', status: 503,
+    reason: 'backend unavailable'},
+]);
+assert.equal(terminalFailures.byPersona.get('persona-a')?.status, 400,
+  'a later persona attempt must not erase another persona terminal failure');
+assert.equal(terminalFailures.byEnvironment.get('env-b')?.purpose, 'review');
+assert.equal(terminalFailures.latest?.model, 'model-b');
+assert.equal(terminalFailures.latest?.reason, 'backend unavailable');
+assert.equal(projectTerminalModelFailures([
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', status: 500},
+  {kind: 'MODEL_SELECTED', persona_id: 'persona-a', model_id: 'recovery-model'},
+]).byPersona.has('persona-a'), false,
+'a newer selected attempt must supersede historical terminal failure state');
+assert.equal(projectTerminalModelFailures([
+  {kind: 'MODEL_FALLBACK_USED', persona_id: 'persona-a', status: 503},
+  {kind: 'MODEL_TRANSPORT_NO_RETRY', persona_id: 'persona-a', status: 503},
+]).latest, null, 'fallback and transport diagnostics are not terminal execution state');
 
 function* millionNodes() {
   for (let index = 0; index < 1_000_000; index++) {

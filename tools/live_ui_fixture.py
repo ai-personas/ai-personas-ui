@@ -731,6 +731,7 @@ class State:
         self.lock = threading.Lock()
         self.revision = 1
         self.ended = False
+        self.model_failed = False
         self.stale_next = False
         self.stale_started = False
         self.tamper_next_poll = False
@@ -743,6 +744,7 @@ class State:
         with self.lock:
             self.revision = value
             self.ended = False
+            self.model_failed = False
 
     def get(self) -> int:
         with self.lock:
@@ -752,6 +754,7 @@ class State:
         with self.lock:
             self.revision = 1
             self.ended = False
+            self.model_failed = False
             self.stale_next = False
             self.stale_started = False
             self.tamper_next_poll = False
@@ -785,6 +788,15 @@ class State:
         with self.lock:
             self.ended = True
 
+    def fail_model(self) -> None:
+        with self.lock:
+            self.ended = True
+            self.model_failed = True
+
+    def is_model_failed(self) -> bool:
+        with self.lock:
+            return self.model_failed
+
     def is_ended(self) -> bool:
         with self.lock:
             return self.ended
@@ -793,6 +805,7 @@ class State:
         with self.lock:
             self.revision = 2
             self.ended = False
+            self.model_failed = False
             self.tamper_next_poll = True
             self.tamper_poll_served = False
 
@@ -801,6 +814,7 @@ class State:
             self.key_generation = 2
             self.revision = 2
             self.ended = False
+            self.model_failed = False
 
     def signing_key_generation(self) -> int:
         with self.lock:
@@ -903,6 +917,7 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
 
 def telemetry() -> dict:
     call = snapshot()["active"]["calls"][0]
+    failed = STATE.is_model_failed()
     scale_count = STATE.get_scale()
     personas = [
         {"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias", "lifecycle_state": "ACTIVE",
@@ -912,6 +927,16 @@ def telemetry() -> dict:
         {"persona_id": PERSONA_THIRD, "name": "Unsigned Ivo telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 4, "reputation_score": 0.84},
     ]
+    for persona in personas:
+        persona.update({
+            "running_llm": False if failed else persona["persona_id"] == PERSONA,
+            "task_execution_state": "idle" if failed else (
+                "running_llm" if persona["persona_id"] == PERSONA else "idle"
+            ),
+            "llm_execution_state": "idle" if failed else (
+                "running" if persona["persona_id"] == PERSONA else "idle"
+            ),
+        })
     if scale_count:
         personas = [{
             "persona_id": f"scale-persona-{index:05d}",
@@ -922,16 +947,28 @@ def telemetry() -> dict:
         } for index in range(scale_count)]
         # Preserve the one real active-call endpoint in the large population.
         personas[0].update({"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias"})
+    model_events = [{
+        "kind": "MODEL_SELECTED", "persona_id": PERSONA, "environment_id": ENV,
+        "model_id": "gpt-5.5", "requested_purpose": call["requested_purpose"], "role": "lead",
+    }]
+    if failed:
+        model_events.append({
+            "kind": "MODEL_CALL_FAILED", "persona_id": PERSONA, "environment_id": ENV,
+            "model_id": "gpt-5.5", "requested_purpose": "persona_communication",
+            "status": 400,
+            "reason": "model returned malformed structured output",
+        })
     return {
         "schema": "personaos-live-telemetry/1",
         "generated_at": now(),
-        "node": {"heartbeat": {"running": True, "busy": f"running {RUN}", "interval_s": 2}},
+        "node": {
+            "heartbeat": {"running": True, "busy": "" if failed else f"running {RUN}", "interval_s": 2},
+            "active_run_persona_ids": [] if failed else [PERSONA],
+            "running_llm_persona_ids": [] if failed else [PERSONA],
+        },
         "kernel": {
-            "active_model_calls": [call],
-            "model_events": [{
-                "kind": "MODEL_SELECTED", "persona_id": PERSONA, "environment_id": ENV,
-                "model_id": "gpt-5.5", "requested_purpose": call["requested_purpose"], "role": "lead",
-            }],
+            "active_model_calls": [] if failed else [call],
+            "model_events": model_events,
             "spans": [],
             "interactions": [
                 {"actor_id": PERSONA, "actor_kind": "persona",
@@ -1141,6 +1178,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/node/status":
             call = snapshot()["active"]["calls"][0]
             ended = STATE.is_ended()
+            failed = STATE.is_model_failed()
             return self.json(200, {
                 "schema": "personaos-node-status/1", "node_id": NODE_ID, "backend": "codex",
                 "active_model": "gpt-5.5", "lineage_durable": True, "artifact_tier": "public",
@@ -1150,8 +1188,10 @@ class Handler(SimpleHTTPRequestHandler):
                 "runs": [{"run": RUN, "status": "completed" if ended else "running"}],
                 "active_model_calls": [] if ended else [call], "personas": [{
                     "persona_id": PERSONA, "name": "Orin Vale", "lifecycle_state": "ACTIVE",
-                    "experience_tasks": 3, "task_execution_state": "running_llm",
-                    "llm_execution_state": "running", "running_llm": True,
+                    "experience_tasks": 3,
+                    "task_execution_state": "idle" if failed else "running_llm",
+                    "llm_execution_state": "idle" if failed else "running",
+                    "running_llm": not failed,
                 }],
             })
         if path == f"/node/runs/{RUN}":
@@ -1253,6 +1293,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/node/end":
             STATE.end()
             return self.json(200, {"ended": True})
+        if path == "/node/fail-model":
+            STATE.fail_model()
+            return self.json(200, {"ended": True, "model_failed": True})
         if path == "/node/reset":
             STATE.reset()
             return self.json(200, {"revision": 1})

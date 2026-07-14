@@ -255,6 +255,7 @@ b{color:var(--bright)}
 .mcard:has(.ms-published){border-left-color:var(--line2)}
 .mcard:has(.ms-converged){border-left-color:var(--intr)}
 .mcard:has(.ms-stopped){border-left-color:var(--down)}
+.mcard:has(.ms-failed){border-left-color:var(--down)}
 .mcard .mtask{color:var(--off-white);font-weight:var(--w-semi);font-size:var(--fs-body);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mcard .mmeta{color:var(--dim);font-size:var(--fs-meta);display:flex;gap:8px;flex-wrap:wrap;margin-top:3px}
 .mstate{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);padding:1px 6px;border-radius:var(--chip-radius);
@@ -262,7 +263,7 @@ b{color:var(--bright)}
 .ms-running{background:var(--up);animation:mspulse 2.4s ease-in-out infinite}
 @keyframes mspulse{0%,100%{opacity:1}50%{opacity:.72}}
 .ms-paused{background:var(--amber);color:var(--ink-on-accent)} .ms-shipped{background:var(--int)} .ms-published{background:var(--surface-raised);color:var(--dim);border:1px solid var(--line2)} .ms-converged{background:var(--intr)}
-.ms-queued{background:var(--idle)} .ms-stopped{background:var(--down)}
+.ms-queued{background:var(--idle)} .ms-stopped,.ms-failed{background:var(--down)}
 
 /* ===================== R1 · CONSTELLATION RAIL ===================== */
 .constellation{flex:0 0 auto;display:none;background:var(--surface-inset);
@@ -457,6 +458,7 @@ b{color:var(--bright)}
 /* RUNNING NOW dot pulses; active dot is steady; idle dot is hollow */
 .pc-dot.run{background:var(--up);box-shadow:0 0 8px var(--up);animation:beatdot 1.3s ease-in-out infinite}
 .pc-dot.on{background:var(--up);box-shadow:0 0 5px rgba(33,208,122,.5)}
+.pc-dot.error{background:var(--down);box-shadow:0 0 7px color-mix(in srgb,var(--down) 62%,transparent)}
 .pc-dot.off{background:transparent;border:1.5px solid var(--mut)}
 /* presence badges in the card header — ONE shape (.pill), only color/fill differs */
 .pc-run{font-size:var(--fs-meta);font-weight:var(--w-bold);letter-spacing:var(--tr-caps);color:var(--ink-on-accent);background:var(--up);
@@ -465,6 +467,8 @@ b{color:var(--bright)}
   background:var(--up-weak);border:1px solid color-mix(in srgb,var(--up) 34%,transparent);border-radius:var(--chip-radius);padding:1px 6px}
 .pc-idle{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--mut);text-transform:uppercase;
   background:color-mix(in srgb,var(--mut) 10%,transparent);border:1px solid color-mix(in srgb,var(--mut) 30%,transparent);border-radius:var(--chip-radius);padding:1px 6px}
+.pc-failed{font-size:var(--fs-meta);font-weight:var(--w-bold);letter-spacing:var(--tr-caps);color:var(--down);text-transform:uppercase;
+  background:var(--down-weak);border:1px solid var(--down2);border-radius:var(--chip-radius);padding:1px 6px}
 .pc-life{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);color:var(--dim);text-transform:uppercase;
   background:color-mix(in srgb,var(--surface-well2) 70%,transparent);border:1px solid var(--line2);border-radius:var(--chip-radius);padding:1px 6px}
 .pc-life.off{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 34%,var(--line2));background:var(--amber-weak)}
@@ -910,6 +914,9 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 
 /* live per-entity activity (persona/env drawer) */
 .livesec{background:var(--surface-deep);border:1px solid var(--line2);border-top:2px solid var(--up2);border-radius:var(--radius-md);padding:9px 11px;margin:2px 0 4px}
+.model-failure{display:grid;gap:7px;margin:4px 0 9px;padding:9px 10px;border:1px solid var(--down2);border-radius:var(--radius-sm);background:var(--down-weak);color:var(--down)}
+.model-failure>div{display:flex;align-items:center;gap:7px}.model-failure b{color:var(--down)}.model-failure small{margin-left:auto;color:var(--dim);text-align:right}
+.model-failure p{margin:0;color:var(--off-white);font:var(--fs-meta)/1.45 var(--mono);overflow-wrap:anywhere}.model-failure .ix-trust{justify-self:start}
 .livegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px;margin:2px 0 6px}
 .livegrid .lm{background:var(--surface-well2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:5px 4px;text-align:center}
 .lmv{font-size:var(--fs-ui);font-weight:var(--w-semi);color:var(--ink);font-variant-numeric:tabular-nums} .lmv.ok{color:var(--up)}
@@ -1093,6 +1100,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .mission-state-dot.ms-running{background:var(--up);box-shadow:0 0 10px var(--up)}
 .mission-state-dot.ms-paused{background:var(--amber)}
 .mission-state-dot.ms-published{background:var(--int)}
+.mission-state-dot.ms-failed{background:var(--down);box-shadow:0 0 8px color-mix(in srgb,var(--down) 55%,transparent)}
 .mission-copy{min-width:0}.mission-copy .mstate{display:inline-flex;margin-bottom:5px}
 .mcard .mtask{margin:0;color:var(--bright);font-size:15px;line-height:1.35;white-space:normal;overflow:visible;text-overflow:clip;text-wrap:pretty}
 .mcard .mmeta{margin-top:7px}.mission-open{color:var(--mut);padding-top:2px}
@@ -1232,6 +1240,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .pc-env-chip.current::after{content:'CURRENT';color:var(--up);font:700 7px/1 var(--mono);letter-spacing:.08em}
 .pc-env-more,.pc-env-none{color:var(--mut);font-size:9px}.pc-environments.independent{border-style:dashed}
 .pc-current{margin-top:9px}.pc-activity-row{padding-block:9px}.owned-outputs{position:relative;z-index:5}
+.pcard.failed{border-color:color-mix(in srgb,var(--down) 52%,#263a51)}.pc-failure-mark{display:inline-flex;color:var(--down)}
 .pc-message-stream{position:relative;z-index:5}.pc-message-stream .pc-section-head small{display:inline-flex;align-items:center;gap:5px}
 .pc-message-stream .pc-section-head small i{width:6px;height:6px;border-radius:50%;background:var(--up);box-shadow:0 0 8px rgba(33,208,122,.6)}
 .pc-message-stream ol{background:linear-gradient(180deg,rgba(4,10,17,.82),rgba(7,14,23,.62));border-color:color-mix(in srgb,hsl(var(--avatar-hue) 72% 60%) 16%,var(--line))}
