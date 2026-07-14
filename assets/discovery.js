@@ -27,7 +27,7 @@ import {
   signedPersonaLabel,
 } from './discovery-authority.mjs?v=20260714-provider-index-v2';
 import {
-  collectLibp2pBootstraps,
+  collectBrowserLibp2pBootstraps,
   compactCount,
   liveTaskMissionProjection,
   nextProgressiveGroupLevel,
@@ -35,7 +35,7 @@ import {
   progressiveGroupLimit,
   selectMonitoringBases,
   selectPriorityWindow,
-} from './network-view.mjs?v=20260714-published-task-evidence-v1';
+} from './network-view.mjs?v=20260714-browser-transport-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -778,7 +778,8 @@ function collectP2PBootstraps(boot){
   const observed=[...(boot?.bootstrap_peers||[]),...(boot?.relay_peers||[]),
     ...((boot?.reachability_profile||{}).bootstrap_peers||[]),
     ...((boot?.reachability_profile||{}).relay_peers||[])];
-  for(const multiaddr of collectLibp2pBootstraps(observed)) S.p2pBootstraps.add(multiaddr);
+  for(const multiaddr of collectBrowserLibp2pBootstraps(
+    {pageProtocol:location.protocol},observed)) S.p2pBootstraps.add(multiaddr);
 }
 async function keysFor(base,boot,{refresh=false}={}){
   const key=base||'@origin';
@@ -1010,7 +1011,8 @@ async function loadGlobalNodes(){
     fetchJson(join(ep,'/v1/bootstrap')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
   for(const {ep,d} of boots){
     if(!d) continue;
-    const addrs=collectLibp2pBootstraps(d.libp2p_multiaddrs,d.relay_multiaddrs);
+    const addrs=collectBrowserLibp2pBootstraps(
+      {pageProtocol:location.protocol},d.libp2p_multiaddrs,d.relay_multiaddrs);
     for(const ma of addrs) S.p2pBootstraps.add(ma);
     if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
   }
@@ -1056,7 +1058,8 @@ async function loadGlobalNodes(){
         reachability:ann.reachability_class||'',
         publicDiscovery:!!ann.public_discovery,
       });
-      for(const ma of collectLibp2pBootstraps(ann.libp2p_multiaddrs)) S.p2pBootstraps.add(ma);
+      for(const ma of collectBrowserLibp2pBootstraps(
+        {pageProtocol:location.protocol},ann.libp2p_multiaddrs)) S.p2pBootstraps.add(ma);
       if(base) freshPeers.add(base);
     }
   }
@@ -3150,7 +3153,10 @@ async function refreshSystemView(){
   // Structure: a bounded monitoring window of bases → their visible env feeds.
   // Selected and actively-running bases rank first; the global population stays
   // represented by aggregates in the navigator instead of being polled en masse.
-  const allBases=[...new Set([...(S.boots?S.boots.keys():[]), ''])];
+  // Live entity feeds belong to a bootstrapped node. The static portal origin is
+  // not an implicit node base: include it only when discovery actually admitted
+  // an `@origin` bootstrap document.
+  const allBases=[...new Set(S.boots?S.boots.keys():[])];
   const bases=allBases.filter((key)=>{ const base=key==='@origin'?'':key; return baseIsFocused(base); })
     .sort((a,b)=>((S.activeModelCallsByBase?.get(b)||[]).length-(S.activeModelCallsByBase?.get(a)||[]).length))
     .slice(0,NETWORK_LIMITS.monitoredBases);
@@ -5801,13 +5807,14 @@ async function refreshP2PRendezvous(){
 }
 async function initP2P(){
   const params=new URLSearchParams(location.search);
-  const root=await fetchJson('.well-known/personaos-discovery.json')||{};
-  collectP2PBootstraps(root);
-  const list=collectLibp2pBootstraps(S.p2pBootstraps,
+  // HTTP discovery has already collected browser-eligible multiaddrs from every
+  // admitted node and the global resolver. Re-fetching this static page's origin
+  // as though it were a node produces a guaranteed 404 on bare hosted portals.
+  const list=collectBrowserLibp2pBootstraps({pageProtocol:location.protocol},S.p2pBootstraps,
     params.getAll('relay'),params.getAll('bootstrap'));
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260710-provider-authority-v2');
+    const mod=await import('./p2p-libp2p.js?v=20260714-browser-dial-gate-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });

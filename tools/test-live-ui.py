@@ -9,6 +9,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -116,6 +117,7 @@ def run(args: argparse.Namespace) -> dict:
                 'authorization': request.headers.get('authorization', ''),
                 'referer': request.headers.get('referer', ''),
                 'resource_type': request.resource_type,
+                'at': time.monotonic(),
             }))
             page.on('download', lambda download: downloads.append(download.suggested_filename))
             page.add_init_script(f"""
@@ -571,6 +573,21 @@ def run(args: argparse.Namespace) -> dict:
             page.locator('.live-diff').wait_for(timeout=10_000)
             after_hash = page.locator('.exact-hash').last.text_content()
             require(before_hash != after_hash, 'open live file did not refresh to the next hash')
+            origin_entity_requests = [item for item in requests
+                                      if urlsplit(item['url']).netloc == urlsplit(base).netloc
+                                      and urlsplit(item['url']).path
+                                      == '/telemetry/live/entities.json']
+            require(not origin_entity_requests,
+                    'static portal origin was polled as an implicit live-telemetry node')
+            origin_bootstrap_times = [item['at'] for item in requests
+                                      if urlsplit(item['url']).netloc == urlsplit(base).netloc
+                                      and urlsplit(item['url']).path
+                                      == '/.well-known/personaos-discovery.json']
+            bootstrap_gaps = [right - left for left, right in zip(
+                origin_bootstrap_times, origin_bootstrap_times[1:]
+            )]
+            require(not bootstrap_gaps or min(bootstrap_gaps) >= 10,
+                    'P2P initialization re-fetched the static portal origin after discovery')
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-live-security.png'), full_page=True)
             require(not errors, 'desktop console errors: ' + '; '.join(errors))

@@ -92,6 +92,42 @@ export function collectLibp2pBootstraps(...sources) {
 }
 
 /**
+ * Admit a structurally valid multiaddr only when this browser can legally dial
+ * its WebSocket transport from the current page security context.
+ *
+ * Browsers map `/ws` to `ws://`.  An HTTPS page will reject that connection as
+ * mixed content before libp2p can negotiate with the peer, so handing such an
+ * address to js-libp2p creates a guaranteed failed dial and a noisy console.
+ * `/wss` and `/tls/.../ws` remain eligible, as do non-WebSocket transports.
+ * This is a browser transport boundary, not peer selection or trust policy.
+ */
+export function normalizeBrowserLibp2pBootstrap(value, {pageProtocol = ''} = {}) {
+  const normalized = normalizeLibp2pBootstrap(value);
+  if (!normalized || String(pageProtocol).toLowerCase() !== 'https:') return normalized;
+  const protocols = normalized.split('/').filter(Boolean).map((part) => part.toLowerCase());
+  for (let index = 0; index < protocols.length; index += 1) {
+    if (protocols[index] !== 'ws') continue;
+    const tlsBeforeWebSocket = protocols.lastIndexOf('tls', index) >= 0;
+    if (!tlsBeforeWebSocket) return null;
+  }
+  return normalized;
+}
+
+export function collectBrowserLibp2pBootstraps(context, ...sources) {
+  const seen = new Set();
+  const out = [];
+  for (const source of sources) {
+    for (const value of iterableOf(source)) {
+      const normalized = normalizeBrowserLibp2pBootstrap(value, context);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  return out;
+}
+
+/**
  * Project already-verified structural mission evidence without interpreting
  * capability vocabulary.
  *

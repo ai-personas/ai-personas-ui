@@ -546,7 +546,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-provider-index-v2/);
+assert.match(index, /discovery\.js\?v=20260714-browser-transport-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
@@ -579,6 +579,8 @@ assert.equal(createHash('sha256').update(rendezvousNamespace).digest('hex'),
 assert.ok(p2pBundle.includes('/personaos/kad/1.0.0'));
 assert.ok(p2pBundle.includes('/personaos/provider-record/1.0.0'));
 assert.ok(p2pBundle.includes('personaos-browser-provider-resolution/1'));
+assert.ok(p2pBundle.includes('denyInsecureWebSocketDial'));
+assert.match(portal, /p2p-libp2p\.js\?v=20260714-browser-dial-gate-v1/);
 assert.match(portal, /Close details/);
 assert.match(portal, /const published=publishedMissionEvidenceProjection\(r\)/);
 assert.match(portal, /const live=liveTaskMissionProjection\(r\), projected=live\|\|published/);
