@@ -182,7 +182,8 @@ Non-live manifest files that advertise a SHA-256 use the same fail-closed byte c
 repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
 Markdown, text, JSON, and CSV retain one prior verified revision and show a bounded line diff when
 an open file changes. Repository-owned adapters cover Gerber/drill, KiCad, netlist/SPICE,
-waveforms, DXF, CAD/3D, PDF, tables, structured data, and Markdown; built-ins cover verified
+waveforms, DXF, CAD/3D (including bounded IFC/STEP/STL/OBJ/glTF byte-derived inspection), PDF,
+tables, structured data, and Markdown; built-ins cover verified
 images, audio/video controls, source code, tabular text, and safe download descriptors. Unknown
 content never produces a blank viewer: textual bytes get a bounded plain-text view and binary
 bytes get metadata plus a bounded hex preview. HTML is displayed as source, archive/office

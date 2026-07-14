@@ -7,7 +7,7 @@ export const LOCAL_RENDERER_MANIFEST=Object.freeze([
   {file:'netlist.mjs',label:'netlist / SPICE',exts:['cir','net','spice','sp','ckt','asc','scs','spc','subckt'],mediaKinds:['netlist','spice','circuit','eda'],fetchMode:'text'},
   {file:'waveform.mjs',label:'waveform',exts:['vcd','wavedrom','wave','wavejson'],mediaKinds:['waveform','vcd','wavedrom','wavejson'],fetchMode:'text'},
   {file:'dxf.mjs',label:'DXF',exts:['dxf'],mediaKinds:['dxf','drawing','mechanical_drawing'],fetchMode:'text'},
-  {file:'cad3d.mjs',label:'CAD / 3D',exts:['step','stp','stl','3mf','obj','gltf','glb','ply'],mediaKinds:['cad','cad3d','mesh','3d','model','step','stl','gltf','glb','obj','ply','3mf'],fetchMode:'bytes'},
+  {file:'cad3d.mjs',label:'CAD / 3D',exts:['step','stp','ifc','stl','3mf','obj','gltf','glb','ply'],mediaKinds:['cad','cad3d','mesh','3d','model','step','ifc','stl','gltf','glb','obj','ply','3mf'],fetchMode:'bytes'},
   {file:'pdf.mjs',label:'PDF',exts:['pdf'],mediaKinds:['pdf','application/pdf'],fetchMode:'bytes'},
   {file:'table.mjs',label:'table',exts:['csv','tsv','bom'],mediaKinds:['table','bom','csv','tsv'],fetchMode:'text'},
   {file:'datatree.mjs',label:'structured data',exts:['json','ndjson'],mediaKinds:['json','ndjson','datatree','structured','data'],fetchMode:'text'},
@@ -22,13 +22,13 @@ const BUILTIN_BY_EXT=Object.freeze({
   py:'code',js:'code',jsx:'code',ts:'code',tsx:'code',sh:'code',bash:'code',zsh:'code',json:'code',jsonl:'code',ndjson:'code',ipynb:'code',
   yaml:'code',yml:'code',toml:'code',spice:'code',cir:'code',net:'code',ini:'code',xml:'code',html:'code',htm:'code',css:'code',scss:'code',
   sql:'code',rs:'code',go:'code',java:'code',c:'code',h:'code',cpp:'code',hpp:'code',rb:'code',php:'code',swift:'code',kt:'code',cfg:'code',log:'code',txt:'plain',
-  stl:'model3d','3mf':'model3d',obj:'model3d',gltf:'model3d',glb:'model3d',step:'descriptor',stp:'descriptor',kicad_pcb:'descriptor',kicad_sch:'descriptor',
+  stl:'model3d','3mf':'model3d',obj:'model3d',gltf:'model3d',glb:'model3d',step:'descriptor',stp:'descriptor',ifc:'descriptor',kicad_pcb:'descriptor',kicad_sch:'descriptor',
   zip:'descriptor',gz:'descriptor',tgz:'descriptor',bz2:'descriptor',xz:'descriptor','7z':'descriptor',rar:'descriptor',
   doc:'descriptor',docx:'descriptor',xls:'descriptor',xlsx:'descriptor',ppt:'descriptor',pptx:'descriptor',pdf:'pdf',
 });
 const BUILTIN_BY_KIND=Object.freeze({
   md:'markdown',markdown:'markdown',csv:'csv',table:'csv',image:'image',png:'image',svg:'image',json:'code',code:'code',source:'code',yaml:'code',
-  model:'model3d',cad:'model3d',mesh:'model3d',step:'descriptor',pdf:'pdf','application/pdf':'pdf',audio:'audio',video:'video',text:'plain',
+  model:'model3d',cad:'model3d',mesh:'model3d',step:'descriptor',ifc:'descriptor',pdf:'pdf','application/pdf':'pdf',audio:'audio',video:'video',text:'plain',
   binary:'generic',archive:'descriptor',
 });
 
@@ -66,4 +66,3 @@ export function artifactDispatch(title,mediaKind){
     fetchMode:['image','audio','video','model3d','descriptor','pdf','generic'].includes(builtin.id)?'bytes':'text',
     label:builtin.id,ext:builtin.ext};
 }
-

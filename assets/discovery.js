@@ -50,7 +50,7 @@ import {
 import {
   selectBuiltinArtifactRenderer,
   selectLocalArtifactModule,
-} from './artifact-types.mjs?v=20260710-universal-artifacts-v1';
+} from './artifact-types.mjs?v=20260714-ifc-inspector-v1';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -1137,9 +1137,13 @@ async function discoverFrom(base,plane){
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   await keysFor(base,boot);
-  const advertisedProviderCount=Number(boot.record_count);
+  // The bootstrap count is the number of signed discovery documents, not the
+  // number of provider lookup aliases. A compact v2 index may legitimately
+  // publish several independently signed ProviderRecords (DID, record id,
+  // handle) that all bind the same hash-addressed document.
+  const advertisedRecordCount=Number(boot.record_count);
   const providerIndexMaxBytes=providerIndexResponseByteLimit(
-    advertisedProviderCount,NETWORK_LIMITS.cachedRecords);
+    advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
   if(!providerIndexMaxBytes){
     log('dht',`${boot.kernel_id||where}: provider record count missing, invalid, or over browser ceiling`,false);
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
@@ -1147,8 +1151,8 @@ async function discoverFrom(base,plane){
   }
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
     {maxBytes:providerIndexMaxBytes});
-  if(!prov||Number(prov.provider_count)!==advertisedProviderCount){
-    log('dht',`${boot.kernel_id||where}: provider index count does not match advertised bootstrap`,false);
+  if(!prov||Number(prov.document_count)!==advertisedRecordCount){
+    log('dht',`${boot.kernel_id||where}: provider document count does not match advertised bootstrap`,false);
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found:[]};
   }
@@ -2380,9 +2384,11 @@ const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judg
   artifact_generation:'build artifacts',artifact_revision:'revise artifacts'};
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
-  'MEMBER_JOINED','ENV_MEMBER_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
+  'MEMBER_JOINED','ENV_MEMBER_ADMITTED','ENV_MEMBER_RE_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
   'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED',
-  'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED','PERSONA_COMMUNICATION_INTENT_RECORDED']);
+  'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED','PERSONA_COMMUNICATION_INTENT_RECORDED',
+  'PERSONA_COMMUNICATION_AUTHORED','PERSONA_INVITATION_AUTHORED','PERSONA_INVITATION_RESPONSE_AUTHORED',
+  'PERSONA_BIRTH_NEED_AUTHORED','PERSONA_BIRTH_PROPOSAL_AUTHORED','PERSONA_BIRTH_ADMITTED','PERSONA_BIRTH_REFUSED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
   'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
 // VERIFY = independent judgement (reinforces trust = signature). Checked before
@@ -2414,10 +2420,14 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   ENVELOPE_MINTED:'minted envelope',EXPERIENCE_TASK_RECORDED:'recorded experience',
   PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
   COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
-  MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',BLACKBOARD_POST:'posted to blackboard',
+  MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',ENV_MEMBER_RE_ADMITTED:'re-admitted member',BLACKBOARD_POST:'posted to blackboard',
   GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
   ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
+  PERSONA_COMMUNICATION_AUTHORED:'broadcast message',PERSONA_INVITATION_AUTHORED:'invited persona',
+  PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
+  PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
+  PERSONA_BIRTH_REFUSED:'refused persona birth',
   MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
@@ -3550,6 +3560,7 @@ async function refreshSystemView(){
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
+  rebindInspectionSource();
   _hydratePersonaAvatars();
   _applyFollow();
   // Focused graph selection is independent of card pagination: running/recent
@@ -3765,7 +3776,8 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
   let h='';
   const out=t.recent_outputs||[];
   if(out.length){
-    h+=`<div class="l2" style="margin:2px 0 3px">Recent model output — what the LLM actually produced (newest first)</div>`
+    const publicMessages=t.tier==='public';
+    h+=`<div class="l2" style="margin:2px 0 3px">${publicMessages?'Public persona-authored messages — verified broadcasts':'Recent authored output'} (newest first)</div>`
       +out.slice(-10).reverse().map((o)=>{
         // the FULL text is carried in the (scroll-capped) surface so copy lifts everything,
         // not the 240-char preview. TYPE-AWARE: error/code/json/tool keep their structure
@@ -3954,7 +3966,13 @@ async function streamPersonaCognition(){
       }
       if(!t) continue;
       const rows=[];
-      for(const o of (t.recent_outputs||[])) rows.push({kind:'LLM_OUTPUT',msg:o.text,at:o.at});
+      for(const o of (t.recent_outputs||[])) rows.push({
+        // The anonymous endpoint contract admits only verified, unaddressed
+        // PersonaCommunication broadcasts. Do not let an untrusted kind label
+        // recast those bytes as raw model output or private candidate work.
+        kind:t.tier==='public'?'PERSONA_COMMUNICATION_AUTHORED':String(o.kind||'LLM_OUTPUT'),
+        msg:o.text,at:o.at,
+      });
       const lz=(t.lessons||[]); if(lz.length) rows.push({kind:'LLM_LESSON',msg:lz[lz.length-1].action,at:''});
       for(const row of rows){
         const msg=String(row.msg||'').trim(); if(!msg) continue;
@@ -3964,7 +3982,8 @@ async function streamPersonaCognition(){
         const key=`cog|${personaKey}|${row.kind}|${row.at||''}|${msg.length}`;
         if(S.ixKeys.has(key)) continue; S.ixKeys.add(key); added++;
         const preview=row.kind==='LLM_LESSON'?('learned — '+msg):_cogPreview(msg);
-        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:'cognition',
+        const publicMessage=row.kind==='PERSONA_COMMUNICATION_AUTHORED';
+        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:publicMessage?'communication':'cognition',
           scope_id:'',at:'',_base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
           _msg:preview.slice(0,200),_rationale:msg,
           _ctype:row.kind==='LLM_LESSON'?'think':_cogType(msg)});
@@ -4337,7 +4356,7 @@ async function _localDependencyOnly(){ throw new Error('external executable rend
 const _LAZY_MOD=new Map();
 async function _lazyModule(file){
   if(_LAZY_MOD.has(file)) return _LAZY_MOD.get(file);
-  const p=import(/* @vite-ignore */ './renderers/'+file+'?v=20260710-universal-artifacts-v1');
+  const p=import(/* @vite-ignore */ './renderers/'+file+'?v=20260714-ifc-inspector-v1');
   p.catch(()=>_LAZY_MOD.delete(file));
   _LAZY_MOD.set(file,p); return p;
 }
@@ -4345,7 +4364,7 @@ async function _lazyModule(file){
 // Renderers that consume binary bytes (blob), not text. Text fetch is skipped.
 const BINARY_RENDERERS=new Set(['image','audio','video','model3d','descriptor','pdf','generic']);
 const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','svg','avif','bmp','ico','tif','tiff']);
-const TEXTY_DESCRIPTOR_EXT=new Set(['step','stp','kicad_pcb','kicad_sch']);
+const TEXTY_DESCRIPTOR_EXT=new Set(['step','stp','ifc','obj','gltf','ply','kicad_pcb','kicad_sch']);
 
 function pickRenderer(title,kind){
   return selectBuiltinArtifactRenderer(title,kind);
@@ -5357,8 +5376,29 @@ function pushView(fn){ S.views.push(fn); renderTop(); }
 function markInspectionSource(source){
   if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); }
   const card=source?.closest?.('.pcard,.env-card')||null; S._detailSource=card;
+  S._detailSourceRef=card?.classList.contains('pcard')
+    ?{kind:'persona',key:String(card.dataset.pkey||''),sid:String(card.dataset.pcard||''),kernel:String(card.dataset.pkernel||'')}
+    :card?.classList.contains('env-card')
+      ?{kind:'environment',sid:String(card.dataset.envsid||''),kernel:String(card.dataset.envkernel||'')}:null;
   if(card){ card.classList.add('inspecting'); card.setAttribute('aria-expanded','true'); card.setAttribute('aria-controls','detailwrap'); }
   document.body.classList.add('detail-open');
+}
+// Live telemetry can repaint the card deck while its inspector is open. Keep
+// the dialog anchored to the newly rendered card instead of retaining a
+// detached element and silently losing aria-expanded/source focus context.
+function rebindInspectionSource(){
+  if(!document.body.classList.contains('detail-open')||!S._detailSourceRef) return;
+  const ref=S._detailSourceRef;
+  const cards=ref.kind==='persona'?document.querySelectorAll('.pcard'):document.querySelectorAll('.env-card');
+  const card=[...cards].find((candidate)=>ref.kind==='persona'
+    ?((ref.key&&candidate.dataset.pkey===ref.key)
+      ||(!ref.key&&candidate.dataset.pcard===ref.sid&&candidate.dataset.pkernel===ref.kernel))
+    :(candidate.dataset.envsid===ref.sid&&candidate.dataset.envkernel===ref.kernel));
+  if(!card) return;
+  const previous=S._detailSource;
+  if(previous&&previous!==card){ previous.classList.remove('inspecting'); previous.setAttribute('aria-expanded','false'); }
+  S._detailSource=card; card.classList.add('inspecting'); card.setAttribute('aria-expanded','true'); card.setAttribute('aria-controls','detailwrap');
+  if(S._lastFocus===previous||!S._lastFocus?.isConnected) S._lastFocus=card;
 }
 function openDetail(id,source){ S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(source||document.activeElement);
   // focus moves into the drawer in renderTop(), AFTER the title (accessible name) is painted.
@@ -5824,6 +5864,7 @@ function wire(){
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     document.body.classList.remove('detail-open');
     if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); S._detailSource=null; }
+    S._detailSourceRef=null;
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;
     $('#logmodal').classList.add('open'); $('.logcard')?.focus(); });

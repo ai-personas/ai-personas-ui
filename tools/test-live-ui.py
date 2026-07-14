@@ -690,12 +690,12 @@ def run(args: argparse.Namespace) -> dict:
             public_card = anonymous.locator('.pcard[title="open Orin Vale"]')
             public_card.wait_for(state='visible', timeout=15_000)
             public_message = public_card.locator(
-                '.pc-message[data-message-kind="LLM_OUTPUT"]',
+                '.pc-message[data-message-kind="PERSONA_COMMUNICATION_AUTHORED"]',
                 has_text=PUBLIC_PERSONA_MESSAGE,
             )
             public_message.wait_for(timeout=15_000)
-            require('produced' in public_message.inner_text(),
-                    'public cognition output lost its persona-authored feed verb')
+            require('broadcast message' in public_message.inner_text(),
+                    'public persona message lost its authored-broadcast feed verb')
             private_deadline = time.time() + 10
             while time.time() < private_deadline:
                 if any(

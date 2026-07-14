@@ -31,11 +31,12 @@ export const PROVIDER_INDEX_LIMITS = Object.freeze({
 /**
  * Bound the one large discovery response independently of ordinary JSON.
  *
- * A compact provider index carries one independently signed provider/document/
- * policy envelope per advertised record. The node's standard bootstrap
- * `record_count` therefore selects a byte budget, while the browser's existing
- * record cache remains the hard population ceiling. Invalid or over-ceiling
- * declarations fail closed before any response body is read.
+ * A compact provider index carries one hash-addressed signed discovery document
+ * per advertised record plus independently signed lookup aliases for that
+ * document. The node's bootstrap `record_count` therefore selects an aggregate
+ * per-document byte budget, while the browser's existing record cache remains
+ * the hard population ceiling. Invalid or over-ceiling declarations fail closed
+ * before any response body is read.
  */
 export function providerIndexResponseByteLimit(recordCount, recordCeiling) {
   if (!Number.isInteger(recordCount) || recordCount < 0

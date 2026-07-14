@@ -4,6 +4,7 @@ import {artifactDispatch,LOCAL_RENDERER_MANIFEST,selectBuiltinArtifactRenderer,s
 const expected=new Map([
   ['board.gbr','gerber.mjs'],['board.kicad_pcb','kicad.mjs'],['inverter.cir','netlist.mjs'],
   ['switching.vcd','waveform.mjs'],['outline.dxf','dxf.mjs'],['enclosure.step','cad3d.mjs'],
+  ['federated-model.ifc','cad3d.mjs'],
   ['report.pdf','pdf.mjs'],['bom.csv','table.mjs'],['trace.ndjson','datatree.mjs'],['readme.md','mdrich.mjs'],
 ]);
 for(const [name,module] of expected) assert.equal(selectLocalArtifactModule(name,'')?.entry.file,module,name);

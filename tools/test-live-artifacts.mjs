@@ -34,7 +34,7 @@ import {
   recordVerificationEntries,
   signedPersonaLabel,
 } from '../assets/discovery-authority.mjs';
-import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
+import {assertSelfContainedGltf,inspectCadBytes} from '../assets/renderers/cad3d.mjs';
 
 const authorityRecord = {
   schema: 'discoverable-record/1', record_id: 'rec-a',
@@ -107,6 +107,17 @@ orphanProviderDoc.documents[`sha256:${'b'.repeat(64)}`] = {record: {record_id: '
 orphanProviderDoc.document_count = 2;
 assert.equal(hydrateProviderIndex(orphanProviderDoc).reason,
   'provider_document_table_unreferenced');
+const ifcInspection=inspectCadBytes(new TextEncoder().encode(`ISO-10303-21;
+HEADER;FILE_SCHEMA(('IFC4'));ENDSEC;
+DATA;
+#1=IFCPROJECT('id',$,'House',$,$,$,$,$,$);
+#2=IFCWALL('wall',$,'Wall',$,$,$,$,$);
+ENDSEC;END-ISO-10303-21;`),'ifc');
+assert.deepEqual(ifcInspection.facts.slice(0,4),[
+  ['STEP envelope','recognized'],['Schema','IFC4'],['Entities inspected',2],['IFC entities',2],
+]);
+const binaryStl=new Uint8Array(84+50); new DataView(binaryStl.buffer).setUint32(80,1,true);
+assert.deepEqual(inspectCadBytes(binaryStl,'stl').facts,[['Encoding','binary STL'],['Triangles',1]]);
 assert.equal(personaAuthoredRole({
   kind: 'persona', role: 'Site systems coordinator',
   label: 'Verifier Specialist', capability_summary: ['lead'], can_lead_cohorts: true,
@@ -560,7 +571,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-persona-identity-pin-v1/);
+assert.match(index, /discovery\.js\?v=20260714-live-alias-artifact-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
@@ -578,12 +589,12 @@ assert.match(portal, /incomplete or malformed provider envelope refused/);
 assert.match(portal, /hydrateProviderIndex\(providerIndex\)/);
 assert.match(portal, /const DEFAULT_JSON_MAX_BYTES=4\*1024\*1024/,
   'ordinary JSON must retain the 4 MiB response boundary');
-assert.match(portal, /providerIndexResponseByteLimit\(\s*advertisedProviderCount,NETWORK_LIMITS\.cachedRecords\)/,
+assert.match(portal, /providerIndexResponseByteLimit\(\s*advertisedRecordCount,NETWORK_LIMITS\.cachedRecords\)/,
   'only the provider index may derive a larger bound from signed-envelope and cache ceilings');
 assert.match(portal, /\{maxBytes:providerIndexMaxBytes\}/,
   'the provider-index fetch must enforce its derived response limit');
-assert.match(portal, /Number\(prov\.provider_count\)!==advertisedProviderCount/,
-  'provider index population must match the bootstrap count that selected its byte budget');
+assert.match(portal, /Number\(prov\.document_count\)!==advertisedRecordCount/,
+  'provider document population must match the bootstrap count that selected its byte budget');
 assert.match(portal, /const recPersonaKeys=new Set\(\)/,
   'multiple signed records for one complete persona identity must not inflate vitals');
 assert.match(portal, /const doc=envelope\.document/);
