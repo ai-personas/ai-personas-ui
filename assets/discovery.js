@@ -30,10 +30,11 @@ import {
   compactCount,
   liveTaskMissionProjection,
   nextProgressiveGroupLevel,
+  publishedMissionEvidenceProjection,
   progressiveGroupLimit,
   selectMonitoringBases,
   selectPriorityWindow,
-} from './network-view.mjs?v=20260712-public-task-routes-v1';
+} from './network-view.mjs?v=20260714-published-task-evidence-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -925,25 +926,25 @@ async function verifiedRowsFromProviderIndex(providers,base,boot,plane,source='h
     const url=String(envelope?.record?.record_url||'');
     if(envelope?.schema!=='provider-record-envelope/1'
         ||envelope?.record?.schema!=='provider-record/1'
+        ||!envelope?.document?.record
         ||!/^discovery\/public\/records\/[A-Za-z0-9:_.-]+\.json$/.test(url)){
-      refused++; log('verify',`${source}: legacy or malformed provider pointer refused`,false); continue; }
+      refused++; log('verify',`${source}: incomplete or malformed provider envelope refused`,false); continue; }
     if(!byUrl.has(url)) byUrl.set(url,envelope);
   }
   const entries=[...byUrl.entries()];
-  for(let i=0;i<entries.length;i+=24){
-    const batch=entries.slice(i,i+24);
-    const docs=await Promise.all(batch.map(([recordUrl,envelope])=>fetchJson(join(base,recordUrl))
-      .then((doc)=>({envelope,doc,recordUrl})).catch(()=>({envelope,doc:null,recordUrl}))));
-    for(const {envelope,doc,recordUrl} of docs){
-      if(!doc?.record){ refused++; continue; }
-      const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
-      if(!authority.ok){ refused++;
-        log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
-      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
-        {access:authority.access,providerBaseVerified:true});
-      if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
-      logRecordAccess(out.row,source); rows.push(out.row);
-    }
+  // The signed ProviderRecord hashes this exact embedded document. Verifying the
+  // atomic envelope+document pair avoids joining an envelope from generation N
+  // with a moving record URL from generation N+1. HTTP and P2P now share the same
+  // transport semantics; record_url remains a signed inspection locator only.
+  for(const [recordUrl,envelope] of entries){
+    const doc=envelope.document;
+    const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
+    if(!authority.ok){ refused++;
+      log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
+    const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
+      {access:authority.access,providerBaseVerified:true});
+    if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
+    logRecordAccess(out.row,source); rows.push(out.row);
   }
   return {rows,refused,envelopeCount:entries.length};
 }
@@ -5251,9 +5252,9 @@ function tick(now){
 }
 
 /* ---------- missions strip (every task the discovered nodes work on) ---------- */
-// Cards come from three honest sources: (1) signed public live-task records,
-// including a signed exact queue/runtime state; (2) discovered project/mission
-// records — published evidence anyone may see; (3) the node's /status —
+// Cards come from three honest sources: (1) signed public task/project/mission
+// records as published evidence, with an optional strict live-task state overlay;
+// (2) live artifact snapshots; (3) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
 // A mission document is the run's Design-History-File artifact. Media kinds are
@@ -5270,23 +5271,21 @@ function missionCardList(){
   const humanTask=(value,kernel,run='')=>{ const raw=String(value||'').trim();
     if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw)) return projectFor(kernel,run)?.label||'Untitled mission';
     return raw; };
-  // Project/mission records carry the actual task. Design-history JSON is evidence
-  // owned by the mission, never a second mission card.
+  // Record structure decides admission; capability vocabulary never does. A
+  // strict live_task + one task_state binding may overlay the published state,
+  // but its absence never erases a verified task record. Design-history JSON is
+  // evidence owned by the mission, never a second mission card.
   for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
-    if(!r||!['project','mission'].includes(r.kind)) continue;
-    const run=runOf(r)||'';
-    cards.push({key:`record:${r._kernel}:${run||id}`,task:humanTask(r.label,r._kernel,run),state:'published',
-      kernel:r._kernel||'',meta:[run?run.slice(0,26):'signed mission record'],recId:id,run});
-  }
-  // S.recs contains only records that passed the browser's signature + access
-  // checks. Preserve the exact signed live state and task label; never infer a
-  // state from telemetry, prose, task vocabulary, or array position alone.
-  for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
-    const projected=liveTaskMissionProjection(r); if(!projected) continue;
+    const published=publishedMissionEvidenceProjection(r); if(!published) continue;
+    // S.recs contains only records that passed browser signature + access checks.
+    // Preserve one exact, signed state only when the strict overlay verifies.
+    const live=liveTaskMissionProjection(r), projected=live||published;
     const run=projected.run||runOf(r)||'';
-    cards.unshift({key:`task:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
-      kernel:r._kernel||'',meta:[run?run.slice(0,26):'signed public task','signed live task'],
-      recId:id,run,liveTask:true});
+    const meta=[run?run.slice(0,26):'',`signed ${published.kind} record`];
+    if(live) meta.push('signed live task');
+    const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
+      kernel:r._kernel||'',meta,recId:id,run,recordKind:published.kind,liveTask:!!live};
+    if(live) cards.unshift(card); else cards.push(card);
   }
   // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
@@ -5321,7 +5320,8 @@ function missionCardList(){
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
   const grouped=new Map();
-  const rank=(card)=>card.state==='running'?6:card.liveTask?5:card.state==='paused'?3:card.state==='published'?1:0;
+  const rank=(card)=>card.state==='running'?6:card.liveTask?5:card.state==='paused'?3
+    :card.recordKind==='task'?2:card.state==='published'?1:0;
   for(const card of scoped){ const key=`${card.kernel}::${String(card.task).toLowerCase().replace(/\s+/g,' ').trim()}`;
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
     const winner=rank(card)>rank(prev)?card:prev;

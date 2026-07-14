@@ -45,6 +45,7 @@ PROVIDER_ENV_EMPTY = "provider-environment-empty"
 PROVIDER_PROJECT = "provider-project"
 PROVIDER_PROJECT_LEGACY = "provider-project-legacy"
 PROVIDER_TASK = "provider-live-public-task"
+PROVIDER_TASK_PUBLISHED = "provider-published-task"
 PROVIDER_DISCOVER_ONLY = "provider-discover-only"
 PROVIDER_EXPIRED_READ = "provider-expired-read"
 PROVIDER_SCOPED_READ = "provider-scoped-read"
@@ -114,7 +115,7 @@ def node_announcement_envelope(base_url: str) -> dict:
         "base_url": base_url,
         "reachability_class": "public",
         "public_discovery": True,
-        "record_count": 17,
+        "record_count": 18,
         "issued_at": now(),
         "expires_at": "2099-01-01T00:00:00+00:00",
     }
@@ -385,6 +386,9 @@ def provider_envelope(
         "schema": "provider-record-envelope/1",
         "record": provider,
         "signature_hex": signature_hex(provider, signing_key),
+        # HTTP indexes and the provider protocol carry the same atomic pair.
+        # ProviderRecord.document_hash binds these exact canonical bytes.
+        "document": document,
     }
 
 
@@ -430,6 +434,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PROJECT,
         PROVIDER_PROJECT_LEGACY,
         PROVIDER_TASK,
+        PROVIDER_TASK_PUBLISHED,
         PROVIDER_DISCOVER_ONLY,
         PROVIDER_EXPIRED_READ,
         PROVIDER_SCOPED_READ,
@@ -525,6 +530,15 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         ],
         links={"live": "telemetry/live/latest.json"},
     )
+    published_task = provider_document(
+        base,
+        PROVIDER_TASK_PUBLISHED,
+        "design 4 bedroom house",
+        kind="task",
+        did=f"did:personaos:{NODE_ID}/task/run-canary-house",
+        capability_summary=["event_driven_handoff"],
+        links={},
+    )
     discover_only = provider_document(
         base, PROVIDER_DISCOVER_ONLY, "Discover-only provider", access_level=None)
     expired_read = provider_document(
@@ -591,6 +605,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(project, urls[PROVIDER_PROJECT]),
         provider_envelope(legacy_project, urls[PROVIDER_PROJECT_LEGACY]),
         provider_envelope(live_task, urls[PROVIDER_TASK]),
+        provider_envelope(published_task, urls[PROVIDER_TASK_PUBLISHED]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
         provider_envelope(expired_read, urls[PROVIDER_EXPIRED_READ]),
         provider_envelope(scoped_read, urls[PROVIDER_SCOPED_READ]),
@@ -615,6 +630,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PROJECT: project,
         PROVIDER_PROJECT_LEGACY: legacy_project,
         PROVIDER_TASK: live_task,
+        PROVIDER_TASK_PUBLISHED: published_task,
         PROVIDER_DISCOVER_ONLY: discover_only,
         PROVIDER_EXPIRED_READ: expired_read,
         PROVIDER_SCOPED_READ: scoped_read,

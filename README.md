@@ -45,9 +45,10 @@ Discovery is **signed + content-addressed** (09_PROTOCOLS §3G/§3H). For
 every node it knows or is told about, the page:
 
 1. **bootstraps** from that node's `.well-known/personaos-discovery.json`;
-2. resolves signed `provider-record/1` envelopes from `discovery/providers.json`, each binding a
-   DID/hash/handle key, record hash, host locators, access policy, and current kernel master key;
-3. **resolves each record and verifies the ProviderRecord, record, and AccessPolicy Ed25519
+2. resolves signed `provider-record/1` envelopes from `discovery/providers.json`, each carrying an
+   exact embedded document and binding its hash, DID/hash/handle key, host locators, access policy,
+   and current kernel master key;
+3. **verifies each atomic envelope+document pair, then the record and AccessPolicy Ed25519
    signatures** against the owning kernel's current published master key (in-browser, via vendored
    [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)). An unsigned, stale-key, forged,
    policy-mismatched, or hash-mismatched record is dropped.
@@ -129,13 +130,13 @@ not from the commons carrying them. Mixed node bootstrap documents are split at 
 boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
 js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
 
-**Live tasks are visible from their signed public record at intake.** The mission surface renders
-the exact task label and the exact bounded value of the signed `task_state:` capability whenever
-the record also carries `live_task`. Capability order is deliberately irrelevant because the
-signed payload canonicalises that list. A prior raw-state record is accepted only when one signed
-legacy state capability is unambiguously corroborated by its signed description; prose never
-supplies a missing state. Unsigned telemetry, project/mission evidence, and operator-only run state
-remain additive sources.
+**Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
+or `mission` record is published evidence using only its bounded signed label and optional run DID;
+open persona-authored capability vocabulary never decides whether it exists. When a task also has
+exactly one `live_task` marker and one bounded `task_state:` binding, that strict signed state
+overlays `published`. Capability order is deliberately irrelevant because the signed payload
+canonicalises that list. Bare capabilities and prose never supply a missing state. Unsigned
+telemetry and operator-only run state remain additive sources.
 
 **Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
 the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies
