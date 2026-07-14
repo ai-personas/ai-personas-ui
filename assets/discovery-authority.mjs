@@ -250,6 +250,12 @@ export function projectDiscoveryRecord(record, canRead) {
   if (record?.kind === 'persona' && Object.hasOwn(record, 'avatar')) {
     out.avatar = record.avatar;
   }
+  if (record?.kind === 'persona'
+      && Object.hasOwn(record, 'identity_signing_key_id')
+      && Object.hasOwn(record, 'identity_public_key_hex')) {
+    out.identity_signing_key_id = record.identity_signing_key_id;
+    out.identity_public_key_hex = record.identity_public_key_hex;
+  }
   return out;
 }
 

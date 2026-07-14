@@ -148,11 +148,25 @@ const minimalPersona = projectDiscoveryRecord({
   ...authorityRecord,
   kind: 'persona',
   avatar: signedPersonaAvatar,
+  identity_signing_key_id: signedPersonaAvatar.identity_signing_key_id,
+  identity_public_key_hex: signedPersonaAvatar.identity_public_key_hex,
 }, false);
 assert.deepEqual(minimalPersona.avatar, signedPersonaAvatar,
   'signed persona avatar must remain visible at discover tier');
+assert.equal(minimalPersona.identity_signing_key_id,
+  signedPersonaAvatar.identity_signing_key_id,
+  'persona identity key id must remain visible at discover tier');
+assert.equal(minimalPersona.identity_public_key_hex,
+  signedPersonaAvatar.identity_public_key_hex,
+  'persona identity key pin must remain visible at discover tier');
 assert.equal(projectDiscoveryRecord({...authorityRecord, avatar: signedPersonaAvatar}, false).avatar,
   undefined, 'non-persona records must not gain a persona identity surface');
+assert.equal(projectDiscoveryRecord({
+  ...authorityRecord,
+  identity_signing_key_id: signedPersonaAvatar.identity_signing_key_id,
+  identity_public_key_hex: signedPersonaAvatar.identity_public_key_hex,
+}, false).identity_public_key_hex, undefined,
+'non-persona records must not gain a persona identity key pin');
 const minimalPolicy = projectAccessPolicy(authorityPolicy([publicGrant()]), false);
 assert.deepEqual(minimalPolicy.access_grants, []);
 assert.equal(minimalPolicy.owner_persona_id, undefined);
@@ -546,7 +560,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-identity-truth-v4/);
+assert.match(index, /discovery\.js\?v=20260714-persona-identity-pin-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

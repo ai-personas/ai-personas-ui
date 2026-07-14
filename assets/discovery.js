@@ -25,7 +25,7 @@ import {
   providerLookupHints,
   recordVerificationEntries,
   signedPersonaLabel,
-} from './discovery-authority.mjs?v=20260714-provider-index-v2';
+} from './discovery-authority.mjs?v=20260714-persona-identity-pin-v1';
 import {
   collectBrowserLibp2pBootstraps,
   compactCount,
