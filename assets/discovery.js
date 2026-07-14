@@ -3540,10 +3540,11 @@ function renderInteractionStream(){
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
       +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
-    // cognition is operator-token-only by design (A-TF2), so an anonymous THINK feed is
-    // always empty — explain that instead of the generic 'fund a mission' line.
+    // A node may publish a redacted persona-message tier. Private nodes answer the
+    // same anonymous probe with 404, so an empty THINK feed must stay neutral: the
+    // browser cannot infer whether the persona is quiet or its messages are private.
     if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
-      return '<li class="l2" style="padding:10px">persona cognition is operator-only (A-TF2) — add an operator token in the console to watch the THINK stream.</li>';
+      return '<li class="l2" style="padding:10px">no public persona messages in the last 5 minutes — this node may be quiet or keep its messages private.</li>';
     // warming: a reachable node is running but no act has streamed yet — say so on the
     // unfiltered feed rather than implying nothing is funded (honest only when warming).
     if(flt==='all' && isWarming())
@@ -3632,13 +3633,11 @@ function renderEnvFeedDoc(doc){
   return h;
 }
 // ---- 🧠 persona THINKING (02_PERSONA §4/§8-10) ----
-// Operator (token) sees the persona's cognition in ITS OWN WORDS — learned
-// lessons (trigger→action+rationale), evolved EVOLVE-BLOCK tactics with GEPA
-// provenance, mode proficiencies, the signed cognition timeline, and the exact
-// thinking FRAME (SOUL + evolved tactics + retrieved knowledge) it generates
-// under. Anonymous viewers get the A-TF2 redacted tier: transition kinds +
-// proficiency numbers from the persona's own public feed — content never.
-function renderThinking(t){
+// A node can opt its persona messages into the public tier. Public viewers may
+// then see the persona-authored outputs/lessons/tactics returned by that endpoint;
+// private nodes answer 404. The exact thinking FRAME remains operator-only even
+// if a faulty or hostile public response includes a non-empty field.
+function renderThinking(t,{allowThinkingFrame=false}={}){
   let h='';
   const out=t.recent_outputs||[];
   if(out.length){
@@ -3691,7 +3690,7 @@ function renderThinking(t){
         `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
         +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+`</div>`;
   }
-  if(t.thinking_frame)
+  if(allowThinkingFrame&&t.thinking_frame)
     h+=`<details class="frame"><summary class="l2">thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
       +`<div class="copy-host">${copyBtn()}<pre class="opout copy-src">${esc(t.thinking_frame)}</pre></div></details>`;
   return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
@@ -3713,19 +3712,22 @@ async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
-  const t=await fetchJson(join(wantBase,`personas/${encodeURIComponent(_shortId(want))}/thinking`));
+  const endpoint=join(wantBase,`personas/${encodeURIComponent(_shortId(want))}/thinking`);
+  const hasOperator=!!tokenFor(endpoint);
+  const t=await fetchJson(endpoint);
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
-  if(t&&t.schema==='personaos-persona-thinking/1'&&(!t.persona_id||_shortId(t.persona_id)===_shortId(want))){
-    el2.innerHTML=renderThinking(t); return; }
+  const allowedTier=hasOperator?t?.tier==='operator':t?.tier==='public';
+  if(t&&allowedTier&&t.schema==='personaos-persona-thinking/1'&&(!t.persona_id||_shortId(t.persona_id)===_shortId(want))){
+    el2.innerHTML=renderThinking(t,{allowThinkingFrame:hasOperator&&t.tier==='operator'}); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el3=$('#thinksec'); if(el3) el3.innerHTML=renderThinkingRedacted(doc);
 }
-// LIVE persona MESSAGES (operator-tier): poll active personas' cognition surface and merge
-// their ACTUAL recent model outputs (what the LLM produced) + newest learned lesson into the
-// SAME live feed — so the operator watches persona LLM messages in real time WITHOUT drilling
-// into a drawer. Public viewers get nothing here by design (A-TF2: content is operator-only).
+// LIVE persona MESSAGES: poll active personas' cognition surface and merge their
+// ACTUAL recent model outputs + newest learned lesson into the same live feed.
+// With a token this accepts the operator tier. Without one it accepts only an
+// explicit public-tier response; a private node's 404 remains a quiet no-op.
 let _cogBusy=false;
 // ONE content-type classifier shared by feed / card / drawer — the substance a
 // persona's raw model output IS, computed once and ridden through on the interaction
@@ -3819,9 +3821,10 @@ async function streamPersonaCognition(){
         // Do NOT use the prefixed persona_id: encodeURIComponent turns its ':' into %3A → 404,
         // which is exactly why born ('persona:<ulid>') personas stopped streaming.
         const endpoint=join(base,`personas/${encodeURIComponent(sid)}/thinking`);
-        if(!tokenFor(endpoint)) continue;
+        const hasOperator=!!tokenFor(endpoint);
         const r=await fetchJson(endpoint);
         if(r && r.schema==='personaos-persona-thinking/1'
+            && (hasOperator ? r.tier==='operator' : r.tier==='public')
             && (!r.persona_id||_shortId(r.persona_id)===sid)){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
       }
@@ -3847,6 +3850,10 @@ async function streamPersonaCognition(){
       S.interactions.sort((a,b)=>a._t-b._t);
       if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
       S.ixKeys=new Set(S.interactions.map((e)=>e._key));
+      // Cognition is merged after the node-wide telemetry ingest, so rebuild the
+      // per-persona index here as well; otherwise the global feed advances while
+      // the corresponding collectible card remains falsely quiet.
+      _refreshPersonaInteractionIndex();
       renderInteractionStream();
       // CARD↔FEED sync: advance the card cognition walls together with the feed (the
       // diff-guards in refreshSystemView make the extra call cheap when nothing changed).
@@ -3934,8 +3941,8 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
-  // 🧠 what it is THINKING: lessons/tactics/frame for the operator; redacted
-  // transition timeline for everyone else. Streams on the live cadence.
+  // 🧠 what it is THINKING: public persona messages when the node opts in,
+  // full cognition/frame only with operator authority. Streams on the live cadence.
   S.drawerThinkPid=_shortId(pid||r.did);   // always the bare id the /thinking endpoint resolves
   html+=H('Thinking')+`<div id="thinksec" class="livesec"><div class="fv-loading">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);

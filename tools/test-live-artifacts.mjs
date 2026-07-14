@@ -503,7 +503,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260713-collectible-cards-v3/);
+assert.match(index, /discovery\.js\?v=20260714-public-cognition-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
