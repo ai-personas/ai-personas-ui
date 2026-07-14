@@ -20,6 +20,10 @@ from live_ui_fixture import (
     PROVIDER_P2P_ONLY,
     PROVIDER_SCOPED_READ,
     PROVIDER_SSE_LEGACY,
+    PERSONA,
+    PERSONA_PEER,
+    PRIVATE_THINKING_FRAME_PROBE,
+    PUBLIC_PERSONA_MESSAGE,
     RUN,
     STATE,
     ThreadingHTTPServer,
@@ -554,6 +558,95 @@ def run(args: argparse.Namespace) -> dict:
             require(not errors, 'desktop console errors: ' + '; '.join(errors))
             context.close()
 
+            # Public persona messages are intentionally fetchable without operator
+            # authority. Private personas answer the same bounded probe with 404;
+            # that refusal must remain quiet, while public output reaches both the
+            # persona card's message feed and cognition drawer. A public response
+            # can never make a thinking_frame render, even if it violates the node
+            # contract and includes one as this fixture deliberately does.
+            STATE.reset()
+            anonymous_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            anonymous = anonymous_context.new_page()
+            anonymous_console_errors: list[str] = []
+            anonymous_page_errors: list[str] = []
+            anonymous_thinking_requests: list[dict] = []
+            anonymous_thinking_responses: list[dict] = []
+            anonymous_failed_responses: list[dict] = []
+            anonymous.on(
+                'console',
+                lambda msg: anonymous_console_errors.append(f'console {msg.type}: {msg.text}')
+                if msg.type in {'warning', 'error'} else None,
+            )
+            anonymous.on('pageerror', lambda error: anonymous_page_errors.append(str(error)))
+            anonymous.on('request', lambda request: anonymous_thinking_requests.append({
+                'url': request.url,
+                'authorization': request.headers.get('authorization', ''),
+            }) if '/thinking' in request.url else None)
+            anonymous.on('response', lambda response: anonymous_thinking_responses.append({
+                'url': response.url,
+                'status': response.status,
+            }) if '/thinking' in response.url else None)
+            anonymous.on('response', lambda response: anonymous_failed_responses.append({
+                'url': response.url,
+                'status': response.status,
+            }) if response.status >= 400 else None)
+            anonymous.goto(url, wait_until='domcontentloaded')
+            public_card = anonymous.locator('.pcard[title="open Orin Vale"]')
+            public_card.wait_for(state='visible', timeout=15_000)
+            public_message = public_card.locator(
+                '.pc-message[data-message-kind="LLM_OUTPUT"]',
+                has_text=PUBLIC_PERSONA_MESSAGE,
+            )
+            public_message.wait_for(timeout=15_000)
+            require('produced' in public_message.inner_text(),
+                    'public cognition output lost its persona-authored feed verb')
+            private_deadline = time.time() + 10
+            while time.time() < private_deadline:
+                if any(
+                    item['status'] == 404
+                    and f'/personas/{PERSONA_PEER}/thinking' in item['url']
+                    for item in anonymous_thinking_responses
+                ):
+                    break
+                anonymous.wait_for_timeout(100)
+            else:
+                raise AssertionError('anonymous private-persona cognition probe did not receive 404')
+            require(anonymous_thinking_requests,
+                    'anonymous browser never attempted the public persona-message endpoint')
+            require(all(not item['authorization'] for item in anonymous_thinking_requests),
+                    'anonymous persona-message probe sent an Authorization header')
+            require(any(
+                f'/personas/{PERSONA}/thinking' in item['url']
+                for item in anonymous_thinking_requests
+            ), 'public persona-message endpoint was not probed')
+            public_card.click()
+            anonymous.locator(
+                '#thinksec .llmout', has_text=PUBLIC_PERSONA_MESSAGE
+            ).wait_for(timeout=10_000)
+            require(anonymous.locator('#thinksec details.frame').count() == 0,
+                    'anonymous persona drawer exposed a thinking_frame surface')
+            require(PRIVATE_THINKING_FRAME_PROBE not in anonymous.locator('body').inner_text(),
+                    'public thinking_frame bytes entered the rendered page')
+            require('404' not in anonymous.locator('#thinksec').inner_text(),
+                    'private cognition 404 leaked into the persona surface')
+            require('404' not in anonymous.locator('#log').inner_text()
+                    and 'not_found' not in anonymous.locator('body').inner_text(),
+                    'private cognition refusal leaked into visible UI state')
+            unexpected_console = [
+                item for item in anonymous_console_errors
+                if 'Failed to load resource' not in item or '404 (Not Found)' not in item
+            ]
+            unexpected_responses = [
+                item for item in anonymous_failed_responses
+                if item['status'] != 404 or '/thinking' not in item['url']
+            ]
+            require(not anonymous_page_errors and not unexpected_console
+                    and not unexpected_responses,
+                    'anonymous public-message application errors: '
+                    + '; '.join(anonymous_page_errors + unexpected_console
+                                + [str(item) for item in unexpected_responses]))
+            anonymous_context.close()
+
             # A valid HTTP response with metadata changed after signing must not
             # enter the live state. The following untampered poll may then advance it.
             STATE.reset()
@@ -913,8 +1006,18 @@ def run(args: argparse.Namespace) -> dict:
                     'verified final workspace renderer is blank')
             if screenshots:
                 sse.screenshot(path=str(screenshots / 'desktop-sse-final-file.png'), full_page=True)
-            require(not sse_errors, 'SSE console errors: ' + '; '.join(sse_errors)
-                    + '; failed responses: ' + '; '.join(sse_failed_responses))
+            unexpected_sse_errors = [
+                item for item in sse_errors
+                if 'Failed to load resource' not in item or '404 (Not Found)' not in item
+            ]
+            unexpected_sse_responses = [
+                item for item in sse_failed_responses
+                if not item.startswith('404 ') or '/thinking' not in item
+            ]
+            require(not unexpected_sse_errors and not unexpected_sse_responses,
+                    'SSE application errors: ' + '; '.join(
+                        unexpected_sse_errors + unexpected_sse_responses
+                    ))
             sse_context.close()
             browser.close()
 
@@ -932,6 +1035,10 @@ def run(args: argparse.Namespace) -> dict:
                 'key_rotation_refreshed': True,
                 'body_requests': len(body_requests),
                 'event_requests': len(event_requests),
+                'anonymous_public_messages': True,
+                'anonymous_thinking_requests': len(anonymous_thinking_requests),
+                'private_thinking_404_quiet': True,
+                'public_thinking_frame_refused': True,
                 'hash_changed': before_hash != after_hash,
                 'image_rerendered': True,
                 'generic_binary_inspected': True,
@@ -942,7 +1049,7 @@ def run(args: argparse.Namespace) -> dict:
                 'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
                 'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
-                                   + mobile_errors + sse_errors),
+                                   + mobile_errors + unexpected_sse_errors),
             }
     except PlaywrightTimeoutError as error:
         raise AssertionError(f'Playwright timed out: {error}') from error

@@ -25,6 +25,13 @@ ENV_WORKSPACE = "ws-shared-0123456789abcdef"
 PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
+PUBLIC_PERSONA_MESSAGE = (
+    "Public design update: revised the circulation plan after peer review."
+)
+# Deliberately returned by the fixture's public projection as a defensive probe.
+# The real node emits an empty frame publicly; the browser must still refuse a
+# non-empty one if a faulty or hostile endpoint violates that contract.
+PRIVATE_THINKING_FRAME_PROBE = "PRIVATE THINKING FRAME MUST NEVER RENDER PUBLICLY"
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
 ENV_EMPTY = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8Q"
 NODE_ID = "kernel:fixture"
@@ -1065,11 +1072,26 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"scale_count": STATE.get_scale()})
         if ((path.startswith("/node/personas/") or path.startswith("/personas/"))
                 and path.endswith("/thinking")):
+            persona_id = unquote(path.split("/")[-2])
+            operator = self.headers.get("Authorization", "") == "Bearer fixture-token"
+            if not operator and persona_id != PERSONA:
+                return self.json(404, {
+                    "error": "not_found",
+                    "filtered_for_principal": "public_stranger",
+                })
             return self.json(200, {
                 "schema": "personaos-persona-thinking/1",
-                "persona_id": PERSONA,
-                "recent_outputs": [],
+                "persona_id": persona_id,
+                "tier": "operator" if operator else "public",
+                "recent_outputs": [] if operator else [{
+                    "kind": "ANSWER_DRAFTED",
+                    "at": now(),
+                    "text": PUBLIC_PERSONA_MESSAGE,
+                }],
                 "lessons": [],
+                "thinking_frame": (
+                    "operator fixture frame" if operator else PRIVATE_THINKING_FRAME_PROBE
+                ),
             })
         if path == "/node/status":
             call = snapshot()["active"]["calls"][0]
