@@ -31,12 +31,16 @@ import {
   compactCount,
   liveTaskMissionProjection,
   nextProgressiveGroupLevel,
+  providerIndexResponseByteLimit,
   publishedMissionEvidenceProjection,
   projectTerminalModelFailures,
   progressiveGroupLimit,
+  responseByteLengthWithinLimit,
   selectMonitoringBases,
   selectPriorityWindow,
-} from './network-view.mjs?v=20260714-live-truth-v2';
+  terminalTaskMissionProjection,
+  verifiedPersonaIdentityPresent,
+} from './network-view.mjs?v=20260714-identity-truth-v4';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -197,17 +201,20 @@ function secureFetchInit(u,init={}){
 }
 async function readBoundedResponseBytes(response,maxBytes){
   const declared=Number(response.headers.get('content-length'));
-  if(Number.isFinite(declared)&&declared>maxBytes) throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+  if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
+    throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
   if(!response.body||typeof response.body.getReader!=='function'){
     const bytes=await response.arrayBuffer();
-    if(bytes.byteLength>maxBytes) throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+    if(!responseByteLengthWithinLimit(bytes.byteLength,maxBytes))
+      throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
     return bytes;
   }
   const reader=response.body.getReader(), chunks=[]; let total=0;
   try{
     for(;;){ const {done,value}=await reader.read(); if(done) break;
       total+=value.byteLength;
-      if(total>maxBytes){ await reader.cancel(); throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`); }
+      if(!responseByteLengthWithinLimit(total,maxBytes)){
+        await reader.cancel(); throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`); }
       chunks.push(value);
     }
   }finally{ try{ reader.releaseLock(); }catch(e){} }
@@ -269,8 +276,9 @@ function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   // stroked key glyph (inherits the button's currentColor; goes green via #opbtn.on)
   // instead of the colour emoji that defeated the token palette.
   b.innerHTML=icon('key')+`<span class="opbtn-label">OPERATOR${n>0?` · ${n}`:''}</span>`; }
+const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
 async function fetchJson(u,init={}){ try{ const r=await fetch(u,secureFetchInit(u,init)); if(!r.ok)return null;
-  const bytes=await readBoundedResponseBytes(r,init.maxBytes||4*1024*1024);
+  const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
   return JSON.parse(new TextDecoder().decode(bytes)); }catch(e){ return null; } }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
@@ -280,7 +288,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 // population is reported as an aggregate instead of silently disappearing.
 const NETWORK_LIMITS=Object.freeze({
   kernelChips:10, monitoredBases:12, cachedKernels:4096, cachedRecords:20000,
-  resolverPage:128, resolverPages:4, discoveryLogRows:300, telemetryTapeRows:2000,
+  resolverPage:128, resolverPages:4, discoveryLogRows:24, telemetryTapeRows:2000,
   graphKernels:6, graphPersonasGlobal:30, graphPersonasFocused:36,
   environmentInitial:10, environmentStep:10, personaInitial:12, personaStep:12,
   cognitionPersonas:24, interactionRows:120,
@@ -1129,7 +1137,21 @@ async function discoverFrom(base,plane){
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   await keysFor(base,boot);
-  const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'));
+  const advertisedProviderCount=Number(boot.record_count);
+  const providerIndexMaxBytes=providerIndexResponseByteLimit(
+    advertisedProviderCount,NETWORK_LIMITS.cachedRecords);
+  if(!providerIndexMaxBytes){
+    log('dht',`${boot.kernel_id||where}: provider record count missing, invalid, or over browser ceiling`,false);
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    return {boot,found:[]};
+  }
+  const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
+    {maxBytes:providerIndexMaxBytes});
+  if(!prov||Number(prov.provider_count)!==advertisedProviderCount){
+    log('dht',`${boot.kernel_id||where}: provider index count does not match advertised bootstrap`,false);
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    return {boot,found:[]};
+  }
   const providers=Array.isArray(prov?.providers)?prov.providers:[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
   const http=await verifiedRowsFromProviderIndex(prov,base,boot,plane,'http provider');
@@ -3164,8 +3186,18 @@ function updateVitalsCounters(){
     }).join(''); }
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
     if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
-  const livePersona=[...S.liveByPersona.values()].filter((d)=>kernelIsFocused(d?.kernel)).length;
-  const recPersona=S.order.filter((id)=>{ const r=S.recs.get(id); return r?.kind==='persona'&&kernelIsFocused(r._kernel); }).length;
+  const livePersona=[...S.liveByPersona.entries()].filter(([personaKey,d])=>
+    kernelIsFocused(d?.kernel)&&verifiedPersonaIdentityPresent(
+      S.personaDiscoveryByKey, personaKey,
+    )).length;
+  const recPersonaKeys=new Set();
+  for(const id of S.order){ const r=S.recs.get(id);
+    if(r?.kind!=='persona'||!kernelIsFocused(r._kernel)) continue;
+    const sid=_shortId(r.did||r.record_id), personaKey=sid?_personaKey(r._kernel,sid):'';
+    if(personaKey&&verifiedPersonaIdentityPresent(
+      S.personaDiscoveryByKey,personaKey)) recPersonaKeys.add(personaKey);
+  }
+  const recPersona=recPersonaKeys.size;
   const personasN=Math.max(livePersona,recPersona);
   const now=Date.now();
   // RUNNING = personas currently named by active_model_calls.
@@ -3227,10 +3259,13 @@ async function refreshSystemView(){
       const members=(feed.members||[]).map((member)=>{
         const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
         const memberSid=_shortId(raw); return memberSid?_personaKey(kernel,memberSid):'';
-      }).filter(Boolean);
+      }).filter((personaKey)=>verifiedPersonaIdentityPresent(
+        S.personaDiscoveryByKey, personaKey,
+      ));
       const sid=_shortId(eid);
       return {base,kernel,envId:eid,sid,name:feed.name||eid,type:feed.env_type||'',
-        status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,recId:null,live:true};
+        status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,
+        recId:null,live:true,verified:false};
     }))).filter(Boolean);
   }));
   for(const rows of liveGroups) for(const b of rows){ const k=envKey(b.kernel,b.sid), prev=bySid.get(k);
@@ -3249,12 +3284,12 @@ async function refreshSystemView(){
     const manifestRel=(r._links||{}).artifact_manifest;
     const cap=(r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
     const k=envKey(r._kernel,sid); let b=bySid.get(k);
-    if(b){ b.recId=b.recId||id; b.run=b.run||run; if(b.name===b.envId) b.name=r.label||b.name;
+    if(b){ b.recId=b.recId||id; b.run=b.run||run; b.verified=true; if(b.name===b.envId) b.name=r.label||b.name;
       if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel;
       if(!b.artifactManifestRel) b.artifactManifestRel=manifestRel; }
     else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
         name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
-        run,recId:id,live:false,exportRel,artifactManifestRel:manifestRel};
+        run,recId:id,live:false,verified:true,exportRel,artifactManifestRel:manifestRel};
       bySid.set(k,b); envBlocks.push(b); }
   }
   // (2b) An env whose LIVE feed is absent (a federated env, or any env whose live
@@ -3282,7 +3317,8 @@ async function refreshSystemView(){
     if(ed&&Array.isArray(ed.members)&&!b.members.length){
       b.roster=ed.members;
       b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
-        return memberSid?_personaKey(b.kernel,memberSid):''; }).filter(Boolean);
+        return memberSid?_personaKey(b.kernel,memberSid):''; }).filter((personaKey)=>
+        verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey));
       b.members.forEach((m)=>assigned.add(m));
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
@@ -3306,12 +3342,14 @@ async function refreshSystemView(){
       sid=_shortId(hit?.scope_id||''); }
     if(!sid) continue;
     const ref=_personaRef(personaKey), block=bySid.get(envKey(d.kernel||ref.kernel,sid));
-    if(block&&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
+    if(block&&verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey)
+      &&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
   }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.entries()].filter(([personaKey,d])=>{ const ref=_personaRef(personaKey);
-    return kernelIsFocused(d?.kernel||ref.kernel)&&!assigned.has(personaKey);
+    return kernelIsFocused(d?.kernel||ref.kernel)&&!assigned.has(personaKey)
+      &&verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey);
   }).map(([personaKey])=>personaKey);
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
@@ -3410,7 +3448,7 @@ async function refreshSystemView(){
       +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
       +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>signals · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'live + verified':'verified record'}</span><span>environment-owned outputs</span></div></article>`;
+      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?(b.verified?'live telemetry + verified identity':'unsigned live telemetry'):'verified record'}</span><span>environment-owned outputs</span></div></article>`;
   };
   // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
   // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
@@ -3457,7 +3495,8 @@ async function refreshSystemView(){
   // Personas are a primary deck, never children of environment cards. Each
   // persona receives the exact environments whose roster or telemetry names it.
   const personaContexts=new Map();
-  const ensurePersona=(value,kernel='')=>{ const ref=_personaRef(value,kernel); if(!ref.sid) return null;
+  const ensurePersona=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
+    if(!ref.sid||!verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,ref.key)) return null;
     let context=personaContexts.get(ref.key); if(!context){ context={key:ref.key,kernel:ref.kernel,environments:[]}; personaContexts.set(ref.key,context); }
     return context; };
   for(const b of _baseCandidates) for(const member of b.members){ const context=ensurePersona(member,b.kernel); if(!context) continue;
@@ -5338,7 +5377,7 @@ function tick(now){
 
 /* ---------- missions strip (every task the discovered nodes work on) ---------- */
 // Cards come from three honest sources: (1) signed public task/project/mission
-// records as published evidence, with an optional strict live-task state overlay;
+// records as published evidence, with signed terminal/live-task state overlays;
 // (2) live artifact snapshots; (3) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
@@ -5357,20 +5396,25 @@ function missionCardList(){
     if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw)) return projectFor(kernel,run)?.label||'Untitled mission';
     return raw; };
   // Record structure decides admission; capability vocabulary never does. A
-  // strict live_task + one task_state binding may overlay the published state,
-  // but its absence never erases a verified task record. Design-history JSON is
-  // evidence owned by the mission, never a second mission card.
+  // A generic terminal lifecycle capability takes precedence, then a strict
+  // live_task + one task_state binding may overlay the published state. Unknown
+  // capability vocabulary never erases or assigns state to a verified task
+  // record. Design-history JSON is evidence owned by the mission, never a
+  // second mission card.
   for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
     const published=publishedMissionEvidenceProjection(r); if(!published) continue;
     // S.recs contains only records that passed browser signature + access checks.
-    // Preserve one exact, signed state only when the strict overlay verifies.
-    const live=liveTaskMissionProjection(r), projected=live||published;
+    // Preserve one exact, signed state only when a fail-closed overlay verifies.
+    const terminal=terminalTaskMissionProjection(r), live=liveTaskMissionProjection(r),
+      projected=terminal||live||published;
     const run=projected.run||runOf(r)||'';
     const meta=[run?run.slice(0,26):'',`signed ${published.kind} record`];
-    if(live) meta.push('signed live task');
+    if(terminal) meta.push('signed terminal task');
+    else if(live) meta.push('signed live task');
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
-      kernel:r._kernel||'',meta,recId:id,run,recordKind:published.kind,liveTask:!!live};
-    if(live) cards.unshift(card); else cards.push(card);
+      kernel:r._kernel||'',meta,recId:id,run,recordKind:published.kind,
+      terminalTask:!!terminal,liveTask:!!live};
+    if(terminal||live) cards.unshift(card); else cards.push(card);
   }
   // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
@@ -5405,7 +5449,7 @@ function missionCardList(){
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
   const grouped=new Map();
-  const rank=(card)=>card.state==='running'?6:card.liveTask?5:card.state==='paused'?3
+  const rank=(card)=>card.state==='running'?7:card.terminalTask?6:card.liveTask?5:card.state==='paused'?3
     :card.recordKind==='task'?2:card.state==='published'?1:0;
   for(const card of scoped){ const key=`${card.kernel}::${String(card.task).toLowerCase().replace(/\s+/g,' ').trim()}`;
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
@@ -5454,7 +5498,7 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>c.state==='running'?1e6:c.state==='failed'?9e5:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>c.state==='running'?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its mission text.
   // Keep the compact mission summary useful in that case and render an explicit

@@ -546,7 +546,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-live-truth-v2/);
+assert.match(index, /discovery\.js\?v=20260714-identity-truth-v4/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
@@ -562,6 +562,16 @@ assert.match(portal, /P2P\.resolveProvider\(key,\{timeoutMs:5000\}\)/);
 assert.match(portal, /signing_key_status!=='current'/);
 assert.match(portal, /incomplete or malformed provider envelope refused/);
 assert.match(portal, /hydrateProviderIndex\(providerIndex\)/);
+assert.match(portal, /const DEFAULT_JSON_MAX_BYTES=4\*1024\*1024/,
+  'ordinary JSON must retain the 4 MiB response boundary');
+assert.match(portal, /providerIndexResponseByteLimit\(\s*advertisedProviderCount,NETWORK_LIMITS\.cachedRecords\)/,
+  'only the provider index may derive a larger bound from signed-envelope and cache ceilings');
+assert.match(portal, /\{maxBytes:providerIndexMaxBytes\}/,
+  'the provider-index fetch must enforce its derived response limit');
+assert.match(portal, /Number\(prov\.provider_count\)!==advertisedProviderCount/,
+  'provider index population must match the bootstrap count that selected its byte budget');
+assert.match(portal, /const recPersonaKeys=new Set\(\)/,
+  'multiple signed records for one complete persona identity must not inflate vitals');
 assert.match(portal, /const doc=envelope\.document/);
 assert.doesNotMatch(portal, /fetchJson\(join\(base,recordUrl\)\)/);
 assert.match(portal, /recordVerificationEntries\(keyEntries,doc\?\.signing_key_id\)/);
@@ -583,7 +593,8 @@ assert.ok(p2pBundle.includes('denyInsecureWebSocketDial'));
 assert.match(portal, /p2p-libp2p\.js\?v=20260714-browser-dial-gate-v1/);
 assert.match(portal, /Close details/);
 assert.match(portal, /const published=publishedMissionEvidenceProjection\(r\)/);
-assert.match(portal, /const live=liveTaskMissionProjection\(r\), projected=live\|\|published/);
+assert.match(portal, /const terminal=terminalTaskMissionProjection\(r\), live=liveTaskMissionProjection\(r\)/);
+assert.match(portal, /projected=terminal\|\|live\|\|published/);
 assert.match(portal, /Design-history JSON is/);
 assert.doesNotMatch(portal, /r\.kind==='artifact'&&_isMissionDoc/);
 assert.match(index, /script-src 'self'/);

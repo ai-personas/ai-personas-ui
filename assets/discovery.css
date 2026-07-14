@@ -250,20 +250,22 @@ b{color:var(--bright)}
 .mcard:hover{border-color:var(--accent);box-shadow:var(--elev-2),var(--edge-top);transform:translateY(-1px)}
 /* state-coded left bar (CSS-only via :has — no JS class change) */
 .mcard:has(.ms-running){border-left-color:var(--up)}
+.mcard:has(.ms-complete),.mcard:has(.ms-completed),.mcard:has(.ms-succeeded){border-left-color:var(--up)}
 .mcard:has(.ms-paused){border-left-color:var(--amber)}
+.mcard:has(.ms-cancelled),.mcard:has(.ms-canceled){border-left-color:var(--amber)}
 .mcard:has(.ms-shipped){border-left-color:var(--int)}
 .mcard:has(.ms-published){border-left-color:var(--line2)}
 .mcard:has(.ms-converged){border-left-color:var(--intr)}
-.mcard:has(.ms-stopped){border-left-color:var(--down)}
-.mcard:has(.ms-failed){border-left-color:var(--down)}
+.mcard:has(.ms-stopped),.mcard:has(.ms-aborted),.mcard:has(.ms-failed){border-left-color:var(--down)}
 .mcard .mtask{color:var(--off-white);font-weight:var(--w-semi);font-size:var(--fs-body);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mcard .mmeta{color:var(--dim);font-size:var(--fs-meta);display:flex;gap:8px;flex-wrap:wrap;margin-top:3px}
 .mstate{font-size:var(--fs-meta);font-weight:var(--w-semi);letter-spacing:var(--tr-caps);padding:1px 6px;border-radius:var(--chip-radius);
   text-transform:uppercase;color:var(--ink-on-accent)}
 .ms-running{background:var(--up);animation:mspulse 2.4s ease-in-out infinite}
 @keyframes mspulse{0%,100%{opacity:1}50%{opacity:.72}}
-.ms-paused{background:var(--amber);color:var(--ink-on-accent)} .ms-shipped{background:var(--int)} .ms-published{background:var(--surface-raised);color:var(--dim);border:1px solid var(--line2)} .ms-converged{background:var(--intr)}
-.ms-queued{background:var(--idle)} .ms-stopped,.ms-failed{background:var(--down)}
+.ms-complete,.ms-completed,.ms-succeeded{background:var(--up)}
+.ms-paused,.ms-cancelled,.ms-canceled{background:var(--amber);color:var(--ink-on-accent)} .ms-shipped{background:var(--int)} .ms-published{background:var(--surface-raised);color:var(--dim);border:1px solid var(--line2)} .ms-converged{background:var(--intr)}
+.ms-queued{background:var(--idle)} .ms-stopped,.ms-aborted,.ms-failed{background:var(--down)}
 
 /* ===================== R1 · CONSTELLATION RAIL ===================== */
 .constellation{flex:0 0 auto;display:none;background:var(--surface-inset);
@@ -1098,9 +1100,10 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   background:linear-gradient(145deg,rgba(16,29,44,.98),rgba(9,17,28,.98))}
 .mission-state-dot{width:8px;height:8px;margin-top:5px;border-radius:50%;background:var(--mut)}
 .mission-state-dot.ms-running{background:var(--up);box-shadow:0 0 10px var(--up)}
-.mission-state-dot.ms-paused{background:var(--amber)}
+.mission-state-dot.ms-complete,.mission-state-dot.ms-completed,.mission-state-dot.ms-succeeded{background:var(--up)}
+.mission-state-dot.ms-paused,.mission-state-dot.ms-cancelled,.mission-state-dot.ms-canceled{background:var(--amber)}
 .mission-state-dot.ms-published{background:var(--int)}
-.mission-state-dot.ms-failed{background:var(--down);box-shadow:0 0 8px color-mix(in srgb,var(--down) 55%,transparent)}
+.mission-state-dot.ms-stopped,.mission-state-dot.ms-aborted,.mission-state-dot.ms-failed{background:var(--down);box-shadow:0 0 8px color-mix(in srgb,var(--down) 55%,transparent)}
 .mission-copy{min-width:0}.mission-copy .mstate{display:inline-flex;margin-bottom:5px}
 .mcard .mtask{margin:0;color:var(--bright);font-size:15px;line-height:1.35;white-space:normal;overflow:visible;text-overflow:clip;text-wrap:pretty}
 .mcard .mmeta{margin-top:7px}.mission-open{color:var(--mut);padding-top:2px}

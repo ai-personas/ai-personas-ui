@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   NETWORK_VIEW_LIMITS,
+  PROVIDER_INDEX_LIMITS,
   collectBrowserLibp2pBootstraps,
   collectLibp2pBootstraps,
   compactCount,
@@ -12,12 +13,16 @@ import {
   normalizeMonitoringBase,
   publishedMissionEvidenceProjection,
   projectTerminalModelFailures,
+  providerIndexResponseByteLimit,
+  responseByteLengthWithinLimit,
   progressiveGroupLimit,
   safeCount,
   selectMonitoringBases,
   selectPriorityWindow,
   selectSearchWindow,
   takeProgressiveGroupWindow,
+  terminalTaskMissionProjection,
+  verifiedPersonaIdentityPresent,
 } from '../assets/network-view.mjs';
 
 const announcedMultiaddr = '/dns4/personas.example/tcp/443/wss/p2p/12D3KooWTest';
@@ -110,6 +115,37 @@ assert.equal(publishedMissionEvidenceProjection({
   did: 'did:personaos:kernel:canary/mission/run-wrong-kind',
 }).run, '', 'a run identifier must be bound to the signed record kind');
 
+assert.deepEqual(terminalTaskMissionProjection({
+  ...canaryPublishedTask,
+  capability_summary: ['complete'],
+}), {
+  task: 'design 4 bedroom house',
+  state: 'complete',
+  run: 'run-01KXF8JBFGQ71A8S8EPGMM6R48',
+  terminalTask: true,
+  terminalCapability: 'complete',
+}, 'a signed generic terminal capability must outrank publication fallback state');
+for (const state of [
+  'complete', 'completed', 'succeeded', 'failed', 'cancelled', 'canceled', 'aborted', 'stopped',
+]) {
+  assert.equal(terminalTaskMissionProjection({
+    ...canaryPublishedTask,
+    capability_summary: [state],
+  })?.state, state, `terminal task capability ${state} must retain its signed spelling`);
+}
+for (const refused of [
+  canaryPublishedTask,
+  {...canaryPublishedTask, capability_summary: ['event_driven_handoff']},
+  {...canaryPublishedTask, capability_summary: ['complete', 'failed']},
+  {...canaryPublishedTask, capability_summary: ['complete', 'complete']},
+  {...canaryPublishedTask, capability_summary: [' complete']},
+  {...canaryPublishedTask, capability_summary: ['COMPLETE']},
+  {...canaryPublishedTask, kind: 'project', capability_summary: ['complete']},
+]) {
+  assert.equal(terminalTaskMissionProjection(refused), null,
+    'unknown, conflicting, malformed, or non-task capabilities must not become terminal state');
+}
+
 assert.deepEqual(liveTaskMissionProjection(signedLiveTask), {
   task: 'design a complete four-bedroom house',
   state: 'awaiting peer sense-making',
@@ -176,6 +212,128 @@ assert.equal(projectTerminalModelFailures([
   {kind: 'MODEL_FALLBACK_USED', persona_id: 'persona-a', status: 503},
   {kind: 'MODEL_TRANSPORT_NO_RETRY', persona_id: 'persona-a', status: 503},
 ]).latest, null, 'fallback and transport diagnostics are not terminal execution state');
+const succeededTerminalCall = projectTerminalModelFailures([
+  {kind: 'MODEL_SELECTED', persona_id: 'persona-a', environment_id: 'env-a'},
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a',
+    status: 503, reason: 'transient terminal projection'},
+  {kind: 'MODEL_CALL_SUCCEEDED', persona_id: 'persona-a', environment_id: 'env-a',
+    model_id: 'recovery-model'},
+]);
+assert.equal(succeededTerminalCall.latest, null,
+  'a terminal success must clear the matching kernel failure projection');
+assert.equal(succeededTerminalCall.byPersona.has('persona-a'), false,
+  'a terminal success must clear the matching persona failure projection');
+assert.equal(succeededTerminalCall.byEnvironment.has('env-a'), false,
+  'a terminal success must clear the matching environment failure projection');
+const unrelatedSuccess = projectTerminalModelFailures([
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a', status: 500},
+  {kind: 'MODEL_CALL_SUCCEEDED', persona_id: 'persona-b', environment_id: 'env-b'},
+]);
+assert.equal(unrelatedSuccess.byPersona.has('persona-a'), true,
+  'one persona success must not erase another persona failure');
+assert.equal(unrelatedSuccess.latest?.personaId, 'persona-a',
+  'an unrelated success must not erase the kernel latest failure');
+const samePersonaOtherEnvironment = projectTerminalModelFailures([
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a', status: 500},
+  {kind: 'MODEL_CALL_SUCCEEDED', persona_id: 'persona-a', environment_id: 'env-b'},
+]);
+assert.equal(samePersonaOtherEnvironment.byPersona.has('persona-a'), true,
+  'a success in another environment must not erase the persona failure');
+assert.equal(samePersonaOtherEnvironment.latest?.environmentId, 'env-a',
+  'cross-environment success must not erase the kernel latest failure');
+const sameEnvironmentOtherPersona = projectTerminalModelFailures([
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a', status: 500},
+  {kind: 'MODEL_CALL_SUCCEEDED', persona_id: 'persona-b', environment_id: 'env-a'},
+]);
+assert.equal(sameEnvironmentOtherPersona.byEnvironment.has('env-a'), true,
+  'another persona success must not erase the shared environment failure');
+assert.equal(projectTerminalModelFailures([
+  {kind: 'MODEL_CALL_FAILED', persona_id: 'persona-a', environment_id: 'env-a', status: 500},
+  {kind: 'MODEL_CALL_SUCCEEDED'},
+]).latest?.personaId, 'persona-a', 'unattributed success must never clear failure state');
+
+const fixturePersonaId = 'persona-a';
+const fixtureIdentityKey = 'ab'.repeat(32);
+const fixtureAvatar = {
+  schema: 'persona-avatar/2',
+  kind: 'raster',
+  body_path: `assets/persona-avatars/sha256/${'12'.repeat(32)}.png`,
+  content_ref: `sha256:${'12'.repeat(32)}`,
+  sha256: '12'.repeat(32),
+  mime_type: 'image/png',
+  byte_length: 68,
+  width: 1,
+  height: 1,
+  character_prompt_hash: `sha256:${'34'.repeat(32)}`,
+  provenance_hash: `sha256:${'56'.repeat(32)}`,
+  persona_id: fixturePersonaId,
+  identity_signing_key_id: `persona:${fixturePersonaId}`,
+  identity_public_key_hex: fixtureIdentityKey,
+  identity_signature_hex: '78'.repeat(64),
+};
+const completePersonaIdentity = {
+  kind: 'persona',
+  did: `did:personaos:kernel-a/persona/${fixturePersonaId}`,
+  label: 'Aster Rowan',
+  _personaSignedName: 'Aster Rowan',
+  _personaIdentityPublicKeyHex: fixtureIdentityKey,
+  avatar: fixtureAvatar,
+};
+const verifiedPersonaRecords = new Map([
+  ['kernel-a\u0000persona\u0000persona-a', completePersonaIdentity],
+  ['kernel-a\u0000env\u0000env-a', {kind: 'env', label: 'Workshop'}],
+]);
+assert.equal(verifiedPersonaIdentityPresent(
+  verifiedPersonaRecords, 'kernel-a\u0000persona\u0000persona-a',
+), true);
+assert.equal(verifiedPersonaIdentityPresent(
+  verifiedPersonaRecords, 'kernel-a\u0000persona\u0000missing-persona',
+), false, 'telemetry without a signed persona record must not create a card');
+assert.equal(verifiedPersonaIdentityPresent(
+  verifiedPersonaRecords, 'kernel-a\u0000env\u0000env-a',
+), false, 'a signed non-persona record must not create a persona card');
+for (const incomplete of [
+  {...completePersonaIdentity, _personaSignedName: fixturePersonaId},
+  {...completePersonaIdentity, _personaSignedName: `Persona ${fixturePersonaId}`},
+  {...completePersonaIdentity, _personaSignedName: ''},
+  {...completePersonaIdentity, avatar: null},
+  {...completePersonaIdentity, avatar: {...fixtureAvatar, kind: 'vector'}},
+  {...completePersonaIdentity, avatar: {...fixtureAvatar, persona_id: 'persona-b'}},
+  {...completePersonaIdentity, _personaIdentityPublicKeyHex: 'cd'.repeat(32)},
+]) {
+  assert.equal(verifiedPersonaIdentityPresent(
+    new Map([['kernel-a\u0000persona\u0000persona-a', incomplete]]),
+    'kernel-a\u0000persona\u0000persona-a',
+  ), false, 'an incomplete, mechanical, or unbound identity must stay hidden');
+}
+assert.equal(verifiedPersonaIdentityPresent(
+  new Map([['kernel-a\u0000persona\u0000persona-b', completePersonaIdentity]]),
+  'kernel-a\u0000persona\u0000persona-b',
+), false, 'the signed persona identity must match the exact telemetry entity key');
+
+const normalProviderCount = 19;
+const normalProviderBytes = 56_100;
+const normalProviderLimit = providerIndexResponseByteLimit(normalProviderCount, 20_000);
+assert.ok(normalProviderBytes < normalProviderLimit,
+  'ordinary signed provider records need bounded framing headroom at small counts');
+const scaleProviderCount = 2_016;
+const scaleProviderBytes = 7_420_883;
+const scaleProviderLimit = providerIndexResponseByteLimit(scaleProviderCount, 20_000);
+assert.equal(PROVIDER_INDEX_LIMITS.maxSignedEnvelopeBytes, 4 * 1024,
+  'the provider-only response budget needs an explicit per-envelope ceiling');
+assert.ok(scaleProviderBytes > 4 * 1024 * 1024,
+  'the signed scale fixture must exercise the provider-specific path');
+assert.ok(scaleProviderBytes < scaleProviderLimit,
+  'the measured 2,016-envelope fixture must fit with bounded headroom');
+assert.ok(scaleProviderBytes > scaleProviderLimit - scaleProviderCount * 512,
+  'the provider-specific scale fixture should meaningfully exercise its narrow cap');
+assert.equal(providerIndexResponseByteLimit(20_001, 20_000), 0,
+  'an advertised population above the record cache ceiling must be refused');
+assert.equal(providerIndexResponseByteLimit(-1, 20_000), 0,
+  'an invalid provider count must be refused before fetching');
+assert.equal(responseByteLengthWithinLimit(scaleProviderLimit, scaleProviderLimit), true);
+assert.equal(responseByteLengthWithinLimit(scaleProviderLimit + 1, scaleProviderLimit), false,
+  'a provider response one byte over its derived cap must be refused');
 
 function* millionNodes() {
   for (let index = 0; index < 1_000_000; index++) {

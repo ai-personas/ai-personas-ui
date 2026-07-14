@@ -24,14 +24,18 @@ from live_ui_fixture import (
     PROVIDER_SCOPED_READ,
     PROVIDER_SSE_LEGACY,
     PERSONA,
+    PERSONA_INCOMPLETE,
     PERSONA_PEER,
     PRIVATE_THINKING_FRAME_PROBE,
     PUBLIC_PERSONA_MESSAGE,
     RUN,
     STATE,
     ThreadingHTTPServer,
+    UNSIGNED_TELEMETRY_GHOST,
     p2p_discover_only_resolution,
     p2p_provider_resolution,
+    provider_record_count,
+    scale_persona_label,
 )
 
 
@@ -127,9 +131,9 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('14/18 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('15/19 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelector('#status')?.textContent
-              .includes('14 verified records')""", timeout=30_000)
+              .includes('15 verified records')""", timeout=30_000)
             require(not any('/discovery/public/records/' in item['url'] for item in requests),
                     'HTTP admission refetched moving record_url instead of verifying the '
                     'hash-bound envelope document')
@@ -185,13 +189,15 @@ def run(args: argparse.Namespace) -> dict:
             )
             published_task.wait_for(state='attached', timeout=15_000)
             published_task_text = published_task.text_content() or ''
-            require('PUBLISHED' in published_task_text,
-                    'verified structural task was hidden without a live_task marker')
+            require('COMPLETE' in published_task_text,
+                    'signed terminal task capability did not override publication state')
+            require('PUBLISHED' not in published_task_text,
+                    'terminal task capability was reduced to generic publication state')
             require('run-canary-house' in published_task_text
                     and 'signed task record' in published_task_text,
-                    'published task evidence lost its bounded signed run/record context')
-            require('event_driven_handoff' not in published_task_text,
-                    'open capability vocabulary was incorrectly interpreted as task state')
+                    'terminal task evidence lost its bounded signed run/record context')
+            require('signed terminal task' in published_task_text,
+                    'terminal task badge lost its signed-source context')
             page.wait_for_function(
                 """() => document.querySelector('#p2p')?.textContent.startsWith('Network · ')""",
                 timeout=15_000,
@@ -291,6 +297,20 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.persona-deck > .pcard').count() == 3,
                     'persona-first deck did not render the live roster once')
             persona_cards = page.locator('.persona-deck > .pcard')
+            page.wait_for_function(
+                "() => document.querySelector('#st-personas .v')?.textContent === '3'",
+                timeout=15_000,
+            )
+            require(page.locator(
+                f'.pcard[data-pcard="{UNSIGNED_TELEMETRY_GHOST}"]'
+            ).count() == 0,
+                    'unsigned telemetry-only ghost created a persona card')
+            require(page.locator(
+                f'.pcard[data-pcard="{PERSONA_INCOMPLETE}"]'
+            ).count() == 0,
+                    'signed but incomplete persona shell created a persona card')
+            require(page.locator('#st-personas .v').text_content() == '3',
+                    'unsigned telemetry-only ghost inflated the persona vital count')
             require(max(persona_cards.evaluate_all(
                 '(cards) => cards.map((card) => card.getBoundingClientRect().width)')) <= 412,
                     'desktop persona card expanded beyond its collectible-card width')
@@ -355,13 +375,18 @@ def run(args: argparse.Namespace) -> dict:
             env_orin_avatar = active_env.locator('.env-persona-node', has_text='Orin Vale').locator('.pc-avatar')
             require(env_orin_avatar.locator('img[src^="blob:"]').count() == 1,
                     'environment graph bypassed verified raster avatar hydration')
+            page.wait_for_function("""() => [...document.querySelectorAll('.persona-deck > .pcard')]
+              .every((card) => card.querySelector('.pc-avatar')?.dataset.avatarState === 'ready')""",
+                                   timeout=15_000)
             require(page.locator(
-                '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 2,
-                    'missing avatars did not remain neutral absence placeholders')
-            require(page.locator('.pcard .pc-avatar-placeholder', has_text='portrait pending').count() == 2,
-                    'missing avatars did not explain their pending portrait state')
-            require(page.locator('.pcard .pc-avatar-placeholder strong').count() == 2,
-                    'missing avatars did not retain a recognizable persona monogram')
+                '.persona-deck > .pcard .pc-avatar[data-avatar-state="ready"] img[src^="blob:"]'
+            ).count() == 3,
+                    'every complete signed persona identity did not hydrate its raster avatar')
+            require(page.locator(
+                '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 0,
+                    'a renderable fixture persona remained an incomplete avatar shell')
+            require(page.locator('.pcard .pc-avatar-placeholder').count() == 0,
+                    'complete signed persona identities rendered portrait placeholders')
             require(page.locator('.pcard .pc-avatar svg').count() == 0,
                     'persona avatar rendering retained generated SVG art')
             require(page.locator('.pcard [data-avatar-source]').count() == 0,
@@ -395,7 +420,8 @@ def run(args: argparse.Namespace) -> dict:
               return window.__topologyTruthSamples || [];
             }""")
             require(not any(sample.strip() == '0 of 0 personas' for sample in topology_samples),
-                    'non-authoritative locator refresh erased a focused persona topology')
+                    'non-authoritative locator refresh erased a focused persona topology: '
+                    + repr(topology_samples))
             orin.click()
             page.locator('#detailwrap.open .kind.k-persona').wait_for(timeout=15_000)
             trust = page.locator('#detailbody .trust-details')
@@ -559,11 +585,11 @@ def run(args: argparse.Namespace) -> dict:
             require(not external_exec, 'external executable code loaded: ' + ', '.join(external_exec))
             avatar_requests = [item for item in requests
                                if '/assets/persona-avatars/sha256/' in item['url']]
-            require(len(avatar_requests) == 1,
-                    'verified content-addressed avatar body was not fetched exactly once')
-            require(not avatar_requests[0]['authorization'],
+            require(len(avatar_requests) == 3,
+                    'each complete persona identity did not verify its raster body exactly once')
+            require(all(not item['authorization'] for item in avatar_requests),
                     'public avatar fetch leaked the operator bearer token')
-            require(not avatar_requests[0]['referer'],
+            require(all(not item['referer'] for item in avatar_requests),
                     'public avatar fetch leaked a referrer')
 
             before_hash = page.locator('.exact-hash').last.text_content()
@@ -884,9 +910,16 @@ def run(args: argparse.Namespace) -> dict:
             scale_context.request.get(base + '/node/scale?count=2000')
             scale = scale_context.new_page()
             scale_errors: list[str] = []
+            scale_provider_bytes: dict[str, int] = {}
             scale.on('console', lambda msg: scale_errors.append(f'console {msg.type}: {msg.text}')
                      if msg.type in {'warning', 'error'} else None)
             scale.on('pageerror', lambda error: scale_errors.append(f'pageerror: {error}'))
+            def capture_scale_provider_size(response) -> None:
+                if response.url.endswith('/node/providers.json'):
+                    raw = response.headers.get('content-length', '')
+                    if raw.isdigit():
+                        scale_provider_bytes['bytes'] = int(raw)
+            scale.on('response', capture_scale_provider_size)
             scale.add_init_script(f"""
               sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
             """)
@@ -896,11 +929,25 @@ def run(args: argparse.Namespace) -> dict:
                                     timeout=15_000)
             require(scale.locator('.pcard').count() == 12,
                     'large stage did not retain its 12-card initial window')
+            require(scale.locator(
+                f'.pcard[data-pcard="{UNSIGNED_TELEMETRY_GHOST}"]'
+            ).count() == 0,
+                    'unsigned scale telemetry created a persona card')
+            require(scale.locator('#st-personas .v').text_content() == '2K',
+                    'unsigned scale telemetry inflated the verified persona count')
+            measured_provider_bytes = scale_provider_bytes.get('bytes', 0)
+            provider_byte_limit = 64 * 1024 + provider_record_count() * 4 * 1024
+            require(measured_provider_bytes > 4 * 1024 * 1024,
+                    'scale provider fixture did not exercise the provider-specific byte path')
+            require(measured_provider_bytes < provider_byte_limit,
+                    'scale provider fixture exceeded its bounded per-envelope byte budget')
             scale_graph_personas = scale.locator('#sysGraph [data-gp]').count()
             require(scale_graph_personas <= 36,
                     'large graph exceeded its exact-persona cap')
             require(scale.locator('[data-kernel-core]').count() <= 6,
                     'large graph exceeded its kernel cap')
+            require(scale.locator('#log > li').count() <= 24,
+                    'large signed provider population escaped the discovery-log ring')
             require(scale.locator('body *').count() < 1_500,
                     'large population materialized an unbounded DOM')
             if screenshots:
@@ -910,10 +957,15 @@ def run(args: argparse.Namespace) -> dict:
                                     timeout=10_000)
             scale.locator('#headerToolsToggle').click()
             scale.locator('#q').fill('scale-persona-01999')
-            scale.wait_for_function("""() => [...document.querySelectorAll('.pcard')]
+            deep_signed_name = scale_persona_label(1999)
+            scale.wait_for_function("""(expectedName) => [...document.querySelectorAll('.pcard')]
               .some((card) => card.dataset.pcard === 'scale-persona-01999'
-                && card.textContent.includes('Persona')
-                && card.textContent.includes('signed name unavailable'))""", timeout=10_000)
+                && card.textContent.includes(expectedName)
+                && card.textContent.includes('signed display name'))""",
+                                    arg=deep_signed_name, timeout=10_000)
+            scale.wait_for_function("""() => document.querySelector(
+              '.pcard[data-pcard="scale-persona-01999"] .pc-avatar'
+            )?.dataset.avatarState === 'ready'""", timeout=15_000)
             require(scale.locator('.pcard').count() <= 24,
                     'search escaped the progressive persona window')
             scale_metrics = {
@@ -921,6 +973,8 @@ def run(args: argparse.Namespace) -> dict:
                 'initial_cards': 12,
                 'expanded_cards': 24,
                 'graph_personas': scale_graph_personas,
+                'provider_index_bytes': measured_provider_bytes,
+                'provider_index_limit': provider_byte_limit,
                 'dom_nodes_after_search': scale.locator('body *').count(),
                 'deep_search_found': True,
             }
@@ -1128,7 +1182,7 @@ def run(args: argparse.Namespace) -> dict:
             failure.on('pageerror', lambda error: failure_errors.append(f'pageerror: {error}'))
             failure.goto(url, wait_until='domcontentloaded')
             failure.wait_for_function("""() => document.querySelector('#status')?.textContent
-              .includes('14 verified records')""", timeout=30_000)
+              .includes('15 verified records')""", timeout=30_000)
             failed_persona = failure.locator('.pcard[title="open Orin Vale"]')
             failed_persona.locator('.pc-failed').wait_for(timeout=15_000)
             require(failed_persona.locator('.pc-run').count() == 0,

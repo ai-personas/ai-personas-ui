@@ -1,3 +1,5 @@
+import {normalizePersonaAvatar} from './persona-avatar.mjs';
+
 /*
  * Bounded, DOM-free helpers for projecting a very large PersonaOS network into
  * small UI windows.  Every collection helper consumes an iterable in one pass
@@ -21,10 +23,48 @@ export const NETWORK_VIEW_LIMITS = Object.freeze({
   maxKeyLength: 512,
 });
 
+export const PROVIDER_INDEX_LIMITS = Object.freeze({
+  framingBytes: 64 * 1024,
+  maxSignedEnvelopeBytes: 4 * 1024,
+});
+
+/**
+ * Bound the one large discovery response independently of ordinary JSON.
+ *
+ * A compact provider index carries one independently signed provider/document/
+ * policy envelope per advertised record. The node's standard bootstrap
+ * `record_count` therefore selects a byte budget, while the browser's existing
+ * record cache remains the hard population ceiling. Invalid or over-ceiling
+ * declarations fail closed before any response body is read.
+ */
+export function providerIndexResponseByteLimit(recordCount, recordCeiling) {
+  if (!Number.isInteger(recordCount) || recordCount < 0
+      || !Number.isInteger(recordCeiling) || recordCeiling < 1
+      || recordCount > recordCeiling) return 0;
+  return PROVIDER_INDEX_LIMITS.framingBytes
+    + recordCount * PROVIDER_INDEX_LIMITS.maxSignedEnvelopeBytes;
+}
+
+export function responseByteLengthWithinLimit(byteLength, maxBytes) {
+  return Number.isSafeInteger(byteLength) && byteLength >= 0
+    && Number.isSafeInteger(maxBytes) && maxBytes >= 1
+    && byteLength <= maxBytes;
+}
+
 const LIVE_TASK_CAPABILITY_LIMIT = 128;
 const LIVE_TASK_STATE_LIMIT = 40;
 const LIVE_TASK_MARKER = 'live_task';
 const TASK_STATE_PREFIX = 'task_state:';
+const TERMINAL_TASK_CAPABILITIES = new Set([
+  'complete',
+  'completed',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'canceled',
+  'aborted',
+  'stopped',
+]);
 const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
 const MISSION_EVIDENCE_LABEL_LIMIT = 256;
 const MISSION_EVIDENCE_DID_LIMIT = 512;
@@ -156,6 +196,33 @@ export function publishedMissionEvidenceProjection(record) {
 }
 
 /**
+ * Project a signed, protocol-level terminal task capability into mission state.
+ *
+ * Capability vocabulary remains open: only the small generic lifecycle set
+ * above has status semantics. Unknown capabilities continue to be published
+ * evidence, never inferred state. Conflicting terminal capabilities fail
+ * closed so canonical array ordering cannot choose an outcome for the UI.
+ */
+export function terminalTaskMissionProjection(record) {
+  if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
+  if (!Array.isArray(record.capability_summary)
+      || record.capability_summary.length > LIVE_TASK_CAPABILITY_LIMIT) return null;
+  const terminal = record.capability_summary.filter((value) => (
+    typeof value === 'string' && TERMINAL_TASK_CAPABILITIES.has(value)
+  ));
+  if (terminal.length !== 1) return null;
+  const task = boundedMissionEvidenceLabel(record.label);
+  if (!task) return null;
+  return Object.freeze({
+    task,
+    state: terminal[0],
+    run: signedMissionRun(record),
+    terminalTask: true,
+    terminalCapability: terminal[0],
+  });
+}
+
+/**
  * Project one already-verified public task record into the mission surface.
  *
  * The caller owns signature/access verification. New records bind their exact,
@@ -199,6 +266,7 @@ function boundedTelemetryField(value, maximum = MODEL_EVENT_FIELD_LIMIT) {
 
 function terminalFailureProjection(event, index) {
   const statusValue = Number(event?.status);
+  const attemptValue = Number(event?.attempt);
   return Object.freeze({
     kind: 'MODEL_CALL_FAILED',
     index,
@@ -206,10 +274,71 @@ function terminalFailureProjection(event, index) {
     environmentId: boundedTelemetryField(event?.environment_id, 512),
     model: boundedTelemetryField(event?.model_id),
     purpose: boundedTelemetryField(event?.requested_purpose ?? event?.purpose),
+    attempt: Number.isSafeInteger(attemptValue) && attemptValue >= 0
+      ? attemptValue : null,
     status: Number.isSafeInteger(statusValue) && statusValue >= 100 && statusValue <= 599
       ? statusValue : null,
     reason: boundedTelemetryField(event?.reason, MODEL_FAILURE_REASON_LIMIT),
   });
+}
+
+function attributedTerminalEventMatches(failure, personaId, environmentId) {
+  if (!failure || (!personaId && !environmentId)) return false;
+  if (failure.personaId || personaId) {
+    if (!failure.personaId || !personaId || failure.personaId !== personaId) return false;
+  }
+  if (failure.environmentId || environmentId) {
+    if (!failure.environmentId || !environmentId
+        || failure.environmentId !== environmentId) return false;
+  }
+  return true;
+}
+
+function signedPersonaId(record) {
+  if (typeof record?.did !== 'string') return '';
+  const did = record.did.normalize('NFC').trim();
+  const marker = '/persona/';
+  const offset = did.lastIndexOf(marker);
+  if (offset < 0) return '';
+  const personaId = did.slice(offset + marker.length);
+  return personaId && personaId.length <= 180 && !/[\u0000-\u0020/\\]/u.test(personaId)
+    ? personaId : '';
+}
+
+function nonMechanicalPersonaLabel(value, personaId) {
+  if (typeof value !== 'string' || !personaId) return '';
+  const label = value.normalize('NFC').trim();
+  if (!label || [...label].length > 240 || /[\u0000-\u001f\u007f]/u.test(label)) return '';
+  const fold = (text) => text.normalize('NFKC').toLocaleLowerCase('en-US')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const labelFold = fold(label), idFold = fold(personaId);
+  if (!labelFold || !idFold || labelFold === idFold
+      || ['persona', 'identity', 'agent'].some((prefix) =>
+        labelFold === `${prefix} ${idFold}`)) return '';
+  return label;
+}
+
+/**
+ * A persona card needs one complete, already-verified public identity record.
+ * Telemetry cannot manufacture identity, and a signed shell without a
+ * persona-authored name plus persona-bound raster descriptor stays hidden.
+ * Cryptographic avatar-signature and byte verification still happens at the
+ * asynchronous image hydration boundary.
+ */
+export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey) {
+  if (!(personaDiscoveryByKey instanceof Map) || typeof personaKey !== 'string'
+      || !personaKey) return false;
+  const record = personaDiscoveryByKey.get(personaKey);
+  if (!record || typeof record !== 'object' || record.kind !== 'persona') return false;
+  const personaId = signedPersonaId(record);
+  const keyParts = personaKey.split('\u0000');
+  if (keyParts.length !== 3 || keyParts[1] !== 'persona' || keyParts[2] !== personaId) return false;
+  const signedName = nonMechanicalPersonaLabel(record._personaSignedName, personaId);
+  const avatar = normalizePersonaAvatar(record.avatar);
+  const identityPin = String(record._personaIdentityPublicKeyHex || '');
+  return !!signedName && !!avatar && avatar.persona_id === personaId
+    && /^[0-9a-f]{64}$/.test(identityPin)
+    && avatar.identity_public_key_hex === identityPin;
 }
 
 /**
@@ -217,8 +346,10 @@ function terminalFailureProjection(event, index) {
  *
  * MODEL_SELECTED begins a new execution attempt and therefore clears an older
  * failure for its exact persona/environment. MODEL_CALL_FAILED closes that
- * attempt. Transport/fallback diagnostics are intentionally ignored: they may
- * be followed by a successful fallback and are not themselves terminal state.
+ * attempt with failure; MODEL_CALL_SUCCEEDED closes it successfully and clears
+ * any matching failure projection. Transport/fallback diagnostics are
+ * intentionally ignored: they may be followed by a successful fallback and
+ * are not themselves terminal state.
  * The returned entity maps and kernel-wide `latest` value let callers surface
  * failure without treating historical MODEL_SELECTED rows as current work.
  */
@@ -231,13 +362,18 @@ export function projectTerminalModelFailures(modelEvents) {
   let latest = null;
   source.forEach((event, index) => {
     const kind = boundedTelemetryField(event?.kind);
-    if (kind !== 'MODEL_SELECTED' && kind !== 'MODEL_CALL_FAILED') return;
+    if (kind !== 'MODEL_SELECTED' && kind !== 'MODEL_CALL_FAILED'
+        && kind !== 'MODEL_CALL_SUCCEEDED') return;
     const personaId = boundedTelemetryField(event?.persona_id, 512);
     const environmentId = boundedTelemetryField(event?.environment_id, 512);
-    if (kind === 'MODEL_SELECTED') {
-      if (personaId) byPersona.delete(personaId);
-      if (environmentId) byEnvironment.delete(environmentId);
-      latest = null;
+    if (kind === 'MODEL_SELECTED' || kind === 'MODEL_CALL_SUCCEEDED') {
+      if (personaId && attributedTerminalEventMatches(
+        byPersona.get(personaId), personaId, environmentId,
+      )) byPersona.delete(personaId);
+      if (environmentId && attributedTerminalEventMatches(
+        byEnvironment.get(environmentId), personaId, environmentId,
+      )) byEnvironment.delete(environmentId);
+      if (attributedTerminalEventMatches(latest, personaId, environmentId)) latest = null;
       return;
     }
     const failure = terminalFailureProjection(event, index);

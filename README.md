@@ -132,11 +132,13 @@ js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
 
 **Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
 or `mission` record is published evidence using only its bounded signed label and optional run DID;
-open persona-authored capability vocabulary never decides whether it exists. When a task also has
-exactly one `live_task` marker and one bounded `task_state:` binding, that strict signed state
-overlays `published`. Capability order is deliberately irrelevant because the signed payload
-canonicalises that list. Bare capabilities and prose never supply a missing state. Unsigned
-telemetry and operator-only run state remain additive sources.
+open persona-authored capability vocabulary never decides whether it exists. Exactly one generic
+terminal lifecycle capability (`complete`, `completed`, `succeeded`, `failed`, `cancelled`,
+`canceled`, `aborted`, or `stopped`) supplies terminal state; otherwise exactly one `live_task`
+marker plus one bounded `task_state:` binding supplies live state. Conflicting, duplicate,
+malformed, and unknown capabilities fail closed, and prose never supplies state. Capability order
+is deliberately irrelevant because the signed payload canonicalises the list. Unsigned telemetry
+and operator-only run state remain additive sources.
 
 **Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
 the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies

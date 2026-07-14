@@ -25,6 +25,8 @@ ENV_WORKSPACE = "ws-shared-0123456789abcdef"
 PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
+PERSONA_INCOMPLETE = "01J9ZXP0RT5K8V3W6Y2N4B7C9G"
+UNSIGNED_TELEMETRY_GHOST = "telemetry-unsigned-ghost"
 PUBLIC_PERSONA_MESSAGE = (
     "Public design update: revised the circulation plan after peer review."
 )
@@ -40,6 +42,7 @@ PROVIDER_OK = "provider-authority-ok"
 PROVIDER_PERSONA = "provider-persona-avatar"
 PROVIDER_PERSONA_PEER = "provider-persona-peer"
 PROVIDER_PERSONA_THIRD = "provider-persona-third"
+PROVIDER_PERSONA_INCOMPLETE = "provider-persona-incomplete"
 PROVIDER_ENV = "provider-environment"
 PROVIDER_ENV_EMPTY = "provider-environment-empty"
 PROVIDER_PROJECT = "provider-project"
@@ -69,6 +72,23 @@ SIGNING_KEYS = {
 AVATAR_IDENTITY_SIGNING_KEY = SigningKey(bytes.fromhex("0b" * 32))
 AVATAR_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+SCALE_GIVEN_NAMES = (
+    "Alden", "Amara", "Ansel", "Asha", "Auden", "Ayla", "Basil", "Celia",
+    "Dario", "Elara", "Esme", "Felix", "Freya", "Hana", "Idris", "Iris",
+    "Jasper", "Juno", "Kai", "Leda", "Leona", "Lucian", "Maeve", "Mira",
+    "Niko", "Noa", "Oren", "Priya", "Rhea", "Rowan", "Sable", "Soren",
+    "Talia", "Theo", "Una", "Vera", "Willa", "Xavi", "Yara", "Zora",
+)
+SCALE_FAMILY_NAMES = (
+    "Ash", "Bell", "Calder", "Dune", "Ember", "Frost", "Grove", "Hale",
+    "Ives", "Jade", "Keene", "Lake", "Moss", "North", "Oak", "Pike",
+    "Quinn", "Rose", "Stone", "Thorne", "Umber", "Voss", "West", "Young",
+    "Zane", "Arden", "Birch", "Cross", "Dawn", "Ellis", "Finch", "Gray",
+    "Hart", "Isley", "James", "Knox", "Lane", "Moon", "Nash", "Owen",
+    "Price", "Ray", "Shaw", "Tate", "Venn", "Wynn", "York", "Zephyr",
+    "Brook", "Wren",
 )
 
 FILES = {
@@ -105,6 +125,34 @@ def signature_hex(value: dict, signing_key: SigningKey) -> str:
     return signing_key.sign(canonical_bytes(value)).signature.hex()
 
 
+def scale_persona_id(index: int) -> str:
+    return f"scale-persona-{index:05d}"
+
+
+def scale_persona_label(index: int) -> str:
+    given = SCALE_GIVEN_NAMES[index % len(SCALE_GIVEN_NAMES)]
+    family = SCALE_FAMILY_NAMES[
+        (index // len(SCALE_GIVEN_NAMES)) % len(SCALE_FAMILY_NAMES)
+    ]
+    return f"{given} {family}"
+
+
+def persona_identity_signing_key(persona_id: str) -> SigningKey:
+    if persona_id == PERSONA:
+        return AVATAR_IDENTITY_SIGNING_KEY
+    seed = hashlib.sha256(
+        b"personaos-ui-fixture-identity/1\0" + persona_id.encode("utf-8")
+    ).digest()
+    return SigningKey(seed)
+
+
+def provider_record_count() -> int:
+    # The first three scale identities reuse the fixture's three ordinary signed
+    # persona records. Every remaining telemetry identity gets one additional
+    # provider envelope; the other 16 fixture records remain unchanged.
+    return 19 + max(0, STATE.get_scale() - 3)
+
+
 def node_announcement_envelope(base_url: str) -> dict:
     """Return a signed locator hint for the fixture's exact node route."""
 
@@ -115,7 +163,7 @@ def node_announcement_envelope(base_url: str) -> dict:
         "base_url": base_url,
         "reachability_class": "public",
         "public_discovery": True,
-        "record_count": 18,
+        "record_count": provider_record_count(),
         "issued_at": now(),
         "expires_at": "2099-01-01T00:00:00+00:00",
     }
@@ -392,9 +440,13 @@ def provider_envelope(
     }
 
 
-def persona_avatar_descriptor() -> dict:
+def persona_avatar_descriptor(
+    persona_id: str = PERSONA,
+    persona_label: str = "Orin Vale",
+) -> dict:
     digest = hashlib.sha256(AVATAR_BYTES).hexdigest()
-    identity_public_key_hex = AVATAR_IDENTITY_SIGNING_KEY.verify_key.encode().hex()
+    identity_signing_key = persona_identity_signing_key(persona_id)
+    identity_public_key_hex = identity_signing_key.verify_key.encode().hex()
     candidate = {
         "schema": "persona-avatar/2",
         "kind": "raster",
@@ -406,29 +458,39 @@ def persona_avatar_descriptor() -> dict:
         "width": 1,
         "height": 1,
         "character_prompt_hash": "sha256:" + hashlib.sha256(
-            b"persona-avatar-character-prompt/1\0fixture character prompt"
+            b"persona-avatar-character-prompt/1\0"
+            + f"fixture portrait of {persona_label}".encode("utf-8")
         ).hexdigest(),
         "provenance_hash": "sha256:" + hashlib.sha256(
             b"persona-avatar-generation-provenance/1\0"
-            + canonical_bytes({"fixture": True, "generator": "external-test-raster"})
+            + canonical_bytes({
+                "fixture": True,
+                "generator": "external-test-raster",
+                "persona_id": persona_id,
+            })
         ).hexdigest(),
-        "persona_id": PERSONA,
-        "identity_signing_key_id": f"persona:{PERSONA}",
+        "persona_id": persona_id,
+        "identity_signing_key_id": f"persona:{persona_id}",
         "identity_public_key_hex": identity_public_key_hex,
     }
-    signature = AVATAR_IDENTITY_SIGNING_KEY.sign(canonical_bytes({
+    signature = identity_signing_key.sign(canonical_bytes({
         "schema": "persona-avatar-admission/1",
         "descriptor": candidate,
     })).signature.hex()
     return {**candidate, "identity_signature_hex": signature}
 
 
-def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
+def provider_fixtures(
+    base: str,
+    *,
+    include_scale: bool = True,
+) -> tuple[list[dict], dict[str, dict]]:
     record_ids = (
         PROVIDER_OK,
         PROVIDER_PERSONA,
         PROVIDER_PERSONA_PEER,
         PROVIDER_PERSONA_THIRD,
+        PROVIDER_PERSONA_INCOMPLETE,
         PROVIDER_ENV,
         PROVIDER_ENV_EMPTY,
         PROVIDER_PROJECT,
@@ -471,6 +533,11 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         "Mara Chen",
         kind="persona",
         did=f"did:personaos:{NODE_ID}/persona/{PERSONA_PEER}",
+        avatar=persona_avatar_descriptor(PERSONA_PEER, "Mara Chen"),
+        identity_signing_key_id=f"persona:{PERSONA_PEER}",
+        identity_public_key_hex=(
+            persona_identity_signing_key(PERSONA_PEER).verify_key.encode().hex()
+        ),
         capability_summary=["active_persona", "lead"],
         links={},
     )
@@ -480,7 +547,21 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         "Ivo Reed",
         kind="persona",
         did=f"did:personaos:{NODE_ID}/persona/{PERSONA_THIRD}",
+        avatar=persona_avatar_descriptor(PERSONA_THIRD, "Ivo Reed"),
+        identity_signing_key_id=f"persona:{PERSONA_THIRD}",
+        identity_public_key_hex=(
+            persona_identity_signing_key(PERSONA_THIRD).verify_key.encode().hex()
+        ),
         capability_summary=["active_persona", "verifier"],
+        links={},
+    )
+    incomplete_persona = provider_document(
+        base,
+        PROVIDER_PERSONA_INCOMPLETE,
+        f"Persona {PERSONA_INCOMPLETE}",
+        kind="persona",
+        did=f"did:personaos:{NODE_ID}/persona/{PERSONA_INCOMPLETE}",
+        capability_summary=["active_persona"],
         links={},
     )
     environment = provider_document(
@@ -536,7 +617,12 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         "design 4 bedroom house",
         kind="task",
         did=f"did:personaos:{NODE_ID}/task/run-canary-house",
-        capability_summary=["event_driven_handoff"],
+        # Normal mode mirrors the public canary terminal projection. The model-
+        # failure mode deliberately keeps this task open so the separate
+        # unsigned terminal-failure overlay remains independently testable.
+        capability_summary=[
+            "event_driven_handoff" if STATE.is_model_failed() else "complete"
+        ],
         links={},
     )
     discover_only = provider_document(
@@ -600,6 +686,7 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(persona, urls[PROVIDER_PERSONA]),
         provider_envelope(persona_peer, urls[PROVIDER_PERSONA_PEER]),
         provider_envelope(persona_third, urls[PROVIDER_PERSONA_THIRD]),
+        provider_envelope(incomplete_persona, urls[PROVIDER_PERSONA_INCOMPLETE]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
         provider_envelope(empty_environment, urls[PROVIDER_ENV_EMPTY]),
         provider_envelope(project, urls[PROVIDER_PROJECT]),
@@ -618,13 +705,12 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(unknown, urls[PROVIDER_UNKNOWN],
                           document_key_status="archived"),
     ]
-    # The envelope remains correctly signed but no longer hashes the served doc.
-    tampered["record"]["label"] = "Tampered provider metadata must be rejected"
-    return envelopes, {
+    documents = {
         PROVIDER_OK: valid,
         PROVIDER_PERSONA: persona,
         PROVIDER_PERSONA_PEER: persona_peer,
         PROVIDER_PERSONA_THIRD: persona_third,
+        PROVIDER_PERSONA_INCOMPLETE: incomplete_persona,
         PROVIDER_ENV: environment,
         PROVIDER_ENV_EMPTY: empty_environment,
         PROVIDER_PROJECT: project,
@@ -644,6 +730,33 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_REVOKED: revoked,
         PROVIDER_UNKNOWN: unknown,
     }
+    if include_scale:
+        for index in range(3, STATE.get_scale()):
+            persona_id = scale_persona_id(index)
+            label = scale_persona_label(index)
+            record_id = f"sp{index:05d}"
+            identity_key = persona_identity_signing_key(persona_id)
+            document = provider_document(
+                base,
+                record_id,
+                label,
+                kind="persona",
+                did=f"did:personaos:{NODE_ID}/persona/{persona_id}",
+                avatar=persona_avatar_descriptor(persona_id, label),
+                identity_signing_key_id=f"persona:{persona_id}",
+                identity_public_key_hex=identity_key.verify_key.encode().hex(),
+                capability_summary=["active_persona"],
+                links={},
+            )
+            envelopes.append(provider_envelope(
+                document,
+                f"discovery/public/records/{record_id}.json",
+                key=record_id,
+            ))
+            documents[record_id] = document
+    # The envelope remains correctly signed but no longer hashes the served doc.
+    tampered["record"]["label"] = "Tampered provider metadata must be rejected"
+    return envelopes, documents
 
 
 def compact_provider_index(envelopes: list[dict]) -> dict:
@@ -675,7 +788,7 @@ def compact_provider_index(envelopes: list[dict]) -> dict:
 
 
 def sse_provider_snapshot(base: str) -> dict:
-    _providers, documents = provider_fixtures(base)
+    _providers, documents = provider_fixtures(base, include_scale=False)
     sse = documents[PROVIDER_SSE]
     index = compact_provider_index([
         provider_envelope(
@@ -692,7 +805,7 @@ def sse_provider_snapshot(base: str) -> dict:
 
 
 def p2p_provider_resolution(base: str) -> tuple[dict, dict]:
-    _providers, documents = provider_fixtures(base)
+    _providers, documents = provider_fixtures(base, include_scale=False)
     document = documents[PROVIDER_P2P_ONLY]
     envelope = provider_envelope(
         document,
@@ -703,7 +816,7 @@ def p2p_provider_resolution(base: str) -> tuple[dict, dict]:
 
 
 def p2p_discover_only_resolution(base: str) -> tuple[dict, dict]:
-    _providers, documents = provider_fixtures(base)
+    _providers, documents = provider_fixtures(base, include_scale=False)
     document = documents[PROVIDER_P2P_DISCOVER_ONLY]
     envelope = provider_envelope(
         document,
@@ -919,7 +1032,7 @@ def telemetry() -> dict:
     call = snapshot()["active"]["calls"][0]
     failed = STATE.is_model_failed()
     scale_count = STATE.get_scale()
-    personas = [
+    ordinary_personas = [
         {"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 3, "reputation_score": 0.91},
         {"persona_id": PERSONA_PEER, "name": "Unsigned Mara telemetry alias", "lifecycle_state": "ACTIVE",
@@ -927,6 +1040,26 @@ def telemetry() -> dict:
         {"persona_id": PERSONA_THIRD, "name": "Unsigned Ivo telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 4, "reputation_score": 0.84},
     ]
+    if scale_count:
+        personas = ordinary_personas[:min(3, scale_count)]
+        personas.extend({
+            "persona_id": scale_persona_id(index),
+            # This is deliberately not the signed label. The UI must obtain a
+            # public name from the verified persona discovery record.
+            "name": f"Unsigned telemetry alias {index:05d}",
+            "lifecycle_state": "ACTIVE",
+            "experience_tasks": index % 17,
+            "reputation_score": round((index % 100) / 100, 2),
+        } for index in range(3, scale_count))
+    else:
+        personas = ordinary_personas
+    personas.append({
+        "persona_id": UNSIGNED_TELEMETRY_GHOST,
+        "name": "Unsigned Telemetry Ghost",
+        "lifecycle_state": "ACTIVE",
+        "experience_tasks": 999,
+        "reputation_score": 1.0,
+    })
     for persona in personas:
         persona.update({
             "running_llm": False if failed else persona["persona_id"] == PERSONA,
@@ -937,16 +1070,6 @@ def telemetry() -> dict:
                 "running" if persona["persona_id"] == PERSONA else "idle"
             ),
         })
-    if scale_count:
-        personas = [{
-            "persona_id": f"scale-persona-{index:05d}",
-            "name": f"Scale Persona {index:05d}",
-            "lifecycle_state": "ACTIVE",
-            "experience_tasks": index % 17,
-            "reputation_score": round((index % 100) / 100, 2),
-        } for index in range(scale_count)]
-        # Preserve the one real active-call endpoint in the large population.
-        personas[0].update({"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias"})
     model_events = [{
         "kind": "MODEL_SELECTED", "persona_id": PERSONA, "environment_id": ENV,
         "model_id": "gpt-5.5", "requested_purpose": call["requested_purpose"], "role": "lead",
@@ -1058,6 +1181,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {
                 "schema": "personaos-discovery/1.1", "kernel_id": NODE_ID,
                 "providers_are_aggregate": True, "providers_url": "providers.json",
+                "record_count": provider_record_count(),
                 "live_telemetry_url": "telemetry.json", "discovery_stream_url": "events",
                 "keys_url": "keys.json", "p2p_received_url": "discovery/p2p/received.json",
                 # Legacy node bootstrap arrays may carry HTTP federation URLs.
