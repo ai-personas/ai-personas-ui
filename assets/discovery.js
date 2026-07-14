@@ -18,13 +18,14 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  hydrateProviderIndex,
   personaAuthoredRole,
   projectDiscoveryRecord,
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
   signedPersonaLabel,
-} from './discovery-authority.mjs?v=20260712-persona-raster-v2';
+} from './discovery-authority.mjs?v=20260714-provider-index-v2';
 import {
   collectLibp2pBootstraps,
   compactCount,
@@ -919,8 +920,18 @@ function logRecordAccess(row,source){
   const label=String(row?.label||row?.record_id||'record').slice(0,36);
   log('access',`${source}: ${label} · ${row?._readAuthorized?'public read granted':'discover-only; read links withheld'}`,true);
 }
-async function verifiedRowsFromProviderIndex(providers,base,boot,plane,source='http'){
+async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,source='http'){
   const rows=[]; let refused=0;
+  const hydrated=hydrateProviderIndex(providerIndex);
+  const declared=Array.isArray(providerIndex?.providers)?providerIndex.providers.length:0;
+  const indexReason=providerIndex?.kernel_id!==boot?.kernel_id
+    ?'provider_index_kernel_mismatch':hydrated.reason;
+  if(!hydrated.ok||indexReason){
+    log('verify',`${source}: compact provider index refused · ${indexReason}`,false);
+    return {rows,refused:Math.max(1,declared),envelopeCount:declared};
+  }
+  refused=hydrated.refused||0;
+  const providers=hydrated.envelopes;
   const byUrl=new Map();
   for(const envelope of (Array.isArray(providers)?providers:[])){
     const url=String(envelope?.record?.record_url||'');
@@ -1088,9 +1099,9 @@ async function discoverFrom(base,plane){
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   await keysFor(base,boot);
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'));
-  const providers=prov?.providers||[];
+  const providers=Array.isArray(prov?.providers)?prov.providers:[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
-  const http=await verifiedRowsFromProviderIndex(providers,base,boot,plane,'http provider');
+  const http=await verifiedRowsFromProviderIndex(prov,base,boot,plane,'http provider');
   const found=[...http.rows];
   if(P2P?.resolveProvider){
     const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
@@ -1667,8 +1678,8 @@ function connectDiscoveryStream(base,boot){
   es.addEventListener('discovery_snapshot',async (ev)=>{
     try{
       const snap=JSON.parse(ev.data||'{}');
-      const providers=Array.isArray(snap?.providers?.providers)?snap.providers.providers:[];
-      const verified=await verifiedRowsFromProviderIndex(providers,base,boot,'internet','SSE provider snapshot');
+      const providerIndex=snap?.providers;
+      const verified=await verifiedRowsFromProviderIndex(providerIndex,base,boot,'internet','SSE provider snapshot');
       let added=0;
       for(const row of verified.rows) if(upsert(row)) added++;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);

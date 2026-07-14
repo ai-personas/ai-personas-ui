@@ -45,10 +45,10 @@ Discovery is **signed + content-addressed** (09_PROTOCOLS §3G/§3H). For
 every node it knows or is told about, the page:
 
 1. **bootstraps** from that node's `.well-known/personaos-discovery.json`;
-2. resolves signed `provider-record/1` envelopes from `discovery/providers.json`, each carrying an
-   exact embedded document and binding its hash, DID/hash/handle key, host locators, access policy,
-   and current kernel master key;
-3. **verifies each atomic envelope+document pair, then the record and AccessPolicy Ed25519
+2. resolves the atomic `dht-provider-index/2` generation from `discovery/providers.json`; its
+   signed alias references share one exact canonical document through a SHA-256-keyed table, and
+   the browser rehydrates each pair in memory without dereferencing its mutable `record_url`;
+3. **verifies each rehydrated ProviderRecord+document pair, then the record and AccessPolicy Ed25519
    signatures** against the owning kernel's current published master key (in-browser, via vendored
    [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)). An unsigned, stale-key, forged,
    policy-mismatched, or hash-mismatched record is dropped.

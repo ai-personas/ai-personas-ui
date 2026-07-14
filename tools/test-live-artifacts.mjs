@@ -25,6 +25,7 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  hydrateProviderIndex,
   personaAuthoredRole,
   projectAccessPolicy,
   projectDiscoveryRecord,
@@ -64,6 +65,48 @@ assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map(
   ['current', 'previous', 'archived']);
 assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
 assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+const providerDocumentRef = `sha256:${'a'.repeat(64)}`;
+const providerDocument = {
+  record: {
+    schema: 'discoverable-record/1', record_id: 'shared',
+    description: 'shared signed document body '.repeat(40),
+  },
+};
+const providerReference = (key) => ({
+  schema: 'provider-record-reference/1',
+  record: {schema: 'provider-record/1', key, document_hash: providerDocumentRef},
+  signature_hex: '00'.repeat(64),
+  document_ref: providerDocumentRef,
+});
+const compactProviderIndex = {
+  schema: 'dht-provider-index/2', provider_count: 2, document_count: 1,
+  documents: {[providerDocumentRef]: providerDocument},
+  providers: [providerReference('did:one'), providerReference('alias-one')],
+};
+const compactHydrated = hydrateProviderIndex(compactProviderIndex);
+assert.equal(compactHydrated.ok, true);
+assert.equal(compactHydrated.envelopes.length, 2);
+assert.deepEqual(compactHydrated.envelopes[0].document, providerDocument);
+assert.deepEqual(compactHydrated.envelopes[1].document, providerDocument);
+assert.ok(JSON.stringify(compactProviderIndex).length < JSON.stringify({
+  providers: compactProviderIndex.providers.map((reference) => ({
+    schema: 'provider-record-envelope/1', record: reference.record,
+    signature_hex: reference.signature_hex, document: providerDocument,
+  })),
+}).length);
+const badProviderRef = structuredClone(compactProviderIndex);
+badProviderRef.providers[1].document_ref = `sha256:${'0'.repeat(64)}`;
+const partiallyHydrated = hydrateProviderIndex(badProviderRef);
+assert.equal(partiallyHydrated.ok, true);
+assert.equal(partiallyHydrated.envelopes.length, 1);
+assert.equal(partiallyHydrated.refused, 1);
+assert.deepEqual(partiallyHydrated.errors, ['provider_document_ref_mismatch']);
+assert.equal(hydrateProviderIndex({schema: 'dht-provider-index/1', providers: []}).ok, false);
+const orphanProviderDoc = structuredClone(compactProviderIndex);
+orphanProviderDoc.documents[`sha256:${'b'.repeat(64)}`] = {record: {record_id: 'orphan'}};
+orphanProviderDoc.document_count = 2;
+assert.equal(hydrateProviderIndex(orphanProviderDoc).reason,
+  'provider_document_table_unreferenced');
 assert.equal(personaAuthoredRole({
   kind: 'persona', role: 'Site systems coordinator',
   label: 'Verifier Specialist', capability_summary: ['lead'], can_lead_cohorts: true,
@@ -503,7 +546,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-published-task-evidence-v1/);
+assert.match(index, /discovery\.js\?v=20260714-provider-index-v2/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
@@ -518,6 +561,7 @@ assert.match(portal, /verifyHttpProviderEnvelope\(envelope,doc,keys,boot,base,ex
 assert.match(portal, /P2P\.resolveProvider\(key,\{timeoutMs:5000\}\)/);
 assert.match(portal, /signing_key_status!=='current'/);
 assert.match(portal, /incomplete or malformed provider envelope refused/);
+assert.match(portal, /hydrateProviderIndex\(providerIndex\)/);
 assert.match(portal, /const doc=envelope\.document/);
 assert.doesNotMatch(portal, /fetchJson\(join\(base,recordUrl\)\)/);
 assert.match(portal, /recordVerificationEntries\(keyEntries,doc\?\.signing_key_id\)/);
