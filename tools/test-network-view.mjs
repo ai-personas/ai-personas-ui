@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 
 import {
   NETWORK_VIEW_LIMITS,
+  collectBrowserLibp2pBootstraps,
   collectLibp2pBootstraps,
   compactCount,
   liveTaskMissionProjection,
   nextProgressiveGroupLevel,
   normalizeLibp2pBootstrap,
+  normalizeBrowserLibp2pBootstrap,
   normalizeMonitoringBase,
   publishedMissionEvidenceProjection,
   progressiveGroupLimit,
@@ -34,6 +36,25 @@ assert.deepEqual(collectLibp2pBootstraps(
   ['https://federation.example', announcedMultiaddr],
   new Set([announcedMultiaddr, '/dns4/relay.example/tcp/443/wss/p2p/relay']),
 ), [announcedMultiaddr, '/dns4/relay.example/tcp/443/wss/p2p/relay']);
+
+const loopbackWs = '/ip4/127.0.0.1/tcp/8788/ws/p2p/12D3KooWLoopback';
+const containerWs = '/ip4/172.17.0.3/tcp/8788/ws/p2p/12D3KooWContainer';
+const secureWs = '/dns4/relay.example/tcp/443/wss/p2p/12D3KooWSecure';
+const tlsWs = '/dns4/relay.example/tcp/443/tls/ws/p2p/12D3KooWTls';
+const webRtc = '/dns4/relay.example/udp/443/webrtc-direct/p2p/12D3KooWWebRtc';
+for (const blocked of [loopbackWs, containerWs]) {
+  assert.equal(normalizeBrowserLibp2pBootstrap(blocked, {pageProtocol: 'https:'}), null,
+    'HTTPS pages must not hand guaranteed mixed-content WebSocket dials to libp2p');
+  assert.equal(normalizeBrowserLibp2pBootstrap(blocked, {pageProtocol: 'http:'}), blocked,
+    'HTTP node-served portals may use an announced plain WebSocket transport');
+}
+for (const allowed of [secureWs, tlsWs, webRtc]) {
+  assert.equal(normalizeBrowserLibp2pBootstrap(allowed, {pageProtocol: 'https:'}), allowed);
+}
+assert.deepEqual(collectBrowserLibp2pBootstraps(
+  {pageProtocol: 'https:'},
+  [loopbackWs, secureWs, containerWs, tlsWs, secureWs],
+), [secureWs, tlsWs], 'browser bootstrap collection must filter before deduped dialing');
 
 const signedLiveTask = {
   kind: 'task',
