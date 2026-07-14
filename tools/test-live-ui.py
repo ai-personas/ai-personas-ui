@@ -103,7 +103,7 @@ def run(args: argparse.Namespace) -> dict:
                     body=json.dumps(body),
                 )
 
-            page.route('https://node1.personas.ai/**', empty_default_locator)
+            context.route('https://node1.personas.ai/**', empty_default_locator)
             errors: list[str] = []
             requests: list[dict] = []
             downloads: list[str] = []
@@ -566,6 +566,9 @@ def run(args: argparse.Namespace) -> dict:
             # contract and includes one as this fixture deliberately does.
             STATE.reset()
             anonymous_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            anonymous_context.route(
+                'https://node1.personas.ai/**', empty_default_locator
+            )
             anonymous = anonymous_context.new_page()
             anonymous_console_errors: list[str] = []
             anonymous_page_errors: list[str] = []
@@ -651,6 +654,7 @@ def run(args: argparse.Namespace) -> dict:
             # enter the live state. The following untampered poll may then advance it.
             STATE.reset()
             tamper_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            tamper_context.route('https://node1.personas.ai/**', empty_default_locator)
             tamper = tamper_context.new_page()
             tamper_errors: list[str] = []
             tamper.on('console', lambda msg: tamper_errors.append(f'console {msg.type}: {msg.text}')
@@ -691,6 +695,7 @@ def run(args: argparse.Namespace) -> dict:
             # let the previous entry overwrite the current key with the same id.
             STATE.reset()
             rotation_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            rotation_context.route('https://node1.personas.ai/**', empty_default_locator)
             rotation = rotation_context.new_page()
             rotation_errors: list[str] = []
             rotation.on('console', lambda msg: rotation_errors.append(f'console {msg.type}: {msg.text}')
@@ -720,6 +725,7 @@ def run(args: argparse.Namespace) -> dict:
             # a raw gossip handle only through current-master ProviderRecord resolution.
             STATE.reset()
             p2p_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            p2p_context.route('https://node1.personas.ai/**', empty_default_locator)
             p2p_page = p2p_context.new_page()
             p2p_errors: list[str] = []
             p2p_page.on('console', lambda msg: p2p_errors.append(f'console {msg.type}: {msg.text}')
@@ -800,6 +806,7 @@ def run(args: argparse.Namespace) -> dict:
             # generator; this browser pass proves the actual graph/stage keep a
             # hard DOM window and can search beyond the initial card window.
             scale_context = browser.new_context(viewport={'width': 1600, 'height': 1000})
+            scale_context.route('https://node1.personas.ai/**', empty_default_locator)
             scale_context.request.get(base + '/node/scale?count=2000')
             scale = scale_context.new_page()
             scale_errors: list[str] = []
@@ -851,6 +858,7 @@ def run(args: argparse.Namespace) -> dict:
 
             STATE.reset()
             mobile_context = browser.new_context(viewport={'width': 390, 'height': 844})
+            mobile_context.route('https://node1.personas.ai/**', empty_default_locator)
             mobile = mobile_context.new_page()
             mobile_errors: list[str] = []
             mobile.on('console', lambda msg: mobile_errors.append(f'console {msg.type}: {msg.text}')
@@ -931,6 +939,7 @@ def run(args: argparse.Namespace) -> dict:
             # after a newer event, then stop polling when run_ended arrives.
             STATE.reset()
             sse_context = browser.new_context(viewport={'width': 1440, 'height': 900})
+            sse_context.route('https://node1.personas.ai/**', empty_default_locator)
             sse = sse_context.new_page()
             sse_errors: list[str] = []
             sse_requests: list[str] = []
