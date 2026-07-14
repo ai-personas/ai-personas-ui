@@ -25,6 +25,9 @@ const LIVE_TASK_CAPABILITY_LIMIT = 128;
 const LIVE_TASK_STATE_LIMIT = 40;
 const LIVE_TASK_MARKER = 'live_task';
 const TASK_STATE_PREFIX = 'task_state:';
+const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
+const MISSION_EVIDENCE_LABEL_LIMIT = 256;
+const MISSION_EVIDENCE_DID_LIMIT = 512;
 
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
@@ -38,6 +41,22 @@ function iterableOf(value) {
   if (value == null) return [];
   if (typeof value === 'string') return [value];
   return typeof value[Symbol.iterator] === 'function' ? value : [value];
+}
+
+function boundedMissionEvidenceLabel(value) {
+  if (typeof value !== 'string') return '';
+  const exact = value.normalize('NFC').trim();
+  if (!exact || /[\u0000-\u001f\u007f]/u.test(exact)) return '';
+  return [...exact].slice(0, MISSION_EVIDENCE_LABEL_LIMIT).join('');
+}
+
+function signedMissionRun(record) {
+  if (typeof record?.did !== 'string') return '';
+  const did = record.did.normalize('NFC').trim();
+  if (!did || [...did].length > MISSION_EVIDENCE_DID_LIMIT
+      || /[\u0000-\u001f\u007f]/u.test(did)) return '';
+  const match = did.match(/\/(task|project|mission)\/(run-[0-9A-Za-z_-]{1,180})$/);
+  return match && match[1] === record.kind ? match[2] : '';
 }
 
 /**
@@ -73,13 +92,37 @@ export function collectLibp2pBootstraps(...sources) {
 }
 
 /**
+ * Project already-verified structural mission evidence without interpreting
+ * capability vocabulary.
+ *
+ * `task`, `project`, and `mission` are record structure, while capability names
+ * are open persona-authored vocabulary.  A verified task therefore remains
+ * public evidence even when its only capability is an unfamiliar handoff or
+ * work mode.  The label and optional run identifier are taken only from bounded
+ * signed record fields; the caller still owns signature/access verification.
+ */
+export function publishedMissionEvidenceProjection(record) {
+  if (!record || typeof record !== 'object' || !MISSION_EVIDENCE_KINDS.has(record.kind)) {
+    return null;
+  }
+  const task = boundedMissionEvidenceLabel(record.label);
+  if (!task) return null;
+  return Object.freeze({
+    task,
+    state: 'published',
+    run: signedMissionRun(record),
+    kind: record.kind,
+    publishedEvidence: true,
+  });
+}
+
+/**
  * Project one already-verified public task record into the mission surface.
  *
  * The caller owns signature/access verification. New records bind their exact,
  * bounded, persona-authored state with `task_state:`; capability ordering is not
- * semantic because the signed discovery payload canonicalises the list. For a
- * prior raw-state record, the signed description may only disambiguate one
- * already-present legacy state capability; it can never supply the state.
+ * semantic because the signed discovery payload canonicalises the list. No bare
+ * capability or prose value is interpreted as state.
  */
 export function liveTaskMissionProjection(record) {
   if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
@@ -95,33 +138,15 @@ export function liveTaskMissionProjection(record) {
     return /[\u0000-\u001f\u007f]/u.test(value) ? '' : value;
   };
   const bindings = capabilities.filter((value) => value.startsWith(TASK_STATE_PREFIX));
-  let state = '';
-  if (bindings.length === 1) {
-    state = boundedState(bindings[0].slice(TASK_STATE_PREFIX.length));
-  } else if (bindings.length > 1) {
-    return null;
-  } else {
-    // Before task_state:/1 the producer emitted one raw identifier state. Its
-    // signed description repeated that value. Requiring both fields keeps the
-    // compatibility path unambiguous even beside other bare capabilities.
-    const description = typeof record.description === 'string' ? record.description : '';
-    const legacy = capabilities.filter((value) => (
-      value !== LIVE_TASK_MARKER
-      && /^[a-z][a-z0-9_-]{0,39}$/.test(value)
-      && description === `${value} live task`
-    ));
-    if (legacy.length !== 1) return null;
-    [state] = legacy;
-  }
+  if (bindings.length !== 1) return null;
+  const state = boundedState(bindings[0].slice(TASK_STATE_PREFIX.length));
   if (!state) return null;
-  const task = String(record.label ?? '').normalize('NFC').trim().slice(0, 256);
+  const task = boundedMissionEvidenceLabel(record.label);
   if (!task) return null;
-  const did = String(record.did ?? '').trim();
-  const match = did.match(/\/task\/(run-[0-9A-Za-z_-]{1,180})$/);
   return Object.freeze({
     task,
     state,
-    run: match ? match[1] : '',
+    run: signedMissionRun(record),
     liveTask: true,
   });
 }

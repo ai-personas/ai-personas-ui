@@ -123,9 +123,12 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('13/17 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('14/18 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelector('#status')?.textContent
-              .includes('13 verified records')""", timeout=30_000)
+              .includes('14 verified records')""", timeout=30_000)
+            require(not any('/discovery/public/records/' in item['url'] for item in requests),
+                    'HTTP admission refetched moving record_url instead of verifying the '
+                    'hash-bound envelope document')
             project_card = page.locator(
                 '.mcard[data-mrec]', has_text='Open host topology'
             )
@@ -169,8 +172,22 @@ def run(args: argparse.Namespace) -> dict:
             signed_live_task_text = signed_live_task.text_content() or ''
             require('AWAITING PEER SYNTHESIS' in signed_live_task_text,
                     'signed public live task did not preserve its exact arbitrary state')
+            require('PUBLISHED' not in signed_live_task_text,
+                    'strict signed live task state did not override published evidence')
             require('signed live task' in signed_live_task_text,
                     'signed public live task lacks explicit signed-source context')
+            published_task = page.locator(
+                '.mcard[data-mrec]', has_text='design 4 bedroom house'
+            )
+            published_task.wait_for(state='attached', timeout=15_000)
+            published_task_text = published_task.text_content() or ''
+            require('PUBLISHED' in published_task_text,
+                    'verified structural task was hidden without a live_task marker')
+            require('run-canary-house' in published_task_text
+                    and 'signed task record' in published_task_text,
+                    'published task evidence lost its bounded signed run/record context')
+            require('event_driven_handoff' not in published_task_text,
+                    'open capability vocabulary was incorrectly interpreted as task state')
             page.wait_for_function(
                 """() => document.querySelector('#p2p')?.textContent.startsWith('Network · ')""",
                 timeout=15_000,

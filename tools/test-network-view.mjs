@@ -8,6 +8,7 @@ import {
   nextProgressiveGroupLevel,
   normalizeLibp2pBootstrap,
   normalizeMonitoringBase,
+  publishedMissionEvidenceProjection,
   progressiveGroupLimit,
   safeCount,
   selectMonitoringBases,
@@ -46,6 +47,47 @@ const signedLiveTask = {
     'task_state:awaiting peer sense-making',
   ].sort(),
 };
+
+const canaryPublishedTask = {
+  kind: 'task',
+  label: 'design 4 bedroom house',
+  did: 'did:personaos:kernel:canary/task/run-01KXF8JBFGQ71A8S8EPGMM6R48',
+  capability_summary: ['event_driven_handoff'],
+};
+assert.deepEqual(publishedMissionEvidenceProjection(canaryPublishedTask), {
+  task: 'design 4 bedroom house',
+  state: 'published',
+  run: 'run-01KXF8JBFGQ71A8S8EPGMM6R48',
+  kind: 'task',
+  publishedEvidence: true,
+}, 'unknown persona-authored capability vocabulary must not hide verified task evidence');
+for (const kind of ['task', 'project', 'mission']) {
+  const projected = publishedMissionEvidenceProjection({
+    kind,
+    label: `${kind} evidence`,
+    did: `did:personaos:kernel:test/${kind}/run-${kind}`,
+    capability_summary: kind === 'task' ? [] : null,
+  });
+  assert.equal(projected.kind, kind);
+  assert.equal(projected.state, 'published');
+  assert.equal(projected.run, `run-${kind}`);
+}
+assert.equal(publishedMissionEvidenceProjection({
+  ...canaryPublishedTask,
+  capability_summary: ['an_entirely_different_work_mode'],
+}).task, canaryPublishedTask.label,
+'published task admission must be invariant under open capability vocabulary');
+assert.equal(publishedMissionEvidenceProjection({...canaryPublishedTask, kind: 'artifact'}), null);
+assert.equal(publishedMissionEvidenceProjection({...canaryPublishedTask, label: '\n'}), null);
+assert.equal(publishedMissionEvidenceProjection({
+  ...canaryPublishedTask,
+  label: 'x'.repeat(300),
+}).task.length, 256, 'signed task labels must be bounded before entering the DOM');
+assert.equal(publishedMissionEvidenceProjection({
+  ...canaryPublishedTask,
+  did: 'did:personaos:kernel:canary/mission/run-wrong-kind',
+}).run, '', 'a run identifier must be bound to the signed record kind');
+
 assert.deepEqual(liveTaskMissionProjection(signedLiveTask), {
   task: 'design a complete four-bedroom house',
   state: 'awaiting peer sense-making',
@@ -61,8 +103,8 @@ const legacySortedLiveTask = {
     'model_pool_hash:legacy-pool',
   ].sort(),
 };
-assert.equal(liveTaskMissionProjection(legacySortedLiveTask).state, 'waiting_for_persona',
-  'unambiguous signed raw-state records must remain visible after canonical sorting');
+assert.equal(liveTaskMissionProjection(legacySortedLiveTask), null,
+  'bare capability vocabulary must never be interpreted as live task state');
 for (const refused of [
   {...signedLiveTask, capability_summary: []},
   {...signedLiveTask, capability_summary: ['live_task']},
