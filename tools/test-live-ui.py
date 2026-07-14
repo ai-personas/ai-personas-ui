@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 
 from live_ui_fixture import (
     Handler,
+    NODE_ID,
     PROVIDER_DISCOVER_ONLY,
     PROVIDER_EXPIRED_READ,
     PROVIDER_P2P_ONLY,
@@ -796,7 +797,14 @@ def run(args: argparse.Namespace) -> dict:
               }}
             """
             p2p_page.route('**/node/providers.json', lambda route: route.fulfill(
-                status=200, json={'providers': []}))
+                status=200, json={
+                    'schema': 'dht-provider-index/2',
+                    'kernel_id': NODE_ID,
+                    'provider_count': 0,
+                    'document_count': 0,
+                    'documents': {},
+                    'providers': [],
+                }))
             p2p_page.route('**/assets/p2p-libp2p.js*', lambda route: route.fulfill(
                 status=200, body=stub, content_type='application/javascript'))
             p2p_page.goto(url, wait_until='domcontentloaded')
@@ -968,7 +976,14 @@ def run(args: argparse.Namespace) -> dict:
             sse.on('response', lambda response: sse_failed_responses.append(
                 f'{response.status} {response.url}') if response.status >= 400 else None)
             sse.route('**/node/providers.json', lambda route: route.fulfill(
-                status=200, json={'providers': []}))
+                status=200, json={
+                    'schema': 'dht-provider-index/2',
+                    'kernel_id': NODE_ID,
+                    'provider_count': 0,
+                    'document_count': 0,
+                    'documents': {},
+                    'providers': [],
+                }))
             sse.goto(url, wait_until='domcontentloaded')
             sse.wait_for_function("""() => document.querySelector('#log')?.textContent
               .includes('discovery snapshot: 1 current ProviderRecord(s) verified; 1 refused')""",

@@ -646,20 +646,49 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
     }
 
 
+def compact_provider_index(envelopes: list[dict]) -> dict:
+    """Deduplicate HTTP documents while preserving signed ProviderRecords."""
+    documents: dict[str, dict] = {}
+    references: list[dict] = []
+    for envelope in envelopes:
+        provider = envelope["record"]
+        document_ref = provider["document_hash"]
+        document = envelope["document"]
+        prior = documents.get(document_ref)
+        if prior is not None and prior != document:
+            raise ValueError("fixture provider document hash collision")
+        documents[document_ref] = document
+        references.append({
+            "schema": "provider-record-reference/1",
+            "record": provider,
+            "signature_hex": envelope["signature_hex"],
+            "document_ref": document_ref,
+        })
+    return {
+        "schema": "dht-provider-index/2",
+        "kernel_id": NODE_ID,
+        "provider_count": len(references),
+        "document_count": len(documents),
+        "documents": documents,
+        "providers": references,
+    }
+
+
 def sse_provider_snapshot(base: str) -> dict:
     _providers, documents = provider_fixtures(base)
     sse = documents[PROVIDER_SSE]
-    return {
-        "providers": {
-            "providers": [
-                provider_envelope(
-                    sse,
-                    f"discovery/public/records/{PROVIDER_SSE}.json",
-                ),
-                {"record_url": f"discovery/public/records/{PROVIDER_SSE_LEGACY}.json"},
-            ],
-        },
-    }
+    index = compact_provider_index([
+        provider_envelope(
+            sse,
+            f"discovery/public/records/{PROVIDER_SSE}.json",
+        ),
+    ])
+    index["providers"].append({
+        "schema": "provider-record-reference/1",
+        "record_url": f"discovery/public/records/{PROVIDER_SSE_LEGACY}.json",
+    })
+    index["provider_count"] = len(index["providers"])
+    return {"providers": index}
 
 
 def p2p_provider_resolution(base: str) -> tuple[dict, dict]:
@@ -1004,7 +1033,7 @@ class Handler(SimpleHTTPRequestHandler):
             })
         if path == "/node/providers.json":
             providers, _documents = provider_fixtures(self.node_base())
-            return self.json(200, {"providers": providers})
+            return self.json(200, compact_provider_index(providers))
         if path == "/node/projects/project-fixture.json":
             return self.json(200, {
                 "schema": "personaos-project-export/2",
