@@ -14,6 +14,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from live_ui_fixture import (
+    ENV,
+    ENV_SECOND,
     Handler,
     PROVIDER_DISCOVER_ONLY,
     PROVIDER_EXPIRED_READ,
@@ -99,7 +101,7 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('9/13 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('11/15 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
                                    timeout=15_000)
             page.wait_for_function("""() => document.querySelector('#sysStream')?.textContent
@@ -121,11 +123,28 @@ def run(args: argparse.Namespace) -> dict:
                         f'signed persona label was not rendered exactly once: {signed_name}')
             require('Unsigned ' not in ' '.join(persona_cards.all_text_contents()),
                     'unsigned telemetry alias overrode a signed persona label')
-            env_card = page.locator('.env-lane', has_text='House Design Studio')
+            env_card = page.locator(
+                f'.env-lane[data-envsid="{ENV.removeprefix("env:")}"]')
             require(env_card.count() == 1,
                     'verified environment record without live roster was hidden from the stage')
             require('awaiting members' in env_card.text_content(),
                     'missing environment roster was not rendered as a neutral absence state')
+            second_env_card = page.locator(
+                f'.env-lane[data-envsid="{ENV_SECOND.removeprefix("env:")}"]')
+            require(second_env_card.count() == 1,
+                    'a second signed environment with the same title was heuristically collapsed')
+            require(page.locator('.env-lane .env-name', has_text='House Design Studio').count() == 2,
+                    'shared environment title selected one signed context over another')
+            routing_pressure = page.locator('.routing-pressure')
+            require(routing_pressure.count() == 1,
+                    'ambiguous signed artifact did not surface explicit routing pressure')
+            require('Unresolved multi-environment drawing' in routing_pressure.text_content(),
+                    'unassigned artifact identity disappeared from routing pressure')
+            require('2 candidates' in routing_pressure.text_content(),
+                    'routing pressure did not expose the exact candidate count')
+            require(page.locator(
+                '.env-lane', has_text='Unresolved multi-environment drawing').count() == 0,
+                    'ambiguous artifact was guessed into an environment lane')
             require(page.locator('.pcard .pc-avatar').count() == persona_cards.count(),
                     'not every actual persona received an avatar slot')
             orin_avatar = page.locator('.pcard', has_text='Orin Vale').locator('.pc-avatar')

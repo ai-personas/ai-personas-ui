@@ -9,9 +9,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = 'f6647e65bce877d48b68c7343ee873ba81e5e312'
+REVIEWED_DESIGN_COMMIT = '009e4e0da5a2ad916033b7a1b2d8bf572adf1614'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '380f19a78c2e63d29f74c784b9937f97d72d7883a90963651b5f4801f3344182'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '15731a8c0dd24a18a12d2db7f65f087accb349546e986eba022151dd289499be'
 
 
 DESIGN_ANCHORS = {
@@ -30,6 +30,15 @@ DESIGN_ANCHORS = {
         'mdns / multicast',
         'discover < read (r) < write (rw) < admin',
         'no infrastructure *whatsoever*',
+    ],
+    '03_TASKS.md': [
+        'never kernel tie-breakers',
+        'routing_context_pressure remains open',
+        'ambiguity is never interpreted as an ephemeral route',
+    ],
+    '04_PROJECT.md': [
+        'never give the kernel or caller authority',
+        'unresolved project-host-choice pressure/refusal',
     ],
     '13_DESIGN_VALIDATION.md': [
         'global discovery layer',
@@ -84,6 +93,7 @@ def main() -> None:
                 failures.append(f'{relative}: normative anchor changed or disappeared: {anchor!r}')
 
     portal = (ui_root / 'assets/discovery.js').read_text(encoding='utf-8')
+    routing_authority = (ui_root / 'assets/routing-authority.mjs').read_text(encoding='utf-8')
     live_signatures = (ui_root / 'assets/live-signatures.mjs').read_text(encoding='utf-8')
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
@@ -124,6 +134,13 @@ def main() -> None:
         'hard-coded delegated IPFS commons': 'delegated-ipfs.dev' not in portal and 'https://ipfs.io' not in portal,
         'honest commons disclosure': 'still infrastructure' in readme and 'relay / bootstrap' in readme,
         'reviewed design pin documented': REVIEWED_DESIGN_COMMIT in readme,
+        'ambiguous environments remain unresolved': (
+            'resolveEnvironmentAuthority' in portal
+            and 'resolveUniqueRunEnvironment' in portal
+            and 'routing_context_pressure' in routing_authority
+            and 'activity_recency' not in routing_authority
+            and 'const _dgroups=' not in portal
+        ),
         'signed records badge': 'SIGNED RECORDS · VERIFIED' in index,
     }
     failures.extend(label for label, passed in ui_checks.items() if not passed)

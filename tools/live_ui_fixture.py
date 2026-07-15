@@ -25,6 +25,7 @@ PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
+ENV_SECOND = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8Q"
 NODE_ID = "kernel:fixture"
 KEY_ID = "kernel-master"
 PROVIDER_OK = "provider-authority-ok"
@@ -44,6 +45,8 @@ PROVIDER_PERSONA_AVATAR = f"rec:public:persona:{PERSONA}"
 PROVIDER_PERSONA_PEER = f"rec:public:persona:{PERSONA_PEER}"
 PROVIDER_PERSONA_THIRD = f"rec:public:persona:{PERSONA_THIRD}"
 PROVIDER_ENV = f"rec:public:env:{ENV}"
+PROVIDER_ENV_SECOND = f"rec:public:env:{ENV_SECOND}"
+PROVIDER_AMBIGUOUS_ARTIFACT = "rec:public:artifact:ambiguous-environment"
 PROVIDER_PEER_ID = "12D3KooWProviderAuthorityFixture"
 SIGNING_KEYS = {
     0: SigningKey(bytes.fromhex("06" * 32)),
@@ -171,6 +174,8 @@ def provider_document(
     policy_subject_id: str | None = None,
     handle: str = "",
     signing_key_generation: int | None = None,
+    record_fields: dict | None = None,
+    links: dict | None = None,
 ) -> dict:
     signing_key = SIGNING_KEYS[
         STATE.signing_key_generation()
@@ -199,13 +204,15 @@ def provider_document(
     }
     if handle:
         record["handle"] = handle
+    if record_fields:
+        record.update(record_fields)
     document = {
         "schema": record["schema"],
         "record": record,
         "signature_hex": signature_hex(record, signing_key),
         "signing_key_id": KEY_ID,
         "access_policy": policy,
-        "links": {"content": f"private/{record_id}.bin", "subject_id": record_id},
+        "links": links or {"content": f"private/{record_id}.bin", "subject_id": record_id},
         "kernel_id": NODE_ID,
         "host_kernel_id": NODE_ID,
         "base": base,
@@ -446,6 +453,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PERSONA_PEER,
         PROVIDER_PERSONA_THIRD,
         PROVIDER_ENV,
+        PROVIDER_ENV_SECOND,
+        PROVIDER_AMBIGUOUS_ARTIFACT,
     )
     urls = {record_id: f"discovery/public/records/{record_id}.json"
             for record_id in record_ids}
@@ -531,6 +540,20 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         label="House Design Studio",
         capability_summary=["project_workspace", "architectural_design_workspace"],
     )
+    environment_second = identity_document(
+        base,
+        record_id=PROVIDER_ENV_SECOND,
+        subject_kind="env",
+        subject_id=ENV_SECOND,
+        label="House Design Studio",
+        capability_summary=["project_workspace", "architectural_design_workspace"],
+    )
+    ambiguous_artifact = provider_document(
+        base,
+        PROVIDER_AMBIGUOUS_ARTIFACT,
+        "Unresolved multi-environment drawing",
+        record_fields={"environment_ids": [ENV, ENV_SECOND]},
+    )
     envelopes = [
         provider_envelope(valid, urls[PROVIDER_OK]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
@@ -548,6 +571,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         provider_envelope(persona_peer, urls[PROVIDER_PERSONA_PEER]),
         provider_envelope(persona_third, urls[PROVIDER_PERSONA_THIRD]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
+        provider_envelope(environment_second, urls[PROVIDER_ENV_SECOND]),
+        provider_envelope(ambiguous_artifact, urls[PROVIDER_AMBIGUOUS_ARTIFACT]),
     ]
     # The envelope remains correctly signed but no longer hashes the served doc.
     tampered["record"]["label"] = "Tampered provider metadata must be rejected"
@@ -569,6 +594,8 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_PERSONA_PEER: persona_peer,
         PROVIDER_PERSONA_THIRD: persona_third,
         PROVIDER_ENV: environment,
+        PROVIDER_ENV_SECOND: environment_second,
+        PROVIDER_AMBIGUOUS_ARTIFACT: ambiguous_artifact,
     }
 
 

@@ -174,8 +174,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`f6647e65bce877d48b68c7343ee873ba81e5e312`: 22 Markdown files with manifest SHA-256
-`380f19a78c2e63d29f74c784b9937f97d72d7883a90963651b5f4801f3344182`. CI fails when either
+`009e4e0da5a2ad916033b7a1b2d8bf572adf1614`: 22 Markdown files with manifest SHA-256
+`15731a8c0dd24a18a12d2db7f65f087accb349546e986eba022151dd289499be`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
@@ -226,6 +226,15 @@ persona telemetry, and persona runtime-status entries after 30 seconds without a
 their ephemeral model/running state, and leaves the durable discovered card visible as
 stale/offline.
 
+Environment routing is authority-preserving. Exact associations come only from a verified
+discovery record/provider surface. A sole candidate is unambiguous, and a current signed project
+primary may resolve a project host; multiple or conflicting candidates remain explicit routing
+pressure. The browser never uses activity recency, a matching title/charter, roster similarity,
+array order, or the first environment on a node to select or collapse an environment. Legacy run
+paths associate artifacts only when exactly one observed environment owns the run. Otherwise the
+artifact stays unassigned and the stage reports the unresolved pressure instead of duplicating it
+under a guessed workspace.
+
 ## Operator console — drive your own node from the portal
 
 Anonymous visitors see each node's **public discovery projection only**: the public status
@@ -269,6 +278,8 @@ node tools/test-live-artifacts.mjs
 node tools/test-artifact-types.mjs
 node tools/test-network-view.mjs
 node tools/test-network-store.mjs
+node tools/test-persona-avatar.mjs
+node tools/test-routing-authority.mjs
 python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
 python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
   --commit local --screenshot /tmp/personaos-hosted-smoke.png
@@ -288,6 +299,8 @@ assets/network-store.mjs                   # kernel-qualified entities, presence
 assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
+assets/persona-avatar.mjs                  # persona-signed, content-addressed raster admission
+assets/routing-authority.mjs               # fail-closed exact/ambiguous environment association
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
 peers.txt                                  # published phonebook of live node URLs (discovered at runtime)

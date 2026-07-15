@@ -46,6 +46,11 @@ import {
   normalizePersonaAvatar,
   personaIdentityKeyPin,
 } from './persona-avatar.mjs?v=20260712-persona-raster-v2';
+import {
+  environmentIdentity,
+  resolveEnvironmentAuthority,
+  resolveUniqueRunEnvironment,
+} from './routing-authority.mjs?v=20260715-persona-routing-authority-v1';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -529,11 +534,8 @@ function _envSid(r){ const sub=(r._links||{}).subject_id;
   const m2=String(r.did||r.record_id||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
   return m2?m2[1]:_shortId(r.did||r.record_id||''); }
 function _envSidFromProject(r){ const L=r?._links||{};
-  for(const v of [L.subject_id,L.env,L.export,r?.did,r?.record_id]){
-    const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
-    if(m) return m[1];
-  }
-  return ''; }
+  const authority=resolveEnvironmentAuthority(r,L,{verified:true});
+  return authority.status==='resolved'?authority.environmentId:''; }
 function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
   const sid=_envSid(r); if(!sid) return null;
   for(const id of S.order||[]){ const p=S.recs.get(id);
@@ -541,14 +543,25 @@ function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
     if(_envSidFromProject(p)===sid){ const prun=runOf(p); if(prun) return prun; }
   }
   return null; }
-function _envSidFromValue(v){ const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
-  return m?m[1]:''; }
-function envSidOfRecord(r){ if(!r) return ''; const L=r._links||{};
-  for(const v of [L.environment_id,L.owning_env_id,L.env,L.artifact_manifest,r.environment_id,r.owning_env_id]){
-    const sid=_envSidFromValue(v); if(sid) return sid;
-  }
+function _envSidFromValue(v){ return environmentIdentity(v); }
+function environmentAuthorityOfRecord(r){
+  // S.recs admits only provider-envelope + discovery-record verified rows.
+  // No unsigned live/status/profile object is passed into this authority path.
+  return resolveEnvironmentAuthority(r,r?._links||{},{verified:true});
+}
+function envSidOfRecord(r){ if(!r) return '';
   if(r.kind==='env') return _envSid(r);
-  return ''; }
+  const authority=environmentAuthorityOfRecord(r);
+  return authority.status==='resolved'?authority.environmentId:'';
+}
+function envRecordForAuthority(r){
+  const authority=environmentAuthorityOfRecord(r);
+  if(authority.status!=='resolved') return {authority,recordId:null};
+  const recordId=S.order.find((id)=>{ const candidate=S.recs.get(id);
+    return candidate?.kind==='env'&&candidate._kernel===r._kernel
+      &&_envSid(candidate)===authority.environmentId; })||null;
+  return {authority,recordId};
+}
 function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.artifacts:[];
   return arts.map((a)=>({ ...a, title:a.title||a.path||a.artifact_id||'',
     body_published:a.body_published!==undefined?a.body_published:!!a.content,
@@ -1405,6 +1418,15 @@ function upsert(r){
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
     capability_summary:r.capability_summary||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||'',
+    // Retain only the bounded, verified environment-authority surface needed
+    // after admission. Unsigned live/status/profile fields never enter this row.
+    environment_id:r.environment_id,
+    owning_environment_id:r.owning_environment_id,
+    owning_env_id:r.owning_env_id,
+    primary_environment_id:r.primary_environment_id,
+    environment_ids:Array.isArray(r.environment_ids)?r.environment_ids.slice(0,64):r.environment_ids,
+    host_environment_ids:Array.isArray(r.host_environment_ids)?r.host_environment_ids.slice(0,64):r.host_environment_ids,
+    candidate_environment_ids:Array.isArray(r.candidate_environment_ids)?r.candidate_environment_ids.slice(0,64):r.candidate_environment_ids,
     _personaAuthoredRole:r.kind==='persona'?personaAuthoredRole(r):'',
     _personaSignedName:r.kind==='persona'?signedPersonaLabel(r):'',
     _personaIdentityPublicKeyHex:r.kind==='persona'?(r._personaIdentityPublicKeyHex||''):'',
@@ -3056,19 +3078,41 @@ async function refreshSystemView(){
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
     const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(_personaKey(r._kernel,sid),r.label); } }
-  // artifacts joined to their ENVIRONMENT first; run paths remain a compatibility
-  // fallback for older exports that predate env-current artifact manifests.
+  // Artifacts join to an exact verified environment reference first. A run path
+  // is only a compatibility join when exactly ONE observed environment owns
+  // that run. With multiple hosts we surface routing pressure and attach the
+  // artifact to none of them; activity/array order never fabricates a winner.
   const artByEnv=new Map();
-  const artByRun=new Map();
+  const runHosts=new Map();
+  // Resolve uniqueness against the complete bounded verified record cache, not
+  // only the current visible/prefetch window; a paginated-away second host must
+  // still make the run ambiguous.
+  for(const id of S.order){ const envRecord=S.recs.get(id);
+    if(envRecord?.kind!=='env'||!kernelIsFocused(envRecord._kernel)) continue;
+    const envRun=runForEnv(envRecord); if(!envRun) continue;
+    const rk=envKey(envRecord._kernel,envRun);
+    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk))
+      .add(envKey(envRecord._kernel,_envSid(envRecord)));
+  }
+  for(const b of envBlocks){ if(!b.run) continue; const rk=envKey(b.kernel,b.run);
+    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk)).add(envKey(b.kernel,b.sid)); }
+  const unresolvedArtifacts=[];
   for(const id of S.order){ const r=S.recs.get(id);
     if(r.kind!=='artifact'||!kernelIsFocused(r._kernel)) continue;
-    const esid=envSidOfRecord(r), ek=envKey(r._kernel,esid); if(esid) (artByEnv.get(ek)||artByEnv.set(ek,[]).get(ek)).push(r);
-    const run=runOf(r), rk=envKey(r._kernel,run); if(run) (artByRun.get(rk)||artByRun.set(rk,[]).get(rk)).push(r); }
-  const envArtifacts=(b)=>{
-    const byEnv=artByEnv.get(envKey(b.kernel,b.sid))||[];
-    if(byEnv.length) return byEnv;
-    return b.run?(artByRun.get(envKey(b.kernel,b.run))||[]):[];
-  };
+    const authority=environmentAuthorityOfRecord(r);
+    let target='';
+    if(authority.status==='resolved') target=envKey(r._kernel,authority.environmentId);
+    else if(authority.status==='absent'){
+      const run=runOf(r), runResolution=resolveUniqueRunEnvironment(
+        run?[...(runHosts.get(envKey(r._kernel,run))||[])]:[],
+      );
+      if(runResolution.status==='resolved') target=runResolution.environmentKey;
+      else if(runResolution.status==='ambiguous') unresolvedArtifacts.push({record:r,
+        authority:{status:'ambiguous',reason:'project_host_choice',candidates:runResolution.candidates}});
+    }else unresolvedArtifacts.push({record:r,authority});
+    if(target) (artByEnv.get(target)||artByEnv.set(target,[]).get(target)).push(r);
+  }
+  const envArtifacts=(b)=>artByEnv.get(envKey(b.kernel,b.sid))||[];
   const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
   const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
 
@@ -3163,24 +3207,10 @@ async function refreshSystemView(){
       +`<span class="env-meta">${esc((b.type||'env').replace(/_/g,' '))} · <span class="${statusOk?'ok':'l2'}">${esc(statusTxt)}</span>${memberTxt}${metaFiles?` · ${metaFiles} file${metaFiles>1?'s':''}`:''}${bundles.length?` · ${bundles.length} bundle${bundles.length>1?'s':''}`:''}</span></div>`
       +`${liveRow}<div class="env-personas">${cards}</div>${artRow}</div>`;
   };
-  // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
-  // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
-  // deliverable. Group by (kernel + normalized task) — mirroring missionCardList()'s
-  // (kernel::task) dedupe — and keep ONE survivor per group (prefer live, then a
-  // lane that bears a deliverable, then the one with the most members).
-  const _normTask=(s)=>String(s||'').toLowerCase().trim();
-  const _dgroups=new Map();
-  for(const b of envBlocks){ const k=(b.kernel||'')+'::'+_normTask(b.name);
-    (_dgroups.get(k)||_dgroups.set(k,[]).get(k)).push(b); }
-  const _kept=[];
-  for(const grp of _dgroups.values()){
-    if(grp.length===1){ _kept.push(grp[0]); continue; }
-    const survivor=grp.slice().sort((a,b)=>{
-      const sc=(x)=>(x.live?4:0)+(envHasArtifacts(x)?2:0)+Math.min(1,x.members.length?1:0);
-      const d=sc(b)-sc(a); return d!==0?d:(b.members.length-a.members.length);
-    })[0];
-    _kept.push(survivor);
-  }
+  // (3) Preserve every exact environment identity. Two environments may share
+  // a mission title, roster, or run while remaining distinct signed contexts;
+  // similarity is not authority to collapse one into the other.
+  const _kept=envBlocks.slice();
   // (4) SORT lanes by activity so the hero slot is a running/deliverable-bearing env,
   // never an empty 'awaiting members' lane. Stable sort pushes empty/departed last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
@@ -3227,7 +3257,13 @@ async function refreshSystemView(){
     +` <span class="scope-copy">· ${compactCount(S.envCount)} environments loaded · activity first</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
     +`</div>`:'';
-  let html=summary+bodyHTML;
+  const routingPressure=unresolvedArtifacts.length
+    ?`<div class="routing-pressure" role="status"><strong>${icon('warn','ico-sm')} Environment routing unresolved</strong>`
+      +`<span>${unresolvedArtifacts.length} signed artifact${unresolvedArtifacts.length===1?'':'s'} ${unresolvedArtifacts.length===1?'has':'have'} multiple or conflicting environment contexts. No environment was selected; the artifact remains visible only as unresolved routing pressure.</span>`
+      +`<span class="routing-pressure-items">${unresolvedArtifacts.slice(0,4).map(({record,authority})=>
+        `<span><b>${esc(record.label||record.record_id||'artifact')}</b> · ${esc((authority.candidates||[]).length)} candidate${(authority.candidates||[]).length===1?'':'s'}</span>`).join('')}`
+      +`${unresolvedArtifacts.length>4?`<span>+${unresolvedArtifacts.length-4} more</span>`:''}</span></div>`:'';
+  let html=summary+routingPressure+bodyHTML;
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
   // viewer who just started a run sees honest "first candidate is coming", not a blank.
@@ -3714,12 +3750,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // project_workspace marker, same as the env lanes do).
   const caps=(ps.capability_summary||r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
   if(caps.length) html+=H('Capabilities')+chipsOf(caps);
-  // THE PLAN — the mission this persona is working on: the charter, objectives,
-  // current round and blocked/measured state of the run its workspace env pursues.
-  // The persona's own record may carry the run path; otherwise resolve it from its
-  // kernel's env record (runOf scans the resolved links for k/run-XXXX).
-  const _eidR=kernelRec(r._kernel,'env');
-  const _prun=runOf(r)||(_eidR?runOf(S.recs.get(_eidR)):null);
+  // THE PLAN — use the persona's direct run or its one exact verified env
+  // association. Never borrow the first env on a multi-env kernel.
+  const _personaEnv=envRecordForAuthority(r);
+  const _prun=runOf(r)||(_personaEnv.recordId?runForEnv(S.recs.get(_personaEnv.recordId)):null);
   if(_prun) html+=await planSection(base,_prun);
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
@@ -3734,18 +3768,21 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   html+=H('Thinking')+`<div id="thinksec" class="livesec"><div class="fv-loading">resolving cognition…</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
-  // the persona's OWN env, not merely the FIRST env on the kernel (wrong on multi-env
-  // nodes): prefer links.env / the profile's environment_id, resolved to a discovered
-  // record; fall back to kernelRec only when neither resolves.
-  const _ownEnvId=L.env||ps.environment_id||prof.environment_id||'';
-  const _ownEnvSid=_ownEnvId?_shortId(_ownEnvId):'';
-  const _ownEnvRec=_ownEnvSid?S.order.find((id)=>{ const x=S.recs.get(id);
-    return x&&x.kind==='env'&&((x.did||'').includes(_ownEnvSid)||(x.record_id||'').includes(_ownEnvSid)||_envSid(x)===_ownEnvSid); }):null;
-  const eid=_ownEnvRec||kernelRec(r._kernel,'env');
+  // Related navigation obeys the same exact authority result. Profile/status
+  // environment fields are unsigned transport observations and cannot select a
+  // destination; ambiguous candidates remain visible as pressure instead.
+  const eid=_personaEnv.recordId;
   const bid=S.order.find((id)=>{ const x=S.recs.get(id);
-    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle; });
+    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle
+      &&((_personaEnv.authority.status==='resolved'
+          &&envSidOfRecord(x)===_personaEnv.authority.environmentId)
+        ||(_prun&&runOf(x)===_prun)); });
   let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
+  else if(['ambiguous','conflict'].includes(_personaEnv.authority.status))
+    nav+=`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(_personaEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
+  else if(ps.environment_id||prof.environment_id)
+    nav+=`<div class="row"><span class="l2">Environment observation withheld from navigation — no verified routing reference</span></div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(base,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
@@ -3781,8 +3818,15 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const manifest=manifestRel?await dfetch(base,manifestRel):null;
   const manifestFiles=manifestArtifacts(manifest);
   const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
+  const _runHostKeys=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='env'
+    &&x._kernel===r._kernel&&runForEnv(x)===_run).map((x)=>_environmentKey(r._kernel,_envSid(x))):[];
+  const _runAuthority=resolveUniqueRunEnvironment(_runHostKeys);
+  const _thisEnvKey=_environmentKey(r._kernel,_sid);
   const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'
-    && ((envSidOfRecord(x)&&envSidOfRecord(x)===_sid) || (_run&&runOf(x)===_run)));
+    &&(()=>{ const authority=environmentAuthorityOfRecord(x);
+      if(authority.status==='resolved') return authority.environmentId===_sid;
+      return authority.status==='absent'&&_run&&runOf(x)===_run
+        &&_runAuthority.status==='resolved'&&_runAuthority.environmentKey===_thisEnvKey; })());
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
   if(manifestFiles.length){
@@ -4463,7 +4507,10 @@ async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc
     +(d.information_hazard_class?kv('Info hazard',esc(d.information_hazard_class)):'')
     +(d.trust_score!=null?kv('Trust score',esc(d.trust_score)):'');
   html+=trustPanel(r);
-  const eid=kernelRec(r._kernel,'env'); if(eid) html+=H('Used by')+`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  const domainEnv=envRecordForAuthority(r);
+  if(domainEnv.recordId) html+=H('Used by')+`<div class="row">${recLink(domainEnv.recordId,'Environment →')}</div>`;
+  else if(['ambiguous','conflict'].includes(domainEnv.authority.status))
+    html+=H('Used by')+`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(domainEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
   return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(d.name||r.label)}`, html};
 }
 async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
@@ -4472,15 +4519,18 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   const d=(L.export?await dfetch(base,L.export):null)||{};
   const members=d.members||[];
   let html=kv('Project',S0(d.project_id||r.did))+kv('Name',S0(d.name||r.label))
-    +kv('Workspace env',S0(d.environment_id))+kv('Members',S0(members.length||'—'))
+    +kv('Workspace env observation',S0(d.environment_id))+kv('Members',S0(members.length||'—'))
     +(d.bundle_id?kv('Deliverable bundle',`<code>${esc(d.bundle_id)}</code>`):'');
   if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
     const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
     return `<div class="grant">${rid?recLink(rid,m.role||m.persona_id):esc(m.role||m.persona_id)}<span class="l2">${esc(m.role||'')}</span></div>`;
   }).join('');
   html+=trustPanel(r);
-  let nav=''; const eid=kernelRec(r._kernel,'env'), did=kernelRec(r._kernel,'domain');
+  const projectEnv=envRecordForAuthority(r);
+  let nav=''; const eid=projectEnv.recordId, did=kernelRec(r._kernel,'domain');
   if(eid) nav+=`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  else if(['ambiguous','conflict'].includes(projectEnv.authority.status))
+    nav+=`<div class="row"><span class="amber">Project host choice unresolved</span><span class="l2">${esc(projectEnv.authority.candidates.length)} verified hosts · no selection</span></div>`;
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
