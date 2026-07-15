@@ -500,9 +500,18 @@ function _environmentKey(kernel,eid){
   try{ return networkEntityKey(String(kernel||'@unknown'),'env',_shortId(eid)); }
   catch(e){ return networkEntityKey('@unknown','env',String(eid||'unknown')); }
 }
+const _personaRefCache=new Map();
 function _personaRef(value,kernel=''){
-  const parsed=splitNetworkKey(value);
-  if(parsed?.kind==='persona') return {key:String(value),kernel:parsed.kernelId,sid:parsed.identity};
+  const raw=String(value||'');
+  const cached=_personaRefCache.get(raw); if(cached) return cached;
+  const parsed=splitNetworkKey(raw);
+  if(parsed?.kind==='persona'){
+    const ref=Object.freeze({key:raw,kernel:parsed.kernelId,sid:parsed.identity});
+    _personaRefCache.set(raw,ref);
+    while(_personaRefCache.size>NETWORK_LIMITS.cachedRecords)
+      _personaRefCache.delete(_personaRefCache.keys().next().value);
+    return ref;
+  }
   const sid=_shortId(value); return {key:_personaKey(kernel,sid),kernel:String(kernel||'@unknown'),sid};
 }
 function _environmentRef(value,kernel=''){
@@ -3146,12 +3155,17 @@ function _environmentCommunicationGraphHTML(b){
     const acts=S.ixByPersona?.get(personaKey)||[], latest=acts[acts.length-1];
     const recent=_modelFresh(personaKey,models)||!!(latest&&Date.now()-latest._t<90000);
     return {running:_runningNow(personaKey),recent}; };
-  refs.sort((a,c)=>{ const sa=memberState(a), sc=memberState(c);
-    return Number(sc.running)-Number(sa.running)||Number(sc.recent)-Number(sa.recent)
-      ||_signedPersonaNameFor(a).localeCompare(_signedPersonaNameFor(c)); });
-  const shown=refs.slice(0,6), shownSet=new Set(shown), hidden=Math.max(0,refs.length-shown.length);
-  const states=new Map(refs.map((key)=>[key,memberState(key)]));
-  const activeCount=[...states.values()].filter((state)=>state.running).length;
+  // Compute each member's state/name once, then retain only the six best rows.
+  // Sorting a thousand-person environment recomputed key parsing/state from every
+  // comparator even though the compact graph renders six nodes; that froze search
+  // and progressive card expansion for seconds at realistic population sizes.
+  const states=new Map(), names=new Map(); let activeCount=0;
+  for(const key of refs){ const state=memberState(key); states.set(key,state);
+    names.set(key,_signedPersonaNameFor(key)); if(state.running) activeCount++; }
+  const shown=selectPriorityWindow(refs,{limit:6,keyOf:(key)=>`${names.get(key)||''}\u0000${key}`,
+    priorityOf:(key)=>{ const state=states.get(key)||{};
+      return (state.running?2:0)+(state.recent?1:0); }}).items;
+  const shownSet=new Set(shown), hidden=Math.max(0,refs.length-shown.length);
   if(!shown.length) return {activeCount,eventCount:scopedEvents.length,directCount:0,
     html:`<section class="env-network empty"><div class="env-network-head"><span>Active constellation</span><small>0 observed members</small></div>`
       +`<div class="env-network-empty">No persona roster has been observed for this signed environment yet.</div></section>`};
@@ -6015,13 +6029,24 @@ function renderMissions(){
 /* ---------- wiring ---------- */
 // lightweight stage/feed filter — hides persona cards, env lanes, and feed rows
 // that don't match the query (replaces the board's row filter).
+function _elementFilterText(el){
+  const data=Object.values(el?.dataset||{}).join(' ');
+  return `${el?.textContent||''} ${data}`.toLowerCase();
+}
+function _loadedRecordMatchesSearch(query){
+  if(!String(query||'').trim()) return false;
+  return selectPriorityWindow(S.recs.values(),{
+    query,limit:1,scanLimit:NETWORK_LIMITS.cachedRecords,dedupeByKey:false,
+    searchTextOf:(r)=>`${r.record_id||r.card_id||''} ${r.did||''} ${r.label||''} ${r.description||''} ${r._kernel||''} ${(r.capability_summary||[]).join(' ')}`,
+  }).items.length>0;
+}
 function _applyFilter(){
   const q=(S.q||'').trim();
-  document.querySelectorAll('.pcard').forEach((el)=>{ el.style.display=(!q||el.textContent.toLowerCase().includes(q))?'':'none'; });
+  document.querySelectorAll('.pcard').forEach((el)=>{ el.style.display=(!q||_elementFilterText(el).includes(q))?'':'none'; });
   document.querySelectorAll('.env-card').forEach((lane)=>{
-    const hay=lane.textContent.toLowerCase();
+    const hay=_elementFilterText(lane);
     lane.style.display=(!q||hay.includes(q))?'':'none'; });
-  document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||li.textContent.toLowerCase().includes(q))?'':'none'; });
+  document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||_elementFilterText(li).includes(q))?'':'none'; });
 }
 function wire(){
   // Design-system nav family: promote the static index.html nav controls additively
@@ -6139,10 +6164,14 @@ function wire(){
   let searchTimer=null;
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase().slice(0,256); _applyFilter();
     clearTimeout(searchTimer); searchTimer=setTimeout(()=>{ S.environmentWindow=NETWORK_LIMITS.environmentInitial;
+      const loadedMatch=_loadedRecordMatchesSearch(S.q);
       renderGlobalKernels(); refreshSystemView(); renderInteractionStream();
       // A resolver-backed global search must reach beyond the sampled first page.
+      // Do not re-fetch and re-verify a large provider inventory when the signed
+      // record is already cached locally: the bounded stage selector can surface
+      // that match directly. Empty queries also never need a resolver lookup.
       // The discovery pass remains bounded and is ignored while another is active.
-      if(!S.kernelFocus&&globalDiscoveryEndpoints().length) discover().catch(()=>{});
+      if(S.q&&!loadedMatch&&!S.kernelFocus&&globalDiscoveryEndpoints().length) discover().catch(()=>{});
     },120); });
   // OPERATOR is a TOGGLE: a second click closes the console it opened. We tag the
   // drawer with S._topIsOp; opening any other drawer (openDetail) or closing the

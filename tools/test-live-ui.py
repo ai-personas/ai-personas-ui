@@ -1069,9 +1069,11 @@ def run(args: argparse.Namespace) -> dict:
             scale = scale_context.new_page()
             scale_errors: list[str] = []
             scale_provider_bytes: dict[str, int] = {}
+            scale_requests: list[str] = []
             scale.on('console', lambda msg: scale_errors.append(f'console {msg.type}: {msg.text}')
                      if msg.type in {'warning', 'error'} else None)
             scale.on('pageerror', lambda error: scale_errors.append(f'pageerror: {error}'))
+            scale.on('request', lambda request: scale_requests.append(request.url))
             def capture_scale_provider_size(response) -> None:
                 if response.url.endswith('/node/providers.json'):
                     raw = response.headers.get('content-length', '')
@@ -1116,11 +1118,16 @@ def run(args: argparse.Namespace) -> dict:
             scale.locator('#headerToolsToggle').click()
             scale.locator('#q').fill('scale-persona-01999')
             deep_signed_name = scale_persona_label(1999)
-            scale.wait_for_function("""(expectedName) => [...document.querySelectorAll('.pcard')]
-              .some((card) => card.dataset.pcard === 'scale-persona-01999'
-                && card.textContent.includes(expectedName)
-                && card.textContent.includes('signed display name'))""",
-                                    arg=deep_signed_name, timeout=10_000)
+            deep_card = scale.locator('.pcard[data-pcard="scale-persona-01999"]')
+            deep_card.wait_for(state='visible', timeout=10_000)
+            deep_card_text = deep_card.text_content()
+            require(deep_signed_name in deep_card_text
+                    and 'signed display name' in deep_card_text,
+                    'deep search lost its signed persona identity')
+            require(not any('/v1/nodes?' in request
+                            and 'q=scale-persona-01999' in request
+                            for request in scale_requests),
+                    'loaded deep search redundantly queried the global resolver')
             scale.wait_for_function("""() => document.querySelector(
               '.pcard[data-pcard="scale-persona-01999"] .pc-avatar'
             )?.dataset.avatarState === 'ready'""", timeout=15_000)
