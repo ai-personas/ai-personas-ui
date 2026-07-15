@@ -521,6 +521,10 @@ const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(portal, /DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https:\/\/node1\.personas\.ai'/);
 assert.match(portal, /\.\.\.p\.getAll\('resolver'\),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT/);
+assert.match(portal, /0 nodes · awaiting node1\.personas\.ai announcements/,
+  'the empty network state must describe automatic node1 discovery');
+assert.doesNotMatch(portal, /add a peer or resolver/i,
+  'the hosted shell must not invite viewers to configure discovery');
 assert.doesNotMatch(index, /id="(?:peer|addpeer)"/,
   'the hosted shell must not ask the viewer to supply a peer URL');
 assert.doesNotMatch(portal, /(?:getItem|setItem)\('personaos_peers'/,

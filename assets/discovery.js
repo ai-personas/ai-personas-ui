@@ -1513,7 +1513,7 @@ function renderGlobalKernels(){
   const knownTotal=Math.max(g.size,Number(S.globalTotal)||0,S.kernels?.size||0);
   if(!g.size){
     el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>';
-    if(scope) scope.textContent='0 nodes · add a peer or resolver';
+    if(scope) scope.textContent='0 nodes · awaiting node1.personas.ai announcements';
     if(overflow) overflow.hidden=true;
     return;
   }
