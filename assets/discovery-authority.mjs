@@ -9,6 +9,37 @@ const POLICY_FIELDS = Object.freeze([
 const text = (value) => String(value ?? '').normalize('NFC').trim();
 const tail = (value) => text(value).split('/').filter(Boolean).pop() || '';
 
+const roleText = (value) => {
+  if (typeof value !== 'string') return '';
+  const role = text(value);
+  return role && role.length <= 160 && !/[\u0000-\u001f\u007f]/.test(role) ? role : '';
+};
+
+export function signedPersonaLabel(record) {
+  if (record?.kind !== 'persona' || typeof record.label !== 'string') return '';
+  const label = text(record.label);
+  return label && label.length <= 240 && !/[\u0000-\u001f\u007f]/.test(label) ? label : '';
+}
+
+export function personaAuthoredRole(record) {
+  if (record?.kind !== 'persona') return '';
+  // These are explicit role fields carried inside the already-verified record.
+  // Labels, names, capability summaries, lifecycle flags, and operator fitness
+  // are deliberately absent: none of them author a coordination role.
+  for (const value of [
+    record.role,
+    record.role_kind,
+    record.coordination_role,
+    record.declared_role,
+    record.membership_role,
+    record.membership?.role,
+  ]) {
+    const role = roleText(value);
+    if (role) return role;
+  }
+  return '';
+}
+
 function liveAt(expiresAt, nowMs) {
   const value = text(expiresAt);
   if (!value) return true;
@@ -156,6 +187,12 @@ export function projectDiscoveryRecord(record, canRead) {
     'access_policy_ref', 'visibility_tier',
   ]) {
     if (Object.hasOwn(record || {}, key)) out[key] = record[key];
+  }
+  // A persona avatar is part of the signed public identity card, not a body
+  // locator. Keep the bounded descriptor at discover tier; the renderer still
+  // validates its exact schema and never follows URL/data fields.
+  if (record?.kind === 'persona' && Object.hasOwn(record, 'avatar')) {
+    out.avatar = record.avatar;
   }
   return out;
 }

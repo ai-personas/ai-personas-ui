@@ -40,6 +40,10 @@ PROVIDER_P2P_DISCOVER_ONLY = "provider-p2p-discover-only"
 PROVIDER_HISTORICAL = "provider-historical-document"
 PROVIDER_REVOKED = "provider-revoked-document"
 PROVIDER_UNKNOWN = "provider-unknown-document"
+PROVIDER_PERSONA_AVATAR = f"rec:public:persona:{PERSONA}"
+PROVIDER_PERSONA_PEER = f"rec:public:persona:{PERSONA_PEER}"
+PROVIDER_PERSONA_THIRD = f"rec:public:persona:{PERSONA_THIRD}"
+PROVIDER_ENV = f"rec:public:env:{ENV}"
 PROVIDER_PEER_ID = "12D3KooWProviderAuthorityFixture"
 SIGNING_KEYS = {
     0: SigningKey(bytes.fromhex("06" * 32)),
@@ -48,6 +52,10 @@ SIGNING_KEYS = {
     3: SigningKey(bytes.fromhex("09" * 32)),
     4: SigningKey(bytes.fromhex("0a" * 32)),
 }
+AVATAR_IDENTITY_SIGNING_KEY = SigningKey(bytes.fromhex("0b" * 32))
+AVATAR_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 FILES = {
     1: {
@@ -254,6 +262,107 @@ def provider_document(
     }
 
 
+def identity_document(
+    base: str,
+    *,
+    record_id: str,
+    subject_kind: str,
+    subject_id: str,
+    label: str,
+    capability_summary: list[str],
+    avatar: dict | None = None,
+    identity_signing_key_id: str = "",
+    identity_public_key_hex: str = "",
+) -> dict:
+    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    policy_payload = {
+        "schema": "access-policy/1",
+        "policy_id": f"acl:{record_id}",
+        "subject_kind": subject_kind,
+        "subject_id": record_id,
+        "owner_persona_id": "",
+        "access_grants": [],
+        "outward_tier": "public",
+        "cross_tenant_agreement_ref": None,
+    }
+    record = {
+        "schema": "discoverable-record/1",
+        "record_id": record_id,
+        "did": f"did:personaos:{NODE_ID}/{subject_kind}/{subject_id}",
+        "kind": subject_kind,
+        "label": label,
+        "capability_summary": capability_summary,
+        "visibility_tier": "public",
+        "access_policy_ref": policy_payload["policy_id"],
+        "signing_key_id": KEY_ID,
+    }
+    if avatar is not None:
+        record["avatar"] = avatar
+    if identity_signing_key_id and identity_public_key_hex:
+        record["identity_signing_key_id"] = identity_signing_key_id
+        record["identity_public_key_hex"] = identity_public_key_hex
+    return {
+        "schema": record["schema"],
+        "record": record,
+        "signature_hex": signature_hex(record, signing_key),
+        "signing_key_id": KEY_ID,
+        "access_policy": {
+            **policy_payload,
+            "signature_hex": signature_hex(policy_payload, signing_key),
+        },
+        "projection": "discover",
+        "kernel_id": NODE_ID,
+        "host_kernel_id": NODE_ID,
+        "base": base,
+    }
+
+
+def persona_avatar_descriptor() -> dict:
+    digest = hashlib.sha256(AVATAR_BYTES).hexdigest()
+    identity_public_key_hex = AVATAR_IDENTITY_SIGNING_KEY.verify_key.encode().hex()
+    candidate = {
+        "schema": "persona-avatar/2",
+        "kind": "raster",
+        "body_path": f"assets/persona-avatars/sha256/{digest}.png",
+        "content_ref": f"sha256:{digest}",
+        "sha256": digest,
+        "mime_type": "image/png",
+        "byte_length": len(AVATAR_BYTES),
+        "width": 1,
+        "height": 1,
+        "character_prompt_hash": "sha256:" + hashlib.sha256(
+            b"persona-avatar-character-prompt/1\0fixture character prompt"
+        ).hexdigest(),
+        "provenance_hash": "sha256:" + hashlib.sha256(
+            b"persona-avatar-generation-provenance/1\0"
+            + canonical_bytes({"fixture": True, "generator": "external-test-raster"})
+        ).hexdigest(),
+        "persona_id": PERSONA,
+        "identity_signing_key_id": f"persona:{PERSONA}",
+        "identity_public_key_hex": identity_public_key_hex,
+    }
+    signature = AVATAR_IDENTITY_SIGNING_KEY.sign(canonical_bytes({
+        "schema": "persona-avatar-admission/1",
+        "descriptor": candidate,
+    })).signature.hex()
+    return {**candidate, "identity_signature_hex": signature}
+
+
+def persona_avatar_document(base: str) -> dict:
+    identity_public_key_hex = AVATAR_IDENTITY_SIGNING_KEY.verify_key.encode().hex()
+    return identity_document(
+        base,
+        record_id=PROVIDER_PERSONA_AVATAR,
+        subject_kind="persona",
+        subject_id=PERSONA,
+        label="Orin Vale",
+        capability_summary=["active_persona"],
+        avatar=persona_avatar_descriptor(),
+        identity_signing_key_id=f"persona:{PERSONA}",
+        identity_public_key_hex=identity_public_key_hex,
+    )
+
+
 def provider_key_cid(key: str) -> str:
     digest = hashlib.sha256(key.encode("utf-8")).digest()
     cid_bytes = bytes((0x01, 0x55, 0x12, 0x20)) + digest
@@ -333,6 +442,10 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_HISTORICAL,
         PROVIDER_REVOKED,
         PROVIDER_UNKNOWN,
+        PROVIDER_PERSONA_AVATAR,
+        PROVIDER_PERSONA_PEER,
+        PROVIDER_PERSONA_THIRD,
+        PROVIDER_ENV,
     )
     urls = {record_id: f"discovery/public/records/{record_id}.json"
             for record_id in record_ids}
@@ -393,6 +506,31 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         access_level=None,
         signing_key_generation=3,
     )
+    persona_avatar = persona_avatar_document(base)
+    persona_peer = identity_document(
+        base,
+        record_id=PROVIDER_PERSONA_PEER,
+        subject_kind="persona",
+        subject_id=PERSONA_PEER,
+        label="Mara Chen",
+        capability_summary=["active_persona", "lead"],
+    )
+    persona_third = identity_document(
+        base,
+        record_id=PROVIDER_PERSONA_THIRD,
+        subject_kind="persona",
+        subject_id=PERSONA_THIRD,
+        label="Ivo Reed",
+        capability_summary=["active_persona", "verifier"],
+    )
+    environment = identity_document(
+        base,
+        record_id=PROVIDER_ENV,
+        subject_kind="env",
+        subject_id=ENV,
+        label="House Design Studio",
+        capability_summary=["project_workspace", "architectural_design_workspace"],
+    )
     envelopes = [
         provider_envelope(valid, urls[PROVIDER_OK]),
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
@@ -406,6 +544,10 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
                           document_key_status="revoked"),
         provider_envelope(unknown, urls[PROVIDER_UNKNOWN],
                           document_key_status="archived"),
+        provider_envelope(persona_avatar, urls[PROVIDER_PERSONA_AVATAR]),
+        provider_envelope(persona_peer, urls[PROVIDER_PERSONA_PEER]),
+        provider_envelope(persona_third, urls[PROVIDER_PERSONA_THIRD]),
+        provider_envelope(environment, urls[PROVIDER_ENV]),
     ]
     # The envelope remains correctly signed but no longer hashes the served doc.
     tampered["record"]["label"] = "Tampered provider metadata must be rejected"
@@ -423,6 +565,10 @@ def provider_fixtures(base: str) -> tuple[list[dict], dict[str, dict]]:
         PROVIDER_HISTORICAL: historical,
         PROVIDER_REVOKED: revoked,
         PROVIDER_UNKNOWN: unknown,
+        PROVIDER_PERSONA_AVATAR: persona_avatar,
+        PROVIDER_PERSONA_PEER: persona_peer,
+        PROVIDER_PERSONA_THIRD: persona_third,
+        PROVIDER_ENV: environment,
     }
 
 
@@ -642,11 +788,11 @@ def telemetry() -> dict:
     call = snapshot()["active"]["calls"][0]
     scale_count = STATE.get_scale()
     personas = [
-        {"persona_id": PERSONA, "name": "Orin Vale", "lifecycle_state": "ACTIVE",
+        {"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 3, "reputation_score": 0.91},
-        {"persona_id": PERSONA_PEER, "name": "Mara Chen", "lifecycle_state": "ACTIVE",
+        {"persona_id": PERSONA_PEER, "name": "Unsigned Mara telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 7, "reputation_score": 0.88},
-        {"persona_id": PERSONA_THIRD, "name": "Ivo Reed", "lifecycle_state": "ACTIVE",
+        {"persona_id": PERSONA_THIRD, "name": "Unsigned Ivo telemetry alias", "lifecycle_state": "ACTIVE",
          "experience_tasks": 4, "reputation_score": 0.84},
     ]
     if scale_count:
@@ -790,6 +936,14 @@ class Handler(SimpleHTTPRequestHandler):
                 "keys": entries,
                 "rotation_schedule": {"master_period_days": 30, "operational_period_days": 7},
             })
+        avatar = persona_avatar_descriptor()
+        if path == f"/node/{avatar['body_path']}":
+            return self.bytes(
+                AVATAR_BYTES,
+                avatar["mime_type"],
+                avatar["sha256"],
+                Path(avatar["body_path"]).name,
+            )
         if path.startswith("/node/ipfs/"):
             return self.json(200, {"Providers": []})
         if path == "/node/discovery/p2p/received.json":

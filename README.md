@@ -201,6 +201,12 @@ persona's request→response and cognition; a coordination constellation (kernel
 fires as messages flow; a who→whom coordination feed threads each task's produce→verify→ship; and a
 heartbeat-driven system vital keeps the page alive. Persona cards expose task/LLM execution state,
 the current model/purpose, and run pressure/review/block state when the node API provides it.
+An admitted persona avatar uses the `persona-avatar/2` contract from its Ed25519-verified public
+record. The browser verifies the descriptor's persona signature, resolves only its exact
+provider-relative content-addressed path, rejects redirects, and checks raster MIME, byte length,
+SHA-256, and dimensions before rendering the bytes through a temporary blob URL. Missing or
+invalid avatars remain neutral text placeholders; the UI generates no identity art, and an avatar
+descriptor never creates another persona or projection card.
 
 Persona→persona graph edges are exact claims, not inferred social links. A standing chord and its
 directional pulse exist only when one observed telemetry event names both an actor persona and an

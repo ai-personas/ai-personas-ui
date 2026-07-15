@@ -23,11 +23,13 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  personaAuthoredRole,
   projectAccessPolicy,
   projectDiscoveryRecord,
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
+  signedPersonaLabel,
 } from '../assets/discovery-authority.mjs';
 import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
 
@@ -60,6 +62,25 @@ assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map(
   ['current', 'previous', 'archived']);
 assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
 assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', role: 'Site systems coordinator',
+  label: 'Verifier Specialist', capability_summary: ['lead'], can_lead_cohorts: true,
+}), 'Site systems coordinator');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', membership: {role: 'Open-vocabulary reviewer'},
+}), 'Open-vocabulary reviewer');
+assert.equal(personaAuthoredRole({
+  kind: 'persona', label: 'Lead Verifier Integrator',
+  capability_summary: ['specialist', 'lead'], can_lead_cohorts: true, born_specialist: true,
+}), '');
+assert.equal(personaAuthoredRole({kind: 'env', role: 'lead'}), '');
+assert.equal(personaAuthoredRole({kind: 'persona', role: `invalid\u0000role`}), '');
+assert.equal(signedPersonaLabel({
+  kind: 'persona', label: 'Signed Open Name', name: 'unsigned summary name',
+}), 'Signed Open Name');
+assert.equal(signedPersonaLabel({kind: 'persona', name: 'inferred name only'}), '');
+assert.equal(signedPersonaLabel({kind: 'env', label: 'Not a persona'}), '');
+assert.equal(signedPersonaLabel({kind: 'persona', label: `bad\u0000name`}), '');
 const discoverOnly = evaluatePublicRecordAccess(authorityRecord, authorityPolicy());
 assert.deepEqual({ok: discoverOnly.ok, level: discoverOnly.level, canRead: discoverOnly.canRead},
   {ok: true, level: 'discover', canRead: false});
@@ -68,6 +89,25 @@ assert.equal(minimal.label, authorityRecord.label);
 assert.equal(minimal.content_locator_ref, undefined);
 assert.equal(minimal.content_hash, undefined);
 assert.equal(minimal.description, undefined);
+const signedPersonaAvatar = {
+  schema: 'persona-avatar/2', kind: 'raster',
+  body_path: `assets/persona-avatars/sha256/${'01'.repeat(32)}.png`,
+  content_ref: `sha256:${'01'.repeat(32)}`, sha256: '01'.repeat(32),
+  mime_type: 'image/png', byte_length: 68, width: 1, height: 1,
+  character_prompt_hash: `sha256:${'02'.repeat(32)}`,
+  provenance_hash: `sha256:${'03'.repeat(32)}`,
+  persona_id: 'persona-open-avatar', identity_signing_key_id: 'persona:persona-open-avatar',
+  identity_public_key_hex: '04'.repeat(32), identity_signature_hex: '05'.repeat(64),
+};
+const minimalPersona = projectDiscoveryRecord({
+  ...authorityRecord,
+  kind: 'persona',
+  avatar: signedPersonaAvatar,
+}, false);
+assert.deepEqual(minimalPersona.avatar, signedPersonaAvatar,
+  'signed persona avatar must remain visible at discover tier');
+assert.equal(projectDiscoveryRecord({...authorityRecord, avatar: signedPersonaAvatar}, false).avatar,
+  undefined, 'non-persona records must not gain a persona identity surface');
 const minimalPolicy = projectAccessPolicy(authorityPolicy([publicGrant()]), false);
 assert.deepEqual(minimalPolicy.access_grants, []);
 assert.equal(minimalPolicy.owner_persona_id, undefined);
