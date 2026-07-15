@@ -1960,7 +1960,7 @@ function emptyStateHTML(){
     <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
 	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
-	    live execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
+	    unverified operator-status execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
 	    no reachable node is currently publishing public records.</div>
 	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through a configured resolver, but none produced browser-reachable public records yet.</div>`:''}
     <h4>Peers tried</h4>${rows}
@@ -2274,14 +2274,15 @@ async function fetchBlob(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(
 async function fetchVerifiedLiveBody(url,expectedHash){
   try{
     const r=await fetch(url,secureFetchInit(url));
-    if(!r.ok) return {ok:false,error:`body HTTP ${r.status}`};
+    if(!r.ok) return {ok:false,checkOutcome:'unavailable',error:`body HTTP ${r.status}`};
     const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
     const actual=await sha256Hex(bytes);
     const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
-    if(!expected||actual!==expected) return {ok:false,error:'SHA-256 mismatch',actual,expected};
+    if(!expected||actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
     const type=r.headers.get('content-type')||'application/octet-stream';
     return {ok:true,actual,bytes,blob:new Blob([bytes],{type}),type,size:bytes.byteLength};
-  }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
+  }catch(e){ const error=String(e&&e.message||e);
+    return {ok:false,checkOutcome:/\bexceeds\b/i.test(error)?'failed':'unavailable',error}; }
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -2293,7 +2294,7 @@ const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(t
 const findRecByDid=(pid,kernel='')=>S.order.find((id)=>{ const r=S.recs.get(id);
   return (!kernel||r?._kernel===kernel)&&(r?.did==='did:personaos:'+pid||r?.did===pid); });
 
-/* ---------- unsigned live workspace transport + exact-byte integrity ---------- */
+/* ---------- kernel-signed live workspace metadata + exact-byte integrity ---------- */
 function _liveRunKey(base,run){ return liveArtifactRunKey(base,run,location.origin); }
 function _liveRunDomKey(base,run){ return encodeURIComponent(_liveRunKey(base,run)); }
 function liveArtifactState(base,run){ return S.liveArtifacts.get(_liveRunKey(base,run))||null; }
@@ -2383,7 +2384,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     const current=next.files.get(`${open.workspaceId}\u0000${open.path}`);
     if(!current||current.sha256!==open.hash){
       // The current view closure resolves the newest record. Re-render in place;
-      // text viewers retain the prior verified body for a bounded diff.
+      // text viewers retain the prior hash-checked body for a bounded diff.
       Promise.resolve().then(()=>renderTop()).catch(()=>{});
     }
   }
@@ -2503,7 +2504,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
 }
 function liveArtifactsHTML(base,run){
   const state=liveArtifactState(base,run);
-  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only Ed25519-verified snapshots and SSE events are applied.</div></div>`;
+  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only snapshots and SSE events whose Ed25519 signatures check are applied.</div></div>`;
   const snap=state.snapshot||{}; const ch=state.changes;
   const changed=ch.baseline?'<span class="l2">baseline snapshot</span>'
     : `<span class="live-change c-created">+${ch.created.length} created</span><span class="live-change c-modified">${ch.modified.length} modified</span><span class="live-change c-deleted">-${ch.deleted.length} deleted</span>`;
@@ -2520,12 +2521,12 @@ function liveArtifactsHTML(base,run){
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
-  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">KERNEL-SIGNED · VERIFIED</span></div>`
-    +(state.ended?`<div class="fv-note">Verified terminal event received${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last accepted revision.</div>`:'')
+  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
+    +(state.ended?`<div class="fv-note">Terminal-event signature checked${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
-    +trees+`<div class="live-integrity-note">File lists and execution frames are Ed25519-verified against the node kernel key. Opened file bytes are SHA-256 checked against the exact signed hash before rendering.</div></div>`;
+    +trees+`<div class="live-integrity-note"><b>Workspace snapshot only · ArtifactBundle lifecycle is unknown.</b> Snapshot metadata is Ed25519 signature-checked against the node kernel key. Opened file bytes are separately SHA-256 checked against the exact signed hash before rendering.</div></div>`;
 }
 
 // ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
@@ -2721,8 +2722,10 @@ function renderEnvLaneLive(b){
    request/response (model selections = what it ASKED a model to do) and its
    cognition; the right rail streams coordination + cross-env interactions
    (kernel.interactions: actor → affected : kind); artifacts show as deliverables.
-   Signed lineage events retain their explicit signed=true marker; model calls and
-   coordination frames remain unsigned, while workspace snapshots are kernel-signed. */
+   Signed lineage events retain their provenance from admitted signed feeds. Raw
+   operator-status model calls and coordination observations remain unsigned;
+   independently verified public telemetry, messages, and routes retain their own
+   signed labels, while workspace snapshots are kernel-signed. */
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
   domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify',
@@ -2996,7 +2999,7 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
   if(!(rows||[]).length) return '';
-  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>kernel-signed · verified</small></div>`
+  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · lifecycle unknown</small></div>`
     +rows.slice(0,2).map((row)=>`<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
       +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
       +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
@@ -3592,7 +3595,7 @@ function updateVitalsCounters(){
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',compactCount(acts)); setV('#st-signed',compactCount(signed));
   // verify badge live count
-  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Live frames remain labelled unsigned transport telemetry.`;
+  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Workspace snapshot signatures and opened-file hashes are checked separately. Raw operator-status runtime frames remain labelled unsigned transport telemetry; whole-document-signed public telemetry, messages, and routes retain their verified labels.`;
   // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
   const dot=$('#livedot'); if(dot){ const heartbeat=heartbeatForScope(); const beating=!!(heartbeat&&heartbeat.running!==false);
     dot.classList.toggle('beating',beating);
@@ -5074,7 +5077,7 @@ function _lineDiffHTML(prior,current){
     skipped=false;
     html+=`<div class="diff-row ${row.kind}"><span class="diff-ln">${row.left??''}</span><span class="diff-ln">${row.right??''}</span><span class="diff-mark">${row.kind==='add'?'+':row.kind==='del'?'-':' '}</span><code>${esc(row.text)}</code></div>`;
   });
-  return `<details class="live-diff" open><summary>Verified prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
+  return `<details class="live-diff" open><summary>Hash-checked prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
 }
 
 async function liveFileView(base,run,workspaceId,path){
@@ -5125,10 +5128,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   if(hashAdvertised){
     verified=validExpectedHash
       ?await fetchVerifiedLiveBody(sourceUrl,expectedHash)
-      :{ok:false,error:'invalid advertised SHA-256'};
+      :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
     if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
       if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
-        verified={ok:false,error:'stale live body response discarded'};
+        verified={ok:false,checkOutcome:'failed',error:'stale live body response discarded'};
       }
     }
     if(verified.ok){
@@ -5168,6 +5171,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
   const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
+  const byteCheckLabel=verified?.ok?'BYTES CHECKED':
+    (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
     ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
@@ -5176,9 +5181,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
     +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
-    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-verified bytes</span>`):'')
+    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-checked bytes</span>`):'')
     +(verifiedDispatch?.contradiction?`<div class="viewerr artifact-format-contradiction">Advertised filename/media metadata conflicts with the verified byte header. Rendering uses the detected ${esc(verifiedDispatch.detected.label)} format; peer code was not executed.</div>`:'')
-    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-verified bytes.</div>`:'')
+    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-checked bytes.</div>`:'')
     +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
@@ -5186,11 +5191,11 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +(opts.liveFile?kv('Live revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">${verified?.ok?'KERNEL-SIGNED METADATA · BYTES CHECKED':'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED'}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
+      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">SNAPSHOT SIGNATURE CHECKED · ${byteCheckLabel}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
       +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff
       :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${verified?.ok?'BYTES CHECKED':'BYTES NOT VERIFIED'}</span></div>`:''))
+        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''))
     +`<div id="fv-body" class="fv-body"></div>`;
   // Built-in renderer path — the fallback used when no local module
   // matches, or when a matched local module throws (parse/empty).
@@ -5780,14 +5785,14 @@ async function operatorRunView(b,run){
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
   });
   const liveCalls=terminal?[]:(liveState?.snapshot?.active?.calls||activeCalls);
-  html+=H(terminal?'Execution · verified terminal state':'Live execution · unsigned status telemetry');
+  html+=H(terminal?'Execution · terminal-event signature checked':'Live execution · unsigned status telemetry');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
     const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
     return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
   else html+=terminal
-    ?'<div class="l2">The verified run-ended event cleared active execution; no model call remains active.</div>'
+    ?'<div class="l2">The signature-checked run-ended event cleared active execution; no model call remains active.</div>'
     :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
   const runtime=terminal?{pressure:null,block:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
   const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
@@ -5798,7 +5803,7 @@ async function operatorRunView(b,run){
     +kv('Completion block',runtime.block?`<span class="no">${esc(runtime.block)}</span>`:'<span class="l2">none exposed</span>')
     +kv('Review eligibility',runtime.review!==null?esc(typeof runtime.review==='object'?JSON.stringify(runtime.review):runtime.review)
       :(inReview?'<span class="amber">review in progress</span>':'<span class="l2">not exposed</span>'));
-  html+=H('Live workspace artifacts')
+  html+=H('Live workspace files')
     +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   // GAP #3: surface the ContinuousRefinementMission trajectory from the served
   // design_history (best-so-far never regresses; budget tranches; marginal value).
@@ -5821,18 +5826,20 @@ async function operatorRunView(b,run){
     const cls=es==='executed'?'ok':(es==='unmeasured'?'no':'amber');
     return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(es)}</span></div>`;
   }).join('');
-  const ap=rs.answer_package; if(ap&&ap.schema) html+=H('Signed AnswerPackage (answer/5)')
-    +kv('Status',S0(ap.status))+kv('Bundle ref',S0(ap.artifact_bundle_ref))
-    +kv('Bundle state',S0(ap.artifact_bundle_state))+kv('Signed',ap.signed_by?`<span class="ok">${icon('check','ico-sm')}</span>`:`<span class="no">${icon('x','ico-sm')}</span>`);
+  // `/runs/<run>` and `/runs/<run>/artifacts` are operator status documents, not
+  // browser-validated AnswerPackage or ArtifactBundle envelopes. Schema strings,
+  // `signed_by` truthiness, verifier-shaped objects, and lifecycle state strings in
+  // those raw documents have no admission authority. No validated bundle projection
+  // reaches this view yet, so lifecycle must remain unknown here.
+  html+=H('AnswerPackage / ArtifactBundle lifecycle')
+    +kv('Lifecycle','<span class="l2 bundle-lifecycle-unknown">unknown</span>')
+    +'<div class="fv-note">Run status and artifact-index JSON are not browser-validated bundle lifecycle evidence. A lifecycle state requires a separately browser-validated bundle plus verifier evidence bound to its current content hash.</div>';
   const files=arts.package||arts.package_files||arts.files||[];
   if(files.length) html+=H(`Package artifacts (${files.length})`)+files.slice(0,100).map((f)=>{
     const path=typeof f==='string'?f:(f.path||f.title||'');
     const name=String(path).split('/').pop();
     return `<div class="grant"><span class="l2">${esc(name)}</span><span class="l2">${esc(String(path).includes('/')?path.split('/').slice(0,-1).join('/'):'')}</span></div>`;
   }).join('');
-  const bundles=arts.bundles||[];
-  if(bundles.length) html+=H(`Bundles (${bundles.length})`)+bundles.map((bd)=>
-    `<div class="grant"><span class="l2">${esc(bd.bundle_id||bd.path||'bundle')}</span><span class="${bd.state==='shipped'||bd.state==='accepted'?'ok':'amber'}">${esc(bd.state||'—')}</span></div>`).join('');
   return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
 }
 
@@ -5970,7 +5977,7 @@ function missionCardList(){
       terminalTask:!!terminal,liveTask:!!live};
     if(terminal||live) cards.unshift(card); else cards.push(card);
   }
-  // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
+  // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
   // monitors; opening one still verifies every fetched file body against sha256.
   for(const state of S.liveArtifacts.values()){

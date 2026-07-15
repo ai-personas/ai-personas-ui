@@ -114,7 +114,9 @@ def main() -> None:
         'kernel-signed live metadata verification': (
             'verifyLiveArtifactSnapshot' in portal
             and 'verifyLiveArtifactEvent' in portal
-            and 'KERNEL-SIGNED · VERIFIED' in portal
+            and 'WORKSPACE SNAPSHOT · SIGNATURE CHECKED' in portal
+            and 'ArtifactBundle lifecycle is unknown' in portal
+            and 'KERNEL-SIGNED · VERIFIED' not in portal
         ),
         'signed live AccessPolicy verification': (
             'access_policy_signature_invalid' in live_signatures
@@ -127,7 +129,16 @@ def main() -> None:
             and '_verifyLiveWithKeyRefresh' in portal
         ),
         'terminal live revision binding': 'broken_terminal_revision_chain' in portal,
-        'failed live body honesty': 'BYTES NOT VERIFIED' in portal,
+        'failed/refused versus unavailable live bytes': (
+            'BYTES CHECK FAILED/REFUSED' in portal
+            and 'BYTES NOT CHECKED' in portal
+        ),
+        'run bundle lifecycle fails closed': (
+            'bundle-lifecycle-unknown' in portal
+            and 'Run status and artifact-index JSON are not browser-validated' in portal
+            and 'Signed AnswerPackage (answer/5)' not in portal
+            and 'ap.signed_by' not in portal
+        ),
         'unsigned non-artifact telemetry label': 'UNSIGNED TRANSPORT' in index,
         'exact-byte integrity check': 'fetchVerifiedLiveBody' in portal and 'safeRenderMime' in portal,
         'remote executable renderer import': 'https://esm.sh' not in portal and 'cdn.jsdelivr.net' not in portal,

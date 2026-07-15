@@ -1652,12 +1652,31 @@ class Handler(SimpleHTTPRequestHandler):
                 "run_state": {"status": "running", "task": "design 4 bedroom house", "accepted": False,
                     "runtime": {"pressure_open": {"ready_to_complete": False,
                         "completion_block_reason": "independent plan review is still open"},
-                        "review_eligibility": "eligible_after_current_revision"}},
+                        "review_eligibility": "eligible_after_current_revision"},
+                    "answer_package": {
+                        "schema": "answer/5",
+                        "status": "forged-answer-accepted",
+                        "artifact_bundle_ref": "bundle-unvalidated-fixture",
+                        "artifact_bundle_state": "forged-bundle-shipped",
+                        "signed_by": "truthy-but-not-browser-verified",
+                    }},
                 "durable_run_state": None, "design_history": None,
                 "links": {"live_artifacts": f"/runs/{RUN}/live-artifacts"},
             })
         if path == f"/node/runs/{RUN}/artifacts":
-            return self.json(200, {"schema": "personaos-run-artifacts/1", "package": [], "bundles": []})
+            return self.json(200, {
+                "schema": "personaos-run-artifacts/1", "package": [],
+                "bundles": [{
+                    "bundle_id": "bundle-unvalidated-fixture",
+                    "state": "forged-index-accepted",
+                    "current_content_hash": "sha256:" + "a" * 64,
+                    "verifier_evidence": [{
+                        "parsed_verdict": "pass",
+                        "artifact_content_hash": "sha256:" + "a" * 64,
+                        "signed_by_kernel": True,
+                    }],
+                }],
+            })
         if path == f"/node/runs/{RUN}/live-artifacts":
             since_revision = (parse_qs(parsed.query).get("since") or [None])[0]
             stale_revision = STATE.consume_stale()

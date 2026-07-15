@@ -61,16 +61,28 @@ def open_live_plan(page) -> None:
     mission.click()
     badge = page.locator('.live-artifacts .transport-badge')
     badge.wait_for(timeout=15_000)
-    require(badge.text_content() == 'KERNEL-SIGNED · VERIFIED',
-            'live workspace snapshot was not labelled kernel-signed and verified')
+    require(badge.text_content() == 'WORKSPACE SNAPSHOT · SIGNATURE CHECKED',
+            'live workspace snapshot did not distinguish signature checking from lifecycle')
+    lifecycle = page.locator('.bundle-lifecycle-unknown')
+    lifecycle.wait_for(timeout=15_000)
+    require(lifecycle.text_content() == 'unknown',
+            'unvalidated run JSON promoted an AnswerPackage/ArtifactBundle lifecycle')
+    run_text = page.locator('#detailbody').inner_text()
+    require('Run status and artifact-index JSON are not browser-validated bundle lifecycle evidence.'
+            in run_text, 'run drawer did not explain its fail-closed bundle lifecycle')
+    for forbidden in ('Signed AnswerPackage', 'forged-answer-accepted',
+                      'forged-bundle-shipped', 'forged-index-accepted',
+                      'truthy-but-not-browser-verified'):
+        require(forbidden not in run_text,
+                f'unvalidated bundle lifecycle claim reached the run drawer: {forbidden}')
     live_file = page.locator('[data-act="live-file"][data-path="design/plan.md"]')
     live_file.wait_for(timeout=15_000)
     live_file.click()
     page.locator('#detailbody [data-act="secure-download"]').wait_for(timeout=15_000)
     page.locator('#fv-body').wait_for(timeout=15_000)
     require(page.locator('.live-view-meta .transport-badge').text_content()
-            == 'KERNEL-SIGNED METADATA · BYTES CHECKED',
-            'live file viewer lost its signed metadata and byte-integrity label')
+            == 'SNAPSHOT SIGNATURE CHECKED · BYTES CHECKED',
+            'live file viewer lost its distinct snapshot-signature and byte-integrity label')
 
 
 def run(args: argparse.Namespace) -> dict:
@@ -586,14 +598,32 @@ def run(args: argparse.Namespace) -> dict:
             page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
             failed_badge = page.locator('.live-view-meta .transport-badge.failed')
             failed_badge.wait_for(timeout=10_000)
-            require(failed_badge.text_content() == 'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED',
-                    'failed body verification was labelled as bytes checked')
+            require(failed_badge.text_content()
+                    == 'SNAPSHOT SIGNATURE CHECKED · BYTES CHECK FAILED/REFUSED',
+                    'failed body integrity check was not labelled as failed and refused')
             require('SHA-256 mismatch' in page.locator('#detailbody').inner_text(),
                     'initial body hash mismatch was not surfaced')
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-live-body-refused.png'),
                                 full_page=True)
             page.unroute('**/live-artifacts/body/**')
+            page.locator('#detailback').click()
+            page.evaluate("""() => {
+              window.__fixtureRealFetch = window.fetch.bind(window);
+              window.fetch = (input, init) => String(input).includes('/live-artifacts/body/')
+                ? Promise.reject(new TypeError('fixture body unavailable'))
+                : window.__fixtureRealFetch(input, init);
+            }""")
+            page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
+            unavailable_badge = page.locator('.live-view-meta .transport-badge.failed')
+            unavailable_badge.wait_for(timeout=10_000)
+            require(unavailable_badge.text_content()
+                    == 'SNAPSHOT SIGNATURE CHECKED · BYTES NOT CHECKED',
+                    'unavailable bytes were mislabelled as a completed integrity check')
+            page.evaluate("""() => {
+              window.fetch = window.__fixtureRealFetch;
+              delete window.__fixtureRealFetch;
+            }""")
             page.locator('#detailback').click()
             page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
             page.locator('.live-view-meta .transport-badge.verified').wait_for(timeout=10_000)
@@ -684,7 +714,7 @@ def run(args: argparse.Namespace) -> dict:
                     'generic binary viewer lost byte-integrity verification')
 
             # Extensionless and misleading filenames are dispatched only from
-            # the bounded header of already hash-verified bytes.
+            # the bounded header of already hash-checked bytes.
             page.locator('#detailback').click()
             page.locator(
                 '[data-act="live-file"][data-path="attachments/verified-portrait"]'
@@ -965,8 +995,8 @@ def run(args: argparse.Namespace) -> dict:
             }""", arg=signed_hash, timeout=10_000)
             tamper.locator('#detailback').click()
             require(tamper.locator('.live-artifacts .transport-badge').text_content()
-                    == 'KERNEL-SIGNED · VERIFIED',
-                    'verified trust label was lost after tamper recovery')
+                    == 'WORKSPACE SNAPSHOT · SIGNATURE CHECKED',
+                    'snapshot-signature trust label was lost after tamper recovery')
             if screenshots:
                 tamper.screenshot(path=str(screenshots / 'desktop-live-signature-tamper.png'),
                                   full_page=True)
@@ -1307,12 +1337,12 @@ def run(args: argparse.Namespace) -> dict:
                 && row.querySelector('.v2')?.textContent.trim().endsWith('ended'))""",
                 timeout=10_000)
             require(sse.locator('#detailbody .live-call').count() == 0,
-                    'verified terminal state retained an active model call')
+                    'signature-checked terminal event retained an active model call')
             terminal_text = sse.locator('#detailbody').text_content().lower()
             require('model call active' not in terminal_text,
-                    'verified final workspace retained model-call-active state')
+                    'signature-checked final workspace retained model-call-active state')
             require('independent plan review is still open' not in terminal_text,
-                    'verified terminal state retained a stale completion block')
+                    'signature-checked terminal event retained a stale completion block')
             sse.wait_for_function("""() => document.querySelector('#st-active .v')?.textContent === '0'""",
                                   timeout=10_000)
             require(sse.locator(f'[data-mrun="{RUN}"] .ms-running').count() == 0,
@@ -1328,10 +1358,10 @@ def run(args: argparse.Namespace) -> dict:
             sse.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
             sse.locator('.live-view-meta .transport-badge.verified').wait_for(timeout=15_000)
             require(sse.locator('.live-view-meta .transport-badge').text_content()
-                    == 'KERNEL-SIGNED METADATA · BYTES CHECKED',
-                    'verified final workspace file bytes were not accepted')
+                    == 'SNAPSHOT SIGNATURE CHECKED · BYTES CHECKED',
+                    'final workspace file bytes did not pass the separate integrity check')
             require(sse.locator('#fv-body').text_content().strip(),
-                    'verified final workspace renderer is blank')
+                    'hash-checked final workspace renderer is blank')
             if screenshots:
                 sse.screenshot(path=str(screenshots / 'desktop-sse-final-file.png'), full_page=True)
             unexpected_sse_errors = [

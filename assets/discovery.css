@@ -718,7 +718,7 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .atree .tfile>a{color:var(--int)}
 .atree .tgated{color:var(--mut)}
 
-/* live workspaces: kernel-signed metadata, hash-verified bytes on open */
+/* live workspaces: signature-checked kernel metadata, hash-checked bytes on open */
 .live-artifacts{margin:4px 0 10px;border-top:2px solid var(--amber);background:var(--surface-deep)}
 .live-artifacts.verified{border-top-color:var(--up)}
 .live-artifacts.waiting{padding:10px 12px;border:1px solid var(--line2);border-top:2px solid var(--amber)}
@@ -757,7 +757,7 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .runtime-call{color:var(--ink);font-size:var(--fs-label)}
 .runtime-tag{border-color:var(--amber-border)!important;color:var(--amber)!important}
 
-/* bounded text diff: exact previous/current verified revisions, no binary-diff claim */
+/* bounded text diff: exact previous/current signature-checked revisions, no binary-diff claim */
 .live-diff{margin:8px 0;border:1px solid var(--line2);background:var(--surface-inset);font-size:var(--fs-label)}
 .live-diff summary{cursor:pointer;padding:6px 8px;color:var(--amber);font-weight:var(--w-semi);border-bottom:1px solid var(--line2)}
 .diff-head,.diff-row{display:grid;grid-template-columns:36px 44px 16px minmax(0,1fr);align-items:start}
