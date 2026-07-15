@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import * as ed from '../assets/noble-ed25519.js';
 import {
+  artifactSemanticLabels,
   boundedLineDiff,
   decideLiveArtifactUpdate,
   endLiveArtifactState,
@@ -10,6 +11,7 @@ import {
   liveBodyCommitIsCurrent,
   liveArtifactFileKey,
   liveArtifactRunKey,
+  sanitizeArtifactSemantics,
   sha256Hex,
   transitionLiveArtifacts,
 } from '../assets/live-artifacts.mjs';
@@ -23,6 +25,7 @@ import {
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
+  hydrateProviderIndex,
   personaAuthoredRole,
   projectAccessPolicy,
   projectDiscoveryRecord,
@@ -30,8 +33,9 @@ import {
   providerLookupHints,
   recordVerificationEntries,
   signedPersonaLabel,
+  validateProviderInventoryWindow,
 } from '../assets/discovery-authority.mjs';
-import {assertSelfContainedGltf} from '../assets/renderers/cad3d.mjs';
+import {assertSelfContainedGltf,inspectCadBytes} from '../assets/renderers/cad3d.mjs';
 
 const authorityRecord = {
   schema: 'discoverable-record/1', record_id: 'rec-a',
@@ -62,6 +66,66 @@ assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map(
   ['current', 'previous', 'archived']);
 assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
 assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+const inventoryNow = Date.parse('2026-07-15T12:00:00.000Z');
+assert.equal(validateProviderInventoryWindow(
+  '2026-07-15T11:30:00.000Z', '2026-07-15T12:30:00.000Z', {nowMs: inventoryNow},
+).ok, true);
+assert.equal(validateProviderInventoryWindow(
+  '2026-07-15T11:30:00.000Z', '2026-07-15T12:30:00.001Z', {nowMs: inventoryNow},
+).ok, false, 'browser inventory admission accepted a lifetime over one hour');
+const providerDocumentRef = `sha256:${'a'.repeat(64)}`;
+const providerDocument = {
+  record: {
+    schema: 'discoverable-record/1', record_id: 'shared',
+    description: 'shared signed document body '.repeat(40),
+  },
+};
+const providerReference = (key) => ({
+  schema: 'provider-record-reference/1',
+  record: {schema: 'provider-record/1', key, document_hash: providerDocumentRef},
+  signature_hex: '00'.repeat(64),
+  document_ref: providerDocumentRef,
+});
+const compactProviderIndex = {
+  schema: 'dht-provider-index/3', provider_count: 2, document_count: 1,
+  documents: {[providerDocumentRef]: providerDocument},
+  providers: [providerReference('did:one'), providerReference('alias-one')],
+};
+const compactHydrated = hydrateProviderIndex(compactProviderIndex);
+assert.equal(compactHydrated.ok, true);
+assert.equal(compactHydrated.envelopes.length, 2);
+assert.deepEqual(compactHydrated.envelopes[0].document, providerDocument);
+assert.deepEqual(compactHydrated.envelopes[1].document, providerDocument);
+assert.ok(JSON.stringify(compactProviderIndex).length < JSON.stringify({
+  providers: compactProviderIndex.providers.map((reference) => ({
+    schema: 'provider-record-envelope/1', record: reference.record,
+    signature_hex: reference.signature_hex, document: providerDocument,
+  })),
+}).length);
+const badProviderRef = structuredClone(compactProviderIndex);
+badProviderRef.providers[1].document_ref = `sha256:${'0'.repeat(64)}`;
+const partiallyHydrated = hydrateProviderIndex(badProviderRef);
+assert.equal(partiallyHydrated.ok, true);
+assert.equal(partiallyHydrated.envelopes.length, 1);
+assert.equal(partiallyHydrated.refused, 1);
+assert.deepEqual(partiallyHydrated.errors, ['provider_document_ref_mismatch']);
+assert.equal(hydrateProviderIndex({schema: 'dht-provider-index/1', providers: []}).ok, false);
+const orphanProviderDoc = structuredClone(compactProviderIndex);
+orphanProviderDoc.documents[`sha256:${'b'.repeat(64)}`] = {record: {record_id: 'orphan'}};
+orphanProviderDoc.document_count = 2;
+assert.equal(hydrateProviderIndex(orphanProviderDoc).reason,
+  'provider_document_table_unreferenced');
+const ifcInspection=inspectCadBytes(new TextEncoder().encode(`ISO-10303-21;
+HEADER;FILE_SCHEMA(('IFC4'));ENDSEC;
+DATA;
+#1=IFCPROJECT('id',$,'House',$,$,$,$,$,$);
+#2=IFCWALL('wall',$,'Wall',$,$,$,$,$);
+ENDSEC;END-ISO-10303-21;`),'ifc');
+assert.deepEqual(ifcInspection.facts.slice(0,4),[
+  ['STEP envelope','recognized'],['Schema','IFC4'],['Entities inspected',2],['IFC entities',2],
+]);
+const binaryStl=new Uint8Array(84+50); new DataView(binaryStl.buffer).setUint32(80,1,true);
+assert.deepEqual(inspectCadBytes(binaryStl,'stl').facts,[['Encoding','binary STL'],['Triangles',1]]);
 assert.equal(personaAuthoredRole({
   kind: 'persona', role: 'Site systems coordinator',
   label: 'Verifier Specialist', capability_summary: ['lead'], can_lead_cohorts: true,
@@ -103,11 +167,25 @@ const minimalPersona = projectDiscoveryRecord({
   ...authorityRecord,
   kind: 'persona',
   avatar: signedPersonaAvatar,
+  identity_signing_key_id: signedPersonaAvatar.identity_signing_key_id,
+  identity_public_key_hex: signedPersonaAvatar.identity_public_key_hex,
 }, false);
 assert.deepEqual(minimalPersona.avatar, signedPersonaAvatar,
   'signed persona avatar must remain visible at discover tier');
+assert.equal(minimalPersona.identity_signing_key_id,
+  signedPersonaAvatar.identity_signing_key_id,
+  'persona identity key id must remain visible at discover tier');
+assert.equal(minimalPersona.identity_public_key_hex,
+  signedPersonaAvatar.identity_public_key_hex,
+  'persona identity key pin must remain visible at discover tier');
 assert.equal(projectDiscoveryRecord({...authorityRecord, avatar: signedPersonaAvatar}, false).avatar,
   undefined, 'non-persona records must not gain a persona identity surface');
+assert.equal(projectDiscoveryRecord({
+  ...authorityRecord,
+  identity_signing_key_id: signedPersonaAvatar.identity_signing_key_id,
+  identity_public_key_hex: signedPersonaAvatar.identity_public_key_hex,
+}, false).identity_public_key_hex, undefined,
+'non-persona records must not gain a persona identity key pin');
 const minimalPolicy = projectAccessPolicy(authorityPolicy([publicGrant()]), false);
 assert.deepEqual(minimalPolicy.access_grants, []);
 assert.equal(minimalPolicy.owner_persona_id, undefined);
@@ -153,6 +231,26 @@ assert.equal(first.files.size, 2);
 assert.equal(first.snapshot.task, 'inspect a changing workspace');
 assert.equal(liveArtifactFileKey(first.files.get('ws-1\0plan.md')), 'ws-1\0plan.md');
 
+assert.deepEqual(sanitizeArtifactSemantics({
+  role_in_bundle: '  authored purpose\n',
+  artifact_roles: ['authored purpose', 'secondary purpose'],
+  capability_summary: ['authored purpose', 'inspectable output'],
+}), {
+  role_in_bundle: 'authored purpose',
+  artifact_roles: ['authored purpose', 'secondary purpose'],
+  capability_summary: ['authored purpose', 'inspectable output', 'secondary purpose'],
+});
+assert.deepEqual(artifactSemanticLabels({
+  role_in_bundle: 'authored purpose', capability_summary: ['authored purpose', 'inspectable output'],
+}), ['authored purpose', 'inspectable output']);
+assert.deepEqual(sanitizeArtifactSemantics({
+  role_in_bundle: 'x'.repeat(LIVE_ARTIFACT_LIMITS.maxArtifactSemanticLength + 1),
+  capability_summary: ['must not partially survive'],
+}), {});
+assert.deepEqual(sanitizeArtifactSemantics({
+  artifact_roles: Array.from({length: LIVE_ARTIFACT_LIMITS.maxArtifactRoles + 1}, (_,i)=>`role-${i}`),
+}), {});
+
 const next = transitionLiveArtifacts(first, {
   run: 'run-1', revision: 'sha256:r2', files: [file('ws-1', 'plan.md', c), file('ws-2', 'model.step', b)],
 });
@@ -161,6 +259,20 @@ assert.deepEqual(next.changes.modified.map((x) => [x.path, x.previous.sha256]), 
 assert.equal(next.changes.modified[0].contentChanged, true);
 assert.deepEqual(next.changes.deleted.map((x) => x.path), ['old.csv']);
 assert.equal(liveArtifactRunKey('https://node.example/', 'run-1'), 'https://node.example\0run-1');
+
+const semanticBaseline=transitionLiveArtifacts(null,{
+  run:'run-semantic',revision:'sha256:s1',files:[file('ws-1','opaque.bin',a,{
+    role_in_bundle:'authored alpha',artifact_roles:['authored alpha'],capability_summary:['authored alpha'],
+  })],
+});
+const semanticChanged=transitionLiveArtifacts(semanticBaseline,{
+  run:'run-semantic',revision:'sha256:s2',files:[file('ws-1','opaque.bin',a,{
+    role_in_bundle:'authored beta',artifact_roles:['authored beta'],capability_summary:['authored beta'],
+  })],
+});
+assert.equal(semanticChanged.changes.modified.length,1);
+assert.equal(semanticChanged.changes.modified[0].contentChanged,false);
+assert.deepEqual(artifactSemanticLabels(semanticChanged.changes.modified[0]),['authored beta']);
 
 const snapshot = (revision, generated_at, files = [file('ws-1', 'plan.md', a)]) => ({
   schema: 'personaos-live-artifacts/1', run: 'run-1', revision, generated_at, files,
@@ -408,17 +520,52 @@ const portal = await readFile(new URL('../assets/discovery.js', import.meta.url)
 const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(portal, /DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https:\/\/node1\.personas\.ai'/);
-assert.match(portal, /\.\.\.p\.getAll\('global_discovery'\),\.\.\.p\.getAll\('resolver'\)/);
+assert.match(portal, /\.\.\.p\.getAll\('resolver'\),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT/);
+assert.match(portal, /0 nodes · awaiting node1\.personas\.ai announcements/,
+  'the empty network state must describe automatic node1 discovery');
+assert.doesNotMatch(portal, /add a peer or resolver/i,
+  'the hosted shell must not invite viewers to configure discovery');
+assert.doesNotMatch(index, /id="(?:peer|addpeer)"/,
+  'the hosted shell must not ask the viewer to supply a peer URL');
+assert.doesNotMatch(portal, /(?:getItem|setItem)\('personaos_peers'/,
+  'manual peer routing state must not survive automatic node1 discovery');
+assert.doesNotMatch(portal, /getAll\('global_discovery'\)/);
+assert.doesNotMatch(portal, /getAll\('peer'\)/);
+assert.doesNotMatch(portal, /fetchJson\(join\(ep,'\/v1\/nodes'\)\)/);
 assert.match(portal, /the locator has no record or identity authority/);
 assert.match(portal, /p\.get\('no_global_discovery'\)==='1'/);
+assert.match(portal, /d\.schema==='personaos-project-export\/2'/);
+assert.match(portal, /d\.primary_environment_id/);
+assert.doesNotMatch(portal, /kv\('Workspace env',S0\(d\.environment_id\)\)/);
 assert.match(portal, /addEventListener\('live_artifact_update'/);
 assert.match(portal, /addEventListener\('run_ended'/);
-assert.match(portal, /project\?\.label\|\|state\.snapshot\?\.task\|\|state\.run/);
+assert.match(portal, /humanTask\(project\?\.label\|\|state\.snapshot\?\.task,nodeId,state\.run\)/);
+assert.doesNotMatch(portal, /r\.kind==='artifact'&&_isMissionDoc/);
 assert.match(portal, /query\.get\('local_discovery'\)!=='1'/);
 assert.match(portal, /location\.hostname==='ai-personas\.github\.io'/);
 assert.match(portal, /query\.get\('origin_discovery'\)==='1'/);
-assert.match(portal, /visiblePersonaIds\.add\(_personaRef\(sid,b\.kernel\)\.key\)/);
+assert.match(portal, /personaWindow\.items\.forEach\(\(context\)=>S\.visiblePersonaIds\.add\(context\.key\)\)/);
 assert.doesNotMatch(portal, /visiblePersonaIds\.add\(_personaKey\(b\.kernel,sid\)\)/);
+assert.match(portal, /fetchVerifiedPersonaAvatar/);
+assert.match(portal, /data-avatar-state/);
+assert.doesNotMatch(portal, /kind\|\|''\)\.toUpperCase\(\)==='AVATAR'/);
+assert.match(portal, /URL\.createObjectURL\(blob\)/);
+assert.doesNotMatch(portal, /persona-avatar-fallback/);
+assert.doesNotMatch(portal, /legacy-fallback/);
+assert.doesNotMatch(portal, /personaAvatarCells/);
+assert.match(portal, /class="persona-deck"/);
+assert.match(portal, /class="environment-grid"/);
+assert.match(portal, /WORKSPACE LOCATION ·/);
+assert.match(portal, /class="env-card-stats"/);
+assert.match(portal, /setHeaderToolsOpen\(false\)/);
+assert.match(portal, /headerToolsToggle/);
+assert.match(portal, /_isMechanicalPersonaName/);
+assert.match(portal, /portrait pending/);
+assert.doesNotMatch(portal, />no image</i);
+assert.match(index, /class="workspace-rail"/);
+assert.match(index, /class="context-dock"/);
+assert.doesNotMatch(portal, /<div class="env-personas">\$\{cards\}/);
+assert.match(portal, /appHeader'\)\?\.offsetHeight === 0|appHeader/);
 assert.match(portal, /if\(!S\.recs\.size&&!\(S\.globalAnnouncements\?\.size\)\) \$\('#status'\)\.textContent='bootstrapping discovery…'/);
 assert.match(portal, /setInterval\(\(\)=>\{ try\{ pollLiveArtifacts\(\)/);
 assert.match(portal, /opts\.liveFile\?\.sha256\|\|opts\.contentHash/);
@@ -438,6 +585,13 @@ assert.doesNotMatch(portal, /needs no token|localhost\s*=\s*operator|per-install
 assert.doesNotMatch(portal, /new EventSource\(esUrl\)/);
 assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
+assert.match(portal, /Authored role claims/);
+assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
+assert.match(index, /discovery\.js\?v=20260715-main-routing-v1/);
+assert.match(portal, /<details class="artifact-index">/);
+assert.match(portal, /<details class="trust-details">/);
+assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
+assert.match(portal, /envManifestFiles\(b\).*authoredArtifactLabelText\(a\)/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE TRANSPORT/);
 assert.doesNotMatch(portal, /UNSIGNED LIVE METADATA/);
 assert.doesNotMatch(portal, /delegated-ipfs\.dev|https:\/\/ipfs\.io|https:\/\/dweb\.link/);
@@ -447,7 +601,20 @@ assert.match(portal, /P2P\.node\.contentRouting\.provide/);
 assert.match(portal, /verifyHttpProviderEnvelope\(envelope,doc,keys,boot,base,expectedKey=''/);
 assert.match(portal, /P2P\.resolveProvider\(key,\{timeoutMs:5000\}\)/);
 assert.match(portal, /signing_key_status!=='current'/);
-assert.match(portal, /legacy or malformed provider pointer refused/);
+assert.match(portal, /incomplete or malformed provider envelope refused/);
+assert.match(portal, /hydrateProviderIndex\(providerIndex\)/);
+assert.match(portal, /const DEFAULT_JSON_MAX_BYTES=4\*1024\*1024/,
+  'ordinary JSON must retain the 4 MiB response boundary');
+assert.match(portal, /providerIndexResponseByteLimit\(\s*advertisedRecordCount,NETWORK_LIMITS\.cachedRecords\)/,
+  'only the provider index may derive a larger bound from signed-envelope and cache ceilings');
+assert.match(portal, /\{maxBytes:providerIndexMaxBytes\}/,
+  'the provider-index fetch must enforce its derived response limit');
+assert.match(portal, /Number\(prov\.document_count\)!==advertisedRecordCount/,
+  'provider document population must match the bootstrap count that selected its byte budget');
+assert.match(portal, /const recPersonaKeys=new Set\(\)/,
+  'multiple signed records for one complete persona identity must not inflate vitals');
+assert.match(portal, /const doc=envelope\.document/);
+assert.doesNotMatch(portal, /fetchJson\(join\(base,recordUrl\)\)/);
 assert.match(portal, /recordVerificationEntries\(keyEntries,doc\?\.signing_key_id\)/);
 assert.match(portal, /untrusted lookup hint only; awaiting current-master ProviderRecord/);
 const gossipHandler = portal.slice(portal.indexOf('function onGossipRecord'),
@@ -463,9 +630,14 @@ assert.equal(createHash('sha256').update(rendezvousNamespace).digest('hex'),
 assert.ok(p2pBundle.includes('/personaos/kad/1.0.0'));
 assert.ok(p2pBundle.includes('/personaos/provider-record/1.0.0'));
 assert.ok(p2pBundle.includes('personaos-browser-provider-resolution/1'));
+assert.ok(p2pBundle.includes('denyInsecureWebSocketDial'));
+assert.match(portal, /p2p-libp2p\.js\?v=20260715-authority-continuity-v1/);
 assert.match(portal, /Close details/);
-assert.match(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'published'/);
-assert.doesNotMatch(portal, /cards\.push\(\{key:'rec:'\+id,task,state:'shipped'/);
+assert.match(portal, /const published=publishedMissionEvidenceProjection\(r\)/);
+assert.match(portal, /const terminal=terminalTaskMissionProjection\(r\), live=liveTaskMissionProjection\(r\)/);
+assert.match(portal, /projected=terminal\|\|live\|\|published/);
+assert.match(portal, /Design-history JSON is/);
+assert.doesNotMatch(portal, /r\.kind==='artifact'&&_isMissionDoc/);
 assert.match(index, /script-src 'self'/);
 assert.match(index, /connect-src 'self' blob:/);
 assert.match(index, /img-src 'self' blob: data:/);

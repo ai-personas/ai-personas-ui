@@ -1,8 +1,0 @@
-# PersonaOS discovery seeds.
-#
-# This file deliberately carries no fixed node URLs. The browser resolves live
-# nodes at runtime through content-addressed discovery and any peer URL the
-# operator supplies with ?peer=<url> or the PEER control.
-#
-# A committed HTTPS hostname becomes stale when the backing node/tunnel rotates;
-# stale seeds make the hosted UI look empty even when local nodes are healthy.

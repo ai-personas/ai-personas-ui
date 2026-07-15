@@ -5,6 +5,9 @@ const POLICY_FIELDS = Object.freeze([
   'schema', 'policy_id', 'subject_kind', 'subject_id', 'owner_persona_id',
   'access_grants', 'outward_tier', 'cross_tenant_agreement_ref',
 ]);
+const PROVIDER_INDEX_SCHEMA = 'dht-provider-index/3';
+const PROVIDER_REFERENCE_SCHEMA = 'provider-record-reference/1';
+const DOCUMENT_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 
 const text = (value) => String(value ?? '').normalize('NFC').trim();
 const tail = (value) => text(value).split('/').filter(Boolean).pop() || '';
@@ -85,6 +88,60 @@ export function providerLookupHints(record, {max = 5} = {}) {
   return hints;
 }
 
+/**
+ * Rehydrate one compact atomic HTTP generation. Cryptographic document-hash,
+ * ProviderRecord, record and policy verification happens immediately after
+ * this structural join; no record URL is dereferenced.
+ */
+export function hydrateProviderIndex(index) {
+  const providers = index?.providers;
+  const documents = index?.documents;
+  if (index?.schema !== PROVIDER_INDEX_SCHEMA || !Array.isArray(providers)
+      || !documents || typeof documents !== 'object' || Array.isArray(documents)
+      || !Number.isInteger(index.provider_count)
+      || index.provider_count !== providers.length) {
+    return {ok: false, reason: 'provider_index_schema_invalid', envelopes: []};
+  }
+  const documentEntries = Object.entries(documents);
+  if (!Number.isInteger(index.document_count)
+      || index.document_count !== documentEntries.length
+      || documentEntries.some(([ref, document]) => !DOCUMENT_HASH_RE.test(ref)
+        || !document || typeof document !== 'object' || Array.isArray(document))) {
+    return {ok: false, reason: 'provider_document_table_invalid', envelopes: []};
+  }
+  const used = new Set();
+  const envelopes = [];
+  const errors = [];
+  for (const reference of providers) {
+    const record = reference?.record;
+    const documentRef = String(reference?.document_ref || '');
+    if (reference?.schema !== PROVIDER_REFERENCE_SCHEMA
+        || record?.schema !== 'provider-record/1'
+        || !DOCUMENT_HASH_RE.test(documentRef)
+        || String(record.document_hash || '') !== documentRef) {
+      errors.push('provider_document_ref_mismatch');
+      continue;
+    }
+    if (!Object.hasOwn(documents, documentRef)) {
+      errors.push('provider_document_ref_missing');
+      continue;
+    }
+    used.add(documentRef);
+    envelopes.push({
+      schema: 'provider-record-envelope/1',
+      record,
+      signature_hex: String(reference.signature_hex || ''),
+      document: documents[documentRef],
+    });
+  }
+  // Invalid aliases are refused independently. If every alias is structurally
+  // sound, an extra unreferenced document makes the complete generation bad.
+  if (!errors.length && used.size !== documentEntries.length) {
+    return {ok: false, reason: 'provider_document_table_unreferenced', envelopes: []};
+  }
+  return {ok: true, envelopes, refused: errors.length, errors};
+}
+
 export function recordVerificationEntries(entries, keyId) {
   const seen = new Set();
   const ranked = {current: 0, previous: 1, archived: 2};
@@ -107,6 +164,19 @@ export function currentMasterKey(entries) {
     entry?.key_id === 'kernel-master' && entry?.role === 'master'
     && entry?.status === 'current' && KEY_RE.test(text(entry?.public_key_hex)));
   return matches.length === 1 ? text(matches[0].public_key_hex) : '';
+}
+
+export function validateProviderInventoryWindow(generatedAtValue, expiresAtValue, {
+  nowMs = Date.now(), maxFutureSkewMs = 30_000, maxLifetimeMs = 3_600_000,
+} = {}) {
+  const generatedAt = Date.parse(String(generatedAtValue || ''));
+  const expiresAt = Date.parse(String(expiresAtValue || ''));
+  const ok = Number.isFinite(generatedAt) && Number.isFinite(expiresAt)
+    && generatedAt <= nowMs + maxFutureSkewMs
+    && expiresAt > nowMs
+    && expiresAt > generatedAt
+    && expiresAt - generatedAt <= maxLifetimeMs;
+  return {ok, generatedAt, expiresAt};
 }
 
 function subjectCandidates(record, links) {
@@ -188,11 +258,16 @@ export function projectDiscoveryRecord(record, canRead) {
   ]) {
     if (Object.hasOwn(record || {}, key)) out[key] = record[key];
   }
-  // A persona avatar is part of the signed public identity card, not a body
-  // locator. Keep the bounded descriptor at discover tier; the renderer still
-  // validates its exact schema and never follows URL/data fields.
+  // The descriptor is signed public identity data, not a fetchable locator.
+  // Rendering validates its bounded shape and never follows URL/data fields.
   if (record?.kind === 'persona' && Object.hasOwn(record, 'avatar')) {
     out.avatar = record.avatar;
+  }
+  if (record?.kind === 'persona'
+      && Object.hasOwn(record, 'identity_signing_key_id')
+      && Object.hasOwn(record, 'identity_public_key_hex')) {
+    out.identity_signing_key_id = record.identity_signing_key_id;
+    out.identity_public_key_hex = record.identity_public_key_hex;
   }
   return out;
 }

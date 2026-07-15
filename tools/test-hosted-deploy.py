@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from playwright.sync_api import sync_playwright
 
 
-ROOT_FILES = ("index.html", "discovery.css", "discovery.js", "peers.txt", "robots.txt")
+ROOT_FILES = ("index.html", "discovery.css", "discovery.js", "robots.txt")
 REQUIRED_BROWSER_ASSETS = {
     "assets/discovery.css",
     "assets/discovery.js",
@@ -25,7 +25,7 @@ REQUIRED_BROWSER_ASSETS = {
     "assets/live-signatures.mjs",
     "assets/noble-ed25519.js",
     "assets/p2p-libp2p.js",
-    "peers.txt",
+    "assets/persona-avatar.mjs",
 }
 
 
@@ -171,8 +171,17 @@ def browser_smoke(
             """() => document.querySelector('#status')?.textContent !== 'booting discovery…'""",
             timeout=30_000,
         )
+        # `initP2P()` is intentionally non-blocking. The initial label is
+        # "connecting…", so merely waiting for the absence of an intermediate
+        # "starting" label can pass before the dynamic import is requested.
+        # Wait for either successful libp2p initialization (`peer(s)`) or its
+        # explicit graceful HTTP fallback (`web discovery`). Both states prove
+        # that the vendored module load was attempted before asset accounting.
         page.wait_for_function(
-            """() => !document.querySelector('#p2p')?.textContent.includes('starting libp2p')""",
+            r"""() => {
+              const text=document.querySelector('#p2p')?.textContent || '';
+              return /Network · (?:\d+ peers?|web discovery)$/.test(text);
+            }""",
             timeout=30_000,
         )
         metrics = page.evaluate(
@@ -221,7 +230,7 @@ def browser_smoke(
         )
     if metrics["title"] != "PersonaOS · Living Network":
         raise AssertionError(f"unexpected title: {metrics['title']!r}")
-    if not metrics["p2p"].startswith("P2P · libp2p "):
+    if not metrics["p2p"].startswith("Network · "):
         raise AssertionError(f"hosted libp2p module did not initialize: {metrics['p2p']!r}")
     if metrics["background"] in {"rgba(0, 0, 0, 0)", "transparent"}:
         raise AssertionError("hosted stylesheet did not apply")

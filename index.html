@@ -9,12 +9,14 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260715-persona-routing-authority-v1">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260715-main-routing-v1">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
        Replaces the old topbar/ticker/board-stats. The living network IS the page. -->
-  <header class="vitals">
+  <div class="workspace-rail">
+  <div class="command-shell" id="commandShell">
+  <header class="vitals" id="appHeader">
     <span class="vgroup vgroup-identity">
       <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
       <h1 class="brandmark"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
@@ -30,33 +32,14 @@
     <span class="vsep" aria-hidden="true"></span>
     <span class="vgroup vgroup-tools">
       <input id="q" type="search" placeholder="filter network…" aria-label="filter personas, environments and events">
-      <input id="peer" type="url" placeholder="peer URL…" aria-label="discover a peer node by URL">
       <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">HELP</button>
-      <button id="addpeer" class="btn">PEER</button>
       <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
     </span>
+    <button id="headerToolsToggle" class="header-tools-toggle" type="button" aria-controls="appHeader"
+      aria-expanded="false" title="show search and network controls">controls</button>
   </header>
-
-  <div class="intro" id="intro" hidden>
-    <button class="link" id="introclose" style="float:right">close ✕</button>
-    <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
-    and refine a real, evidence-bound deliverable
-    round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
-    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
-    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
-    <div class="gloss">
-      <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
-      <span><b>ENV</b> the shared environment a team of personas works in</span>
-      <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
-      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
-      <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
-      <span><b>LIVE FRAME</b> unsigned transport telemetry — useful state, not a signed record</span>
-      <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
-      <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
-    </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>
-    then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
-  </div>
+  <button id="headerToggle" class="header-toggle" type="button" aria-controls="appHeader"
+    aria-expanded="true" title="collapse status and controls">collapse header</button>
 
   <nav class="globalbar" aria-label="network scope and discovered nodes">
     <button id="networkAll" class="network-scope on" type="button" aria-pressed="true"
@@ -65,16 +48,23 @@
     <span id="globalKernels" class="globalbar-list"><span class="dim">discovering kernels…</span></span>
     <span id="networkOverflow" class="network-overflow" hidden></span>
   </nav>
+  </div>
 
-  <section class="missions" id="missions" aria-label="missions" hidden>
-    <span class="globalbar-label" title="every task the discovered personas are working on, paused on, or have shipped — click a card for the full mission record">MISSIONS</span>
+  <div class="context-dock" aria-label="current mission and network map">
+  <details class="missions" id="missions" hidden>
+    <summary class="mission-summary">
+      <span class="mission-summary-icon" aria-hidden="true">●</span>
+      <span><span class="mission-eyebrow" id="missionEyebrow">MISSION EVIDENCE</span><strong id="missionHeadline">Current work</strong></span>
+      <span class="mission-summary-meta" id="missionCount"></span>
+      <span class="mission-chevron" aria-hidden="true">⌄</span>
+    </summary>
     <div id="missionCards" class="mission-cards"></div>
-  </section>
+  </details>
 
   <!-- R1 · CONSTELLATION RAIL — supporting minimap of the node: the kernel core
        beats on the heartbeat; persona nodes breathe when live; an edge fires a
        traveling pulse when a coordination message names that persona. -->
-  <section class="constellation" id="constellation" aria-labelledby="conTitle">
+  <section class="constellation collapsed" id="constellation" aria-labelledby="conTitle">
     <div class="con-head">
       <span class="con-title" id="conTitle">LIVE&nbsp;TOPOLOGY</span>
       <span class="scope-pill" id="graphScope">GLOBAL NETWORK</span>
@@ -89,40 +79,46 @@
         <span class="lg-cap" aria-hidden="true">channel</span>
         <span class="lg"><span class="lg-link"></span>persona&nbsp;↔&nbsp;persona</span>
         <span class="lg-sep" aria-hidden="true"></span>
-        <span class="lg-cap" aria-hidden="true">role</span>
-        <span class="lg"><span class="lg-ring r-lead"></span>lead</span>
-        <span class="lg"><span class="lg-ring r-verifier"></span>verifier</span>
-        <span class="lg"><span class="lg-ring r-integrator"></span>integrator</span>
-        <span class="lg"><span class="lg-ring r-specialist"></span>specialist</span>
-        <span class="lg"><span class="lg-ring r-member"></span>member</span>
+        <span class="lg-cap" aria-hidden="true">identity</span>
+        <span class="lg"><span class="lg-ring r-authored"></span>persona-authored characteristic</span>
       </span>
-      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="true" aria-controls="sysGraph">▾</button>
+      <button id="conToggle" class="con-toggle" title="collapse / expand the constellation" aria-label="collapse or expand the constellation" aria-expanded="false" aria-controls="sysGraph">▾</button>
     </div>
     <svg id="sysGraph" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="conTitle sysGraphCap"></svg>
   </section>
+  </div>
+  </div>
 
-  <!-- R2 · THE STAGE (hero: environments → living persona cards) + R3 · COORDINATION FEED -->
+  <div class="intro" id="intro" hidden>
+    <button class="link" id="introclose" style="float:right">close ✕</button>
+    <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
+    and refine a real, evidence-bound deliverable
+    round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
+    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
+    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
+    <div class="gloss">
+      <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
+      <span><b>ENV</b> the shared environment a team of personas works in</span>
+      <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
+      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
+      <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
+      <span><b>UNSIGNED TRANSPORT</b> live execution telemetry — useful state, not a signed record</span>
+      <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
+      <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
+    </div>
+    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>.
+    Open its same-origin UI at <code>http://localhost:8765/</code>; public nodes announce through <code>node1.personas.ai</code> automatically.</p>
+  </div>
+
+  <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
+       compact workspace index and each persona card names its current rooms. -->
   <main class="stage-wrap">
     <div class="stage" id="sysEnvs"><div class="dim" style="padding:22px">discovering live personas…</div></div>
-    <aside class="coordfeed" aria-label="live persona activity">
-      <div class="cf-head"><span>LIVE&nbsp;·&nbsp;PERSONA&nbsp;ACTIVITY <span class="transport-badge">UNSIGNED TRANSPORT</span></span><span class="dim" id="sysStreamRate" role="status" aria-live="polite"></span></div>
-      <div class="cf-tabs" id="sysStreamTabs" role="group" aria-label="filter the activity feed">
-        <button data-flt="all" class="chip on" title="every live event across all personas and environments">ALL</button>
-        <button data-flt="think" class="chip" title="what each persona's model actually produced + lessons it learned (operator token required)">THINK</button>
-        <button data-flt="coord" class="chip" title="who→whom coordination messages the kernel routes between personas">COORD</button>
-        <button data-flt="verify" class="chip" title="signature and acceptance checks on each claim">VERIFY</button>
-        <button data-flt="artifact" class="chip" title="shipped artifacts, task acceptance &amp; verification deliverables">SHIP</button>
-        <button data-flt="tool" class="chip" title="a persona reaching for / acquiring / using a tool">TOOLS</button>
-        <button data-flt="crossenv" class="chip" title="coordination that crosses from one environment into another">CROSS-ENV</button>
-      </div>
-      <ol class="cf-body" id="sysStream" role="log" aria-label="live persona coordination"></ol>
-      <div class="cf-foot" id="cfFollow" hidden><span class="dim">following one persona</span><button class="link ghost-btn" id="cfUnfollow">show all ✕</button></div>
-    </aside>
   </main>
 
   <footer>
     <span id="status" role="status">booting discovery…</span>
-    <span id="p2p" class="p2p-stat" role="status" aria-label="peer-to-peer connectivity status">P2P · starting libp2p…</span>
+    <span id="p2p" class="p2p-stat" role="status" aria-label="network connectivity status">Network · connecting…</span>
     <button id="logbtn" class="link">discovery log</button>
   </footer>
 
@@ -135,11 +131,15 @@
 
   <div class="drawer-wrap" id="detailwrap">
     <div class="drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
-      <div class="drawer-head"><b id="detail-title">—</b><span><button id="detailback" class="link nav-back" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span></div>
+      <div class="drawer-accent" aria-hidden="true"></div>
+      <div class="drawer-head">
+        <div class="drawer-head-copy"><span class="drawer-eyebrow">INSPECTING LIVE RECORD</span><b id="detail-title">—</b></div>
+        <span><button id="detailback" class="link nav-back" hidden>‹ back</button><button id="detailclose" class="link">close ✕</button></span>
+      </div>
       <div class="drawer-body" id="detailbody"></div>
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260715-persona-routing-authority-v1"></script>
+  <script type="module" src="assets/discovery.js?v=20260715-main-routing-v1"></script>
 </body>
 </html>

@@ -40,14 +40,16 @@ jobs:
         run: python3 tools/check-design-reference.py design-reference
 
       - name: Test live artifact state contract
-        run: node tools/test-live-artifacts.mjs
+        run: |
+          node tools/test-live-artifacts.mjs
+          node tools/test-persona-avatar.mjs
 
       - name: Test bounded network and artifact dispatch contracts
         run: |
           node tools/test-network-store.mjs
           node tools/test-network-view.mjs
           node tools/test-artifact-types.mjs
-          node tools/test-persona-avatar.mjs
+          node tools/test-public-telemetry.mjs
           node tools/test-routing-authority.mjs
 
       - name: Install Playwright

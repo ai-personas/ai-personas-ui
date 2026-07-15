@@ -10,43 +10,44 @@ other transient execution telemetry remains explicitly labelled as unsigned tran
 
 ## Realtime discovery — the page ships **no** data
 
-This repository is a **pure shell**: `index.html`, `assets/`, `peers.txt`, `robots.txt`. It
+This repository is a **pure shell**: `index.html`, `assets/`, and `robots.txt`. It
 contains **no run data at all**. Every persona, environment, project, artifact, telemetry span,
 and refinement mission is discovered at runtime from live nodes. First contact is merged from:
 
 - the page origin when a PersonaOS node serves this shell;
-- **`?peer=<url>`**, peers saved by the **PEER** control in `localStorage`, and `peers.txt`;
 - bounded localhost probes for a node running on the viewer's machine;
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
 - libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
 - the default `https://node1.personas.ai` rendezvous plus any additive
-  `?resolver=<https-url>` (or legacy `?global_discovery=`) supplied by the viewer.
+  `?resolver=<https-url>` supplied by the viewer.
 
-This repository's `peers.txt` deliberately contains no fixed node hostname. Resolver responses are
-signed announcements and locators only; `node1` and custom resolvers receive no authority over the
-records or identities they point to. Use `?no_global_discovery=1` for an explicit
+Resolver responses are signed announcements and locators only; `node1` and custom resolvers receive
+no authority over the records or identities they point to. Use `?no_global_discovery=1` for an explicit
 resolver-free/offline session. Discovery
 records are re-resolved and re-verified every 15 seconds. If no first-contact path finds a reachable
-node, the page shows an explicit empty state.
+node, the page shows an explicit empty state. The hosted URL never needs or interprets a
+peer-routing query parameter.
 
 **Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
 IP** (browsers block mixed content). So on an **intranet**, open the **node-served** UI directly
 at `http://<node-host>:8799/` — the node serves this same shell over plain HTTP, same-origin, so
 realtime discovery works without any tunnel. For the **internet**, expose the node behind an
-**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, give
-viewers its URL through `?peer=`, or use another signed-announcement resolver. In every case trust
+**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, or use
+another signed-announcement resolver. In every case trust
 is the **Ed25519 signature on each record, not the host**.
 
-## P2P discovery - how it finds things (no central index)
+## P2P discovery - how it finds things (no trusted central registry)
 
 Discovery is **signed + content-addressed** (09_PROTOCOLS §3G/§3H). For
 every node it knows or is told about, the page:
 
 1. **bootstraps** from that node's `.well-known/personaos-discovery.json`;
-2. resolves signed `provider-record/1` envelopes from `discovery/providers.json`, each binding a
-   DID/hash/handle key, record hash, host locators, access policy, and current kernel master key;
-3. **resolves each record and verifies the ProviderRecord, record, and AccessPolicy Ed25519
+2. resolves the current, expiring, current-master-signed `dht-provider-index/3` generation from
+   `discovery/providers.json`; its hash-chained manifest binds every record id, exact canonical
+   document hash, URL leaf, ProviderRecord generation, and manifest hash, and the browser rehydrates
+   each pair in memory without dereferencing its mutable `record_url`;
+3. **verifies each rehydrated ProviderRecord+document pair, then the record and AccessPolicy Ed25519
    signatures** against the owning kernel's current published master key (in-browser, via vendored
    [`noble-ed25519`](https://github.com/paulmillr/noble-ed25519)). An unsigned, stale-key, forged,
    policy-mismatched, or hash-mismatched record is dropped.
@@ -68,11 +69,11 @@ UI does not claim otherwise.
 
 Raw gossip is **lookup-only**: a record's embedded key, label, base, links, and policy never enter
 the UI directly. The browser extracts at most five bounded content-hash/DID/global-handle/handle/id
-aliases, rate-limits their DHT queries, and displays the record only after `resolveProvider` returns
-a current-master-signed ProviderRecord whose document hash, record signature, policy signature,
-subject, scope, and host binding all verify. This lets a gossip-only handle discover a previously
-unknown node without an HTTP provider-index seed while preventing self-signed gossip from
-overwriting displayed state.
+aliases and rate-limits their DHT queries. A resolved ProviderRecord/document pair must pass its
+current-master, document-hash, record-signature, policy, subject, scope, and host checks, then match
+the record id, document hash, generation, and manifest hash in that kernel's current complete v3
+inventory before it can refresh displayed state. A standalone lookup result cannot outlive or
+bypass an inventory omission.
 
 Public visibility grants strangers **discover**, not read. A matching, unexpired public `r`/`rw`/
 `admin` grant whose optional scope matches the signed policy subject is required before an anonymous
@@ -85,14 +86,22 @@ current-kernel-master-only.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
 peers; public nodes normally announce through the default untrusted locator, and any kernel can
-also be added with `?peer=https://its-host`, advertised through libp2p/IPFS, or saved with the PEER
-control. Every route enters the same record-resolution and signature check.
+also be advertised through libp2p/IPFS. Every route
+enters the same record-resolution and signature check.
 
 **The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
 window of at most six kernel cores and ten navigator chips, with explicit “shown of total” and
-aggregated-overflow counts. Selecting a kernel drills into that node's environments and personas:
-the graph shows at most 36 prioritised personas, while the accessible stage starts with ten
-environments and twelve personas per environment and expands through search or **SHOW MORE**.
+aggregated-overflow counts. Selecting a kernel drills into that node's personas and environments:
+the graph shows at most 36 prioritised personas, while the accessible stage starts with one flat
+twelve-persona deck plus a compact ten-environment workspace index and expands through search or
+**SHOW MORE**. Personas are never nested under environments; each card names the exact environments
+whose roster or live telemetry associates it with them.
+Environment records render as their own collectible workspace cards with stable identity sigils,
+live people/signal/file facts, environment-owned outputs, and a compact avatar constellation. Each
+constellation node reuses the exact persona-signed raster verifier; animated directional edges and
+the in-card communication ticker appear only for observed actor→persona-endpoint frames in that
+exact environment. A verified environment with no observed roster still renders as an explicit
+empty card rather than disappearing or fabricating members.
 Dense graph windows keep only about ten evenly spaced labels plus every active, recent, or followed
 persona labelled; every other exact node remains keyboard-focusable with its full tooltip, avoiding
 an unreadable text cloud without dropping identities.
@@ -116,7 +125,39 @@ a willing replica or pin provider. These are optional, replaceable **commons**, 
 central index, but they are still infrastructure. Without bootstrap/relay/rendezvous or a direct
 peer URL, unrelated browsers cannot discover each other through NAT; without replication/pinning,
 an offline origin's bytes are unavailable. Trust still comes from signatures and content hashes,
-not from the commons carrying them.
+not from the commons carrying them. Mixed node bootstrap documents are split at the browser
+boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
+js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
+
+**Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
+or `mission` record is published evidence using only its bounded signed label and optional run DID;
+open persona-authored capability vocabulary never decides whether it exists. Exactly one generic
+terminal lifecycle capability (`complete`, `completed`, `succeeded`, `failed`, `cancelled`,
+`canceled`, `aborted`, or `stopped`) supplies terminal state; otherwise exactly one `live_task`
+marker plus one bounded `task_state:` binding supplies live state. Conflicting, duplicate,
+malformed, and unknown capabilities fail closed, and prose never supplies state. Capability order
+is deliberately irrelevant because the signed payload canonicalises the list. Unsigned telemetry
+and operator-only run state remain additive sources.
+
+**Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
+the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies
+the descriptor's persona signature, resolves only its exact provider-relative content-addressed
+path, rejects redirects, and checks raster MIME, byte length, SHA-256, and dimensions before
+rendering the bytes through a temporary blob URL. A verified lifecycle shell is rendered immediately
+as an independently materializing persona; its persona-authored name, characteristics, and avatar
+may become materialized independently, and a verified adopted name does not falsely promote the
+remaining identity fields. Missing or invalid avatars remain an explicit portrait-pending state.
+The UI generates no identity art: avatar creation belongs to the persona lifecycle, and an avatar
+descriptor never creates another persona or projection card. The top status/control header is
+independently collapsible and consumes zero layout height while closed.
+
+**Public persona activity is a closed signed projection.** Anonymous aggregate telemetry and each
+persona/environment feed must use their exact public schemas, bind the current node id, be fresh,
+and verify under the sole current kernel master. Public communication topology admits only exact,
+independently signed broadcast-route metadata. A persona card's text stream comes only from the
+exact whole-document-signed `personaos-persona-public-messages/1` endpoint for that current-inventory
+persona; addressed output, a wrong author/subject, extra fields, or changed bytes are rejected.
+Detailed cognition remains available only through the bearer-gated operator schema.
 
 ## Realtime execution and live artifacts
 
@@ -151,9 +192,13 @@ Non-live manifest files that advertise a SHA-256 use the same fail-closed byte c
 repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
 Markdown, text, JSON, and CSV retain one prior verified revision and show a bounded line diff when
 an open file changes. Repository-owned adapters cover Gerber/drill, KiCad, netlist/SPICE,
-waveforms, DXF, CAD/3D, PDF, tables, structured data, and Markdown; built-ins cover verified
-images, audio/video controls, source code, tabular text, and safe download descriptors. Unknown
-content never produces a blank viewer: textual bytes get a bounded plain-text view and binary
+waveforms, DXF, CAD/3D (including bounded IFC/STEP/STL/OBJ/glTF byte-derived inspection), PDF,
+tables, structured data, and Markdown; built-ins cover verified
+images, audio/video controls, source code, tabular text, and safe download descriptors. For
+hash-verified bytes, bounded header recognition can select the closed local renderer for PNG,
+JPEG, WebP, PDF, SVG, ZIP/3MF, STEP/IFC, STL, OBJ, PLY, DXF, KiCad, Gerber, Excellon, and glTF even
+when the filename is absent or misleading; contradictions are shown explicitly. Unknown content
+never produces a blank viewer: textual bytes get a bounded plain-text view and binary
 bytes get metadata plus a bounded hex preview. HTML is displayed as source, archive/office
 formats are descriptors, and executable peer content is never run. The credential-bearing page
 imports no executable CDN modules. Markdown cannot fetch remote media, and glTF with non-data
@@ -196,17 +241,14 @@ Click any discovered record for deep detail with its trust state visible:
 - **telemetry** → a consent-gated activity/presence feed; signed spans and unsigned live frames
   are labelled separately.
 
-A real-time **LIVING NETWORK** UI makes the personas legible: living persona cards stream each
-persona's request→response and cognition; a coordination constellation (kernel core + persona nodes)
-fires as messages flow; a who→whom coordination feed threads each task's produce→verify→ship; and a
-heartbeat-driven system vital keeps the page alive. Persona cards expose task/LLM execution state,
-the current model/purpose, and run pressure/review/block state when the node API provides it.
-An admitted persona avatar uses the `persona-avatar/2` contract from its Ed25519-verified public
-record. The browser verifies the descriptor's persona signature, resolves only its exact
-provider-relative content-addressed path, rejects redirects, and checks raster MIME, byte length,
-SHA-256, and dimensions before rendering the bytes through a temporary blob URL. Missing or
-invalid avatars remain neutral text placeholders; the UI generates no identity art, and an avatar
-descriptor never creates another persona or projection card.
+A real-time **LIVING NETWORK** UI makes the personas legible through an original collectible-card
+visual language: the signed display name and verified raster portrait are the card hero, while each
+card's bounded message stream shows its own observed model requests and coordination signals.
+Environment cards carry a smaller live avatar constellation and message ticker. The global
+coordination constellation still fires as messages flow, and the heartbeat-driven system vital
+keeps the page alive. Persona cards expose task/LLM execution state, the current model/purpose, and
+run pressure/review/block state when the node API provides it. This visual system does not reuse
+third-party trading-card artwork, logos, nomenclature, or layouts.
 
 Persona→persona graph edges are exact claims, not inferred social links. A standing chord and its
 directional pulse exist only when one observed telemetry event names both an actor persona and an
@@ -275,10 +317,11 @@ Deterministic validation (the Playwright check starts its own local fixture):
 
 ```bash
 node tools/test-live-artifacts.mjs
+node tools/test-persona-avatar.mjs
 node tools/test-artifact-types.mjs
 node tools/test-network-view.mjs
 node tools/test-network-store.mjs
-node tools/test-persona-avatar.mjs
+node tools/test-public-telemetry.mjs
 node tools/test-routing-authority.mjs
 python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
 python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
@@ -294,21 +337,23 @@ The browser test requires Python Playwright, PyNaCl, and an installed Chromium. 
 index.html                                 # the discovery portal (terminal UI) — pure shell, no data
 assets/discovery.js                        # discovery, live monitor, drawers, render orchestration
 assets/discovery-authority.mjs             # provider hints, historical keys, AccessPolicy projection
+assets/persona-avatar.mjs                  # persona-signature + raster-byte/hash/MIME/dimension verification
 assets/network-view.mjs                    # bounded priority/search/progressive network projections
 assets/network-store.mjs                   # kernel-qualified entities, presence leases, event rings
 assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
+assets/public-telemetry.mjs                # exact public/operator telemetry and route projection
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
-assets/persona-avatar.mjs                  # persona-signed, content-addressed raster admission
 assets/routing-authority.mjs               # fail-closed exact/ambiguous environment association
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
-peers.txt                                  # published phonebook of live node URLs (discovered at runtime)
-tools/discovery_page.py, discovery_v11.py  # build-time generators (publish a node); NOT needed at runtime
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
+tools/test-persona-avatar.mjs              # signed, content-addressed raster avatar regression
 tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknown-content fallback
 tools/test-network-view.mjs                # million-node bounded-window regression
 tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression
+tools/test-public-telemetry.mjs             # public telemetry privacy/route regression
+tools/test-routing-authority.mjs            # fail-closed environment association regression
 tools/live_ui_fixture.py                    # canonical live API fixture for browser validation
 tools/test-live-ui.py                       # Playwright security, live-update, and mobile regression
 tools/test-hosted-deploy.py                 # exact deployed-byte + hosted Chromium smoke
