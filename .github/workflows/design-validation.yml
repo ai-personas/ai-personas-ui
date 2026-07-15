@@ -49,6 +49,7 @@ jobs:
           node tools/test-network-store.mjs
           node tools/test-network-view.mjs
           node tools/test-artifact-types.mjs
+          node tools/test-public-telemetry.mjs
 
       - name: Install Playwright
         run: |

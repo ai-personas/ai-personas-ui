@@ -32,9 +32,7 @@
     <span class="vsep" aria-hidden="true"></span>
     <span class="vgroup vgroup-tools">
       <input id="q" type="search" placeholder="filter network…" aria-label="filter personas, environments and events">
-      <input id="peer" type="url" placeholder="peer URL…" aria-label="discover a peer node by URL">
       <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">HELP</button>
-      <button id="addpeer" class="btn">PEER</button>
       <button id="opbtn" class="btn" title="operator bearer-token console: ASK / FUND / STOP + full node state">OPERATOR</button>
     </span>
     <button id="headerToolsToggle" class="header-tools-toggle" type="button" aria-controls="appHeader"
@@ -108,8 +106,8 @@
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>
-    then open <code>http://localhost:8765/</code> or add an HTTPS peer with ＋PEER.</p>
+    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>.
+    Open its same-origin UI at <code>http://localhost:8765/</code>; public nodes announce through <code>node1.personas.ai</code> automatically.</p>
   </div>
 
   <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
@@ -142,6 +140,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260714-live-alias-artifact-v1"></script>
+  <script type="module" src="assets/discovery.js?v=20260715-v3-public-personas-v3"></script>
 </body>
 </html>

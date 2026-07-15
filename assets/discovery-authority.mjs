@@ -5,7 +5,7 @@ const POLICY_FIELDS = Object.freeze([
   'schema', 'policy_id', 'subject_kind', 'subject_id', 'owner_persona_id',
   'access_grants', 'outward_tier', 'cross_tenant_agreement_ref',
 ]);
-const PROVIDER_INDEX_SCHEMA = 'dht-provider-index/2';
+const PROVIDER_INDEX_SCHEMA = 'dht-provider-index/3';
 const PROVIDER_REFERENCE_SCHEMA = 'provider-record-reference/1';
 const DOCUMENT_HASH_RE = /^sha256:[0-9a-f]{64}$/;
 
@@ -164,6 +164,19 @@ export function currentMasterKey(entries) {
     entry?.key_id === 'kernel-master' && entry?.role === 'master'
     && entry?.status === 'current' && KEY_RE.test(text(entry?.public_key_hex)));
   return matches.length === 1 ? text(matches[0].public_key_hex) : '';
+}
+
+export function validateProviderInventoryWindow(generatedAtValue, expiresAtValue, {
+  nowMs = Date.now(), maxFutureSkewMs = 30_000, maxLifetimeMs = 3_600_000,
+} = {}) {
+  const generatedAt = Date.parse(String(generatedAtValue || ''));
+  const expiresAt = Date.parse(String(expiresAtValue || ''));
+  const ok = Number.isFinite(generatedAt) && Number.isFinite(expiresAt)
+    && generatedAt <= nowMs + maxFutureSkewMs
+    && expiresAt > nowMs
+    && expiresAt > generatedAt
+    && expiresAt - generatedAt <= maxLifetimeMs;
+  return {ok, generatedAt, expiresAt};
 }
 
 function subjectCandidates(record, links) {

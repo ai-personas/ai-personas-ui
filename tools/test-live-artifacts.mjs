@@ -33,6 +33,7 @@ import {
   providerLookupHints,
   recordVerificationEntries,
   signedPersonaLabel,
+  validateProviderInventoryWindow,
 } from '../assets/discovery-authority.mjs';
 import {assertSelfContainedGltf,inspectCadBytes} from '../assets/renderers/cad3d.mjs';
 
@@ -65,6 +66,13 @@ assert.deepEqual(recordVerificationEntries(historyEntries, 'kernel-master').map(
   ['current', 'previous', 'archived']);
 assert.equal(currentMasterKey(historyEntries), '11'.repeat(32));
 assert.equal(currentMasterKey([...historyEntries, historyEntries[1]]), '');
+const inventoryNow = Date.parse('2026-07-15T12:00:00.000Z');
+assert.equal(validateProviderInventoryWindow(
+  '2026-07-15T11:30:00.000Z', '2026-07-15T12:30:00.000Z', {nowMs: inventoryNow},
+).ok, true);
+assert.equal(validateProviderInventoryWindow(
+  '2026-07-15T11:30:00.000Z', '2026-07-15T12:30:00.001Z', {nowMs: inventoryNow},
+).ok, false, 'browser inventory admission accepted a lifetime over one hour');
 const providerDocumentRef = `sha256:${'a'.repeat(64)}`;
 const providerDocument = {
   record: {
@@ -79,7 +87,7 @@ const providerReference = (key) => ({
   document_ref: providerDocumentRef,
 });
 const compactProviderIndex = {
-  schema: 'dht-provider-index/2', provider_count: 2, document_count: 1,
+  schema: 'dht-provider-index/3', provider_count: 2, document_count: 1,
   documents: {[providerDocumentRef]: providerDocument},
   providers: [providerReference('did:one'), providerReference('alias-one')],
 };
@@ -513,6 +521,10 @@ const p2pBundle = await readFile(new URL('../assets/p2p-libp2p.js', import.meta.
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 assert.match(portal, /DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https:\/\/node1\.personas\.ai'/);
 assert.match(portal, /\.\.\.p\.getAll\('resolver'\),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT/);
+assert.doesNotMatch(index, /id="(?:peer|addpeer)"/,
+  'the hosted shell must not ask the viewer to supply a peer URL');
+assert.doesNotMatch(portal, /(?:getItem|setItem)\('personaos_peers'/,
+  'manual peer routing state must not survive automatic node1 discovery');
 assert.doesNotMatch(portal, /getAll\('global_discovery'\)/);
 assert.doesNotMatch(portal, /getAll\('peer'\)/);
 assert.doesNotMatch(portal, /fetchJson\(join\(ep,'\/v1\/nodes'\)\)/);
@@ -571,7 +583,7 @@ assert.match(portal, /authenticated polling \(token omitted from URL\)/);
 assert.match(portal, /KERNEL-SIGNED · VERIFIED/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260714-live-alias-artifact-v1/);
+assert.match(index, /discovery\.js\?v=20260715-v3-public-personas-v3/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
@@ -615,7 +627,7 @@ assert.ok(p2pBundle.includes('/personaos/kad/1.0.0'));
 assert.ok(p2pBundle.includes('/personaos/provider-record/1.0.0'));
 assert.ok(p2pBundle.includes('personaos-browser-provider-resolution/1'));
 assert.ok(p2pBundle.includes('denyInsecureWebSocketDial'));
-assert.match(portal, /p2p-libp2p\.js\?v=20260714-browser-dial-gate-v1/);
+assert.match(portal, /p2p-libp2p\.js\?v=20260715-authority-continuity-v1/);
 assert.match(portal, /Close details/);
 assert.match(portal, /const published=publishedMissionEvidenceProjection\(r\)/);
 assert.match(portal, /const terminal=terminalTaskMissionProjection\(r\), live=liveTaskMissionProjection\(r\)/);

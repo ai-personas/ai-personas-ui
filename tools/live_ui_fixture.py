@@ -10,7 +10,7 @@ import json
 import mimetypes
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -26,6 +26,7 @@ PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
 PERSONA_INCOMPLETE = "01J9ZXP0RT5K8V3W6Y2N4B7C9G"
+PERSONA_PENDING_SECOND = "01J9ZXP0RT5K8V3W6Y2N4B7C9H"
 UNSIGNED_TELEMETRY_GHOST = "telemetry-unsigned-ghost"
 PUBLIC_PERSONA_MESSAGE = (
     "Public design update: revised the circulation plan after peer review."
@@ -43,6 +44,7 @@ PROVIDER_PERSONA = "provider-persona-avatar"
 PROVIDER_PERSONA_PEER = "provider-persona-peer"
 PROVIDER_PERSONA_THIRD = "provider-persona-third"
 PROVIDER_PERSONA_INCOMPLETE = "provider-persona-incomplete"
+PROVIDER_PERSONA_PENDING_SECOND = "provider-persona-pending-second"
 PROVIDER_ENV = "provider-environment"
 PROVIDER_ENV_EMPTY = "provider-environment-empty"
 PROVIDER_PROJECT = "provider-project"
@@ -94,12 +96,18 @@ SCALE_FAMILY_NAMES = (
 FILES = {
     1: {
         "attachments/controller.bin": b"\x00\xffPERSONAOS\x01\x02\x03\x7f\x80\xfe",
+        "attachments/verified-portrait": AVATAR_BYTES,
+        "documents/mislabeled-plan.png": b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n",
+        "models/extensionless-step": b"ISO-10303-21;\nHEADER;ENDSEC;\nDATA;ENDSEC;\nEND-ISO-10303-21;\n",
         "design/plan.md": b"# Four bedroom concept\n\n- Entry opens to the living hall.\n- Kitchen faces the garden.\n- Bedroom count: 4\n\n![remote tracker](https://example.invalid/pixel.png)\n<img src=\"https://example.invalid/raw.png\">\n",
         "design/old-notes.csv": b"issue,status\nsite fit,open\n",
         "drawings/concept.svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#f6f7f9"/><path d="M70 60h500v240H70zM300 60v240M70 180h500" fill="none" stroke="#151b24" stroke-width="8"/><text x="95" y="120" font-family="sans-serif" font-size="24">Living</text><text x="350" y="120" font-family="sans-serif" font-size="24">Bedrooms</text></svg>',
     },
     2: {
         "attachments/controller.bin": b"\x00\xffPERSONAOS\x01\x02\x04\x7f\x80\xfe",
+        "attachments/verified-portrait": AVATAR_BYTES,
+        "documents/mislabeled-plan.png": b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n",
+        "models/extensionless-step": b"ISO-10303-21;\nHEADER;ENDSEC;\nDATA;ENDSEC;\nEND-ISO-10303-21;\n",
         "design/plan.md": b"# Four bedroom concept\n\n- Sheltered entry opens to a defined foyer.\n- Kitchen and dining face the garden.\n- Bedroom count: 4, with a ground-floor accessible suite.\n- Egress and storage are marked on the current plan.\n",
         "design/room-schedule.csv": b"room,area_m2\nprimary bedroom,17.5\nbedroom 2,12.0\nbedroom 3,11.8\nbedroom 4,11.5\n",
         "drawings/concept.svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#f6f7f9"/><path d="M55 45h530v270H55zM285 45v270M55 170h530M430 170v145" fill="none" stroke="#151b24" stroke-width="8"/><path d="M270 65a28 28 0 0 0 28 28M415 190a28 28 0 0 0 28 28" fill="none" stroke="#2783d8" stroke-width="4"/><text x="80" y="105" font-family="sans-serif" font-size="22">Living / dining</text><text x="330" y="105" font-family="sans-serif" font-size="22">Kitchen</text><text x="80" y="235" font-family="sans-serif" font-size="22">Accessible suite</text><text x="455" y="235" font-family="sans-serif" font-size="22">Bed 2</text></svg>',
@@ -125,6 +133,10 @@ def signature_hex(value: dict, signing_key: SigningKey) -> str:
     return signing_key.sign(canonical_bytes(value)).signature.hex()
 
 
+def content_hash(value) -> str:
+    return f"sha256:{hashlib.sha256(canonical_bytes(value)).hexdigest()}"
+
+
 def scale_persona_id(index: int) -> str:
     return f"scale-persona-{index:05d}"
 
@@ -147,10 +159,12 @@ def persona_identity_signing_key(persona_id: str) -> SigningKey:
 
 
 def provider_record_count() -> int:
-    # The first three scale identities reuse the fixture's three ordinary signed
-    # persona records. Every remaining telemetry identity gets one additional
-    # provider envelope; the other 16 fixture records remain unchanged.
-    return 19 + max(0, STATE.get_scale() - 3)
+    # Invalid-provider probes are not members of the atomic v3 inventory. In
+    # scale mode the two materializing fixture personas are replaced by the
+    # requested exact population.
+    scale = STATE.get_scale()
+    count = 11 + scale if scale else 16
+    return count - (1 if STATE.inventory_omitted_record_id else 0)
 
 
 def node_announcement_envelope(base_url: str) -> dict:
@@ -249,6 +263,7 @@ def provider_document(
     record_id: str,
     label: str,
     *,
+    description: str | None = None,
     access_level: str | None = "r",
     expires_at: str = "",
     scope_kind: str = "",
@@ -285,7 +300,9 @@ def provider_document(
         "did": did or f"did:personaos:{NODE_ID}/{kind}/{record_id}",
         "kind": kind,
         "label": label,
-        "description": f"read-gated detail for {record_id}",
+        "description": (
+            f"read-gated detail for {record_id}" if description is None else description
+        ),
         # DiscoverableRecord.signing_payload() canonicalises this signed field.
         # Keep the fixture wire shape faithful so consumers cannot rely on an
         # authored insertion order that production never preserves.
@@ -480,6 +497,49 @@ def persona_avatar_descriptor(
     return {**candidate, "identity_signature_hex": signature}
 
 
+def persona_lifecycle_card(
+    persona_id: str,
+    did: str,
+    *,
+    materialized: bool,
+    issued_at: str = "2026-07-15T00:00:00+00:00",
+) -> dict:
+    identity_key = persona_identity_signing_key(persona_id)
+    state = "materialized" if materialized else "pending"
+    fields = {
+        field: {"state": state, "persona_authored": materialized}
+        for field in ("name", "characteristics", "avatar")
+    }
+    payload = {
+        "schema": "personaos-persona-lifecycle-card/1",
+        "persona_id": persona_id,
+        "did": did,
+        "lifecycle_state": "ACTIVE",
+        "identity_materialization_state": state,
+        "identity_fields": fields,
+        "identity_signing_key_id": f"persona:{persona_id}",
+        "identity_public_key_hex": identity_key.verify_key.encode().hex(),
+        "identity_signature_verified": True,
+        "identity_signature_hash": content_hash({
+            "schema": "personaos-fixture-identity-proof/1",
+            "persona_id": persona_id,
+            "state": state,
+        }),
+        "lifecycle_chain_verified": True,
+        "lifecycle_chain_head_hash": content_hash({
+            "schema": "personaos-fixture-lifecycle-head/1",
+            "persona_id": persona_id,
+            "state": state,
+            "issued_at": issued_at,
+        }),
+        "authority": "kernel_observed_verified_persona_lifecycle",
+        "issued_at": issued_at,
+        "signing_key_id": KEY_ID,
+    }
+    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    return {**payload, "signature_hex": signature_hex(payload, signing_key)}
+
+
 def provider_fixtures(
     base: str,
     *,
@@ -491,6 +551,7 @@ def provider_fixtures(
         PROVIDER_PERSONA_PEER,
         PROVIDER_PERSONA_THIRD,
         PROVIDER_PERSONA_INCOMPLETE,
+        PROVIDER_PERSONA_PENDING_SECOND,
         PROVIDER_ENV,
         PROVIDER_ENV_EMPTY,
         PROVIDER_PROJECT,
@@ -527,6 +588,9 @@ def provider_fixtures(
         capability_summary=["active_persona"],
         links={},
     )
+    persona["persona_lifecycle_card"] = persona_lifecycle_card(
+        PERSONA, persona["record"]["did"], materialized=True
+    )
     persona_peer = provider_document(
         base,
         PROVIDER_PERSONA_PEER,
@@ -540,6 +604,9 @@ def provider_fixtures(
         ),
         capability_summary=["active_persona", "lead"],
         links={},
+    )
+    persona_peer["persona_lifecycle_card"] = persona_lifecycle_card(
+        PERSONA_PEER, persona_peer["record"]["did"], materialized=True
     )
     persona_third = provider_document(
         base,
@@ -555,14 +622,44 @@ def provider_fixtures(
         capability_summary=["active_persona", "verifier"],
         links={},
     )
+    persona_third["persona_lifecycle_card"] = persona_lifecycle_card(
+        PERSONA_THIRD, persona_third["record"]["did"], materialized=True
+    )
+    incomplete_key = persona_identity_signing_key(PERSONA_INCOMPLETE)
     incomplete_persona = provider_document(
         base,
         PROVIDER_PERSONA_INCOMPLETE,
-        f"Persona {PERSONA_INCOMPLETE}",
+        "",
+        description="",
         kind="persona",
         did=f"did:personaos:{NODE_ID}/persona/{PERSONA_INCOMPLETE}",
+        identity_signing_key_id=f"persona:{PERSONA_INCOMPLETE}",
+        identity_public_key_hex=incomplete_key.verify_key.encode().hex(),
         capability_summary=["active_persona"],
         links={},
+    )
+    incomplete_persona["persona_lifecycle_card"] = persona_lifecycle_card(
+        PERSONA_INCOMPLETE,
+        incomplete_persona["record"]["did"],
+        materialized=False,
+    )
+    pending_second_key = persona_identity_signing_key(PERSONA_PENDING_SECOND)
+    pending_second = provider_document(
+        base,
+        PROVIDER_PERSONA_PENDING_SECOND,
+        "",
+        description="",
+        kind="persona",
+        did=f"did:personaos:{NODE_ID}/persona/{PERSONA_PENDING_SECOND}",
+        identity_signing_key_id=f"persona:{PERSONA_PENDING_SECOND}",
+        identity_public_key_hex=pending_second_key.verify_key.encode().hex(),
+        capability_summary=["active_persona"],
+        links={},
+    )
+    pending_second["persona_lifecycle_card"] = persona_lifecycle_card(
+        PERSONA_PENDING_SECOND,
+        pending_second["record"]["did"],
+        materialized=False,
     )
     environment = provider_document(
         base,
@@ -686,7 +783,10 @@ def provider_fixtures(
         provider_envelope(persona, urls[PROVIDER_PERSONA]),
         provider_envelope(persona_peer, urls[PROVIDER_PERSONA_PEER]),
         provider_envelope(persona_third, urls[PROVIDER_PERSONA_THIRD]),
-        provider_envelope(incomplete_persona, urls[PROVIDER_PERSONA_INCOMPLETE]),
+        *([] if STATE.get_scale() else [
+            provider_envelope(incomplete_persona, urls[PROVIDER_PERSONA_INCOMPLETE]),
+            provider_envelope(pending_second, urls[PROVIDER_PERSONA_PENDING_SECOND]),
+        ]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
         provider_envelope(empty_environment, urls[PROVIDER_ENV_EMPTY]),
         provider_envelope(project, urls[PROVIDER_PROJECT]),
@@ -696,13 +796,7 @@ def provider_fixtures(
         provider_envelope(discover_only, urls[PROVIDER_DISCOVER_ONLY]),
         provider_envelope(expired_read, urls[PROVIDER_EXPIRED_READ]),
         provider_envelope(scoped_read, urls[PROVIDER_SCOPED_READ]),
-        provider_envelope(tampered, urls[PROVIDER_TAMPERED]),
-        provider_envelope(bad_subject, urls[PROVIDER_BAD_SUBJECT]),
         provider_envelope(historical, urls[PROVIDER_HISTORICAL],
-                          document_key_status="archived"),
-        provider_envelope(revoked, urls[PROVIDER_REVOKED],
-                          document_key_status="revoked"),
-        provider_envelope(unknown, urls[PROVIDER_UNKNOWN],
                           document_key_status="archived"),
     ]
     documents = {
@@ -711,6 +805,7 @@ def provider_fixtures(
         PROVIDER_PERSONA_PEER: persona_peer,
         PROVIDER_PERSONA_THIRD: persona_third,
         PROVIDER_PERSONA_INCOMPLETE: incomplete_persona,
+        PROVIDER_PERSONA_PENDING_SECOND: pending_second,
         PROVIDER_ENV: environment,
         PROVIDER_ENV_EMPTY: empty_environment,
         PROVIDER_PROJECT: project,
@@ -754,54 +849,75 @@ def provider_fixtures(
                 key=record_id,
             ))
             documents[record_id] = document
+    if STATE.inventory_omitted_record_id:
+        envelopes = [
+            envelope for envelope in envelopes
+            if envelope["record"]["record_id"] != STATE.inventory_omitted_record_id
+        ]
     # The envelope remains correctly signed but no longer hashes the served doc.
     tampered["record"]["label"] = "Tampered provider metadata must be rejected"
     return envelopes, documents
 
 
 def compact_provider_index(envelopes: list[dict]) -> dict:
-    """Deduplicate HTTP documents while preserving signed ProviderRecords."""
+    """Build one exact, durable, current-master-signed v3 inventory."""
     documents: dict[str, dict] = {}
-    references: list[dict] = []
+    prepared: list[tuple[dict, dict, str]] = []
     for envelope in envelopes:
-        provider = envelope["record"]
+        provider = dict(envelope["record"])
         document_ref = provider["document_hash"]
         document = envelope["document"]
         prior = documents.get(document_ref)
         if prior is not None and prior != document:
             raise ValueError("fixture provider document hash collision")
         documents[document_ref] = document
+        prepared.append((provider, document, document_ref))
+    manifest = sorted(({
+        "record_id": provider["record_id"],
+        "document_hash": document_ref,
+        "record_url": provider["record_url"],
+    } for provider, _document, document_ref in prepared), key=lambda row: (
+        row["record_id"], row["document_hash"], row["record_url"]
+    ))
+    manifest_hash = content_hash(manifest)
+    references: list[dict] = []
+    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    for provider, _document, document_ref in prepared:
+        provider["inventory_generation"] = STATE.inventory_generation
+        provider["inventory_manifest_hash"] = manifest_hash
         references.append({
             "schema": "provider-record-reference/1",
             "record": provider,
-            "signature_hex": envelope["signature_hex"],
+            "signature_hex": signature_hex(provider, signing_key),
             "document_ref": document_ref,
         })
-    return {
-        "schema": "dht-provider-index/2",
+    generated = datetime.fromisoformat(STATE.inventory_generated_at)
+    payload = {
+        "schema": "dht-provider-index/3",
         "kernel_id": NODE_ID,
+        "base": prepared[0][0]["base_url"] if prepared else "",
+        "inventory_generation": STATE.inventory_generation,
+        "previous_inventory_hash": STATE.inventory_previous_hash,
+        "generated_at": STATE.inventory_generated_at,
+        "expires_at": (generated + timedelta(hours=1)).isoformat(),
+        "inventory_manifest": manifest,
+        "inventory_manifest_hash": manifest_hash,
         "provider_count": len(references),
         "document_count": len(documents),
         "documents": documents,
         "providers": references,
+        "visibility": "public",
+        "version": STATE.inventory_generation,
+        "signing_key_id": KEY_ID,
     }
+    inventory_hash = content_hash(payload)
+    signed = {**payload, "inventory_hash": inventory_hash}
+    return {**signed, "signature_hex": signature_hex(signed, signing_key)}
 
 
 def sse_provider_snapshot(base: str) -> dict:
-    _providers, documents = provider_fixtures(base, include_scale=False)
-    sse = documents[PROVIDER_SSE]
-    index = compact_provider_index([
-        provider_envelope(
-            sse,
-            f"discovery/public/records/{PROVIDER_SSE}.json",
-        ),
-    ])
-    index["providers"].append({
-        "schema": "provider-record-reference/1",
-        "record_url": f"discovery/public/records/{PROVIDER_SSE_LEGACY}.json",
-    })
-    index["provider_count"] = len(index["providers"])
-    return {"providers": index}
+    providers, _documents = provider_fixtures(base, include_scale=False)
+    return {"providers": compact_provider_index(providers)}
 
 
 def p2p_provider_resolution(base: str) -> tuple[dict, dict]:
@@ -852,6 +968,10 @@ class State:
         self.key_generation = 1
         self.key_requests = 0
         self.scale_count = 0
+        self.inventory_generation = 1
+        self.inventory_previous_hash = ""
+        self.inventory_generated_at = now()
+        self.inventory_omitted_record_id = ""
 
     def set(self, value: int) -> None:
         with self.lock:
@@ -875,6 +995,17 @@ class State:
             self.key_generation = 1
             self.key_requests = 0
             self.scale_count = 0
+            self.inventory_generation = 1
+            self.inventory_previous_hash = ""
+            self.inventory_generated_at = now()
+            self.inventory_omitted_record_id = ""
+
+    def advance_inventory_omitting(self, previous_hash: str, record_id: str) -> None:
+        with self.lock:
+            self.inventory_generation += 1
+            self.inventory_previous_hash = previous_hash
+            self.inventory_generated_at = now()
+            self.inventory_omitted_record_id = record_id
 
     def set_scale(self, count: int) -> None:
         with self.lock:
@@ -1115,6 +1246,242 @@ def telemetry() -> dict:
     }
 
 
+def _public_persona_summary(
+    persona_id: str,
+    name: str,
+    *,
+    materialized: bool,
+    failed: bool,
+    experience_tasks: int,
+    reputation_score: float,
+) -> dict:
+    state = "materialized" if materialized else "pending"
+    safe_reputation = float(reputation_score)
+    if safe_reputation.is_integer():
+        safe_reputation = 0.001 if safe_reputation <= 0 else 0.999
+    return {
+        "persona_id": persona_id,
+        "name": name if materialized else "",
+        "lifecycle_state": "ACTIVE",
+        "identity_materialization_state": state,
+        "identity_fields": {
+            field: {"state": state, "persona_authored": materialized}
+            for field in ("name", "characteristics", "avatar")
+        },
+        "experience_tasks": experience_tasks,
+        "reputation_score": safe_reputation,
+        "running_llm": False if failed else persona_id == PERSONA,
+        "task_execution_state": "idle" if failed else (
+            "running_llm" if persona_id == PERSONA else "idle"
+        ),
+        "llm_execution_state": "idle" if failed else (
+            "running" if persona_id == PERSONA else "idle"
+        ),
+    }
+
+
+def _signed_public_route(
+    *, event_id: str, at: str, sender: str, recipients: list[str]
+) -> dict:
+    payload = {
+        "schema": "personaos-public-persona-communication-route/1",
+        "event_id": event_id,
+        "at": at,
+        "sender_persona_id": sender,
+        "environment_id": ENV,
+        "route_kind": "broadcast",
+        "recipient_persona_ids": recipients,
+        "persona_signature_verified": True,
+        "lineage_signature_verified": True,
+        "signing_key_id": KEY_ID,
+    }
+    key = SIGNING_KEYS[STATE.signing_key_generation()]
+    return {**payload, "signature_hex": signature_hex(payload, key)}
+
+
+def _signed_public_document(payload: dict) -> dict:
+    key = SIGNING_KEYS[STATE.signing_key_generation()]
+    signed = {**payload, "signing_key_id": KEY_ID}
+    return {**signed, "signature_hex": signature_hex(signed, key)}
+
+
+def public_persona_messages(
+        persona_id: str = PERSONA,
+        name: str = "Orin Vale",
+        author_persona_id: str | None = None,
+        text: str = PUBLIC_PERSONA_MESSAGE,
+        output_extra: dict | None = None,
+) -> dict:
+    """Build the exact signed anonymous persona-message projection."""
+    generated_at = now()
+    output = {
+        "kind": "PERSONA_COMMUNICATION_AUTHORED",
+        "at": generated_at,
+        "text": text,
+        "environment_id": ENV,
+        "author_persona_id": author_persona_id or persona_id,
+        "persona_signature_verified": True,
+        **(output_extra or {}),
+    }
+    return _signed_public_document({
+        "schema": "personaos-persona-public-messages/1",
+        "generated_at": generated_at,
+        "persona_id": persona_id,
+        "name": name,
+        "lifecycle_state": "ACTIVE",
+        "identity_materialization_state": "materialized",
+        "identity_fields": {
+            field: {"state": "materialized", "persona_authored": True}
+            for field in ("name", "characteristics", "avatar")
+        },
+        "tier": "public",
+        "recent_outputs": [output],
+    })
+
+
+def telemetry() -> dict:
+    call = snapshot()["active"]["calls"][0]
+    failed = STATE.is_model_failed()
+    scale_count = STATE.get_scale()
+    ordinary = [
+        _public_persona_summary(PERSONA, "Orin Vale", materialized=True, failed=failed,
+                                experience_tasks=3, reputation_score=0.91),
+        _public_persona_summary(PERSONA_PEER, "Mara Chen", materialized=True, failed=failed,
+                                experience_tasks=7, reputation_score=0.88),
+        _public_persona_summary(PERSONA_THIRD, "Ivo Reed", materialized=True, failed=failed,
+                                experience_tasks=4, reputation_score=0.84),
+    ]
+    if scale_count:
+        personas = ordinary[:min(3, scale_count)]
+        personas.extend(
+            _public_persona_summary(
+                scale_persona_id(index), scale_persona_label(index), materialized=True,
+                failed=failed, experience_tasks=index % 17,
+                reputation_score=round((index % 100) / 100, 2),
+            )
+            for index in range(3, scale_count)
+        )
+    else:
+        personas = [
+            *ordinary,
+            _public_persona_summary(
+                PERSONA_INCOMPLETE, "", materialized=False, failed=failed,
+                experience_tasks=0, reputation_score=0.0,
+            ),
+            _public_persona_summary(
+                PERSONA_PENDING_SECOND, "", materialized=False, failed=failed,
+                experience_tasks=0, reputation_score=0.0,
+            ),
+        ]
+    personas.append({
+        **_public_persona_summary(
+            UNSIGNED_TELEMETRY_GHOST, "Unsigned Telemetry Ghost", materialized=True,
+            failed=failed, experience_tasks=999, reputation_score=1.0,
+        ),
+        "name": "Unsigned Telemetry Ghost",
+    })
+    generated_at = now()
+    model_events = [{
+        "kind": "MODEL_SELECTED", "persona_id": PERSONA,
+        "environment_id": ENV, "model_id": "gpt-5.5",
+        "requested_purpose": call["requested_purpose"], "role": "lead",
+        "at": generated_at,
+    }]
+    if failed:
+        model_events.append({
+            "kind": "MODEL_CALL_FAILED", "persona_id": PERSONA,
+            "environment_id": ENV, "model_id": "gpt-5.5",
+            "requested_purpose": "persona_communication", "status": 400,
+            "at": generated_at,
+        })
+    public_ids = [item["persona_id"] for item in personas
+                  if item["persona_id"] != UNSIGNED_TELEMETRY_GHOST]
+    routes = [] if scale_count and scale_count < 3 else [
+        _signed_public_route(
+            event_id="event:fixture-orin-broadcast", at=generated_at,
+            sender=PERSONA, recipients=[PERSONA_PEER, PERSONA_THIRD],
+        ),
+        _signed_public_route(
+            event_id="event:fixture-mara-broadcast", at=generated_at,
+            sender=PERSONA_PEER,
+            recipients=([PERSONA_THIRD] if scale_count else
+                        [PERSONA_THIRD, PERSONA_INCOMPLETE, PERSONA_PENDING_SECOND]),
+        ),
+    ]
+    active_calls = [] if failed else [{
+        key: value for key, value in call.items()
+        if key in {"call_id", "model_id", "persona_id", "environment_id",
+                   "requested_purpose", "started_at", "status"}
+    }]
+    topology = [{
+        "environment_id": ENV, "status": "active", "member_count": len(public_ids),
+        "members": [{"persona_id": pid, "active": True} for pid in public_ids],
+    }]
+    activity: list[dict] = []
+    return _signed_public_document({
+        "schema": "personaos-live-telemetry-public/1",
+        "generated_at": generated_at,
+        "node_id": NODE_ID,
+        "counts": {"active_personas": len(public_ids), "environments": 1,
+                   "active_model_calls": len(active_calls), "lineage_scopes": 0,
+                   "lineage_scopes_verified": 0, "lineage_events": len(routes),
+                   "otel_spans": 0},
+        "personas": personas,
+        "topology": topology,
+        "topology_hash": content_hash(topology),
+        "model_status": {"active_calls": active_calls, "recent_events": model_events},
+        "activity": activity,
+        "activity_hash": content_hash(activity),
+        "communication_routes": routes,
+        "communication_routes_hash": content_hash(routes),
+        "sufficiency": [],
+    })
+
+
+def entity_telemetry_documents() -> dict[str, dict]:
+    aggregate = telemetry()
+    generated_at = aggregate["generated_at"]
+    summaries = [item for item in aggregate["personas"]
+                 if item["persona_id"] != UNSIGNED_TELEMETRY_GHOST]
+    routes = aggregate["communication_routes"]
+    events = aggregate["model_status"]["recent_events"]
+    documents: dict[str, dict] = {}
+    index = {"schema": "personaos-telemetry-entities-public/1",
+             "generated_at": generated_at, "node_id": NODE_ID,
+             "personas": {}, "environments": {}}
+    for summary in summaries:
+        persona_id = summary["persona_id"]
+        rel = f"telemetry/personas/{persona_id.split(':')[-1]}.json"
+        persona_routes = [route for route in routes
+                          if route["sender_persona_id"] == persona_id
+                          or persona_id in route["recipient_persona_ids"]]
+        documents[rel] = _signed_public_document({
+            "schema": "personaos-persona-telemetry-public/1",
+            "generated_at": generated_at, "node_id": NODE_ID,
+            "persona_id": persona_id, "name": summary["name"],
+            "tier": "public_redacted", "summary": summary,
+            "model_status": [event for event in events
+                             if event.get("persona_id") == persona_id],
+            "activity": [], "communication_routes": persona_routes,
+            "communication_routes_hash": content_hash(persona_routes),
+        })
+        index["personas"][persona_id] = rel
+    environment_rel = f"telemetry/environments/{ENV.split(':')[-1]}.json"
+    topology = aggregate["topology"][0]
+    documents[environment_rel] = _signed_public_document({
+        "schema": "personaos-environment-telemetry-public/1",
+        "generated_at": generated_at, "node_id": NODE_ID,
+        "environment_id": ENV, "tier": "public_redacted",
+        "status": topology["status"], "member_count": topology["member_count"],
+        "members": topology["members"], "model_status": events,
+        "activity": [], "communication_routes": routes,
+        "communication_routes_hash": content_hash(routes),
+    })
+    index["environments"][ENV] = environment_rel
+    documents["telemetry/live/entities.json"] = _signed_public_document(index)
+    return documents
+
+
 class Handler(SimpleHTTPRequestHandler):
     server_version = "PersonaOSUIFixture/1"
 
@@ -1133,7 +1500,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(raw)
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            # Browser contexts intentionally close with bounded telemetry reads
+            # in flight; that peer disconnect is not a fixture/server failure.
+            return
 
     def bytes(self, body: bytes, content_type: str, digest: str, name: str = "artifact.bin") -> None:
         safe_name = "".join(char if char.isalnum() or char in ".-_" else "_" for char in Path(name).name)
@@ -1268,14 +1640,26 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(200, {"records": []})
         if path == "/node/gossip/cache":
             return self.json(200, {"cards": {}})
-        if path in {"/node/telemetry/live/entities.json", "/telemetry/live/entities.json"}:
-            return self.json(200, {"environments": {}, "personas": {}})
+        for prefix in ("/node/", "/"):
+            if path.startswith(prefix + "telemetry/"):
+                rel = path[len(prefix):]
+                document = entity_telemetry_documents().get(rel)
+                if document is not None:
+                    return self.json(200, document)
         if path == "/node/telemetry.json":
             return self.json(200, telemetry())
         if path == "/node/scale":
             count = int((parse_qs(parsed.query).get("count") or ["0"])[0])
             STATE.set_scale(count)
             return self.json(200, {"scale_count": STATE.get_scale()})
+        if path == "/node/advance-provider-inventory":
+            providers, _documents = provider_fixtures(self.node_base())
+            current = compact_provider_index(providers)
+            STATE.advance_inventory_omitting(current["inventory_hash"], PROVIDER_OK)
+            return self.json(200, {
+                "inventory_generation": STATE.inventory_generation,
+                "omitted_record_id": PROVIDER_OK,
+            })
         if ((path.startswith("/node/personas/") or path.startswith("/personas/"))
                 and path.endswith("/thinking")):
             persona_id = unquote(path.split("/")[-2])
@@ -1285,20 +1669,16 @@ class Handler(SimpleHTTPRequestHandler):
                     "error": "not_found",
                     "filtered_for_principal": "public_stranger",
                 })
-            return self.json(200, {
-                "schema": "personaos-persona-thinking/1",
-                "persona_id": persona_id,
-                "tier": "operator" if operator else "public",
-                "recent_outputs": [] if operator else [{
-                    "kind": "ANSWER_DRAFTED",
-                    "at": now(),
-                    "text": PUBLIC_PERSONA_MESSAGE,
-                }],
-                "lessons": [],
-                "thinking_frame": (
-                    "operator fixture frame" if operator else PRIVATE_THINKING_FRAME_PROBE
-                ),
-            })
+            if operator:
+                return self.json(200, {
+                    "schema": "personaos-persona-thinking/1",
+                    "persona_id": persona_id,
+                    "tier": "operator",
+                    "recent_outputs": [],
+                    "lessons": [],
+                    "thinking_frame": "operator fixture frame",
+                })
+            return self.json(200, public_persona_messages())
         if path == "/node/status":
             call = snapshot()["active"]["calls"][0]
             ended = STATE.is_ended()

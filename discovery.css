@@ -70,7 +70,7 @@ b{color:var(--bright)}
 .stat.auth-read .v{color:var(--up)}
 .vitals input{background:var(--surface-inset);border:1px solid var(--line2);color:var(--ink);border-radius:5px;
   padding:6px 9px;font-family:var(--mono);font-size:12px}
-#q{flex:0 1 210px;min-width:140px} #peer{flex:0 1 200px;min-width:150px}
+#q{flex:0 1 260px;min-width:140px}
 .chip,.btn{background:var(--surface-raised);border:1px solid var(--line2);color:var(--dim);border-radius:5px;
   padding:5px 9px;font-size:11px;cursor:pointer;letter-spacing:.4px}
 .chip.on{background:var(--int);border-color:var(--int);color:var(--ink-on-accent);font-weight:700}
@@ -498,7 +498,7 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap}
   .verify-badge{display:none}          /* trust chrome → desktop only */
   .vsub{display:none}                  /* keep the mark, drop the subtitle */
   .vitals{gap:6px;padding:var(--space-2) var(--space-3);min-height:46px}
-  #q,#peer{flex:1 1 100%;min-width:0}  /* each input on its own row */
+  #q{flex:1 1 100%;min-width:0}
   .vcounts{order:5;flex:1 1 100%;justify-content:space-between;gap:10px}
   .stat{min-width:0;text-align:left}
   .globalbar{gap:6px;padding:3px 10px}

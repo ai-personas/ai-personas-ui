@@ -23,6 +23,9 @@ import {
   takeProgressiveGroupWindow,
   terminalTaskMissionProjection,
   verifiedPersonaIdentityPresent,
+  verifiedPersonaLifecyclePresent,
+  verifiedPersonaRenderable,
+  personaLifecycleProjection,
 } from '../assets/network-view.mjs';
 
 const announcedMultiaddr = '/dns4/personas.example/tcp/443/wss/p2p/12D3KooWTest';
@@ -310,6 +313,69 @@ assert.equal(verifiedPersonaIdentityPresent(
   new Map([['kernel-a\u0000persona\u0000persona-b', completePersonaIdentity]]),
   'kernel-a\u0000persona\u0000persona-b',
 ), false, 'the signed persona identity must match the exact telemetry entity key');
+
+const pendingLifecycle={
+  schema:'personaos-persona-lifecycle-card/1',persona_id:fixturePersonaId,
+  did:`did:personaos:kernel-a/persona/${fixturePersonaId}`,lifecycle_state:'ACTIVE',
+  identity_materialization_state:'pending',identity_fields:{
+    name:{state:'pending',persona_authored:false},
+    characteristics:{state:'pending',persona_authored:false},
+    avatar:{state:'pending',persona_authored:false},
+  },identity_signing_key_id:`persona:${fixturePersonaId}`,
+  identity_public_key_hex:fixtureIdentityKey,identity_signature_verified:true,
+  identity_signature_hash:`sha256:${'12'.repeat(32)}`,lifecycle_chain_verified:true,
+  lifecycle_chain_head_hash:`sha256:${'34'.repeat(32)}`,
+  authority:'kernel_observed_verified_persona_lifecycle',issued_at:'2026-07-15T00:00:00+00:00',
+  signing_key_id:'kernel-master',signature_hex:'ab'.repeat(64),
+};
+const pendingPersona={kind:'persona',did:pendingLifecycle.did,label:'',_personaSignedName:'',
+  _personaLifecycleVerified:true,_personaIdentitySigningKeyId:`persona:${fixturePersonaId}`,
+  _personaIdentityPublicKeyHex:fixtureIdentityKey,persona_lifecycle_card:pendingLifecycle};
+const pendingKey=`kernel-a\u0000persona\u0000${fixturePersonaId}`;
+const pendingRecords=new Map([[pendingKey,pendingPersona]]);
+assert.equal(verifiedPersonaIdentityPresent(pendingRecords,pendingKey),false,
+  'a lifecycle shell must not be recast as a materialized identity');
+assert.equal(verifiedPersonaLifecyclePresent(pendingRecords,pendingKey),true);
+assert.equal(verifiedPersonaRenderable(pendingRecords,pendingKey),true,
+  'a verified pending lifecycle must remain visibly discoverable');
+assert.deepEqual(personaLifecycleProjection(pendingRecords,pendingKey),{
+  personaId:fixturePersonaId,lifecycleState:'ACTIVE',materializationState:'pending',
+  identityFields:{
+    name:{state:'pending',personaAuthored:false},
+    characteristics:{state:'pending',personaAuthored:false},
+    avatar:{state:'pending',personaAuthored:false},
+  },
+});
+const adoptedNameLifecycle={...pendingLifecycle,identity_fields:{
+  ...pendingLifecycle.identity_fields,
+  name:{state:'materialized',persona_authored:true},
+}};
+const adoptedNamePendingPersona={...pendingPersona,label:'Aster Rowan',_personaSignedName:'Aster Rowan',
+  persona_lifecycle_card:adoptedNameLifecycle};
+const adoptedNamePendingRecords=new Map([[pendingKey,adoptedNamePendingPersona]]);
+assert.equal(verifiedPersonaIdentityPresent(adoptedNamePendingRecords,pendingKey),false,
+  'an adopted display name alone must not promote a pending shell to complete identity');
+assert.equal(verifiedPersonaLifecyclePresent(adoptedNamePendingRecords,pendingKey),true,
+  'a pending shell may retain an independently verified persona-authored display name');
+assert.equal(verifiedPersonaRenderable(adoptedNamePendingRecords,pendingKey),true,
+  'a named pending shell must remain renderable while preserving materialization state');
+assert.equal(personaLifecycleProjection(
+  adoptedNamePendingRecords,pendingKey,
+)?.identityFields.name.personaAuthored,true);
+for(const refused of [
+  {...pendingPersona,_personaLifecycleVerified:false},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,persona_id:'other'}},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,signature_hex:'bad'}},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,unexpected:'signed but invalid'}},
+  {...pendingPersona,_personaIdentityPublicKeyHex:'cd'.repeat(32)},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,lifecycle_state:'DORMANT'}},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,identity_materialization_state:'materialized'}},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,identity_fields:{...pendingLifecycle.identity_fields,
+    name:{state:'pending',persona_authored:'yes'}}}},
+  {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,identity_fields:{...pendingLifecycle.identity_fields,
+    name:{state:'pending',persona_authored:true}}}},
+]) assert.equal(verifiedPersonaLifecyclePresent(new Map([[pendingKey,refused]]),pendingKey),false,
+  'unverified or malformed lifecycle shells must stay hidden');
 
 const normalProviderCount = 19;
 const normalProviderBytes = 56_100;

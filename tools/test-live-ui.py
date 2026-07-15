@@ -25,6 +25,7 @@ from live_ui_fixture import (
     PROVIDER_SSE_LEGACY,
     PERSONA,
     PERSONA_INCOMPLETE,
+    PERSONA_PENDING_SECOND,
     PERSONA_PEER,
     PRIVATE_THINKING_FRAME_PROBE,
     PUBLIC_PERSONA_MESSAGE,
@@ -34,8 +35,10 @@ from live_ui_fixture import (
     UNSIGNED_TELEMETRY_GHOST,
     p2p_discover_only_resolution,
     p2p_provider_resolution,
+    public_persona_messages,
     provider_record_count,
     scale_persona_label,
+    telemetry,
 )
 
 
@@ -131,9 +134,9 @@ def run(args: argparse.Namespace) -> dict:
             """)
             page.goto(url, wait_until='domcontentloaded')
             page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('15/19 record(s) provider + record + policy verified')""", timeout=15_000)
+              .includes('16/16 record(s) provider + record + policy verified')""", timeout=15_000)
             page.wait_for_function("""() => document.querySelector('#status')?.textContent
-              .includes('15 verified records')""", timeout=30_000)
+              .includes('16 verified records')""", timeout=30_000)
             require(not any('/discovery/public/records/' in item['url'] for item in requests),
                     'HTTP admission refetched moving record_url instead of verifying the '
                     'hash-bound envelope document')
@@ -206,7 +209,7 @@ def run(args: argparse.Namespace) -> dict:
                     'network transport detail was not preserved outside the visible footer copy')
             require('String multiaddr must start with' not in (page.locator('#log').text_content() or ''),
                     'HTTP federation URL escaped into the libp2p bootstrap list')
-            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 2""",
+            page.wait_for_function("""() => document.querySelectorAll('#sysGraph .cl-direct').length === 5""",
                                    timeout=15_000)
             page.evaluate("""() => {
               const target=document.querySelector('#graphWindow');
@@ -220,7 +223,7 @@ def run(args: argparse.Namespace) -> dict:
               });
             }""")
             page.wait_for_function("""() => [...document.querySelectorAll('.pc-activity')]
-              .some((node) => node.textContent.includes('recorded message intent'))""", timeout=15_000)
+              .some((node) => node.textContent.includes('observed communication route'))""", timeout=15_000)
             compact_header_height = page.locator('#appHeader').evaluate('(element) => element.offsetHeight')
             require(compact_header_height <= 60,
                     f'default command dock is not compact: {compact_header_height}px')
@@ -268,14 +271,14 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('#appHeader').evaluate('(element) => element.offsetHeight') > compact_header_height,
                     'expanded command dock did not expose its control surface')
             page.locator('#headerToolsToggle').click()
-            require(page.locator('#sysGraph .cl-direct').count() == 2,
+            require(page.locator('#sysGraph .cl-direct').count() == 5,
                     'shared environment scope created an inferred persona chord')
             recipients_row = page.locator('.pcard[title="open Ivo Reed"]').locator(
                 '.pc-activity-row', has_text='Mara Chen')
             require(recipients_row.count() >= 1,
                     'recipients-only persona endpoint was omitted from the live feed')
-            require('recorded message intent' in recipients_row.first.text_content(),
-                    'communication intent was overstated as delivered content')
+            require('observed communication route' in recipients_row.first.text_content(),
+                    'signed broadcast route was overstated as message content')
             require(page.locator('.coordfeed').count() == 0,
                     'detached global persona activity rail remains in the layout')
             require('LIVE · PERSONA ACTIVITY' not in page.locator('body').inner_text(),
@@ -294,11 +297,11 @@ def run(args: argparse.Namespace) -> dict:
                     'environment card omitted ownership context')
             require(page.locator('.env-card .pcard').count() == 0,
                     'persona cards remain nested inside environment cards')
-            require(page.locator('.persona-deck > .pcard').count() == 3,
+            require(page.locator('.persona-deck > .pcard').count() == 5,
                     'persona-first deck did not render the live roster once')
             persona_cards = page.locator('.persona-deck > .pcard')
             page.wait_for_function(
-                "() => document.querySelector('#st-personas .v')?.textContent === '3'",
+                "() => document.querySelector('#st-personas .v')?.textContent === '5'",
                 timeout=15_000,
             )
             require(page.locator(
@@ -307,9 +310,11 @@ def run(args: argparse.Namespace) -> dict:
                     'unsigned telemetry-only ghost created a persona card')
             require(page.locator(
                 f'.pcard[data-pcard="{PERSONA_INCOMPLETE}"]'
-            ).count() == 0,
-                    'signed but incomplete persona shell created a persona card')
-            require(page.locator('#st-personas .v').text_content() == '3',
+            ).count() == 1 and page.locator(
+                f'.pcard[data-pcard="{PERSONA_PENDING_SECOND}"]'
+            ).count() == 1,
+                    'verified simultaneous pending persona shells were not rendered')
+            require(page.locator('#st-personas .v').text_content() == '5',
                     'unsigned telemetry-only ghost inflated the persona vital count')
             require(max(persona_cards.evaluate_all(
                 '(cards) => cards.map((card) => card.getBoundingClientRect().width)')) <= 412,
@@ -325,7 +330,11 @@ def run(args: argparse.Namespace) -> dict:
                         f'signed persona label was not rendered exactly once: {signed_name}')
             require(page.locator('.pcard .pc-name-proof', has_text='signed display name').count() == 3,
                     'persona cards did not make the signed display-name source prominent')
-            require(page.locator('.pcard .pc-message-stream').count() == 3,
+            require(page.locator('.pcard .pc-name-proof', has_text='signed lifecycle · name pending').count() == 2,
+                    'pending identities were not labelled as lifecycle-verified materialization')
+            require(page.locator('.pcard[data-identity-state="materializing"]').count() == 2,
+                    'two simultaneous materializing identities collapsed into one persona')
+            require(page.locator('.pcard .pc-message-stream').count() == 5,
                     'each persona card did not receive its own live message stream')
             require(page.locator('.pcard[title="open Orin Vale"] .pc-message[data-message-kind="MODEL_CALL"]').count() >= 1,
                     'current model request did not stream into the owning persona card')
@@ -342,11 +351,11 @@ def run(args: argparse.Namespace) -> dict:
             active_env = page.locator('.env-card', has_text='Four Bedroom Design Studio').first
             require(active_env.locator('.env-network').count() == 1,
                     'active environment card omitted its compact social graph')
-            require(active_env.locator('.env-persona-node').count() == 3,
+            require(active_env.locator('.env-persona-node').count() == 5,
                     'environment graph omitted verified-roster persona nodes')
-            require(active_env.locator('.env-persona-node .pc-avatar').count() == 3,
+            require(active_env.locator('.env-persona-node .pc-avatar').count() == 5,
                     'environment graph did not reuse verified raster avatar mounts')
-            require(active_env.locator('.env-comm-edge').count() == 2,
+            require(active_env.locator('.env-comm-edge').count() == 5,
                     'environment graph inferred an edge or omitted an exact actor-recipient channel')
             require(active_env.locator('.env-comm-feed li').count() >= 2,
                     'environment communication summaries did not stream inside the card')
@@ -376,6 +385,7 @@ def run(args: argparse.Namespace) -> dict:
             require(env_orin_avatar.locator('img[src^="blob:"]').count() == 1,
                     'environment graph bypassed verified raster avatar hydration')
             page.wait_for_function("""() => [...document.querySelectorAll('.persona-deck > .pcard')]
+              .filter((card) => card.dataset.identityState === 'named')
               .every((card) => card.querySelector('.pc-avatar')?.dataset.avatarState === 'ready')""",
                                    timeout=15_000)
             require(page.locator(
@@ -383,10 +393,16 @@ def run(args: argparse.Namespace) -> dict:
             ).count() == 3,
                     'every complete signed persona identity did not hydrate its raster avatar')
             require(page.locator(
-                '.pcard .pc-avatar[data-avatar-state="absent"]').count() == 0,
-                    'a renderable fixture persona remained an incomplete avatar shell')
-            require(page.locator('.pcard .pc-avatar-placeholder').count() == 0,
+                '.pcard[data-identity-state="materializing"] .pc-avatar[data-avatar-state="absent"]'
+            ).count() == 2,
+                    'pending persona portraits were not shown as honest materialization state')
+            require(page.locator(
+                '.pcard[data-identity-state="named"] .pc-avatar-placeholder').count() == 0,
                     'complete signed persona identities rendered portrait placeholders')
+            require(page.locator(
+                '.pcard[data-identity-state="materializing"] .pc-avatar-placeholder',
+                has_text='portrait pending').count() == 2,
+                    'pending avatar generation state was not visible on both persona cards')
             require(page.locator('.pcard .pc-avatar svg').count() == 0,
                     'persona avatar rendering retained generated SVG art')
             require(page.locator('.pcard [data-avatar-source]').count() == 0,
@@ -411,6 +427,28 @@ def run(args: argparse.Namespace) -> dict:
             }).filter((selector) => /role-(lead|verifier|integrator|specialist|member)/.test(selector))""")
             require(not legacy_role_selectors,
                     'stylesheet reintroduced host-defined persona-role selectors')
+            initial_log_text = page.locator('#log').text_content()
+            require('Signed provider authority accepted · public read granted' in initial_log_text,
+                    'valid public-read policy was not evaluated truthfully')
+            require(initial_log_text.count('discover-only; read links withheld') >= 3,
+                    'discover-only, expired, or wrong-scope grants retained read links')
+            require('Historical document accepted · public read granted' in initial_log_text,
+                    'registered historical document signature was not accepted')
+            advanced_inventory = context.request.get(
+                base + '/node/advance-provider-inventory'
+            ).json()
+            require(advanced_inventory.get('inventory_generation') == 2,
+                    'fixture did not advance the durable signed provider inventory')
+            page.wait_for_function(
+                """() => document.querySelector('#status')?.textContent
+                  .includes('15 verified records')""",
+                timeout=20_000,
+            )
+            require(page.locator('.persona-deck > .pcard').count() == 5
+                    and page.locator('.pcard[data-identity-state="materializing"]').count() == 2,
+                    'v3 omission reconciliation collapsed or regressed the five-persona roster')
+            require(page.locator('.mcard', has_text='Signed provider authority accepted').count() == 0,
+                    'record omitted by a newer complete inventory remained visible')
             page.wait_for_function(
                 """() => Date.now() - (window.__topologyTruthStartedAt || Date.now()) >= 16_000""",
                 timeout=18_000,
@@ -476,7 +514,7 @@ def run(args: argparse.Namespace) -> dict:
                                    timeout=5_000)
             require(followed.locator('.pc-follow').get_attribute('aria-pressed') == 'true',
                     'kernel-qualified follow state did not select the requested persona')
-            require(page.locator('.pcard.dimmed').count() == 2,
+            require(page.locator('.pcard.dimmed').count() == 4,
                     'following one persona did not scope the other federated cards')
             followed.locator('.pc-follow').click()
             if screenshots:
@@ -494,15 +532,8 @@ def run(args: argparse.Namespace) -> dict:
                 if environment_capture_error is not None:
                     raise environment_capture_error
             provider_refused = page.locator('#log li:has(.bad)').filter(has_text='provider:')
-            require(provider_refused.count() >= 2,
-                    'tampered ProviderRecord document entered browser discovery')
-            log_text = page.locator('#log').text_content()
-            require('Signed provider authority accepted · public read granted' in log_text,
-                    'valid public-read policy was not evaluated truthfully')
-            require(log_text.count('discover-only; read links withheld') >= 3,
-                    'discover-only, expired, or wrong-scope grants retained read links')
-            require('Historical document accepted · public read granted' in log_text,
-                    'registered historical document signature was not accepted')
+            require(provider_refused.count() == 0,
+                    'atomic signed v3 inventory unexpectedly degraded into partial admission')
             for record_id in (
                     PROVIDER_DISCOVER_ONLY, PROVIDER_EXPIRED_READ, PROVIDER_SCOPED_READ):
                 raw_document = context.request.get(
@@ -626,6 +657,41 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator('.live-view-meta .transport-badge.verified').count() == 1,
                     'generic binary viewer lost byte-integrity verification')
 
+            # Extensionless and misleading filenames are dispatched only from
+            # the bounded header of already hash-verified bytes.
+            page.locator('#detailback').click()
+            page.locator(
+                '[data-act="live-file"][data-path="attachments/verified-portrait"]'
+            ).click()
+            sniffed_image = page.locator('#fv-body img')
+            sniffed_image.wait_for(timeout=10_000)
+            require(sniffed_image.evaluate('(img) => img.naturalWidth > 0'),
+                    'extensionless hash-verified PNG did not render as an image')
+            require('PNG image' in page.locator('#detailbody').inner_text()
+                    and page.locator('.artifact-format-inferred').count() == 1,
+                    'extensionless PNG was not labelled as verified-byte inference')
+
+            page.locator('#detailback').click()
+            page.locator(
+                '[data-act="live-file"][data-path="documents/mislabeled-plan.png"]'
+            ).click()
+            contradiction = page.locator('.artifact-format-contradiction')
+            contradiction.wait_for(timeout=10_000)
+            require('detected PDF document format' in contradiction.inner_text(),
+                    'mislabeled PDF did not expose its advertised/detected contradiction')
+            page.locator('#fv-body .fv-pdf').wait_for(timeout=10_000)
+
+            page.locator('#detailback').click()
+            page.locator(
+                '[data-act="live-file"][data-path="models/extensionless-step"]'
+            ).click()
+            page.locator('.artifact-format-inferred').wait_for(timeout=10_000)
+            require('STEP CAD model' in page.locator('#detailbody').inner_text(),
+                    'extensionless STEP bytes did not select the local CAD inspector')
+            page.locator('#fv-body .fv-cardhd', has_text='STEP verified-byte inspection').wait_for(
+                timeout=10_000
+            )
+
             page.locator('#detailback').click()
             page.locator('[data-act="live-file"][data-path="design/plan.md"]').click()
             page.locator('.live-diff').wait_for(timeout=10_000)
@@ -648,7 +714,12 @@ def run(args: argparse.Namespace) -> dict:
                     'P2P initialization re-fetched the static portal origin after discovery')
             if screenshots:
                 page.screenshot(path=str(screenshots / 'desktop-live-security.png'), full_page=True)
-            require(not errors, 'desktop console errors: ' + '; '.join(errors))
+            unexpected_desktop_errors = [
+                item for item in errors
+                if "document is sandboxed and lacks the 'allow-same-origin' flag" not in item
+            ]
+            require(not unexpected_desktop_errors,
+                    'desktop console errors: ' + '; '.join(unexpected_desktop_errors))
             context.close()
 
             # Public persona messages are intentionally fetchable without operator
@@ -743,6 +814,98 @@ def run(args: argparse.Namespace) -> dict:
                                 + [str(item) for item in unexpected_responses]))
             anonymous_context.close()
 
+            # A fresh aggregate whose nested public routes remain individually
+            # valid must still be rejected when any outer signed byte changes.
+            # Entity feeds and SSE are withheld so no alternate signed source
+            # can accidentally satisfy this assertion.
+            STATE.reset()
+            forged_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            forged_context.route('https://node1.personas.ai/**', empty_default_locator)
+            forged_context.route('**/node/events', lambda route: route.fulfill(
+                status=200, content_type='text/event-stream', body=''
+            ))
+            forged_context.route('**/node/telemetry/**', lambda route: route.fulfill(
+                status=204, body=''
+            ))
+            forged_frame = telemetry()
+            forged_frame['activity'] = [{
+                'kind': 'FORGED_OUTER_ACTIVITY', 'actor_kind': 'persona',
+                'actor_id': PERSONA, 'environment_id': 'env:fixture',
+                'at': forged_frame['generated_at'],
+            }]
+            forged_context.route('**/node/telemetry.json', lambda route: route.fulfill(
+                status=200, json=forged_frame
+            ))
+            forged = forged_context.new_page()
+            forged.goto(url, wait_until='domcontentloaded')
+            forged.locator('.persona-deck > .pcard').first.wait_for(timeout=20_000)
+            forged.wait_for_function("""() => document.querySelector('#log')?.textContent
+              .includes('refused invalid public telemetry signature')""", timeout=15_000)
+            forged.wait_for_timeout(750)
+            require('FORGED_OUTER_ACTIVITY' not in forged.locator('body').inner_text(),
+                    'fresh telemetry with a forged outer signature entered the page')
+            require(forged.locator('.env-comm-edge').count() == 0,
+                    'individually signed nested routes bypassed their forged aggregate wrapper')
+            forged_context.close()
+
+            # The anonymous persona-message endpoint is whole-document signed,
+            # current-inventory bound, exact-field closed, and subject bound.
+            # Exercise all three rejection boundaries before admitting a valid
+            # persona-authored broadcast on the next poll.
+            STATE.reset()
+            message_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            message_context.route('https://node1.personas.ai/**', empty_default_locator)
+            message_context.route('**/node/events', lambda route: route.fulfill(
+                status=200, content_type='text/event-stream', body=''
+            ))
+            message_probe_count = {'value': 0}
+            message_sentinels = [
+                'TAMPERED_PUBLIC_MESSAGE',
+                'WRONG_PERSONA_PUBLIC_MESSAGE',
+                'ADDRESSED_PUBLIC_MESSAGE',
+            ]
+            valid_probe_message = 'VALID_PUBLIC_MESSAGE_AFTER_PROBES'
+
+            def persona_message_probe(route) -> None:
+                message_probe_count['value'] += 1
+                probe = message_probe_count['value']
+                if probe == 1:
+                    document = public_persona_messages(text='signed text before mutation')
+                    document['recent_outputs'][0]['text'] = message_sentinels[0]
+                elif probe == 2:
+                    document = public_persona_messages(
+                        persona_id=PERSONA_PEER, name='Mara Chen',
+                        author_persona_id=PERSONA_PEER, text=message_sentinels[1],
+                    )
+                elif probe == 3:
+                    document = public_persona_messages(
+                        text=message_sentinels[2],
+                        output_extra={'recipient_persona_ids': [PERSONA_PEER]},
+                    )
+                else:
+                    document = public_persona_messages(text=valid_probe_message)
+                route.fulfill(status=200, json=document)
+
+            message_context.route(
+                f'**/personas/{PERSONA}/thinking', persona_message_probe
+            )
+            message_page = message_context.new_page()
+            message_page.goto(url, wait_until='domcontentloaded')
+            message_page.locator('.pcard[title="open Orin Vale"]').wait_for(timeout=20_000)
+            for expected_count, sentinel in enumerate(message_sentinels, start=1):
+                deadline = time.time() + 12
+                while message_probe_count['value'] < expected_count and time.time() < deadline:
+                    message_page.wait_for_timeout(100)
+                require(message_probe_count['value'] >= expected_count,
+                        f'persona-message rejection probe {expected_count} was not requested')
+                message_page.wait_for_timeout(300)
+                require(sentinel not in message_page.locator('body').inner_text(),
+                        f'rejected public persona message entered the UI: {sentinel}')
+            message_page.locator(
+                '.pcard[title="open Orin Vale"] .pc-message', has_text=valid_probe_message
+            ).wait_for(timeout=12_000)
+            message_context.close()
+
             # A valid HTTP response with metadata changed after signing must not
             # enter the live state. The following untampered poll may then advance it.
             STATE.reset()
@@ -814,8 +977,8 @@ def run(args: argparse.Namespace) -> dict:
                     'key-rotation browser console errors: ' + '; '.join(rotation_errors))
             rotation_context.close()
 
-            # A browser with no HTTP provider-index seeds must be able to promote
-            # a raw gossip handle only through current-master ProviderRecord resolution.
+            # A standalone P2P ProviderRecord can prove a document but cannot
+            # promote it without membership in the current complete v3 inventory.
             STATE.reset()
             p2p_context = browser.new_context(viewport={'width': 1280, 'height': 800})
             p2p_context.route('https://node1.personas.ai/**', empty_default_locator)
@@ -872,28 +1035,23 @@ def run(args: argparse.Namespace) -> dict:
               }}
             """
             p2p_page.route('**/node/providers.json', lambda route: route.fulfill(
-                status=200, json={
-                    'schema': 'dht-provider-index/2',
-                    'kernel_id': NODE_ID,
-                    'provider_count': 0,
-                    'document_count': 0,
-                    'documents': {},
-                    'providers': [],
-                }))
+                status=204, body=''))
             p2p_page.route('**/assets/p2p-libp2p.js*', lambda route: route.fulfill(
                 status=200, body=stub, content_type='application/javascript'))
             p2p_page.goto(url, wait_until='domcontentloaded')
             p2p_page.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('libp2p gossip: 1 current-master ProviderRecord(s) verified')""",
+              .includes('libp2p gossip: provider lookup unresolved; nothing displayed')""",
                 timeout=15_000)
             p2p_log = p2p_page.locator('#log').text_content()
             require('untrusted lookup hint only; awaiting current-master ProviderRecord' in p2p_log,
                     'raw gossip was not labelled as an untrusted lookup hint')
             require('P2P handle resolved by current' in p2p_log
                     and 'public read granted' in p2p_log,
-                    'P2P-only resolved record did not pass full provider/policy verification')
+                    'P2P provider/document verification did not run before inventory gating')
             require('P2P discover-only projection · discover-only; read links withheld' in p2p_log,
-                    'zero-grant P2P projection did not verify as discover-only')
+                    'zero-grant P2P document did not retain discover-only policy projection')
+            require(p2p_page.locator('.mcard', has_text='P2P handle resolved by current').count() == 0,
+                    'standalone P2P ProviderRecord bypassed complete-inventory membership')
             require('MALICIOUS SELF-KEY LABEL' not in p2p_log,
                     'raw self-key gossip metadata entered the UI')
             resolved_keys = p2p_page.evaluate('globalThis.__p2pResolvedKeys')
@@ -924,7 +1082,7 @@ def run(args: argparse.Namespace) -> dict:
               sessionStorage.setItem('personaos_operator', JSON.stringify({{{json.dumps(node)}:'fixture-token'}}));
             """)
             scale.goto(url, wait_until='domcontentloaded')
-            scale.locator('.pcard').first.wait_for(timeout=15_000)
+            scale.locator('.pcard').first.wait_for(timeout=60_000)
             scale.wait_for_function("""() => document.querySelector('#graphWindow')?.textContent.includes('2K')""",
                                     timeout=15_000)
             require(scale.locator('.pcard').count() == 12,
@@ -1079,17 +1237,10 @@ def run(args: argparse.Namespace) -> dict:
             sse.on('response', lambda response: sse_failed_responses.append(
                 f'{response.status} {response.url}') if response.status >= 400 else None)
             sse.route('**/node/providers.json', lambda route: route.fulfill(
-                status=200, json={
-                    'schema': 'dht-provider-index/2',
-                    'kernel_id': NODE_ID,
-                    'provider_count': 0,
-                    'document_count': 0,
-                    'documents': {},
-                    'providers': [],
-                }))
+                status=204, body=''))
             sse.goto(url, wait_until='domcontentloaded')
             sse.wait_for_function("""() => document.querySelector('#log')?.textContent
-              .includes('discovery snapshot: 1 current ProviderRecord(s) verified; 1 refused')""",
+              .includes('discovery snapshot: 16 current ProviderRecord(s) verified; 0 refused')""",
                 timeout=15_000)
             open_live_plan(sse)
             sse.locator('#fv-body').wait_for(timeout=10_000)
@@ -1182,7 +1333,7 @@ def run(args: argparse.Namespace) -> dict:
             failure.on('pageerror', lambda error: failure_errors.append(f'pageerror: {error}'))
             failure.goto(url, wait_until='domcontentloaded')
             failure.wait_for_function("""() => document.querySelector('#status')?.textContent
-              .includes('15 verified records')""", timeout=30_000)
+              .includes('16 verified records')""", timeout=30_000)
             failed_persona = failure.locator('.pcard[title="open Orin Vale"]')
             failed_persona.locator('.pc-failed').wait_for(timeout=15_000)
             require(failed_persona.locator('.pc-run').count() == 0,
@@ -1211,8 +1362,10 @@ def run(args: argparse.Namespace) -> dict:
             live_text = failure.locator('#livesec').inner_text()
             live_text_lower = live_text.lower()
             require('terminal execution status' in live_text_lower
-                    and 'model returned malformed structured output' in live_text,
+                    and 'model call failed' in live_text_lower,
                     'persona inspector did not surface terminal failure diagnostics')
+            require('model returned malformed structured output' not in live_text_lower,
+                    'public failure projection exposed the operator-tier model reason')
             require('model selection history' in live_text_lower
                     and 'doing now' not in live_text_lower,
                     'historical model selection was still labelled as current work')
@@ -1234,7 +1387,7 @@ def run(args: argparse.Namespace) -> dict:
                 'revoked_unknown_document_keys_refused': True,
                 'discover_only_raw_http_minimal': True,
                 'discover_only_raw_p2p_minimal': True,
-                'p2p_only_provider_resolved': True,
+                'p2p_standalone_inventory_gated': True,
                 'sse_legacy_provider_refused': True,
                 'key_rotation_refreshed': True,
                 'body_requests': len(body_requests),
@@ -1243,9 +1396,12 @@ def run(args: argparse.Namespace) -> dict:
                 'anonymous_thinking_requests': len(anonymous_thinking_requests),
                 'private_thinking_404_quiet': True,
                 'public_thinking_frame_refused': True,
+                'public_aggregate_outer_forgery_refused': True,
+                'public_message_tamper_subject_and_addressing_refused': True,
                 'hash_changed': before_hash != after_hash,
                 'image_rerendered': True,
                 'generic_binary_inspected': True,
+                'verified_byte_format_dispatch': ['png', 'pdf', 'step'],
                 'stale_poll_refused': True,
                 'run_ended_stopped_polling': True,
                 'run_ended_cleared_runtime': True,
@@ -1253,7 +1409,7 @@ def run(args: argparse.Namespace) -> dict:
                 'terminal_model_failure_truthful': True,
                 'scale': scale_metrics,
                 'mobile': {**metrics, 'drawer': drawer, 'file_drawer': file_drawer},
-                'console_errors': (errors + tamper_errors + rotation_errors + p2p_errors
+                'console_errors': (unexpected_desktop_errors + tamper_errors + rotation_errors + p2p_errors
                                    + mobile_errors + unexpected_sse_errors),
             }
     except PlaywrightTimeoutError as error:

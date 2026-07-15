@@ -342,6 +342,81 @@ export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey
     && avatar.identity_public_key_hex === identityPin;
 }
 
+function normalizedPersonaLifecycleCard(record) {
+  const card=record?.persona_lifecycle_card;
+  const exactFields=['authority','did','identity_fields','identity_materialization_state',
+    'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
+    'identity_signing_key_id','issued_at','lifecycle_chain_head_hash',
+    'lifecycle_chain_verified','lifecycle_state','persona_id','schema','signature_hex',
+    'signing_key_id'];
+  if(!card||typeof card!=='object'||Array.isArray(card)
+      ||card.schema!=='personaos-persona-lifecycle-card/1'
+      ||card.signing_key_id!=='kernel-master'
+      ||Object.keys(card).sort().join('\u0000')!==exactFields.sort().join('\u0000')
+      ||!/^[0-9a-f]{128}$/i.test(String(card.signature_hex||''))) return null;
+  const personaId=signedPersonaId(record);
+  if(!personaId||String(card.persona_id||'')!==personaId
+      ||String(card.did||'')!==String(record.did||'')) return null;
+  const lifecycle=String(card.lifecycle_state||'').normalize('NFC').trim();
+  if(lifecycle!=='ACTIVE') return null;
+  if(card.authority!=='kernel_observed_verified_persona_lifecycle'
+      ||card.identity_signature_verified!==true||card.lifecycle_chain_verified!==true
+      ||!/^sha256:[0-9a-f]{64}$/i.test(String(card.identity_signature_hash||''))
+      ||!/^sha256:[0-9a-f]{64}$/i.test(String(card.lifecycle_chain_head_hash||''))) return null;
+  const issuedAt=String(card.issued_at||'');
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(issuedAt)
+      ||!Number.isFinite(Date.parse(issuedAt))) return null;
+  const outerKeyId=String(record._personaIdentitySigningKeyId||record.identity_signing_key_id||'');
+  const outerPublicKey=String(record._personaIdentityPublicKeyHex||record.identity_public_key_hex||'').toLowerCase();
+  if(!outerKeyId||String(card.identity_signing_key_id||'')!==outerKeyId
+      ||!/^[0-9a-f]{64}$/.test(outerPublicKey)
+      ||String(card.identity_public_key_hex||'').toLowerCase()!==outerPublicKey) return null;
+  const materialization=String(card.identity_materialization_state||'');
+  if(!['pending','materialized'].includes(materialization)) return null;
+  const fields=card.identity_fields;
+  if(!fields||typeof fields!=='object'||Array.isArray(fields)) return null;
+  const normalizedFields={};
+  for(const name of ['name','characteristics','avatar']){
+    const field=fields[name];
+    if(!field||typeof field!=='object'||Array.isArray(field)
+        ||Object.keys(field).sort().join('\u0000')!=='persona_authored\u0000state'
+        ||!['pending','materialized'].includes(String(field.state||''))
+        ||typeof field.persona_authored!=='boolean'
+        ||field.persona_authored!==(field.state==='materialized')) return null;
+    normalizedFields[name]=Object.freeze({state:field.state,personaAuthored:field.persona_authored});
+  }
+  if(Object.keys(fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return null;
+  const allMaterialized=Object.values(normalizedFields).every((field)=>field.state==='materialized');
+  if((materialization==='materialized')!==allMaterialized) return null;
+  return Object.freeze({personaId,lifecycleState:lifecycle,
+    materializationState:materialization,identityFields:Object.freeze(normalizedFields)});
+}
+
+/**
+ * A kernel-signed lifecycle shell is sufficient to render an honest pending
+ * persona card. The nested signature is verified at discovery admission and
+ * recorded on the already provider/document-verified row. No telemetry alias,
+ * guessed name, traits, role or avatar can satisfy this predicate.
+ */
+export function verifiedPersonaLifecyclePresent(personaDiscoveryByKey,personaKey){
+  if(!(personaDiscoveryByKey instanceof Map)||typeof personaKey!=='string'||!personaKey) return false;
+  const record=personaDiscoveryByKey.get(personaKey);
+  if(!record||record.kind!=='persona'||record._personaLifecycleVerified!==true) return false;
+  const lifecycle=normalizedPersonaLifecycleCard(record); if(!lifecycle) return false;
+  const keyParts=personaKey.split('\u0000');
+  return keyParts.length===3&&keyParts[1]==='persona'&&keyParts[2]===lifecycle.personaId;
+}
+
+export function verifiedPersonaRenderable(personaDiscoveryByKey,personaKey){
+  return verifiedPersonaIdentityPresent(personaDiscoveryByKey,personaKey)
+    ||verifiedPersonaLifecyclePresent(personaDiscoveryByKey,personaKey);
+}
+
+export function personaLifecycleProjection(personaDiscoveryByKey,personaKey){
+  if(!verifiedPersonaLifecyclePresent(personaDiscoveryByKey,personaKey)) return null;
+  return normalizedPersonaLifecycleCard(personaDiscoveryByKey.get(personaKey));
+}
+
 /**
  * Project the latest terminal model-call failure from an ordered telemetry ring.
  *

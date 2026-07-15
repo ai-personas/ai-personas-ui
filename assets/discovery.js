@@ -25,7 +25,8 @@ import {
   providerLookupHints,
   recordVerificationEntries,
   signedPersonaLabel,
-} from './discovery-authority.mjs?v=20260714-persona-identity-pin-v1';
+  validateProviderInventoryWindow,
+} from './discovery-authority.mjs?v=20260715-provider-window-v1';
 import {
   collectBrowserLibp2pBootstraps,
   compactCount,
@@ -39,8 +40,9 @@ import {
   selectMonitoringBases,
   selectPriorityWindow,
   terminalTaskMissionProjection,
-  verifiedPersonaIdentityPresent,
-} from './network-view.mjs?v=20260714-identity-truth-v4';
+  verifiedPersonaRenderable,
+  personaLifecycleProjection,
+} from './network-view.mjs?v=20260715-lifecycle-shell-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -50,12 +52,27 @@ import {
 import {
   selectBuiltinArtifactRenderer,
   selectLocalArtifactModule,
-} from './artifact-types.mjs?v=20260714-ifc-inspector-v1';
+  resolveVerifiedArtifactDispatch,
+} from './artifact-types.mjs?v=20260715-verified-sniff-v1';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
   personaIdentityKeyPin,
 } from './persona-avatar.mjs?v=20260712-persona-raster-v2';
+import {
+  entityTelemetryProjection,
+  isExactPublicCommunicationRoute,
+  isEnvironmentTelemetryDocument,
+  isPersonaTelemetryDocument,
+  isPublicEntityIndexDocument,
+  isPublicEntityTelemetryDocument,
+  OPERATOR_LIVE_TELEMETRY_SCHEMA,
+  publicCommunicationRouteEvents,
+  telemetryActiveCalls,
+  telemetryActivity,
+  telemetryModelEvents,
+  telemetrySpans,
+} from './public-telemetry.mjs?v=20260715-public-contract-v1';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -171,6 +188,7 @@ function opTokens(){
   // Clear credentials written by older portal builds instead of silently retaining
   // durable authority that model-authored same-origin content could have observed.
   try{ localStorage.removeItem('personaos_operator'); }catch(e){}
+  try{ localStorage.removeItem('personaos_peers'); }catch(e){}
   try{ return JSON.parse(sessionStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; }
 }
 function opSaveTokens(m){
@@ -296,11 +314,14 @@ const NETWORK_LIMITS=Object.freeze({
 const NETWORK=new NetworkStore({limits:{maxEntities:NETWORK_LIMITS.cachedRecords,
   maxPresence:NETWORK_LIMITS.cachedRecords,maxGraphExact:96,maxGraphAggregates:24,maxGraphNodes:120}});
 const TELEMETRY_GATE=new TelemetryAdmissionGate({maxSources:128,maxAgeMs:30000,futureSkewMs:30000});
+const VERIFIED_COMMUNICATION_ROUTES=new WeakMap();
+const VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS=new WeakSet();
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
   providerKeyRefreshAt:new Map(), providerHintJobs:new Map(), providerHintQueue:[],
+  providerInventories:new Map(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
@@ -335,9 +356,7 @@ const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion:
 // from replayed model_events or heartbeat.busy. Historical model_events remain
 // useful history, but they must not mark personas/envs as running now.
 function _activeCalls(live){
-  const calls=(live&&live.kernel&&Array.isArray(live.kernel.active_model_calls))
-    ? live.kernel.active_model_calls : [];
-  return calls.filter(Boolean);
+  return telemetryActiveCalls(live).filter(Boolean);
 }
 function _terminalCallKey(base,call){
   const id=String(call?.call_id||'');
@@ -521,8 +540,12 @@ function _refreshPersonaInteractionIndex(){
   for(const [,rows] of S.ixByPersona) if(rows.length>12) rows.splice(0,rows.length-12);
 }
 
-function ingestLiveTelemetry(base,live,{source='poll',eventId=''}={}){
+function ingestLiveTelemetry(base,live,{source='poll',eventId='',verifiedCommunicationRoutes=[],
+  publicFrameVerified=false}={}){
   const sourceKey=base||'@origin';
+  if(live?.schema==='personaos-live-telemetry-public/1'&&publicFrameVerified!==true){
+    return {accepted:false,decision:{accepted:false,reason:'public_signature_invalid',sourceKey}};
+  }
   const decision=TELEMETRY_GATE.admit(sourceKey,live,{eventId});
   if(!decision.accepted){
     const refusalKey=`${sourceKey}\u0000${decision.reason}`;
@@ -534,7 +557,7 @@ function ingestLiveTelemetry(base,live,{source='poll',eventId=''}={}){
     return {accepted:false,decision};
   }
   indexLiveTelemetry(base,live,{observedAt:decision.observedAt,
-    receivedAt:decision.receivedAt,sequence:decision.sequence,source});
+    receivedAt:decision.receivedAt,sequence:decision.sequence,source,verifiedCommunicationRoutes});
   return {accepted:true,decision};
 }
 // The workspace RUN id (k/run-XXXX) every record carries in its resolved links /
@@ -597,7 +620,8 @@ function manifestRun(m){ for(const a of manifestArtifacts(m)){ if(a&&a.run) retu
 function indexLiveTelemetry(base,live,meta={}){
   if(!live||typeof live!=='object') return;
   const baseKey=base||'@origin';
-  const kernelId=(S.boots?.get(baseKey)||{}).kernel_id||live?.node?.node_id||live?.kernel?.kernel_id||baseKey;
+  const kernelId=(S.boots?.get(baseKey)||{}).kernel_id||live?.node_id
+    ||live?.node?.node_id||live?.kernel?.kernel_id||baseKey;
   const receivedAt=Number(meta.receivedAt)||Date.now();
   const t=Number(meta.observedAt)||Date.parse(live.generated_at||'')||receivedAt;
   // the always-on baseline pulse: node.heartbeat is present + running on every
@@ -616,7 +640,7 @@ function indexLiveTelemetry(base,live,meta={}){
   const terminalPersonaIds=new Set(rawActiveCalls
     .filter((call)=>_terminalCallIsBlocked(base,call,receivedAt))
     .map((call)=>_shortId(call?.persona_id)).filter(Boolean));
-  const me=(live.kernel&&live.kernel.model_events)||[];
+  const me=telemetryModelEvents(live);
   const projectedFailures=projectTerminalModelFailures(me);
   const terminalFailuresByPersona=new Map([...projectedFailures.byPersona]
     .map(([pid,failure])=>[_shortId(pid),failure]).filter(([pid])=>pid));
@@ -626,7 +650,7 @@ function indexLiveTelemetry(base,live,meta={}){
     ...projectedFailures.latest,observedAt:t,receivedAt,base:baseKey==='@origin'?'':baseKey,kernel:kernelId,
   });
   else S.terminalModelFailureByKernel.delete(kernelId);
-  const sp=(live.kernel&&live.kernel.spans)||[];
+  const sp=telemetrySpans(live);
   const rawPersonas=Array.isArray(live.personas)?live.personas:[];
   const personas=rawPersonas.slice(0,NETWORK_LIMITS.cachedRecords);
   S.liveTel.set(baseKey,rawPersonas.length===personas.length?live:{...live,personas});
@@ -706,7 +730,7 @@ function indexLiveTelemetry(base,live,meta={}){
   // re-polls don't duplicate; newest kept (ring of 400). On the FIRST load we
   // seed the ring WITHOUT spiking the vital or firing edges (the 400-ring spans
   // hours — stale events must not animate); only genuinely-new keys fire after.
-  const ix=(live.kernel&&live.kernel.interactions)||[];
+  const ix=telemetryActivity(live,{verifiedCommunicationRoutes:meta.verifiedCommunicationRoutes});
   if(ix.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
     S.ixColdByBase=S.ixColdByBase||new Set();
@@ -763,10 +787,10 @@ function indexLiveTelemetry(base,live,meta={}){
   // so order them off the live frame time and merge them into the SAME feed (deduped,
   // ring-bounded) — the monitor then shows WHAT each persona is asking its model in
   // real time, not only who→whom coordination. Never fabricated: pure node telemetry.
-  const me2=(live.kernel&&live.kernel.model_events)||[];
+  const me2=telemetryModelEvents(live);
   if(me2.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    const baseT=runtimeBusy?(Date.parse(live.generated_at||'')||t):(_latestSpanTime(live.kernel&&live.kernel.spans)||t);
+    const baseT=runtimeBusy?(Date.parse(live.generated_at||'')||t):(_latestSpanTime(sp)||t);
     let addedM=0;
     me2.forEach((m,i)=>{
       if(String(m.kind||'')!=='MODEL_SELECTED') return;
@@ -854,7 +878,9 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
     ||p.signing_key_role!=='master'||p.signing_key_status!=='current'
     ||String(p.public_key_hex||'').toLowerCase()!==pk.toLowerCase()
     ||(expectedKey&&String(p.key||'')!==expectedKey)
-    ||p.visibility_tier!=='public'||p.host_kernel_id!==boot?.kernel_id) return {ok:false,reason:'provider_authority_invalid'};
+    ||p.visibility_tier!=='public'||p.host_kernel_id!==boot?.kernel_id
+    ||String(p.record_url||'')!==`discovery/public/records/${p.record_id}.json`)
+    return {ok:false,reason:'provider_authority_invalid'};
   let ok=false; try{ ok=await ed.verifyAsync(hexToBytes(envelope.signature_hex),enc.encode(canon(p)),hexToBytes(pk)); }catch(e){}
   if(!ok) return {ok:false,reason:'provider_signature_invalid'};
   if(`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==p.document_hash) return {ok:false,reason:'provider_document_hash_mismatch'};
@@ -872,19 +898,12 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
     boundStatus=String(p.document_signing_key_status||''),
     boundKey=String(p.document_public_key_hex||'').toLowerCase();
   const hasDocumentKeyBinding=!!(boundId||boundStatus||boundKey);
-  if(hasDocumentKeyBinding){
-    if(boundId!==String(doc.signing_key_id||'')
+  if(!hasDocumentKeyBinding||boundId!==String(doc.signing_key_id||'')
       ||!['current','previous','archived'].includes(boundStatus)
-      ||!/^[0-9a-f]{64}$/.test(boundKey)) return {ok:false,reason:'provider_document_key_binding_invalid'};
-    candidates=candidates.filter((entry)=>entry.key_id===boundId&&entry.status===boundStatus
-      &&String(entry.public_key_hex||'').toLowerCase()===boundKey);
-  }else{
-    // Legacy envelopes can verify only current documents. Historical acceptance
-    // requires a current-master-signed generation binding in the ProviderRecord.
-    candidates=candidates.filter((entry)=>entry.status==='current'
-      &&entry.key_id===p.signing_key_id
-      &&String(entry.public_key_hex||'').toLowerCase()===String(pk).toLowerCase());
-  }
+      ||!/^[0-9a-f]{64}$/.test(boundKey))
+    return {ok:false,reason:'provider_document_key_binding_invalid'};
+  candidates=candidates.filter((entry)=>entry.key_id===boundId&&entry.status===boundStatus
+    &&String(entry.public_key_hex||'').toLowerCase()===boundKey);
   const recordMatches=[];
   for(const entry of candidates){ try{
     if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(r)),
@@ -912,6 +931,220 @@ async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedK
   verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
   return verification.ok?{...verification,keys}:{...verification,keys:{}};
 }
+async function verifyPersonaLifecycleCard(card,record,documentKey){
+  if(record?.kind!=='persona'||documentKey?.key_id!=='kernel-master') return false;
+  if(!card||typeof card!=='object'||Array.isArray(card)
+      ||card.schema!=='personaos-persona-lifecycle-card/1'
+      ||card.signing_key_id!=='kernel-master'
+      ||!/^[0-9a-f]{128}$/i.test(String(card.signature_hex||''))) return false;
+  const payload={};
+  for(const key of Object.keys(card)) if(key!=='signature_hex') payload[key]=card[key];
+  try{ return await ed.verifyAsync(hexToBytes(card.signature_hex),enc.encode(canon(payload)),
+    hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
+}
+async function verifyPublicCommunicationRoutes(base,live){
+  const routes=Array.isArray(live?.communication_routes)?live.communication_routes.slice(-96):null;
+  if(live&&typeof live==='object'){
+    VERIFIED_COMMUNICATION_ROUTES.set(live,[]);
+    VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.delete(live);
+  }
+  if(!routes) return [];
+  const advertised=String(live?.communication_routes_hash||'').toLowerCase();
+  if(!/^sha256:[0-9a-f]{64}$/.test(advertised)
+      ||`sha256:${await sha256Hex(enc.encode(canon(routes)))}`!==advertised){
+    return []; }
+  VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.add(live);
+  const registry=S.keyDocs.get(base||'@origin');
+  const key=currentMasterKey(registry?.entries||[]); if(!key) return [];
+  const verified=[];
+  for(const route of routes){
+    if(!isExactPublicCommunicationRoute(route)) continue;
+    const payload={}; for(const field of Object.keys(route)) if(field!=='signature_hex') payload[field]=route[field];
+    try{ if(await ed.verifyAsync(hexToBytes(route.signature_hex),enc.encode(canon(payload)),hexToBytes(key)))
+      verified.push(route); }catch(_){ /* one bad route cannot poison independently signed siblings */ }
+  }
+  VERIFIED_COMMUNICATION_ROUTES.set(live,verified);
+  return verified;
+}
+const PUBLIC_AGGREGATE_TELEMETRY_FIELDS=Object.freeze([
+  'activity','activity_hash','communication_routes','communication_routes_hash','counts',
+  'generated_at','model_status','node_id','personas','schema','signature_hex','signing_key_id',
+  'sufficiency','topology','topology_hash',
+].sort());
+async function verifyPublicTelemetryFrame(base,live){
+  if(live?.schema===OPERATOR_LIVE_TELEMETRY_SCHEMA)
+    return !!tokenFor(join(base,'telemetry.json'));
+  if(live?.schema!=='personaos-live-telemetry-public/1'
+      ||!_exactObjectFields(live,PUBLIC_AGGREGATE_TELEMETRY_FIELDS)
+      ||!_freshPublicGeneratedAt(live.generated_at)
+      ||!Array.isArray(live.personas)||!Array.isArray(live.activity)
+      ||!Array.isArray(live.communication_routes)
+      ||!live.model_status||typeof live.model_status!=='object'||Array.isArray(live.model_status)
+      ||!_exactObjectFields(live.model_status,['active_calls','recent_events'])
+      ||!Array.isArray(live.model_status.active_calls)||!Array.isArray(live.model_status.recent_events))
+    return false;
+  const registry=S.keyDocs.get(base||'@origin');
+  if(!registry?.kernelId||String(live.node_id||'')!==registry.kernelId) return false;
+  return verifyCurrentMasterSignedDocument(base,live);
+}
+async function verifyCurrentMasterSignedDocument(base,doc){
+  if(!doc||typeof doc!=='object'||Array.isArray(doc)) return false;
+  if(doc.signing_key_id!=='kernel-master'
+      ||!/^[0-9a-f]{128}$/i.test(String(doc.signature_hex||''))) return false;
+  const registry=S.keyDocs.get(base||'@origin');
+  const key=currentMasterKey(registry?.entries||[]); if(!key) return false;
+  const payload={}; for(const field of Object.keys(doc)) if(field!=='signature_hex') payload[field]=doc[field];
+  try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(payload)),hexToBytes(key)); }
+  catch(_){ return false; }
+}
+const PROVIDER_INVENTORY_FIELDS=Object.freeze([
+  'base','document_count','documents','expires_at','generated_at','inventory_generation',
+  'inventory_hash','inventory_manifest','inventory_manifest_hash','kernel_id',
+  'previous_inventory_hash','provider_count','providers','schema','signature_hex',
+  'signing_key_id','version','visibility',
+].sort());
+const PROVIDER_MANIFEST_FIELDS=Object.freeze(['document_hash','record_id','record_url']);
+const SHA256_CONTENT_RE=/^sha256:[0-9a-f]{64}$/;
+async function verifyProviderInventory(index,base,boot){
+  if(!_exactObjectFields(index,PROVIDER_INVENTORY_FIELDS)
+      ||index.schema!=='dht-provider-index/3'||index.kernel_id!==boot?.kernel_id
+      ||String(index.base||'').replace(/\/$/,'')!==String(base||'').replace(/\/$/,'')
+      ||index.signing_key_id!=='kernel-master'||index.visibility!=='public'
+      ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
+      ||index.version!==index.inventory_generation
+      ||!Array.isArray(index.inventory_manifest)||!Array.isArray(index.providers)
+      ||!index.documents||typeof index.documents!=='object'||Array.isArray(index.documents)
+      ||!Number.isSafeInteger(index.provider_count)||index.provider_count!==index.providers.length
+      ||!Number.isSafeInteger(index.document_count)
+      ||index.document_count!==Object.keys(index.documents).length
+      ||index.document_count!==index.inventory_manifest.length
+      ||!SHA256_CONTENT_RE.test(String(index.inventory_manifest_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(index.inventory_hash||'')))
+    return {ok:false,reason:'provider_inventory_shape_invalid'};
+  const inventoryWindow=validateProviderInventoryWindow(index.generated_at,index.expires_at);
+  const {generatedAt,expiresAt}=inventoryWindow;
+  if(!inventoryWindow.ok)
+    return {ok:false,reason:'provider_inventory_stale'};
+  if((index.inventory_generation===1&&index.previous_inventory_hash!=='')
+      ||(index.inventory_generation>1&&!SHA256_CONTENT_RE.test(String(index.previous_inventory_hash||''))))
+    return {ok:false,reason:'provider_inventory_chain_invalid'};
+  const manifest=index.inventory_manifest;
+  const rows=[]; const recordIds=new Set(), documentHashes=new Set();
+  for(const item of manifest){
+    if(!_exactObjectFields(item,PROVIDER_MANIFEST_FIELDS)
+        ||!/^[A-Za-z0-9:_.-]{1,300}$/.test(String(item.record_id||''))
+        ||!SHA256_CONTENT_RE.test(String(item.document_hash||''))
+        ||String(item.record_url)!==`discovery/public/records/${item.record_id}.json`
+        ||recordIds.has(item.record_id)||documentHashes.has(item.document_hash)
+        ||!Object.hasOwn(index.documents,item.document_hash))
+      return {ok:false,reason:'provider_inventory_manifest_invalid'};
+    recordIds.add(item.record_id); documentHashes.add(item.document_hash); rows.push(item);
+  }
+  const lexical=(left,right)=>left<right?-1:left>right?1:0;
+  const sorted=[...rows].sort((a,b)=>lexical(a.record_id,b.record_id)
+    ||lexical(a.document_hash,b.document_hash)||lexical(a.record_url,b.record_url));
+  if(canon(rows)!==canon(sorted)
+      ||`sha256:${await sha256Hex(enc.encode(canon(rows)))}`!==index.inventory_manifest_hash
+      ||Object.keys(index.documents).some((hash)=>!documentHashes.has(hash)))
+    return {ok:false,reason:'provider_inventory_manifest_hash_invalid'};
+  const byRecord=new Map(rows.map((item)=>[item.record_id,item]));
+  const referenced=new Set();
+  for(const reference of index.providers){
+    const provider=reference?.record, item=byRecord.get(String(provider?.record_id||''));
+    if(!item||String(provider.record_url||'')!==item.record_url
+        ||String(provider.document_hash||'')!==item.document_hash
+        ||String(reference.document_ref||'')!==item.document_hash
+        ||provider.inventory_generation!==index.inventory_generation
+        ||provider.inventory_manifest_hash!==index.inventory_manifest_hash)
+      return {ok:false,reason:'provider_inventory_record_binding_invalid'};
+    referenced.add(item.record_id);
+  }
+  if(referenced.size!==recordIds.size)
+    return {ok:false,reason:'provider_inventory_manifest_unreferenced'};
+  const hashPayload={};
+  for(const field of Object.keys(index)) if(field!=='inventory_hash'&&field!=='signature_hex')
+    hashPayload[field]=index[field];
+  if(`sha256:${await sha256Hex(enc.encode(canon(hashPayload)))}`!==index.inventory_hash)
+    return {ok:false,reason:'provider_inventory_hash_invalid'};
+  if(!await verifyCurrentMasterSignedDocument(base,index))
+    return {ok:false,reason:'provider_inventory_signature_invalid'};
+  return {ok:true,generation:index.inventory_generation,hash:index.inventory_hash,
+    previousHash:String(index.previous_inventory_hash||''),manifestHash:index.inventory_manifest_hash,
+    recordIds,bindings:new Map(rows.map((item)=>[item.record_id,item.document_hash])),
+    generatedAt,expiresAt};
+}
+const PUBLIC_ENTITY_INDEX_FIELDS=Object.freeze([
+  'environments','generated_at','node_id','personas','schema','signature_hex','signing_key_id',
+].sort());
+const PUBLIC_PERSONA_FEED_FIELDS=Object.freeze([
+  'activity','communication_routes','communication_routes_hash','generated_at','model_status',
+  'name','node_id','persona_id','schema','signature_hex','signing_key_id','summary','tier',
+].sort());
+const PUBLIC_ENVIRONMENT_FEED_FIELDS=Object.freeze([
+  'activity','communication_routes','communication_routes_hash','environment_id','generated_at',
+  'member_count','members','model_status','node_id','schema','signature_hex','signing_key_id','status','tier',
+].sort());
+function _exactObjectFields(value,fields){
+  return !!value&&typeof value==='object'&&!Array.isArray(value)
+    &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
+}
+function _telemetryEntitySlug(value){
+  const source=String(value||'').split(':').pop().trim(); let out='',replaced=false;
+  for(const char of source){
+    if(/[A-Za-z0-9._-]/.test(char)){ out+=char; replaced=false; }
+    else if(!replaced){ out+='_'; replaced=true; }
+  }
+  return out.replace(/^_+|_+$/g,'')||'unknown';
+}
+function _entityFeedPath(rel){ return String(rel||'').split(/[?#]/,1)[0].replace(/^\/+/, ''); }
+function _freshPublicGeneratedAt(value,now=Date.now()){
+  const at=Date.parse(String(value||''));
+  return Number.isFinite(at)&&at>=now-30000&&at<=now+30000;
+}
+function _safeEntityMap(value,prefix){
+  if(!value||typeof value!=='object'||Array.isArray(value)
+      ||Object.keys(value).length>NETWORK_LIMITS.cachedRecords) return false;
+  return Object.entries(value).every(([id,rel])=>id&&id.length<=512
+    &&String(rel)===`${prefix}/${_telemetryEntitySlug(id)}.json`);
+}
+async function verifyPublicEntityDocument(base,rel,doc){
+  const registry=S.keyDocs.get(base||'@origin');
+  if(!_freshPublicGeneratedAt(doc?.generated_at)||!registry?.kernelId
+      ||String(doc?.node_id||'')!==registry.kernelId
+      ||(kernelForBase(base)&&kernelForBase(base)!==registry.kernelId)) return false;
+  const path=_entityFeedPath(rel);
+  if(isPublicEntityIndexDocument(doc)){
+    if(!_exactObjectFields(doc,PUBLIC_ENTITY_INDEX_FIELDS)
+        ||path!=='telemetry/live/entities.json'
+        ||!_safeEntityMap(doc.personas,'telemetry/personas')
+        ||!_safeEntityMap(doc.environments,'telemetry/environments')) return false;
+  }else if(doc?.schema==='personaos-persona-telemetry-public/1'){
+    const pid=String(doc.persona_id||'');
+    if(!_exactObjectFields(doc,PUBLIC_PERSONA_FEED_FIELDS)||!pid||pid.length>512
+        ||path!==`telemetry/personas/${_telemetryEntitySlug(pid)}.json`
+        ||doc.tier!=='public_redacted'
+        ||!doc.summary||typeof doc.summary!=='object'||Array.isArray(doc.summary)
+        ||String(doc.summary.persona_id||'')!==pid
+        ||String(doc.name||'')!==String(doc.summary.name||'')
+        ||!Array.isArray(doc.model_status)||!Array.isArray(doc.activity)
+        ||!Array.isArray(doc.communication_routes)
+        ||doc.model_status.some((event)=>!event||typeof event!=='object'||Array.isArray(event)
+          ||String(event.persona_id||'')!==pid)
+        ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
+  }else if(doc?.schema==='personaos-environment-telemetry-public/1'){
+    const eid=String(doc.environment_id||'');
+    if(!_exactObjectFields(doc,PUBLIC_ENVIRONMENT_FEED_FIELDS)||!eid||eid.length>512
+        ||path!==`telemetry/environments/${_telemetryEntitySlug(eid)}.json`
+        ||doc.tier!=='public_redacted'||!Number.isSafeInteger(doc.member_count)
+        ||doc.member_count<0||!Array.isArray(doc.members)||doc.members.length!==doc.member_count
+        ||!Array.isArray(doc.model_status)||!Array.isArray(doc.activity)
+        ||!Array.isArray(doc.communication_routes)
+        ||doc.model_status.some((event)=>!event||typeof event!=='object'||Array.isArray(event)
+          ||String(event.environment_id||'')!==eid)
+        ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
+  }else return false;
+  return verifyCurrentMasterSignedDocument(base,doc);
+}
 async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={}){
   if(!doc?.record) return {ok:false,row:null};
   const registry=S.keyDocs.get(base||'@origin')||{};
@@ -931,10 +1164,15 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   // exact source record has already passed the kernel/document signature gate.
   // Keep the pin internal; absence is normal and never invents one.
   const identityPublicKeyHex=personaId?personaIdentityKeyPin(doc.record,personaId):'';
+  const lifecycleVerified=personaId
+    ?await verifyPersonaLifecycleCard(doc.persona_lifecycle_card,doc.record,signature.entry):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     _providerBase:meta.providerBaseVerified===true?rawBase:'',
     _personaIdentityPublicKeyHex:identityPublicKeyHex,
+    _personaIdentitySigningKeyId:personaId?String(doc.record.identity_signing_key_id||''):'',
+    _personaLifecycleVerified:lifecycleVerified,
+    persona_lifecycle_card:lifecycleVerified?doc.persona_lifecycle_card:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -948,13 +1186,19 @@ function logRecordAccess(row,source){
 }
 async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,source='http'){
   const rows=[]; let refused=0;
+  const inventory=await verifyProviderInventory(providerIndex,base,boot);
+  if(!inventory.ok){
+    log('verify',`${source}: signed provider inventory refused · ${inventory.reason}`,false);
+    return {rows,refused:Math.max(1,Number(providerIndex?.provider_count)||0),
+      envelopeCount:Number(providerIndex?.provider_count)||0,inventory};
+  }
   const hydrated=hydrateProviderIndex(providerIndex);
   const declared=Array.isArray(providerIndex?.providers)?providerIndex.providers.length:0;
   const indexReason=providerIndex?.kernel_id!==boot?.kernel_id
     ?'provider_index_kernel_mismatch':hydrated.reason;
   if(!hydrated.ok||indexReason){
     log('verify',`${source}: compact provider index refused · ${indexReason}`,false);
-    return {rows,refused:Math.max(1,declared),envelopeCount:declared};
+    return {rows,refused:Math.max(1,declared),envelopeCount:declared,inventory};
   }
   refused=hydrated.refused||0;
   const providers=hydrated.envelopes;
@@ -973,17 +1217,27 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
   // atomic envelope+document pair avoids joining an envelope from generation N
   // with a moving record URL from generation N+1. HTTP and P2P now share the same
   // transport semantics; record_url remains a signed inspection locator only.
-  for(const [recordUrl,envelope] of entries){
-    const doc=envelope.document;
-    const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
-    if(!authority.ok){ refused++;
-      log('verify',`${source}: ${(envelope?.record?.key||'provider').slice(0,28)} · ${authority.reason||'FAIL'}`,false); continue; }
-    const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
-      {access:authority.access,providerBaseVerified:true});
-    if(!out.ok){ refused++; log('verify',`${source}: ${out.reason||'record refused'}`,false); continue; }
-    logRecordAccess(out.row,source); rows.push(out.row);
+  // Provider identities are independent once the atomic inventory has passed.
+  // Verify bounded batches concurrently so a large population does not turn
+  // discovery into an artificial one-person-at-a-time schedule.
+  const batchSize=64;
+  for(let offset=0;offset<entries.length;offset+=batchSize){
+    const batch=await Promise.all(entries.slice(offset,offset+batchSize).map(async([recordUrl,envelope])=>{
+      const doc=envelope.document;
+      const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
+      if(!authority.ok) return {ok:false,envelope,reason:authority.reason||'FAIL'};
+      const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
+        {access:authority.access,providerBaseVerified:true});
+      return out.ok?{ok:true,row:out.row}:{ok:false,envelope,reason:out.reason||'record refused'};
+    }));
+    for(const result of batch){
+      if(!result.ok){ refused++;
+        log('verify',`${source}: ${(result.envelope?.record?.key||'provider').slice(0,28)} · ${result.reason}`,false);
+        continue; }
+      logRecordAccess(result.row,source); rows.push(result.row);
+    }
   }
-  return {rows,refused,envelopeCount:entries.length};
+  return {rows,refused,envelopeCount:entries.length,inventory};
 }
 async function verifiedRowsFromP2PResult(result,source='p2p'){
   const rows=[]; let refused=0;
@@ -998,7 +1252,11 @@ async function verifiedRowsFromP2PResult(result,source='p2p'){
     const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',
       {access:authority.access,providerBaseVerified:true});
     if(!out.ok){ refused++; continue; }
-    out.row._net='p2p'; logRecordAccess(out.row,source); rows.push(out.row);
+    out.row._net='p2p';
+    out.row._providerInventoryGeneration=p.inventory_generation;
+    out.row._providerInventoryManifestHash=String(p.inventory_manifest_hash||'');
+    out.row._providerDocumentHash=String(p.document_hash||'');
+    logRecordAccess(out.row,source); rows.push(out.row);
   }
   return {rows,refused};
 }
@@ -1138,7 +1396,7 @@ async function discoverFrom(base,plane){
   S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
   await keysFor(base,boot);
   // The bootstrap count is the number of signed discovery documents, not the
-  // number of provider lookup aliases. A compact v2 index may legitimately
+  // number of provider lookup aliases. A compact v3 inventory may legitimately
   // publish several independently signed ProviderRecords (DID, record id,
   // handle) that all bind the same hash-addressed document.
   const advertisedRecordCount=Number(boot.record_count);
@@ -1165,8 +1423,11 @@ async function discoverFrom(base,plane){
     const resolved=await Promise.all(aliases.map((key)=>P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
     let authorityVerified=0;
     for(const result of resolved){ const verified=await verifiedRowsFromP2PResult(result,'p2p index lookup');
-      found.push(...verified.rows); authorityVerified+=verified.rows.length; }
-    if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup(s) current-master verified`,authorityVerified>0);
+      // Standalone provider lookups remain locator evidence only. Public rows
+      // are rendered from the signed v3 inventory so retirement/omission can
+      // be reconciled atomically instead of leaving a stale P2P contribution.
+      authorityVerified+=verified.rows.length; }
+    if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup proof(s) verified · inventory promotion required`,authorityVerified>0);
   }
   const uniqueFound=new Map(found.map((row)=>[
     `${row._kernel||boot.kernel_id||'@unknown'}\u0000${row.record_id||row.did}`,row]));
@@ -1194,7 +1455,9 @@ async function discoverFrom(base,plane){
     else noteKernel(boot.kernel_id,'http',base||location.origin,{reachable:true});
   }
   S.peerHealth.set(where,{ok:true,records:found.length,kernel:boot.kernel_id||'',t:Date.now()});
-  return {boot,found};
+  const inventory={...(http.inventory||{}),complete:http.inventory?.ok===true
+    &&http.refused===0&&new Set(found.map((row)=>row.record_id)).size===http.inventory.recordIds?.size};
+  return {boot,found,inventory};
 }
 
 // ---------- global kernel tracker (the "across the globe" strip) ----------
@@ -1286,26 +1549,16 @@ function renderGlobalKernels(){
   const omitted=Math.max(0,knownTotal-visible.length);
   if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
-// Peers come from the signed locator, the "＋ PEER" local fallback, and the
-// published peers.txt file. The public URL has no peer-routing parameter: a bare
-// hosted URL discovers announced nodes through node1.personas.ai automatically.
-let TXT_PEERS=[];
-async function loadPeersTxt(){
-  // peers.txt — one node URL per line; '#' comments + blank lines ignored. Each
-  // listed node is bootstrapped + resolved + Ed25519-verified like any other route.
-  const t=await fetchText('peers.txt');
-  TXT_PEERS = t ? t.split(/\r?\n/).map((s)=>s.trim()).filter((s)=>s && !s.startsWith('#')) : [];
-  if(TXT_PEERS.length) log('peers.txt',`${TXT_PEERS.length} peer(s): ${TXT_PEERS.join(', ').slice(0,90)}`);
-  else log('peers.txt','none listed');
-  return TXT_PEERS;
-}
-function peerList(){ let s=[];
-  try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
+// A bare hosted URL resolves signed node announcements through
+// node1.personas.ai automatically. Same-origin/local, resolver, gossip, and
+// content-addressed P2P routes are additive evidence; viewers never enter a
+// peer URL or carry routing state in the public URL.
+function peerList(){
   const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
   // Explicit and local routes outrank opportunistic/global ones; a focused node
   // is pinned to the front. This is the active monitoring window, not a claim
   // that the rest of the discovered population ceased to exist.
-  const all=[...new Set([...focused,...s,...TXT_PEERS,...(S.localPeers||[]),
+  const all=[...new Set([...focused,...(S.localPeers||[]),
     ...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
@@ -1319,12 +1572,8 @@ function peerList(){ let s=[];
 function peerSourceTags(base){
   const u=String(base||'').replace(/\/$/,'');
   if(!u) return [];
-  let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){}
-  s=(Array.isArray(s)?s:[]).map((x)=>String(x||'').replace(/\/$/,''));
-  const txt=(TXT_PEERS||[]).map((x)=>String(x||'').replace(/\/$/,''));
   const inSet=(set)=>[...(set||[])].map((x)=>String(x||'').replace(/\/$/,'')).includes(u);
   const out=[];
-  if(s.includes(u)||txt.includes(u)) out.push('manual');
   if(inSet(S.localPeers)) out.push('local');
   if(inSet(S.globalPeers)) out.push('resolver');
   if(inSet(S.gossipPeers)) out.push('gossip');
@@ -1483,14 +1732,79 @@ async function discoverLocalNode(opts={}){
 
 function recordStoreKey(r){ const raw=r?.record_id||r?.card_id; if(!raw) return '';
   return `${encodeURIComponent(String(r?._kernel||'@unknown'))}::${encodeURIComponent(String(raw))}`; }
+function _personaLifecycleRegresses(current,candidate){
+  if(current?.kind!=='persona'||current?._personaLifecycleVerified!==true) return false;
+  if(candidate?.kind!=='persona'||candidate?._personaLifecycleVerified!==true
+      ||!candidate.persona_lifecycle_card) return true;
+  const before=current.persona_lifecycle_card||{}, after=candidate.persona_lifecycle_card||{};
+  const beforeAt=Date.parse(String(before.issued_at||''));
+  const afterAt=Date.parse(String(after.issued_at||''));
+  if(!Number.isFinite(afterAt)||Number.isFinite(beforeAt)&&afterAt<beforeAt) return true;
+  if(before.identity_materialization_state==='materialized'
+      &&after.identity_materialization_state!=='materialized') return true;
+  if(Number.isFinite(beforeAt)&&afterAt===beforeAt
+      &&String(before.lifecycle_chain_head_hash||'')!==String(after.lifecycle_chain_head_hash||'')) return true;
+  return false;
+}
+function _removeRecordStoreKey(id){
+  const row=S.recs.get(id); if(!row) return false;
+  if(row.kind==='persona'){
+    const sid=_shortId(row.did||row.record_id), key=_personaKey(row._kernel,sid);
+    if(S.personaDiscoveryByKey.get(key)===row) S.personaDiscoveryByKey.delete(key);
+    S.liveByPersona.delete(key); S.personaRuntimeById?.delete(key);
+    if(S.follow===key) S.follow=null;
+  }
+  try{ NETWORK.removeEntity(networkEntityKey(row._kernel,row.kind,
+    _shortId(row.did||row.record_id))); }catch(_){ }
+  S.recs.delete(id); S.order=S.order.filter((value)=>value!==id); return true;
+}
+function applyVerifiedProviderInventory(base,boot,rows,inventory){
+  if(!inventory?.complete||!inventory.ok||!boot?.kernel_id) return false;
+  const source=String(boot.kernel_id), prior=S.providerInventories.get(source);
+  if(prior){
+    if(inventory.generation<prior.generation
+        ||(inventory.generation===prior.generation&&inventory.hash!==prior.hash)){
+      log('verify',`${source}: stale/equivocating provider inventory generation refused`,false); return false;
+    }
+    if(inventory.generation===prior.generation) return true;
+    if(inventory.generation===prior.generation+1&&inventory.previousHash!==prior.hash){
+      log('verify',`${source}: provider inventory chain head mismatch refused`,false); return false;
+    }
+  }
+  const incoming=new Set();
+  for(const row of rows){
+    if(String(row?._kernel||'')!==source||!inventory.recordIds.has(String(row.record_id||''))){
+      log('verify',`${source}: provider inventory row escaped its signed manifest`,false); return false;
+    }
+    const id=recordStoreKey(row), current=S.recs.get(id);
+    if(!id||_personaLifecycleRegresses(current,row)){
+      log('verify',`${source}: stale persona lifecycle head refused`,false); return false;
+    }
+    incoming.add(id);
+  }
+  if(incoming.size!==inventory.recordIds.size) return false;
+  for(const row of rows) upsert({...row,_inventorySource:source,
+    _inventoryGeneration:inventory.generation,_inventoryHash:inventory.hash});
+  for(const id of (prior?.recordKeys||[])) if(!incoming.has(id)) _removeRecordStoreKey(id);
+  S.providerInventories.set(source,{generation:inventory.generation,hash:inventory.hash,
+    recordKeys:incoming,manifestHash:inventory.manifestHash,
+    bindings:new Map(inventory.bindings||[]),base:base||''});
+  return true;
+}
 function upsert(r){
   const id=recordStoreKey(r); if(!id) return false;
   let row=S.recs.get(id);
+  if(row&&_personaLifecycleRegresses(row,r)){
+    log('verify',`${r._kernel||'node'}: ignored regressive persona lifecycle update`,false); return false;
+  }
   if(!row){ row={id,events:0,lastT:0,spark:new Array(SPARK_N).fill(0),bucket:0,rate:0,_new:true};
     S.recs.set(id,row); S.order.push(id); }
-  Object.assign(row,{kind:r.kind,label:r.label||id,did:r.did||id,visibility_tier:r.visibility_tier,
+  Object.assign(row,{kind:r.kind,label:r.kind==='persona'?String(r.label||''):(r.label||id),did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
     _providerBase:r._providerBase||'',
+    _inventorySource:r._inventorySource||row._inventorySource||'',
+    _inventoryGeneration:r._inventoryGeneration||row._inventoryGeneration||0,
+    _inventoryHash:r._inventoryHash||row._inventoryHash||'',
     _broadcastOnly:!!r._broadcastOnly,_effective_level:r._effective_level||'discover',
     _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
@@ -1499,6 +1813,10 @@ function upsert(r){
     _personaAuthoredRole:r.kind==='persona'?personaAuthoredRole(r):'',
     _personaSignedName:r.kind==='persona'?signedPersonaLabel(r):'',
     _personaIdentityPublicKeyHex:r.kind==='persona'?(r._personaIdentityPublicKeyHex||''):'',
+    _personaIdentitySigningKeyId:r.kind==='persona'?(r._personaIdentitySigningKeyId||''):'',
+    _personaLifecycleVerified:r.kind==='persona'&&r._personaLifecycleVerified===true,
+    persona_lifecycle_card:r.kind==='persona'&&r.persona_lifecycle_card
+      ?r.persona_lifecycle_card:null,
     avatar:r.kind==='persona'&&Object.hasOwn(r,'avatar')?r.avatar:null});
   if(row.kind==='persona'){
     const sid=_shortId(row.did||row.record_id);
@@ -1526,7 +1844,7 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
       bundle,artifact:bundle,telemetry:first('telemetry'),mission:first('mission')}; }
 }
 async function resolveKernelBases(seeds){
-  // Every seed (this origin, peers.txt, ＋PEER, signed locator) is resolved the SAME way:
+  // Every automatic seed (this origin, signed locator, gossip, IPFS) is resolved the SAME way:
   // its bootstrap may BE a kernel (providers_url), LIST kernels (federated_kernels —
   // a multi-run node), and NAME further peers (one hop). Previously only the page's
   // own origin was expanded, so a multi-run peer node yielded zero records.
@@ -1551,22 +1869,6 @@ async function resolveKernelBases(seeds){
   const unique=[...new Set(kernels)]; S.monitoringOmitted=(S.monitoringOmitted||0)+Math.max(0,unique.length-NETWORK_LIMITS.monitoredBases);
   return unique.slice(0,NETWORK_LIMITS.monitoredBases);
 }
-function pruneDeadManualPeers(){
-  // +PEER seeds live in this browser's localStorage. With IPFS as the live source of
-  // truth, a manually-added node that's now unreachable shouldn't linger and keep
-  // erroring. Drop only entries we ATTEMPTED this cycle and found unreachable —
-  // never untried or reachable ones. IPFS peers are not touched; re-add a node
-  // any time with ＋PEER.
-  let s; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){ return; }
-  if(!Array.isArray(s)||!s.length) return;
-  const ph=S.peerHealth||new Map();
-  const dead=(u)=>{ const h=ph.get(u)||ph.get(opBaseKey(u))||ph.get(opBaseKey(u)+'/'); return !!(h&&h.ok===false); };
-  const keep=s.filter((u)=>!dead(u));
-  if(keep.length!==s.length){
-    localStorage.setItem('personaos_peers',JSON.stringify(keep));
-    log('peers',`removed ${s.length-keep.length} unreachable ＋PEER node(s) from this browser`,false);
-  }
-}
 let _discoverBusy=false;
 async function discover(){
   // re-entrancy guard: the 15s interval is .then()-fired-and-forgotten and can stack
@@ -1578,8 +1880,7 @@ async function discover(){
   // verified count and timestamp visible while that happens; "bootstrapping"
   // is truthful only before this tab has verified any node or record at all.
   if(!S.recs.size&&!(S.globalAnnouncements?.size)) $('#status').textContent='bootstrapping discovery…';
-  const [_txt,_global,_ipfs,_local]=await Promise.all([
-    loadPeersTxt(),                                                 // published peers.txt → TXT_PEERS
+  const [_global,_ipfs,_local]=await Promise.all([
     loadGlobalNodes(),                                              // node1/additive ?resolver= signed locator → peers/relays
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
@@ -1594,11 +1895,10 @@ async function discover(){
   const results=await Promise.all(bases.map((b)=>
     discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
   for(const {b,res} of results){
-    res.found.forEach(upsert);
+    if(res.boot) applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
     if(res.boot) connectDiscoveryStream(b,res.boot);
     if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
   }
-  pruneDeadManualPeers();                  // drop +PEER seeds that resolved unreachable
   rebalanceDiscoveryStreams();
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
@@ -1639,9 +1939,8 @@ function emptyStateHTML(){
     LAN/localhost node. Either open the <b>node-served UI</b> at
     <code>http://localhost:8765/</code> (same-origin), or expose the
     node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
-    and let the node announce its tunnel through <code>node1.personas.ai</code>. The
-    <b>＋ PEER</b> control remains a local diagnostic fallback.`:`2 · The node announces
-    itself through <code>node1.personas.ai</code>; <b>＋ PEER</b> is a local diagnostic fallback.`}<br>
+    and let the node announce its tunnel through <code>node1.personas.ai</code>.`:`2 · The node announces
+    itself through <code>node1.personas.ai</code> automatically.`}<br>
     3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
     4 · Your own node? Click <b>OPERATOR</b>, paste its token
     (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
@@ -1737,17 +2036,26 @@ function connectDiscoveryStream(base,boot){
       const snap=JSON.parse(ev.data||'{}');
       const providerIndex=snap?.providers;
       const verified=await verifiedRowsFromProviderIndex(providerIndex,base,boot,'internet','SSE provider snapshot');
-      let added=0;
-      for(const row of verified.rows) if(upsert(row)) added++;
+      const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
+        &&verified.refused===0
+        &&new Set(verified.rows.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
+      const accepted=applyVerifiedProviderInventory(base,boot,verified.rows,inventory);
+      const added=accepted?verified.rows.length:0;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
       if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
-  es.addEventListener('telemetry_update',(ev)=>{
+  es.addEventListener('telemetry_update',async (ev)=>{
     try{
       const payload=JSON.parse(ev.data||'{}');
       const live=payload.telemetry||payload;
-      const admitted=ingestLiveTelemetry(base,live,{source:'sse',eventId:ev.lastEventId||''});
+      const publicFrameVerified=await verifyPublicTelemetryFrame(base,live);
+      if(!publicFrameVerified) return;
+      const verifiedCommunicationRoutes=await verifyPublicCommunicationRoutes(base,live);
+      if(live?.schema==='personaos-live-telemetry-public/1'
+          &&!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(live)) return;
+      const admitted=ingestLiveTelemetry(base,live,{source:'sse',eventId:ev.lastEventId||'',
+        verifiedCommunicationRoutes,publicFrameVerified});
       if(!admitted.accepted) return;
       appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
       refreshLiveSection();   // stream into an open persona/env drawer, in place
@@ -1825,12 +2133,19 @@ async function loadTelemetry(base){
       });
     });
   };
-  const ingestLive=(live)=>{
-    if(!ingestLiveTelemetry(base,live,{source:'poll'}).accepted) return;
-    const modelEvents=live?.kernel?.model_events||[];
+  const ingestLive=async(live)=>{
+    const publicFrameVerified=await verifyPublicTelemetryFrame(base,live);
+    if(!publicFrameVerified){ log('telemetry',`${base||'@origin'}: refused invalid public telemetry signature`,false); return; }
+    const verifiedCommunicationRoutes=await verifyPublicCommunicationRoutes(base,live);
+    if(live?.schema==='personaos-live-telemetry-public/1'
+        &&!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(live)){
+      log('telemetry',`${base||'@origin'}: refused invalid public communication-route collection`,false); return;
+    }
+    if(!ingestLiveTelemetry(base,live,{source:'poll',verifiedCommunicationRoutes,publicFrameVerified}).accepted) return;
+    const modelEvents=telemetryModelEvents(live);
     if(!Array.isArray(modelEvents)||!modelEvents.length) return;
     const generatedT=Date.parse(live.generated_at||'')||Date.now();
-    const baseT=_activeCalls(live).length?generatedT:(_latestSpanTime(live?.kernel?.spans)||generatedT);
+    const baseT=_activeCalls(live).length?generatedT:(_latestSpanTime(telemetrySpans(live))||generatedT);
     modelEvents.forEach((m,i)=>{
       const purpose=String(m.requested_purpose||m.purpose||'model');
       pushEvent({
@@ -1853,7 +2168,7 @@ async function loadTelemetry(base){
   }
   if(boot.live_telemetry_url){
     const live=await fetchJson(join(base,boot.live_telemetry_url));
-    ingestLive(live);
+    await ingestLive(live);
   }
   if(!added){ return; }
   // aggregate across kernels, re-sort by time, normalise inter-event gaps to a lively cadence
@@ -2387,6 +2702,7 @@ const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITT
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','ENV_MEMBER_RE_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
   'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED',
   'ENV_CLARIFICATION_REQUESTED','ENV_CLARIFICATION_ANSWERED','PERSONA_COMMUNICATION_INTENT_RECORDED',
+  'PERSONA_COMMUNICATION_ROUTE_OBSERVED',
   'PERSONA_COMMUNICATION_AUTHORED','PERSONA_INVITATION_AUTHORED','PERSONA_INVITATION_RESPONSE_AUTHORED',
   'PERSONA_BIRTH_NEED_AUTHORED','PERSONA_BIRTH_PROPOSAL_AUTHORED','PERSONA_BIRTH_ADMITTED','PERSONA_BIRTH_REFUSED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
@@ -2424,6 +2740,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
   ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
+  PERSONA_COMMUNICATION_ROUTE_OBSERVED:'observed communication route',
   PERSONA_COMMUNICATION_AUTHORED:'broadcast message',PERSONA_INVITATION_AUTHORED:'invited persona',
   PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
   PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
@@ -2503,7 +2820,9 @@ function _personaAvatarHTML(personaKey){
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
-  const state=descriptor?'pending':(signedCard?.avatar?'failed':'absent');
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,ref.key);
+  const avatarPending=lifecycle?.identityFields?.avatar?.state==='pending';
+  const state=descriptor?'pending':(signedCard?.avatar||(!avatarPending&&lifecycle)?'failed':'absent');
   const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
   const placeholderLabel=state==='absent'?'portrait pending':state==='failed'?'portrait unavailable':'verifying portrait';
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="avatar unavailable">`
@@ -2687,12 +3006,18 @@ function renderPersonaCard(pid,kernel='',context={}){
   const rt=runtimeForPersona(personaKey)||{};
   const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
   const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
   const signedName=String(signedIdentity?._personaSignedName||'');
   const hasSignedIdentity=!!signedIdentity;
   const hasSignedName=hasSignedIdentity&&!_isMechanicalPersonaName(signedName,sid);
   const name=_displayPersonaName(signedName,sid);
   const role=_coordRole(sid,s,ref.kernel);
-  const state=s.lifecycle_state||'';
+  const state=s.lifecycle_state||lifecycle?.lifecycleState||'';
+  const identityPending=lifecycle?.materializationState==='pending';
+  const namePending=lifecycle?.identityFields?.name?.state==='pending'
+    ||s.identity_name_pending===true;
+  const characteristicsPending=lifecycle?.identityFields?.characteristics?.state==='pending';
+  const avatarPending=lifecycle?.identityFields?.avatar?.state==='pending';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
   // recent kernel.interactions naming this persona (so the hero stays alive on a
   // node that streams coordination but no model_events). Both are real telemetry.
@@ -2750,7 +3075,9 @@ function renderPersonaCard(pid,kernel='',context={}){
   // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
   // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
   const statHTML=(Number(s.experience_tasks)>0?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
-    +(s.identity_name_pending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'identity name unresolved')}">${icon('warn','ico-sm')} name pending</span>`:'')
+    +(namePending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'persona-authored name pending')}">${icon('warn','ico-sm')} name pending</span>`:'')
+    +(characteristicsPending?`<span class="tag" title="persona-authored characteristics pending">${icon('warn','ico-sm')} traits pending</span>`:'')
+    +(avatarPending?`<span class="tag" title="persona-authored raster portrait pending">${icon('warn','ico-sm')} portrait pending</span>`:'')
     +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
     +(hasOp&&s.brain_fragment_count!=null?`<span class="tag" title="brain fragments (operator)">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
     +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
@@ -2768,8 +3095,8 @@ function renderPersonaCard(pid,kernel='',context={}){
     : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
       :rt.task_execution_state==='run_participant'?'<span class="pc-recent">RUN ACTIVE</span>'
       :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
-  const lifecycle=(state||'ACTIVE').toUpperCase();
-  const lifecycleBadge=`<span class="pc-life${lifecycle==='ACTIVE'?'':' off'}">${esc(lifecycle==='ACTIVE'?'AVAILABLE':lifecycle.toLowerCase())}</span>`;
+  const lifecycleState=(state||'ACTIVE').toUpperCase();
+  const lifecycleBadge=`<span class="pc-life${lifecycleState==='ACTIVE'?'':' off'}">${esc(lifecycleState==='ACTIVE'?'AVAILABLE':lifecycleState.toLowerCase())}</span>`;
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
@@ -2781,11 +3108,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE CARD · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
+  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${identityPending?icon('warn','ico-sm')+' IDENTITY MATERIALIZING':hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE CARD · ${esc(sid.slice(-6).toUpperCase())}</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +environmentHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -3197,14 +3524,14 @@ function updateVitalsCounters(){
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
     if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
   const livePersona=[...S.liveByPersona.entries()].filter(([personaKey,d])=>
-    kernelIsFocused(d?.kernel)&&verifiedPersonaIdentityPresent(
+    kernelIsFocused(d?.kernel)&&verifiedPersonaRenderable(
       S.personaDiscoveryByKey, personaKey,
     )).length;
   const recPersonaKeys=new Set();
   for(const id of S.order){ const r=S.recs.get(id);
     if(r?.kind!=='persona'||!kernelIsFocused(r._kernel)) continue;
     const sid=_shortId(r.did||r.record_id), personaKey=sid?_personaKey(r._kernel,sid):'';
-    if(personaKey&&verifiedPersonaIdentityPresent(
+    if(personaKey&&verifiedPersonaRenderable(
       S.personaDiscoveryByKey,personaKey)) recPersonaKeys.add(personaKey);
   }
   const recPersona=recPersonaKeys.size;
@@ -3269,7 +3596,7 @@ async function refreshSystemView(){
       const members=(feed.members||[]).map((member)=>{
         const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
         const memberSid=_shortId(raw); return memberSid?_personaKey(kernel,memberSid):'';
-      }).filter((personaKey)=>verifiedPersonaIdentityPresent(
+      }).filter((personaKey)=>verifiedPersonaRenderable(
         S.personaDiscoveryByKey, personaKey,
       ));
       const sid=_shortId(eid);
@@ -3328,7 +3655,7 @@ async function refreshSystemView(){
       b.roster=ed.members;
       b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
         return memberSid?_personaKey(b.kernel,memberSid):''; }).filter((personaKey)=>
-        verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey));
+        verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey));
       b.members.forEach((m)=>assigned.add(m));
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
@@ -3352,14 +3679,14 @@ async function refreshSystemView(){
       sid=_shortId(hit?.scope_id||''); }
     if(!sid) continue;
     const ref=_personaRef(personaKey), block=bySid.get(envKey(d.kernel||ref.kernel,sid));
-    if(block&&verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey)
+    if(block&&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)
       &&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
   }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.entries()].filter(([personaKey,d])=>{ const ref=_personaRef(personaKey);
     return kernelIsFocused(d?.kernel||ref.kernel)&&!assigned.has(personaKey)
-      &&verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,personaKey);
+      &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey);
   }).map(([personaKey])=>personaKey);
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
@@ -3506,13 +3833,20 @@ async function refreshSystemView(){
   // persona receives the exact environments whose roster or telemetry names it.
   const personaContexts=new Map();
   const ensurePersona=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
-    if(!ref.sid||!verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,ref.key)) return null;
+    if(!ref.sid||!verifiedPersonaRenderable(S.personaDiscoveryByKey,ref.key)) return null;
     let context=personaContexts.get(ref.key); if(!context){ context={key:ref.key,kernel:ref.kernel,environments:[]}; personaContexts.set(ref.key,context); }
     return context; };
   for(const b of _baseCandidates) for(const member of b.members){ const context=ensurePersona(member,b.kernel); if(!context) continue;
     if(!context.environments.some((env)=>envKey(env.kernel,env.sid)===envKey(b.kernel,b.sid)))
       context.environments.push({sid:b.sid,kernel:b.kernel,name:b.name,status:b.status,live:b.live,score:_score(b)}); }
   for(const personaKey of orphans) ensurePersona(personaKey);
+  // A newly born persona may have a verified lifecycle envelope before it has
+  // joined an environment or emitted telemetry. Keep that honest materialising
+  // card discoverable instead of waiting for an unrelated roster side effect.
+  for(const personaKey of S.personaDiscoveryByKey.keys()){
+    const ref=_personaRef(personaKey);
+    if(kernelIsFocused(ref.kernel)) ensurePersona(personaKey);
+  }
   const personaCandidates=[...personaContexts.values()].filter((context)=>!query
     ||_personaSearch(context.key).toLowerCase().includes(query)
     ||context.environments.some((env)=>`${env.name} ${env.status}`.toLowerCase().includes(query))
@@ -3710,9 +4044,48 @@ async function fetchEntityFeed(base,rel){
   const key=(base||'@origin')+'|'+rel;
   const m=(S.entFeed=S.entFeed||new Map()); const hit=m.get(key);
   if(hit&&(Date.now()-hit.ts)<4000) return hit.v;
-  const v=await fetchJson(join(base,rel)); m.set(key,{v,ts:Date.now()}); return v;
+  const v=await fetchJson(join(base,rel));
+  if(v&&typeof v==='object'){
+    await verifyPublicCommunicationRoutes(base,v);
+    if(isPublicEntityTelemetryDocument(v)||isPublicEntityIndexDocument(v)){
+      const verified=await verifyPublicEntityDocument(base,rel,v);
+      if(!verified){
+        const refusalKey=`${base||'@origin'}\u0000public_entity_signature_invalid`;
+        const last=S.telemetryRefusals.get(refusalKey)||0;
+        if(Date.now()-last>10000){
+          S.telemetryRefusals.set(refusalKey,Date.now());
+          log('telemetry',`${base||'@origin'}: refused invalid public entity-feed signature`,false);
+        }
+        m.set(key,{v:null,ts:Date.now()}); return null;
+      }
+    }
+    _ingestVerifiedEntityRoutes(base,v);
+  }
+  m.set(key,{v,ts:Date.now()}); return v;
 }
-function feedModels(doc){ return ((doc&&doc.model_events)||[]).filter((m)=>(m.kind||'')==='MODEL_SELECTED')
+function _ingestVerifiedEntityRoutes(base,doc){
+  const routes=publicCommunicationRouteEvents(VERIFIED_COMMUNICATION_ROUTES.get(doc)||[]);
+  if(!routes.length) return 0;
+  const kernel=kernelForBase(base)||String(doc?.kernel_id||doc?.node_id||'@unknown');
+  S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
+  for(const event of routes){
+    const aff=_eventEndpoints(event).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).join(',');
+    const key=`${base}|${event.scope_id}|${event.actor_id}|${aff}|${event.kind}|${event.at||event.event_id}`;
+    if(S.ixKeys.has(key)) continue;
+    const rec={...event,_base:base,_kernel:kernel,
+      _t:Date.parse(event.at||'')||Date.now(),_key:key};
+    S.ixKeys.add(key); S.interactions.push(rec); added++;
+    try{ NETWORK.ingestEvent({...event,kernel_id:kernel,event_id:event.event_id||key}); }catch(_){ }
+  }
+  if(added){
+    S.interactions.sort((a,b)=>a._t-b._t);
+    if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+    S.ixKeys=new Set(S.interactions.map((event)=>event._key));
+    _refreshPersonaInteractionIndex();
+  }
+  return added;
+}
+function feedModels(doc){ return telemetryModelEvents(doc).filter((m)=>(m.kind||'')==='MODEL_SELECTED')
   .map((m)=>({purpose:String(m.requested_purpose||m.role||'model'),model:String(m.model_id||'—'),role:String(m.role||'')})); }
 function renderPersonaFeedDoc(doc,personaKey=''){
   const s=doc.summary||{}; let h='';
@@ -3737,7 +4110,7 @@ function renderPersonaFeedDoc(doc,personaKey=''){
   }
   const ref=_personaRef(personaKey||doc.persona_id||'');
   const running=_activeModelCallsForPersona(ref.key).length>0;
-  const projected=projectTerminalModelFailures(doc.model_events||[]);
+  const projected=projectTerminalModelFailures(telemetryModelEvents(doc));
   const feedFailure=projected.byPersona.get(doc.persona_id)||projected.latest;
   const indexedFailure=S.liveByPersona.get(ref.key)?.terminalFailure||null;
   const terminalFailure=running?null:(indexedFailure||feedFailure||null);
@@ -3844,6 +4217,49 @@ function renderThinkingRedacted(doc){
       +`<span class="l2">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+'</div>';
   return h;
 }
+const PUBLIC_PERSONA_MESSAGE_FIELDS=Object.freeze([
+  'generated_at','identity_fields','identity_materialization_state','lifecycle_state','name',
+  'persona_id','recent_outputs','schema','signature_hex','signing_key_id','tier',
+].sort());
+const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
+  'at','author_persona_id','environment_id','kind','persona_signature_verified','text',
+].sort());
+function _currentInventoryPersona(kernel,pid){
+  const personaKey=_personaKey(kernel,pid), row=S.personaDiscoveryByKey.get(personaKey);
+  const inventory=S.providerInventories.get(String(kernel||''));
+  return row&&inventory&&row._inventorySource===kernel
+    &&row._inventoryGeneration===inventory.generation&&row._inventoryHash===inventory.hash
+    &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)?row:null;
+}
+async function verifyPublicPersonaMessages(base,doc,{personaId,kernel}={}){
+  const pid=_shortId(personaId), row=_currentInventoryPersona(kernel,pid);
+  if(!row||!_exactObjectFields(doc,PUBLIC_PERSONA_MESSAGE_FIELDS)
+      ||doc.schema!=='personaos-persona-public-messages/1'||doc.tier!=='public'
+      ||_shortId(doc.persona_id)!==pid||!_freshPublicGeneratedAt(doc.generated_at)
+      ||String(doc.name||'')!==String(row._personaSignedName||'')
+      ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>12) return false;
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
+  if(lifecycle&&(doc.lifecycle_state!==lifecycle.lifecycleState
+      ||doc.identity_materialization_state!==lifecycle.materializationState)) return false;
+  if(lifecycle){
+    if(!doc.identity_fields||typeof doc.identity_fields!=='object'||Array.isArray(doc.identity_fields)
+        ||Object.keys(doc.identity_fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return false;
+    for(const field of ['name','characteristics','avatar']){
+      const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
+      if(!_exactObjectFields(value,['persona_authored','state'])
+          ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
+    }
+  }
+  for(const output of doc.recent_outputs){
+    if(!_exactObjectFields(output,PUBLIC_PERSONA_OUTPUT_FIELDS)
+        ||output.kind!=='PERSONA_COMMUNICATION_AUTHORED'
+        ||_shortId(output.author_persona_id)!==pid||output.persona_signature_verified!==true
+        ||!String(output.environment_id||'').trim()
+        ||!String(output.text||'').trim()||String(output.text).length>4096
+        ||!Number.isFinite(Date.parse(String(output.at||'')))) return false;
+  }
+  return verifyCurrentMasterSignedDocument(base,doc);
+}
 async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
@@ -3853,12 +4269,16 @@ async function refreshThinking(){
   const t=await fetchJson(endpoint);
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
-  const allowedTier=hasOperator?t?.tier==='operator':t?.tier==='public';
-  if(t&&allowedTier&&t.schema==='personaos-persona-thinking/1'&&(!t.persona_id||_shortId(t.persona_id)===_shortId(want))){
-    el2.innerHTML=renderThinking(t,{allowThinkingFrame:hasOperator&&t.tier==='operator'}); return; }
+  const operatorAccepted=hasOperator&&t?.tier==='operator'
+    &&t?.schema==='personaos-persona-thinking/1'&&_shortId(t.persona_id)===_shortId(want);
+  const publicAccepted=!hasOperator&&await verifyPublicPersonaMessages(wantBase,t,
+    {personaId:want,kernel:wantKernel});
+  if(operatorAccepted||publicAccepted){
+    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted}); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
-  const el3=$('#thinksec'); if(el3) el3.innerHTML=renderThinkingRedacted(doc);
+  const el3=$('#thinksec'); if(el3) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
+    :'<div class="privacy-note">No verified persona-authored public broadcasts are available. Private cognition is not exposed.</div>';
 }
 // LIVE persona MESSAGES: poll active personas' cognition surface and merge their
 // ACTUAL recent model outputs + newest learned lesson into the same live feed.
@@ -3959,9 +4379,11 @@ async function streamPersonaCognition(){
         const endpoint=join(base,`personas/${encodeURIComponent(sid)}/thinking`);
         const hasOperator=!!tokenFor(endpoint);
         const r=await fetchJson(endpoint);
-        if(r && r.schema==='personaos-persona-thinking/1'
-            && (hasOperator ? r.tier==='operator' : r.tier==='public')
-            && (!r.persona_id||_shortId(r.persona_id)===sid)){
+        const accepted=hasOperator
+          ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
+            &&_shortId(r.persona_id)===sid
+          :await verifyPublicPersonaMessages(base,r,{personaId:sid,kernel});
+        if(accepted){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
       }
       if(!t) continue;
@@ -3970,7 +4392,8 @@ async function streamPersonaCognition(){
         // The anonymous endpoint contract admits only verified, unaddressed
         // PersonaCommunication broadcasts. Do not let an untrusted kind label
         // recast those bytes as raw model output or private candidate work.
-        kind:t.tier==='public'?'PERSONA_COMMUNICATION_AUTHORED':String(o.kind||'LLM_OUTPUT'),
+        kind:t.schema==='personaos-persona-public-messages/1'
+          ?'PERSONA_COMMUNICATION_AUTHORED':String(o.kind||'LLM_OUTPUT'),
         msg:o.text,at:o.at,
       });
       const lz=(t.lessons||[]); if(lz.length) rows.push({kind:'LLM_LESSON',msg:lz[lz.length-1].action,at:''});
@@ -4019,9 +4442,9 @@ function refreshLiveSection(){
     fetchEntityFeed(S.drawerLiveBase||'',wantFeed).then((doc)=>{
       if(S.drawerLiveFeed!==wantFeed||S.drawerLiveId!==wantId||S.drawerLiveKernel!==wantKernel) return;
       const el2=$('#livesec'); if(!el2) return;
-      if(doc&&doc.schema==='personaos-persona-telemetry/1')
+      if(isPersonaTelemetryDocument(doc))
         el2.innerHTML=renderPersonaFeedDoc(doc,_personaKey(wantKernel,wantId));
-      else if(doc&&doc.schema==='personaos-env-telemetry/1') el2.innerHTML=renderEnvFeedDoc(doc);
+      else if(isEnvironmentTelemetryDocument(doc)) el2.innerHTML=renderEnvFeedDoc(doc);
       else fallback();
     }).catch(fallback);
     return;
@@ -4037,12 +4460,14 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   const prof=(L.profile?await dfetch(base,L.profile):null)||{};
   const ns=await fetchNodeStatus(base)||{};
   const pid=prof.persona_id||personaIdFromDid(r.did);
+  const personaKey=_personaKey(r._kernel,pid||r.did);
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
   const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
   const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
-  const rawDisplayName=String(ps.name||r.label||'');
+  const rawDisplayName=String(ps.name||r._personaSignedName||'');
   const displayName=_displayPersonaName(rawDisplayName,pid||r.did);
-  const role=ps.role||(ps.membership||{}).role||'—';
-  const state=ps.lifecycle_state||'—';
+  const role=ps.role||(ps.membership||{}).role||r._personaAuthoredRole||_ROLE_NOT_DECLARED;
+  const state=ps.lifecycle_state||lifecycle?.lifecycleState||'—';
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
   // and the title already shows (name): keep only rows the grid does NOT carry.
@@ -4051,6 +4476,11 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     ?`${personaIdentity.slice(0,6)}…${personaIdentity.slice(-6)}`:personaIdentity;
   let html=kv('Persona id',`<code title="${esc(personaIdentity)}">${esc(compactPersonaIdentity||'—')}</code>`)
     +kv('Role',`<span class="cap">${esc(role)}</span>`)
+    +(lifecycle?kv('Identity materialization',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
+    +(lifecycle?kv('Identity fields',['name','characteristics','avatar'].map((field)=>{
+      const value=lifecycle.identityFields[field];
+      return `<span class="cap ${value.state==='pending'?'amber':'ok'}">${esc(field)} ${esc(value.state)}</span>`;
+    }).join(' ')):'')
     +kv('Archetype',S0(ps.archetype))
     +kv('Disposition',S0(ps.primary_disposition))
     +(ps.identity_name_state?kv('Identity name',ps.identity_name_pending
@@ -4088,7 +4518,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // 🧠 what it is THINKING: public persona messages when the node opts in,
   // full cognition/frame only with operator authority. Streams on the live cadence.
   S.drawerThinkPid=_shortId(pid||r.did);   // always the bare id the /thinking endpoint resolves
-  html+=H('Thinking')+`<div id="thinksec" class="livesec"><div class="fv-loading">resolving cognition…</div></div>`;
+  const thinkingEndpoint=join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`);
+  const operatorThinking=!!tokenFor(thinkingEndpoint);
+  html+=H(operatorThinking?'Thinking':'Authored public messages')
+    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving signed public broadcasts…'}</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   // the persona's OWN env, not merely the FIRST env on the kernel (wrong on multi-env
@@ -4607,20 +5040,21 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
   const authoredAttr=JSON.stringify(authoredLabels);
-  const pick=pickRenderer(title,kind);
+  let pick=pickRenderer(title,kind);
   const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
   // Repository-owned .mjs registry takes precedence over built-in families for any
   // ext/kind it claims (richer viewers win). Resolved once; only used when this
   // is NOT a forced-plain/raw view (raw always shows the built-in plain text).
-  const lazyPick=forcedPlain?null:pickLazyRenderer(title,kind);
+  let lazyPick=forcedPlain?null:pickLazyRenderer(title,kind);
   // fetchMode drives byte-vs-text fetch: a bytes module fetches its own
   // ArrayBuffer inside render(), so we must NOT do a pointless text prefetch.
-  const lazyBytes=!!(lazyPick && lazyPick.entry.fetchMode==='bytes');
+  let lazyBytes=!!(lazyPick && lazyPick.entry.fetchMode==='bytes');
   // header media-kind label reflects the chosen renderer (lazy ext if matched).
-  const lazyExt=lazyPick?lazyPick.ext:'';
-  const isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
-  const rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
+  let lazyExt=lazyPick?lazyPick.ext:'';
+  let isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
+  let rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
+  let verifiedDispatch=null, renderKind=kind;
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
   let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
@@ -4637,6 +5071,16 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }
     if(verified.ok){
       realSize=verified.size;
+      verifiedDispatch=resolveVerifiedArtifactDispatch(title,kind,verified.bytes);
+      if(verifiedDispatch.detected&&!forcedPlain){
+        renderKind=verifiedDispatch.selectionMediaKind;
+        pick=pickRenderer(verifiedDispatch.selectionTitle,renderKind);
+        lazyPick=pickLazyRenderer(verifiedDispatch.selectionTitle,renderKind);
+        lazyBytes=!!(lazyPick&&lazyPick.entry.fetchMode==='bytes');
+        lazyExt=lazyPick?lazyPick.ext:'';
+        isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
+        rendId=lazyPick?('lazy:'+lazyPick.entry.file):pick.id;
+      }
       if(!isBinary) text=new TextDecoder().decode(verified.bytes);
       const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
       if(opts.liveFile&&text!=null){
@@ -4656,7 +5100,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
     text=await fetchText(url); realSize=text?text.length:null;
   }
-  const ctx={ base, path, url,sourceUrl, title, kind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
+  const ctx={ base, path, url,sourceUrl, title, kind:renderKind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
     contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
@@ -4670,6 +5114,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
     +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
+    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-verified bytes</span>`):'')
+    +(verifiedDispatch?.contradiction?`<div class="viewerr artifact-format-contradiction">Advertised filename/media metadata conflicts with the verified byte header. Rendering uses the detected ${esc(verifiedDispatch.detected.label)} format; peer code was not executed.</div>`:'')
+    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-verified bytes.</div>`:'')
     +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
@@ -4762,15 +5209,17 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
   const tel=await fetchJson(join(base,L.snapshot||'telemetry/live/latest.json'))||{};
   // Per-ENTITY feed record (telemetry:<persona>/<env> → its own redacted-tier
   // document): render the entity's live "inside" view and stream it in place.
-  if(tel.schema==='personaos-persona-telemetry/1'||tel.schema==='personaos-env-telemetry/1'){
-    const isP=tel.schema==='personaos-persona-telemetry/1';
+  if(isPersonaTelemetryDocument(tel)||isEnvironmentTelemetryDocument(tel)){
+    const isP=isPersonaTelemetryDocument(tel);
     S.drawerLiveKind=isP?'persona':'env';
     S.drawerLiveId=isP?tel.persona_id:tel.environment_id;
     S.drawerLiveKernel=r._kernel||tel.kernel_id||tel.node_id||kernelForBase(base);
     S.drawerLiveBase=base; S.drawerLiveFeed=L.snapshot||'';
     let html=kv('Feed',S0(r.label))
       +kv('Subject',`<span class="cap">${esc(isP?'persona':'environment')}</span> <code>${esc(S.drawerLiveId)}</code>`)
-      +kv('Tier','redacted — span kinds / status / durations / transitions only (A-TF2)')
+      +kv('Tier',isPublicEntityTelemetryDocument(tel)
+        ?'public redacted — lifecycle, model status and route metadata only'
+        :'redacted — span kinds / status / durations / transitions only (A-TF2)')
       +kv('Generated',S0(tel.generated_at))
       +kv('Access','consent-gated · content tier needs a read+ grant AND a consent pin (A-TF3)');
     html+=H(isP?'● Live · inside this persona':'● Live · inside this environment')
@@ -4778,7 +5227,7 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
     html+=trustPanel(r);
     return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`, html};
   }
-  const k=tel.kernel||{}, personas=tel.personas||[], modelEvents=k.model_events||[];
+  const k=tel.kernel||{}, personas=tel.personas||[], modelEvents=telemetryModelEvents(tel);
   const selected=modelEvents.filter((e)=>e.kind==='MODEL_SELECTED');
   const byPurpose={};
   for(const e of selected){ const pp=e.requested_purpose||e.role||'other'; byPurpose[pp]=(byPurpose[pp]||0)+1; }
@@ -5611,8 +6060,6 @@ function wire(){
   setHeaderCollapsed(headerCollapsed); headerToggle?.addEventListener('click',()=>setHeaderCollapsed(!header.classList.contains('collapsed')));
   // the help button (？) → stroked help-circle (keeps its aria-label/title text).
   const hbtn=$('#helpbtn'); if(hbtn) hbtn.innerHTML=icon('help');
-  // ＋ PEER → stroked plus + label (keeps the button's accessible text on the label span).
-  const ap=$('#addpeer'); if(ap) ap.innerHTML=icon('plus')+'<span>PEER</span>';
   // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
   // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
@@ -5697,18 +6144,6 @@ function wire(){
       // The discovery pass remains bounded and is ignored while another is active.
       if(!S.kernelFocus&&globalDiscoveryEndpoints().length) discover().catch(()=>{});
     },120); });
-  $('#addpeer').addEventListener('click',()=>{ let v=$('#peer').value.trim(); if(!v)return;
-    // the input is type=url but there's no <form>, so native validation never runs —
-    // normalise a bare host ('localhost:8765') to an absolute https URL before storing.
-    if(!/^https?:\/\//i.test(v)) v='https://'+v;
-    let s=[]; try{ s=JSON.parse(localStorage.getItem('personaos_peers')||'[]'); }catch(e){} if(!s.includes(v))s.push(v);
-    localStorage.setItem('personaos_peers',JSON.stringify(s)); $('#peer').value='';
-    discover().then(()=>{ renderMissions();
-      const ph=S.peerHealth||new Map();
-      const h=ph.get(v)||ph.get(opBaseKey(v))||ph.get(opBaseKey(v)+'/');
-      log('peer', h&&h.ok?('reachable ✓ '+v):('no node at '+v), !!(h&&h.ok)); }); });
-  // Enter in the peer field submits (no <form> wraps it)
-  $('#peer').addEventListener('keydown',(e)=>{ if(e.key==='Enter') $('#addpeer').click(); });
   // OPERATOR is a TOGGLE: a second click closes the console it opened. We tag the
   // drawer with S._topIsOp; opening any other drawer (openDetail) or closing the
   // drawer clears the flag, so the toggle reflects true open-ness.
@@ -5939,7 +6374,15 @@ async function _resolveProviderHintJob(job){
   const unique=new Map(rows.map((row)=>[`${row._kernel}\u0000${row.record_id||row.did}`,row]));
   let added=0;
   for(const row of unique.values()){
-    if(upsert(row)){ added++; noteKernel(row._kernel,'p2p',row._base||''); }
+    const inventory=S.providerInventories.get(String(row._kernel||''));
+    const id=recordStoreKey(row), recordId=String(row.record_id||'');
+    if(!inventory||!inventory.recordKeys?.has(id)
+        ||row._providerInventoryGeneration!==inventory.generation
+        ||row._providerInventoryManifestHash!==inventory.manifestHash
+        ||row._providerDocumentHash!==inventory.bindings?.get(recordId)) continue;
+    if(upsert({...row,_inventorySource:row._kernel,
+      _inventoryGeneration:inventory.generation,_inventoryHash:inventory.hash})){
+      added++; noteKernel(row._kernel,'p2p',row._base||''); }
   }
   if(added){ log('p2p',`${job.source}: ${added} current-master ProviderRecord(s) verified`,true);
     classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection(); }
@@ -5993,7 +6436,7 @@ async function initP2P(){
     params.getAll('relay'),params.getAll('bootstrap'));
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260714-browser-dial-gate-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260715-authority-continuity-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });

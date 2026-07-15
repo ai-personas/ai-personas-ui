@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from playwright.sync_api import sync_playwright
 
 
-ROOT_FILES = ("index.html", "discovery.css", "discovery.js", "peers.txt", "robots.txt")
+ROOT_FILES = ("index.html", "discovery.css", "discovery.js", "robots.txt")
 REQUIRED_BROWSER_ASSETS = {
     "assets/discovery.css",
     "assets/discovery.js",
@@ -26,7 +26,6 @@ REQUIRED_BROWSER_ASSETS = {
     "assets/noble-ed25519.js",
     "assets/p2p-libp2p.js",
     "assets/persona-avatar.mjs",
-    "peers.txt",
 }
 
 
