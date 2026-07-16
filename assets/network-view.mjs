@@ -410,10 +410,10 @@ function nonMechanicalPersonaLabel(value, personaId) {
 
 /**
  * A persona card needs one complete, already-verified public identity record.
- * Telemetry cannot manufacture identity, and a signed shell without a
- * persona-authored name plus persona-bound raster descriptor stays hidden.
- * Cryptographic avatar-signature and byte verification still happens at the
- * asynchronous image hydration boundary.
+ * Telemetry cannot manufacture identity. Signed name and characteristics are
+ * required; a raster portrait is optional profile enrichment. When one is
+ * present, its persona binding is still enforced here and its signature/bytes
+ * are verified again at the asynchronous image hydration boundary.
  */
 export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey) {
   if (!(personaDiscoveryByKey instanceof Map) || typeof personaKey !== 'string'
@@ -424,13 +424,17 @@ export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey
   const keyParts = personaKey.split('\u0000');
   if (!identity || keyParts.length !== 3 || keyParts[1] !== 'persona'
       || keyParts[2] !== identity.canonicalId) return false;
+  const lifecycle = normalizedPersonaLifecycleCard(record);
+  if (record._personaLifecycleVerified !== true
+      || lifecycle?.materializationState !== 'materialized') return false;
   const personaId = identity.signedId;
   const signedName = nonMechanicalPersonaLabel(record._personaSignedName, personaId);
   const avatar = normalizePersonaAvatar(record.avatar);
   const identityPin = String(record._personaIdentityPublicKeyHex || '');
-  return !!signedName && !!avatar && avatar.persona_id === personaId
-    && /^[0-9a-f]{64}$/.test(identityPin)
-    && avatar.identity_public_key_hex === identityPin;
+  const avatarValid = record.avatar == null || (!!avatar
+    && avatar.persona_id === personaId
+    && avatar.identity_public_key_hex === identityPin);
+  return !!signedName && /^[0-9a-f]{64}$/.test(identityPin) && avatarValid;
 }
 
 function normalizedPersonaLifecycleCard(record) {
@@ -477,8 +481,9 @@ function normalizedPersonaLifecycleCard(record) {
     normalizedFields[name]=Object.freeze({state:field.state,personaAuthored:field.persona_authored});
   }
   if(Object.keys(fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return null;
-  const allMaterialized=Object.values(normalizedFields).every((field)=>field.state==='materialized');
-  if((materialization==='materialized')!==allMaterialized) return null;
+  const requiredMaterialized=['name','characteristics']
+    .every((name)=>normalizedFields[name].state==='materialized');
+  if((materialization==='materialized')!==requiredMaterialized) return null;
   return Object.freeze({personaId:identity.canonicalId,lifecycleState:lifecycle,
     materializationState:materialization,identityFields:Object.freeze(normalizedFields)});
 }
