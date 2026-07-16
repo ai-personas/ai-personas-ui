@@ -3130,7 +3130,6 @@ function renderPersonaCard(pid,kernel='',context={}){
   const namePending=lifecycle?.identityFields?.name?.state==='pending'
     ||s.identity_name_pending===true;
   const characteristicsPending=lifecycle?.identityFields?.characteristics?.state==='pending';
-  const avatarPending=lifecycle?.identityFields?.avatar?.state==='pending';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
   // recent kernel.interactions naming this persona (so the hero stays alive on a
   // node that streams coordination but no model_events). Both are real telemetry.
@@ -3190,7 +3189,6 @@ function renderPersonaCard(pid,kernel='',context={}){
   const statHTML=(Number(s.experience_tasks)>0?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
     +(namePending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'persona-authored name pending')}">${icon('warn','ico-sm')} name pending</span>`:'')
     +(characteristicsPending?`<span class="tag" title="persona-authored characteristics pending">${icon('warn','ico-sm')} traits pending</span>`:'')
-    +(avatarPending?`<span class="tag" title="persona-authored raster portrait pending">${icon('warn','ico-sm')} portrait pending</span>`:'')
     +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
     +(hasOp&&s.brain_fragment_count!=null?`<span class="tag" title="brain fragments (operator)">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
     +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
