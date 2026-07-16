@@ -476,6 +476,32 @@ assert.equal(verifiedPersonaRenderable(adoptedNamePendingRecords,pendingKey),tru
 assert.equal(personaLifecycleProjection(
   adoptedNamePendingRecords,pendingKey,
 )?.identityFields.name.personaAuthored,true);
+
+// PersonaOS-born identities are currently kind-qualified in signed node records
+// (`persona:<ULID>`), while the kernel-qualified browser index uses the same
+// canonical local identity as runtime telemetry (`<ULID>`). Keep the exact
+// signed value bound inside the lifecycle envelope, but compare the card key to
+// its canonical local identity so a real newborn is not silently discarded.
+const bornLocalId='01KXNSCZBFJPQMZZ02ZJNSV8X9';
+const bornSignedId=`persona:${bornLocalId}`;
+const bornDid=`did:personaos:kernel-a/persona/${bornSignedId}`;
+const bornLifecycle={...pendingLifecycle,persona_id:bornSignedId,did:bornDid,
+  identity_signing_key_id:`persona:${bornSignedId}`};
+const bornPersona={...pendingPersona,did:bornDid,
+  _personaIdentitySigningKeyId:`persona:${bornSignedId}`,
+  persona_lifecycle_card:bornLifecycle};
+const bornKey=`kernel-a\u0000persona\u0000${bornLocalId}`;
+const bornRecords=new Map([[bornKey,bornPersona]]);
+assert.equal(verifiedPersonaLifecyclePresent(bornRecords,bornKey),true,
+  'a current kind-qualified PersonaOS birth must render under its canonical local key');
+assert.equal(verifiedPersonaRenderable(bornRecords,bornKey),true,
+  'a verified current PersonaOS newborn must remain visible while its avatar is pending');
+assert.equal(personaLifecycleProjection(bornRecords,bornKey)?.personaId,bornLocalId,
+  'a signed kind-qualified identity must project the canonical browser identity');
+assert.equal(verifiedPersonaLifecyclePresent(
+  new Map([[bornKey,{...bornPersona,persona_lifecycle_card:{...bornLifecycle,persona_id:bornLocalId}}]]),
+  bornKey,
+),false,'canonicalization must not weaken the exact DID-to-lifecycle identity binding');
 for(const refused of [
   {...pendingPersona,_personaLifecycleVerified:false},
   {...pendingPersona,persona_lifecycle_card:{...pendingLifecycle,persona_id:'other'}},

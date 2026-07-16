@@ -26,7 +26,10 @@ PERSONA = "01J9ZXP0RT5K8V3W6Y2N4B7C9D"
 PERSONA_PEER = "01J9ZXP0RT5K8V3W6Y2N4B7C9E"
 PERSONA_THIRD = "01J9ZXP0RT5K8V3W6Y2N4B7C9F"
 PERSONA_INCOMPLETE = "01J9ZXP0RT5K8V3W6Y2N4B7C9G"
-PERSONA_PENDING_SECOND = "01J9ZXP0RT5K8V3W6Y2N4B7C9H"
+# Real PersonaOS births currently carry a kind-qualified signed identity. Keep
+# one integration persona in that exact shape so browser admission exercises
+# the DID, identity-key pin, lifecycle envelope, telemetry, and card join.
+PERSONA_PENDING_SECOND = "persona:01J9ZXP0RT5K8V3W6Y2N4B7C9H"
 UNSIGNED_TELEMETRY_GHOST = "telemetry-unsigned-ghost"
 PUBLIC_PERSONA_MESSAGE = (
     "Public design update: revised the circulation plan after peer review."

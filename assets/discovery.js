@@ -40,10 +40,11 @@ import {
   selectMonitoringBases,
   selectVerifiedPublicTaskRunTargets,
   selectPriorityWindow,
+  signedPersonaIdentity,
   terminalTaskMissionProjection,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260716-public-run-target-v3';
+} from './network-view.mjs?v=20260716-persona-id-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -1184,11 +1185,13 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   const r=surface.record, projectedPolicy=surface.policy;
   const b=surface.base, links=surface.links, url=surface.url;
   const gossipRecord=projectDiscoveryRecord(doc.record,false);
-  const personaId=r.kind==='persona'?_shortId(r.did||r.record_id):'';
+  const personaIdentity=r.kind==='persona'?signedPersonaIdentity(doc.record):null;
+  const personaId=personaIdentity?.canonicalId||'';
   // An independently published persona-key claim is useful only because this
   // exact source record has already passed the kernel/document signature gate.
   // Keep the pin internal; absence is normal and never invents one.
-  const identityPublicKeyHex=personaId?personaIdentityKeyPin(doc.record,personaId):'';
+  const identityPublicKeyHex=personaIdentity
+    ?personaIdentityKeyPin(doc.record,personaIdentity.signedId):'';
   const lifecycleVerified=personaId
     ?await verifyPersonaLifecycleCard(doc.persona_lifecycle_card,doc.record,signature.entry):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,

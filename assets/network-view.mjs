@@ -382,15 +382,17 @@ function attributedTerminalEventMatches(failure, personaId, environmentId) {
   return true;
 }
 
-function signedPersonaId(record) {
+export function signedPersonaIdentity(record) {
   if (typeof record?.did !== 'string') return '';
   const did = record.did.normalize('NFC').trim();
   const marker = '/persona/';
   const offset = did.lastIndexOf(marker);
   if (offset < 0) return '';
-  const personaId = did.slice(offset + marker.length);
-  return personaId && personaId.length <= 180 && !/[\u0000-\u0020/\\]/u.test(personaId)
-    ? personaId : '';
+  const signedId = did.slice(offset + marker.length);
+  if (!signedId || signedId.length > 180 || /[\u0000-\u0020/\\]/u.test(signedId)) return null;
+  const canonicalId = signedId.startsWith('persona:') ? signedId.slice('persona:'.length) : signedId;
+  return canonicalId && canonicalId.length <= 180 && !/[\u0000-\u0020/\\]/u.test(canonicalId)
+    ? Object.freeze({signedId, canonicalId}) : null;
 }
 
 function nonMechanicalPersonaLabel(value, personaId) {
@@ -418,9 +420,11 @@ export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey
       || !personaKey) return false;
   const record = personaDiscoveryByKey.get(personaKey);
   if (!record || typeof record !== 'object' || record.kind !== 'persona') return false;
-  const personaId = signedPersonaId(record);
+  const identity = signedPersonaIdentity(record);
   const keyParts = personaKey.split('\u0000');
-  if (keyParts.length !== 3 || keyParts[1] !== 'persona' || keyParts[2] !== personaId) return false;
+  if (!identity || keyParts.length !== 3 || keyParts[1] !== 'persona'
+      || keyParts[2] !== identity.canonicalId) return false;
+  const personaId = identity.signedId;
   const signedName = nonMechanicalPersonaLabel(record._personaSignedName, personaId);
   const avatar = normalizePersonaAvatar(record.avatar);
   const identityPin = String(record._personaIdentityPublicKeyHex || '');
@@ -441,8 +445,8 @@ function normalizedPersonaLifecycleCard(record) {
       ||card.signing_key_id!=='kernel-master'
       ||Object.keys(card).sort().join('\u0000')!==exactFields.sort().join('\u0000')
       ||!/^[0-9a-f]{128}$/i.test(String(card.signature_hex||''))) return null;
-  const personaId=signedPersonaId(record);
-  if(!personaId||String(card.persona_id||'')!==personaId
+  const identity=signedPersonaIdentity(record);
+  if(!identity||String(card.persona_id||'')!==identity.signedId
       ||String(card.did||'')!==String(record.did||'')) return null;
   const lifecycle=String(card.lifecycle_state||'').normalize('NFC').trim();
   if(lifecycle!=='ACTIVE') return null;
@@ -475,7 +479,7 @@ function normalizedPersonaLifecycleCard(record) {
   if(Object.keys(fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return null;
   const allMaterialized=Object.values(normalizedFields).every((field)=>field.state==='materialized');
   if((materialization==='materialized')!==allMaterialized) return null;
-  return Object.freeze({personaId,lifecycleState:lifecycle,
+  return Object.freeze({personaId:identity.canonicalId,lifecycleState:lifecycle,
     materializationState:materialization,identityFields:Object.freeze(normalizedFields)});
 }
 

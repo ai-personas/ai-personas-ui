@@ -550,7 +550,7 @@ def run(args: argparse.Namespace) -> dict:
             require(page.locator(
                 f'.pcard[data-pcard="{PERSONA_INCOMPLETE}"]'
             ).count() == 1 and page.locator(
-                f'.pcard[data-pcard="{PERSONA_PENDING_SECOND}"]'
+                f'.pcard[data-pcard="{PERSONA_PENDING_SECOND.split(":")[-1]}"]'
             ).count() == 1,
                     'verified simultaneous pending persona shells were not rendered')
             require(page.locator('#st-personas .v').text_content() == '5',
