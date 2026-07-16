@@ -239,6 +239,16 @@ def run(args: argparse.Namespace) -> dict:
                 arg=same_origin_count,
                 timeout=30_000,
             )
+            # Record verification updates the status before refreshSystemView's
+            # live-feed awaits finish and atomically paint the persona deck.
+            # Synchronize on the exact projection under test instead of racing
+            # that intentionally independent rendering phase.
+            same_origin_page.wait_for_function(
+                """(expected) => document
+                  .querySelectorAll('.persona-deck > .pcard').length === expected""",
+                arg=5,
+                timeout=15_000,
+            )
             require(same_origin_page.locator('.persona-deck > .pcard').count() == 5,
                     'same-origin empty base alias did not admit its signed persona inventory')
             same_origin_context.close()
