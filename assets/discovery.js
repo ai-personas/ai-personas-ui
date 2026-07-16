@@ -2936,8 +2936,9 @@ function _personaAvatarHTML(personaKey){
   const avatarPending=lifecycle?.identityFields?.avatar?.state==='pending';
   const state=descriptor?'pending':(signedCard?.avatar||(!avatarPending&&lifecycle)?'failed':'absent');
   const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const placeholderLabel=state==='absent'?'portrait pending':state==='failed'?'portrait unavailable':'verifying portrait';
-  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="avatar unavailable">`
+  const placeholderLabel=state==='absent'?'no portrait':state==='failed'?'portrait unavailable':'verifying portrait';
+  const avatarLabel=state==='absent'?'no portrait; monogram shown':state==='failed'?'portrait unavailable; monogram shown':'verifying persona portrait';
+  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="${esc(avatarLabel)}">`
     +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor){
@@ -3009,12 +3010,12 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
 }
 function _neutralPersonaAvatar(mount,state='failed'){
   mount.dataset.avatarState=state;
-  mount.setAttribute('aria-label','avatar unavailable');
+  mount.setAttribute('aria-label',state==='absent'?'no portrait; monogram shown':'portrait unavailable; monogram shown');
   const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
   placeholder.setAttribute('aria-hidden','true');
   const ref=_personaRef(_entityKeyFromDom(mount.dataset.avatarKey||''));
   const monogram=document.createElement('strong'); monogram.textContent=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const label=document.createElement('small'); label.textContent=state==='absent'?'portrait pending':'portrait unavailable';
+  const label=document.createElement('small'); label.textContent=state==='absent'?'no portrait':'portrait unavailable';
   placeholder.append(monogram,label);
   mount.replaceChildren(placeholder);
 }
