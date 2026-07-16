@@ -43,7 +43,7 @@ import {
   terminalTaskMissionProjection,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260716-public-run-target-v2';
+} from './network-view.mjs?v=20260716-public-run-target-v3';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -1947,6 +1947,10 @@ async function discover(){
   rebalanceDiscoveryStreams();
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
+  // The first interval tick can precede provider-inventory admission on a
+  // fresh hosted tab. Start the separately verified public artifact probe as
+  // soon as discovery has established the signed task/base/run join.
+  pollLiveArtifacts();
   const when=new Date();
   const kernelCount=Math.max(S.kernels.size||0,Number(S.globalTotal)||0);
   const monitored=(S.boots&&S.boots.size)||0;

@@ -206,9 +206,10 @@ export function publishedMissionEvidenceProjection(record) {
  * admitted both the record and policy signatures, and the same record remains
  * present in the kernel's unexpired current hash-chained provider inventory.
  * The API base comes from that inventory and must still resolve to a bootstrap
- * for the same kernel. Exact terminal task evidence is omitted, exact live-task
- * evidence ranks before other published tasks, and the caller supplies the
- * already-bounded browser record cache. This helper retains at most
+ * for the same kernel. Exact live-task evidence ranks before terminal/history
+ * tasks, and the caller supplies the already-bounded browser record cache.
+ * Every response still needs its own public artifact policy and signature.
+ * This helper retains at most
  * PUBLIC_TASK_RUN_POLL_LIMIT unique base/run pairs.
  */
 export function selectVerifiedPublicTaskRunTargets(
@@ -266,14 +267,6 @@ export function selectVerifiedPublicTaskRunTargets(
     if (String(boot?.kernel_id || '') !== kernel) continue;
 
     const key = `${base}\u0000${run}`;
-    // A current signed terminal task is evidence that this exact run no longer
-    // needs a live endpoint. Exclude it before the request ceiling so completed
-    // history cannot consume every automatic probe slot.
-    if (terminalTaskMissionProjection(record)) {
-      fallbackTargets.delete(key);
-      liveTargets.delete(key);
-      continue;
-    }
     const target = Object.freeze({base, run, kernel, recordKey});
     if (liveTaskMissionProjection(record)) {
       fallbackTargets.delete(key);

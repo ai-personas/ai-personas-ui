@@ -186,7 +186,12 @@ for (const inventory of [
 const terminalPollRecord = {...taskPollRecord, capability_summary: ['complete']};
 assert.deepEqual(selectVerifiedPublicTaskRunTargets(
   [terminalPollRecord], taskPollInventory, taskPollBoots, {nowMs: 1_783_683_601_000},
-), [], 'an exact signed terminal task must not consume a live endpoint probe');
+), [{
+  base: 'https://node.example/api',
+  run: 'run-01KTEST',
+  kernel: 'kernel:test',
+  recordKey: taskPollRecord._storeKey,
+}], 'a signed terminal task may discover a separately authorized final snapshot');
 
 const publishedHistory = Array.from({length: PUBLIC_TASK_RUN_POLL_LIMIT}, (_, index) => ({
   ...taskPollRecord,
