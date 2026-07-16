@@ -19,6 +19,8 @@ from live_ui_fixture import (
     ENV,
     ENV_SAME_TITLE,
     Handler,
+    KEY_ID,
+    NODE_ID,
     PROVIDER_DISCOVER_ONLY,
     PROVIDER_EXPIRED_READ,
     PROVIDER_P2P_ONLY,
@@ -31,13 +33,16 @@ from live_ui_fixture import (
     PRIVATE_THINKING_FRAME_PROBE,
     PUBLIC_PERSONA_MESSAGE,
     RUN,
+    SIGNING_KEYS,
     STATE,
     ThreadingHTTPServer,
     UNSIGNED_TELEMETRY_GHOST,
+    compact_provider_index,
     p2p_discover_only_resolution,
     p2p_provider_resolution,
     public_persona_messages,
     provider_record_count,
+    provider_fixtures,
     scale_persona_label,
     telemetry,
 )
@@ -107,6 +112,93 @@ def run(args: argparse.Namespace) -> dict:
             if executable:
                 launch['executable_path'] = executable
             browser = playwright.chromium.launch(**launch)
+
+            def current_key_document() -> dict:
+                generation = STATE.signing_key_generation()
+                return {
+                    'schema': 'personaos-keys/1',
+                    'kernel_id': NODE_ID,
+                    'keys': [{
+                        'key_id': KEY_ID,
+                        'role': 'master',
+                        'public_key_hex': SIGNING_KEYS[generation].verify_key.encode().hex(),
+                        'status': 'current',
+                        'rotated_at': '2026-07-10T00:00:00+00:00',
+                    }, {
+                        'key_id': KEY_ID,
+                        'role': 'master',
+                        'public_key_hex': SIGNING_KEYS[0].verify_key.encode().hex(),
+                        'status': 'archived',
+                        'rotated_at': '2026-06-01T00:00:00+00:00',
+                    }],
+                }
+
+            def mount_origin_inventory(test_context, advertised_base: str) -> int:
+                providers, _documents = provider_fixtures(advertised_base)
+                inventory = compact_provider_index(providers)
+                bootstrap = {
+                    'schema': 'personaos-discovery/1.1',
+                    'kernel_id': NODE_ID,
+                    'providers_are_aggregate': True,
+                    'providers_url': 'same-origin-providers.json',
+                    'record_count': inventory['document_count'],
+                    'keys_url': 'same-origin-keys.json',
+                    'public_discovery': True,
+                }
+                test_context.route(
+                    f'{base}/.well-known/personaos-discovery.json',
+                    lambda route: route.fulfill(status=200, json=bootstrap),
+                )
+                test_context.route(
+                    f'{base}/same-origin-providers.json',
+                    lambda route: route.fulfill(status=200, json=inventory),
+                )
+                keys = current_key_document()
+                test_context.route(
+                    f'{base}/same-origin-keys.json',
+                    lambda route: route.fulfill(status=200, json=keys),
+                )
+                return inventory['document_count']
+
+            # A node-served UI names its own transport with the empty base alias.
+            # Its signed inventory is bound to the canonical page origin, not to
+            # the internal empty-string shorthand.
+            same_origin_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            same_origin_count = mount_origin_inventory(same_origin_context, base)
+            same_origin_page = same_origin_context.new_page()
+            origin_only_url = f'{base}/?no_global_discovery=1&no_local_discovery=1'
+            same_origin_page.goto(origin_only_url, wait_until='domcontentloaded')
+            same_origin_page.wait_for_function(
+                """(expected) => document.querySelector('#status')?.textContent
+                  .includes(`${expected} verified records`)""",
+                arg=same_origin_count,
+                timeout=30_000,
+            )
+            require(same_origin_page.locator('.persona-deck > .pcard').count() == 5,
+                    'same-origin empty base alias did not admit its signed persona inventory')
+            same_origin_context.close()
+
+            # The alias normalization must not weaken origin authority: an
+            # internally valid inventory bound to another absolute origin is
+            # still refused before any of its records reach browser state.
+            foreign_origin_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            mount_origin_inventory(foreign_origin_context, 'https://different-origin.invalid')
+            foreign_origin_page = foreign_origin_context.new_page()
+            foreign_origin_page.goto(origin_only_url, wait_until='domcontentloaded')
+            foreign_origin_page.wait_for_function(
+                """() => document.querySelector('#log')?.textContent
+                  .includes('signed provider inventory refused · provider_inventory_shape_invalid')""",
+                timeout=15_000,
+            )
+            foreign_origin_page.wait_for_function(
+                """() => document.querySelector('#status')?.textContent
+                  .includes('0 verified records')""",
+                timeout=15_000,
+            )
+            require(foreign_origin_page.locator('.persona-deck > .pcard').count() == 0,
+                    'cross-origin provider base entered the verified persona deck')
+            foreign_origin_context.close()
+
             context = browser.new_context(viewport={'width': 1440, 'height': 900}, accept_downloads=True)
             page = context.new_page()
             def empty_default_locator(route) -> None:

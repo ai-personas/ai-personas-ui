@@ -1028,9 +1028,10 @@ const PROVIDER_INVENTORY_FIELDS=Object.freeze([
 const PROVIDER_MANIFEST_FIELDS=Object.freeze(['document_hash','record_id','record_url']);
 const SHA256_CONTENT_RE=/^sha256:[0-9a-f]{64}$/;
 async function verifyProviderInventory(index,base,boot){
+  const expectedBase=String(base||location.origin).replace(/\/$/,'');
   if(!_exactObjectFields(index,PROVIDER_INVENTORY_FIELDS)
       ||index.schema!=='dht-provider-index/3'||index.kernel_id!==boot?.kernel_id
-      ||String(index.base||'').replace(/\/$/,'')!==String(base||'').replace(/\/$/,'')
+      ||String(index.base||'').replace(/\/$/,'')!==expectedBase
       ||index.signing_key_id!=='kernel-master'||index.visibility!=='public'
       ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
       ||index.version!==index.inventory_generation
