@@ -389,6 +389,83 @@ const signedSnapshot = await signedMetadata({
 assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
   keyEntries, expectedNodeId: 'kernel:test', expectedRun: 'run-signed', requirePublic: true,
 })).ok, true);
+assert.equal((await verifyLiveArtifactSnapshot(signedSnapshot, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).ok, true);
+const activeWithPrior = structuredClone(signedSnapshot);
+activeWithPrior.since_revision = `sha256:${b}`;
+await resignMetadata(activeWithPrior);
+assert.equal((await verifyLiveArtifactSnapshot(activeWithPrior, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+const finalizedBootstrap = structuredClone(activeWithPrior);
+finalizedBootstrap.lifecycle = {
+  state: 'run_finalized', workspace_revision: finalizedBootstrap.since_revision,
+  finalized_at: finalizedBootstrap.generated_at,
+};
+finalizedBootstrap.workspaces = [{workspace_id: 'ws-final', state: 'run_finalized'}];
+await resignMetadata(finalizedBootstrap);
+const finalizedBootstrapVerification = await verifyLiveArtifactSnapshot(finalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+});
+assert.equal(finalizedBootstrapVerification.ok, true);
+assert.equal(finalizedBootstrapVerification.immutableFinalizedBootstrap, true);
+assert.equal((await verifyLiveArtifactSnapshot(finalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: finalizedBootstrap.revision,
+})).ok, true);
+const mismatchedFinalizedBootstrap = structuredClone(finalizedBootstrap);
+mismatchedFinalizedBootstrap.lifecycle.workspace_revision = `sha256:${c}`;
+await resignMetadata(mismatchedFinalizedBootstrap);
+assert.equal((await verifyLiveArtifactSnapshot(mismatchedFinalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+const invalidRevisionBootstrap = structuredClone(finalizedBootstrap);
+invalidRevisionBootstrap.since_revision = 'sha256:not-a-revision';
+invalidRevisionBootstrap.lifecycle.workspace_revision = invalidRevisionBootstrap.since_revision;
+await resignMetadata(invalidRevisionBootstrap);
+assert.equal((await verifyLiveArtifactSnapshot(invalidRevisionBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+const unsignedFinalizedBootstrap = structuredClone(finalizedBootstrap);
+delete unsignedFinalizedBootstrap.signature_hex;
+assert.equal((await verifyLiveArtifactSnapshot(unsignedFinalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'metadata_signature_invalid');
+assert.equal((await verifyLiveArtifactSnapshot(finalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: `sha256:${c}`,
+})).reason, 'poll_revision_binding_mismatch');
+const emptyFinalizedBootstrap = structuredClone(finalizedBootstrap);
+emptyFinalizedBootstrap.workspaces = [];
+await resignMetadata(emptyFinalizedBootstrap);
+assert.equal((await verifyLiveArtifactSnapshot(emptyFinalizedBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+const activeWorkspaceBootstrap = structuredClone(finalizedBootstrap);
+activeWorkspaceBootstrap.workspaces[0].state = 'run_active';
+await resignMetadata(activeWorkspaceBootstrap);
+assert.equal((await verifyLiveArtifactSnapshot(activeWorkspaceBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+const mismatchedFinalizedAtBootstrap = structuredClone(finalizedBootstrap);
+mismatchedFinalizedAtBootstrap.lifecycle.finalized_at = '2026-07-10T12:00:01Z';
+await resignMetadata(mismatchedFinalizedAtBootstrap);
+assert.equal((await verifyLiveArtifactSnapshot(mismatchedFinalizedAtBootstrap, {
+  keyEntries, requirePublic: true, expectedSinceRevision: null,
+})).reason, 'poll_revision_binding_mismatch');
+for (const invalidFinalizedAt of [undefined, null, 'not-a-timestamp']) {
+  const malformedFinalizedAtBootstrap = structuredClone(finalizedBootstrap);
+  if (invalidFinalizedAt === undefined) {
+    delete malformedFinalizedAtBootstrap.lifecycle.finalized_at;
+    delete malformedFinalizedAtBootstrap.generated_at;
+  } else {
+    malformedFinalizedAtBootstrap.lifecycle.finalized_at = invalidFinalizedAt;
+    malformedFinalizedAtBootstrap.generated_at = invalidFinalizedAt;
+  }
+  await resignMetadata(malformedFinalizedAtBootstrap);
+  assert.equal((await verifyLiveArtifactSnapshot(malformedFinalizedAtBootstrap, {
+    keyEntries, requirePublic: true, expectedSinceRevision: null,
+  })).reason, 'poll_revision_binding_mismatch');
+}
 const rotatedKeyEntries = [
   {key_id: 'kernel-master', role: 'master', status: 'archived', public_key_hex: 'aa'.repeat(32)},
   ...keyEntries,
@@ -605,7 +682,7 @@ assert.match(portal, /Run status and artifact-index JSON are not browser-validat
 assert.doesNotMatch(portal, /Signed AnswerPackage \(answer\/5\)|ap\.signed_by/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260716-persona-id-v2/);
+assert.match(index, /discovery\.js\?v=20260716-terminal-bootstrap-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

@@ -182,7 +182,30 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
   if (!isObject(document) || !REVISION_RE.test(String(document.revision || ''))) {
     return failed('invalid_snapshot_revision');
   }
-  return verifyMetadata(document, options, 'personaos-live-artifacts/1');
+  const verified = await verifyMetadata(document, options, 'personaos-live-artifacts/1');
+  if (!verified.ok) return verified;
+  const lifecycle = document.lifecycle;
+  const workspaces = document.workspaces;
+  const immutableFinalizedBootstrap = isObject(lifecycle)
+    && lifecycle.state === 'run_finalized'
+    && REVISION_RE.test(String(document.since_revision || ''))
+    && lifecycle.workspace_revision === document.since_revision
+    && typeof lifecycle.finalized_at === 'string'
+    && Number.isFinite(parseKernelIso(lifecycle.finalized_at))
+    && lifecycle.finalized_at === document.generated_at
+    && Array.isArray(workspaces)
+    && workspaces.length > 0
+    && workspaces.every((workspace) => isObject(workspace) && workspace.state === 'run_finalized');
+  if (Object.hasOwn(options, 'expectedSinceRevision')) {
+    const expected = options.expectedSinceRevision ?? null;
+    const observed = document.since_revision ?? null;
+    const immutableBootstrapOrRefresh = immutableFinalizedBootstrap
+      && (expected === null || expected === document.revision);
+    if (observed !== expected && !immutableBootstrapOrRefresh) {
+      return failed('poll_revision_binding_mismatch');
+    }
+  }
+  return {...verified, immutableFinalizedBootstrap};
 }
 
 export async function verifyLiveArtifactEvent(document, options = {}) {

@@ -14,7 +14,7 @@ import {
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260710-kernel-signed-live';
+} from './live-signatures.mjs?v=20260716-terminal-bootstrap-v1';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
@@ -2441,14 +2441,11 @@ async function fetchLiveArtifacts(base,run,options={}){
     const doc=await fetchJson(endpoint,
       {signal:controller.signal,maxBytes:LIVE_ARTIFACT_LIMITS.maxSnapshotBytes});
     if(doc){
-      const verification=await _verifyLiveWithKeyRefresh(base,endpoint,null,(context)=>
-        verifyLiveArtifactSnapshot(doc,{...context,expectedRun:run}));
-      if(!verification.ok){ _logLiveVerificationRefusal(run,verification); return S.liveArtifacts.get(key)||null; }
       const expectedSince=startedRevision||null;
-      if((doc.since_revision??null)!==expectedSince){
-        _logLiveVerificationRefusal(run,{reason:'poll_revision_binding_mismatch'});
-        return S.liveArtifacts.get(key)||null;
-      }
+      const verification=await _verifyLiveWithKeyRefresh(base,endpoint,null,(context)=>
+        verifyLiveArtifactSnapshot(doc,{...context,expectedRun:run,
+          expectedSinceRevision:expectedSince}));
+      if(!verification.ok){ _logLiveVerificationRefusal(run,verification); return S.liveArtifacts.get(key)||null; }
       return ingestLiveArtifactSnapshot(base,doc,'poll',{
         requestGeneration:generation,startedRevision,verification,
         publicSeed:options.publicSeed===true});
