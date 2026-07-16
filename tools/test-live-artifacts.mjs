@@ -533,6 +533,10 @@ assert.doesNotMatch(portal, /getAll\('global_discovery'\)/);
 assert.doesNotMatch(portal, /getAll\('peer'\)/);
 assert.doesNotMatch(portal, /fetchJson\(join\(ep,'\/v1\/nodes'\)\)/);
 assert.match(portal, /the locator has no record or identity authority/);
+assert.match(portal, /kernelId!==`kernel:\$\{publicKey\.slice\(0,16\)\}`/,
+  'an untrusted locator must not assign an expected kernel id to a rogue signing key');
+assert.match(portal, /env\?\.signing_key_id!==['"]kernel-master['"]/,
+  'global announcements must be signed by the stable kernel identity key');
 assert.match(portal, /p\.get\('no_global_discovery'\)==='1'/);
 assert.match(portal, /d\.schema==='personaos-project-export\/2'/);
 assert.match(portal, /d\.primary_environment_id/);

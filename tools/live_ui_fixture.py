@@ -38,7 +38,6 @@ PRIVATE_THINKING_FRAME_PROBE = "PRIVATE THINKING FRAME MUST NEVER RENDER PUBLICL
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
 ENV_EMPTY = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8Q"
 ENV_SAME_TITLE = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8R"
-NODE_ID = "kernel:fixture"
 KEY_ID = "kernel-master"
 PROVIDER_OK = "provider-authority-ok"
 PROVIDER_PERSONA = "provider-persona-avatar"
@@ -74,6 +73,9 @@ SIGNING_KEYS = {
     3: SigningKey(bytes.fromhex("09" * 32)),
     4: SigningKey(bytes.fromhex("0a" * 32)),
 }
+# The locator identity is anchored to a stable discovery key. Provider and
+# document keys may rotate independently in the fixture.
+NODE_ID = "kernel:" + SIGNING_KEYS[0].verify_key.encode().hex()[:16]
 AVATAR_IDENTITY_SIGNING_KEY = SigningKey(bytes.fromhex("0b" * 32))
 AVATAR_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -173,10 +175,11 @@ def provider_record_count() -> int:
 def node_announcement_envelope(base_url: str) -> dict:
     """Return a signed locator hint for the fixture's exact node route."""
 
-    signing_key = SIGNING_KEYS[STATE.signing_key_generation()]
+    signing_key = SIGNING_KEYS[0]
     announcement = {
         "schema": "personaos-node-announcement/1",
         "kernel_id": NODE_ID,
+        "node_id": NODE_ID,
         "base_url": base_url,
         "reachability_class": "public",
         "public_discovery": True,
@@ -188,6 +191,7 @@ def node_announcement_envelope(base_url: str) -> dict:
         "schema": "personaos-node-announcement-envelope/1",
         "announcement": announcement,
         "public_key_hex": signing_key.verify_key.encode().hex(),
+        "signing_key_id": KEY_ID,
         "signature_hex": signature_hex(announcement, signing_key),
     }
 
