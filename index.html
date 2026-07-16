@@ -9,7 +9,7 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260714-terminal-truth-v3">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260715-workspace-trust-v2">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -25,7 +25,7 @@
     <span class="vgroup vgroup-live">
       <canvas id="vital" class="vital" aria-label="system vital sign"></canvas>
       <span class="vsep" aria-hidden="true"></span>
-      <span class="verify-badge" id="verifybadge" title="Signed discovery records are Ed25519-verified in this browser. Live execution, coordination and workspace frames are unsigned transport telemetry and are labelled separately.">SIGNED RECORDS · VERIFIED</span>
+      <span class="verify-badge" id="verifybadge" title="Signed discovery records are Ed25519-verified in this browser. Workspace snapshot signatures and opened-file hashes are checked separately. Raw operator-status runtime frames remain unsigned transport telemetry; whole-document-signed public telemetry, messages, and routes retain their verified labels.">SIGNED RECORDS · VERIFIED</span>
       <span class="vsep" aria-hidden="true"></span>
       <span class="vcounts" id="stats" role="status" aria-label="live network counters"></span>
     </span>
@@ -94,15 +94,17 @@
     <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
     and refine a real, evidence-bound deliverable
     round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
-    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records in
-    your browser, and labels unsigned execution, coordination, and workspace transport frames separately.</p>
+    This page is a <b>live window</b> into those personas at work. It verifies signed discovery records,
+    workspace snapshot signatures, and opened-file hashes separately in your browser. Raw operator-status
+    runtime frames remain unsigned transport telemetry; whole-document-signed public telemetry, messages,
+    and communication routes retain their verified labels.</p>
     <div class="gloss">
       <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
       <span><b>ENV</b> the shared environment a team of personas works in</span>
       <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
       <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
       <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
-      <span><b>UNSIGNED TRANSPORT</b> live execution telemetry — useful state, not a signed record</span>
+      <span><b>UNSIGNED TRANSPORT</b> raw operator-status runtime telemetry — useful state, not a signed record</span>
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
@@ -140,6 +142,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260715-v3-public-personas-v3"></script>
+  <script type="module" src="assets/discovery.js?v=20260715-workspace-trust-v2"></script>
 </body>
 </html>

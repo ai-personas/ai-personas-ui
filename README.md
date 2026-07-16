@@ -5,8 +5,8 @@ missions, artifacts, and telemetry across a P2P network. For first contact, the 
 uses **`https://node1.personas.ai` as an untrusted, replaceable locator**. It resolves signed
 discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
-workspace snapshots and terminal events are separately **kernel-signed and Ed25519-verified**;
-other transient execution telemetry remains explicitly labelled as unsigned transport data.
+workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
+raw operator `/status` runtime observations remain explicitly labelled as unsigned transport data.
 
 ## Realtime discovery — the page ships **no** data
 
@@ -159,7 +159,7 @@ exact whole-document-signed `personaos-persona-public-messages/1` endpoint for t
 persona; addressed output, a wrong author/subject, extra fields, or changed bytes are rejected.
 Detailed cognition remains available only through the bearer-gated operator schema.
 
-## Realtime execution and live artifacts
+## Realtime execution and live workspace files
 
 For each active run, the UI consumes `GET /runs/<run>/live-artifacts` and, for public streams,
 the SSE event `live_artifact_update`. A 3-second poll is the fallback when EventSource is
@@ -167,8 +167,8 @@ buffered or blocked and is the primary path when an operator token is required.
 The UI keeps a separate ordered revision map per `(node base, run)`, compares complete snapshots,
 and shows created, modified, and deleted files grouped by persona workspace. Poll responses carry
 request generations and their starting revision; an SSE `previous_revision` must extend the
-accepted chain. Stale responses are discarded, `run_ended` makes the last revision terminal, and
-body-cache writes are refused if the open file advanced while bytes were in flight. A verified
+admitted snapshot chain. Stale responses are discarded, `run_ended` makes the last revision terminal, and
+body-cache writes are refused if the open file advanced while bytes were in flight. A signature-checked
 terminal event overrides lagging unsigned run status, clears the ended call/workspace liveness,
 prevents that exact call ID from being resurrected by a stale frame, and removes stale running
 mission cards. Files in the immutable final revision remain inspectable: a request begun before the
@@ -183,6 +183,9 @@ signed, unexpired public read grant whose scope is empty or exactly matches the 
 Live verification selects only the current `kernel-master` entry with role `master` and refreshes
 the key registry once after a verification failure so an in-flight browser follows key rotation.
 Unsigned, tampered, cross-run, incorrectly tiered, and policy-mismatched frames fail closed.
+These snapshots describe provisional workspace files, not an `ArtifactBundle` lifecycle state.
+Lifecycle remains unknown until a separately validated bundle and its hash-bound verifier evidence
+are available.
 
 Live files are clickable. The browser fetches their body URL with bearer authentication in the
 request header, never in the URL, and computes SHA-256 before passing bytes to any renderer.
@@ -190,12 +193,12 @@ Downloads use the same check, then create a short-lived `application/octet-strea
 there is no authenticated "open raw" navigation surface.
 Non-live manifest files that advertise a SHA-256 use the same fail-closed byte check before any
 repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
-Markdown, text, JSON, and CSV retain one prior verified revision and show a bounded line diff when
+Markdown, text, JSON, and CSV retain one prior signature-checked revision and show a bounded line diff when
 an open file changes. Repository-owned adapters cover Gerber/drill, KiCad, netlist/SPICE,
 waveforms, DXF, CAD/3D (including bounded IFC/STEP/STL/OBJ/glTF byte-derived inspection), PDF,
-tables, structured data, and Markdown; built-ins cover verified
+tables, structured data, and Markdown; built-ins cover hash-checked
 images, audio/video controls, source code, tabular text, and safe download descriptors. For
-hash-verified bytes, bounded header recognition can select the closed local renderer for PNG,
+hash-checked bytes, bounded header recognition can select the closed local renderer for PNG,
 JPEG, WebP, PDF, SVG, ZIP/3MF, STEP/IFC, STL, OBJ, PLY, DXF, KiCad, Gerber, Excellon, and glTF even
 when the filename is absent or misleading; contradictions are shown explicitly. Unknown content
 never produces a blank viewer: textual bytes get a bounded plain-text view and binary
@@ -209,9 +212,11 @@ downloads at 32 MiB.
 The distinction is intentional:
 
 - **signed discovery record**: Ed25519 verified in-browser;
-- **signed lineage event**: shown as signed only when the feed explicitly marks it signed;
-- **live workspace snapshot / terminal event**: Ed25519 verified against the node kernel key;
-- **other live execution frame**: unsigned node transport telemetry, labelled separately;
+- **signed public telemetry/message document or route**: shown as signed only after its exact schema,
+  bindings, and whole-document signature pass the browser verifier;
+- **signed lineage event**: retains its signed provenance inside an admitted signed feed;
+- **live workspace snapshot / terminal event**: Ed25519 signature checked against the node kernel key;
+- **raw operator-status runtime/model-call frame**: unsigned node transport telemetry, labelled separately;
 - **opened live file body**: bytes independently checked against the signed advertised SHA-256.
 
 ## Design reference validation
@@ -219,8 +224,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`f6647e65bce877d48b68c7343ee873ba81e5e312`: 22 Markdown files with manifest SHA-256
-`380f19a78c2e63d29f74c784b9937f97d72d7883a90963651b5f4801f3344182`. CI fails when either
+`009e4e0da5a2ad916033b7a1b2d8bf572adf1614`: 22 Markdown files with manifest SHA-256
+`15731a8c0dd24a18a12d2db7f65f087accb349546e986eba022151dd289499be`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
@@ -238,8 +243,8 @@ Click any discovered record for deep detail with its trust state visible:
   extensions;
 - **project / bundle** → the J7 model cascade, verifier cascade + 8-source safety floor, OCI/IPLD
   distribution (CIDs), any fabricated physical asset, and an **in-browser artifact viewer**;
-- **telemetry** → a consent-gated activity/presence feed; signed spans and unsigned live frames
-  are labelled separately.
+- **telemetry** → a consent-gated activity/presence feed; browser-verified public documents and
+  unsigned operator-status observations are labelled separately.
 
 A real-time **LIVING NETWORK** UI makes the personas legible through an original collectible-card
 visual language: the signed display name and verified raster portrait are the card hero, while each
@@ -267,6 +272,15 @@ or out-of-order sequence updates are rejected. The UI also expires heartbeat, ac
 persona telemetry, and persona runtime-status entries after 30 seconds without a refresh, clears
 their ephemeral model/running state, and leaves the durable discovered card visible as
 stale/offline.
+
+Environment routing is authority-preserving. Exact associations come only from a verified
+discovery record/provider surface. A sole candidate is unambiguous, and a current signed project
+primary may resolve a project host; multiple or conflicting candidates remain explicit routing
+pressure. The browser never uses activity recency, a matching title/charter, roster similarity,
+array order, or the first environment on a node to select or collapse an environment. Legacy run
+paths associate artifacts only when exactly one observed environment owns the run. Otherwise the
+artifact stays unassigned and the stage reports the unresolved pressure instead of duplicating it
+under a guessed workspace.
 
 ## Operator console — drive your own node from the portal
 
@@ -313,6 +327,7 @@ node tools/test-artifact-types.mjs
 node tools/test-network-view.mjs
 node tools/test-network-store.mjs
 node tools/test-public-telemetry.mjs
+node tools/test-routing-authority.mjs
 python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
 python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
   --commit local --screenshot /tmp/personaos-hosted-smoke.png
@@ -334,6 +349,7 @@ assets/artifact-types.mjs                  # safe local/built-in artifact dispat
 assets/public-telemetry.mjs                # exact public/operator telemetry and route projection
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification
+assets/routing-authority.mjs               # fail-closed exact/ambiguous environment association
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
 tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
@@ -342,6 +358,7 @@ tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknow
 tools/test-network-view.mjs                # million-node bounded-window regression
 tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression
 tools/test-public-telemetry.mjs             # public telemetry privacy/route regression
+tools/test-routing-authority.mjs            # fail-closed environment association regression
 tools/live_ui_fixture.py                    # canonical live API fixture for browser validation
 tools/test-live-ui.py                       # Playwright security, live-update, and mobile regression
 tools/test-hosted-deploy.py                 # exact deployed-byte + hosted Chromium smoke

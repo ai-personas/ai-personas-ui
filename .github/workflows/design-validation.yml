@@ -50,6 +50,7 @@ jobs:
           node tools/test-network-view.mjs
           node tools/test-artifact-types.mjs
           node tools/test-public-telemetry.mjs
+          node tools/test-routing-authority.mjs
 
       - name: Install Playwright
         run: |

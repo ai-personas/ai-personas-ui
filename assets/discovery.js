@@ -60,6 +60,11 @@ import {
   personaIdentityKeyPin,
 } from './persona-avatar.mjs?v=20260712-persona-raster-v2';
 import {
+  environmentIdentity,
+  resolveEnvironmentAuthority,
+  resolveUniqueRunEnvironment,
+} from './routing-authority.mjs?v=20260715-persona-routing-authority-v1';
+import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
   isEnvironmentTelemetryDocument,
@@ -589,11 +594,8 @@ function _envSid(r){ const sub=(r._links||{}).subject_id;
   const m2=String(r.did||r.record_id||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
   return m2?m2[1]:_shortId(r.did||r.record_id||''); }
 function _envSidFromProject(r){ const L=r?._links||{};
-  for(const v of [L.subject_id,L.env,L.export,r?.did,r?.record_id]){
-    const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
-    if(m) return m[1];
-  }
-  return ''; }
+  const authority=resolveEnvironmentAuthority(r,L,{verified:true});
+  return authority.status==='resolved'?authority.environmentId:''; }
 function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
   const sid=_envSid(r); if(!sid) return null;
   for(const id of S.order||[]){ const p=S.recs.get(id);
@@ -601,14 +603,25 @@ function runForEnv(r){ const direct=runOf(r); if(direct) return direct;
     if(_envSidFromProject(p)===sid){ const prun=runOf(p); if(prun) return prun; }
   }
   return null; }
-function _envSidFromValue(v){ const m=String(v||'').match(/env:([0-9A-HJKMNP-TV-Z]{20,})/i);
-  return m?m[1]:''; }
-function envSidOfRecord(r){ if(!r) return ''; const L=r._links||{};
-  for(const v of [L.environment_id,L.owning_env_id,L.env,L.artifact_manifest,r.environment_id,r.owning_env_id]){
-    const sid=_envSidFromValue(v); if(sid) return sid;
-  }
+function _envSidFromValue(v){ return environmentIdentity(v); }
+function environmentAuthorityOfRecord(r){
+  // S.recs admits only provider-envelope + discovery-record verified rows.
+  // No unsigned live/status/profile object is passed into this authority path.
+  return resolveEnvironmentAuthority(r,r?._links||{},{verified:true});
+}
+function envSidOfRecord(r){ if(!r) return '';
   if(r.kind==='env') return _envSid(r);
-  return ''; }
+  const authority=environmentAuthorityOfRecord(r);
+  return authority.status==='resolved'?authority.environmentId:'';
+}
+function envRecordForAuthority(r){
+  const authority=environmentAuthorityOfRecord(r);
+  if(authority.status!=='resolved') return {authority,recordId:null};
+  const recordId=S.order.find((id)=>{ const candidate=S.recs.get(id);
+    return candidate?.kind==='env'&&candidate._kernel===r._kernel
+      &&_envSid(candidate)===authority.environmentId; })||null;
+  return {authority,recordId};
+}
 function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.artifacts:[];
   return arts.map((a)=>({ ...a, title:a.title||a.path||a.artifact_id||'',
     body_published:a.body_published!==undefined?a.body_published:!!a.content,
@@ -1015,9 +1028,10 @@ const PROVIDER_INVENTORY_FIELDS=Object.freeze([
 const PROVIDER_MANIFEST_FIELDS=Object.freeze(['document_hash','record_id','record_url']);
 const SHA256_CONTENT_RE=/^sha256:[0-9a-f]{64}$/;
 async function verifyProviderInventory(index,base,boot){
+  const expectedBase=String(base||location.origin).replace(/\/$/,'');
   if(!_exactObjectFields(index,PROVIDER_INVENTORY_FIELDS)
       ||index.schema!=='dht-provider-index/3'||index.kernel_id!==boot?.kernel_id
-      ||String(index.base||'').replace(/\/$/,'')!==String(base||'').replace(/\/$/,'')
+      ||String(index.base||'').replace(/\/$/,'')!==expectedBase
       ||index.signing_key_id!=='kernel-master'||index.visibility!=='public'
       ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
       ||index.version!==index.inventory_generation
@@ -1819,6 +1833,16 @@ function upsert(r){
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
     capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||'',
+    // Keep only the bounded environment-authority fields from this already
+    // verified discovery row. Unsigned status/profile observations never enter
+    // the routing resolver.
+    environment_id:r.environment_id,
+    owning_environment_id:r.owning_environment_id,
+    owning_env_id:r.owning_env_id,
+    primary_environment_id:r.primary_environment_id,
+    environment_ids:Array.isArray(r.environment_ids)?r.environment_ids.slice(0,64):r.environment_ids,
+    host_environment_ids:Array.isArray(r.host_environment_ids)?r.host_environment_ids.slice(0,64):r.host_environment_ids,
+    candidate_environment_ids:Array.isArray(r.candidate_environment_ids)?r.candidate_environment_ids.slice(0,64):r.candidate_environment_ids,
     _personaAuthoredRole:r.kind==='persona'?personaAuthoredRole(r):'',
     _personaSignedName:r.kind==='persona'?signedPersonaLabel(r):'',
     _personaIdentityPublicKeyHex:r.kind==='persona'?(r._personaIdentityPublicKeyHex||''):'',
@@ -1937,7 +1961,7 @@ function emptyStateHTML(){
     <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
 	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
-	    live execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
+	    unverified operator-status execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
 	    no reachable node is currently publishing public records.</div>
 	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through a configured resolver, but none produced browser-reachable public records yet.</div>`:''}
     <h4>Peers tried</h4>${rows}
@@ -2251,14 +2275,15 @@ async function fetchBlob(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(
 async function fetchVerifiedLiveBody(url,expectedHash){
   try{
     const r=await fetch(url,secureFetchInit(url));
-    if(!r.ok) return {ok:false,error:`body HTTP ${r.status}`};
+    if(!r.ok) return {ok:false,checkOutcome:'unavailable',error:`body HTTP ${r.status}`};
     const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
     const actual=await sha256Hex(bytes);
     const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
-    if(!expected||actual!==expected) return {ok:false,error:'SHA-256 mismatch',actual,expected};
+    if(!expected||actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
     const type=r.headers.get('content-type')||'application/octet-stream';
     return {ok:true,actual,bytes,blob:new Blob([bytes],{type}),type,size:bytes.byteLength};
-  }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
+  }catch(e){ const error=String(e&&e.message||e);
+    return {ok:false,checkOutcome:/\bexceeds\b/i.test(error)?'failed':'unavailable',error}; }
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -2270,7 +2295,7 @@ const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(t
 const findRecByDid=(pid,kernel='')=>S.order.find((id)=>{ const r=S.recs.get(id);
   return (!kernel||r?._kernel===kernel)&&(r?.did==='did:personaos:'+pid||r?.did===pid); });
 
-/* ---------- unsigned live workspace transport + exact-byte integrity ---------- */
+/* ---------- kernel-signed live workspace metadata + exact-byte integrity ---------- */
 function _liveRunKey(base,run){ return liveArtifactRunKey(base,run,location.origin); }
 function _liveRunDomKey(base,run){ return encodeURIComponent(_liveRunKey(base,run)); }
 function liveArtifactState(base,run){ return S.liveArtifacts.get(_liveRunKey(base,run))||null; }
@@ -2360,7 +2385,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     const current=next.files.get(`${open.workspaceId}\u0000${open.path}`);
     if(!current||current.sha256!==open.hash){
       // The current view closure resolves the newest record. Re-render in place;
-      // text viewers retain the prior verified body for a bounded diff.
+      // text viewers retain the prior hash-checked body for a bounded diff.
       Promise.resolve().then(()=>renderTop()).catch(()=>{});
     }
   }
@@ -2480,7 +2505,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
 }
 function liveArtifactsHTML(base,run){
   const state=liveArtifactState(base,run);
-  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only Ed25519-verified snapshots and SSE events are applied.</div></div>`;
+  if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only snapshots and SSE events whose Ed25519 signatures check are applied.</div></div>`;
   const snap=state.snapshot||{}; const ch=state.changes;
   const changed=ch.baseline?'<span class="l2">baseline snapshot</span>'
     : `<span class="live-change c-created">+${ch.created.length} created</span><span class="live-change c-modified">${ch.modified.length} modified</span><span class="live-change c-deleted">-${ch.deleted.length} deleted</span>`;
@@ -2497,12 +2522,12 @@ function liveArtifactsHTML(base,run){
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
-  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">KERNEL-SIGNED · VERIFIED</span></div>`
-    +(state.ended?`<div class="fv-note">Verified terminal event received${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last accepted revision.</div>`:'')
+  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
+    +(state.ended?`<div class="fv-note">Terminal-event signature checked${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
-    +trees+`<div class="live-integrity-note">File lists and execution frames are Ed25519-verified against the node kernel key. Opened file bytes are SHA-256 checked against the exact signed hash before rendering.</div></div>`;
+    +trees+`<div class="live-integrity-note"><b>Workspace snapshot only · ArtifactBundle lifecycle is unknown.</b> Snapshot metadata is Ed25519 signature-checked against the node kernel key. Opened file bytes are separately SHA-256 checked against the exact signed hash before rendering.</div></div>`;
 }
 
 // ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
@@ -2698,8 +2723,10 @@ function renderEnvLaneLive(b){
    request/response (model selections = what it ASKED a model to do) and its
    cognition; the right rail streams coordination + cross-env interactions
    (kernel.interactions: actor → affected : kind); artifacts show as deliverables.
-   Signed lineage events retain their explicit signed=true marker; model calls and
-   coordination frames remain unsigned, while workspace snapshots are kernel-signed. */
+   Signed lineage events retain their provenance from admitted signed feeds. Raw
+   operator-status model calls and coordination observations remain unsigned;
+   independently verified public telemetry, messages, and routes retain their own
+   signed labels, while workspace snapshots are kernel-signed. */
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
   domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify',
@@ -2973,7 +3000,7 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
   if(!(rows||[]).length) return '';
-  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>kernel-signed · verified</small></div>`
+  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · lifecycle unknown</small></div>`
     +rows.slice(0,2).map((row)=>`<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
       +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
       +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
@@ -3569,7 +3596,7 @@ function updateVitalsCounters(){
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',compactCount(acts)); setV('#st-signed',compactCount(signed));
   // verify badge live count
-  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Live frames remain labelled unsigned transport telemetry.`;
+  const vb=$('#verifybadge'); if(vb) vb.title=`${S.recs.size} signed discovery record(s) Ed25519-verified in this browser. Workspace snapshot signatures and opened-file hashes are checked separately. Raw operator-status runtime frames remain labelled unsigned transport telemetry; whole-document-signed public telemetry, messages, and routes retain their verified labels.`;
   // livedot beats ONLY while a real node heartbeat is running (no decorative pulse)
   const dot=$('#livedot'); if(dot){ const heartbeat=heartbeatForScope(); const beating=!!(heartbeat&&heartbeat.running!==false);
     dot.classList.toggle('beating',beating);
@@ -3705,22 +3732,47 @@ async function refreshSystemView(){
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
     const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(_personaKey(r._kernel,sid),r.label); } }
-  // artifacts joined to their ENVIRONMENT first; run paths remain a compatibility
-  // fallback for older exports that predate env-current artifact manifests.
+  // Artifacts join to an exact verified environment reference first. A run path
+  // is only a compatibility join when exactly ONE observed environment owns
+  // that run. With multiple hosts we surface routing pressure and attach the
+  // artifact to none of them; activity/array order never fabricates a winner.
   const artByEnv=new Map();
-  const artByRun=new Map();
   const artByPersona=new Map();
+  const runHosts=new Map();
+  // Resolve legacy run-path joins against the complete verified record cache,
+  // not only the visible card window. A paginated-away second host must still
+  // make the run ambiguous.
+  for(const id of S.order){ const envRecord=S.recs.get(id);
+    if(envRecord?.kind!=='env'||!kernelIsFocused(envRecord._kernel)) continue;
+    const envRun=runForEnv(envRecord); if(!envRun) continue;
+    const rk=envKey(envRecord._kernel,envRun);
+    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk))
+      .add(envKey(envRecord._kernel,_envSid(envRecord)));
+  }
+  for(const b of envBlocks){ if(!b.run) continue; const rk=envKey(b.kernel,b.run);
+    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk))
+      .add(envKey(b.kernel,b.sid)); }
+  const unresolvedArtifacts=[];
   for(const id of S.order){ const r=S.recs.get(id);
     if(r.kind!=='artifact'||!kernelIsFocused(r._kernel)) continue;
-    const esid=envSidOfRecord(r), ek=envKey(r._kernel,esid); if(esid) (artByEnv.get(ek)||artByEnv.set(ek,[]).get(ek)).push(r);
+    const authority=environmentAuthorityOfRecord(r);
+    let target='';
+    if(authority.status==='resolved') target=envKey(r._kernel,authority.environmentId);
+    else if(authority.status==='absent'){
+      const run=runOf(r);
+      const runResolution=resolveUniqueRunEnvironment(
+        run?[...(runHosts.get(envKey(r._kernel,run))||[])]:[],
+      );
+      if(runResolution.status==='resolved') target=runResolution.environmentKey;
+      else if(runResolution.status==='ambiguous') unresolvedArtifacts.push({record:r,
+        authority:{status:'ambiguous',reason:'project_host_choice',candidates:runResolution.candidates}});
+    }else unresolvedArtifacts.push({record:r,authority});
+    if(target) (artByEnv.get(target)||artByEnv.set(target,[]).get(target)).push(r);
     const owner=_shortId(r._access?.owner_persona_id||'');
-    if(owner&&!esid){ const pk=_personaKey(r._kernel,owner); (artByPersona.get(pk)||artByPersona.set(pk,[]).get(pk)).push(r); }
-    const run=runOf(r), rk=envKey(r._kernel,run); if(run) (artByRun.get(rk)||artByRun.set(rk,[]).get(rk)).push(r); }
-  const envArtifacts=(b)=>{
-    const byEnv=artByEnv.get(envKey(b.kernel,b.sid))||[];
-    if(byEnv.length) return byEnv;
-    return b.run?(artByRun.get(envKey(b.kernel,b.run))||[]):[];
-  };
+    if(owner&&!target){ const pk=_personaKey(r._kernel,owner);
+      (artByPersona.get(pk)||artByPersona.set(pk,[]).get(pk)).push(r); }
+  }
+  const envArtifacts=(b)=>artByEnv.get(envKey(b.kernel,b.sid))||[];
   const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
   const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
   const liveWorkspacesByPersona=new Map(), liveWorkspacesByEnv=new Map();
@@ -3801,24 +3853,10 @@ async function refreshSystemView(){
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
       +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?(b.verified?'live telemetry + verified identity':'unsigned live telemetry'):'verified record'}</span><span>environment-owned outputs</span></div></article>`;
   };
-  // (3) DE-DUPE lanes that are the SAME mission discovered as several env records.
-  // bySid keys on exact sid, so aliases can become N full lanes with an identical roster +
-  // deliverable. Group by (kernel + normalized task) — mirroring missionCardList()'s
-  // (kernel::task) dedupe — and keep ONE survivor per group (prefer live, then a
-  // lane that bears a deliverable, then the one with the most members).
-  const _normTask=(s)=>String(s||'').toLowerCase().trim();
-  const _dgroups=new Map();
-  for(const b of envBlocks){ const k=(b.kernel||'')+'::'+_normTask(b.name);
-    (_dgroups.get(k)||_dgroups.set(k,[]).get(k)).push(b); }
-  const _kept=[];
-  for(const grp of _dgroups.values()){
-    if(grp.length===1){ _kept.push(grp[0]); continue; }
-    const survivor=grp.slice().sort((a,b)=>{
-      const sc=(x)=>(x.live?4:0)+(envHasArtifacts(x)?2:0)+Math.min(1,x.members.length?1:0);
-      const d=sc(b)-sc(a); return d!==0?d:(b.members.length-a.members.length);
-    })[0];
-    _kept.push(survivor);
-  }
+  // (3) Preserve every exact environment identity. Shared titles, rosters,
+  // tasks, or run references are observations, never authority to collapse one
+  // signed context into another.
+  const _kept=envBlocks.slice();
   // (4) SORT lanes by activity so running/deliverable-bearing environments lead.
   // Stable sort keeps signed empty environments visible while placing them last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
@@ -3896,7 +3934,13 @@ async function refreshSystemView(){
     +` <span class="scope-copy">· ${compactCount(S.envCount)} environments</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
     +`</div>`:'';
-  let html=summary+bodyHTML;
+  const routingPressure=unresolvedArtifacts.length
+    ?`<div class="routing-pressure" role="status"><strong>${icon('warn','ico-sm')} Environment routing unresolved</strong>`
+      +`<span>${unresolvedArtifacts.length} signed artifact${unresolvedArtifacts.length===1?'':'s'} ${unresolvedArtifacts.length===1?'has':'have'} multiple or conflicting environment contexts. No environment was selected; the artifact remains visible only as unresolved routing pressure.</span>`
+      +`<span class="routing-pressure-items">${unresolvedArtifacts.slice(0,4).map(({record,authority})=>
+        `<span><b>${esc(record.label||record.record_id||'artifact')}</b> · ${esc((authority.candidates||[]).length)} candidate${(authority.candidates||[]).length===1?'':'s'}</span>`).join('')}`
+      +`${unresolvedArtifacts.length>4?`<span>+${unresolvedArtifacts.length-4} more</span>`:''}</span></div>`:'';
+  let html=summary+routingPressure+bodyHTML;
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
   // viewer who just started a run sees honest "first candidate is coming", not a blank.
@@ -4515,12 +4559,10 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // project_workspace marker, same as the env lanes do).
   const caps=(ps.capability_summary||r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
   if(caps.length) html+=H('Capabilities')+chipsOf(caps);
-  // THE PLAN — the mission this persona is working on: the charter, objectives,
-  // current round and blocked/measured state of the run its workspace env pursues.
-  // The persona's own record may carry the run path; otherwise resolve it from its
-  // kernel's env record (runOf scans the resolved links for k/run-XXXX).
-  const _eidR=kernelRec(r._kernel,'env');
-  const _prun=runOf(r)||(_eidR?runOf(S.recs.get(_eidR)):null);
+  // THE PLAN — use the persona's direct run or its one exact verified env
+  // association. Never borrow the first env on a multi-env kernel.
+  const _personaEnv=envRecordForAuthority(r);
+  const _prun=runOf(r)||(_personaEnv.recordId?runForEnv(S.recs.get(_personaEnv.recordId)):null);
   if(_prun) html+=await planSection(base,_prun);
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
@@ -4538,18 +4580,21 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving signed public broadcasts…'}</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
-  // the persona's OWN env, not merely the FIRST env on the kernel (wrong on multi-env
-  // nodes): prefer links.env / the profile's environment_id, resolved to a discovered
-  // record; fall back to kernelRec only when neither resolves.
-  const _ownEnvId=L.env||ps.environment_id||prof.environment_id||'';
-  const _ownEnvSid=_ownEnvId?_shortId(_ownEnvId):'';
-  const _ownEnvRec=_ownEnvSid?S.order.find((id)=>{ const x=S.recs.get(id);
-    return x&&x.kind==='env'&&((x.did||'').includes(_ownEnvSid)||(x.record_id||'').includes(_ownEnvSid)||_envSid(x)===_ownEnvSid); }):null;
-  const eid=_ownEnvRec||kernelRec(r._kernel,'env');
+  // Related navigation obeys the same exact authority result. Profile/status
+  // environment fields are unsigned transport observations and cannot select a
+  // destination; ambiguous candidates remain visible as pressure instead.
+  const eid=_personaEnv.recordId;
   const bid=S.order.find((id)=>{ const x=S.recs.get(id);
-    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle; });
+    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle
+      &&((_personaEnv.authority.status==='resolved'
+          &&envSidOfRecord(x)===_personaEnv.authority.environmentId)
+        ||(_prun&&runOf(x)===_prun)); });
   let nav='';
   if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
+  else if(['ambiguous','conflict'].includes(_personaEnv.authority.status))
+    nav+=`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(_personaEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
+  else if(ps.environment_id||prof.environment_id)
+    nav+=`<div class="row"><span class="l2">Environment observation withheld from navigation — no verified routing reference</span></div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(base,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
@@ -4588,8 +4633,15 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   const manifest=manifestRel?await dfetch(base,manifestRel):null;
   const manifestFiles=manifestArtifacts(manifest);
   const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
+  const _runHostKeys=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='env'
+    &&x._kernel===r._kernel&&runForEnv(x)===_run).map((x)=>_environmentKey(r._kernel,_envSid(x))):[];
+  const _runAuthority=resolveUniqueRunEnvironment(_runHostKeys);
+  const _thisEnvKey=_environmentKey(r._kernel,_sid);
   const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'
-    && ((envSidOfRecord(x)&&envSidOfRecord(x)===_sid) || (_run&&runOf(x)===_run)));
+    &&(()=>{ const authority=environmentAuthorityOfRecord(x);
+      if(authority.status==='resolved') return authority.environmentId===_sid;
+      return authority.status==='absent'&&_run&&runOf(x)===_run
+        &&_runAuthority.status==='resolved'&&_runAuthority.environmentKey===_thisEnvKey; })());
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
   if(manifestFiles.length){
@@ -5026,7 +5078,7 @@ function _lineDiffHTML(prior,current){
     skipped=false;
     html+=`<div class="diff-row ${row.kind}"><span class="diff-ln">${row.left??''}</span><span class="diff-ln">${row.right??''}</span><span class="diff-mark">${row.kind==='add'?'+':row.kind==='del'?'-':' '}</span><code>${esc(row.text)}</code></div>`;
   });
-  return `<details class="live-diff" open><summary>Verified prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
+  return `<details class="live-diff" open><summary>Hash-checked prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
 }
 
 async function liveFileView(base,run,workspaceId,path){
@@ -5077,10 +5129,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   if(hashAdvertised){
     verified=validExpectedHash
       ?await fetchVerifiedLiveBody(sourceUrl,expectedHash)
-      :{ok:false,error:'invalid advertised SHA-256'};
+      :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
     if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
       if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
-        verified={ok:false,error:'stale live body response discarded'};
+        verified={ok:false,checkOutcome:'failed',error:'stale live body response discarded'};
       }
     }
     if(verified.ok){
@@ -5120,6 +5172,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
   const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary && !forcedPlain && text===null);
   const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
+  const byteCheckLabel=verified?.ok?'BYTES CHECKED':
+    (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
     ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
@@ -5128,9 +5182,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         : '<span class="l2">raw</span>');
   let html=kv('File',esc(title))
     +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
-    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-verified bytes</span>`):'')
+    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-checked bytes</span>`):'')
     +(verifiedDispatch?.contradiction?`<div class="viewerr artifact-format-contradiction">Advertised filename/media metadata conflicts with the verified byte header. Rendering uses the detected ${esc(verifiedDispatch.detected.label)} format; peer code was not executed.</div>`:'')
-    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-verified bytes.</div>`:'')
+    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-checked bytes.</div>`:'')
     +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
@@ -5138,11 +5192,11 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +(opts.liveFile?kv('Live revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">${verified?.ok?'KERNEL-SIGNED METADATA · BYTES CHECKED':'KERNEL-SIGNED METADATA · BYTES NOT VERIFIED'}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
+      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">SNAPSHOT SIGNATURE CHECKED · ${byteCheckLabel}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
       +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff
       :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${verified?.ok?'BYTES CHECKED':'BYTES NOT VERIFIED'}</span></div>`:''))
+        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''))
     +`<div id="fv-body" class="fv-body"></div>`;
   // Built-in renderer path — the fallback used when no local module
   // matches, or when a matched local module throws (parse/empty).
@@ -5294,7 +5348,10 @@ async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc
     +(d.information_hazard_class?kv('Info hazard',esc(d.information_hazard_class)):'')
     +(d.trust_score!=null?kv('Trust score',esc(d.trust_score)):'');
   html+=trustPanel(r);
-  const eid=kernelRec(r._kernel,'env'); if(eid) html+=H('Used by')+`<div class="row">${recLink(eid,'Environment →')}</div>`;
+  const domainEnv=envRecordForAuthority(r);
+  if(domainEnv.recordId) html+=H('Used by')+`<div class="row">${recLink(domainEnv.recordId,'Environment →')}</div>`;
+  else if(['ambiguous','conflict'].includes(domainEnv.authority.status))
+    html+=H('Used by')+`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(domainEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
   return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(d.name||r.label)}`, html};
 }
 async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
@@ -5729,14 +5786,14 @@ async function operatorRunView(b,run){
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
   });
   const liveCalls=terminal?[]:(liveState?.snapshot?.active?.calls||activeCalls);
-  html+=H(terminal?'Execution · verified terminal state':'Live execution · unsigned status telemetry');
+  html+=H(terminal?'Execution · terminal-event signature checked':'Live execution · unsigned status telemetry');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
     const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
     return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
   else html+=terminal
-    ?'<div class="l2">The verified run-ended event cleared active execution; no model call remains active.</div>'
+    ?'<div class="l2">The signature-checked run-ended event cleared active execution; no model call remains active.</div>'
     :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
   const runtime=terminal?{pressure:null,block:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
   const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
@@ -5747,7 +5804,7 @@ async function operatorRunView(b,run){
     +kv('Completion block',runtime.block?`<span class="no">${esc(runtime.block)}</span>`:'<span class="l2">none exposed</span>')
     +kv('Review eligibility',runtime.review!==null?esc(typeof runtime.review==='object'?JSON.stringify(runtime.review):runtime.review)
       :(inReview?'<span class="amber">review in progress</span>':'<span class="l2">not exposed</span>'));
-  html+=H('Live workspace artifacts')
+  html+=H('Live workspace files')
     +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   // GAP #3: surface the ContinuousRefinementMission trajectory from the served
   // design_history (best-so-far never regresses; budget tranches; marginal value).
@@ -5770,18 +5827,20 @@ async function operatorRunView(b,run){
     const cls=es==='executed'?'ok':(es==='unmeasured'?'no':'amber');
     return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(es)}</span></div>`;
   }).join('');
-  const ap=rs.answer_package; if(ap&&ap.schema) html+=H('Signed AnswerPackage (answer/5)')
-    +kv('Status',S0(ap.status))+kv('Bundle ref',S0(ap.artifact_bundle_ref))
-    +kv('Bundle state',S0(ap.artifact_bundle_state))+kv('Signed',ap.signed_by?`<span class="ok">${icon('check','ico-sm')}</span>`:`<span class="no">${icon('x','ico-sm')}</span>`);
+  // `/runs/<run>` and `/runs/<run>/artifacts` are operator status documents, not
+  // browser-validated AnswerPackage or ArtifactBundle envelopes. Schema strings,
+  // `signed_by` truthiness, verifier-shaped objects, and lifecycle state strings in
+  // those raw documents have no admission authority. No validated bundle projection
+  // reaches this view yet, so lifecycle must remain unknown here.
+  html+=H('AnswerPackage / ArtifactBundle lifecycle')
+    +kv('Lifecycle','<span class="l2 bundle-lifecycle-unknown">unknown</span>')
+    +'<div class="fv-note">Run status and artifact-index JSON are not browser-validated bundle lifecycle evidence. A lifecycle state requires a separately browser-validated bundle plus verifier evidence bound to its current content hash.</div>';
   const files=arts.package||arts.package_files||arts.files||[];
   if(files.length) html+=H(`Package artifacts (${files.length})`)+files.slice(0,100).map((f)=>{
     const path=typeof f==='string'?f:(f.path||f.title||'');
     const name=String(path).split('/').pop();
     return `<div class="grant"><span class="l2">${esc(name)}</span><span class="l2">${esc(String(path).includes('/')?path.split('/').slice(0,-1).join('/'):'')}</span></div>`;
   }).join('');
-  const bundles=arts.bundles||[];
-  if(bundles.length) html+=H(`Bundles (${bundles.length})`)+bundles.map((bd)=>
-    `<div class="grant"><span class="l2">${esc(bd.bundle_id||bd.path||'bundle')}</span><span class="${bd.state==='shipped'||bd.state==='accepted'?'ok':'amber'}">${esc(bd.state||'—')}</span></div>`).join('');
   return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
 }
 
@@ -5919,7 +5978,7 @@ function missionCardList(){
       terminalTask:!!terminal,liveTask:!!live};
     if(terminal||live) cards.unshift(card); else cards.push(card);
   }
-  // Public artifact-tier nodes can expose an unsigned live workspace snapshot even
+  // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
   // monitors; opening one still verifies every fetched file body against sha256.
   for(const state of S.liveArtifacts.values()){

@@ -247,7 +247,7 @@ export function liveBodyCommitIsCurrent(expected, current, openFile) {
   if (!expected || !current) return false;
   // A body request started while the run was active must never commit after a
   // terminal event, even if the final revision retained the same hash. A new
-  // request started from the verified final revision is safe: terminal states
+  // request started from the signature-checked final revision is safe: terminal states
   // are immutable and still bind the exact advertised file bytes.
   if (current.ended && (!expected.terminalAtStart
       || String(expected.endedAt || '') !== String(current.endedAt || ''))) return false;

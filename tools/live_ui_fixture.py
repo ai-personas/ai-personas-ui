@@ -37,6 +37,7 @@ PUBLIC_PERSONA_MESSAGE = (
 PRIVATE_THINKING_FRAME_PROBE = "PRIVATE THINKING FRAME MUST NEVER RENDER PUBLICLY"
 ENV = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8P"
 ENV_EMPTY = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8Q"
+ENV_SAME_TITLE = "env:01KX5TJ1SX3B2MJ0P1N5VBTN8R"
 NODE_ID = "kernel:fixture"
 KEY_ID = "kernel-master"
 PROVIDER_OK = "provider-authority-ok"
@@ -47,6 +48,8 @@ PROVIDER_PERSONA_INCOMPLETE = "provider-persona-incomplete"
 PROVIDER_PERSONA_PENDING_SECOND = "provider-persona-pending-second"
 PROVIDER_ENV = "provider-environment"
 PROVIDER_ENV_EMPTY = "provider-environment-empty"
+PROVIDER_ENV_SAME_TITLE = "provider-environment-same-title"
+PROVIDER_AMBIGUOUS_ARTIFACT = "provider-artifact-ambiguous-environment"
 PROVIDER_PROJECT = "provider-project"
 PROVIDER_PROJECT_LEGACY = "provider-project-legacy"
 PROVIDER_TASK = "provider-live-public-task"
@@ -163,7 +166,7 @@ def provider_record_count() -> int:
     # scale mode the two materializing fixture personas are replaced by the
     # requested exact population.
     scale = STATE.get_scale()
-    count = 11 + scale if scale else 16
+    count = 11 + scale if scale else 18
     return count - (1 if STATE.inventory_omitted_record_id else 0)
 
 
@@ -279,6 +282,7 @@ def provider_document(
     identity_public_key_hex: str = "",
     capability_summary: list[str] | None = None,
     links: dict | None = None,
+    record_fields: dict | None = None,
 ) -> dict:
     signing_key = SIGNING_KEYS[
         STATE.signing_key_generation()
@@ -322,6 +326,8 @@ def provider_document(
         record["identity_public_key_hex"] = identity_public_key_hex
     if handle:
         record["handle"] = handle
+    if isinstance(record_fields, dict):
+        record.update(record_fields)
     document = {
         "schema": record["schema"],
         "record": record,
@@ -570,6 +576,8 @@ def provider_fixtures(
         PROVIDER_HISTORICAL,
         PROVIDER_REVOKED,
         PROVIDER_UNKNOWN,
+        PROVIDER_ENV_SAME_TITLE,
+        PROVIDER_AMBIGUOUS_ARTIFACT,
     )
     urls = {record_id: f"discovery/public/records/{record_id}.json"
             for record_id in record_ids}
@@ -778,6 +786,21 @@ def provider_fixtures(
         access_level=None,
         signing_key_generation=3,
     )
+    environment_same_title = provider_document(
+        base,
+        PROVIDER_ENV_SAME_TITLE,
+        "Four Bedroom Design Studio",
+        kind="env",
+        did=f"did:personaos:{NODE_ID}/env/{ENV_SAME_TITLE}",
+        capability_summary=["workspace", "residential_design"],
+        links={},
+    )
+    ambiguous_artifact = provider_document(
+        base,
+        PROVIDER_AMBIGUOUS_ARTIFACT,
+        "Unresolved multi-environment drawing",
+        record_fields={"environment_ids": [ENV, ENV_SAME_TITLE]},
+    )
     envelopes = [
         provider_envelope(valid, urls[PROVIDER_OK]),
         provider_envelope(persona, urls[PROVIDER_PERSONA]),
@@ -789,6 +812,16 @@ def provider_fixtures(
         ]),
         provider_envelope(environment, urls[PROVIDER_ENV]),
         provider_envelope(empty_environment, urls[PROVIDER_ENV_EMPTY]),
+        *([] if STATE.get_scale() else [
+            provider_envelope(
+                environment_same_title,
+                urls[PROVIDER_ENV_SAME_TITLE],
+            ),
+            provider_envelope(
+                ambiguous_artifact,
+                urls[PROVIDER_AMBIGUOUS_ARTIFACT],
+            ),
+        ]),
         provider_envelope(project, urls[PROVIDER_PROJECT]),
         provider_envelope(legacy_project, urls[PROVIDER_PROJECT_LEGACY]),
         provider_envelope(live_task, urls[PROVIDER_TASK]),
@@ -824,6 +857,8 @@ def provider_fixtures(
         PROVIDER_HISTORICAL: historical,
         PROVIDER_REVOKED: revoked,
         PROVIDER_UNKNOWN: unknown,
+        PROVIDER_ENV_SAME_TITLE: environment_same_title,
+        PROVIDER_AMBIGUOUS_ARTIFACT: ambiguous_artifact,
     }
     if include_scale:
         for index in range(3, STATE.get_scale()):
@@ -1157,93 +1192,6 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
         "omitted_file_count": 0,
         "omitted_reasons": {},
     })
-
-
-def telemetry() -> dict:
-    call = snapshot()["active"]["calls"][0]
-    failed = STATE.is_model_failed()
-    scale_count = STATE.get_scale()
-    ordinary_personas = [
-        {"persona_id": PERSONA, "name": "Unsigned Orin telemetry alias", "lifecycle_state": "ACTIVE",
-         "experience_tasks": 3, "reputation_score": 0.91},
-        {"persona_id": PERSONA_PEER, "name": "Unsigned Mara telemetry alias", "lifecycle_state": "ACTIVE",
-         "experience_tasks": 7, "reputation_score": 0.88},
-        {"persona_id": PERSONA_THIRD, "name": "Unsigned Ivo telemetry alias", "lifecycle_state": "ACTIVE",
-         "experience_tasks": 4, "reputation_score": 0.84},
-    ]
-    if scale_count:
-        personas = ordinary_personas[:min(3, scale_count)]
-        personas.extend({
-            "persona_id": scale_persona_id(index),
-            # This is deliberately not the signed label. The UI must obtain a
-            # public name from the verified persona discovery record.
-            "name": f"Unsigned telemetry alias {index:05d}",
-            "lifecycle_state": "ACTIVE",
-            "experience_tasks": index % 17,
-            "reputation_score": round((index % 100) / 100, 2),
-        } for index in range(3, scale_count))
-    else:
-        personas = ordinary_personas
-    personas.append({
-        "persona_id": UNSIGNED_TELEMETRY_GHOST,
-        "name": "Unsigned Telemetry Ghost",
-        "lifecycle_state": "ACTIVE",
-        "experience_tasks": 999,
-        "reputation_score": 1.0,
-    })
-    for persona in personas:
-        persona.update({
-            "running_llm": False if failed else persona["persona_id"] == PERSONA,
-            "task_execution_state": "idle" if failed else (
-                "running_llm" if persona["persona_id"] == PERSONA else "idle"
-            ),
-            "llm_execution_state": "idle" if failed else (
-                "running" if persona["persona_id"] == PERSONA else "idle"
-            ),
-        })
-    model_events = [{
-        "kind": "MODEL_SELECTED", "persona_id": PERSONA, "environment_id": ENV,
-        "model_id": "gpt-5.5", "requested_purpose": call["requested_purpose"], "role": "lead",
-    }]
-    if failed:
-        model_events.append({
-            "kind": "MODEL_CALL_FAILED", "persona_id": PERSONA, "environment_id": ENV,
-            "model_id": "gpt-5.5", "requested_purpose": "persona_communication",
-            "status": 400,
-            "reason": "model returned malformed structured output",
-        })
-    return {
-        "schema": "personaos-live-telemetry/1",
-        "generated_at": now(),
-        "node": {
-            "heartbeat": {"running": True, "busy": "" if failed else f"running {RUN}", "interval_s": 2},
-            "active_run_persona_ids": [] if failed else [PERSONA],
-            "running_llm_persona_ids": [] if failed else [PERSONA],
-        },
-        "kernel": {
-            "active_model_calls": [] if failed else [call],
-            "model_events": model_events,
-            "spans": [],
-            "interactions": [
-                {"actor_id": PERSONA, "actor_kind": "persona",
-                 "affected": [{"id": PERSONA_PEER, "kind": "persona"}],
-                 "kind": "PERSONA_COMMUNICATION_INTENT_RECORDED",
-                 "scope": "environment", "scope_id": ENV, "at": now(), "signed": False},
-                {"actor_id": PERSONA_PEER, "actor_kind": "persona",
-                 "recipients": [{"id": PERSONA_THIRD, "kind": "persona"}], "affected": [],
-                 "kind": "PERSONA_COMMUNICATION_INTENT_RECORDED",
-                 "scope": "environment", "scope_id": ENV, "at": now(), "signed": False},
-                {"actor_id": NODE_ID, "actor_kind": "kernel",
-                 "affected": [{"id": PERSONA_THIRD, "kind": "persona"}],
-                 "kind": "ATTENTION_ALLOCATED", "scope": "environment", "scope_id": ENV,
-                 "at": now(), "signed": False},
-                {"actor_id": PERSONA_THIRD, "actor_kind": "persona", "affected": [],
-                 "kind": "TASK_PROGRESS_REPORTED", "scope": "environment", "scope_id": ENV,
-                 "at": now(), "signed": False},
-            ],
-        },
-        "personas": personas,
-    }
 
 
 def _public_persona_summary(
@@ -1704,12 +1652,31 @@ class Handler(SimpleHTTPRequestHandler):
                 "run_state": {"status": "running", "task": "design 4 bedroom house", "accepted": False,
                     "runtime": {"pressure_open": {"ready_to_complete": False,
                         "completion_block_reason": "independent plan review is still open"},
-                        "review_eligibility": "eligible_after_current_revision"}},
+                        "review_eligibility": "eligible_after_current_revision"},
+                    "answer_package": {
+                        "schema": "answer/5",
+                        "status": "forged-answer-accepted",
+                        "artifact_bundle_ref": "bundle-unvalidated-fixture",
+                        "artifact_bundle_state": "forged-bundle-shipped",
+                        "signed_by": "truthy-but-not-browser-verified",
+                    }},
                 "durable_run_state": None, "design_history": None,
                 "links": {"live_artifacts": f"/runs/{RUN}/live-artifacts"},
             })
         if path == f"/node/runs/{RUN}/artifacts":
-            return self.json(200, {"schema": "personaos-run-artifacts/1", "package": [], "bundles": []})
+            return self.json(200, {
+                "schema": "personaos-run-artifacts/1", "package": [],
+                "bundles": [{
+                    "bundle_id": "bundle-unvalidated-fixture",
+                    "state": "forged-index-accepted",
+                    "current_content_hash": "sha256:" + "a" * 64,
+                    "verifier_evidence": [{
+                        "parsed_verdict": "pass",
+                        "artifact_content_hash": "sha256:" + "a" * 64,
+                        "signed_by_kernel": True,
+                    }],
+                }],
+            })
         if path == f"/node/runs/{RUN}/live-artifacts":
             since_revision = (parse_qs(parsed.query).get("since") or [None])[0]
             stale_revision = STATE.consume_stale()
