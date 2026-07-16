@@ -243,6 +243,26 @@ export function endLiveArtifactState(previous, event = {}) {
     endReason: String(event.reason || event.status || 'run ended')};
 }
 
+export function finalizeLiveArtifactState(previous, verification = {}) {
+  if (!previous || verification?.ok !== true
+      || verification?.immutableFinalizedBootstrap !== true) return null;
+  const finalizedAt = String(verification.finalizedAt || '');
+  const workspaces = previous.snapshot?.workspaces;
+  if (!finalizedAt || finalizedAt !== String(previous.generatedAt || '')
+      || !Array.isArray(workspaces) || workspaces.length === 0
+      || workspaces.some((workspace) => workspace?.state !== 'run_finalized')) return null;
+  const snapshot = previous.snapshot && typeof previous.snapshot === 'object'
+    ? {
+      ...previous.snapshot,
+      active: {...(previous.snapshot.active || {}), calls: [], persona_ids: [], environment_ids: []},
+      workspaces: workspaces.map((workspace) => ({...workspace, active_call_ids: []})),
+    }
+    : previous.snapshot;
+  return {...previous, snapshot, ended: true, finalized: true,
+    terminalKind: 'immutable_finalized_snapshot', endedAt: finalizedAt,
+    endReason: 'run finalized'};
+}
+
 export function liveBodyCommitIsCurrent(expected, current, openFile) {
   if (!expected || !current) return false;
   // A body request started while the run was active must never commit after a

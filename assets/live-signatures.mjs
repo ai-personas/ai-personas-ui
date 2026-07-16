@@ -205,7 +205,12 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
       return failed('poll_revision_binding_mismatch');
     }
   }
-  return {...verified, immutableFinalizedBootstrap};
+  return {
+    ...verified,
+    immutableFinalizedBootstrap,
+    finalizedAt: immutableFinalizedBootstrap ? lifecycle.finalized_at : '',
+    workspaceRevision: immutableFinalizedBootstrap ? lifecycle.workspace_revision : '',
+  };
 }
 
 export async function verifyLiveArtifactEvent(document, options = {}) {

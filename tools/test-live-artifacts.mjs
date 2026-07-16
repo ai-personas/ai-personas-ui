@@ -7,6 +7,7 @@ import {
   boundedLineDiff,
   decideLiveArtifactUpdate,
   endLiveArtifactState,
+  finalizeLiveArtifactState,
   LIVE_ARTIFACT_LIMITS,
   liveBodyCommitIsCurrent,
   liveArtifactFileKey,
@@ -314,6 +315,47 @@ assert.equal(liveBodyCommitIsCurrent(finalExpectedBody, ended, {bodyKey: 'body-1
 assert.equal(liveBodyCommitIsCurrent({...finalExpectedBody, endedAt: 'different'}, ended,
   {bodyKey: 'body-1', hash: a}), false);
 
+const immutableFinalInput = snapshot('sha256:final', '2026-07-10T12:00:06Z');
+immutableFinalInput.workspaces = [{
+  workspace_id: 'ws-1', active_call_ids: ['call-1'], state: 'run_finalized',
+}];
+const immutableFinalBefore = transitionLiveArtifacts(null, immutableFinalInput);
+const immutableFinalVerification = {
+  ok: true, immutableFinalizedBootstrap: true,
+  finalizedAt: immutableFinalInput.generated_at,
+};
+const immutableFinal = finalizeLiveArtifactState(immutableFinalBefore, immutableFinalVerification);
+assert.equal(immutableFinal.ended, true);
+assert.equal(immutableFinal.finalized, true);
+assert.equal(immutableFinal.terminalKind, 'immutable_finalized_snapshot');
+assert.equal(immutableFinal.revision, immutableFinalBefore.revision);
+assert.equal(immutableFinal.files, immutableFinalBefore.files,
+  'terminal projection must retain the exact hash-bound file map');
+assert.deepEqual(immutableFinal.snapshot.active.calls, []);
+assert.deepEqual(immutableFinal.snapshot.active.persona_ids, []);
+assert.deepEqual(immutableFinal.snapshot.active.environment_ids, []);
+assert.equal(immutableFinal.snapshot.workspaces[0].state, 'run_finalized');
+assert.deepEqual(immutableFinal.snapshot.workspaces[0].active_call_ids, []);
+assert.equal(finalizeLiveArtifactState(immutableFinalBefore, {
+  ...immutableFinalVerification, ok: false,
+}), null, 'an unverified final marker must not terminalize state');
+assert.equal(finalizeLiveArtifactState(immutableFinalBefore, {
+  ...immutableFinalVerification, finalizedAt: '2026-07-10T12:00:07Z',
+}), null, 'terminal proof must bind the accepted snapshot generation time');
+const nonFinalWorkspace = transitionLiveArtifacts(null, snapshot(
+  'sha256:not-final', immutableFinalInput.generated_at,
+));
+assert.equal(finalizeLiveArtifactState(nonFinalWorkspace, immutableFinalVerification), null,
+  'an active workspace must not be terminalized by a final marker');
+const immutableBody = {...immutableFinalBefore.files.get('ws-1\0plan.md'),
+  revision: immutableFinalBefore.revision, bodyKey: 'body-final'};
+assert.equal(liveBodyCommitIsCurrent(immutableBody, immutableFinal,
+  {bodyKey: 'body-final', hash: a}), false,
+  'a body fetch started before finalization must not commit afterward');
+assert.equal(liveBodyCommitIsCurrent({...immutableBody, terminalAtStart: true,
+  endedAt: immutableFinal.endedAt}, immutableFinal, {bodyKey: 'body-final', hash: a}), true,
+  'a body fetch started from the immutable final revision remains hash-bound');
+
 const many = Array.from({length: LIVE_ARTIFACT_LIMITS.maxFiles + 30}, (_, i) =>
   file('ws-limit', `dir/f-${i}.txt`, a));
 many.push(file('ws-limit', `${'deep/'.repeat(LIVE_ARTIFACT_LIMITS.maxPathDepth)}x.txt`, a));
@@ -410,6 +452,9 @@ const finalizedBootstrapVerification = await verifyLiveArtifactSnapshot(finalize
 });
 assert.equal(finalizedBootstrapVerification.ok, true);
 assert.equal(finalizedBootstrapVerification.immutableFinalizedBootstrap, true);
+assert.equal(finalizedBootstrapVerification.finalizedAt, finalizedBootstrap.lifecycle.finalized_at);
+assert.equal(finalizedBootstrapVerification.workspaceRevision,
+  finalizedBootstrap.lifecycle.workspace_revision);
 assert.equal((await verifyLiveArtifactSnapshot(finalizedBootstrap, {
   keyEntries, requirePublic: true, expectedSinceRevision: finalizedBootstrap.revision,
 })).ok, true);
@@ -681,8 +726,21 @@ assert.match(portal, /bundle-lifecycle-unknown/);
 assert.match(portal, /Run status and artifact-index JSON are not browser-validated/);
 assert.doesNotMatch(portal, /Signed AnswerPackage \(answer\/5\)|ap\.signed_by/);
 assert.match(portal, /Authored role claims/);
-assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260716-terminal-bootstrap-v1/);
+assert.match(portal, /live-artifacts\.mjs\?v=20260716-finalized-state-v1/);
+assert.match(portal, /live-signatures\.mjs\?v=20260716-finalized-state-v1/);
+assert.match(portal, /finalizeLiveArtifactState\(next,meta\.verification\)/,
+  'verified immutable final snapshots must enter the terminal state projection');
+assert.match(portal, /_applyTerminalLiveArtifactEffects\(base,key,next\)/,
+  'final snapshots must apply the same active-call tombstones as terminal events');
+assert.match(portal, /if\(!next\.ended\) _rememberTrackedLiveRun/,
+  'final snapshots must not be retained in the active polling tracker');
+assert.match(portal, /if\(S\.liveArtifactEnded\.has\(key\)\) return S\.liveArtifacts/,
+  'terminal bootstrap state must stop direct polling');
+assert.match(portal, /immutableFinalizedBootstrap:meta\.verification\.immutableFinalizedBootstrap===true/,
+  'the accepted state must retain its exact terminal proof kind');
+assert.match(portal, /Immutable finalized-snapshot signature checked/,
+  'terminal bootstrap UI must not mislabel a snapshot as a run-ended event');
+assert.match(index, /discovery\.js\?v=20260716-finalized-state-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

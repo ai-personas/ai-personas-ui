@@ -4,17 +4,18 @@ import {
   boundedLineDiff,
   decideLiveArtifactUpdate,
   endLiveArtifactState,
+  finalizeLiveArtifactState,
   LIVE_ARTIFACT_LIMITS,
   liveBodyCommitIsCurrent,
   liveArtifactFileKey,
   liveArtifactRunKey,
   sha256Hex,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260712-artifact-semantics-v1';
+} from './live-artifacts.mjs?v=20260716-finalized-state-v1';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260716-terminal-bootstrap-v1';
+} from './live-signatures.mjs?v=20260716-finalized-state-v1';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
@@ -2376,6 +2377,29 @@ function _rememberTrackedLiveRun(key,base,run,meta={}){
   if(meta.publicSeed===true) return;
   S.trackedLiveRuns.set(key,{base,run,lastSeen:Date.now()});
 }
+function _applyTerminalLiveArtifactEffects(base,key,state){
+  const now=Date.now(), baseKey=base||'@origin';
+  const endedCalls=Array.isArray(state?.snapshot?.active?.calls)
+    ?state.snapshot.active.calls:[];
+  for(const call of endedCalls){ const tombstoneKey=_terminalCallKey(base,call);
+    if(tombstoneKey) S.terminalCallTombstones.set(tombstoneKey,now+120000); }
+  while(S.terminalCallTombstones.size>256){
+    S.terminalCallTombstones.delete(S.terminalCallTombstones.keys().next().value);
+  }
+  const currentCalls=S.activeModelCallsByBase?.get(baseKey)||[];
+  S.activeModelCallsByBase?.set(baseKey,_filterTerminalCalls(base,currentCalls,now));
+  S.activeModelCallObservedAt?.set(baseKey,now);
+  _rebuildActiveModelCallIndex();
+  for(const [personaKey,item] of (S.personaRuntimeById||new Map())){
+    if(item?._baseKey!==baseKey||!_terminalCallIsBlocked(base,item.current_model_call,now)) continue;
+    S.personaRuntimeById.set(personaKey,{...item,current_model_call:null,running_llm:false,
+      llm_execution_state:'idle',task_execution_state:'idle',_receivedAt:now});
+  }
+  S.liveArtifactEnded.set(key,now);
+  while(S.liveArtifactEnded.size>64) S.liveArtifactEnded.delete(S.liveArtifactEnded.keys().next().value);
+  S.liveArtifactRequestGeneration.set(key,(S.liveArtifactRequestGeneration.get(key)||0)+1);
+  S.liveArtifactAbort.get(key)?.abort(); S.liveArtifactAbort.delete(key); S.trackedLiveRuns.delete(key);
+}
 function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   if(snapshot?.schema!=='personaos-live-artifacts/1'||!snapshot.run||!snapshot.revision) return null;
   const key=_liveRunKey(base,snapshot.run);
@@ -2390,20 +2414,22 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     if(!['run_ended'].includes(decision.reason)) log('live',`${snapshot.run}: ignored ${decision.reason}`,false);
     return previous;
   }
-  const next=transitionLiveArtifacts(previous,scoped);
+  let next=transitionLiveArtifacts(previous,scoped);
   next.base=base;
   next.source=source;
   next.receivedAt=Date.now();
   next.verification={verified:true,signingKeyId:meta.verification.signingKeyId,
-    accessPolicyRef:meta.verification.accessPolicyRef,outwardTier:meta.verification.outwardTier};
-  if(previous&&decision.refresh){
-    next.changes=previous.changes; next.ended=false;
-    S.liveArtifacts.set(key,next);
-    _rememberTrackedLiveRun(key,base,snapshot.run,meta);
-    _renderLiveArtifactMount(base,snapshot.run);
-    renderMissions(); refreshLiveSection(); updateVitalsCounters();
-    Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
-    return next;
+    accessPolicyRef:meta.verification.accessPolicyRef,outwardTier:meta.verification.outwardTier,
+    immutableFinalizedBootstrap:meta.verification.immutableFinalizedBootstrap===true};
+  if(previous&&decision.refresh) next.changes=previous.changes;
+  if(meta.verification.immutableFinalizedBootstrap===true){
+    const finalized=finalizeLiveArtifactState(next,meta.verification);
+    if(!finalized){
+      _logLiveVerificationRefusal(snapshot.run,{reason:'finalized_snapshot_projection_mismatch'});
+      return previous;
+    }
+    _applyTerminalLiveArtifactEffects(base,key,next);
+    next=finalized;
   }
   S.liveArtifacts.set(key,next);
   while(S.liveArtifacts.size>48){
@@ -2411,7 +2437,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     if(oldest===S.openLiveFile?.stateKey) break;
     S.liveArtifacts.delete(oldest);
   }
-  _rememberTrackedLiveRun(key,base,snapshot.run,meta);
+  if(!next.ended) _rememberTrackedLiveRun(key,base,snapshot.run,meta);
   _renderLiveArtifactMount(base,snapshot.run);
   const open=S.openLiveFile;
   if(open&&open.stateKey===key){
@@ -2463,28 +2489,8 @@ function endLiveArtifactRun(base,event,meta={}){
   if(!previous||String(event.previous_revision||'')!==String(previous.revision||'')){
     _logLiveVerificationRefusal(run,{reason:'broken_terminal_revision_chain'}); return;
   }
-  const now=Date.now(), baseKey=base||'@origin';
-  const endedCalls=Array.isArray(previous?.snapshot?.active?.calls)
-    ?previous.snapshot.active.calls:[];
-  for(const call of endedCalls){ const tombstoneKey=_terminalCallKey(base,call);
-    if(tombstoneKey) S.terminalCallTombstones.set(tombstoneKey,now+120000); }
-  while(S.terminalCallTombstones.size>256){
-    S.terminalCallTombstones.delete(S.terminalCallTombstones.keys().next().value);
-  }
-  const currentCalls=S.activeModelCallsByBase?.get(baseKey)||[];
-  S.activeModelCallsByBase?.set(baseKey,_filterTerminalCalls(base,currentCalls,now));
-  S.activeModelCallObservedAt?.set(baseKey,now);
-  _rebuildActiveModelCallIndex();
-  for(const [personaKey,item] of (S.personaRuntimeById||new Map())){
-    if(item?._baseKey!==baseKey||!_terminalCallIsBlocked(base,item.current_model_call,now)) continue;
-    S.personaRuntimeById.set(personaKey,{...item,current_model_call:null,running_llm:false,
-      llm_execution_state:'idle',task_execution_state:'idle',_receivedAt:now});
-  }
-  S.liveArtifactEnded.set(key,Date.now());
-  while(S.liveArtifactEnded.size>64) S.liveArtifactEnded.delete(S.liveArtifactEnded.keys().next().value);
-  S.liveArtifactRequestGeneration.set(key,(S.liveArtifactRequestGeneration.get(key)||0)+1);
-  S.liveArtifactAbort.get(key)?.abort(); S.liveArtifactAbort.delete(key); S.trackedLiveRuns.delete(key);
   const ended=endLiveArtifactState(previous,event);
+  if(ended) _applyTerminalLiveArtifactEffects(base,key,previous);
   if(ended){ ended.receivedAt=Date.now(); ended.verification={verified:true,
       signingKeyId:meta.verification.signingKeyId,accessPolicyRef:meta.verification.accessPolicyRef,
       outwardTier:meta.verification.outwardTier,terminalEventVerified:true};
@@ -2578,6 +2584,7 @@ function liveArtifactsHTML(base,run){
   const wsMeta=new Map((snap.workspaces||[]).map((w)=>[w.workspace_id,w]));
   const byWs=new Map(); for(const file of state.files.values()) (byWs.get(file.workspace_id)||byWs.set(file.workspace_id,[]).get(file.workspace_id)).push(file);
   const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
+  const finalizedBootstrap=state.verification?.immutableFinalizedBootstrap===true;
   const trees=workspaces.map((workspaceId)=>{ const w=wsMeta.get(workspaceId)||{}; const files=byWs.get(workspaceId)||[];
     const pid=_shortId(w.persona_id||files[0]?.persona_id), kernel=snap.node_id||kernelForBase(base);
     const label=_nameFor(pid,kernel)||pid||workspaceId;
@@ -2586,8 +2593,10 @@ function liveArtifactsHTML(base,run){
       +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
-  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?'Run ended · final workspace':'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
-    +(state.ended?`<div class="fv-note">Terminal-event signature checked${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the last captured workspace revision.</div>`:'')
+  const terminalTitle=finalizedBootstrap?'Run finalized · final workspace':'Run ended · final workspace';
+  const terminalNote=finalizedBootstrap?'Immutable finalized-snapshot signature checked':'Terminal-event signature checked';
+  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?terminalTitle:'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
+    +(state.ended?`<div class="fv-note">${terminalNote}${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the final captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
@@ -5834,7 +5843,9 @@ async function operatorRunView(b,run){
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
   const liveState=liveArtifactState(b,run)||_live;
-  const terminal=Boolean(liveState?.ended&&liveState?.verification?.terminalEventVerified);
+  const finalizedBootstrap=liveState?.verification?.immutableFinalizedBootstrap===true;
+  const terminal=Boolean(liveState?.ended
+    &&(liveState?.verification?.terminalEventVerified||finalizedBootstrap));
   const stt=terminal?'ended':String(rs.status||'—');
   const stClass=terminal?'l2':((stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no'));
   // a paused mission card opens this view directly, so give it inline resume/stop
@@ -5857,14 +5868,16 @@ async function operatorRunView(b,run){
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
   });
   const liveCalls=terminal?[]:(liveState?.snapshot?.active?.calls||activeCalls);
-  html+=H(terminal?'Execution · terminal-event signature checked':'Live execution · unsigned status telemetry');
+  html+=H(terminal
+    ?`Execution · ${finalizedBootstrap?'finalized-snapshot':'terminal-event'} signature checked`
+    :'Live execution · unsigned status telemetry');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
     const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
     return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
   else html+=terminal
-    ?'<div class="l2">The signature-checked run-ended event cleared active execution; no model call remains active.</div>'
+    ?`<div class="l2">The signature-checked ${finalizedBootstrap?'finalized snapshot':'run-ended event'} cleared active execution; no model call remains active.</div>`
     :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
   const runtime=terminal?{pressure:null,block:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
   const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
