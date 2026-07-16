@@ -747,7 +747,11 @@ assert.match(portal, /immutableFinalizedBootstrap:meta\.verification\.immutableF
   'the accepted state must retain its exact terminal proof kind');
 assert.match(portal, /Immutable finalized-snapshot signature checked/,
   'terminal bootstrap UI must not mislabel a snapshot as a run-ended event');
-assert.match(index, /discovery\.js\?v=20260716-finalized-state-v2/);
+assert.match(portal, /hasOperatorStatus\?fetchJson\(join\(b,'runs\/'\+encodeURIComponent\(run\)\)\):Promise\.resolve\(null\)/,
+  'anonymous final-workspace views must not probe operator-only run status');
+assert.match(portal, /hasOperatorStatus\?fetchJson\(join\(b,'runs\/'\+encodeURIComponent\(run\)\+'\/artifacts'\)\):Promise\.resolve\(null\)/,
+  'anonymous final-workspace views must not probe operator-only artifact indexes');
+assert.match(index, /discovery\.js\?v=20260716-finalized-state-v3/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

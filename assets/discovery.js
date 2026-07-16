@@ -5836,9 +5836,10 @@ function _runRuntimeSurfaces(st){
 async function operatorRunView(b,run){
   S.curBase=b;
   const trackKey=_liveRunKey(b,run); S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
+  const hasOperatorStatus=!!tokenFor(join(b,'status'));
   const [stRaw,artsRaw,_live,nodeStatus]=await Promise.all([
-    fetchJson(join(b,'runs/'+encodeURIComponent(run))),
-    fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')),
+    hasOperatorStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):Promise.resolve(null),
+    hasOperatorStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):Promise.resolve(null),
     fetchLiveArtifacts(b,run),
     fetchNodeStatus(b),
   ]);
@@ -5854,7 +5855,7 @@ async function operatorRunView(b,run){
   // a paused mission card opens this view directly, so give it inline resume/stop
   // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
   // console-level #op-run-target, and read #opr-budget when present.
-  const canOperate=!terminal&&!!tokenFor(join(b,'status'));
+  const canOperate=!terminal&&hasOperatorStatus;
   let html=canOperate?('<div class="opform"><div class="oprow">'
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
