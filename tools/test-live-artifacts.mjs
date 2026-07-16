@@ -600,7 +600,7 @@ assert.match(portal, /Run status and artifact-index JSON are not browser-validat
 assert.doesNotMatch(portal, /Signed AnswerPackage \(answer\/5\)|ap\.signed_by/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260715-workspace-trust-v2/);
+assert.match(index, /discovery\.js\?v=20260716-public-run-autotrack-v1/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

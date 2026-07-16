@@ -14,12 +14,14 @@ import {
   publishedMissionEvidenceProjection,
   projectTerminalModelFailures,
   providerIndexResponseByteLimit,
+  PUBLIC_TASK_RUN_POLL_LIMIT,
   responseByteLengthWithinLimit,
   progressiveGroupLimit,
   safeCount,
   selectMonitoringBases,
   selectPriorityWindow,
   selectSearchWindow,
+  selectVerifiedPublicTaskRunTargets,
   takeProgressiveGroupWindow,
   terminalTaskMissionProjection,
   verifiedPersonaIdentityPresent,
@@ -117,6 +119,68 @@ assert.equal(publishedMissionEvidenceProjection({
   ...canaryPublishedTask,
   did: 'did:personaos:kernel:canary/mission/run-wrong-kind',
 }).run, '', 'a run identifier must be bound to the signed record kind');
+
+const taskPollRecord = {
+  ...signedLiveTask,
+  visibility_tier: 'public',
+  _kernel: 'kernel:test',
+  _storeKey: 'kernel-test::task-live',
+  _inventorySource: 'kernel:test',
+  _inventoryGeneration: 7,
+  _inventoryHash: 'sha256:current-inventory',
+  _doc: {record_signature_verified: true, policy_signature_verified: true},
+};
+const taskPollInventory = new Map([['kernel:test', {
+  generation: 7,
+  hash: 'sha256:current-inventory',
+  base: 'https://node.example/api',
+  recordKeys: new Set([taskPollRecord._storeKey]),
+}]]);
+const taskPollBoots = new Map([['https://node.example/api', {kernel_id: 'kernel:test'}]]);
+assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+  [taskPollRecord], taskPollInventory, taskPollBoots,
+), [{
+  base: 'https://node.example/api',
+  run: 'run-01KTEST',
+  kernel: 'kernel:test',
+  recordKey: taskPollRecord._storeKey,
+}], 'a current browser-verified public task DID must seed its exact node/run poll');
+for (const refused of [
+  {...taskPollRecord, visibility_tier: 'project_only'},
+  {...taskPollRecord, _doc: {...taskPollRecord._doc, record_signature_verified: false}},
+  {...taskPollRecord, _doc: {...taskPollRecord._doc, policy_signature_verified: false}},
+  {...taskPollRecord, _inventoryGeneration: 6},
+  {...taskPollRecord, _inventoryHash: 'sha256:stale'},
+  {...taskPollRecord, _inventorySource: 'kernel:other'},
+  {...taskPollRecord, kind: 'project'},
+  {...taskPollRecord, did: 'did:personaos:kernel:test/task/task-without-run',
+    _links: {live: '/k/run-link-must-not-authorize/live-artifacts'}},
+]) {
+  assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+    [refused], taskPollInventory, taskPollBoots,
+  ), [], 'unsigned, stale, private, non-task, and link-derived run candidates must fail closed');
+}
+assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+  [taskPollRecord], taskPollInventory, taskPollBoots, {focusedKernel: 'kernel:other'},
+), [], 'a task outside the focused kernel must not create background polling');
+assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+  [taskPollRecord], taskPollInventory,
+  new Map([['https://node.example/api', {kernel_id: 'kernel:other'}]]),
+), [], 'an inventory base whose bootstrap names another kernel must not be joined');
+
+const manyPollRecords = Array.from({length: PUBLIC_TASK_RUN_POLL_LIMIT + 12}, (_, index) => ({
+  ...taskPollRecord,
+  did: `did:personaos:kernel:test/task/run-bounded-${index}`,
+  _storeKey: `kernel-test::task-${index}`,
+}));
+const manyInventory = new Map([['kernel:test', {
+  ...taskPollInventory.get('kernel:test'),
+  recordKeys: new Set(manyPollRecords.map((record) => record._storeKey)),
+}]]);
+assert.equal(selectVerifiedPublicTaskRunTargets(
+  manyPollRecords, manyInventory, taskPollBoots, {limit: Number.MAX_SAFE_INTEGER},
+).length, PUBLIC_TASK_RUN_POLL_LIMIT,
+'automatic public run polling must retain a hard browser request ceiling');
 
 assert.deepEqual(terminalTaskMissionProjection({
   ...canaryPublishedTask,

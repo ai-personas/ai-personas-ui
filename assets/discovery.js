@@ -38,11 +38,12 @@ import {
   progressiveGroupLimit,
   responseByteLengthWithinLimit,
   selectMonitoringBases,
+  selectVerifiedPublicTaskRunTargets,
   selectPriorityWindow,
   terminalTaskMissionProjection,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260715-lifecycle-shell-v1';
+} from './network-view.mjs?v=20260716-public-run-target-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -342,6 +343,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // records. File bytes are also checked against each signed advertised sha256.
   liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
+  liveArtifactPublicProbes:new Map(),
   terminalCallTombstones:new Map(),
   terminalModelFailureByKernel:new Map(),
   personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
@@ -2378,6 +2380,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     S.liveArtifacts.set(key,next);
     S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
     _renderLiveArtifactMount(base,snapshot.run);
+    renderMissions(); refreshLiveSection(); updateVitalsCounters();
     Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
     return next;
   }
@@ -2398,6 +2401,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
       Promise.resolve().then(()=>renderTop()).catch(()=>{});
     }
   }
+  renderMissions(); refreshLiveSection(); updateVitalsCounters();
   Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
   return next;
 }
@@ -2487,7 +2491,39 @@ function pollLiveArtifacts(){
     else if(now-item.lastSeen<60000 || S.openLiveFile?.stateKey===key) targets.set(key,item);
     else S.trackedLiveRuns.delete(key);
   }
-  for(const item of targets.values()) fetchLiveArtifacts(item.base,item.run).catch(()=>{});
+  // Anonymous hosted viewers cannot learn run ids from operator `/status`, and
+  // SSE has no obligation to replay a snapshot published before this tab joined.
+  // Seed polling only from an exact signed task DID that remains in the same
+  // kernel's current verified provider inventory. The inventory supplies the
+  // API base; links, labels and unsigned status never invent a run/base join.
+  const publicTargets=selectVerifiedPublicTaskRunTargets(
+    S.order.map((id)=>S.recs.get(id)),S.providerInventories,S.boots,
+    {focusedKernel:S.kernelFocus||'',limit:48},
+  );
+  const currentPublicKeys=new Set();
+  for(const item of publicTargets){
+    const key=_liveRunKey(item.base,item.run); currentPublicKeys.add(key);
+    if(S.liveArtifactEnded.has(key)||targets.has(key)) continue;
+    const probe=S.liveArtifactPublicProbes.get(key);
+    if(probe?.nextAt>now) continue;
+    targets.set(key,{...item,publicSeed:true});
+  }
+  for(const key of S.liveArtifactPublicProbes.keys()){
+    if(!currentPublicKeys.has(key)) S.liveArtifactPublicProbes.delete(key);
+  }
+  while(S.liveArtifactPublicProbes.size>64)
+    S.liveArtifactPublicProbes.delete(S.liveArtifactPublicProbes.keys().next().value);
+  for(const item of targets.values()){
+    const request=fetchLiveArtifacts(item.base,item.run);
+    if(item.publicSeed) request.then((state)=>{
+      const key=_liveRunKey(item.base,item.run);
+      if(state){ S.liveArtifactPublicProbes.delete(key); return; }
+      const failures=(S.liveArtifactPublicProbes.get(key)?.failures||0)+1;
+      S.liveArtifactPublicProbes.set(key,{failures,
+        nextAt:Date.now()+Math.min(30000,3000*(2**Math.min(3,failures-1)))});
+    }).catch(()=>{});
+    else request.catch(()=>{});
+  }
 }
 function _liveTreeBuild(files){
   const root={dirs:new Map(),files:[]};
@@ -3795,7 +3831,7 @@ async function refreshSystemView(){
       const row={base:state.base,run:state.run,workspaceId,fileCount,authored,state:ws.state||'live'};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
         (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
-      else if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
+      if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
         (liveWorkspacesByEnv.get(ek)||liveWorkspacesByEnv.set(ek,[]).get(ek)).push(row); }
     }
   }
@@ -3831,7 +3867,9 @@ async function refreshSystemView(){
     const manifestBundleId=(b.artifactManifest&&b.artifactManifest.current_bundle_id)||'';
     const manifestAuthored=[...new Set(manifestFiles.flatMap((item)=>authoredArtifactLabels(item)))].slice(0,8);
     const artifactRows=bundles.length?bundles:arts;
-    const liveEnvOutputs=_liveWorkspacesHTML(liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[],{label:'Live shared worktree',scope:'environment worktree'});
+    const liveEnvRows=liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[];
+    const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:'Live shared worktree',scope:'environment worktree'});
+    const liveFileCount=liveEnvRows.reduce((total,row)=>total+(Number(row.fileCount)||0),0);
     const artRow=liveEnvOutputs||(artifactRows.length
       ?_ownedOutputsHTML(artifactRows,{label:'Shared outputs',scope:'environment worktree'})
       :(manifestFiles.length?`<section class="owned-outputs env-owned-outputs"><div class="owned-outputs-head"><span>Shared outputs</span><small>environment worktree</small></div>`
@@ -3840,7 +3878,8 @@ async function refreshSystemView(){
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
-    return {artRow,departed,statusTxt,statusOk,metaFiles};
+    return {artRow,departed,statusTxt,statusOk,
+      metaFiles:liveEnvRows.length?liveFileCount:metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
@@ -5996,9 +6035,16 @@ function missionCardList(){
     seen.add(nodeRun);
     const nodeId=state.snapshot?.node_id||'';
     const project=projectFor(nodeId,state.run);
-    const calls=(state.snapshot?.active?.calls||[]).length;
-    cards.unshift({key:'live:'+nodeRun,task:humanTask(project?.label||state.snapshot?.task,nodeId,state.run),state:'running',kernel:nodeId||kernelForBase(state.base),
-      meta:[state.run.slice(0,26),`${state.files.size} live files`,calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run});
+    const active=state.snapshot?.active||{};
+    const calls=(active.calls||[]).length;
+    const activeNow=calls>0||(active.persona_ids||[]).length>0
+      ||(active.environment_ids||[]).length>0;
+    const card={key:'live:'+nodeRun,
+      task:humanTask(project?.label||state.snapshot?.task,nodeId,state.run),
+      state:activeNow?'running':'published',kernel:nodeId||kernelForBase(state.base),
+      meta:[state.run.slice(0,26),`${state.files.size} ${activeNow?'live':'verified'} files`,
+        calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run};
+    if(activeNow) cards.unshift(card); else cards.push(card);
   }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
   // on success, so a vanished node's last 'run-X RUNNING' would otherwise linger here as

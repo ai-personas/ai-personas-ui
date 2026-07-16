@@ -62,7 +62,9 @@ def require(condition: bool, message: str) -> None:
 
 
 def open_live_plan(page) -> None:
-    mission = page.locator('.mcard[data-mrun="run-fixture-live"]')
+    mission = page.locator(
+        '.mcard[data-mrun="run-fixture-live"]', has_text='live files'
+    )
     mission.wait_for(state='attached', timeout=15_000)
     page.locator('#missions').evaluate('(element) => { element.open = true; }')
     mission.wait_for(state='visible', timeout=5_000)
@@ -383,6 +385,61 @@ def run(args: argparse.Namespace) -> dict:
                     'terminal task evidence lost its bounded signed run/record context')
             require('signed terminal task' in published_task_text,
                     'terminal task badge lost its signed-source context')
+
+            # A bare hosted viewer has no operator `/status.stoppable_runs` and
+            # may connect after SSE emitted the current workspace snapshot. Its
+            # exact browser-verified public task DID must therefore seed bounded
+            # polling without a drawer click, bearer, guessed link, or run id.
+            anonymous_requests: list[dict] = []
+            anonymous_context = browser.new_context(viewport={'width': 1280, 'height': 900})
+            anonymous_context.route('https://node1.personas.ai/**', empty_default_locator)
+            anonymous = anonymous_context.new_page()
+            anonymous.on('request', lambda request: anonymous_requests.append({
+                'url': request.url,
+                'authorization': request.headers.get('authorization', ''),
+            }))
+            anonymous.goto(url, wait_until='domcontentloaded')
+            anonymous.wait_for_function(
+                """(expected) => document.querySelector('#log')?.textContent
+                  .includes(`${expected}/${expected} record(s) provider + record + policy verified`)""",
+                arg=expected_records,
+                timeout=30_000,
+            )
+            anonymous.locator(
+                f'.pcard [data-live-output-run="{RUN}"]'
+            ).wait_for(state='attached', timeout=15_000)
+            env_sid = ENV.split(':')[-1]
+            anonymous_env = anonymous.locator(f'.env-card[data-envsid="{env_sid}"]')
+            anonymous_env.locator(
+                f'[data-live-output-run="{RUN}"]'
+            ).first.wait_for(state='attached', timeout=15_000)
+            require(anonymous_env.locator(
+                f'[data-live-output-run="{RUN}"]'
+            ).count() == 2,
+                    'exact persona and shared workspaces did not both reach the environment card')
+            env_files = anonymous_env.locator('.env-card-stats span', has_text='files')
+            require(env_files.locator('b').text_content() == '8',
+                    'verified persona + shared workspace files did not update the exact '
+                    'environment card')
+            live_mission = anonymous.locator(
+                f'.mcard[data-mrun="{RUN}"]', has_text='live files'
+            )
+            live_mission.wait_for(state='attached', timeout=15_000)
+            require('RUNNING' in (live_mission.text_content() or ''),
+                    'verified snapshot did not update the mission strip to running')
+            automatic_polls = [item for item in anonymous_requests
+                               if urlsplit(item['url']).path
+                               == f'/node/runs/{RUN}/live-artifacts']
+            require(automatic_polls,
+                    'bare public task did not automatically seed live-artifact polling')
+            require(all(not item['authorization'] for item in automatic_polls),
+                    'anonymous live-artifact polling unexpectedly attached an operator bearer')
+            require(anonymous.evaluate(
+                """() => !document.querySelector('#detailwrap')?.classList.contains('open')
+                  && !sessionStorage.getItem('personaos_operator')"""),
+                    'automatic polling depended on an operator session or opened drawer')
+            anonymous_context.close()
+
             page.wait_for_function(
                 """() => document.querySelector('#p2p')?.textContent.startsWith('Network · ')""",
                 timeout=15_000,
@@ -1381,7 +1438,10 @@ def run(args: argparse.Namespace) -> dict:
                       if msg.type in {'warning', 'error'} else None)
             mobile.on('pageerror', lambda error: mobile_errors.append(f'pageerror: {error}'))
             mobile.goto(url, wait_until='domcontentloaded')
-            mobile.locator('.mcard[data-mrun="run-fixture-live"]').wait_for(
+            mobile_live_mission = mobile.locator(
+                '.mcard[data-mrun="run-fixture-live"]', has_text='live files'
+            )
+            mobile_live_mission.wait_for(
                 state='attached', timeout=15_000)
             metrics = mobile.evaluate("""() => {
               const selectors = ['.workspace-rail','.stage-wrap','footer'];
@@ -1431,7 +1491,7 @@ def run(args: argparse.Namespace) -> dict:
                     'mobile full-collapse control disappeared with the hidden network navigator')
             mobile.locator('#headerToggle').click()
             mobile.locator('#missions').evaluate('(element) => { element.open = true; }')
-            mobile.locator('.mcard[data-mrun="run-fixture-live"]').click()
+            mobile_live_mission.click()
             mobile.locator('[data-act="live-file"][data-path="design/plan.md"]').wait_for(timeout=15_000)
             drawer = mobile.evaluate("""() => {
               const el=document.querySelector('#detailbody');

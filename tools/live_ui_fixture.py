@@ -712,7 +712,7 @@ def provider_fixtures(
         PROVIDER_TASK,
         "prepare the site approval package",
         kind="task",
-        did=f"did:personaos:{NODE_ID}/task/run-public-intake",
+        did=f"did:personaos:{NODE_ID}/task/{RUN}",
         capability_summary=[
             "live_task",
             "model_pool_hash:fixture-pool",
@@ -1136,8 +1136,10 @@ def file_record(path: str, body: bytes, revision: int, *, workspace_id: str = WO
     }
 
 
-def snapshot(revision: int | None = None, since_revision: str | None = None) -> dict:
+def snapshot(revision: int | None = None, since_revision: str | None = None,
+             *, active: bool = True) -> dict:
     revision = STATE.get() if revision is None else revision
+    ended = not active
     files = [file_record(path, body, revision) for path, body in sorted(FILES[revision].items())]
     files.append(file_record(
         "shared/environment-brief.md",
@@ -1158,7 +1160,7 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
         "since_revision": since_revision,
         "visibility_tier": "public",
         "active": {
-            "calls": [{
+            "calls": [] if ended else [{
                 "schema": "model-active-call/1",
                 "call_id": "call-fixture",
                 "model_id": "gpt-5.5",
@@ -1170,21 +1172,21 @@ def snapshot(revision: int | None = None, since_revision: str | None = None) -> 
                 "status": "running",
                 "workspace_id": WORKSPACE,
             }],
-            "persona_ids": [PERSONA],
-            "environment_ids": [ENV],
+            "persona_ids": [] if ended else [PERSONA],
+            "environment_ids": [] if ended else [ENV],
         },
         "workspaces": [{
             "workspace_id": WORKSPACE,
             "environment_id": ENV,
             "persona_id": PERSONA,
-            "active_call_ids": ["call-fixture"],
-            "state": "model_call_active",
+            "active_call_ids": [] if ended else ["call-fixture"],
+            "state": "run_ended" if ended else "model_call_active",
         }, {
             "workspace_id": ENV_WORKSPACE,
             "environment_id": ENV,
             "persona_id": "",
             "active_call_ids": [],
-            "state": "shared_environment_active",
+            "state": "run_ended" if ended else "shared_environment_active",
         }],
         "file_count": len(files),
         "indexed_file_count": len(files),
@@ -1687,10 +1689,18 @@ class Handler(SimpleHTTPRequestHandler):
             if stale_revision is not None:
                 time.sleep(2.0)
                 return self.json(200, snapshot(stale_revision, since_revision))
-            document = snapshot(since_revision=since_revision)
+            document = snapshot(
+                since_revision=since_revision,
+                active=not STATE.is_ended(),
+            )
             if STATE.consume_tampered_poll():
                 document["task"] = "tampered after signing"
             return self.json(200, document)
+        if path == "/node/runs/run-canary-house/live-artifacts":
+            # The second signed task intentionally has no published workspace.
+            # A successful empty response exercises negative-probe backoff
+            # without turning that absence into browser-console noise.
+            return self.empty()
         body_prefix = f"/node/runs/{RUN}/live-artifacts/body/"
         if path.startswith(body_prefix):
             workspace_id, _, encoded_rel = path[len(body_prefix):].partition("/")

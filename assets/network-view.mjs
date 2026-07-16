@@ -69,6 +69,7 @@ const TERMINAL_TASK_CAPABILITIES = new Set([
 const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
 const MISSION_EVIDENCE_LABEL_LIMIT = 256;
 const MISSION_EVIDENCE_DID_LIMIT = 512;
+export const PUBLIC_TASK_RUN_POLL_LIMIT = 48;
 const MODEL_EVENT_SCAN_LIMIT = 8_192;
 const MODEL_FAILURE_REASON_LIMIT = 240;
 const MODEL_EVENT_FIELD_LIMIT = 128;
@@ -194,6 +195,75 @@ export function publishedMissionEvidenceProjection(record) {
     kind: record.kind,
     publishedEvidence: true,
   });
+}
+
+/**
+ * Select exact public task runs that the browser may probe for a signed live
+ * workspace snapshot without first opening an operator surface.
+ *
+ * This boundary deliberately accepts no URL/link-derived run aliases. A target
+ * exists only when the run is bound by the signed task DID, the browser has
+ * admitted both the record and policy signatures, and the same record remains
+ * present in the kernel's current hash-chained provider inventory. The API base
+ * comes from that inventory and must still resolve to a bootstrap for the same
+ * kernel. The caller supplies the already-bounded browser record cache; this
+ * helper retains at most PUBLIC_TASK_RUN_POLL_LIMIT unique base/run pairs.
+ */
+export function selectVerifiedPublicTaskRunTargets(
+  records,
+  inventories,
+  bootstraps,
+  options = {},
+) {
+  if (!(inventories instanceof Map) || !(bootstraps instanceof Map)) return [];
+  const requestedLimit = boundedInteger(
+    options.limit,
+    PUBLIC_TASK_RUN_POLL_LIMIT,
+    1,
+    PUBLIC_TASK_RUN_POLL_LIMIT,
+  );
+  const focusedKernel = typeof options.focusedKernel === 'string'
+    ? options.focusedKernel : '';
+  const seen = new Set();
+  const targets = [];
+
+  for (const record of iterableOf(records)) {
+    if (targets.length >= requestedLimit) break;
+    if (!record || record.kind !== 'task' || record.visibility_tier !== 'public'
+        || record._doc?.record_signature_verified !== true
+        || record._doc?.policy_signature_verified !== true) continue;
+    const projection = publishedMissionEvidenceProjection(record);
+    const run = projection?.run || '';
+    const kernel = String(record._kernel || '');
+    const recordKey = String(record._storeKey || '');
+    if (!run || !kernel || !recordKey || (focusedKernel && kernel !== focusedKernel)) continue;
+
+    const inventory = inventories.get(kernel);
+    if (!inventory || !(inventory.recordKeys instanceof Set)
+        || !inventory.recordKeys.has(recordKey)
+        || String(record._inventorySource || '') !== kernel
+        || record._inventoryGeneration !== inventory.generation
+        || String(record._inventoryHash || '') !== String(inventory.hash || '')) continue;
+
+    const rawBase = inventory.base;
+    if (typeof rawBase !== 'string') continue;
+    const base = rawBase.replace(/\/$/, '');
+    if (base) {
+      let parsed;
+      try { parsed = new URL(base); } catch (_) { continue; }
+      if (!['http:', 'https:'].includes(parsed.protocol)
+          || parsed.username || parsed.password || parsed.search || parsed.hash
+          || parsed.href.replace(/\/$/, '') !== base) continue;
+    }
+    const boot = bootstraps.get(base || '@origin');
+    if (String(boot?.kernel_id || '') !== kernel) continue;
+
+    const key = `${base}\u0000${run}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push(Object.freeze({base, run, kernel, recordKey}));
+  }
+  return targets;
 }
 
 /**
