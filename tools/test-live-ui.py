@@ -9,7 +9,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from nacl.signing import SigningKey
 from playwright.sync_api import Error as PlaywrightError
@@ -1066,6 +1066,10 @@ def run(args: argparse.Namespace) -> dict:
                 f'/personas/{PERSONA}/thinking' in item['url']
                 for item in anonymous_thinking_requests
             ), 'public persona-message endpoint was not probed')
+            require(any(
+                f'/personas/{quote(PERSONA_PENDING_SECOND, safe="")}/thinking' in item['url']
+                for item in anonymous_thinking_requests
+            ), 'kind-qualified PersonaOS birth lost its exact identity in the endpoint route')
             public_card.click()
             anonymous.locator(
                 '#thinksec .llmout', has_text=PUBLIC_PERSONA_MESSAGE

@@ -487,9 +487,9 @@ function _modelEventTime(m,fallback){
 // Index a live-telemetry doc per-persona and per-env so the detail views can
 // render each entity's OWN activity (model_events carry persona_id +
 // environment_id; spans carry scope + trace_id). Every Map key is qualified by
-// its kernel; short ids are used only for labels and node-local API paths.
-// Reduce ANY id form to the bare trailing id (ULID / kernel hex) the node's
-// /thinking + per-entity endpoints resolve. Personas/envs ship two DID shapes:
+// its kernel; short ids are canonical browser join keys and compact labels.
+// Exact signed ids are retained separately for identity-bound node routes.
+// Personas/envs ship two DID shapes:
 //   colon  did:personaos:<kernel>:persona:<ULID>
 //   slash  did:personaos:kernel:<kernel>/persona/persona:<ULID>   (live form)
 // The slash form's trailing segment is the real id — taking only the last path
@@ -521,6 +521,10 @@ function _personaRef(value,kernel=''){
     return ref;
   }
   const sid=_shortId(value); return {key:_personaKey(kernel,sid),kernel:String(kernel||'@unknown'),sid};
+}
+function _signedPersonaEndpointId(value,kernel=''){
+  const ref=_personaRef(value,kernel);
+  return signedPersonaIdentity(S.personaDiscoveryByKey.get(ref.key))?.signedId||ref.sid;
 }
 function _environmentRef(value,kernel=''){
   const parsed=splitNetworkKey(value);
@@ -4357,9 +4361,11 @@ function _currentInventoryPersona(kernel,pid){
 }
 async function verifyPublicPersonaMessages(base,doc,{personaId,kernel}={}){
   const pid=_shortId(personaId), row=_currentInventoryPersona(kernel,pid);
-  if(!row||!_exactObjectFields(doc,PUBLIC_PERSONA_MESSAGE_FIELDS)
+  const identity=signedPersonaIdentity(row);
+  if(!row||!identity||identity.canonicalId!==pid
+      ||!_exactObjectFields(doc,PUBLIC_PERSONA_MESSAGE_FIELDS)
       ||doc.schema!=='personaos-persona-public-messages/1'||doc.tier!=='public'
-      ||_shortId(doc.persona_id)!==pid||!_freshPublicGeneratedAt(doc.generated_at)
+      ||String(doc.persona_id||'')!==identity.signedId||!_freshPublicGeneratedAt(doc.generated_at)
       ||String(doc.name||'')!==String(row._personaSignedName||'')
       ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>12) return false;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
@@ -4377,7 +4383,8 @@ async function verifyPublicPersonaMessages(base,doc,{personaId,kernel}={}){
   for(const output of doc.recent_outputs){
     if(!_exactObjectFields(output,PUBLIC_PERSONA_OUTPUT_FIELDS)
         ||output.kind!=='PERSONA_COMMUNICATION_AUTHORED'
-        ||_shortId(output.author_persona_id)!==pid||output.persona_signature_verified!==true
+        ||String(output.author_persona_id||'')!==identity.signedId
+        ||output.persona_signature_verified!==true
         ||!String(output.environment_id||'').trim()
         ||!String(output.text||'').trim()||String(output.text).length>4096
         ||!Number.isFinite(Date.parse(String(output.at||'')))) return false;
@@ -4388,13 +4395,13 @@ async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
-  const endpoint=join(wantBase,`personas/${encodeURIComponent(_shortId(want))}/thinking`);
+  const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
   const t=await fetchJson(endpoint);
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
-    &&t?.schema==='personaos-persona-thinking/1'&&_shortId(t.persona_id)===_shortId(want);
+    &&t?.schema==='personaos-persona-thinking/1'&&String(t.persona_id||'')===want;
   const publicAccepted=!hasOperator&&await verifyPublicPersonaMessages(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
@@ -4474,18 +4481,20 @@ async function streamPersonaCognition(){
     // the bounded cache once and retains only the cognition polling window.
     function* cognitionCandidates(){
       for(const personaKey of (S.visiblePersonaIds||[])){ const ref=_personaRef(personaKey);
-        yield {...ref,selected:true,base:S.liveByPersona.get(personaKey)?.base||''}; }
+        yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),selected:true,
+          base:S.liveByPersona.get(personaKey)?.base||''}; }
       for(const [personaKey,d] of (S.liveByPersona||new Map())) if(kernelIsFocused(d?.kernel)){
-        const ref=_personaRef(personaKey); yield {...ref,base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
+        const ref=_personaRef(personaKey); yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),
+          base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
       for(const id of (S.order||[])){ const r=S.recs.get(id);
         if(r&&r.kind==='persona'&&kernelIsFocused(r._kernel)){ const ref=_personaRef(r.did||r.id||'',r._kernel);
-          yield {...ref,base:r._base||''}; } }
+          yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:r._base||''}; } }
     }
     const list=selectPriorityWindow(cognitionCandidates(),{limit:NETWORK_LIMITS.cognitionPersonas,
       keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
       searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items.filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
-    for(const candidate of list){ const {key:personaKey,sid,kernel}=candidate;
+    for(const candidate of list){ const {key:personaKey,sid,kernel,endpointId}=candidate;
       // Never probe another kernel for a colliding short id. A sticky route is
       // retained only while it still resolves to this persona's owning kernel.
       const routes=[S.cogBaseFor.get(personaKey),candidate.base,
@@ -4496,17 +4505,16 @@ async function streamPersonaCognition(){
         .filter((base)=>kernelForBase(base)===kernel || (!!base&&base===candidate.base));
       let t=null, usedBase='';
       for(const base of order){
-        // _shortId strips the did:/persona: PREFIX (it is NOT a length truncation), giving the
-        // bare ULID the /thinking endpoint resolves for BOTH founder AND born specialists.
-        // Do NOT use the prefixed persona_id: encodeURIComponent turns its ':' into %3A → 404,
-        // which is exactly why born ('persona:<ulid>') personas stopped streaming.
-        const endpoint=join(base,`personas/${encodeURIComponent(sid)}/thinking`);
+        // Node routes are identity-bound: a PersonaOS-born identity is exactly
+        // `persona:<ULID>`, while an initial founder may be the bare id. The
+        // canonical `sid` remains only the browser join key.
+        const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
         const hasOperator=!!tokenFor(endpoint);
         const r=await fetchJson(endpoint);
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
-            &&_shortId(r.persona_id)===sid
-          :await verifyPublicPersonaMessages(base,r,{personaId:sid,kernel});
+            &&String(r.persona_id||'')===endpointId
+          :await verifyPublicPersonaMessages(base,r,{personaId:endpointId,kernel});
         if(accepted){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
       }
@@ -4639,7 +4647,7 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // 🧠 what it is THINKING: public persona messages when the node opts in,
   // full cognition/frame only with operator authority. Streams on the live cadence.
-  S.drawerThinkPid=_shortId(pid||r.did);   // always the bare id the /thinking endpoint resolves
+  S.drawerThinkPid=_signedPersonaEndpointId(personaKey);
   const thinkingEndpoint=join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`);
   const operatorThinking=!!tokenFor(thinkingEndpoint);
   html+=H(operatorThinking?'Thinking':'Authored public messages')
