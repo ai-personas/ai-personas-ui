@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from nacl.signing import SigningKey
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -38,12 +39,14 @@ from live_ui_fixture import (
     ThreadingHTTPServer,
     UNSIGNED_TELEMETRY_GHOST,
     compact_provider_index,
+    node_announcement_envelope,
     p2p_discover_only_resolution,
     p2p_provider_resolution,
     public_persona_messages,
     provider_record_count,
     provider_fixtures,
     scale_persona_label,
+    signature_hex,
     telemetry,
 )
 
@@ -160,6 +163,68 @@ def run(args: argparse.Namespace) -> dict:
                 )
                 return inventory['document_count']
 
+            # node1 and custom resolvers are untrusted locators. A rogue key can
+            # self-sign an otherwise intact envelope containing the expected
+            # kernel id, but must not make that node or its route observable.
+            rogue_context = browser.new_context(viewport={'width': 1280, 'height': 800})
+            rogue_signing_key = SigningKey(bytes.fromhex('0c' * 32))
+            rogue_envelope = node_announcement_envelope(node)
+            rogue_envelope['public_key_hex'] = rogue_signing_key.verify_key.encode().hex()
+            rogue_envelope['signature_hex'] = signature_hex(
+                rogue_envelope['announcement'], rogue_signing_key
+            )
+
+            def rogue_locator(route) -> None:
+                body = ({
+                    'schema': 'personaos-global-discovery-bootstrap/1',
+                    'libp2p_multiaddrs': [],
+                    'relay_multiaddrs': [],
+                } if '/v1/bootstrap' in route.request.url else {
+                    'schema': 'personaos-node-announcement-page/1',
+                    'nodes': [rogue_envelope],
+                    'total': 1,
+                    'next_cursor': '',
+                })
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(body))
+
+            def empty_locator(route) -> None:
+                body = ({
+                    'schema': 'personaos-global-discovery-bootstrap/1',
+                    'libp2p_multiaddrs': [],
+                    'relay_multiaddrs': [],
+                } if '/v1/bootstrap' in route.request.url else {
+                    'schema': 'personaos-node-announcement-page/1',
+                    'nodes': [],
+                    'total': 0,
+                    'next_cursor': '',
+                })
+                route.fulfill(status=200, content_type='application/json', body=json.dumps(body))
+
+            rogue_context.route('https://rogue-locator.invalid/**', rogue_locator)
+            rogue_context.route('https://node1.personas.ai/**', empty_locator)
+            rogue_requests: list[str] = []
+            rogue_page = rogue_context.new_page()
+            rogue_page.on('request', lambda request: rogue_requests.append(request.url))
+            rogue_page.goto(
+                f'{base}/?resolver=https://rogue-locator.invalid&no_local_discovery=1',
+                wait_until='domcontentloaded',
+            )
+            rogue_page.wait_for_function(
+                """() => document.querySelector('#log')?.textContent
+                  .includes('announcement signature/hash failed')""",
+                timeout=15_000,
+            )
+            require(
+                rogue_page.locator(f'.gk[data-kernel="{NODE_ID}"]').count() == 0,
+                'rogue locator key assigned the expected self-certifying kernel id',
+            )
+            require(
+                not any('/node/.well-known/personaos-discovery.json' in url
+                        for url in rogue_requests),
+                'UI followed a route from a rogue self-signed locator envelope',
+            )
+            rogue_context.close()
+
             # A node-served UI names its own transport with the empty base alias.
             # Its signed inventory is bound to the canonical page origin, not to
             # the internal empty-string shorthand.
@@ -264,11 +329,11 @@ def run(args: argparse.Namespace) -> dict:
             # The live run card intentionally coalesces with the most recent project
             # label. Retarget the already-wired signed-record card to exercise the
             # second verified project without reaching into module-scoped functions.
-            project_card.evaluate("""(element) => {
-              element.dataset.mrec = `${encodeURIComponent('kernel:fixture')}::${
+            project_card.evaluate("""(element, nodeId) => {
+              element.dataset.mrec = `${encodeURIComponent(nodeId)}::${
                 encodeURIComponent('provider-project-legacy')}`;
               element.click();
-            }""")
+            }""", NODE_ID)
             page.locator('#detailwrap.open .kind.k-project').wait_for(timeout=15_000)
             page.locator('#detail-title', has_text='Legacy singular topology').wait_for(
                 timeout=15_000

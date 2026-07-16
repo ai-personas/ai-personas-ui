@@ -1296,10 +1296,19 @@ function globalDiscoveryEndpoints(){
 async function verifyGlobalEnvelope(env){
   const ann=env?.announcement;
   if(env?.schema!=='personaos-node-announcement-envelope/1'||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
+  const publicKey=String(env?.public_key_hex||'');
+  const kernelId=String(ann?.kernel_id||'');
+  // node1 is an untrusted locator, so a self-signature alone cannot assign an
+  // arbitrary kernel id. Production kernel ids are self-certifying prefixes of
+  // their stable kernel-master discovery key.
+  if(env?.signing_key_id!=='kernel-master'||!/^[0-9a-f]{64}$/.test(publicKey)
+    ||!/^[0-9a-f]{128}$/.test(String(env?.signature_hex||''))
+    ||!/kernel:[0-9a-f]{16}/.test(kernelId)
+    ||kernelId!==`kernel:${publicKey.slice(0,16)}`) return {ok:false};
   const exp=Date.parse(ann.expires_at||'');
   if(!Number.isFinite(exp)||exp<=Date.now()) return {ok:false};
   let ok=false;
-  try{ ok=await ed.verifyAsync(hexToBytes(env.signature_hex),enc.encode(canon(ann)),hexToBytes(env.public_key_hex)); }catch(e){}
+  try{ ok=await ed.verifyAsync(hexToBytes(env.signature_hex),enc.encode(canon(ann)),hexToBytes(publicKey)); }catch(e){}
   if(!ok) return {ok:false};
   if(Object.prototype.hasOwnProperty.call(env,'public_bundle')||ann.public_bundle_hash) return {ok:false};
   return {ok:true,ann};
