@@ -243,6 +243,14 @@ export function endLiveArtifactState(previous, event = {}) {
     endReason: String(event.reason || event.status || 'run ended')};
 }
 
+export function terminalLiveArtifactCalls(...states) {
+  return states.flatMap((state) => {
+    const calls=state?.snapshot?.active?.calls;
+    return Array.isArray(calls)
+      ?calls.filter((call)=>call&&typeof call==='object'):[];
+  });
+}
+
 export function finalizeLiveArtifactState(previous, verification = {}) {
   if (!previous || verification?.ok !== true
       || verification?.immutableFinalizedBootstrap !== true) return null;

@@ -10,8 +10,9 @@ import {
   liveArtifactFileKey,
   liveArtifactRunKey,
   sha256Hex,
+  terminalLiveArtifactCalls,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260716-finalized-state-v1';
+} from './live-artifacts.mjs?v=20260716-finalized-state-v2';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
@@ -2377,10 +2378,9 @@ function _rememberTrackedLiveRun(key,base,run,meta={}){
   if(meta.publicSeed===true) return;
   S.trackedLiveRuns.set(key,{base,run,lastSeen:Date.now()});
 }
-function _applyTerminalLiveArtifactEffects(base,key,state){
+function _applyTerminalLiveArtifactEffects(base,key,...states){
   const now=Date.now(), baseKey=base||'@origin';
-  const endedCalls=Array.isArray(state?.snapshot?.active?.calls)
-    ?state.snapshot.active.calls:[];
+  const endedCalls=terminalLiveArtifactCalls(...states);
   for(const call of endedCalls){ const tombstoneKey=_terminalCallKey(base,call);
     if(tombstoneKey) S.terminalCallTombstones.set(tombstoneKey,now+120000); }
   while(S.terminalCallTombstones.size>256){
@@ -2428,7 +2428,10 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
       _logLiveVerificationRefusal(snapshot.run,{reason:'finalized_snapshot_projection_mismatch'});
       return previous;
     }
-    _applyTerminalLiveArtifactEffects(base,key,next);
+    // The final snapshot correctly carries no active calls. Tombstone the
+    // preceding signed snapshot too so delayed unsigned telemetry cannot
+    // resurrect a call that the finalized generation has ended.
+    _applyTerminalLiveArtifactEffects(base,key,previous,next);
     next=finalized;
   }
   S.liveArtifacts.set(key,next);

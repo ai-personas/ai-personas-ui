@@ -14,6 +14,7 @@ import {
   liveArtifactRunKey,
   sanitizeArtifactSemantics,
   sha256Hex,
+  terminalLiveArtifactCalls,
   transitionLiveArtifacts,
 } from '../assets/live-artifacts.mjs';
 import {
@@ -316,10 +317,14 @@ assert.equal(liveBodyCommitIsCurrent({...finalExpectedBody, endedAt: 'different'
   {bodyKey: 'body-1', hash: a}), false);
 
 const immutableFinalInput = snapshot('sha256:final', '2026-07-10T12:00:06Z');
+immutableFinalInput.active = {calls: [], persona_ids: [], environment_ids: []};
 immutableFinalInput.workspaces = [{
   workspace_id: 'ws-1', active_call_ids: ['call-1'], state: 'run_finalized',
 }];
 const immutableFinalBefore = transitionLiveArtifacts(null, immutableFinalInput);
+assert.deepEqual(terminalLiveArtifactCalls(orderedFirst, immutableFinalBefore)
+  .map((call) => call.call_id), ['call-1'],
+  'finalization must retain pre-final call ids for terminal tombstones');
 const immutableFinalVerification = {
   ok: true, immutableFinalizedBootstrap: true,
   finalizedAt: immutableFinalInput.generated_at,
@@ -726,12 +731,14 @@ assert.match(portal, /bundle-lifecycle-unknown/);
 assert.match(portal, /Run status and artifact-index JSON are not browser-validated/);
 assert.doesNotMatch(portal, /Signed AnswerPackage \(answer\/5\)|ap\.signed_by/);
 assert.match(portal, /Authored role claims/);
-assert.match(portal, /live-artifacts\.mjs\?v=20260716-finalized-state-v1/);
+assert.match(portal, /live-artifacts\.mjs\?v=20260716-finalized-state-v2/);
 assert.match(portal, /live-signatures\.mjs\?v=20260716-finalized-state-v1/);
 assert.match(portal, /finalizeLiveArtifactState\(next,meta\.verification\)/,
   'verified immutable final snapshots must enter the terminal state projection');
-assert.match(portal, /_applyTerminalLiveArtifactEffects\(base,key,next\)/,
-  'final snapshots must apply the same active-call tombstones as terminal events');
+assert.match(portal, /_applyTerminalLiveArtifactEffects\(base,key,previous,next\)/,
+  'final snapshots must tombstone calls from both pre-final and final signed state');
+assert.match(portal, /terminalLiveArtifactCalls\(\.\.\.states\)/,
+  'terminal effects must use the state-level pre-final call union');
 assert.match(portal, /if\(!next\.ended\) _rememberTrackedLiveRun/,
   'final snapshots must not be retained in the active polling tracker');
 assert.match(portal, /if\(S\.liveArtifactEnded\.has\(key\)\) return S\.liveArtifacts/,
@@ -740,7 +747,7 @@ assert.match(portal, /immutableFinalizedBootstrap:meta\.verification\.immutableF
   'the accepted state must retain its exact terminal proof kind');
 assert.match(portal, /Immutable finalized-snapshot signature checked/,
   'terminal bootstrap UI must not mislabel a snapshot as a run-ended event');
-assert.match(index, /discovery\.js\?v=20260716-finalized-state-v1/);
+assert.match(index, /discovery\.js\?v=20260716-finalized-state-v2/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);
