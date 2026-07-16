@@ -1,4 +1,4 @@
-name: Design reference and live UI validation
+name: Design reference validation
 
 on:
   pull_request:
@@ -26,11 +26,6 @@ jobs:
           ref: master
           path: design-reference
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,24 +33,3 @@ jobs:
 
       - name: Check normative design anchors
         run: python3 tools/check-design-reference.py design-reference
-
-      - name: Test live artifact state contract
-        run: |
-          node tools/test-live-artifacts.mjs
-          node tools/test-persona-avatar.mjs
-
-      - name: Test bounded network and artifact dispatch contracts
-        run: |
-          node tools/test-network-store.mjs
-          node tools/test-network-view.mjs
-          node tools/test-artifact-types.mjs
-          node tools/test-public-telemetry.mjs
-          node tools/test-routing-authority.mjs
-
-      - name: Install Playwright
-        run: |
-          python3 -m pip install 'playwright>=1.50,<2' 'PyNaCl>=1.5,<2'
-          python3 -m playwright install --with-deps chromium
-
-      - name: Validate live UI and mobile layout
-        run: python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation

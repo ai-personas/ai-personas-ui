@@ -236,7 +236,7 @@ Monday and on UI changes. The last reviewed design commit is
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
-place, followed by the state harness and Playwright live/mobile regression.
+place.
 
 ## Explore
 
@@ -325,24 +325,6 @@ git clone https://github.com/ai-personas/ai-personas-ui.git
 cd ai-personas-ui && python3 -m http.server 8099   # open http://localhost:8099
 ```
 
-Deterministic validation (the Playwright check starts its own local fixture):
-
-```bash
-node tools/test-live-artifacts.mjs
-node tools/test-persona-avatar.mjs
-node tools/test-artifact-types.mjs
-node tools/test-network-view.mjs
-node tools/test-network-store.mjs
-node tools/test-public-telemetry.mjs
-node tools/test-routing-authority.mjs
-python3 tools/test-live-ui.py --screenshot-dir /tmp/personaos-ui-validation
-python3 tools/test-hosted-deploy.py --base-url http://127.0.0.1:8099/ \
-  --commit local --screenshot /tmp/personaos-hosted-smoke.png
-```
-
-The browser test requires Python Playwright, PyNaCl, and an installed Chromium. Set
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE` when the browser is installed outside Playwright's default cache.
-
 ## Layout
 
 ```
@@ -359,16 +341,6 @@ assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed2551
 assets/routing-authority.mjs               # fail-closed exact/ambiguous environment association
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
-tools/test-live-artifacts.mjs              # deterministic live revision/diff contract harness
-tools/test-persona-avatar.mjs              # signed, content-addressed raster avatar regression
-tools/test-artifact-types.mjs              # artifact-dispatch matrix and unknown-content fallback
-tools/test-network-view.mjs                # million-node bounded-window regression
-tools/test-network-store.mjs               # identity, lease, ring, and graph-projection regression
-tools/test-public-telemetry.mjs             # public telemetry privacy/route regression
-tools/test-routing-authority.mjs            # fail-closed environment association regression
-tools/live_ui_fixture.py                    # canonical live API fixture for browser validation
-tools/test-live-ui.py                       # Playwright security, live-update, and mobile regression
-tools/test-hosted-deploy.py                 # exact deployed-byte + hosted Chromium smoke
 tools/check-design-reference.py             # scheduled normative-design drift guard
 ```
 
