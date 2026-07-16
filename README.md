@@ -167,7 +167,10 @@ buffered or blocked and is the primary path when an operator token is required.
 An anonymous page also seeds this poll from an exact run bound by a browser-verified public task
 DID in the node's current hash-chained provider inventory. The inventory supplies the matching
 bootstrapped API base; links, labels, cached gossip, and unsigned status cannot create the join.
-Automatic probes retain at most 48 node/run pairs and exponentially back off empty endpoints.
+The browser requires that signed inventory's verified expiry to remain live, excludes exact signed
+terminal tasks, prioritises exact signed live-task evidence over published history, retains at most
+48 node/run pairs, rechecks inventory authority on every anonymous cycle, and exponentially backs
+off empty endpoints.
 The UI keeps a separate ordered revision map per `(node base, run)`, compares complete snapshots,
 and shows created, modified, and deleted files grouped by persona workspace. Poll responses carry
 request generations and their starting revision; an SSE `previous_revision` must extend the

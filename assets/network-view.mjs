@@ -204,10 +204,12 @@ export function publishedMissionEvidenceProjection(record) {
  * This boundary deliberately accepts no URL/link-derived run aliases. A target
  * exists only when the run is bound by the signed task DID, the browser has
  * admitted both the record and policy signatures, and the same record remains
- * present in the kernel's current hash-chained provider inventory. The API base
- * comes from that inventory and must still resolve to a bootstrap for the same
- * kernel. The caller supplies the already-bounded browser record cache; this
- * helper retains at most PUBLIC_TASK_RUN_POLL_LIMIT unique base/run pairs.
+ * present in the kernel's unexpired current hash-chained provider inventory.
+ * The API base comes from that inventory and must still resolve to a bootstrap
+ * for the same kernel. Exact terminal task evidence is omitted, exact live-task
+ * evidence ranks before other published tasks, and the caller supplies the
+ * already-bounded browser record cache. This helper retains at most
+ * PUBLIC_TASK_RUN_POLL_LIMIT unique base/run pairs.
  */
 export function selectVerifiedPublicTaskRunTargets(
   records,
@@ -216,6 +218,8 @@ export function selectVerifiedPublicTaskRunTargets(
   options = {},
 ) {
   if (!(inventories instanceof Map) || !(bootstraps instanceof Map)) return [];
+  const nowMs = typeof options.nowMs === 'number' && Number.isFinite(options.nowMs)
+    ? options.nowMs : Date.now();
   const requestedLimit = boundedInteger(
     options.limit,
     PUBLIC_TASK_RUN_POLL_LIMIT,
@@ -224,11 +228,10 @@ export function selectVerifiedPublicTaskRunTargets(
   );
   const focusedKernel = typeof options.focusedKernel === 'string'
     ? options.focusedKernel : '';
-  const seen = new Set();
-  const targets = [];
+  const liveTargets = new Map();
+  const fallbackTargets = new Map();
 
   for (const record of iterableOf(records)) {
-    if (targets.length >= requestedLimit) break;
     if (!record || record.kind !== 'task' || record.visibility_tier !== 'public'
         || record._doc?.record_signature_verified !== true
         || record._doc?.policy_signature_verified !== true) continue;
@@ -241,6 +244,10 @@ export function selectVerifiedPublicTaskRunTargets(
     const inventory = inventories.get(kernel);
     if (!inventory || !(inventory.recordKeys instanceof Set)
         || !inventory.recordKeys.has(recordKey)
+        || !Number.isFinite(inventory.generatedAt)
+        || !Number.isFinite(inventory.expiresAt)
+        || inventory.expiresAt <= nowMs
+        || inventory.expiresAt <= inventory.generatedAt
         || String(record._inventorySource || '') !== kernel
         || record._inventoryGeneration !== inventory.generation
         || String(record._inventoryHash || '') !== String(inventory.hash || '')) continue;
@@ -259,11 +266,28 @@ export function selectVerifiedPublicTaskRunTargets(
     if (String(boot?.kernel_id || '') !== kernel) continue;
 
     const key = `${base}\u0000${run}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    targets.push(Object.freeze({base, run, kernel, recordKey}));
+    // A current signed terminal task is evidence that this exact run no longer
+    // needs a live endpoint. Exclude it before the request ceiling so completed
+    // history cannot consume every automatic probe slot.
+    if (terminalTaskMissionProjection(record)) {
+      fallbackTargets.delete(key);
+      liveTargets.delete(key);
+      continue;
+    }
+    const target = Object.freeze({base, run, kernel, recordKey});
+    if (liveTaskMissionProjection(record)) {
+      fallbackTargets.delete(key);
+      if (!liveTargets.has(key) && liveTargets.size < requestedLimit) {
+        liveTargets.set(key, target);
+      }
+      if (liveTargets.size >= requestedLimit) break;
+      continue;
+    }
+    if (!liveTargets.has(key) && !fallbackTargets.has(key)
+        && fallbackTargets.size < requestedLimit) fallbackTargets.set(key, target);
   }
-  return targets;
+  return [...liveTargets.values(), ...fallbackTargets.values()]
+    .slice(0, requestedLimit);
 }
 
 /**

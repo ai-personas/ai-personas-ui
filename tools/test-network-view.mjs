@@ -135,10 +135,12 @@ const taskPollInventory = new Map([['kernel:test', {
   hash: 'sha256:current-inventory',
   base: 'https://node.example/api',
   recordKeys: new Set([taskPollRecord._storeKey]),
+  generatedAt: 1_783_683_600_000,
+  expiresAt: 1_783_687_200_000,
 }]]);
 const taskPollBoots = new Map([['https://node.example/api', {kernel_id: 'kernel:test'}]]);
 assert.deepEqual(selectVerifiedPublicTaskRunTargets(
-  [taskPollRecord], taskPollInventory, taskPollBoots,
+  [taskPollRecord], taskPollInventory, taskPollBoots, {nowMs: 1_783_683_601_000},
 ), [{
   base: 'https://node.example/api',
   run: 'run-01KTEST',
@@ -157,16 +159,58 @@ for (const refused of [
     _links: {live: '/k/run-link-must-not-authorize/live-artifacts'}},
 ]) {
   assert.deepEqual(selectVerifiedPublicTaskRunTargets(
-    [refused], taskPollInventory, taskPollBoots,
+    [refused], taskPollInventory, taskPollBoots, {nowMs: 1_783_683_601_000},
   ), [], 'unsigned, stale, private, non-task, and link-derived run candidates must fail closed');
 }
 assert.deepEqual(selectVerifiedPublicTaskRunTargets(
-  [taskPollRecord], taskPollInventory, taskPollBoots, {focusedKernel: 'kernel:other'},
+  [taskPollRecord], taskPollInventory, taskPollBoots,
+  {focusedKernel: 'kernel:other', nowMs: 1_783_683_601_000},
 ), [], 'a task outside the focused kernel must not create background polling');
 assert.deepEqual(selectVerifiedPublicTaskRunTargets(
   [taskPollRecord], taskPollInventory,
   new Map([['https://node.example/api', {kernel_id: 'kernel:other'}]]),
+  {nowMs: 1_783_683_601_000},
 ), [], 'an inventory base whose bootstrap names another kernel must not be joined');
+for (const inventory of [
+  {...taskPollInventory.get('kernel:test'), expiresAt: 1_783_683_601_000},
+  {...taskPollInventory.get('kernel:test'), expiresAt: Number.NaN},
+  (() => { const value = {...taskPollInventory.get('kernel:test')}; delete value.expiresAt; return value; })(),
+  {...taskPollInventory.get('kernel:test'), generatedAt: Number.NaN},
+]) {
+  assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+    [taskPollRecord], new Map([['kernel:test', inventory]]), taskPollBoots,
+    {nowMs: 1_783_683_601_000},
+  ), [], 'absent, malformed, and expired inventory authority must not seed polling');
+}
+
+const terminalPollRecord = {...taskPollRecord, capability_summary: ['complete']};
+assert.deepEqual(selectVerifiedPublicTaskRunTargets(
+  [terminalPollRecord], taskPollInventory, taskPollBoots, {nowMs: 1_783_683_601_000},
+), [], 'an exact signed terminal task must not consume a live endpoint probe');
+
+const publishedHistory = Array.from({length: PUBLIC_TASK_RUN_POLL_LIMIT}, (_, index) => ({
+  ...taskPollRecord,
+  did: `did:personaos:kernel:test/task/run-published-${index}`,
+  capability_summary: ['awaiting_external_handoff'],
+  _storeKey: `kernel-test::published-${index}`,
+}));
+const liveAfterHistory = {
+  ...taskPollRecord,
+  did: 'did:personaos:kernel:test/task/run-current-after-history',
+  _storeKey: 'kernel-test::current-after-history',
+};
+const historyInventory = new Map([['kernel:test', {
+  ...taskPollInventory.get('kernel:test'),
+  recordKeys: new Set([...publishedHistory, liveAfterHistory].map((record) => record._storeKey)),
+}]]);
+const historyTargets = selectVerifiedPublicTaskRunTargets(
+  [...publishedHistory, liveAfterHistory], historyInventory, taskPollBoots,
+  {nowMs: 1_783_683_601_000},
+);
+assert.equal(historyTargets.length, PUBLIC_TASK_RUN_POLL_LIMIT,
+  'automatic public run polling must retain its hard browser request ceiling');
+assert.equal(historyTargets[0].run, 'run-current-after-history',
+  'exact signed live evidence must outrank a full window of published history');
 
 const manyPollRecords = Array.from({length: PUBLIC_TASK_RUN_POLL_LIMIT + 12}, (_, index) => ({
   ...taskPollRecord,
@@ -178,7 +222,8 @@ const manyInventory = new Map([['kernel:test', {
   recordKeys: new Set(manyPollRecords.map((record) => record._storeKey)),
 }]]);
 assert.equal(selectVerifiedPublicTaskRunTargets(
-  manyPollRecords, manyInventory, taskPollBoots, {limit: Number.MAX_SAFE_INTEGER},
+  manyPollRecords, manyInventory, taskPollBoots,
+  {limit: Number.MAX_SAFE_INTEGER, nowMs: 1_783_683_601_000},
 ).length, PUBLIC_TASK_RUN_POLL_LIMIT,
 'automatic public run polling must retain a hard browser request ceiling');
 

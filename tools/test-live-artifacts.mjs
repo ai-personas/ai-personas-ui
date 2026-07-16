@@ -572,6 +572,11 @@ assert.doesNotMatch(portal, /<div class="env-personas">\$\{cards\}/);
 assert.match(portal, /appHeader'\)\?\.offsetHeight === 0|appHeader/);
 assert.match(portal, /if\(!S\.recs\.size&&!\(S\.globalAnnouncements\?\.size\)\) \$\('#status'\)\.textContent='bootstrapping discovery…'/);
 assert.match(portal, /setInterval\(\(\)=>\{ try\{ pollLiveArtifacts\(\)/);
+assert.match(portal, /if\(meta\.publicSeed===true\) return;\s+S\.trackedLiveRuns\.set/,
+  'automatic public probes must not outlive their current provider-inventory authority');
+assert.match(portal,
+  /fetchLiveArtifacts\(item\.base,item\.run,\{publicSeed:item\.publicSeed===true\}\)/,
+  'automatic public-probe provenance must reach snapshot tracking admission');
 assert.match(portal, /opts\.liveFile\?\.sha256\|\|opts\.contentHash/);
 assert.match(portal, /fetchVerifiedLiveBody\(sourceUrl,expectedHash\)/);
 assert.match(portal, /const bodyUnavailable=hashAdvertised\?!verified\?\.ok/);
@@ -600,7 +605,7 @@ assert.match(portal, /Run status and artifact-index JSON are not browser-validat
 assert.doesNotMatch(portal, /Signed AnswerPackage \(answer\/5\)|ap\.signed_by/);
 assert.match(portal, /Authored role claims/);
 assert.match(portal, /live-artifacts\.mjs\?v=20260712-artifact-semantics-v1/);
-assert.match(index, /discovery\.js\?v=20260716-public-run-autotrack-v1/);
+assert.match(index, /discovery\.js\?v=20260716-public-run-autotrack-v2/);
 assert.match(portal, /<details class="artifact-index">/);
 assert.match(portal, /<details class="trust-details">/);
 assert.match(portal, /envArtifacts\(b\).*authoredArtifactLabelText\(a\)/);

@@ -43,7 +43,7 @@ import {
   terminalTaskMissionProjection,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260716-public-run-target-v1';
+} from './network-view.mjs?v=20260716-public-run-target-v2';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -1822,7 +1822,8 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
   for(const id of (prior?.recordKeys||[])) if(!incoming.has(id)) _removeRecordStoreKey(id);
   S.providerInventories.set(source,{generation:inventory.generation,hash:inventory.hash,
     recordKeys:incoming,manifestHash:inventory.manifestHash,
-    bindings:new Map(inventory.bindings||[]),base:base||''});
+    bindings:new Map(inventory.bindings||[]),base:base||'',
+    generatedAt:inventory.generatedAt,expiresAt:inventory.expiresAt});
   return true;
 }
 function upsert(r){
@@ -2355,6 +2356,15 @@ function _renderLiveArtifactMount(base,run){
     if(host.dataset.h!==html){ host.dataset.h=html; host.innerHTML=html; }
   });
 }
+function _rememberTrackedLiveRun(key,base,run,meta={}){
+  // Anonymous automatic probes must re-establish their current unexpired
+  // provider-inventory authority on every poll. Promoting a successful probe
+  // into the generic tracker would let it outlive the inventory that supplied
+  // its base/run join. Operator status, explicit drawer opens, and verified SSE
+  // snapshots retain the ordinary short-lived tracking fallback.
+  if(meta.publicSeed===true) return;
+  S.trackedLiveRuns.set(key,{base,run,lastSeen:Date.now()});
+}
 function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   if(snapshot?.schema!=='personaos-live-artifacts/1'||!snapshot.run||!snapshot.revision) return null;
   const key=_liveRunKey(base,snapshot.run);
@@ -2378,7 +2388,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   if(previous&&decision.refresh){
     next.changes=previous.changes; next.ended=false;
     S.liveArtifacts.set(key,next);
-    S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
+    _rememberTrackedLiveRun(key,base,snapshot.run,meta);
     _renderLiveArtifactMount(base,snapshot.run);
     renderMissions(); refreshLiveSection(); updateVitalsCounters();
     Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
@@ -2390,7 +2400,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
     if(oldest===S.openLiveFile?.stateKey) break;
     S.liveArtifacts.delete(oldest);
   }
-  S.trackedLiveRuns.set(key,{base,run:snapshot.run,lastSeen:Date.now()});
+  _rememberTrackedLiveRun(key,base,snapshot.run,meta);
   _renderLiveArtifactMount(base,snapshot.run);
   const open=S.openLiveFile;
   if(open&&open.stateKey===key){
@@ -2405,7 +2415,7 @@ function ingestLiveArtifactSnapshot(base,snapshot,source='poll',meta={}){
   Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
   return next;
 }
-async function fetchLiveArtifacts(base,run){
+async function fetchLiveArtifacts(base,run,options={}){
   const key=_liveRunKey(base,run);
   if(S.liveArtifactEnded.has(key)) return S.liveArtifacts.get(key)||null;
   if(S.liveArtifactPolls.has(key)) return S.liveArtifactPolls.get(key).promise;
@@ -2429,7 +2439,8 @@ async function fetchLiveArtifacts(base,run){
         return S.liveArtifacts.get(key)||null;
       }
       return ingestLiveArtifactSnapshot(base,doc,'poll',{
-        requestGeneration:generation,startedRevision,verification});
+        requestGeneration:generation,startedRevision,verification,
+        publicSeed:options.publicSeed===true});
     }
     return null;
   })().finally(()=>{ const current=S.liveArtifactPolls.get(key); if(current?.generation===generation) S.liveArtifactPolls.delete(key);
@@ -2497,7 +2508,7 @@ function pollLiveArtifacts(){
   // kernel's current verified provider inventory. The inventory supplies the
   // API base; links, labels and unsigned status never invent a run/base join.
   const publicTargets=selectVerifiedPublicTaskRunTargets(
-    S.order.map((id)=>S.recs.get(id)),S.providerInventories,S.boots,
+    S.recs.values(),S.providerInventories,S.boots,
     {focusedKernel:S.kernelFocus||'',limit:48},
   );
   const currentPublicKeys=new Set();
@@ -2514,7 +2525,7 @@ function pollLiveArtifacts(){
   while(S.liveArtifactPublicProbes.size>64)
     S.liveArtifactPublicProbes.delete(S.liveArtifactPublicProbes.keys().next().value);
   for(const item of targets.values()){
-    const request=fetchLiveArtifacts(item.base,item.run);
+    const request=fetchLiveArtifacts(item.base,item.run,{publicSeed:item.publicSeed===true});
     if(item.publicSeed) request.then((state)=>{
       const key=_liveRunKey(item.base,item.run);
       if(state){ S.liveArtifactPublicProbes.delete(key); return; }
