@@ -3144,6 +3144,13 @@ function _modelFresh(value,models,kernel=''){
   const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
   return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
 }
+function _latestPersonaActivityForRecency(acts){
+  for(let index=(acts?.length||0)-1;index>=0;index--){
+    const event=acts[index], at=Number(event?._t);
+    if(event?._observedState!==true&&Number.isFinite(at)&&at>0) return event;
+  }
+  return null;
+}
 
 // one persona card: identity + lifecycle + live "doing now" + request/response mini-stream + cognition
 const _ROLE_NOT_DECLARED='role not declared';
@@ -3344,7 +3351,7 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
 }
 function _personaActivityHTML(acts,personaKey){
-  const rows=[]; const seen=new Map();
+  const candidates=[]; const seen=new Map();
   for(const e of [...(acts||[])].reverse()){
     const endpoints=_eventEndpoints(e).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).sort().join(',');
     const detail=String(e?._msg||e?._cap?.capability||e?._cap?.tool_name||'').replace(/\s+/g,' ').trim();
@@ -3357,10 +3364,20 @@ function _personaActivityHTML(acts,personaKey){
     const key=[e?.kind,e?.actor_kind,e?.actor_id,endpoints,detail,identity,
       preserveEvent?(e?._key||''):''].join('|');
     const prior=seen.get(key); if(prior){ prior.count++; continue; }
-    if(rows.length===4) continue;
-    const row={event:e,count:1}; seen.set(key,row); rows.push(row);
+    const row={event:e,count:1}; seen.set(key,row); candidates.push(row);
   }
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No observed persona activity in the current five-minute window.</div></section>`;
+  // Repeated kernel model snapshots can have a newer observation timestamp than
+  // the exact persona-authored output they report on. Keep that transport status
+  // visible, but reserve half of this compact surface for the newest verified
+  // exact persona messages/actions when they exist. Trust still comes from the
+  // already-verified public-cognition document; this is presentation only.
+  const rows=[];
+  const add=(row)=>{ if(row&&!rows.includes(row)&&rows.length<4) rows.push(row); };
+  candidates.filter(({event})=>typeof event?._exactText==='string'&&event._exactText.trim())
+    .slice(0,2).forEach(add);
+  candidates.forEach(add);
+  rows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No signed or observed activity is available in the retained public window.</div></section>`;
   return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small><i></i> verified and observed stream</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
     +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
@@ -3409,7 +3426,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   // recent kernel.interactions naming this persona (so the hero stays alive on a
   // node that streams coordination but no model_events). Both are real telemetry.
   const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
-  const recentAct=acts[acts.length-1];
+  const recentAct=_latestPersonaActivityForRecency(acts);
   const actFresh=!!recentAct && (Date.now()-recentAct._t)<90000;
   const hasModels=models.length>0;
   // HONEST recency: a model-bearing card decays to idle once its model events stop
@@ -3452,7 +3469,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   // persona calling models AND just reaching for a tool would otherwise mask the tool act.
   // Strictly additive — does NOT touch pc-msgs/pc-glance/pc-stats. The client projection
   // strips payload, so only the verb is available (no capability name / error).
-  const toolAct=[...acts].reverse().find((a)=>TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
+  const toolAct=[...acts].reverse().find((a)=>a?._observedState!==true
+    &&TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
   const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
   // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
   // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
@@ -3491,6 +3509,19 @@ function renderPersonaCard(pid,kernel='',context={}){
   if(!running && !terminalFailure && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
   const hue=_personaAvatarHue(personaKey);
   const environments=(context.environments||[]).filter(Boolean);
+  const workspaceRows=(context.liveWorkspaces||[]).filter((row)=>row&&typeof row.run==='string'&&row.run.trim());
+  const workspaceTimes=workspaceRows.map((row)=>Date.parse(row.generatedAt||''));
+  const newestWorkspaceAt=workspaceTimes.length&&workspaceTimes.every(Number.isFinite)
+    ?Math.max(...workspaceTimes):null;
+  const currentWorkspaceRows=newestWorkspaceAt===null?workspaceRows
+    :workspaceRows.filter((row)=>Date.parse(row.generatedAt||'')===newestWorkspaceAt);
+  const workspaceRuns=[...new Set(currentWorkspaceRows
+    .map((row)=>typeof row?.run==='string'?row.run.trim():'').filter(Boolean))];
+  const verifiedCurrentTask=workspaceRuns.length===1
+    ?_verifiedPublicTaskForRun(ref.kernel,workspaceRuns[0]):null;
+  const currentTask=typeof verifiedCurrentTask?.task==='string'?verifiedCurrentTask.task:'';
+  const currentTaskHTML=currentTask
+    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Current task</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
@@ -3502,7 +3533,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)} · ${esc(sid.slice(0,10))}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +environmentHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
     +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My live worktree',scope:'persona worktree'})
     +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
@@ -3530,7 +3561,7 @@ function _environmentCommunicationGraphHTML(b){
   const refs=[...new Set((b?.members||[]).map((value)=>_personaRef(value,b?.kernel).key).filter(Boolean))];
   const scopedEvents=_environmentScopedEvents(b);
   const memberState=(personaKey)=>{ const d=S.liveByPersona.get(personaKey)||{}, models=d.models||[];
-    const acts=S.ixByPersona?.get(personaKey)||[], latest=acts[acts.length-1];
+    const acts=S.ixByPersona?.get(personaKey)||[], latest=_latestPersonaActivityForRecency(acts);
     const recent=_modelFresh(personaKey,models)||!!(latest&&Date.now()-latest._t<90000);
     return {running:_runningNow(personaKey),recent}; };
   // Compute each member's state/name once, then retain only the six best rows.
@@ -4134,7 +4165,8 @@ async function refreshSystemView(){
       const workspaceFiles=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId);
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,run:state.run,workspaceId,fileCount,authored,state:ws.state||'live'};
+      const row={base:state.base,run:state.run,workspaceId,fileCount,authored,state:ws.state||'live',
+        generatedAt:String(snap.generated_at||'')};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
         (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
       if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
@@ -4317,7 +4349,7 @@ async function refreshSystemView(){
     const sid=ref.sid, d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
     const models=d.models||[]; const last=models[models.length-1];
     const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
-    const recentAct=acts[acts.length-1];
+    const recentAct=_latestPersonaActivityForRecency(acts);
     const recent=_modelFresh(personaKey,models)||!!(recentAct&&(Date.now()-recentAct._t)<90000);
     return {key:personaKey,sid,kernel:d.kernel||ref.kernel,name:_signedPersonaNameFor(personaKey),
       role:_coordRole(sid,s,ref.kernel),live:recent,running:_runningNow(personaKey),
@@ -5140,6 +5172,17 @@ function _verifiedPublicTaskRun(kernel,taskId){
     if(lifecycle?.taskId===task&&lifecycle.run) runs.add(lifecycle.run);
   }
   return runs.size===1?runs.values().next().value:'';
+}
+function _verifiedPublicTaskForRun(kernel,runId){
+  const run=_publicProvenanceAtom(runId); if(!kernel||!run) return null;
+  const matches=[];
+  for(const id of (S.order||[])){
+    const record=S.recs.get(id); if(record?._kernel!==kernel) continue;
+    const lifecycle=publicTaskLifecycleProjection(record);
+    if(lifecycle?.run===run&&typeof lifecycle.task==='string'&&lifecycle.task.trim())
+      matches.push(lifecycle);
+  }
+  return matches.length===1?matches[0]:null;
 }
 function _withVerifiedTaskRun(provenance,kernel,resolveRun=_verifiedPublicTaskRun){
   if(!provenance.run&&provenance.task){
@@ -6741,6 +6784,10 @@ async function operatorRunView(b,run){
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
   const liveState=liveArtifactState(b,run)||_live;
+  const publicTask=_verifiedPublicTaskForRun(
+    String(liveState?.snapshot?.node_id||nodeStatus?.node_id||kernelForBase(b)||''),
+    run,
+  );
   const finalizedBootstrap=liveState?.verification?.immutableFinalizedBootstrap===true;
   const terminal=Boolean(liveState?.ended
     &&(liveState?.verification?.terminalEventVerified||finalizedBootstrap));
@@ -6760,7 +6807,7 @@ async function operatorRunView(b,run){
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
     +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
-    +kv('Task',S0((rs.task||'').slice(0,200)));
+    +kv('Task',S0((rs.task||publicTask?.task||'').slice(0,200)));
   const activeCalls=terminal?[]:(nodeStatus?.active_model_calls||[]).filter((call)=>{
     const current=liveState?.snapshot?.active?.calls||[];
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
@@ -6937,7 +6984,8 @@ function missionCardList(){
   const projectFor=(kernel,run='')=>projects.find((p)=>p._kernel===kernel&&run&&runOf(p)===run)
     ||[...projects].reverse().find((p)=>p._kernel===kernel);
   const humanTask=(value,kernel,run='')=>{ const raw=String(value||'').trim();
-    if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw)) return projectFor(kernel,run)?.label||'Untitled mission';
+    if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw))
+      return _verifiedPublicTaskForRun(kernel,run)?.task||projectFor(kernel,run)?.label||'Untitled mission';
     return raw; };
   // Record structure decides admission; capability vocabulary never assigns
   // task state. A task card requires its independently signed lifecycle object;
