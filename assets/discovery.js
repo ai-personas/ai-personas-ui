@@ -2765,9 +2765,12 @@ function endLiveArtifactRun(base,event,meta={}){
   }
   const ended=endLiveArtifactState(previous,event);
   if(ended) _applyTerminalLiveArtifactEffects(base,key,previous);
-  if(ended){ ended.receivedAt=Date.now(); ended.verification={verified:true,
-      signingKeyId:meta.verification.signingKeyId,accessPolicyRef:meta.verification.accessPolicyRef,
-      outwardTier:meta.verification.outwardTier,terminalEventVerified:true};
+  if(ended){ ended.receivedAt=Date.now(); ended.verification={...(ended.verification||{}),
+      verified:true,
+      signingKeyId:ended.verification?.signingKeyId||meta.verification.signingKeyId,
+      accessPolicyRef:ended.verification?.accessPolicyRef||meta.verification.accessPolicyRef,
+      outwardTier:ended.verification?.outwardTier||meta.verification.outwardTier,
+      terminalEventVerified:true};
     S.liveArtifacts.set(key,ended); _renderLiveArtifactMount(base,run);
     const runDrawerVisible=[...document.querySelectorAll('[data-live-run-key]')]
       .some((host)=>host.dataset.liveRunKey===_liveRunDomKey(base,run));
@@ -5205,7 +5208,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||String(doc.persona_id||'')!==identity.signedId||!_safePublicCognitionInstant(doc.generated_at)
       ||!_freshPublicGeneratedAt(doc.generated_at)
       ||!_safePublicCognitionAtom(doc.persona_id,512,{required:true})
-      ||!_safePublicCognitionText(doc.name,512,{required:true})
+      ||!_safePublicCognitionText(doc.name,512)
       ||!_safePublicCognitionAtom(doc.lifecycle_state,64,{required:true})
       ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
       ||String(doc.name||'')!==String(row._personaSignedName||'')
@@ -5223,6 +5226,12 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||doc.identity_materialization_state!==lifecycle.materializationState
       ||!doc.identity_fields||typeof doc.identity_fields!=='object'||Array.isArray(doc.identity_fields)
       ||Object.keys(doc.identity_fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return false;
+  // A lifecycle shell legitimately has no persona-authored name yet. Bind
+  // emptiness to the independently verified name-field state: a pending name
+  // must remain empty, while a materialized name must remain non-empty. The
+  // exact equality to the signed discovery label above still applies in both
+  // cases, so cognition cannot invent or replace either identity state.
+  if((lifecycle.identityFields.name.state==='materialized')!==Boolean(doc.name)) return false;
   for(const field of ['name','characteristics','avatar']){
     const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
     if(!_exactObjectFields(value,['persona_authored','state'])

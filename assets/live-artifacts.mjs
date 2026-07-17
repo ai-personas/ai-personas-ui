@@ -227,6 +227,17 @@ export function decideLiveArtifactUpdate(previous, snapshot, meta = {}) {
 export function endLiveArtifactState(previous, event = {}) {
   if (!previous) return null;
   if (String(event.previous_revision || '') !== String(previous.revision || '')) return null;
+  const workspaces = previous.snapshot?.workspaces;
+  const immutableFinalized = previous.finalized === true
+    && previous.terminalKind === 'immutable_finalized_snapshot'
+    && previous.verification?.immutableFinalizedBootstrap === true
+    && Array.isArray(workspaces) && workspaces.length > 0
+    && workspaces.every((workspace) => workspace?.state === 'run_finalized');
+  // A later signature-checked terminal frame confirms transport quiescence; it
+  // cannot weaken an immutable finalized snapshot that already binds the exact
+  // workspace states and bytes. Keep that stronger state and its verification
+  // metadata intact while the caller records terminalEventVerified.
+  if (immutableFinalized) return {...previous};
   const snapshot = previous.snapshot && typeof previous.snapshot === 'object'
     ? {
       ...previous.snapshot,
