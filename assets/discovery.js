@@ -2909,12 +2909,14 @@ const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created'
 // "self-extension" story. These have human verbs in IX_VERB but would otherwise
 // fall to the muted 'activity' catch-all, indistinguishable from background noise.
 const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_BLOCKED','EXTERNAL_CAPABILITY_ACQUIRED',
-  'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED','PROVISIONAL_TOOL_STATUS']);
+  'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED','PROVISIONAL_TOOL_STATUS',
+  'PERSONA_ACTION_AUTHORED','PERSONA_ACTION_COMPLETED','PERSONA_ACTION_FAILED']);
 // a verdict that did NOT accept → render in the rejected colour. A persona honestly
 // stuck on self-provisioning (EXTERNAL_CAPABILITY_BLOCKED) reads as fail too. NOTE:
 // the public interaction projection strips payload, so CAPABILITY_PROVISIONED's
 // ok/error fields are NOT in the client stream — only BLOCKED is markable client-side.
-const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED';
+const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED'
+  ||kind==='PERSONA_ACTION_FAILED';
 function _ixClass(kind,event=null){ if(event?._cognition===true
     ||(event?._providerProvisional===true&&kind==='PROVISIONAL_ASSISTANT_MESSAGE')
     ||kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
@@ -2945,7 +2947,9 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PROVISIONAL_TOOL_STATUS:'tool status',COGNITION_LESSON:'holds lesson',
   COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
-  ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
+  ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool',
+  PERSONA_ACTION_AUTHORED:'action authored',PERSONA_ACTION_COMPLETED:'action completed',
+  PERSONA_ACTION_FAILED:'action failed'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
 // per-row feed kind glyph keyed to the _ixClass lane (inherits the lane colour via
 // currentColor on .ix-kind). One stroked icon per lane — no colour emoji.
@@ -4551,8 +4555,9 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
   'accepted','at','kind','mode','task_id',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
+const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS=new Set([
-  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',
+  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',PUBLIC_PERSONA_ACTION_OUTPUT_KIND,
 ]);
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
 const PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND='PERSONA_COGNITIVE_INTENT';
@@ -4702,9 +4707,21 @@ async function _validPublicPersonaAuthority(output,identity,row){
   }
   return verified;
 }
+function _validPublicPersonaActionText(text){
+  if(typeof text!=='string'||!text
+      ||enc.encode(text).length>PUBLIC_PERSONA_COGNITION_LIMITS.exactTextBytes) return false;
+  try{
+    const action=JSON.parse(text);
+    return _exactObjectFields(action,['action','arguments'])
+      &&_safePublicCognitionAtom(action.action,512,{required:true})
+      &&action.arguments&&typeof action.arguments==='object'&&!Array.isArray(action.arguments)
+      &&canon(action)===text;
+  }catch(_){ return false; }
+}
 async function _validPublicPersonaOutput(output,identity,row){
-  const exact=PUBLIC_PERSONA_EXACT_OUTPUT_KINDS.has(output?.kind);
-  if(!_exactObjectFields(output,exact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS)
+  const personaExact=PUBLIC_PERSONA_EXACT_OUTPUT_KINDS.has(output?.kind);
+  const actionExact=output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
+  if(!_exactObjectFields(output,personaExact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS)
       ||!_safePublicCognitionAtom(output.kind,128,{required:true})
       ||!_safePublicCognitionInstant(output.at)
       ||typeof output.text!=='string'||!output.text.trim()
@@ -4715,18 +4732,19 @@ async function _validPublicPersonaOutput(output,identity,row){
       ||!Array.isArray(output.audience_persona_ids)
       ||output.audience_persona_ids.length>PUBLIC_PERSONA_COGNITION_LIMITS.audience) return false;
   const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
-  if(exact!==(output.authority==='persona_signature')
-      ||(!exact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
-      ||(exact&&!output.environment_id)
+  if(personaExact!==(output.authority==='persona_signature')
+      ||(!personaExact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
+      ||((personaExact||actionExact)&&!output.environment_id)
       ||(!communication&&output.audience_persona_ids.length)
-      ||(!exact&&!_safePublicCognitionText(output.text,
+      ||(!personaExact&&!actionExact&&!_safePublicCognitionText(output.text,
         PUBLIC_PERSONA_COGNITION_LIMITS.lineageText,{required:true}))) return false;
   const audience=new Set();
   for(const personaId of output.audience_persona_ids){
     if(!_safePublicCognitionAtom(personaId,512,{required:true})||audience.has(personaId)) return false;
     audience.add(personaId);
   }
-  if(!exact) return true;
+  if(actionExact) return _validPublicPersonaActionText(output.text);
+  if(!personaExact) return true;
   return await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)
     &&await _validPublicPersonaAuthority(output,identity,row);
 }
@@ -4912,12 +4930,15 @@ function _publicCognitionRows(doc){
   }
   for(const output of doc.recent_outputs){
     const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
+    const action=output.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
     rows.push({
       source:'output',kind:output.kind,at:output.at,
-      scope:communication?'communication':'cognition',scopeId:output.environment_id,
-      msg:output.text,rationale:output.text,cognition:!communication,ctype:'think',
+      scope:communication?'communication':action?'action':'cognition',scopeId:output.environment_id,
+      msg:output.text,rationale:output.text,cognition:!communication&&!action,ctype:action?'tool':'think',
       exactText:output.text,recipients:output.audience_persona_ids,
       authority:output.authority,dedup:output,
+      trustLabel:action?'SIGNED LINEAGE ACTION':'',
+      trustTitle:action?'exact authenticated action in the verified kernel-signed public cognition document':'',
     });
   }
   for(const lesson of doc.lessons) rows.push({
