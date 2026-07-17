@@ -4147,10 +4147,7 @@ function renderInteractionStream(){
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
     const verb=_ixVerb(e.kind);
-    // Content-type chips remain available to the operator surface. Anonymous
-    // cognition rows stay neutral and use only their signed event kind.
-    const ct=(e._ctype&&e._ctype!=='think')?`<span class="ix-ct ct-${e._ctype}">${e._ctype}</span>`:'';
-    const msg=e._msg?`<span class="ix-msg">${ct}${esc(e._msg)}</span>`:'';
+    const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
     const trust=e.signed===true
       ? `<span class="ix-trust signed" title="${esc(e._trustTitle||'lineage signature asserted by the node frame')}">${esc(e._trustLabel||'SIGNED EVENT')}</span>`
       : `<span class="ix-trust transport" title="live node transport frame; not independently signature-verified in this browser">LIVE FRAME</span>`;
@@ -4334,22 +4331,13 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
   if(out.length){
     h+=`<div class="l2" style="margin:2px 0 3px">${publicCognition?'Signed outputs and messages':'Recent authored output'} (newest first)</div>`
       +out.slice(-12).reverse().map((o)=>{
-        // the FULL text is carried in the (scroll-capped) surface so copy lifts everything,
-        // not the 240-char preview. TYPE-AWARE: error/code/json/tool keep their structure
-        // in a real <pre> (indentation + newlines preserved, larger scroll budget); prose
-        // types (markdown/plan/think) stay clamped one-line prose. esc() on every byte.
-        const full=String(o.text||''); const ty=publicCognition?'think':_cogType(full);
+        const full=String(o.text||'');
         const recipients=Array.isArray(o.audience_persona_ids)?o.audience_persona_ids.length:0;
         const publicMeta=publicCognition
           ? `<div class="l2">${esc(String(o.authority||'').replace(/_/g,' '))} · ${recipients?`${recipients} addressed recipient${recipients===1?'':'s'}`:'no addressed recipients'}${o.environment_id?` · environment ${esc(o.environment_id)}`:''}</div>`
           : '';
-        if(ty==='error'||ty==='code'||ty==='json'||ty==='tool'){
-          return `<div class="think llmout copy-host ctype-${ty}"><span class="ctype-tag amber">${esc(o.kind||ty)}</span> ${copyBtn()}`
-            +`<pre class="ct-pre copy-src">${esc(full)}</pre>${publicMeta}</div>`;
-        }
-        const long=full.length>240;
         return `<div class="think llmout copy-host"><span class="amber">${esc(o.kind||'output')}</span> ${copyBtn()}`
-          +`<span class="opmsg copy-src${long?' clamp':''}">${esc(full)}</span>${publicMeta}</div>`;
+          +`<pre class="ct-pre copy-src">${esc(full)}</pre>${publicMeta}</div>`;
       }).join('');
   }
   const mp=t.mode_proficiencies||{};
@@ -4587,53 +4575,7 @@ async function refreshThinking(){
 // the operator tier. Without one it accepts only the exact public cognition
 // contract; a private node's 404 remains a quiet no-op.
 let _cogBusy=false;
-// ONE content-type classifier shared by feed / card / drawer — the substance a
-// persona's raw model output IS, computed once and ridden through on the interaction
-// record (_ctype). Order-sensitive, cheapest-first: a failing-loop persona's error
-// must out-rank a JSON/code read; tool-call json before generic json; a fenced/code
-// blob before prose; a numbered plan before markdown. Returns one vocabulary value:
-// error | tool | json | code | markdown | plan | think.
-function _cogType(s){
-  const v=String(s||'').trim(); if(!v) return 'think';
-  // 1) ERROR — a traceback / exception / fatal line anywhere (a stuck loop).
-  if(/(^|\n)\s*(Traceback \(most recent call last\)|[A-Za-z_]*(?:Error|Exception)\b\s*:|fatal:|FATAL\b|panic:|Segmentation fault)/.test(v)
-     || /\b(Error|Exception)\b[^\n]*\n\s+at /.test(v)) return 'error';
-  // 2) TOOL — a tool-call object (the distinctive keys), checked before generic json.
-  if(v[0]==='{'){ try{ const o=JSON.parse(v);
-    if(o&&typeof o==='object'&&(('tool_name' in o)||('tool' in o&&'arguments' in o)||('name' in o&&'arguments' in o)||('tool_calls' in o)||('function_call' in o))) return 'tool';
-  }catch(e){} }
-  // 3) JSON — parses cleanly as an object/array.
-  if(v[0]==='{'||v[0]==='['){ try{ JSON.parse(v); return 'json'; }catch(e){} }
-  // 4) CODE — a fenced block, a shebang, or a leading import/def/function line.
-  if(/```/.test(v)||/^#!/.test(v)||/^\s*(import |from \S+ import |def |class |function |const |let |var |#include|package )/m.test(v)) return 'code';
-  // 5) PLAN — a numbered step list (≥2 "1. … 2. …" lines).
-  if((v.match(/^\s*\d+[.)]\s+\S/gm)||[]).length>=2) return 'plan';
-  // 6) MARKDOWN — headings / bullets / tables (prose with structure).
-  if(/^#{1,6}\s+\S/m.test(v)||/^\s*[-*]\s+\S/m.test(v)||/^\s*\|.+\|/m.test(v)) return 'markdown';
-  // 7) THINK — plain reasoning prose (the default).
-  return 'think';
-}
-// Readable one-line preview of a persona's raw model OUTPUT (a candidate package
-// JSON or a code blob) — so the THINK feed shows WHAT it produced, not a code dump.
-function _cogPreview(msg){
-  const s=String(msg||'').trim();
-  if(s[0]==='{'||s[0]==='['){ try{ const o=JSON.parse(s); const p=(o&&o.package)||o;
-    const files=p&&p.files;
-    if(Array.isArray(files)&&files.length) return `produced ${files.length}-file package — ${files.slice(0,4).join(', ')}${files.length>4?'…':''}`;
-    if(p&&p.file_count) return `produced ${p.file_count}-file package`;
-  }catch(e){} }
-  // ERROR-FIRST: a failing-loop persona surfaces the verb (mirrors 'learned — '),
-  // so it reads 'errored — KeyError: …' instead of masquerading as normal output.
-  if(_cogType(s)==='error'){
-    const ln=s.split(/\r?\n/).map((x)=>x.trim()).find((x)=>/((?:[A-Za-z_]*(?:Error|Exception))\b\s*:|fatal:|panic:|Segmentation fault)/.test(x))
-      ||s.split(/\r?\n/).map((x)=>x.trim()).find(Boolean)||'';
-    return 'errored — '+ln.slice(0,140);
-  }
-  for(const ln of s.split(/\r?\n/)){ const t=ln.trim();
-    if(!t||t.startsWith('#!')||/^(import |from |\/\/|#|"""|''')/.test(t)) continue; return t.slice(0,150); }
-  return s.replace(/\s+/g,' ').slice(0,150);
-}
-function _publicCognitionPreview(value){
+function _cognitionPreview(value){
   for(const line of String(value||'').split('\n')){
     const text=line.trim(); if(text) return text.slice(0,150);
   }
@@ -4770,14 +4712,14 @@ async function streamPersonaCognition(){
         if(personaSeen?.has(key)||S.ixKeys.has(key)) continue;
         if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
         S.ixKeys.add(key); added++;
-        const contentPreview=publicCognition?_publicCognitionPreview(msg):_cogPreview(msg);
+        const contentPreview=_cognitionPreview(msg);
         const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
         const preview=prefix?`${prefix} — ${contentPreview}`:contentPreview;
         const recipients=(row.recipients||[]).map((id)=>({kind:'persona',id}));
         S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
           scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:publicCognition,
           _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
-          _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),_ctype:publicCognition?'think':(row.ctype||_cogType(msg)),
+          _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
           _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
           _observedState:row.observedState===true,
           _trustLabel:publicCognition?'SIGNED COGNITION':'',

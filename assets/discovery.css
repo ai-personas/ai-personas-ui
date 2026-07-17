@@ -591,25 +591,9 @@ b{color:var(--bright)}
   background:var(--surface-inset);border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px 6px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:max-content;margin-top:2px}
 .ix-tool.fail .ix-cap,.ix-verify.fail .ix-cap{color:var(--down);background:var(--down-weak);border-color:var(--down2)}
-/* ---- CONTENT-TYPE chip: ONE vocabulary (error|json|code|markdown|plan|tool) computed once
-   in streamPersonaCognition and consumed identically by feed (.ix-ct) / card (.pc-ct) / drawer (.ctype-tag) ---- */
-.ctype-tag,.ix-ct,.pc-ct{font:var(--w-semi) var(--fs-meta)/1 var(--mono);text-transform:uppercase;letter-spacing:var(--tr-caps);
-  padding:1px 4px;border-radius:var(--radius-sm);margin-right:5px;flex:0 0 auto}
-.ct-code{color:var(--code-text);background:var(--code-bg);border:1px solid var(--line2)}
-.ct-json{color:var(--int);background:var(--accent-weak)}
-.ct-error{color:var(--down);background:var(--down-weak)}
-.ct-plan{color:var(--amber);background:var(--amber-weak)}
-.ct-tool{color:var(--intr);background:color-mix(in srgb,var(--intr) 12%,transparent)}
-.ct-markdown{color:var(--think-col);background:var(--think-bg)}
-/* drawer typed-output block (bounded surface + internal scroll) */
 .ct-pre{font:var(--fs-meta)/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;
   max-height:200px;overflow:auto;overscroll-behavior:contain;
   background:var(--surface-inset);border:1px solid var(--line2);border-radius:var(--radius-md);padding:8px 10px;margin:4px 0}
-.ct-pre.ctype-error{background:var(--down-weak);border-color:var(--down2)}
-.ct-pre.ctype-code{color:var(--code-text)}
-.ct-pre.ctype-json{border-color:var(--accent-border)}
-.ct-pre.ctype-tool{border-color:color-mix(in srgb,var(--intr) 34%,transparent)}
-.think.ctype-error.llmout{border-left:2px solid var(--down)}
 .ix.fresh{animation:synin .7s ease-out}
 @keyframes synin{0%{background-color:color-mix(in srgb,var(--lane,var(--int)) 18%,transparent)}100%{background-color:transparent}}
 /* per-task thread spine: a colored connector tying adjacent same-scope acts */
