@@ -1331,7 +1331,12 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     ?await verifyPublicTaskLifecycle(doc.task_lifecycle,doc.record,signature.entry,k):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
-    _providerBase:meta.providerBaseVerified===true?rawBase:'',
+    // Keep the reached provider route separate from the read-gated content
+    // base. `base` is the endpoint whose bootstrap, current-master keys and
+    // ProviderRecord were just verified; an empty base means this verified
+    // node is the current page origin. Public discover-only projection may
+    // correctly clear `_base`, but it must not clear this node API route.
+    _providerBase:meta.providerBaseVerified===true?opBaseKey(base):'',
     _personaIdentityPublicKeyHex:identityPublicKeyHex,
     _personaIdentitySigningKeyId:personaId?String(doc.record.identity_signing_key_id||''):'',
     _personaLifecycleVerified:lifecycleVerified,
@@ -1906,6 +1911,11 @@ async function discoverLocalNode(opts={}){
 
 function recordStoreKey(r){ const raw=r?.record_id||r?.card_id; if(!raw) return '';
   return `${encodeURIComponent(String(r?._kernel||'@unknown'))}::${encodeURIComponent(String(raw))}`; }
+// Node API requests (status, public cognition, telemetry and live workspaces)
+// may use only the provider route admitted by current-master verification.
+// `_base` is a different surface: it is intentionally blank for discover-only
+// records and otherwise names the read-authorized content host.
+function nodeBaseForRecord(r){ return String(r?._providerBase||'').replace(/\/$/,''); }
 function _personaLifecycleRegresses(current,candidate){
   if(current?.kind!=='persona'||current?._personaLifecycleVerified!==true) return false;
   if(candidate?.kind!=='persona'||candidate?._personaLifecycleVerified!==true
@@ -1977,7 +1987,7 @@ function upsert(r){
     S.recs.set(id,row); S.order.push(id); }
   Object.assign(row,{kind:r.kind,label:r.kind==='persona'?String(r.label||''):(r.label||id),did:r.did||id,visibility_tier:r.visibility_tier,
     planes:planesOf(r.visibility_tier),_kernel:r._kernel,_access:r._access,_url:r._url,_links:r._links||{},_base:r._base||'',_doc:r._doc,_net:r._net||'',
-    _providerBase:r._providerBase||'',
+    _providerBase:r._providerBase||row._providerBase||'',
     _inventorySource:r._inventorySource||row._inventorySource||'',
     _inventoryGeneration:r._inventoryGeneration||row._inventoryGeneration||0,
     _inventoryHash:r._inventoryHash||row._inventoryHash||'',
@@ -5127,6 +5137,10 @@ async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
+  if(!wantBase){
+    el.innerHTML='<div class="privacy-note">No current-master-verified node route is available for public activity.</div>';
+    return;
+  }
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
   const t=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
@@ -5378,8 +5392,7 @@ async function streamPersonaCognition(){
     const baseCandidates=[
       ...[...(S.liveTel?S.liveTel.keys():[])].map((k)=>({base:k==='@origin'?'':k,
         active:(S.activeModelCallsByBase?.get(k)||[]).length>0,focused:!!S.kernelFocus&&baseIsFocused(k==='@origin'?'':k)})),
-      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona'&&kernelIsFocused(r._kernel)).map((r)=>({base:r._base||''})),
-      {base:''},
+      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona'&&kernelIsFocused(r._kernel)).map((r)=>({base:nodeBaseForRecord(r)})),
     ];
     const apiBases=selectMonitoringBases(baseCandidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64}).bases;
     // Visible, running and recent personas outrank the rest. This selector scans
@@ -5393,7 +5406,7 @@ async function streamPersonaCognition(){
           base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
       for(const id of (S.order||[])){ const r=S.recs.get(id);
         if(r&&r.kind==='persona'&&kernelIsFocused(r._kernel)){ const ref=_personaRef(r.did||r.id||'',r._kernel);
-          yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:r._base||''}; } }
+          yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:nodeBaseForRecord(r)}; } }
     }
     const list=selectPriorityWindow(cognitionCandidates(),{limit:NETWORK_LIMITS.cognitionPersonas,
       keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
@@ -5513,14 +5526,14 @@ function refreshLiveSection(){
   }
   fallback();
 }
-async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
+async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
   S.curBase=base;
   // PersonaCard public projection (02_PERSONA): bind the SERVED profile doc
   // (links.profile → personas/<id>.json). PER-04: the public card shows
   // reputation_score [0,1] — never raw operator fitness (that lives only in
   // the token-gated operator console). /status is a fallback for liveness.
-  const prof=(L.profile?await dfetch(base,L.profile):null)||{};
-  const ns=await fetchNodeStatus(base)||{};
+  const prof=(L.profile?await dfetch(contentBase,L.profile):null)||{};
+  const ns=base?(await fetchNodeStatus(base)||{}):{};
   const pid=prof.persona_id||personaIdFromDid(r.did);
   const personaKey=_personaKey(r._kernel,pid||r.did);
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
@@ -5567,23 +5580,25 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // association. Never borrow the first env on a multi-env kernel.
   const _personaEnv=envRecordForAuthority(r);
   const _prun=runOf(r)||(_personaEnv.recordId?runForEnv(S.recs.get(_personaEnv.recordId)):null);
-  if(_prun) html+=await planSection(base,_prun);
+  if(_prun&&base) html+=await planSection(base,_prun);
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
   // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
   S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
-  S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
+  S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // Public activity combines persona-signed final output with explicitly
   // provisional kernel observations; the private thinking frame remains
   // available only with operator authority. Both refresh on the live cadence.
-  S.drawerThinkPid=_signedPersonaEndpointId(personaKey);
-  const thinkingEndpoint=join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`);
-  const operatorThinking=!!tokenFor(thinkingEndpoint);
+  S.drawerThinkPid=base?_signedPersonaEndpointId(personaKey):null;
+  const thinkingEndpoint=base?join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`):'';
+  const operatorThinking=!!thinkingEndpoint&&!!tokenFor(thinkingEndpoint);
   html+=H(operatorThinking?'Thinking':'Live public activity')
-    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving verified public activity…'}</div></div>`;
-  setTimeout(refreshThinking,0);
+    +`<div id="thinksec" class="livesec">${base
+      ?`<div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving verified public activity…'}</div>`
+      :'<div class="privacy-note">No current-master-verified node route is available for public activity.</div>'}</div>`;
+  if(base) setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   // Related navigation obeys the same exact authority result. Profile/status
   // environment fields are unsigned transport observations and cannot select a
@@ -5602,15 +5617,15 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     nav+=`<div class="row"><span class="l2">Environment observation withheld from navigation — no verified routing reference</span></div>`;
   if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
   if(nav) html+=H('Related')+nav;
-  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(base,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
+  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(contentBase,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
   return {title:`<span class="kind k-persona">PERSONA</span> ${esc(displayName)}`, html};
 }
-async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // EnvironmentInstance export (05_ENVIRONMENT): bind the SERVED env doc
   // (environments/<id>.json) — env_type, status, members, lineage_digest,
   // rule_count. /status is only a liveness fallback when no export link exists.
-  const d=(L.export?await dfetch(base,L.export):null)||{};
-  const ns=d.environment_id?{}:(await fetchNodeStatus(base)||{});
+  const d=(L.export?await dfetch(contentBase,L.export):null)||{};
+  const ns=d.environment_id||!base?{}:(await fetchNodeStatus(base)||{});
   const members=d.members||[];
   const ld=d.lineage_digest||{};
   // de-dup scalars the live tiles + the 'Members (N)' header already carry
@@ -5631,11 +5646,11 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   // current round, blocked/measured state). Surfaced right under the env header so
   // the drawer answers "what is this env trying to DO", not only "what did it make".
   const _run=runForEnv(r);
-  if(_run) html+=await planSection(base,_run);
+  if(_run&&base) html+=await planSection(base,_run);
   // Deliverables produced in THIS environment. New exports publish an env-current
   // manifest; older exports fall back to signed records joined by env id or run id.
   const manifestRel=L.artifact_manifest||d.artifact_manifest||'';
-  const manifest=manifestRel?await dfetch(base,manifestRel):null;
+  const manifest=manifestRel?await dfetch(contentBase,manifestRel):null;
   const manifestFiles=manifestArtifacts(manifest);
   const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
   const _runHostKeys=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='env'
@@ -5687,7 +5702,7 @@ async function envView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v
   // document (links.telemetry → telemetry/environments/<slug>.json).
   const envId=d.environment_id||r.did;
   S.drawerLiveKind='env'; S.drawerLiveId=envId; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
-  S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
+  S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   html+=trustPanel(r);
@@ -6275,17 +6290,20 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
 }
-async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
+async function telemetryView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // 01_KERNEL §8/§11: live telemetry nests OTel/lineage under `kernel`
   // (model_events, spans, summary, lineage_durable) and persona evolution
   // summaries under `personas`. Bind those — NOT the old tel.events/tel.ring.
   const snapshotPath=L.snapshot||'telemetry/live/latest.json';
-  const tel=await fetchJson(join(base,snapshotPath))||{};
+  const feedBase=L.snapshot?contentBase:base;
+  if(!feedBase) return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`,
+    html:'<div class="privacy-note">No current-master-verified node route is available for this telemetry feed.</div>'};
+  const tel=await fetchJson(join(feedBase,snapshotPath))||{};
   const publicEntity=isPublicEntityTelemetryDocument(tel);
   const publicAggregate=tel.schema==='personaos-live-telemetry-public/1';
-  if(publicEntity) await verifyPublicCommunicationRoutes(base,tel);
-  const admitted=publicEntity?await verifyPublicEntityDocument(base,snapshotPath,tel)
-    :publicAggregate?await verifyPublicTelemetryFrame(base,tel):true;
+  if(publicEntity) await verifyPublicCommunicationRoutes(feedBase,tel);
+  const admitted=publicEntity?await verifyPublicEntityDocument(feedBase,snapshotPath,tel)
+    :publicAggregate?await verifyPublicTelemetryFrame(feedBase,tel):true;
   if(!admitted) return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`,
     html:'<div class="privacy-note">Public telemetry was refused because its current-master signature or exact public shape did not verify.</div>'};
   // Per-ENTITY feed record (telemetry:<persona>/<env> → its own redacted-tier
@@ -6294,8 +6312,8 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
     const isP=isPersonaTelemetryDocument(tel);
     S.drawerLiveKind=isP?'persona':'env';
     S.drawerLiveId=isP?tel.persona_id:tel.environment_id;
-    S.drawerLiveKernel=r._kernel||tel.kernel_id||tel.node_id||kernelForBase(base);
-    S.drawerLiveBase=base; S.drawerLiveFeed=L.snapshot||'';
+    S.drawerLiveKernel=r._kernel||tel.kernel_id||tel.node_id||kernelForBase(feedBase);
+    S.drawerLiveBase=feedBase; S.drawerLiveFeed=snapshotPath;
     let html=kv('Feed',S0(r.label))
       +kv('Subject',`<span class="cap">${esc(isP?'persona':'environment')}</span> <code>${esc(S.drawerLiveId)}</code>`)
       +kv('Tier',isPublicEntityTelemetryDocument(tel)
@@ -7016,7 +7034,7 @@ function missionCardList(){
         lifecycleSurfaces.join(' · '),lifecycle.terminalReason?`terminal ${lifecycle.terminalReason}`:'signed live lifecycle']
       :[run?run.slice(0,26):'',`signed ${published.kind} record`];
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
-      kernel:r._kernel||'',meta,recId:id,run,recordKind:published.kind,
+      kernel:r._kernel||'',meta,recId:id,run,base:nodeBaseForRecord(r),recordKind:published.kind,
       terminalTask:!!lifecycle?.terminalTask,liveTask:!!lifecycle?.liveTask,
       exactLifecycle:!!lifecycle};
     if(lifecycle) cards.unshift(card); else cards.push(card);
