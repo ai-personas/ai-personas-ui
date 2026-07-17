@@ -2402,28 +2402,21 @@ function connectDiscoveryStream(base,boot){
     enqueueLiveArtifactFrame(async()=>{
       let payload; try{ payload=JSON.parse(raw); }
       catch(e){ log('stream','live artifact frame parse failed',false); return; }
-      const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
-        verifyLiveArtifactEvent(payload,{...context,requirePublic:true}));
-      if(!verification.ok||verification.kind!=='snapshot'){
-        _logLiveVerificationRefusal(payload?.run,verification); return;
-      }
-      ingestLiveArtifactSnapshot(base,payload.snapshot,'sse',{
-        previousRevision:payload.previous_revision,verification:verification.snapshot});
-    });
-  });
-  es.addEventListener('run_ended',(ev)=>{
-    const raw=ev.data||'{}';
-    enqueueLiveArtifactFrame(async()=>{
-      let payload; try{ payload=JSON.parse(raw); }
-      catch(e){ log('stream','run-ended frame parse failed',false); return; }
       const previous=liveArtifactState(base,payload?.run);
       const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
         verifyLiveArtifactEvent(payload,{...context,requirePublic:true,
           expectedPreviousRevision:previous?.revision||''}));
-      if(!verification.ok||verification.kind!=='run_ended'){
+      if(!verification.ok){
         _logLiveVerificationRefusal(payload?.run,verification); return;
       }
-      endLiveArtifactRun(base,payload,{verification});
+      if(verification.kind==='run_ended'){
+        endLiveArtifactRun(base,payload,{verification}); return;
+      }
+      if(verification.kind!=='snapshot'){
+        _logLiveVerificationRefusal(payload?.run,{reason:'unexpected_live_artifact_event_kind'}); return;
+      }
+      ingestLiveArtifactSnapshot(base,payload.snapshot,'sse',{
+        previousRevision:payload.previous_revision,verification:verification.snapshot});
     });
   });
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
@@ -3444,7 +3437,7 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
   if(!(rows||[]).length) return '';
-  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · lifecycle unknown</small></div>`
+  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · ArtifactBundle lifecycle unknown</small></div>`
     +rows.slice(0,2).map((row)=>`<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
       +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
       +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
