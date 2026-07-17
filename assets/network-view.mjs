@@ -52,23 +52,12 @@ export function responseByteLengthWithinLimit(byteLength, maxBytes) {
     && byteLength <= maxBytes;
 }
 
-const LIVE_TASK_CAPABILITY_LIMIT = 128;
-const LIVE_TASK_STATE_LIMIT = 40;
-const LIVE_TASK_MARKER = 'live_task';
-const TASK_STATE_PREFIX = 'task_state:';
-const TERMINAL_TASK_CAPABILITIES = new Set([
-  'complete',
-  'completed',
-  'succeeded',
-  'failed',
-  'cancelled',
-  'canceled',
-  'aborted',
-  'stopped',
-]);
 const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
 const MISSION_EVIDENCE_LABEL_LIMIT = 256;
 const MISSION_EVIDENCE_DID_LIMIT = 512;
+const PUBLIC_TASK_LIFECYCLE_SCHEMA = 'personaos-public-task-lifecycle/1';
+const PUBLIC_TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/;
+const PUBLIC_TASK_REVISION_RE = /^sha256:[0-9a-f]{64}$/;
 export const PUBLIC_TASK_RUN_POLL_LIMIT = 48;
 const MODEL_EVENT_SCAN_LIMIT = 8_192;
 const MODEL_FAILURE_REASON_LIMIT = 240;
@@ -93,6 +82,13 @@ function boundedMissionEvidenceLabel(value) {
   const exact = value.normalize('NFC').trim();
   if (!exact || /[\u0000-\u001f\u007f]/u.test(exact)) return '';
   return [...exact].slice(0, MISSION_EVIDENCE_LABEL_LIMIT).join('');
+}
+
+function publicLifecycleText(value, maximum) {
+  if (typeof value !== 'string' || value !== value.trim()
+      || !value || [...value].length > maximum
+      || /[\u0000-\u001f\u007f]/u.test(value)) return '';
+  return value;
 }
 
 function signedMissionRun(record) {
@@ -198,6 +194,46 @@ export function publishedMissionEvidenceProjection(record) {
 }
 
 /**
+ * Project one independently kernel-signed public task lifecycle document.
+ *
+ * Cryptographic admission and revision verification happen in discovery.js.
+ * This helper binds that admitted document back to the already-verified task
+ * DID and exposes only the exact state carried by the lifecycle contract.
+ */
+export function publicTaskLifecycleProjection(record) {
+  const lifecycle = record?.task_lifecycle;
+  if (!record || record.kind !== 'task' || record._taskLifecycleVerified !== true
+      || !lifecycle || typeof lifecycle !== 'object' || Array.isArray(lifecycle)
+      || lifecycle.schema !== PUBLIC_TASK_LIFECYCLE_SCHEMA
+      || lifecycle.kernel_id !== record._kernel
+      || typeof lifecycle.run_id !== 'string'
+      || signedMissionRun(record) !== lifecycle.run_id
+      || !PUBLIC_TASK_ID_RE.test(String(lifecycle.task_id || ''))
+      || publicLifecycleText(lifecycle.state, 128) !== lifecycle.state
+      || !PUBLIC_TASK_REVISION_RE.test(String(lifecycle.revision || ''))
+      || (lifecycle.terminal_reason
+        && publicLifecycleText(lifecycle.terminal_reason, 512)
+          !== lifecycle.terminal_reason)) return null;
+  const task = boundedMissionEvidenceLabel(record.label);
+  if (!task) return null;
+  const terminalReason = String(lifecycle.terminal_reason || '');
+  return Object.freeze({
+    task,
+    state: lifecycle.state,
+    run: lifecycle.run_id,
+    taskId: lifecycle.task_id,
+    revision: lifecycle.revision,
+    pressure: lifecycle.pressure,
+    review: lifecycle.review,
+    block: lifecycle.block,
+    terminalReason,
+    exactLifecycle: true,
+    terminalTask: Boolean(terminalReason),
+    liveTask: !terminalReason,
+  });
+}
+
+/**
  * Select exact public task runs that the browser may probe for a signed live
  * workspace snapshot without first opening an operator surface.
  *
@@ -236,8 +272,8 @@ export function selectVerifiedPublicTaskRunTargets(
     if (!record || record.kind !== 'task' || record.visibility_tier !== 'public'
         || record._doc?.record_signature_verified !== true
         || record._doc?.policy_signature_verified !== true) continue;
-    const projection = publishedMissionEvidenceProjection(record);
-    const run = projection?.run || '';
+    const lifecycle = publicTaskLifecycleProjection(record);
+    const run = lifecycle?.run || '';
     const kernel = String(record._kernel || '');
     const recordKey = String(record._storeKey || '');
     if (!run || !kernel || !recordKey || (focusedKernel && kernel !== focusedKernel)) continue;
@@ -268,7 +304,7 @@ export function selectVerifiedPublicTaskRunTargets(
 
     const key = `${base}\u0000${run}`;
     const target = Object.freeze({base, run, kernel, recordKey});
-    if (liveTaskMissionProjection(record)) {
+    if (lifecycle.liveTask) {
       fallbackTargets.delete(key);
       if (!liveTargets.has(key) && liveTargets.size < requestedLimit) {
         liveTargets.set(key, target);
@@ -281,68 +317,6 @@ export function selectVerifiedPublicTaskRunTargets(
   }
   return [...liveTargets.values(), ...fallbackTargets.values()]
     .slice(0, requestedLimit);
-}
-
-/**
- * Project a signed, protocol-level terminal task capability into mission state.
- *
- * Capability vocabulary remains open: only the small generic lifecycle set
- * above has status semantics. Unknown capabilities continue to be published
- * evidence, never inferred state. Conflicting terminal capabilities fail
- * closed so canonical array ordering cannot choose an outcome for the UI.
- */
-export function terminalTaskMissionProjection(record) {
-  if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
-  if (!Array.isArray(record.capability_summary)
-      || record.capability_summary.length > LIVE_TASK_CAPABILITY_LIMIT) return null;
-  const terminal = record.capability_summary.filter((value) => (
-    typeof value === 'string' && TERMINAL_TASK_CAPABILITIES.has(value)
-  ));
-  if (terminal.length !== 1) return null;
-  const task = boundedMissionEvidenceLabel(record.label);
-  if (!task) return null;
-  return Object.freeze({
-    task,
-    state: terminal[0],
-    run: signedMissionRun(record),
-    terminalTask: true,
-    terminalCapability: terminal[0],
-  });
-}
-
-/**
- * Project one already-verified public task record into the mission surface.
- *
- * The caller owns signature/access verification. New records bind their exact,
- * bounded, persona-authored state with `task_state:`; capability ordering is not
- * semantic because the signed discovery payload canonicalises the list. No bare
- * capability or prose value is interpreted as state.
- */
-export function liveTaskMissionProjection(record) {
-  if (!record || typeof record !== 'object' || record.kind !== 'task') return null;
-  if (!Array.isArray(record.capability_summary)
-      || record.capability_summary.length > LIVE_TASK_CAPABILITY_LIMIT) return null;
-  const capabilities = record.capability_summary.map((value) => (
-    typeof value === 'string' ? value : ''
-  ));
-  if (capabilities.filter((value) => value === LIVE_TASK_MARKER).length !== 1) return null;
-
-  const boundedState = (value) => {
-    if (!value || value !== value.trim() || [...value].length > LIVE_TASK_STATE_LIMIT) return '';
-    return /[\u0000-\u001f\u007f]/u.test(value) ? '' : value;
-  };
-  const bindings = capabilities.filter((value) => value.startsWith(TASK_STATE_PREFIX));
-  if (bindings.length !== 1) return null;
-  const state = boundedState(bindings[0].slice(TASK_STATE_PREFIX.length));
-  if (!state) return null;
-  const task = boundedMissionEvidenceLabel(record.label);
-  if (!task) return null;
-  return Object.freeze({
-    task,
-    state,
-    run: signedMissionRun(record),
-    liveTask: true,
-  });
 }
 
 function boundedTelemetryField(value, maximum = MODEL_EVENT_FIELD_LIMIT) {

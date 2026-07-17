@@ -32,10 +32,10 @@ import {
 import {
   collectBrowserLibp2pBootstraps,
   compactCount,
-  liveTaskMissionProjection,
   nextProgressiveGroupLevel,
   providerIndexResponseByteLimit,
   publishedMissionEvidenceProjection,
+  publicTaskLifecycleProjection,
   projectTerminalModelFailures,
   progressiveGroupLimit,
   responseByteLengthWithinLimit,
@@ -43,10 +43,9 @@ import {
   selectVerifiedPublicTaskRunTargets,
   selectPriorityWindow,
   signedPersonaIdentity,
-  terminalTaskMissionProjection,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260716-persona-id-v1';
+} from './network-view.mjs?v=20260717-public-task-lifecycle-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -992,6 +991,63 @@ async function verifyPersonaLifecycleCard(card,record,documentKey){
   try{ return await ed.verifyAsync(hexToBytes(card.signature_hex),enc.encode(canon(payload)),
     hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
 }
+const PUBLIC_TASK_LIFECYCLE_FIELDS=Object.freeze([
+  'access','block','kernel_id','links','pressure','review','revision','run_id','schema',
+  'signature_hex','signing_key_id','state','task_id','terminal_reason',
+].sort());
+const PUBLIC_TASK_LIFECYCLE_REVISION_FIELDS=Object.freeze([
+  'schema','kernel_id','run_id','task_id','state','pressure','review','block',
+  'terminal_reason','links','access',
+]);
+const PUBLIC_TASK_LIFECYCLE_TASK_ID_RE=/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/;
+function _plainLifecycleObject(value){ return !!value&&typeof value==='object'&&!Array.isArray(value); }
+function _publicLifecycleText(value,maximum){ return typeof value==='string'&&value===value.trim()
+  &&!!value&&[...value].length<=maximum&&!/[\u0000-\u001f\u007f]/u.test(value); }
+async function verifyPublicTaskLifecycle(lifecycle,record,documentKey,kernelId){
+  if(record?.kind!=='task'||documentKey?.key_id!=='kernel-master'
+      ||!_exactObjectFields(lifecycle,PUBLIC_TASK_LIFECYCLE_FIELDS)
+      ||lifecycle.schema!=='personaos-public-task-lifecycle/1'
+      ||lifecycle.kernel_id!==kernelId
+      ||lifecycle.access!=='public_read_only'
+      ||lifecycle.signing_key_id!=='kernel-master'
+      ||!/^run-[A-Za-z0-9_-]{1,180}$/.test(String(lifecycle.run_id||''))
+      ||!PUBLIC_TASK_LIFECYCLE_TASK_ID_RE.test(String(lifecycle.task_id||''))
+      ||!_publicLifecycleText(lifecycle.state,128)
+      ||(lifecycle.terminal_reason
+        &&!_publicLifecycleText(lifecycle.terminal_reason,512))
+      ||!/^sha256:[0-9a-f]{64}$/.test(String(lifecycle.revision||''))
+      ||!/^[0-9a-f]{128}$/.test(String(lifecycle.signature_hex||''))
+      ||!_plainLifecycleObject(lifecycle.pressure)
+      ||!_plainLifecycleObject(lifecycle.review)
+      ||!_plainLifecycleObject(lifecycle.block)
+      ||!_exactObjectFields(lifecycle.links,['discovery','live_artifacts','telemetry'])
+      ||lifecycle.links.discovery!=='/.well-known/personaos-discovery.json'
+      ||lifecycle.links.live_artifacts!==`/runs/${lifecycle.run_id}/live-artifacts`
+      ||lifecycle.links.telemetry!=='/telemetry/live/latest.json'
+      ||String(record.did||'')!==`did:personaos:${kernelId}/task/${lifecycle.run_id}`)
+    return false;
+  const evidenceBytes=enc.encode(canon({pressure:lifecycle.pressure,
+    review:lifecycle.review,block:lifecycle.block})).length;
+  if(evidenceBytes>3*256*1024) return false;
+  const revisionPayload={};
+  for(const field of PUBLIC_TASK_LIFECYCLE_REVISION_FIELDS) revisionPayload[field]=lifecycle[field];
+  if(`sha256:${await sha256Hex(enc.encode(canon(revisionPayload)))}`!==lifecycle.revision)
+    return false;
+  const expectedCapabilities=[
+    'public_task_lifecycle',
+    `task_state:${lifecycle.state}`,
+    `task_run:${lifecycle.run_id}`,
+    `task_id:${lifecycle.task_id}`,
+    `task_revision:${lifecycle.revision}`,
+  ];
+  const capabilities=Array.isArray(record.capability_summary)?record.capability_summary:[];
+  if(expectedCapabilities.some((value)=>capabilities.filter((item)=>item===value).length!==1))
+    return false;
+  const payload={}; for(const field of Object.keys(lifecycle))
+    if(field!=='signature_hex') payload[field]=lifecycle[field];
+  try{ return await ed.verifyAsync(hexToBytes(lifecycle.signature_hex),enc.encode(canon(payload)),
+    hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
+}
 async function verifyPublicCommunicationRoutes(base,live){
   const routes=Array.isArray(live?.communication_routes)?live.communication_routes.slice(-96):null;
   if(live&&typeof live==='object'){
@@ -1219,6 +1275,8 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     ?personaIdentityKeyPin(doc.record,personaIdentity.signedId):'';
   const lifecycleVerified=personaId
     ?await verifyPersonaLifecycleCard(doc.persona_lifecycle_card,doc.record,signature.entry):false;
+  const taskLifecycleVerified=r.kind==='task'
+    ?await verifyPublicTaskLifecycle(doc.task_lifecycle,doc.record,signature.entry,k):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     _providerBase:meta.providerBaseVerified===true?rawBase:'',
@@ -1226,12 +1284,14 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     _personaIdentitySigningKeyId:personaId?String(doc.record.identity_signing_key_id||''):'',
     _personaLifecycleVerified:lifecycleVerified,
     persona_lifecycle_card:lifecycleVerified?doc.persona_lifecycle_card:null,
+    _taskLifecycleVerified:taskLifecycleVerified,
+    task_lifecycle:taskLifecycleVerified?doc.task_lifecycle:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
           kernel_id:k,host_kernel_id:doc.host_kernel_id||'',base:b,links,
           access_policy:projectedPolicy,record_signature_verified:true,
-          policy_signature_verified:true}}};
+          policy_signature_verified:true,task_lifecycle_signature_verified:taskLifecycleVerified}}};
 }
 function logRecordAccess(row,source){
   const label=String(row?.label||row?.record_id||'record').slice(0,36);
@@ -1890,6 +1950,8 @@ function upsert(r){
     _personaLifecycleVerified:r.kind==='persona'&&r._personaLifecycleVerified===true,
     persona_lifecycle_card:r.kind==='persona'&&r.persona_lifecycle_card
       ?r.persona_lifecycle_card:null,
+    _taskLifecycleVerified:r.kind==='task'&&r._taskLifecycleVerified===true,
+    task_lifecycle:r.kind==='task'&&r.task_lifecycle?r.task_lifecycle:null,
     avatar:r.kind==='persona'&&Object.hasOwn(r,'avatar')?r.avatar:null});
   if(row.kind==='persona'){
     const sid=_shortId(row.did||row.record_id);
@@ -5843,6 +5905,21 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
     +kv('Kernel',esc(r._kernel||'—'))+kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)+kv('Body anchor',esc(anchor))
     +kv('Events (this run)',esc(r.events));
   const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
+  const lifecycle=publicTaskLifecycleProjection(r);
+  if(lifecycle){
+    html+=H('Exact public lifecycle')
+      +kv('State',`<span class="ok">${esc(lifecycle.state)}</span>`)
+      +kv('Run',`<code>${esc(lifecycle.run)}</code>`)
+      +kv('Task id',`<code>${esc(lifecycle.taskId)}</code>`)
+      +kv('Revision',`<code>${esc(lifecycle.revision)}</code>`)
+      +kv('Terminal reason',lifecycle.terminalReason
+        ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`:'<span class="l2">active / non-terminal</span>');
+    for(const [label,value] of [['Pressure',lifecycle.pressure],['Review',lifecycle.review],['Block',lifecycle.block]]){
+      if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
+      html+=H(label)+`<pre class="filview">${esc(JSON.stringify(value,null,2))}</pre>`;
+    }
+    html+=`<div class="fv-note"><span class="ok">${icon('check','ico-sm')} kernel signature and content-hash revision verified</span> · anonymous read-only lifecycle projection; no operator capability is present.</div>`;
+  }
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
     +H('Source')+(r._url?`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`
       :'<div class="row"><span class="l2">withheld · discover-only metadata projection</span></div>');
@@ -6475,26 +6552,30 @@ function missionCardList(){
   const humanTask=(value,kernel,run='')=>{ const raw=String(value||'').trim();
     if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw)) return projectFor(kernel,run)?.label||'Untitled mission';
     return raw; };
-  // Record structure decides admission; capability vocabulary never does. A
-  // A generic terminal lifecycle capability takes precedence, then a strict
-  // live_task + one task_state binding may overlay the published state. Unknown
-  // capability vocabulary never erases or assigns state to a verified task
-  // record. Design-history JSON is evidence owned by the mission, never a
-  // second mission card.
+  // Record structure decides admission; capability vocabulary never assigns
+  // task state. A task card requires its independently signed lifecycle object;
+  // project/mission records remain published evidence. Design-history JSON is
+  // evidence owned by the mission, never a second mission card.
   for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
     const published=publishedMissionEvidenceProjection(r); if(!published) continue;
-    // S.recs contains only records that passed browser signature + access checks.
-    // Preserve one exact, signed state only when a fail-closed overlay verifies.
-    const terminal=terminalTaskMissionProjection(r), live=liveTaskMissionProjection(r),
-      projected=terminal||live||published;
+    const lifecycle=publicTaskLifecycleProjection(r);
+    if(r.kind==='task'&&!lifecycle) continue;
+    const projected=lifecycle||published;
     const run=projected.run||runOf(r)||'';
-    const meta=[run?run.slice(0,26):'',`signed ${published.kind} record`];
-    if(terminal) meta.push('signed terminal task');
-    else if(live) meta.push('signed live task');
+    const lifecycleSurfaces=lifecycle?[
+      Object.keys(lifecycle.pressure||{}).length?'pressure':'',
+      Object.keys(lifecycle.review||{}).length?'review':'',
+      Object.keys(lifecycle.block||{}).length?'block':'',
+    ].filter(Boolean):[];
+    const meta=lifecycle
+      ?[lifecycle.taskId.slice(0,26),`rev ${lifecycle.revision.slice(7,19)}`,
+        lifecycleSurfaces.join(' · '),lifecycle.terminalReason?`terminal ${lifecycle.terminalReason}`:'signed live lifecycle']
+      :[run?run.slice(0,26):'',`signed ${published.kind} record`];
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
       kernel:r._kernel||'',meta,recId:id,run,recordKind:published.kind,
-      terminalTask:!!terminal,liveTask:!!live};
-    if(terminal||live) cards.unshift(card); else cards.push(card);
+      terminalTask:!!lifecycle?.terminalTask,liveTask:!!lifecycle?.liveTask,
+      exactLifecycle:!!lifecycle};
+    if(lifecycle) cards.unshift(card); else cards.push(card);
   }
   // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
   // when /status remains operator-gated. Surface those active runs as read-only
@@ -6601,9 +6682,10 @@ function renderMissions(){
   if(eyebrow) eyebrow.textContent=cards.some((card)=>card.state==='running')?'NOW WORKING ON'
     :cards.some((card)=>card.state==='failed')?'EXECUTION NEEDS ATTENTION':'MISSION EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
+  const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
   const html=window.items.length?window.items.map((c)=>
     `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
-    +`<div class="mission-state-dot ms-${esc(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${esc(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
+    +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
     +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
     +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('')
     :`<div class="mission-no-match">No missions match this network filter.</div>`;
