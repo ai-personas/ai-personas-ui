@@ -2847,13 +2847,15 @@ const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created'
 // "self-extension" story. These have human verbs in IX_VERB but would otherwise
 // fall to the muted 'activity' catch-all, indistinguishable from background noise.
 const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_BLOCKED','EXTERNAL_CAPABILITY_ACQUIRED',
-  'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED']);
+  'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED','PROVISIONAL_TOOL_STATUS']);
 // a verdict that did NOT accept → render in the rejected colour. A persona honestly
 // stuck on self-provisioning (EXTERNAL_CAPABILITY_BLOCKED) reads as fail too. NOTE:
 // the public interaction projection strips payload, so CAPABILITY_PROVISIONED's
 // ok/error fields are NOT in the client stream — only BLOCKED is markable client-side.
 const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED';
-function _ixClass(kind,event=null){ if(event?._cognition===true||kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
+function _ixClass(kind,event=null){ if(event?._cognition===true
+    ||(event?._providerProvisional===true&&kind==='PROVISIONAL_ASSISTANT_MESSAGE')
+    ||kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
   if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
   if(TOOL_KINDS.has(kind))return 'tool';
   if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
@@ -2876,7 +2878,9 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
   PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
   PERSONA_BIRTH_REFUSED:'refused persona birth',
-  MODEL_CALL:'model call',LLM_OUTPUT:'produced',LLM_LESSON:'learned',COGNITION_LESSON:'holds lesson',
+  MODEL_CALL:'model call',LLM_OUTPUT:'produced',LLM_LESSON:'learned',
+  PROVISIONAL_ASSISTANT_MESSAGE:'streamed assistant message',PROVISIONAL_PROVIDER_STATUS:'provider status',
+  PROVISIONAL_TOOL_STATUS:'tool status',COGNITION_LESSON:'holds lesson',
   COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
@@ -4150,7 +4154,7 @@ function renderInteractionStream(){
     const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
     const trust=e.signed===true
       ? `<span class="ix-trust signed" title="${esc(e._trustTitle||'lineage signature asserted by the node frame')}">${esc(e._trustLabel||'SIGNED EVENT')}</span>`
-      : `<span class="ix-trust transport" title="live node transport frame; not independently signature-verified in this browser">LIVE FRAME</span>`;
+      : `<span class="ix-trust transport" title="${esc(e._trustTitle||'live node transport frame; not independently signature-verified in this browser')}">${esc(e._trustLabel||'LIVE FRAME')}</span>`;
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
@@ -4306,11 +4310,11 @@ function renderEnvFeedDoc(doc){
   h+=`<div class="sublabel">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
   return h;
 }
-// ---- 🧠 persona THINKING (02_PERSONA §4/§8-10) ----
-// A node can opt its bounded persona cognition projection into the public tier.
-// Anonymous viewers accept only the exact current-master-signed schema below;
-// private nodes answer 404. The exact thinking FRAME remains operator-only even
-// if a faulty or hostile public response includes a non-empty field.
+// ---- persona public activity (02_PERSONA §4/§8-10) ----
+// A node can opt its bounded persona activity projection into the public tier.
+// Anonymous viewers accept only the exact current-master-signed schema below.
+// Persona-signed final output remains distinct from closed, kernel-observed
+// provisional provider events; the exact thinking FRAME remains operator-only.
 function renderThinking(t,{allowThinkingFrame=false}={}){
   let h='';
   const publicCognition=t.schema==='personaos-persona-public-cognition/1';
@@ -4326,6 +4330,28 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
           +(Number.isFinite(started)?` · started ${esc(_ago(started))}`:'')+`</div>`
           +((call.task_id||call.run_id)?`<div class="l2">${call.task_id?`task ${esc(call.task_id)}`:''}${call.task_id&&call.run_id?' · ':''}${call.run_id?`run ${esc(call.run_id)}`:''}</div>`:'')
           +`</div>`;
+      }).join('');
+  }
+  const provisional=publicCognition?(t.provisional_outputs||[]):[];
+  if(provisional.length){
+    const provisionalStart=Math.max(0,provisional.length-24);
+    const visibleProvisional=provisional.slice(provisionalStart)
+      .map((event,offset)=>({event,index:provisionalStart+offset}));
+    h+=`<div class="privacy-note">Live provider stream — kernel-observed and provisional, not persona-signed cognition or hidden reasoning.</div>`
+      +visibleProvisional.map(({event,index})=>{
+        const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
+          +`${event.call_id?` · call ${esc(event.call_id)}`:''} · sequence ${esc(event.sequence)}`
+          +(event.kind==='assistant_message'?` · chunk ${esc(event.chunk_index+1)}/${esc(event.chunk_count)}`:'')
+          +`</div>`;
+        if(event.kind==='assistant_message'){
+          return `<div class="think llmout copy-host"><span class="amber">provisional assistant message</span> ${copyBtn()}`
+            +`<pre class="ct-pre copy-src" data-provisional-output-index="${index}"></pre>${callMeta}</div>`;
+        }
+        const subject=event.kind==='tool_status'
+          ?[event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
+          :'provider turn';
+        return `<div class="think"><span class="amber">${esc(String(event.kind||'status').replace(/_/g,' '))}</span> ${esc(event.status||'')}`
+          +(subject?` · ${esc(subject)}`:'')+callMeta+`</div>`;
       }).join('');
   }
   const out=t.recent_outputs||[];
@@ -4389,6 +4415,13 @@ function hydrateThinkingOutputText(host,doc){
       ?outputs[index]?.text:'';
     target.textContent=typeof text==='string'?text:String(text??'');
   }
+  const provisional=Array.isArray(doc?.provisional_outputs)?doc.provisional_outputs:[];
+  for(const target of host.querySelectorAll('[data-provisional-output-index]')){
+    const index=Number(target.dataset.provisionalOutputIndex);
+    const text=Number.isSafeInteger(index)&&index>=0&&index<provisional.length
+      ?provisional[index]?.text:'';
+    target.textContent=typeof text==='string'?text:String(text??'');
+  }
 }
 function renderThinkingRedacted(doc){
   let h='<div class="privacy-note">Detailed cognition is private. This view shows verified state transitions only.</div>';
@@ -4406,7 +4439,7 @@ function renderThinkingRedacted(doc){
 const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
   'active_calls','evolution_timeline','generated_at','identity_fields',
   'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
-  'proven_facts','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
+  'proven_facts','provisional_outputs','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
   'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
@@ -4428,9 +4461,24 @@ const PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS=Object.freeze([
   'parent_communication_id','payload','provenance','schema','signed_by','signing_key_id',
 ].sort());
 const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=Object.freeze([
-  'call_id','model_id','persona_id','reasoning_effort','requested_purpose','run_id',
+  'call_id','model_id','persona_id','provisional_events','reasoning_effort','requested_purpose','run_id',
   'started_at','status','task_id',
 ].sort());
+const PUBLIC_PROVISIONAL_BASE_FIELDS=Object.freeze([
+  'at','authority','kind','persona_signed','provisional','schema','sequence',
+].sort());
+const PUBLIC_PROVISIONAL_BINDING_FIELDS=Object.freeze([
+  'call_id','model_id','persona_id',
+].sort());
+const PUBLIC_PROVISIONAL_KINDS=new Set([
+  'assistant_message','provider_status','tool_status',
+]);
+const PUBLIC_PROVISIONAL_PROVIDER_STATUSES=new Set([
+  'turn_completed','turn_failed','turn_started',
+]);
+const PUBLIC_PROVISIONAL_TOOL_STATUSES=new Set([
+  'completed','failed','started',
+]);
 const PUBLIC_PERSONA_LESSON_FIELDS=Object.freeze([
   'action','confidence','rationale','trigger',
 ].sort());
@@ -4452,6 +4500,7 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
 const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
   activeCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
+  provisionalEvents:128,provisionalTextCodePoints:16*1024,
   atom:512,lineageText:4096,exactTextBytes:512*1024,documentBytes:4*1024*1024,
 });
 const PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE=new Map();
@@ -4473,6 +4522,62 @@ function _safePublicCognitionAtom(value,maximum=PUBLIC_PERSONA_COGNITION_LIMITS.
 function _safePublicCognitionInstant(value,{required=true}={}){
   return _safePublicCognitionAtom(value,64,{required})
     &&(!value||(PUBLIC_PERSONA_COGNITION_INSTANT.test(value)&&Number.isFinite(Date.parse(value))));
+}
+function _publicProvisionalEventFields(event,{bound=false}={}){
+  const fields=[...PUBLIC_PROVISIONAL_BASE_FIELDS];
+  if(event?.kind==='assistant_message'){
+    fields.push('chunk_count','chunk_index','sha256','text','utf8_bytes');
+    if(Object.prototype.hasOwnProperty.call(event,'message_id')) fields.push('message_id');
+  }else if(event?.kind==='provider_status') fields.push('status');
+  else if(event?.kind==='tool_status'){
+    fields.push('status','tool_type');
+    for(const field of ['server','tool_name'])
+      if(Object.prototype.hasOwnProperty.call(event,field)) fields.push(field);
+  }
+  if(bound) fields.push(...PUBLIC_PROVISIONAL_BINDING_FIELDS);
+  return fields.sort();
+}
+function _safePublicProvisionalStateToken(value){
+  return typeof value==='string'&&value.length>=1&&value.length<=180
+    &&value.trim()===value&&/^[A-Za-z0-9:_.@/+\-]+$/.test(value)
+    &&!value.startsWith('/')&&!value.startsWith('./')&&!value.startsWith('../')
+    &&!value.startsWith('~/')&&!value.includes('/../')&&!/^[A-Za-z]:\//.test(value);
+}
+async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
+  if(!_exactObjectFields(event,_publicProvisionalEventFields(event))
+      ||event.schema!=='personaos-provisional-cognition/1'
+      ||event.authority!=='kernel_observed_provider_event'
+      ||event.persona_signed!==false||event.provisional!==true
+      ||!PUBLIC_PROVISIONAL_KINDS.has(event.kind)
+      ||!Number.isSafeInteger(event.sequence)||event.sequence<1
+      ||!_safePublicCognitionInstant(event.at)) return false;
+  const observed=Date.parse(event.at), started=Date.parse(String(call?.started_at||''));
+  const generated=Date.parse(String(generatedAt||''));
+  if(!Number.isFinite(observed)||!Number.isFinite(started)||!Number.isFinite(generated)
+      ||observed<started||observed>generated) return false;
+  if(event.kind==='assistant_message'){
+    if(typeof event.text!=='string'||!event.text
+        ||[...event.text].length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalTextCodePoints
+        ||!Number.isSafeInteger(event.utf8_bytes)||event.utf8_bytes<1
+        ||!SHA256_CONTENT_RE.test(String(event.sha256||''))
+        ||!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
+        ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
+        ||event.chunk_count>4096||event.chunk_index>=event.chunk_count
+        ||(Object.prototype.hasOwnProperty.call(event,'message_id')
+          &&!_safePublicProvisionalStateToken(event.message_id))) return false;
+    const bytes=enc.encode(event.text);
+    return bytes.length===event.utf8_bytes
+      &&`sha256:${await sha256Hex(bytes)}`===event.sha256;
+  }
+  if(event.kind==='provider_status') return PUBLIC_PROVISIONAL_PROVIDER_STATUSES.has(event.status);
+  if(!PUBLIC_PROVISIONAL_TOOL_STATUSES.has(event.status)
+      ||!_safePublicCognitionText(event.tool_type,160,{required:true})
+      ||event.tool_type.trim()!==event.tool_type) return false;
+  for(const field of ['server','tool_name']) if(Object.prototype.hasOwnProperty.call(event,field)){
+    if(!_safePublicCognitionText(event[field],240,{required:true})
+        ||event[field].trim()!==event[field]) return false;
+  }
+  return true;
 }
 async function _validPublicPersonaAuthoredOutput(authored,exactText){
   if(!_exactObjectFields(authored,PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS)
@@ -4563,7 +4668,7 @@ async function _validPublicPersonaOutput(output,identity,row){
   return await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)
     &&await _validPublicPersonaAuthority(output,identity,row);
 }
-function _validPublicPersonaActiveCall(call,identity){
+function _validPublicPersonaActiveCall(call,identity,generatedAt){
   return _exactObjectFields(call,PUBLIC_PERSONA_ACTIVE_CALL_FIELDS)
     &&_safePublicCognitionAtom(call.call_id,512,{required:true})
     &&_safePublicCognitionAtom(call.model_id,512,{required:true})
@@ -4573,8 +4678,11 @@ function _validPublicPersonaActiveCall(call,identity){
     &&_safePublicCognitionText(call.requested_purpose,512)
     &&_safePublicCognitionAtom(call.run_id,512)
     &&_safePublicCognitionInstant(call.started_at)
+    &&Date.parse(call.started_at)<=Date.parse(generatedAt)
     &&call.status==='running'
-    &&_safePublicCognitionAtom(call.task_id,512);
+    &&_safePublicCognitionAtom(call.task_id,512)
+    &&Array.isArray(call.provisional_events)
+    &&call.provisional_events.length<=PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents;
 }
 function _validPublicPersonaLesson(lesson){
   return _exactObjectFields(lesson,PUBLIC_PERSONA_LESSON_FIELDS)
@@ -4622,6 +4730,8 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
       ||String(doc.name||'')!==String(row._personaSignedName||'')
       ||!Array.isArray(doc.active_calls)||doc.active_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.activeCalls
+      ||!Array.isArray(doc.provisional_outputs)
+      ||doc.provisional_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents
       ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.outputs
       ||!Array.isArray(doc.lessons)||doc.lessons.length>PUBLIC_PERSONA_COGNITION_LIMITS.lessons
       ||!Array.isArray(doc.tactics)||doc.tactics.length>PUBLIC_PERSONA_COGNITION_LIMITS.tactics
@@ -4638,10 +4748,31 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
     if(!_exactObjectFields(value,['persona_authored','state'])
         ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
   }
-  const callIds=new Set();
+  const callIds=new Set(), callsById=new Map(), flattenedProvisional=[];
   for(const call of doc.active_calls){
-    if(!_validPublicPersonaActiveCall(call,identity)||callIds.has(call.call_id)) return false;
-    callIds.add(call.call_id);
+    if(!_validPublicPersonaActiveCall(call,identity,doc.generated_at)||callIds.has(call.call_id)) return false;
+    callIds.add(call.call_id); callsById.set(call.call_id,call);
+    let previousSequence=0,previousObservedAt=Date.parse(call.started_at);
+    for(const event of call.provisional_events){
+      const observedAt=Date.parse(event?.at||'');
+      if(!await _validPublicProvisionalEvent(event,
+        {call,generatedAt:doc.generated_at})
+          ||event.sequence<=previousSequence||observedAt<previousObservedAt) return false;
+      previousSequence=event.sequence; previousObservedAt=observedAt;
+      flattenedProvisional.push({...event,call_id:call.call_id,model_id:call.model_id,
+        persona_id:identity.signedId});
+    }
+  }
+  const expectedProvisional=flattenedProvisional.slice(-PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents);
+  if(canon(doc.provisional_outputs)!==canon(expectedProvisional)) return false;
+  // Exact equality to the independently validated nested records proves content
+  // integrity without hashing every assistant chunk twice. Close the flattened
+  // shape explicitly and bind its transport identifiers to the owning call.
+  for(const event of doc.provisional_outputs){
+    const call=callsById.get(event?.call_id);
+    if(!call||!_exactObjectFields(event,_publicProvisionalEventFields(event,{bound:true}))
+        ||event.call_id!==call.call_id||event.model_id!==call.model_id
+        ||event.persona_id!==identity.signedId) return false;
   }
   for(const output of doc.recent_outputs)
     if(!await _validPublicPersonaOutput(output,identity,row)) return false;
@@ -4672,10 +4803,10 @@ async function refreshThinking(){
   const el3=$('#thinksec'); if(el3) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
     :'<div class="privacy-note">No verified signed public cognition is available. Private cognition is not exposed.</div>';
 }
-// LIVE persona cognition: poll active personas' cognition surface and merge the
-// exact validated signed state into the same live feed. With a token this accepts
-// the operator tier. Without one it accepts only the exact public cognition
-// contract; a private node's 404 remains a quiet no-op.
+// LIVE persona activity: poll active personas and merge the exact validated
+// kernel-signed snapshot into the live feed. Persona-signed final output and
+// provisional kernel observations keep separate trust labels. With a token this
+// accepts the operator tier; a private node's anonymous 404 remains a quiet no-op.
 let _cogBusy=false;
 function _cognitionPreview(value){
   for(const line of String(value||'').split('\n')){
@@ -4702,6 +4833,21 @@ function _publicCognitionRows(doc){
     rationale:`model ${call.model_id} · ${call.status}${call.reasoning_effort?` · reasoning ${call.reasoning_effort}`:''}`,
     cognition:true,ctype:'think',recipients:[],dedup:call,
   });
+  for(const event of doc.provisional_outputs){
+    const assistant=event.kind==='assistant_message', tool=event.kind==='tool_status';
+    const kind=assistant?'PROVISIONAL_ASSISTANT_MESSAGE':tool?'PROVISIONAL_TOOL_STATUS':'PROVISIONAL_PROVIDER_STATUS';
+    const statusDetail=tool
+      ?[event.status,event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
+      :[event.status,event.model_id].filter(Boolean).join(' · ');
+    rows.push({
+      source:'provisional',kind,at:event.at,scope:'provider',scopeId:event.call_id,
+      msg:assistant?event.text:statusDetail,rationale:assistant?event.text:statusDetail,
+      exactText:assistant?event.text:'',cognition:false,providerProvisional:true,ctype:'think',
+      recipients:[],authority:event.authority,dedup:event,personaSigned:false,
+      trustLabel:'KERNEL OBSERVED · PROVISIONAL',
+      trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning',
+    });
+  }
   for(const output of doc.recent_outputs){
     const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
     rows.push({
@@ -4810,7 +4956,8 @@ async function streamPersonaCognition(){
           S.publicCognitionSeen.delete(S.publicCognitionSeen.keys().next().value);
       }
       for(const row of rows){
-        const msg=typeof row.msg==='string'?row.msg:String(row.msg??''); if(!msg.trim()) continue;
+        const msg=typeof row.msg==='string'?row.msg:String(row.msg??'');
+        if(!msg.trim()&&row.providerProvisional!==true) continue;
         const key=`cog|${personaKey}|${row.source}|${row.kind}|${_publicCognitionFingerprint(row.dedup)}`;
         if(personaSeen?.has(key)||S.ixKeys.has(key)) continue;
         if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
@@ -4819,16 +4966,19 @@ async function streamPersonaCognition(){
         const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
         const preview=prefix?`${prefix} — ${contentPreview}`:contentPreview;
         const recipients=(row.recipients||[]).map((id)=>({kind:'persona',id}));
+        const personaSigned=publicCognition&&row.personaSigned!==false;
+        const trustTitle=row.trustTitle||(personaSigned
+          ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'');
         S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
-          scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:publicCognition,
+          scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:personaSigned,
           _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
           _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
           _exactText:typeof row.exactText==='string'?row.exactText:'',
           _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
+          _providerProvisional:row.providerProvisional===true,
           _observedState:row.observedState===true,
-          _trustLabel:publicCognition?'SIGNED COGNITION':'',
-          _trustTitle:publicCognition
-            ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'',
+          _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
+          _trustTitle:String(trustTitle),
         });
       }
     }
@@ -4933,13 +5083,14 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
-  // Public signed cognition when the node opts in; the private thinking frame is
-  // available only with operator authority. Both stream on the live cadence.
+  // Public activity combines persona-signed final output with explicitly
+  // provisional kernel observations; the private thinking frame remains
+  // available only with operator authority. Both refresh on the live cadence.
   S.drawerThinkPid=_signedPersonaEndpointId(personaKey);
   const thinkingEndpoint=join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`);
   const operatorThinking=!!tokenFor(thinkingEndpoint);
-  html+=H(operatorThinking?'Thinking':'Signed public cognition')
-    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving signed public cognition…'}</div></div>`;
+  html+=H(operatorThinking?'Thinking':'Live public activity')
+    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving verified public activity…'}</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   // Related navigation obeys the same exact authority result. Profile/status
