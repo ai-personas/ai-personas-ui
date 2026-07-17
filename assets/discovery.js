@@ -186,6 +186,14 @@ async function verifyRecord(doc,keyEntries){
 const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
+function normalizedHttpsBase(value){
+  const raw=String(value||'').replace(/\/$/,'');
+  try{
+    const url=new URL(raw);
+    if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash) return '';
+    return url.toString().replace(/\/$/,'');
+  }catch(_){ return ''; }
+}
 /* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
    The node mints a process bearer at boot and temporarily stages it under
    runs/.../_operator/token until the first model call.
@@ -331,7 +339,9 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   providerKeyRefreshAt:new Map(), providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
-  streams:new Map(), p2pBootstraps:new Set(), globalPeers:new Set(), gossipPeers:new Set(),
+  providerRouteReconciliations:new Map(),
+  streams:new Map(), p2pBootstraps:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
+  p2pDialRetryTimer:null, p2pDialActive:0, globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
   // Live per-entity telemetry index: base → latest live telemetry doc, plus
@@ -924,19 +934,60 @@ function log(tag,msg,ok){ const li=document.createElement('li');
   while(host.children.length>NETWORK_LIMITS.discoveryLogRows) host.firstElementChild?.remove(); }
 
 /* ---------- discovery (runtime resolve + in-browser verify) ---------- */
-function collectP2PBootstraps(boot){
-  const observed=[...(boot?.bootstrap_peers||[]),...(boot?.relay_peers||[]),
-    ...((boot?.reachability_profile||{}).bootstrap_peers||[]),
-    ...((boot?.reachability_profile||{}).relay_peers||[])];
-  for(const multiaddr of collectBrowserLibp2pBootstraps(
-    {pageProtocol:location.protocol},observed)) S.p2pBootstraps.add(multiaddr);
+const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256,
+  maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
+  retryMaxMs:60000,successfulRedialMs:60000});
+const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
+  maxReconciliationsPerJob:8,jobDeadlineMs:30000});
+function boundedP2PBootstrapSource(value){
+  if(typeof value==='string') return [value];
+  return Array.isArray(value)?value.slice(0,P2P_BOOTSTRAP_LIMITS.maxCandidatesPerSource):[];
 }
-async function keysFor(base,boot,{refresh=false}={}){
+function rememberP2PBootstraps(sourceLists,{dial=false}={}){
+  // Bound how much untrusted input is scanned per source, but filter for an
+  // actually browser-eligible transport before applying the 64-address
+  // admission ceiling. An invalid bootstrap list therefore cannot crowd valid
+  // relay entries out merely by appearing first.
+  const sources=(Array.isArray(sourceLists)?sourceLists:[sourceLists])
+    .map(boundedP2PBootstrapSource);
+  const eligible=collectBrowserLibp2pBootstraps(
+    {pageProtocol:location.protocol},...sources);
+  const admitted=[];
+  for(const multiaddr of eligible){
+    if(S.p2pBootstraps.has(multiaddr)){
+      if(dial) _queueP2PBootstrapDial(multiaddr);
+      continue;
+    }
+    if(S.p2pBootstraps.size>=P2P_BOOTSTRAP_LIMITS.maxKnown){
+      if(!S._p2pBootstrapLimitNoted){
+        S._p2pBootstrapLimitNoted=true;
+        log('p2p','browser bootstrap address limit reached; additional transport hints refused',false);
+      }
+      break;
+    }
+    S.p2pBootstraps.add(multiaddr); admitted.push(multiaddr);
+    if(dial) _queueP2PBootstrapDial(multiaddr);
+  }
+  return admitted;
+}
+function collectP2PBootstraps(boot,{dial=false}={}){
+  return rememberP2PBootstraps([
+    boot?.bootstrap_peers,
+    boot?.relay_peers,
+    boot?.reachability_profile?.bootstrap_peers,
+    boot?.reachability_profile?.relay_peers,
+  ],{dial});
+}
+async function keysFor(base,boot,{refresh=false,signal=null}={}){
   const key=base||'@origin';
   const cached=S.keyDocs.get(key);
   if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
       &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
-  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'));
+  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'),
+    {signal});
+  // A route-reconciliation deadline is not evidence that a previously verified
+  // registry became invalid. Do not let its abort erase shared cached authority.
+  if(signal?.aborted) return S.keys.get(key)||{};
   const keys={}; const entries=[]; const currentIds=new Set();
   let valid=keysDoc?.schema==='personaos-keys/1'
     &&!!String(keysDoc?.kernel_id||'')
@@ -1021,14 +1072,18 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
   if(!access.ok||!access.canDiscover) return {ok:false,reason:access.reason||'provider_access_refused'};
   return {ok:true,access,documentKey};
 }
-async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedKey=''){
-  let keys=await keysFor(base,boot);
+async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedKey='',
+  {signal=null}={}){
+  if(signal?.aborted) return {ok:false,reason:'provider_verification_aborted',keys:{}};
+  let keys=await keysFor(base,boot,{signal});
   let verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
   if(verification.ok) return {...verification,keys};
+  if(signal?.aborted) return {...verification,keys:{}};
   const cacheKey=base||'@origin', last=S.providerKeyRefreshAt.get(cacheKey)||0;
   if(Date.now()-last<10000) return {...verification,keys:{}};
   S.providerKeyRefreshAt.set(cacheKey,Date.now());
-  keys=await keysFor(base,boot,{refresh:true});
+  keys=await keysFor(base,boot,{refresh:true,signal});
+  if(signal?.aborted) return {...verification,keys:{}};
   verification=await verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKey);
   return verification.ok?{...verification,keys}:{...verification,keys:{}};
 }
@@ -1354,7 +1409,8 @@ function logRecordAccess(row,source){
   const label=String(row?.label||row?.record_id||'record').slice(0,36);
   log('access',`${source}: ${label} · ${row?._readAuthorized?'public read granted':'discover-only; read links withheld'}`,true);
 }
-async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,source='http'){
+async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,source='http',
+  {signal=null}={}){
   const rows=[]; let refused=0;
   const inventory=await verifyProviderInventory(providerIndex,base,boot);
   if(!inventory.ok){
@@ -1394,7 +1450,8 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
   for(let offset=0;offset<entries.length;offset+=batchSize){
     const batch=await Promise.all(entries.slice(offset,offset+batchSize).map(async([recordUrl,envelope])=>{
       const doc=envelope.document;
-      const authority=await verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base);
+      const authority=await verifyHttpProviderWithKeyRefresh(
+        envelope,doc,boot,base,'',{signal});
       if(!authority.ok) return {ok:false,envelope,reason:authority.reason||'FAIL'};
       const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
         {access:authority.access,providerBaseVerified:true});
@@ -1409,26 +1466,32 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
   }
   return {rows,refused,envelopeCount:entries.length,inventory};
 }
-async function verifiedRowsFromP2PResult(result,source='p2p'){
-  const rows=[]; let refused=0;
-  const expectedKey=String(result?.key||'');
-  for(const item of (Array.isArray(result?.records)?result.records:[])){
+async function verifiedRouteHintsFromP2PResult(result,{signal=null}={}){
+  const routeHints=[];
+  const expectedKey=String(result?.key||''), allRecords=Array.isArray(result?.records)?result.records:[],
+    records=allRecords.slice(0,P2P_ROUTE_LIMITS.maxCandidatesPerResolution);
+  let refused=Math.max(0,allRecords.length-records.length);
+  if(result?.schema!=='personaos-browser-provider-resolution/1'||!expectedKey
+      ||result.verified_count!==allRecords.length)
+    return {routeHints,refused:Math.max(1,allRecords.length)};
+  for(const item of records){
+    if(signal?.aborted) break;
     const doc=item?.document, p=item?.record||{};
-    if(!doc?.record||!expectedKey){ refused++; continue; }
+    const base=normalizedHttpsBase(p.base_url);
+    if(!doc?.record||!expectedKey||!base
+        ||!Number.isSafeInteger(p.inventory_generation)||p.inventory_generation<1
+        ||!/^sha256:[0-9a-f]{64}$/.test(String(p.inventory_manifest_hash||''))){
+      refused++; continue;
+    }
     const pboot={kernel_id:p.host_kernel_id,keys_url:'.well-known/personaos-keys.json'};
-    const base=String(p.base_url||'');
-    const authority=await verifyHttpProviderWithKeyRefresh(item,doc,pboot,base,expectedKey);
+    const authority=await verifyHttpProviderWithKeyRefresh(
+      item,doc,pboot,base,expectedKey,{signal});
     if(!authority.ok){ refused++; continue; }
-    const out=await verifiedRecordFromDoc(doc,authority.keys,pboot,base,'internet','',
-      {access:authority.access,providerBaseVerified:true});
-    if(!out.ok){ refused++; continue; }
-    out.row._net='p2p';
-    out.row._providerInventoryGeneration=p.inventory_generation;
-    out.row._providerInventoryManifestHash=String(p.inventory_manifest_hash||'');
-    out.row._providerDocumentHash=String(p.document_hash||'');
-    logRecordAccess(out.row,source); rows.push(out.row);
+    const master=currentProviderMaster(base,pboot);
+    if(!master||pboot.kernel_id!==`kernel:${master.slice(0,16)}`){ refused++; continue; }
+    routeHints.push({base,kernel:pboot.kernel_id});
   }
-  return {rows,refused};
+  return {routeHints,refused};
 }
 const DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai';
 function globalDiscoveryEndpoints(){
@@ -1473,9 +1536,11 @@ async function loadGlobalNodes(){
     fetchJson(join(ep,'/v1/bootstrap')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
   for(const {ep,d} of boots){
     if(!d) continue;
-    const addrs=collectBrowserLibp2pBootstraps(
-      {pageProtocol:location.protocol},d.libp2p_multiaddrs,d.relay_multiaddrs);
-    for(const ma of addrs) S.p2pBootstraps.add(ma);
+    // Resolver bootstrap peers are transport-only first contact. Dialling one
+    // grants it no record authority; every provider and inventory remains
+    // independently current-master verified in this browser.
+    const addrs=rememberP2PBootstraps(
+      [d.libp2p_multiaddrs,d.relay_multiaddrs],{dial:true});
     if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
   }
   // Traverse only a fixed number of small cursor pages. In global mode a search
@@ -1520,8 +1585,7 @@ async function loadGlobalNodes(){
         reachability:ann.reachability_class||'',
         publicDiscovery:!!ann.public_discovery,
       });
-      for(const ma of collectBrowserLibp2pBootstraps(
-        {pageProtocol:location.protocol},ann.libp2p_multiaddrs)) S.p2pBootstraps.add(ma);
+      rememberP2PBootstraps([ann.libp2p_multiaddrs],{dial:true});
       if(base) freshPeers.add(base);
     }
   }
@@ -1563,17 +1627,24 @@ async function loadGlobalNodes(){
   }
   return rows;
 }
-async function discoverFrom(base,plane,knownBoot=null){
+async function discoverFrom(base,plane,knownBoot=null,
+  {expectedKernel='',resolveProviderAliases=true,signal=null}={}){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
-  const boot=knownBoot||await fetchJson(join(base,'.well-known/personaos-discovery.json'));
+  const boot=knownBoot||await fetchJson(
+    join(base,'.well-known/personaos-discovery.json'),{signal});
   S.peerHealth=(S.peerHealth||new Map());
   if(!boot){ log('bootstrap',`no endpoint at ${where}`,false);
     const gb=S.globalAnnouncementByBase?.get(opBaseKey(where))||S.globalAnnouncementByBase?.get(String(where||'').replace(/\/$/,''));
     if(gb?.kernel_id) noteKernel(gb.kernel_id,'unreachable',where,{reachable:false});
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]}; }
-  S.boots.set(base||'@origin',boot); collectP2PBootstraps(boot);
-  await keysFor(base,boot);
+  if(expectedKernel&&boot.kernel_id!==expectedKernel){
+    log('bootstrap',`${where}: route hint resolved to a different kernel`,false);
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]};
+  }
+  S.boots.set(base||'@origin',boot);
+  await keysFor(base,boot,{signal});
+  if(signal?.aborted) return {boot:null,found:[]};
   // The bootstrap count is the number of signed discovery documents, not the
   // number of provider lookup aliases. A compact v3 inventory may legitimately
   // publish several independently signed ProviderRecords (DID, record id,
@@ -1587,7 +1658,7 @@ async function discoverFrom(base,plane,knownBoot=null){
     return {boot,found:[]};
   }
   const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
-    {maxBytes:providerIndexMaxBytes});
+    {maxBytes:providerIndexMaxBytes,signal});
   if(!prov||Number(prov.document_count)!==advertisedRecordCount){
     log('dht',`${boot.kernel_id||where}: provider document count does not match advertised bootstrap`,false);
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
@@ -1595,17 +1666,19 @@ async function discoverFrom(base,plane,knownBoot=null){
   }
   const providers=Array.isArray(prov?.providers)?prov.providers:[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
-  const http=await verifiedRowsFromProviderIndex(prov,base,boot,plane,'http provider');
+  const http=await verifiedRowsFromProviderIndex(
+    prov,base,boot,plane,'http provider',{signal});
   const found=[...http.rows];
-  if(P2P?.resolveProvider){
+  if(resolveProviderAliases&&P2P?.resolveProvider){
     const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
     const resolved=await Promise.all(aliases.map((key)=>P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
     let authorityVerified=0;
-    for(const result of resolved){ const verified=await verifiedRowsFromP2PResult(result,'p2p index lookup');
+    for(const result of resolved){ const verified=await verifiedRouteHintsFromP2PResult(
+      result,{signal});
       // Standalone provider lookups remain locator evidence only. Public rows
       // are rendered from the signed v3 inventory so retirement/omission can
       // be reconciled atomically instead of leaving a stale P2P contribution.
-      authorityVerified+=verified.rows.length; }
+      authorityVerified+=verified.routeHints.length; }
     if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup proof(s) verified · inventory promotion required`,authorityVerified>0);
   }
   const uniqueFound=new Map(found.map((row)=>[
@@ -1613,16 +1686,17 @@ async function discoverFrom(base,plane,knownBoot=null){
   found.length=0; found.push(...uniqueFound.values());
   if(found.length) log('verify',`${found.length}/${http.envelopeCount} record(s) provider + record + policy verified`,true);
   // Bridge-cache gossip is untrusted lookup material only. It never becomes a
-  // displayed record or supplies base/links/policy; current-master ProviderRecord
-  // resolution is the sole promotion path into S.recs.
+  // displayed record or supplies base/links/policy. A resolved current-master
+  // ProviderRecord supplies only an HTTPS route; the route's complete signed
+  // inventory is the sole promotion path into S.recs.
   const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
-  const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived)):null;
+  const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived),{signal}):null;
   for(const doc of (p2pDoc?.records||[])){
     if(doc?.record?.visibility_tier==='public') queueProviderHints(doc.record,'bridge-cache gossip');
   }
   // HTTP gossip cache is also hint-only. Self-asserted origin/kernel fields never
   // create a node or record in the UI before current-master provider resolution.
-  const gossip=await fetchJson(join(base,'gossip/cache'));
+  const gossip=await fetchJson(join(base,'gossip/cache'),{signal});
   for(const id in (gossip?.cards||gossip||{})){
     const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
     const record=card.record||card;
@@ -1734,11 +1808,14 @@ function renderGlobalKernels(){
 // peer URL or carry routing state in the public URL.
 function peerList(){
   const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
+  const recentGossip=[...(S.gossipPeers||[])].reverse();
   // Explicit and local routes outrank opportunistic/global ones; a focused node
-  // is pinned to the front. This is the active monitoring window, not a claim
-  // that the rest of the discovered population ceased to exist.
+  // is pinned to the front. Verified P2P routes are stored as an LRU Set, so
+  // reverse them here to keep the newest live route in the monitoring window.
+  // This is the active monitoring window, not a claim that the rest of the
+  // discovered population ceased to exist.
   const all=[...new Set([...focused,...(S.localPeers||[]),
-    ...(S.gossipPeers||[]),...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
+    ...recentGossip,...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
   const window=selectMonitoringBases(all.map((base,index)=>({base,priority:all.length-index})),{
@@ -1951,7 +2028,6 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
         ||(inventory.generation===prior.generation&&inventory.hash!==prior.hash)){
       log('verify',`${source}: stale/equivocating provider inventory generation refused`,false); return false;
     }
-    if(inventory.generation===prior.generation) return true;
     if(inventory.generation===prior.generation+1&&inventory.previousHash!==prior.hash){
       log('verify',`${source}: provider inventory chain head mismatch refused`,false); return false;
     }
@@ -1968,6 +2044,10 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
     incoming.add(id);
   }
   if(incoming.size!==inventory.recordIds.size) return false;
+  // Re-apply an identical, freshly verified generation as well as a newer one.
+  // This heals bounded-cache eviction without weakening atomic retirement: the
+  // exact inventory hash was checked above and every incoming row must still
+  // exhaust the signed manifest before any stale key is removed.
   for(const row of rows) upsert({...row,_inventorySource:source,
     _inventoryGeneration:inventory.generation,_inventoryHash:inventory.hash});
   for(const id of (prior?.recordKeys||[])) if(!incoming.has(id)) _removeRecordStoreKey(id);
@@ -2062,7 +2142,7 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
     visited.add(key);
     const job=fetchJson(join(b,'.well-known/personaos-discovery.json')).then((boot)=>{
       if(!boot){ if(b) emit(b,null); return; }               // dead peer → discoverFrom logs it
-      S.boots.set(b||'@origin',boot); collectP2PBootstraps(boot);
+      S.boots.set(b||'@origin',boot);
       const fks=boot.federated_kernels||[];
       if(boot.providers_are_aggregate) emit(b,boot);         // public aggregate: do not expand private runs
       else {
@@ -2109,7 +2189,10 @@ async function discover(){
       if(!res.boot) return;
       const accepted=applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
       connectDiscoveryStream(b,res.boot);
-      if(accepted) scheduleRealtimeRepaint({records:true});
+      if(accepted){
+        collectP2PBootstraps(res.boot,{dial:true});
+        scheduleRealtimeRepaint({records:true});
+      }
       await loadTelemetry(b);                 // aggregate static spans + live node telemetry
       scheduleRealtimeRepaint();
     }).catch(()=>{});
@@ -2358,8 +2441,8 @@ function rebalanceDiscoveryStreams(){
 }
 
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
-async function loadTelemetry(base){
-  const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
+async function loadTelemetry(base,{signal=null}={}){
+  const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'),{signal});
   if(!boot) return;
   const kid=boot.kernel_id||base;
   let added=0;
@@ -2415,11 +2498,12 @@ async function loadTelemetry(base){
   if(boot.telemetry_spans_url) spansUrls.push(boot.telemetry_spans_url);
   if(!boot.live_telemetry_url) spansUrls.push('telemetry/spans.json');
   for(const url of [...new Set(spansUrls)]){
-    const spans=await fetchJson(join(base,url));
+    if(signal?.aborted) return;
+    const spans=await fetchJson(join(base,url),{signal});
     ingestSpans(spans);
   }
   if(boot.live_telemetry_url){
-    const live=await fetchJson(join(base,boot.live_telemetry_url));
+    const live=await fetchJson(join(base,boot.live_telemetry_url),{signal});
     await ingestLive(live);
   }
   if(!added){ return; }
@@ -7543,8 +7627,89 @@ function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P
   const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'}`:'HTTP federation discovery';
   el.title=detail; el.setAttribute('aria-label',`Network connectivity: ${detail}`);
   el.textContent=n?`Network · ${peers} peer${peers===1?'':'s'}`:'Network · web discovery'; }
+function _ensureP2PRendezvousSchedule(){
+  if(!P2P?.node) return;
+  P2P._rendezvousConfigured=true;
+  if(!P2P._rendezvousSoon){
+    P2P._rendezvousSoon=setTimeout(()=>{
+      P2P._rendezvousSoon=null; refreshP2PRendezvous().catch(()=>{});
+    },3000);
+  }
+  if(!P2P._rendezvousTimer)
+    P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000);
+}
+function _p2pBootstrapDialState(multiaddr){
+  let state=S.p2pDialStates.get(multiaddr);
+  if(state) return state;
+  if(S.p2pDialStates.size>=P2P_BOOTSTRAP_LIMITS.maxKnown) return null;
+  state={queued:false,active:false,retry:false,nextAt:0,attempts:0};
+  S.p2pDialStates.set(multiaddr,state); return state;
+}
+function _scheduleP2PBootstrapRetries(){
+  if(S.p2pDialRetryTimer){ clearTimeout(S.p2pDialRetryTimer); S.p2pDialRetryTimer=null; }
+  let nextAt=Infinity;
+  for(const state of S.p2pDialStates.values()) if(state.retry&&!state.queued&&!state.active)
+    nextAt=Math.min(nextAt,state.nextAt);
+  if(!Number.isFinite(nextAt)) return;
+  S.p2pDialRetryTimer=setTimeout(()=>{
+    S.p2pDialRetryTimer=null; const now=Date.now();
+    for(const [multiaddr,state] of S.p2pDialStates)
+      if(state.retry&&!state.queued&&!state.active&&state.nextAt<=now)
+        _queueP2PBootstrapDial(multiaddr);
+    _pumpP2PBootstrapDials(); _scheduleP2PBootstrapRetries();
+  },Math.max(0,nextAt-Date.now()));
+}
+function _primeInitialP2PBootstrapDial(multiaddr){
+  const state=_p2pBootstrapDialState(multiaddr); if(!state) return;
+  // The libp2p bootstrap plugin gets the first attempt. Schedule a direct dial
+  // as a bounded fallback because that plugin does not expose per-address
+  // success/failure to this module.
+  state.retry=true;
+  state.nextAt=Date.now()+P2P_BOOTSTRAP_LIMITS.dialTimeoutMs;
+  _scheduleP2PBootstrapRetries();
+}
+function _queueP2PBootstrapDial(multiaddr){
+  if(!P2P?.dialBootstrap) return;
+  const state=_p2pBootstrapDialState(multiaddr); if(!state||state.queued||state.active) return;
+  const now=Date.now();
+  if(state.nextAt>now){ if(state.retry) _scheduleP2PBootstrapRetries(); return; }
+  if(S.p2pDialQueue.length>=P2P_BOOTSTRAP_LIMITS.maxQueue){
+    state.retry=true; state.nextAt=now+250; _scheduleP2PBootstrapRetries(); return;
+  }
+  state.queued=true; state.retry=false;
+  S.p2pDialQueue.push(multiaddr); _pumpP2PBootstrapDials();
+}
+function _pumpP2PBootstrapDials(){
+  while(P2P?.dialBootstrap&&S.p2pDialActive<P2P_BOOTSTRAP_LIMITS.maxConcurrent
+      &&S.p2pDialQueue.length){
+    const multiaddr=S.p2pDialQueue.shift(), state=_p2pBootstrapDialState(multiaddr);
+    if(!state) continue;
+    state.queued=false; state.active=true; S.p2pDialActive++;
+    // Promise.resolve places both multiaddr parsing and node.dial inside the
+    // rejection boundary. A malformed locator can never strand an active slot.
+    Promise.resolve().then(()=>P2P.dialBootstrap(multiaddr,
+      {signal:AbortSignal.timeout(P2P_BOOTSTRAP_LIMITS.dialTimeoutMs)}))
+      .then(()=>{
+        state.attempts=0; state.retry=false;
+        state.nextAt=Date.now()+P2P_BOOTSTRAP_LIMITS.successfulRedialMs;
+        log('p2p','new browser bootstrap connected',true);
+        updateP2PStatus(); _ensureP2PRendezvousSchedule();
+      })
+      .catch((error)=>{
+        state.attempts=Math.min(16,state.attempts+1); state.retry=true;
+        const factor=2**Math.min(6,state.attempts-1);
+        state.nextAt=Date.now()+Math.min(P2P_BOOTSTRAP_LIMITS.retryMaxMs,
+          P2P_BOOTSTRAP_LIMITS.retryBaseMs*factor);
+        log('p2p',`bootstrap dial failed: ${String(error&&error.message||error).slice(0,100)}`,false);
+      })
+      .finally(()=>{
+        state.active=false; S.p2pDialActive--;
+        _pumpP2PBootstrapDials(); _scheduleP2PBootstrapRetries();
+      });
+  }
+}
 const PROVIDER_HINT_LIMITS=Object.freeze({maxPending:64,maxQueue:16,maxJobsPerMinute:16,
-  maxConcurrent:2,maxKeysPerHint:5,cooldownMs:30000});
+  maxConcurrent:2,maxKeysPerHint:5,maxRouteHints:64,cooldownMs:30000});
 function _providerHintJobId(record,hints){
   return String(record?.did||record?.record_id||record?.card_id||hints.join('|')).slice(0,2048);
 }
@@ -7574,28 +7739,72 @@ function queueProviderHints(record,source='gossip'){
   }
   _enqueueProviderHintJob(job);
 }
+function _rememberP2PRouteHint(base){
+  S.gossipPeers.delete(base); S.gossipPeers.add(base);
+  while(S.gossipPeers.size>PROVIDER_HINT_LIMITS.maxRouteHints)
+    S.gossipPeers.delete(S.gossipPeers.values().next().value);
+}
+function _reconcileP2PRouteHint({base,kernel},{signal=null}={}){
+  const id=`${kernel}\u0000${base}`;
+  const active=S.providerRouteReconciliations.get(id);
+  if(active) return active;
+  const work=(async()=>{
+    // A signed ProviderRecord contributes only this route hint. The browser
+    // fetches the named node's complete signed inventory and performs the same
+    // current-master, manifest, chain, document and policy checks as ordinary
+    // HTTP discovery before a single row can enter the UI.
+    const resolved=await discoverFrom(base,'internet',null,
+      {expectedKernel:kernel,resolveProviderAliases:false,signal});
+    if(signal?.aborted||!resolved.boot) return {accepted:false,count:0};
+    const accepted=applyVerifiedProviderInventory(
+      base,resolved.boot,resolved.found,resolved.inventory);
+    if(!accepted) return {accepted:false,count:0};
+    _rememberP2PRouteHint(base);
+    collectP2PBootstraps(resolved.boot,{dial:true});
+    noteKernel(kernel,'p2p',base,{reachable:true});
+    await loadTelemetry(base,{signal});
+    if(!signal?.aborted) connectDiscoveryStream(base,resolved.boot);
+    return {accepted:true,count:resolved.found.length};
+  })();
+  S.providerRouteReconciliations.set(id,work);
+  return work.finally(()=>{
+    if(S.providerRouteReconciliations.get(id)===work)
+      S.providerRouteReconciliations.delete(id);
+  });
+}
 async function _resolveProviderHintJob(job){
-  const results=await Promise.all(job.hints.map((key)=>
-    P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
-  const rows=[];
-  for(const result of results){ const verified=await verifiedRowsFromP2PResult(result,`${job.source} lookup`);
-    rows.push(...verified.rows); }
-  const unique=new Map(rows.map((row)=>[`${row._kernel}\u0000${row.record_id||row.did}`,row]));
-  let added=0;
-  for(const row of unique.values()){
-    const inventory=S.providerInventories.get(String(row._kernel||''));
-    const id=recordStoreKey(row), recordId=String(row.record_id||'');
-    if(!inventory||!inventory.recordKeys?.has(id)
-        ||row._providerInventoryGeneration!==inventory.generation
-        ||row._providerInventoryManifestHash!==inventory.manifestHash
-        ||row._providerDocumentHash!==inventory.bindings?.get(recordId)) continue;
-    if(upsert({...row,_inventorySource:row._kernel,
-      _inventoryGeneration:inventory.generation,_inventoryHash:inventory.hash})){
-      added++; noteKernel(row._kernel,'p2p',row._base||''); }
-  }
-  if(added){ log('p2p',`${job.source}: ${added} current-master ProviderRecord(s) verified`,true);
-    classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection(); }
-  else log('p2p',`${job.source}: provider lookup unresolved; nothing displayed`,false);
+  const controller=new AbortController();
+  const deadline=setTimeout(()=>controller.abort(),P2P_ROUTE_LIMITS.jobDeadlineMs);
+  try{
+    const results=await Promise.all(job.hints.map((key)=>
+      P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+    const routeHints=[];
+    for(const result of results){
+      if(controller.signal.aborted) break;
+      const verified=await verifiedRouteHintsFromP2PResult(
+        result,{signal:controller.signal});
+      routeHints.push(...verified.routeHints);
+    }
+    const unique=new Map();
+    for(const routeHint of routeHints){
+      const base=normalizedHttpsBase(routeHint?.base), kernel=String(routeHint?.kernel||'');
+      if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{base,kernel});
+      if(unique.size>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+    }
+    let reconciledRoutes=0, reconciledRecords=0;
+    for(const hint of unique.values()){
+      if(controller.signal.aborted) break;
+      const reconciled=await _reconcileP2PRouteHint(
+        hint,{signal:controller.signal});
+      if(reconciled.accepted){
+        reconciledRoutes++; reconciledRecords+=reconciled.count;
+      }
+    }
+    if(reconciledRoutes){
+      log('p2p',`${job.source}: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
+      classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection(); }
+    else log('p2p',`${job.source}: provider route unresolved; nothing displayed`,false);
+  }finally{ clearTimeout(deadline); }
 }
 function _pumpProviderHintJobs(){
   while(P2P?.resolveProvider&&S.providerHintActive<PROVIDER_HINT_LIMITS.maxConcurrent
@@ -7641,14 +7850,23 @@ async function initP2P(){
   // HTTP discovery has already collected browser-eligible multiaddrs from every
   // admitted node and the global resolver. Re-fetching this static page's origin
   // as though it were a node produces a guaranteed 404 on bare hosted portals.
-  const list=collectBrowserLibp2pBootstraps({pageProtocol:location.protocol},S.p2pBootstraps,
-    params.getAll('relay'),params.getAll('bootstrap'));
+  // Viewer-supplied routes are explicit intent, so admit their eligible values
+  // before learned hints can consume the bounded startup window.
+  const explicit=collectBrowserLibp2pBootstraps({pageProtocol:location.protocol},
+    boundedP2PBootstrapSource(params.getAll('relay')),
+    boundedP2PBootstrapSource(params.getAll('bootstrap')));
+  const list=collectBrowserLibp2pBootstraps({pageProtocol:location.protocol},
+    explicit,S.p2pBootstraps)
+    .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260715-authority-continuity-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260717-dynamic-bootstrap-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
+    P2P.dialBootstrap=(multiaddr,options)=>
+      mod.dialP2PBootstrap(P2P.node,multiaddr,options);
+    for(const multiaddr of list) _primeInitialP2PBootstrapDial(multiaddr);
     P2P._rendezvousConfigured=list.length>0;
     updateP2PStatus();
     for(const id of S.order){ const r=S.recs.get(id);
@@ -7657,8 +7875,8 @@ async function initP2P(){
     for(const job of pending) _enqueueProviderHintJob(job);
     log('p2p', list.length ? `dialling ${list.length} relay/bootstrap peer(s)…`
       : 'libp2p running — no relay configured; add ?relay=<multiaddr> to reach other machines (a browser needs a relay/bootstrap to find peers)');
-    if(list.length){ setTimeout(()=>refreshP2PRendezvous().catch(()=>{}),3000);
-      P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000); }
+    if(list.length) _ensureP2PRendezvousSchedule();
+    _pumpP2PBootstrapDials();
     if(list.length) Promise.resolve().then(()=>discover()).then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
   }catch(e){ log('p2p','libp2p unavailable here, using HTTP federation: '+(e&&e.message||e), false);
     updateP2PStatus(); }

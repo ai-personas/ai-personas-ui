@@ -42,3 +42,10 @@ ${t}`,s=Yq.get(o);if(s&&Date.now()-s.at<1e4)return s.authority;let i=await G4e(`
 @noble/ciphers/utils.js:
   (*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) *)
 */
+
+// Convert a browser-admitted string multiaddr with the bundle's own parser
+// before passing it to the live libp2p node. Dynamic post-start dials therefore
+// use the same transport implementation as the initial bootstrap list.
+export function dialP2PBootstrap(node, multiaddr, options = {}) {
+  return node.dial($(String(multiaddr)), options);
+}
