@@ -622,7 +622,8 @@ function ingestLiveTelemetry(base,live,{source='poll',eventId='',verifiedCommuni
     return {accepted:false,decision};
   }
   indexLiveTelemetry(base,live,{observedAt:decision.observedAt,
-    receivedAt:decision.receivedAt,sequence:decision.sequence,source,verifiedCommunicationRoutes});
+    receivedAt:decision.receivedAt,sequence:decision.sequence,source,verifiedCommunicationRoutes,
+    publicFrameVerified});
   return {accepted:true,decision};
 }
 // The workspace RUN id (k/run-XXXX) every record carries in its resolved links /
@@ -697,6 +698,8 @@ function indexLiveTelemetry(base,live,meta={}){
     ||live?.node?.node_id||live?.kernel?.kernel_id||baseKey;
   const receivedAt=Number(meta.receivedAt)||Date.now();
   const t=Number(meta.observedAt)||Date.parse(live.generated_at||'')||receivedAt;
+  const publicSnapshotSigned=live.schema==='personaos-live-telemetry-public/1'
+    &&meta.publicFrameVerified===true;
   // the always-on baseline pulse: node.heartbeat is present + running on every
   // node sample, so the page is alive the instant it loads even when both event
   // streams are momentarily quiet — and it NEVER fakes activity.
@@ -803,7 +806,8 @@ function indexLiveTelemetry(base,live,meta={}){
   // re-polls don't duplicate; newest kept (ring of 400). On the FIRST load we
   // seed the ring WITHOUT spiking the vital or firing edges (the 400-ring spans
   // hours — stale events must not animate); only genuinely-new keys fire after.
-  const ix=telemetryActivity(live,{verifiedCommunicationRoutes:meta.verifiedCommunicationRoutes});
+  const ix=telemetryActivity(live,{verifiedCommunicationRoutes:meta.verifiedCommunicationRoutes,
+    publicFrameVerified:meta.publicFrameVerified===true});
   if(ix.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
     S.ixColdByBase=S.ixColdByBase||new Set();
@@ -812,7 +816,23 @@ function indexLiveTelemetry(base,live,meta={}){
       const aff=_eventEndpoints(e).map((a)=>`${a.kind}:${a.id}`).join(',');
       const key=`${base}|${e.scope_id}|${e.actor_id}|${aff}|${e.kind}|${e.at||i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key);
-      const rec={...e, _base:base, _kernel:kernelId, _t:Date.parse(e.at||'')||t, _key:key};
+      const routeSigned=e.persona_signature_verified===true&&e.lineage_signature_verified===true;
+      const snapshotSigned=publicSnapshotSigned||routeSigned;
+      const scope=String(e.scope||''), scopeId=String(e.scope_id||'');
+      const provenance={event:String(e.event_id||''),at:String(e.at||''),
+        status:_publicProvenanceStatus(e.status),
+        environment:String(e.environment_id||(scope==='environment'?scopeId:'')),
+        task:scope==='task'?scopeId:'',scopeId:!['environment','task'].includes(scope)?scopeId:'',
+        snapshotAt:publicSnapshotSigned&&!e.at?String(live.generated_at||''):''};
+      const rec={...e,signed:e.signed===true||snapshotSigned,
+        _base:base,_kernel:kernelId,_t:Date.parse(e.at||'')||t,_key:key,_provenance:provenance,
+        _observedState:!e.at,
+        _trustLabel:routeSigned?'PERSONA + LINEAGE SIGNED ROUTE'
+          :publicSnapshotSigned?'KERNEL SIGNED SNAPSHOT':String(e._trustLabel||''),
+        _trustTitle:routeSigned
+          ?'persona-authored route and kernel lineage signatures independently verified'
+          :publicSnapshotSigned?'activity in the verified kernel-signed public telemetry snapshot'
+            :String(e._trustTitle||'')};
       S.interactions.push(rec); fresh.push(rec);
       try{ NETWORK.ingestEvent({...e,kernel_id:kernelId,event_id:key}); }catch(err){}
     });
@@ -855,27 +875,35 @@ function indexLiveTelemetry(base,live,meta={}){
     }
     S.ixColdByBase.add(baseKey); S.ixColdLoaded=true;
   }
-  // PERSONA MESSAGES (live monitor): a persona's model request IS a live message.
-  // kernel.model_events carry persona_id + model + purpose + rationale (no timestamp),
-  // so order them off the live frame time and merge them into the SAME feed (deduped,
-  // ring-bounded) — the monitor then shows WHAT each persona is asking its model in
-  // real time, not only who→whom coordination. Never fabricated: pure node telemetry.
+  // Persona model-status entries join the same live stream. Public snapshots are
+  // whole-document signed but may intentionally omit model/call IDs and event
+  // timestamps; absent fields stay absent and generated_at is labelled snapshot,
+  // never reinterpreted as the event time.
   const me2=telemetryModelEvents(live);
   if(me2.length){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
     const baseT=runtimeBusy?(Date.parse(live.generated_at||'')||t):(_latestSpanTime(sp)||t);
     let addedM=0;
     me2.forEach((m,i)=>{
-      if(String(m.kind||'')!=='MODEL_SELECTED') return;
-      const model=String(m.model_id||'—'), purpose=String(m.requested_purpose||m.purpose||'model');
-      const role=String(m.role||''), rationale=String(m.rationale||m.reason||'');
-      const key=`${base}|model|${m.persona_id||''}|${model}|${purpose}|${role}|${rationale}|${i}`;
+      const kind=String(m.kind||''); if(!kind.startsWith('MODEL_')) return;
+      const model=_publicProvenanceAtom(m.model_id), purpose=_publicProvenanceAtom(m.requested_purpose);
+      const role=_publicProvenanceAtom(m.role), rationale=String(m.rationale||m.reason||'');
+      const status=_publicProvenanceStatus(m.status);
+      const eventAt=_publicProvenanceAtom(m.at,80);
+      const provenance=_publicModelEventProvenance(m,
+        publicSnapshotSigned?String(live.generated_at||''):'');
+      const key=`${base}|model|${m.persona_id||''}|${kind}|${model}|${purpose}|${role}|${status}|${m.latency_ms??''}|${i}`;
       if(S.ixKeys.has(key)) return; S.ixKeys.add(key); addedM++;
       const mt=_modelEventTime(m,baseT-((me2.length-i)*200));
       S.interactions.push({actor_id:String(m.persona_id||''),actor_kind:m.persona_id?'persona':'kernel',
-        affected:[{id:model,kind:'model'}],kind:'MODEL_CALL',scope:'model',scope_id:String(m.environment_id||''),
-        at:'',_base:base,_kernel:kernelId,_t:mt,_key:key,
-        _msg:purpose+(role&&role!=='-'&&role!==''?(' · '+role):''),_model:model,_rationale:rationale});
+        affected:model?[{id:model,kind:'model'}]:[],kind,scope:'model',scope_id:String(m.environment_id||''),
+        at:eventAt,signed:publicSnapshotSigned,_base:base,_kernel:kernelId,_t:mt,_key:key,
+        _msg:[purpose,role,status,Number.isFinite(m.latency_ms)?`${m.latency_ms} ms`:''].filter(Boolean).join(' · '),
+        _model:model,_rationale:rationale,_provenance:provenance,_observedState:!eventAt,
+        _trustLabel:publicSnapshotSigned?'KERNEL SIGNED SNAPSHOT':'',
+        _trustTitle:publicSnapshotSigned
+          ?'model-status entry in the verified kernel-signed public telemetry snapshot; missing event fields were not inferred'
+          :''});
     });
     if(addedM){
       S.interactions.sort((a,b)=>a._t-b._t);
@@ -2994,7 +3022,8 @@ const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_
   ||kind==='PERSONA_ACTION_FAILED';
 function _ixClass(kind,event=null){ if(event?._cognition===true
     ||(event?._providerProvisional===true&&kind==='PROVISIONAL_ASSISTANT_MESSAGE')
-    ||kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
+    ||kind==='MODEL_CALL'||String(kind||'').startsWith('MODEL_')
+    ||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
   if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
   if(TOOL_KINDS.has(kind))return 'tool';
   if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
@@ -3017,7 +3046,8 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
   PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
   PERSONA_BIRTH_REFUSED:'refused persona birth',
-  MODEL_CALL:'model call',LLM_OUTPUT:'produced',LLM_LESSON:'learned',
+  MODEL_CALL:'model call observed',MODEL_SELECTED:'model selected',MODEL_CALL_SUCCEEDED:'model call succeeded',
+  MODEL_CALL_FAILED:'model call failed',LLM_OUTPUT:'produced',LLM_LESSON:'learned',
   PROVISIONAL_ASSISTANT_MESSAGE:'streamed assistant message',PROVISIONAL_PROVIDER_STATUS:'provider status',
   PROVISIONAL_TOOL_STATUS:'tool status',COGNITION_LESSON:'holds lesson',
   COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
@@ -3026,6 +3056,68 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PERSONA_ACTION_AUTHORED:'action authored',PERSONA_ACTION_COMPLETED:'action completed',
   PERSONA_ACTION_FAILED:'action failed'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
+function _ixHeadline(event){
+  const provenance=event?._provenance||{};
+  if(provenance.action) return String(provenance.action);
+  if(event?.kind==='MODEL_CALL'&&provenance.purpose)
+    return `model · ${provenance.purpose}`;
+  return _ixVerb(event?.kind);
+}
+const PUBLIC_ACTIVITY_PROVENANCE_ORDER=Object.freeze([
+  'action','purpose','model','status','role','tool','server','run','task','missionTask','call','event','intent',
+  'request','message','parentMessage','sequence','latencyMs','effort','environment','persona','scopeId',
+  'evidence','dedupe','authority','authorityHash','parentHash','signingKey','authoredAt','startedAt','at','snapshotAt',
+]);
+const PUBLIC_ACTIVITY_CORE_PROVENANCE=new Set([
+  'action','purpose','model','status','role','tool','server','run','task','missionTask','call','event','intent',
+  'request','message','parentMessage','sequence','latencyMs','effort','environment','authoredAt','startedAt','at','snapshotAt',
+]);
+const PUBLIC_ACTIVITY_PROVENANCE_LABEL=Object.freeze({
+  action:'action',purpose:'purpose',model:'model',status:'state',run:'run',task:'task',
+  missionTask:'mission task',call:'call',event:'event',intent:'intent',request:'request',
+  message:'message',parentMessage:'parent message',sequence:'seq',latencyMs:'latency ms',
+  role:'role',tool:'tool',server:'server',effort:'reasoning',environment:'env',persona:'persona',scopeId:'scope',
+  evidence:'evidence',dedupe:'wake key',authority:'authority',authorityHash:'authority hash',
+  parentHash:'parent hash',signingKey:'signing key',authoredAt:'authored',
+  startedAt:'started',at:'at',snapshotAt:'snapshot',
+});
+function _boundedActivityProvenanceValue(value){
+  if(typeof value==='number'&&Number.isFinite(value)) return String(value);
+  return typeof value==='string'&&value.length<=4096?value:'';
+}
+function _activityProvenanceFragments(provenance,{full=false}={}){
+  if(!provenance||typeof provenance!=='object'||Array.isArray(provenance)) return '';
+  const fragments=[];
+  for(const field of PUBLIC_ACTIVITY_PROVENANCE_ORDER){
+    if(!full&&!PUBLIC_ACTIVITY_CORE_PROVENANCE.has(field)) continue;
+    const source=Array.isArray(provenance[field])?provenance[field]:[provenance[field]];
+    for(const raw of source.slice(0,16)){
+      const value=_boundedActivityProvenanceValue(raw); if(!value) continue;
+      const joinedRun=field==='run'&&provenance.runFromTaskLifecycle===true;
+      const title=joinedRun
+        ?'exact run joined from the independently verified public task lifecycle':value;
+      const label=joinedRun?'run · task proof':PUBLIC_ACTIVITY_PROVENANCE_LABEL[field]||field;
+      fragments.push(`<span class="ix-prov" title="${esc(title)}"><small>${esc(label)}</small><code>${esc(value)}</code></span>`);
+    }
+  }
+  return fragments.join('');
+}
+function _eventTrustHTML(event){
+  return event?.signed===true
+    ? `<span class="ix-trust signed" title="${esc(event._trustTitle||'lineage signature asserted by the admitted node frame')}">${esc(event._trustLabel||'SIGNED EVENT')}</span>`
+    : `<span class="ix-trust transport" title="${esc(event?._trustTitle||'live node transport frame; not independently signature-verified in this browser')}">${esc(event?._trustLabel||'LIVE FRAME')}</span>`;
+}
+function _activityProvenanceHTML(provenance,{className='ix-provenance',prepend='',full=false}={}){
+  const fragments=_activityProvenanceFragments(provenance,{full});
+  return fragments||prepend?`<span class="${esc(className)}">${prepend}${fragments}</span>`:'';
+}
+function _eventTimeHTML(event){
+  const provenance=event?._provenance||{};
+  const exact=String(provenance.at||provenance.startedAt||provenance.snapshotAt||event?.at||'');
+  const valid=Number.isFinite(Date.parse(exact));
+  const label=event?._observedState?'snapshot':_ago(event?._t||Date.now());
+  return `<time${valid?` datetime="${esc(exact)}" title="${esc(exact)}"`:''}>${esc(label)}</time>`;
+}
 // per-row feed kind glyph keyed to the _ixClass lane (inherits the lane colour via
 // currentColor on .ix-kind). One stroked icon per lane — no colour emoji.
 const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',tool:'tool',crossenv:'arrow',activity:'dot'};
@@ -3256,7 +3348,14 @@ function _personaActivityHTML(acts,personaKey){
   for(const e of [...(acts||[])].reverse()){
     const endpoints=_eventEndpoints(e).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).sort().join(',');
     const detail=String(e?._msg||e?._cap?.capability||e?._cap?.tool_name||'').replace(/\s+/g,' ').trim();
-    const key=[e?.kind,e?.actor_kind,e?.actor_id,endpoints,detail].join('|');
+    const provenance=e?._provenance||{};
+    const identity=[provenance.call,provenance.event,provenance.intent,provenance.message,
+      provenance.action,provenance.run,provenance.task,provenance.at,provenance.startedAt,
+      provenance.snapshotAt].filter((value)=>value!==undefined&&value!==null&&value!=='').join('|');
+    const preserveEvent=identity||e?._cognition===true||e?._providerProvisional===true
+      ||e?.kind==='MODEL_CALL'||String(e?.kind||'').startsWith('MODEL_');
+    const key=[e?.kind,e?.actor_kind,e?.actor_id,endpoints,detail,identity,
+      preserveEvent?(e?._key||''):''].join('|');
     const prior=seen.get(key); if(prior){ prior.count++; continue; }
     if(rows.length===4) continue;
     const row={event:e,count:1}; seen.set(key,row); rows.push(row);
@@ -3278,10 +3377,12 @@ function _personaActivityHTML(acts,personaKey){
         :`${actor}${targetLabel?` → ${targetLabel}`:` → ${selfName}`}`;
       const detail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').replace(/\s+/g,' ').trim();
       const direction=mine?'outbound':(actorKey?'inbound':'observed');
+      const provenance=_activityProvenanceHTML(e._provenance,{className:'pc-message-provenance',
+        prepend:_eventTrustHTML(e)});
       return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
         +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(route)}</span>`
-        +`<b>${esc(_ixVerb(e.kind))}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
-        +`</span><time>${e._observedState?'current snapshot':esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
+        +`<b>${esc(_ixHeadline(e))}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
+        +provenance+`</span>${_eventTimeHTML(e)}</li>`; }).join('')+`</ol></section>`;
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
@@ -4291,11 +4392,10 @@ function renderInteractionStream(){
     const threaded=sid&&sid===prevScope; prevScope=sid;
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
-    const verb=_ixVerb(e.kind);
+    const verb=_ixHeadline(e);
     const msg=e._msg?`<span class="ix-msg">${esc(e._msg)}</span>`:'';
-    const trust=e.signed===true
-      ? `<span class="ix-trust signed" title="${esc(e._trustTitle||'lineage signature asserted by the node frame')}">${esc(e._trustLabel||'SIGNED EVENT')}</span>`
-      : `<span class="ix-trust transport" title="${esc(e._trustTitle||'live node transport frame; not independently signature-verified in this browser')}">${esc(e._trustLabel||'LIVE FRAME')}</span>`;
+    const trust=_eventTrustHTML(e);
+    const provenance=_activityProvenanceHTML(e._provenance);
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
@@ -4304,7 +4404,8 @@ function renderInteractionStream(){
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
-      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${e._observedState?'current snapshot':esc(_ago(e._t))}</span></li>`;
+      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span>${provenance}`
+      +`<span class="ix-time">${_eventTimeHTML(e)}</span></li>`;
   }).join('')||(()=>{
     // A node may publish a signed public-cognition tier. Private nodes answer the
     // same anonymous probe with 404, so an empty THINK feed must stay neutral: the
@@ -4383,8 +4484,12 @@ function _ingestVerifiedEntityRoutes(base,doc){
     const aff=_eventEndpoints(event).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).join(',');
     const key=`${base}|${event.scope_id}|${event.actor_id}|${aff}|${event.kind}|${event.at||event.event_id}`;
     if(S.ixKeys.has(key)) continue;
-    const rec={...event,_base:base,_kernel:kernel,
-      _t:Date.parse(event.at||'')||Date.now(),_key:key};
+    const rec={...event,signed:true,_base:base,_kernel:kernel,
+      _t:Date.parse(event.at||'')||Date.now(),_key:key,
+      _provenance:{event:String(event.event_id||''),environment:String(event.environment_id||''),
+        at:String(event.at||'')},
+      _trustLabel:'PERSONA + LINEAGE SIGNED ROUTE',
+      _trustTitle:'persona-authored route and kernel lineage signatures independently verified'};
     S.ixKeys.add(key); S.interactions.push(rec); added++;
     try{ NETWORK.ingestEvent({...event,kernel_id:kernel,event_id:event.event_id||key}); }catch(_){ }
   }
@@ -4398,6 +4503,25 @@ function _ingestVerifiedEntityRoutes(base,doc){
 }
 function feedModels(doc){ return telemetryModelEvents(doc).filter((m)=>(m.kind||'')==='MODEL_SELECTED')
   .map((m)=>({purpose:String(m.requested_purpose||m.role||'model'),model:String(m.model_id||'—'),role:String(m.role||'')})); }
+// Callers admit public documents through their current-master verification gate
+// before reaching this renderer. Keep every signed status row distinct: the
+// current public contract has no event ID with which identical calls could be merged.
+function _verifiedPublicModelStatusHTML(doc){
+  const events=telemetryModelEvents(doc); if(!events.length) return '<div class="l2">no model status published</div>';
+  return events.slice(-16).reverse().map((event)=>{
+    const provenance=_publicModelEventProvenance(event,doc.generated_at);
+    const missing=[['model id',provenance.model],['call id',provenance.call],['run id',provenance.run],
+      ['task id',provenance.task],['event id',provenance.event],['event timestamp',provenance.at]]
+      .filter(([,value])=>!value).map(([label])=>label);
+    const trust=_eventTrustHTML({signed:true,_trustLabel:'KERNEL SIGNED SNAPSHOT',
+      _trustTitle:'model-status entry in the verified kernel-signed public telemetry document'});
+    return `<div class="think"><span class="amber">${esc(_ixVerb(event.kind||'MODEL_EVENT'))}</span>`
+      +([provenance.status,Number.isFinite(event.latency_ms)?`${event.latency_ms} ms`:null]
+        .filter(Boolean).length?` · ${esc([provenance.status,Number.isFinite(event.latency_ms)?`${event.latency_ms} ms`:null].filter(Boolean).join(' · '))}`:'')
+      +_activityProvenanceHTML(provenance,{className:'think-provenance',prepend:trust,full:true})
+      +(missing.length?`<div class="l2">not published for this event: ${esc(missing.join(', '))}</div>`:'')+`</div>`;
+  }).join('');
+}
 function renderPersonaFeedDoc(doc,personaKey=''){
   const s=doc.summary||{}; let h='';
   // PER-04 / §4.1: public tiles (state, tasks, reputation); operator-tier evolution
@@ -4427,8 +4551,9 @@ function renderPersonaFeedDoc(doc,personaKey=''){
   const terminalFailure=running?null:(indexedFailure||feedFailure||null);
   if(terminalFailure) h+=`<div class="sublabel">Terminal execution status</div>`
     +_terminalModelFailureHTML(terminalFailure);
-  h+=`<div class="sublabel">${running?'Doing now':'Model selection history'}</div>`
-    +_liveFeed(feedModels(doc),{historical:!running});
+  h+=`<div class="sublabel">${isPublicEntityTelemetryDocument(doc)?'Verified model status':running?'Doing now':'Model selection history'}</div>`
+    +(isPublicEntityTelemetryDocument(doc)?_verifiedPublicModelStatusHTML(doc)
+      :_liveFeed(feedModels(doc),{historical:!running}));
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
     h+=`<div class="sublabel">Lifecycle / lineage</div>`
@@ -4448,7 +4573,8 @@ function renderEnvFeedDoc(doc){
     h+=`<div class="sublabel">Lineage events (this env)</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k2,v])=>
         `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
-  h+=`<div class="sublabel">Model activity in this env <span class="dim">(own feed)</span></div>`+_liveFeed(feedModels(doc));
+  h+=`<div class="sublabel">Model activity in this env <span class="dim">(own feed)</span></div>`
+    +(isPublicEntityTelemetryDocument(doc)?_verifiedPublicModelStatusHTML(doc):_liveFeed(feedModels(doc)));
   return h;
 }
 // ---- persona public activity (02_PERSONA §4/§8-10) ----
@@ -4456,21 +4582,32 @@ function renderEnvFeedDoc(doc){
 // Anonymous viewers accept only the exact current-master-signed schema below.
 // Persona-signed final output remains distinct from closed, kernel-observed
 // provisional provider events; the exact thinking FRAME remains operator-only.
-function renderThinking(t,{allowThinkingFrame=false}={}){
+function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   let h='';
   const publicCognition=t.schema==='personaos-persona-public-cognition/1';
   const calls=t.active_calls||[];
+  const callsById=new Map(calls.map((call)=>[call.call_id,call]));
+  const taskRunCache=new Map();
+  const resolveTaskRun=(runKernel,task)=>{
+    const key=`${runKernel}\u0000${task}`;
+    if(!taskRunCache.has(key)) taskRunCache.set(key,_verifiedPublicTaskRun(runKernel,task));
+    return taskRunCache.get(key);
+  };
   if(calls.length){
     h+=`<div class="l2" style="margin:2px 0 3px">Active model calls — verified current snapshot</div>`
       +calls.slice(-8).reverse().map((call)=>{
         const started=Date.parse(String(call.started_at||''));
         const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
+        const signedMeta=publicCognition?_activityProvenanceHTML(_publicCallProvenance(call),{
+          className:'think-provenance',full:true,prepend:_eventTrustHTML({signed:true,
+            _trustLabel:'KERNEL SIGNED ACTIVE CALL',
+            _trustTitle:'active model call in the verified current kernel-signed public cognition snapshot'})}):'';
         return `<div class="think"><span class="amber">${esc(call.status||'active')}</span> ${esc(purpose)}`
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
           +(Number.isFinite(started)?` · started ${esc(_ago(started))}`:'')+`</div>`
           +((call.task_id||call.run_id)?`<div class="l2">${call.task_id?`task ${esc(call.task_id)}`:''}${call.task_id&&call.run_id?' · ':''}${call.run_id?`run ${esc(call.run_id)}`:''}</div>`:'')
-          +`</div>`;
+          +signedMeta+`</div>`;
       }).join('');
   }
   const provisional=publicCognition?(t.provisional_outputs||[]):[];
@@ -4480,10 +4617,15 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
       .map((event,offset)=>({event,index:provisionalStart+offset}));
     h+=`<div class="privacy-note">Live provider stream — kernel-observed and provisional, not persona-signed cognition or hidden reasoning.</div>`
       +visibleProvisional.map(({event,index})=>{
+        const call=callsById.get(event.call_id);
+        const provenance=_publicProvisionalProvenance(event,call);
+        const signedMeta=_activityProvenanceHTML(provenance,{className:'think-provenance',full:true,
+          prepend:_eventTrustHTML({signed:true,_trustLabel:'KERNEL OBSERVED · PROVISIONAL',
+            _trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning'})});
         const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
           +`${event.call_id?` · call ${esc(event.call_id)}`:''} · sequence ${esc(event.sequence)}`
           +(event.kind==='assistant_message'?` · chunk ${esc(event.chunk_index+1)}/${esc(event.chunk_count)}`:'')
-          +`</div>`;
+          +`</div>${signedMeta}`;
         if(event.kind==='assistant_message'){
           return `<div class="think llmout copy-host"><span class="amber">provisional assistant message</span> ${copyBtn()}`
             +`<pre class="ct-pre copy-src" data-provisional-output-index="${index}"></pre>${callMeta}</div>`;
@@ -4503,8 +4645,11 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
     h+=`<div class="l2" style="margin:2px 0 3px">${publicCognition?'Signed outputs and messages':'Recent authored output'} (newest first)</div>`
       +visibleOutputs.map(({output:o,index})=>{
         const recipients=Array.isArray(o.audience_persona_ids)?o.audience_persona_ids.length:0;
+        const trust=publicCognition?_publicOutputTrust(o):null;
         const publicMeta=publicCognition
-          ? `<div class="l2">${esc(String(o.authority||'').replace(/_/g,' '))} · ${recipients?`${recipients} addressed recipient${recipients===1?'':'s'}`:'no addressed recipients'}${o.environment_id?` · environment ${esc(o.environment_id)}`:''}</div>`
+          ? `<div class="l2">${recipients?`${recipients} addressed recipient${recipients===1?'':'s'}`:'no addressed recipients'}</div>`
+            +_activityProvenanceHTML(_publicOutputProvenance(o,kernel,resolveTaskRun),{className:'think-provenance',full:true,
+              prepend:_eventTrustHTML({signed:true,_trustLabel:trust.label,_trustTitle:trust.title})})
           : '';
         return `<div class="think llmout copy-host"><span class="amber">${esc(o.kind||'output')}</span> ${copyBtn()}`
           +`<pre class="ct-pre copy-src" data-thinking-output-index="${index}"></pre>${publicMeta}</div>`;
@@ -4951,7 +5096,7 @@ async function refreshThinking(){
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
-    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted});
+    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
     hydrateThinkingOutputText(el2,t); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
@@ -4980,25 +5125,150 @@ function _publicCognitionFingerprint(value){
   }
   return `${source.length.toString(36)}-${(left>>>0).toString(36)}-${(right>>>0).toString(36)}`;
 }
-function _publicCognitionRows(doc){
+function _publicProvenanceAtom(value,maximum=512){
+  return typeof value==='string'&&value.length<=maximum&&value.trim()===value?value:'';
+}
+function _publicProvenanceStatus(value){
+  return typeof value==='number'&&Number.isFinite(value)?String(value):_publicProvenanceAtom(value,256);
+}
+function _verifiedPublicTaskRun(kernel,taskId){
+  const task=_publicProvenanceAtom(taskId); if(!kernel||!task) return '';
+  const runs=new Set();
+  for(const id of (S.order||[])){
+    const record=S.recs.get(id); if(record?._kernel!==kernel) continue;
+    const lifecycle=publicTaskLifecycleProjection(record);
+    if(lifecycle?.taskId===task&&lifecycle.run) runs.add(lifecycle.run);
+  }
+  return runs.size===1?runs.values().next().value:'';
+}
+function _withVerifiedTaskRun(provenance,kernel,resolveRun=_verifiedPublicTaskRun){
+  if(!provenance.run&&provenance.task){
+    const run=resolveRun(kernel,provenance.task);
+    if(run){ provenance.run=run; provenance.runFromTaskLifecycle=true; }
+  }
+  return provenance;
+}
+function _publicCallProvenance(call){
+  return {
+    purpose:_publicProvenanceAtom(call?.requested_purpose),
+    model:_publicProvenanceAtom(call?.model_id),status:_publicProvenanceAtom(call?.status),
+    run:_publicProvenanceAtom(call?.run_id),task:_publicProvenanceAtom(call?.task_id),
+    call:_publicProvenanceAtom(call?.call_id),effort:_publicProvenanceAtom(call?.reasoning_effort),
+    startedAt:_publicProvenanceAtom(call?.started_at,80),
+  };
+}
+function _publicModelEventProvenance(event,snapshotAt=''){
+  return {model:_publicProvenanceAtom(event?.model_id),
+    purpose:_publicProvenanceAtom(event?.requested_purpose),status:_publicProvenanceStatus(event?.status),
+    role:_publicProvenanceAtom(event?.role),run:_publicProvenanceAtom(event?.run_id),
+    task:_publicProvenanceAtom(event?.task_id),call:_publicProvenanceAtom(event?.call_id),
+    event:_publicProvenanceAtom(event?.event_id),environment:_publicProvenanceAtom(event?.environment_id),
+    persona:_publicProvenanceAtom(event?.persona_id),
+    latencyMs:Number.isFinite(event?.latency_ms)?event.latency_ms:undefined,
+    at:_publicProvenanceAtom(event?.at,80),snapshotAt:_publicProvenanceAtom(snapshotAt,80)};
+}
+function _publicProvisionalProvenance(event,call){
+  return {..._publicCallProvenance(call),model:_publicProvenanceAtom(event?.model_id),
+    call:_publicProvenanceAtom(event?.call_id),at:_publicProvenanceAtom(event?.at,80),
+    authority:_publicProvenanceAtom(event?.authority,256),sequence:event?.sequence,
+    status:_publicProvenanceAtom(event?.status,256),message:_publicProvenanceAtom(event?.message_id),
+    tool:_publicProvenanceAtom(event?.tool_name,512)||_publicProvenanceAtom(event?.tool_type,512),
+    server:_publicProvenanceAtom(event?.server,512)};
+}
+function _publicOutputTrust(output){
+  if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND) return {
+    label:'SIGNED LINEAGE ACTION',
+    title:'exact authenticated action in the verified kernel-signed public cognition document',
+  };
+  if(output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND) return {
+    label:'PERSONA SIGNED INTENT',
+    title:'persona signature and authored-output hash verified, inside the verified kernel-signed public cognition document',
+  };
+  if(output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND) return {
+    label:'PERSONA SIGNED MESSAGE',
+    title:'persona communication signature and authored-output hash verified, inside the verified kernel-signed public cognition document',
+  };
+  return {label:'KERNEL SIGNED LINEAGE',
+    title:'exact lineage output in the verified kernel-signed public cognition document'};
+}
+function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun){
+  const provenance={
+    environment:_publicProvenanceAtom(output?.environment_id),
+    at:_publicProvenanceAtom(output?.at,80),authority:_publicProvenanceAtom(output?.authority,128),
+  };
+  if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND){
+    try{
+      const action=JSON.parse(output.text), args=action.arguments||{};
+      provenance.action=_publicProvenanceAtom(action.action);
+      provenance.run=_publicProvenanceAtom(args.run_id);
+      provenance.task=_publicProvenanceAtom(args.task_id);
+      provenance.event=_publicProvenanceAtom(args.event_id);
+      provenance.request=_publicProvenanceAtom(args.request_id);
+      provenance.status=_publicProvenanceAtom(args.status,256)
+        ||_publicProvenanceAtom(args.lifecycle_state,256);
+      provenance.environment=_publicProvenanceAtom(args.environment_id)||provenance.environment;
+      if(Array.isArray(args.evidence_refs)) provenance.evidence=args.evidence_refs
+        .map((value)=>_publicProvenanceAtom(value,1024)).filter(Boolean).slice(0,16);
+    }catch(_){ /* reached only after the exact action validator; keep base provenance if unavailable */ }
+  }else if(output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND){
+    const authority=output.persona_authority||{};
+    provenance.intent=_publicProvenanceAtom(authority.intent_id);
+    provenance.event=_publicProvenanceAtom(authority.wake_event_id);
+    provenance.task=_publicProvenanceAtom(authority.task_id);
+    provenance.missionTask=_publicProvenanceAtom(authority.mission_task_id);
+    provenance.dedupe=_publicProvenanceAtom(authority.wake_dedupe_key,1024);
+    provenance.authoredAt=_publicProvenanceAtom(authority.authored_at,80);
+    provenance.signingKey=_publicProvenanceAtom(authority.signing_key_id);
+    provenance.authorityHash=_publicProvenanceAtom(output.persona_authority_hash,1024);
+  }else if(output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND){
+    const authority=output.persona_authority||{}, source=authority.provenance;
+    provenance.message=_publicProvenanceAtom(authority.communication_id);
+    provenance.parentMessage=_publicProvenanceAtom(authority.parent_communication_id);
+    provenance.parentHash=_publicProvenanceAtom(authority.parent_communication_hash,1024);
+    provenance.signingKey=_publicProvenanceAtom(authority.signing_key_id);
+    provenance.authorityHash=_publicProvenanceAtom(output.persona_authority_hash,1024);
+    if(source&&typeof source==='object'&&!Array.isArray(source)){
+      provenance.run=_publicProvenanceAtom(source.run_id);
+      provenance.task=_publicProvenanceAtom(source.task_id);
+      provenance.event=_publicProvenanceAtom(source.event_id)
+        ||_publicProvenanceAtom(source.wake_event_id);
+    }
+  }
+  return _withVerifiedTaskRun(provenance,kernel,resolveRun);
+}
+function _publicCognitionRows(doc,{kernel=''}={}){
   const observedAt=doc.generated_at, rows=[];
-  for(const call of doc.active_calls) rows.push({
-    source:'active_call',kind:'MODEL_CALL',at:call.started_at,scope:'model',scopeId:call.task_id||call.run_id,
-    msg:[call.requested_purpose,call.model_id,call.status].filter(Boolean).join(' · '),
-    rationale:`model ${call.model_id} · ${call.status}${call.reasoning_effort?` · reasoning ${call.reasoning_effort}`:''}`,
-    cognition:true,ctype:'think',recipients:[],dedup:call,
-  });
+  const runCache=new Map();
+  const resolveRun=(runKernel,task)=>{
+    const key=`${runKernel}\u0000${task}`;
+    if(!runCache.has(key)) runCache.set(key,_verifiedPublicTaskRun(runKernel,task));
+    return runCache.get(key);
+  };
+  const callsById=new Map(doc.active_calls.map((call)=>[call.call_id,call]));
+  for(const call of doc.active_calls){
+    const provenance=_publicCallProvenance(call);
+    rows.push({
+      source:'active_call',kind:'MODEL_CALL',at:call.started_at,scope:'model',scopeId:call.task_id||call.run_id,
+      msg:[call.requested_purpose,call.model_id,call.status].filter(Boolean).join(' · '),
+      rationale:`model ${call.model_id} · ${call.status}${call.reasoning_effort?` · reasoning ${call.reasoning_effort}`:''}`,
+      cognition:true,ctype:'think',recipients:[],dedup:provenance,provenance,
+      trustLabel:'KERNEL SIGNED ACTIVE CALL',
+      trustTitle:'active model call in the verified current kernel-signed public cognition snapshot',
+    });
+  }
   for(const event of doc.provisional_outputs){
     const assistant=event.kind==='assistant_message', tool=event.kind==='tool_status';
     const kind=assistant?'PROVISIONAL_ASSISTANT_MESSAGE':tool?'PROVISIONAL_TOOL_STATUS':'PROVISIONAL_PROVIDER_STATUS';
     const statusDetail=tool
       ?[event.status,event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
       :[event.status,event.model_id].filter(Boolean).join(' · ');
+    const call=callsById.get(event.call_id);
+    const provenance=_publicProvisionalProvenance(event,call);
     rows.push({
       source:'provisional',kind,at:event.at,scope:'provider',scopeId:event.call_id,
       msg:assistant?event.text:statusDetail,rationale:assistant?event.text:statusDetail,
       exactText:assistant?event.text:'',cognition:false,providerProvisional:true,ctype:'think',
-      recipients:[],authority:event.authority,dedup:event,personaSigned:false,
+      recipients:[],authority:event.authority,dedup:event,personaSigned:false,provenance,
       trustLabel:'KERNEL OBSERVED · PROVISIONAL',
       trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning',
     });
@@ -5006,34 +5276,42 @@ function _publicCognitionRows(doc){
   for(const output of doc.recent_outputs){
     const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
     const action=output.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
+    const provenance=_publicOutputProvenance(output,kernel,resolveRun);
+    const trust=_publicOutputTrust(output);
     rows.push({
       source:'output',kind:output.kind,at:output.at,
-      scope:communication?'communication':action?'action':'cognition',scopeId:output.environment_id,
+      scope:communication?'communication':action?'action':'cognition',
+      scopeId:provenance.task||output.environment_id,
       msg:output.text,rationale:output.text,cognition:!communication&&!action,ctype:action?'tool':'think',
       exactText:output.text,recipients:output.audience_persona_ids,
-      authority:output.authority,dedup:output,
-      trustLabel:action?'SIGNED LINEAGE ACTION':'',
-      trustTitle:action?'exact authenticated action in the verified kernel-signed public cognition document':'',
+      authority:output.authority,dedup:output,provenance,
+      trustLabel:trust.label,trustTitle:trust.title,
     });
   }
   for(const lesson of doc.lessons) rows.push({
     source:'lesson',kind:'COGNITION_LESSON',at:observedAt,scope:'cognition',scopeId:'',
     msg:lesson.action,rationale:[lesson.trigger,lesson.rationale].filter(Boolean).join(' · '),
     cognition:true,ctype:'think',recipients:[],dedup:lesson,observedState:true,
+    provenance:{snapshotAt:observedAt},trustLabel:'KERNEL SIGNED SNAPSHOT',
   });
   for(const tactic of doc.tactics) rows.push({
     source:'tactic',kind:'COGNITION_TACTIC',at:observedAt,scope:'cognition',scopeId:'',
     msg:tactic.action,rationale:[tactic.trigger,tactic.source].filter(Boolean).join(' · '),
     cognition:true,ctype:'think',recipients:[],dedup:tactic,observedState:true,
+    provenance:{snapshotAt:observedAt},trustLabel:'KERNEL SIGNED SNAPSHOT',
   });
   for(const fact of doc.proven_facts) rows.push({
     source:'fact',kind:'COGNITION_PROVEN_FACT',at:observedAt,scope:'cognition',scopeId:'',
     msg:fact,rationale:fact,cognition:true,ctype:'think',recipients:[],dedup:fact,observedState:true,
+    provenance:{snapshotAt:observedAt},trustLabel:'KERNEL SIGNED SNAPSHOT',
   });
   for(const event of doc.evolution_timeline) rows.push({
     source:'evolution',kind:event.kind,at:event.at||observedAt,scope:'cognition',scopeId:event.task_id,
     msg:[event.mode,event.accepted===true?'accepted':event.accepted===false?'not accepted':'',event.kind].filter(Boolean).join(' · '),
     rationale:event.mode,cognition:true,ctype:'think',recipients:[],dedup:event,observedState:!event.at,
+    provenance:_withVerifiedTaskRun({task:event.task_id,at:event.at||'',snapshotAt:event.at?'':observedAt},kernel,resolveRun),
+    trustLabel:'KERNEL SIGNED EVOLUTION',
+    trustTitle:'evolution entry in the verified kernel-signed public cognition document',
   });
   return rows;
 }
@@ -5102,7 +5380,7 @@ async function streamPersonaCognition(){
       }
       if(publicCognition) _indexPublicCognitionActiveCalls(personaKey,t.active_calls,
         {base:usedBase,kernel,observedAt:Date.now()});
-      const rows=publicCognition?_publicCognitionRows(t):[];
+      const rows=publicCognition?_publicCognitionRows(t,{kernel}):[];
       if(!publicCognition){
         for(const output of (t.recent_outputs||[])) rows.push({source:'output',kind:String(output.kind||'LLM_OUTPUT'),
           msg:output.text,at:output.at,scope:'cognition',scopeId:'',recipients:[],dedup:output});
@@ -5140,6 +5418,7 @@ async function streamPersonaCognition(){
           _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
           _providerProvisional:row.providerProvisional===true,
           _observedState:row.observedState===true,
+          _provenance:row.provenance&&typeof row.provenance==='object'?row.provenance:null,
           _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
           _trustTitle:String(trustTitle),
         };
@@ -5948,7 +6227,15 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
   // 01_KERNEL §8/§11: live telemetry nests OTel/lineage under `kernel`
   // (model_events, spans, summary, lineage_durable) and persona evolution
   // summaries under `personas`. Bind those — NOT the old tel.events/tel.ring.
-  const tel=await fetchJson(join(base,L.snapshot||'telemetry/live/latest.json'))||{};
+  const snapshotPath=L.snapshot||'telemetry/live/latest.json';
+  const tel=await fetchJson(join(base,snapshotPath))||{};
+  const publicEntity=isPublicEntityTelemetryDocument(tel);
+  const publicAggregate=tel.schema==='personaos-live-telemetry-public/1';
+  if(publicEntity) await verifyPublicCommunicationRoutes(base,tel);
+  const admitted=publicEntity?await verifyPublicEntityDocument(base,snapshotPath,tel)
+    :publicAggregate?await verifyPublicTelemetryFrame(base,tel):true;
+  if(!admitted) return {title:`<span class="kind k-telemetry">TELEMETRY</span> ${esc(r.label)}`,
+    html:'<div class="privacy-note">Public telemetry was refused because its current-master signature or exact public shape did not verify.</div>'};
   // Per-ENTITY feed record (telemetry:<persona>/<env> → its own redacted-tier
   // document): render the entity's live "inside" view and stream it in place.
   if(isPersonaTelemetryDocument(tel)||isEnvironmentTelemetryDocument(tel)){
@@ -5979,13 +6266,14 @@ async function telemetryView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>
     +kv('Signed spans',S0((k.spans||[]).length))
     +kv('Model-selection events',S0(selected.length))
     +kv('Access','consent-gated · read+ (operator) or public-telemetry opt-in');
-  if(Object.keys(byPurpose).length){
+  if(publicAggregate) html+=H('Verified model status')+_verifiedPublicModelStatusHTML(tel);
+  if(!publicAggregate&&Object.keys(byPurpose).length){
     html+=H('Model selection by purpose');
     html+=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([kk,v])=>
       `<div class="grant"><span class="l2">${esc(kk)}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
   const recent=selected.slice(-8).reverse();
-  if(recent.length){
+  if(!publicAggregate&&recent.length){
     html+=H('Recent model selections');
     html+=recent.map((e)=>`<div class="grant"><span class="l2">${esc(e.requested_purpose||e.role||'')}</span>`
       +`<span>${esc(e.model_id||'—')}</span></div>`).join('');

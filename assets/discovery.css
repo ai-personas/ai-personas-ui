@@ -586,6 +586,14 @@ b{color:var(--bright)}
   font:var(--w-semi) 8px/1.2 var(--sans);white-space:nowrap}
 .ix-trust.signed{border:1px solid var(--up2);color:var(--up);background:var(--up-weak)}
 .ix-trust.transport{border:1px solid var(--amber-border);color:var(--amber);background:var(--amber-weak)}
+.ix-provenance,.think-provenance,.pc-message-provenance{display:flex;align-items:center;flex-wrap:wrap;gap:3px 5px;min-width:0}
+.ix-provenance{flex:1 1 100%;margin:2px 0 0 160px}
+.ix-prov{display:inline-flex;align-items:center;min-width:0;max-width:min(100%,360px);border:1px solid var(--line);
+  border-radius:var(--radius-sm);background:var(--surface-inset);font:var(--fs-meta)/1.25 var(--mono);overflow:hidden}
+.ix-prov small{flex:0 0 auto;padding:1px 4px;color:var(--mut);border-right:1px solid var(--line);font:700 7px/1.25 var(--sans);
+  letter-spacing:var(--tr-caps);text-transform:uppercase}
+.ix-prov code{display:block;min-width:0;max-width:280px;padding:1px 4px;color:var(--dim);font:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.think-provenance{margin-top:5px}.think-provenance .ix-prov{max-width:100%}.think-provenance .ix-prov code{max-width:420px}
 /* capability/tool detail (WHICH capability + its error) surfaced from the _cap projection — own line */
 .ix-cap{flex:1 1 100%;margin-left:160px;font:var(--fs-meta)/1.3 var(--mono);color:var(--dim);
   background:var(--surface-inset);border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px 6px;
@@ -1244,6 +1252,9 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .pc-message.inbound{margin-left:13px;border-left-color:var(--int)}.pc-message.outbound{margin-right:13px;border-left-color:var(--up)}
 .pc-message.observed{border-left-style:dashed}.pc-message-route{color:var(--off-white)!important;font:700 9px/1.25 var(--mono);letter-spacing:.01em}
 .pc-message-body{color:var(--dim)!important;font-style:italic}.pc-message.fresh{animation:message-arrive .65s var(--ease-out)}
+.pc-message-provenance{margin-top:2px;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+.pc-message-provenance .ix-trust{overflow:visible}.pc-message-provenance .ix-prov{max-width:100%;white-space:normal;overflow:hidden}
+.pc-message-provenance .ix-prov code{max-width:190px}.pc-message-provenance .ix-prov small{color:var(--mut)}
 @keyframes message-arrive{from{opacity:.25;transform:translateY(-5px)}to{opacity:1;transform:none}}
 
 .environment-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:18px;align-items:start}
@@ -1388,7 +1399,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   .ix-msg{flex:1 1 auto;min-width:0;max-width:none}
   /* feed collapses on phone: kind takes its own full-width first row, time+body beneath */
   .ix-kind{order:-3;flex:0 0 100%}
-  .ix-cap{margin-left:50px}
+  .ix-cap,.ix-provenance{margin-left:50px}
   /* tap-target floor on phone — scoped to phone so desktop density is unchanged */
   .cf-tabs .chip,.btn,.chip,.link,.pc-follow,.art-chip{min-height:var(--ctl-h-touch);display:inline-flex;align-items:center}
   .link{padding:0 4px}
