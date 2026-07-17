@@ -937,6 +937,8 @@ function log(tag,msg,ok){ const li=document.createElement('li');
 const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256,
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
+const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
@@ -977,6 +979,19 @@ function collectP2PBootstraps(boot,{dial=false}={}){
     boot?.reachability_profile?.bootstrap_peers,
     boot?.reachability_profile?.relay_peers,
   ],{dial});
+}
+async function loadPortalP2PBootstrapHints(){
+  // This same-origin file is a replaceable transport commons, not a registry:
+  // it can only help the browser reach libp2p. It cannot admit a node, persona,
+  // telemetry frame or artifact; those still traverse the current-master,
+  // signature, inventory and body-hash verification paths below.
+  const hints=await fetchJson(PORTAL_P2P_HINTS_URL,{
+    signal:AbortSignal.timeout(3000),maxBytes:PORTAL_P2P_HINTS_MAX_BYTES});
+  if(!Array.isArray(hints)) return [];
+  const admitted=rememberP2PBootstraps([hints]);
+  if(admitted.length)
+    log('p2p',`${admitted.length} same-origin transport bootstrap hint(s) admitted; zero record authority`);
+  return admitted;
 }
 async function keysFor(base,boot,{refresh=false,signal=null}={}){
   const key=base||'@origin';
@@ -7886,6 +7901,9 @@ async function initP2P(){
 
 (async ()=>{
   wire();
+  // Fetch the static transport commons concurrently, but settle its bounded
+  // request before libp2p starts so it participates in the initial dial set.
+  const portalP2PHints=loadPortalP2PBootstrapHints();
   // The IPFS plane (rendezvous CID → signed IPNS node cards) probes CONCURRENTLY
   // with HTTP discovery — a slow/dead configured peer must not delay it.
   discoverViaIPFS().catch(()=>{});
@@ -7893,6 +7911,7 @@ async function initP2P(){
   discoverLocalNode().catch(()=>{});                                  // is a node running on THIS machine?
   setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
   await discover();
+  await portalP2PHints;
   prefetchNodeStatuses();
   renderMissions();
   initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
