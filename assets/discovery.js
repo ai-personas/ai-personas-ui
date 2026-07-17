@@ -4785,8 +4785,17 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS=Object.freeze([
   ...PUBLIC_PERSONA_OUTPUT_FIELDS,
   'authored_output','persona_authority','persona_authority_hash',
 ].sort());
+const PUBLIC_PERSONA_ACTION_OUTPUT_FIELDS=Object.freeze([
+  ...PUBLIC_PERSONA_OUTPUT_FIELDS,
+  'persona_authority','persona_authority_hash',
+].sort());
 const PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS=Object.freeze([
   'schema','sha256','text','utf8_bytes',
+].sort());
+const PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS=Object.freeze([
+  'action_arguments','action_descriptor_hash','action_id','action_name','authored_text',
+  'authored_text_hash','environment_id','model_call_id','persona_id','schema','signed_by',
+  'signing_key_id','task_id',
 ].sort());
 const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=Object.freeze([
   'authored_at','completion_readiness','environment_id','intent','intent_id',
@@ -4828,7 +4837,7 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS=new Set([
-  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',PUBLIC_PERSONA_ACTION_OUTPUT_KIND,
+  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',
 ]);
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
 const PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND='PERSONA_COGNITIVE_INTENT';
@@ -4978,21 +4987,64 @@ async function _validPublicPersonaAuthority(output,identity,row){
   }
   return verified;
 }
-function _validPublicPersonaActionText(text){
-  if(typeof text!=='string'||!text
-      ||enc.encode(text).length>PUBLIC_PERSONA_COGNITION_LIMITS.exactTextBytes) return false;
+async function _validPublicPersonaActionAuthority(output,identity,row){
+  const authority=output.persona_authority;
+  const publicKey=String(row?._personaIdentityPublicKeyHex||'').toLowerCase();
+  const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
+  if(!authority||typeof authority!=='object'||Array.isArray(authority)
+      ||!_exactObjectFields(authority,PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS)
+      ||authority.schema!=='personaos-authenticated-persona-action/1'
+      ||authority.persona_id!==identity.signedId
+      ||authority.environment_id!==output.environment_id
+      ||signingKeyId!==`persona:${identity.signedId}`
+      ||authority.signing_key_id!==signingKeyId
+      ||!/^[0-9a-f]{64}$/.test(publicKey)
+      ||!_safePublicCognitionAtom(authority.action_id,512,{required:true})
+      ||!_safePublicCognitionAtom(authority.task_id,512)
+      ||!_safePublicCognitionAtom(authority.model_call_id,512,{required:true})
+      ||!_safePublicCognitionAtom(authority.action_name,512,{required:true})
+      ||!SHA256_CONTENT_RE.test(String(authority.action_descriptor_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(authority.authored_text_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(output.persona_authority_hash||''))
+      ||!authority.action_arguments||typeof authority.action_arguments!=='object'
+      ||Array.isArray(authority.action_arguments)
+      ||authority.authored_text!==output.text
+      ||`sha256:${await sha256Hex(enc.encode(output.text))}`!==authority.authored_text_hash
+      ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
+    return false;
+  let action;
   try{
-    const action=JSON.parse(text);
-    return _exactObjectFields(action,['action','arguments'])
-      &&_safePublicCognitionAtom(action.action,512,{required:true})
-      &&action.arguments&&typeof action.arguments==='object'&&!Array.isArray(action.arguments)
-      &&canon(action)===text;
+    action=JSON.parse(output.text);
+    if(!_exactObjectFields(action,['action','arguments'])
+        ||!_safePublicCognitionAtom(action.action,512,{required:true})
+        ||!action.arguments||typeof action.arguments!=='object'||Array.isArray(action.arguments)
+        ||canon(action)!==output.text
+        ||action.action!==authority.action_name
+        ||canon(action.arguments)!==canon(authority.action_arguments)) return false;
   }catch(_){ return false; }
+  const signature=String(authority.signed_by||'');
+  if(!/^[0-9a-f]{128}$/.test(signature)) return false;
+  const cacheKey=`action:${publicKey}:${output.persona_authority_hash}:${signature}`;
+  if(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.get(cacheKey)===true) return true;
+  const payload={};
+  for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+  let verified=false;
+  try{ verified=await ed.verifyAsync(hexToBytes(signature),enc.encode(canon(payload)),hexToBytes(publicKey)); }
+  catch(_){ verified=false; }
+  if(verified){
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(cacheKey);
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.set(cacheKey,true);
+    while(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.size>512)
+      PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.keys().next().value);
+  }
+  return verified;
 }
 async function _validPublicPersonaOutput(output,identity,row){
   const personaExact=PUBLIC_PERSONA_EXACT_OUTPUT_KINDS.has(output?.kind);
   const actionExact=output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
-  if(!_exactObjectFields(output,personaExact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS)
+  const outputFields=actionExact?PUBLIC_PERSONA_ACTION_OUTPUT_FIELDS
+    :personaExact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS;
+  if(!_exactObjectFields(output,outputFields)
       ||!_safePublicCognitionAtom(output.kind,128,{required:true})
       ||!_safePublicCognitionInstant(output.at)
       ||typeof output.text!=='string'||!output.text.trim()
@@ -5003,8 +5055,8 @@ async function _validPublicPersonaOutput(output,identity,row){
       ||!Array.isArray(output.audience_persona_ids)
       ||output.audience_persona_ids.length>PUBLIC_PERSONA_COGNITION_LIMITS.audience) return false;
   const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
-  if(personaExact!==(output.authority==='persona_signature')
-      ||(!personaExact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
+  if((personaExact||actionExact)!==(output.authority==='persona_signature')
+      ||(!personaExact&&!actionExact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
       ||((personaExact||actionExact)&&!output.environment_id)
       ||(!communication&&output.audience_persona_ids.length)
       ||(!personaExact&&!actionExact&&!_safePublicCognitionText(output.text,
@@ -5014,7 +5066,7 @@ async function _validPublicPersonaOutput(output,identity,row){
     if(!_safePublicCognitionAtom(personaId,512,{required:true})||audience.has(personaId)) return false;
     audience.add(personaId);
   }
-  if(actionExact) return _validPublicPersonaActionText(output.text);
+  if(actionExact) return await _validPublicPersonaActionAuthority(output,identity,row);
   if(!personaExact) return true;
   return await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)
     &&await _validPublicPersonaAuthority(output,identity,row);
@@ -5243,8 +5295,8 @@ function _publicProvisionalProvenance(event,call){
 }
 function _publicOutputTrust(output){
   if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND) return {
-    label:'SIGNED LINEAGE ACTION',
-    title:'exact authenticated action in the verified kernel-signed public cognition document',
+    label:'PERSONA SIGNED ACTION',
+    title:'persona action signature, authority hash, and exact action binding verified inside the kernel-signed public cognition document',
   };
   if(output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND) return {
     label:'PERSONA SIGNED INTENT',
