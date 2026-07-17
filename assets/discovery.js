@@ -938,7 +938,7 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260717-live-9b67d58',import.meta.url).href;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260717-live-e6765b1',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
