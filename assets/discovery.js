@@ -154,7 +154,7 @@ async function copyFromButton(btn){
   // .copy-src isolates the payload text (the button lives outside it), so its
   // textContent is exactly the surface content — no label-stripping needed.
   const tgt=host.querySelector('.copy-src')||host;
-  const text=(tgt.textContent||'').trimEnd();
+  const text=tgt.textContent||'';
   let ok=false;
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); ok=true; } }catch(e){}
   if(!ok){ try{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
@@ -4154,7 +4154,8 @@ function renderInteractionStream(){
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
-    const ttl=e._rationale?` title="${esc(e._rationale)}"`:(cap&&cap.error?` title="${esc(cap.error)}"`:'');
+    const rationaleTitle=e._exactText?_cognitionPreview(e._exactText):e._rationale;
+    const ttl=rationaleTitle?` title="${esc(rationaleTitle)}"`:(cap&&cap.error?` title="${esc(cap.error)}"`:'');
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
@@ -4329,15 +4330,17 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
   }
   const out=t.recent_outputs||[];
   if(out.length){
+    const outputStart=Math.max(0,out.length-12);
+    const visibleOutputs=out.slice(outputStart)
+      .map((output,offset)=>({output,index:outputStart+offset})).reverse();
     h+=`<div class="l2" style="margin:2px 0 3px">${publicCognition?'Signed outputs and messages':'Recent authored output'} (newest first)</div>`
-      +out.slice(-12).reverse().map((o)=>{
-        const full=String(o.text||'');
+      +visibleOutputs.map(({output:o,index})=>{
         const recipients=Array.isArray(o.audience_persona_ids)?o.audience_persona_ids.length:0;
         const publicMeta=publicCognition
           ? `<div class="l2">${esc(String(o.authority||'').replace(/_/g,' '))} · ${recipients?`${recipients} addressed recipient${recipients===1?'':'s'}`:'no addressed recipients'}${o.environment_id?` · environment ${esc(o.environment_id)}`:''}</div>`
           : '';
         return `<div class="think llmout copy-host"><span class="amber">${esc(o.kind||'output')}</span> ${copyBtn()}`
-          +`<pre class="ct-pre copy-src">${esc(full)}</pre>${publicMeta}</div>`;
+          +`<pre class="ct-pre copy-src" data-thinking-output-index="${index}"></pre>${publicMeta}</div>`;
       }).join('');
   }
   const mp=t.mode_proficiencies||{};
@@ -4378,6 +4381,15 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
       +`<div class="copy-host">${copyBtn()}<pre class="opout copy-src">${esc(t.thinking_frame)}</pre></div></details>`;
   return h||'<div class="l2">no cognition recorded yet</div>';
 }
+function hydrateThinkingOutputText(host,doc){
+  const outputs=Array.isArray(doc?.recent_outputs)?doc.recent_outputs:[];
+  for(const target of host.querySelectorAll('[data-thinking-output-index]')){
+    const index=Number(target.dataset.thinkingOutputIndex);
+    const text=Number.isSafeInteger(index)&&index>=0&&index<outputs.length
+      ?outputs[index]?.text:'';
+    target.textContent=typeof text==='string'?text:String(text??'');
+  }
+}
 function renderThinkingRedacted(doc){
   let h='<div class="privacy-note">Detailed cognition is private. This view shows verified state transitions only.</div>';
   const mp=(doc&&doc.summary&&doc.summary.mode_proficiencies)||{};
@@ -4399,6 +4411,22 @@ const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
   'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
 ].sort());
+const PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS=Object.freeze([
+  ...PUBLIC_PERSONA_OUTPUT_FIELDS,
+  'authored_output','persona_authority','persona_authority_hash',
+].sort());
+const PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS=Object.freeze([
+  'schema','sha256','text','utf8_bytes',
+].sort());
+const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=Object.freeze([
+  'authored_at','completion_readiness','environment_id','intent','intent_id',
+  'mission_task_id','persona_id','persona_signature','schema','self_wake','signing_key_id',
+  'task_id','wake_dedupe_key','wake_event_id',
+].sort());
+const PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS=Object.freeze([
+  'addressed_to','authored_by','communication_id','environment_id','parent_communication_hash',
+  'parent_communication_id','payload','provenance','schema','signed_by','signing_key_id',
+].sort());
 const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=Object.freeze([
   'call_id','model_id','persona_id','reasoning_effort','requested_purpose','run_id',
   'started_at','status','task_id',
@@ -4417,11 +4445,16 @@ const PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS=new Set([
   'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',
 ]);
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
+const PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND='PERSONA_COGNITIVE_INTENT';
+const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
+  PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND,PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND,
+]);
 const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
   activeCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
-  atom:512,text:4096,
+  atom:512,lineageText:4096,exactTextBytes:512*1024,documentBytes:4*1024*1024,
 });
+const PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE=new Map();
 function _safePublicCognitionText(value,maximum,{required=false}={}){
   if(typeof value!=='string'||value.length>maximum||(required&&!value.trim())) return false;
   for(let index=0;index<value.length;index++){
@@ -4441,11 +4474,73 @@ function _safePublicCognitionInstant(value,{required=true}={}){
   return _safePublicCognitionAtom(value,64,{required})
     &&(!value||(PUBLIC_PERSONA_COGNITION_INSTANT.test(value)&&Number.isFinite(Date.parse(value))));
 }
-function _validPublicPersonaOutput(output,identity){
-  if(!_exactObjectFields(output,PUBLIC_PERSONA_OUTPUT_FIELDS)
+async function _validPublicPersonaAuthoredOutput(authored,exactText){
+  if(!_exactObjectFields(authored,PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS)
+      ||authored.schema!=='personaos-persona-authored-output/1'
+      ||typeof exactText!=='string'||authored.text!==exactText
+      ||!Number.isSafeInteger(authored.utf8_bytes)||authored.utf8_bytes<1
+      ||authored.utf8_bytes>PUBLIC_PERSONA_COGNITION_LIMITS.exactTextBytes
+      ||!SHA256_CONTENT_RE.test(String(authored.sha256||''))) return false;
+  const bytes=enc.encode(authored.text);
+  return bytes.length===authored.utf8_bytes
+    &&`sha256:${await sha256Hex(bytes)}`===authored.sha256;
+}
+async function _validPublicPersonaAuthority(output,identity,row){
+  const authority=output.persona_authority;
+  const publicKey=String(row?._personaIdentityPublicKeyHex||'').toLowerCase();
+  const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
+  if(!authority||typeof authority!=='object'||Array.isArray(authority)
+      ||!/^[0-9a-f]{64}$/.test(publicKey)||!signingKeyId
+      ||!SHA256_CONTENT_RE.test(String(output.persona_authority_hash||''))
+      ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
+    return false;
+  let signature='',payload=null;
+  if(output.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND){
+    if(!_exactObjectFields(authority,PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS)
+        ||authority.schema!=='personaos-persona-cognitive-intent/1'
+        ||authority.persona_id!==identity.signedId
+        ||authority.environment_id!==output.environment_id
+        ||authority.signing_key_id!==signingKeyId
+        ||!_safePublicCognitionInstant(authority.authored_at)
+        ||!authority.intent||typeof authority.intent!=='object'||Array.isArray(authority.intent)
+        ||canon(authority.intent.authored_output)!==canon(output.authored_output)) return false;
+    signature=String(authority.persona_signature||'');
+    payload={};
+    for(const field of Object.keys(authority)) if(field!=='persona_signature') payload[field]=authority[field];
+  }else if(output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND){
+    if(!_exactObjectFields(authority,PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS)
+        ||authority.schema!=='personaos-persona-communication/1'
+        ||authority.authored_by!==identity.signedId
+        ||authority.environment_id!==output.environment_id
+        ||authority.signing_key_id!==signingKeyId
+        ||!Array.isArray(authority.addressed_to)
+        ||canon(authority.addressed_to)!==canon(output.audience_persona_ids)
+        ||!authority.payload||typeof authority.payload!=='object'||Array.isArray(authority.payload)
+        ||canon(authority.payload.authored_output)!==canon(output.authored_output)) return false;
+    signature=String(authority.signed_by||'');
+    payload={};
+    for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+  }else return false;
+  if(!/^[0-9a-f]{128}$/i.test(signature)) return false;
+  const cacheKey=`${publicKey}:${output.persona_authority_hash}:${signature}`;
+  if(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.get(cacheKey)===true) return true;
+  let verified=false;
+  try{ verified=await ed.verifyAsync(hexToBytes(signature),enc.encode(canon(payload)),hexToBytes(publicKey)); }
+  catch(_){ verified=false; }
+  if(verified){
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(cacheKey);
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.set(cacheKey,true);
+    while(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.size>512)
+      PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.keys().next().value);
+  }
+  return verified;
+}
+async function _validPublicPersonaOutput(output,identity,row){
+  const exact=PUBLIC_PERSONA_EXACT_OUTPUT_KINDS.has(output?.kind);
+  if(!_exactObjectFields(output,exact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS)
       ||!_safePublicCognitionAtom(output.kind,128,{required:true})
       ||!_safePublicCognitionInstant(output.at)
-      ||!_safePublicCognitionText(output.text,PUBLIC_PERSONA_COGNITION_LIMITS.text,{required:true})
+      ||typeof output.text!=='string'||!output.text.trim()
       ||!_safePublicCognitionAtom(output.author_persona_id,512,{required:true})
       ||output.author_persona_id!==identity.signedId
       ||!_safePublicCognitionAtom(output.environment_id,512)
@@ -4453,16 +4548,20 @@ function _validPublicPersonaOutput(output,identity){
       ||!Array.isArray(output.audience_persona_ids)
       ||output.audience_persona_ids.length>PUBLIC_PERSONA_COGNITION_LIMITS.audience) return false;
   const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
-  if(communication!==(output.authority==='persona_signature')
-      ||(!communication&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
-      ||(communication&&!output.environment_id)
-      ||(!communication&&output.audience_persona_ids.length)) return false;
+  if(exact!==(output.authority==='persona_signature')
+      ||(!exact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
+      ||(exact&&!output.environment_id)
+      ||(!communication&&output.audience_persona_ids.length)
+      ||(!exact&&!_safePublicCognitionText(output.text,
+        PUBLIC_PERSONA_COGNITION_LIMITS.lineageText,{required:true}))) return false;
   const audience=new Set();
   for(const personaId of output.audience_persona_ids){
     if(!_safePublicCognitionAtom(personaId,512,{required:true})||audience.has(personaId)) return false;
     audience.add(personaId);
   }
-  return true;
+  if(!exact) return true;
+  return await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)
+    &&await _validPublicPersonaAuthority(output,identity,row);
 }
 function _validPublicPersonaActiveCall(call,identity){
   return _exactObjectFields(call,PUBLIC_PERSONA_ACTIVE_CALL_FIELDS)
@@ -4528,6 +4627,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!Array.isArray(doc.tactics)||doc.tactics.length>PUBLIC_PERSONA_COGNITION_LIMITS.tactics
       ||!Array.isArray(doc.proven_facts)||doc.proven_facts.length>PUBLIC_PERSONA_COGNITION_LIMITS.facts
       ||!Array.isArray(doc.evolution_timeline)||doc.evolution_timeline.length>PUBLIC_PERSONA_COGNITION_LIMITS.evolution) return false;
+  if(!await verifyCurrentMasterSignedDocument(base,doc)) return false;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
   if(!lifecycle||doc.lifecycle_state!==lifecycle.lifecycleState
       ||doc.identity_materialization_state!==lifecycle.materializationState
@@ -4543,12 +4643,13 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
     if(!_validPublicPersonaActiveCall(call,identity)||callIds.has(call.call_id)) return false;
     callIds.add(call.call_id);
   }
-  if(doc.recent_outputs.some((output)=>!_validPublicPersonaOutput(output,identity))
-      ||doc.lessons.some((lesson)=>!_validPublicPersonaLesson(lesson))
+  for(const output of doc.recent_outputs)
+    if(!await _validPublicPersonaOutput(output,identity,row)) return false;
+  if(doc.lessons.some((lesson)=>!_validPublicPersonaLesson(lesson))
       ||doc.tactics.some((tactic)=>!_validPublicPersonaTactic(tactic))
       ||doc.proven_facts.some((fact)=>!_safePublicCognitionText(fact,4096,{required:true}))
       ||doc.evolution_timeline.some((event)=>!_validPublicPersonaEvolution(event))) return false;
-  return verifyCurrentMasterSignedDocument(base,doc);
+  return true;
 }
 async function refreshThinking(){
   if(!S.drawerThinkPid) return;
@@ -4556,7 +4657,7 @@ async function refreshThinking(){
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
-  const t=await fetchJson(endpoint,{maxBytes:512*1024});
+  const t=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
@@ -4564,7 +4665,8 @@ async function refreshThinking(){
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
-    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted}); return; }
+    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted});
+    hydrateThinkingOutputText(el2,t); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el3=$('#thinksec'); if(el3) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
@@ -4601,12 +4703,13 @@ function _publicCognitionRows(doc){
     cognition:true,ctype:'think',recipients:[],dedup:call,
   });
   for(const output of doc.recent_outputs){
-    const communication=output.authority==='persona_signature';
+    const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
     rows.push({
       source:'output',kind:output.kind,at:output.at,
       scope:communication?'communication':'cognition',scopeId:output.environment_id,
       msg:output.text,rationale:output.text,cognition:!communication,ctype:'think',
-      recipients:output.audience_persona_ids,authority:output.authority,dedup:output,
+      exactText:output.text,recipients:output.audience_persona_ids,
+      authority:output.authority,dedup:output,
     });
   }
   for(const lesson of doc.lessons) rows.push({
@@ -4678,7 +4781,7 @@ async function streamPersonaCognition(){
         // canonical `sid` remains only the browser join key.
         const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
         const hasOperator=!!tokenFor(endpoint);
-        const r=await fetchJson(endpoint,{maxBytes:512*1024});
+        const r=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
@@ -4707,7 +4810,7 @@ async function streamPersonaCognition(){
           S.publicCognitionSeen.delete(S.publicCognitionSeen.keys().next().value);
       }
       for(const row of rows){
-        const msg=String(row.msg||'').trim(); if(!msg) continue;
+        const msg=typeof row.msg==='string'?row.msg:String(row.msg??''); if(!msg.trim()) continue;
         const key=`cog|${personaKey}|${row.source}|${row.kind}|${_publicCognitionFingerprint(row.dedup)}`;
         if(personaSeen?.has(key)||S.ixKeys.has(key)) continue;
         if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
@@ -4720,6 +4823,7 @@ async function streamPersonaCognition(){
           scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:publicCognition,
           _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
           _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
+          _exactText:typeof row.exactText==='string'?row.exactText:'',
           _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
           _observedState:row.observedState===true,
           _trustLabel:publicCognition?'SIGNED COGNITION':'',
