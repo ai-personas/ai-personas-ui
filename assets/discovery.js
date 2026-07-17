@@ -2975,7 +2975,8 @@ function renderEnvLaneLive(b){
   const model=latestModel
     ? `<span class="env-live-chip ${envRunning?'model':''}">${envRunning?'<span class="livedot2"></span>':'last: '}${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
     : '';
-  return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${live.fresh?'live now':'recent'}</span>${model}${recent}</div>`;
+  const state=live.fresh?'live now':live.recent?'recent':'history';
+  return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${state}</span>${model}${recent}</div>`;
 }
 
 /* ===================== ◫ SYSTEM VIEW — the living representation ===================
@@ -3144,10 +3145,14 @@ function _modelFresh(value,models,kernel=''){
   const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
   return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
 }
+function _eventEligibleForRecency(event){
+  const at=Number(event?._t);
+  return event?._observedState!==true&&Number.isFinite(at)&&at>0;
+}
 function _latestPersonaActivityForRecency(acts){
   for(let index=(acts?.length||0)-1;index>=0;index--){
-    const event=acts[index], at=Number(event?._t);
-    if(event?._observedState!==true&&Number.isFinite(at)&&at>0) return event;
+    const event=acts[index];
+    if(_eventEligibleForRecency(event)) return event;
   }
   return null;
 }
@@ -3550,7 +3555,8 @@ function _environmentScopedEvents(b){
   const now=Date.now(), lease=5*60*1000;
   return (S.interactions||[]).filter((event)=>_eventKernel(event)===kernel
     &&_shortId(event?.scope_id||'')===sid
-    &&event?._t>0&&now-event._t<=lease&&event._t-now<30000);
+    &&_eventEligibleForRecency(event)
+    &&now-event._t<=lease&&event._t-now<30000);
 }
 function _environmentGraphId(b){
   let value=2166136261;
@@ -3629,7 +3635,8 @@ function _environmentCommunicationGraphHTML(b){
 // Edges/nodes pulse only for fresh interactions from kernel telemetry.
 function _hotPersonas(){
   const hot=new Set(), now=Date.now(), recent=(S.interactions||[])
-    .filter((e)=>e._t>0&&now-e._t<=5*60*1000&&e._t-now<30000).slice(-10);
+    .filter((e)=>_eventEligibleForRecency(e)
+      &&now-e._t<=5*60*1000&&e._t-now<30000).slice(-10);
   for(const e of recent){
     if(e.actor_kind==='persona'&&e.actor_id) hot.add(_eventPersonaKey(e,e.actor_id));
     for(const endpoint of _personaEndpoints(e)) hot.add(_eventPersonaKey(e,endpoint.id));
@@ -3659,7 +3666,8 @@ function _personaTraffic(posOf){
     const t=map.get(key)||map.set(key,{a:ordered[0],b:ordered[1],n:0,direct:true}).get(key);
     t.n+=n; };
   const now=Date.now(), all=(S.interactions||[])
-    .filter((e)=>e._t>0&&now-e._t<=5*60*1000&&e._t-now<30000);
+    .filter((e)=>_eventEligibleForRecency(e)
+      &&now-e._t<=5*60*1000&&e._t-now<30000);
   for(const e of all.slice(-NETWORK_LIMITS.interactionRows)){
     if(e.actor_kind!=='persona') continue;
     const a=_eventPersonaKey(e,e.actor_id); if(!a||!posOf.has(a)) continue;
@@ -3966,7 +3974,8 @@ function updateVitalsCounters(){
   const active=new Set(activeBases.flatMap(([base,calls])=>{ const kernel=kernelForBase(base==='@origin'?'':base);
     return (calls||[]).map((call)=>{ const sid=_shortId(call?.persona_id);
       return sid?_personaKey(call?.kernel_id||kernel,sid):''; }).filter(Boolean); })).size;
-  const acts=(S.interactions||[]).filter((e)=>now-e._t<60000&&kernelIsFocused(e._kernel||kernelForBase(e._base))).length;
+  const acts=(S.interactions||[]).filter((e)=>_eventEligibleForRecency(e)
+    &&now-e._t<60000&&kernelIsFocused(e._kernel||kernelForBase(e._base))).length;
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
   // unverified live interactions are NOT signed and must never inflate this.
   const signed=S.order.filter((id)=>kernelIsFocused(S.recs.get(id)?._kernel)).length;
