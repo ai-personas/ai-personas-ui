@@ -14,6 +14,7 @@ const PUBLIC_ROUTE_FIELDS=Object.freeze([
   'persona_signature_verified','recipient_persona_ids','route_kind','schema',
   'sender_persona_id','signature_hex','signing_key_id',
 ].sort());
+const PUBLIC_ROUTE_KINDS=Object.freeze(new Set(['broadcast','direct']));
 const _objects=(value,limit)=>Array.isArray(value)
   ?value.filter((item)=>item&&typeof item==='object'&&!Array.isArray(item)).slice(-limit):[];
 const _token=(value,max=512)=>{ const out=String(value||'').normalize('NFC').trim();
@@ -30,14 +31,16 @@ export function isExactPublicCommunicationRoute(raw){
       ||Object.keys(raw).sort().join('\u0000')!==PUBLIC_ROUTE_FIELDS.join('\u0000')
       ||raw.schema!=='personaos-public-persona-communication-route/1'
       ||raw.persona_signature_verified!==true||raw.lineage_signature_verified!==true
-      ||raw.signing_key_id!=='kernel-master'||raw.route_kind!=='broadcast'
+      ||raw.signing_key_id!=='kernel-master'||!PUBLIC_ROUTE_KINDS.has(raw.route_kind)
       ||!/^[0-9a-f]{128}$/i.test(String(raw.signature_hex||''))) return false;
   const sender=_token(raw.sender_persona_id), environment=_token(raw.environment_id);
   const eventId=_token(raw.event_id), at=_token(raw.at,80);
   if(!sender||!environment||!eventId||!at||!Number.isFinite(Date.parse(at))
       ||!Array.isArray(raw.recipient_persona_ids)||raw.recipient_persona_ids.length>64) return false;
   const recipients=raw.recipient_persona_ids.map((value)=>_token(value));
-  return !recipients.some((value)=>!value)&&new Set(recipients).size===recipients.length;
+  return !recipients.some((value)=>!value)
+    &&new Set(recipients).size===recipients.length
+    &&(raw.route_kind!=='direct'||recipients.length>0);
 }
 
 export function telemetryModelEvents(doc){
@@ -71,7 +74,7 @@ export function telemetryActivity(doc,{verifiedCommunicationRoutes=[],publicFram
     ...publicCommunicationRouteEvents(verifiedCommunicationRoutes)].slice(-120);
 }
 
-/** Project independently verified, content-free broadcast routing metadata. */
+/** Project independently verified, content-free communication routing metadata. */
 export function publicCommunicationRouteEvents(verifiedRoutes){
   const out=[];
   for(const raw of _objects(verifiedRoutes,96)){
@@ -84,7 +87,7 @@ export function publicCommunicationRouteEvents(verifiedRoutes){
       recipients:recipientIds.map((id)=>Object.freeze({kind:'persona',id})),affected:[],
       environment_id:_token(raw.environment_id),scope:'environment',
       scope_id:_token(raw.environment_id),at:_token(raw.at,80),status:'observed',
-      route_kind:'broadcast',event_id:_token(raw.event_id),
+      route_kind:raw.route_kind,event_id:_token(raw.event_id),
       persona_signature_verified:true,lineage_signature_verified:true,
     }));
   }

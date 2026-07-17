@@ -146,18 +146,24 @@ path, rejects redirects, and checks raster MIME, byte length, SHA-256, and dimen
 rendering the bytes through a temporary blob URL. A verified lifecycle shell is rendered immediately
 as an independently materializing persona; its persona-authored name, characteristics, and avatar
 may become materialized independently, and a verified adopted name does not falsely promote the
-remaining identity fields. Missing or invalid avatars remain an explicit portrait-pending state.
-The UI generates no identity art: avatar creation belongs to the persona lifecycle, and an avatar
-descriptor never creates another persona or projection card. The top status/control header is
+remaining identity fields. Every card immediately renders a deterministic local monogram derived
+from its verified identity key and name. That instant local avatar is a presentation fallback, not
+persona-authored identity evidence; an optional verified persona-authored raster replaces it only
+after the existing signature and byte checks pass. An avatar descriptor never creates another
+persona or projection card. The top status/control header is
 independently collapsible and consumes zero layout height while closed.
 
 **Public persona activity is a closed signed projection.** Anonymous aggregate telemetry and each
 persona/environment feed must use their exact public schemas, bind the current node id, be fresh,
 and verify under the sole current kernel master. Public communication topology admits only exact,
-independently signed broadcast-route metadata. A persona card's text stream comes only from the
-exact whole-document-signed `personaos-persona-public-messages/1` endpoint for that current-inventory
-persona; addressed output, a wrong author/subject, extra fields, or changed bytes are rejected.
-Detailed cognition remains available only through the bearer-gated operator schema.
+independently signed direct or broadcast route metadata. A persona card's public activity stream
+comes only from the exact whole-document-signed `personaos-persona-public-cognition/1` endpoint for
+that current-inventory persona. It renders bounded active calls, outputs/messages, learned state,
+proven facts, and evolution entries without inferring content type or relabelling communication
+kinds; addressed messages retain their verified recipient count. A wrong author/subject, extra field,
+invalid nested shape, stale document, or changed byte is rejected. Private thinking frames remain
+available only through the bearer-gated operator schema. Anonymous cognition refresh remains bounded
+GET-only polling; viewing this surface cannot submit persona actions.
 
 ## Realtime execution and live workspace files
 

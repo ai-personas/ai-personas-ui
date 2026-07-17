@@ -81,7 +81,7 @@ import {
   telemetryActivity,
   telemetryModelEvents,
   telemetrySpans,
-} from './public-telemetry.mjs?v=20260715-public-contract-v1';
+} from './public-telemetry.mjs?v=20260717-direct-routes-v1';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -435,6 +435,8 @@ function heartbeatForScope(){
 function expireLivePresence(now=Date.now()){
   NETWORK.sweepPresence(now);
   const lease=30000, retention=120000; let callsChanged=false;
+  for(const [personaKey,state] of (S.cognitionActiveCallsByPersona||new Map()))
+    if(now-Number(state?.observedAt||0)>lease) S.cognitionActiveCallsByPersona.delete(personaKey);
   for(const [base,at] of (S.activeModelCallObservedAt||new Map())) if(now-at>lease){
     S.activeModelCallObservedAt.delete(base); S.activeModelCallsByBase.delete(base); callsChanged=true; }
   if(callsChanged) _rebuildActiveModelCallIndex();
@@ -448,6 +450,7 @@ function expireLivePresence(now=Date.now()){
       S.lastModelSeenAt?.delete(personaKey); S.lastActiveAt?.delete(personaKey);
       S.modelCount?.delete(personaKey); S.pcardSeen?.delete(personaKey); S.pcCogSeen?.delete(personaKey);
       S.ixByPersona?.delete(personaKey); S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
+      S.publicCognitionSeen?.delete(personaKey);
       if(S.follow===personaKey) S.follow=null;
       continue;
     }
@@ -462,9 +465,25 @@ function expireLivePresence(now=Date.now()){
   for(const [kernel,failure] of (S.terminalModelFailureByKernel||new Map()))
     if(now-(failure?.receivedAt||0)>retention) S.terminalModelFailureByKernel.delete(kernel);
 }
+function _indexPublicCognitionActiveCalls(personaKey,calls,{base='',kernel='',observedAt=Date.now()}={}){
+  const map=S.cognitionActiveCallsByPersona=S.cognitionActiveCallsByPersona||new Map();
+  const rows=(Array.isArray(calls)?calls:[]).map((call)=>({...call,_base:base,_kernel:kernel,
+    _signedPublicCognition:true}));
+  map.delete(personaKey); map.set(personaKey,{calls:rows,observedAt});
+  while(map.size>NETWORK_LIMITS.cognitionPersonas*4) map.delete(map.keys().next().value);
+}
 function _activeModelCallsForPersona(value,kernel=''){
   const ref=_personaRef(value,kernel);
-  return (S.activeModelCallsByPersona&&S.activeModelCallsByPersona.get(ref.key))||[];
+  const telemetry=(S.activeModelCallsByPersona&&S.activeModelCallsByPersona.get(ref.key))||[];
+  const cognition=S.cognitionActiveCallsByPersona?.get(ref.key);
+  if(cognition&&Date.now()-cognition.observedAt>30000){
+    S.cognitionActiveCallsByPersona.delete(ref.key);
+    return telemetry;
+  }
+  if(!cognition?.calls?.length) return telemetry;
+  const merged=new Map();
+  for(const call of [...telemetry,...cognition.calls]) merged.set(String(call.call_id||canon(call)),call);
+  return [...merged.values()];
 }
 function _runtimeBusy(){
   return !!(S.activeModelCallCount>0);
@@ -2834,7 +2853,7 @@ const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_BLOCKED'
 // the public interaction projection strips payload, so CAPABILITY_PROVISIONED's
 // ok/error fields are NOT in the client stream — only BLOCKED is markable client-side.
 const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED';
-function _ixClass(kind){ if(kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
+function _ixClass(kind,event=null){ if(event?._cognition===true||kind==='MODEL_CALL'||kind==='LLM_OUTPUT'||kind==='LLM_LESSON')return 'think';
   if(CROSSENV_KINDS.has(kind))return 'crossenv'; if(VERIFY_KINDS.has(kind))return 'verify';
   if(TOOL_KINDS.has(kind))return 'tool';
   if(COORD_KINDS.has(kind))return 'coord'; if(ARTIFACT_KINDS.has(kind))return 'artifact'; return 'activity'; }
@@ -2853,11 +2872,12 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   ENV_CLARIFICATION_REQUESTED:'asked clarification',ENV_CLARIFICATION_ANSWERED:'answered clarification',
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
   PERSONA_COMMUNICATION_ROUTE_OBSERVED:'observed communication route',
-  PERSONA_COMMUNICATION_AUTHORED:'broadcast message',PERSONA_INVITATION_AUTHORED:'invited persona',
+  PERSONA_COMMUNICATION_AUTHORED:'authored message',PERSONA_INVITATION_AUTHORED:'invited persona',
   PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
   PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
   PERSONA_BIRTH_REFUSED:'refused persona birth',
-  MODEL_CALL:'asked',LLM_OUTPUT:'produced',LLM_LESSON:'learned',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
+  MODEL_CALL:'model call',LLM_OUTPUT:'produced',LLM_LESSON:'learned',COGNITION_LESSON:'holds lesson',
+  COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
@@ -2932,12 +2952,14 @@ function _personaAvatarHTML(personaKey){
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
-  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,ref.key);
-  const avatarPending=lifecycle?.identityFields?.avatar?.state==='pending';
-  const state=descriptor?'pending':(signedCard?.avatar||(!avatarPending&&lifecycle)?'failed':'absent');
+  const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const placeholderLabel=state==='absent'?'no portrait':state==='failed'?'portrait unavailable':'verifying portrait';
-  const avatarLabel=state==='absent'?'no portrait; monogram shown':state==='failed'?'portrait unavailable; monogram shown':'verifying persona portrait';
+  const placeholderLabel=state==='local'?'instant local avatar':state==='failed'?'local avatar · portrait unavailable':'local avatar · verifying portrait';
+  const avatarLabel=state==='local'
+    ?'instant deterministic local avatar; no optional persona-authored raster admitted'
+    :state==='failed'
+      ?'instant deterministic local avatar; optional persona-authored raster unavailable'
+      :'instant deterministic local avatar shown while optional persona-authored raster is verified';
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="${esc(avatarLabel)}">`
     +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
 }
@@ -3010,12 +3032,14 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
 }
 function _neutralPersonaAvatar(mount,state='failed'){
   mount.dataset.avatarState=state;
-  mount.setAttribute('aria-label',state==='absent'?'no portrait; monogram shown':'portrait unavailable; monogram shown');
+  mount.setAttribute('aria-label',state==='local'
+    ?'instant deterministic local avatar; no optional persona-authored raster admitted'
+    :'instant deterministic local avatar; optional persona-authored raster unavailable');
   const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
   placeholder.setAttribute('aria-hidden','true');
   const ref=_personaRef(_entityKeyFromDom(mount.dataset.avatarKey||''));
   const monogram=document.createElement('strong'); monogram.textContent=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const label=document.createElement('small'); label.textContent=state==='absent'?'no portrait':'portrait unavailable';
+  const label=document.createElement('small'); label.textContent=state==='local'?'instant local avatar':'local avatar · portrait unavailable';
   placeholder.append(monogram,label);
   mount.replaceChildren(placeholder);
 }
@@ -3026,7 +3050,7 @@ async function _hydratePersonaAvatarMount(mount){
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const revision=_personaAvatarMountRevision(descriptor,signedCard);
   if(!descriptor||mount.dataset.avatarRevision!==revision){
-    _neutralPersonaAvatar(mount,signedCard?.avatar?'failed':'absent'); return;
+    _neutralPersonaAvatar(mount,signedCard?.avatar?'failed':'local'); return;
   }
   mount.dataset.avatarState='loading';
   try{
@@ -3036,7 +3060,7 @@ async function _hydratePersonaAvatarMount(mount){
     img.decoding='async'; img.draggable=false; img.width=asset.width; img.height=asset.height;
     img.addEventListener('error',()=>{ if(mount.isConnected&&mount.contains(img)) _neutralPersonaAvatar(mount); },{once:true});
     img.src=asset.url;
-    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.setAttribute('aria-label','verified persona avatar');
+    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.setAttribute('aria-label','verified optional persona-authored raster avatar');
   }catch(e){ if(mount.isConnected&&mount.dataset.avatarRevision===revision) _neutralPersonaAvatar(mount); }
 }
 function _hydratePersonaAvatars(){
@@ -3092,32 +3116,37 @@ function _personaActivityHTML(acts,personaKey){
     if(rows.length===4) continue;
     const row={event:e,count:1}; seen.set(key,row); rows.push(row);
   }
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small>quiet now</small></div><div class="pc-activity-empty">No observed persona messages in the current five-minute window.</div></section>`;
-  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live message stream</span><small><i></i> observed telemetry</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
-    +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind), kernel=_eventKernel(e);
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No observed persona activity in the current five-minute window.</div></section>`;
+  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small><i></i> verified and observed stream</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
+    +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
       const mine=actorKey===personaKey;
       const targets=_eventEndpoints(e).map((endpoint)=>endpoint.kind==='persona'
         ?_nameFor(_eventPersonaKey(e,endpoint.id))
         :(endpoint.kind==='model'?String(endpoint.id||'model'):`${endpoint.kind}:${String(endpoint.id||'').slice(0,10)}`)).slice(0,3);
+      const recipientCount=Number.isSafeInteger(e._recipientCount)&&e._recipientCount>0?e._recipientCount:0;
+      const targetLabel=recipientCount?`${recipientCount} recipient${recipientCount===1?'':'s'}`:targets.join(', ');
       const selfName=_nameFor(personaKey);
       const route=mine
-        ?`${selfName}${targets.length?` → ${targets.join(', ')}`:''}`
-        :`${actor}${targets.length?` → ${targets.join(', ')}`:` → ${selfName}`}`;
+        ?`${selfName}${targetLabel?` → ${targetLabel}`:''}`
+        :`${actor}${targetLabel?` → ${targetLabel}`:` → ${selfName}`}`;
       const detail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').replace(/\s+/g,' ').trim();
       const direction=mine?'outbound':(actorKey?'inbound':'observed');
       return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
         +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(route)}</span>`
         +`<b>${esc(_ixVerb(e.kind))}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
-        +`</span><time>${esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
+        +`</span><time>${e._observedState?'current snapshot':esc(_ago(e._t))}</time></li>`; }).join('')+`</ol></section>`;
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
   const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
   const models=d.models||[]; const last=models[models.length-1];
   const rt=runtimeForPersona(personaKey)||{};
-  const activeCall=d.stale?null:(_activeModelCallsForPersona(personaKey).at(-1)||rt.current_model_call||null);
+  const indexedActiveCalls=_activeModelCallsForPersona(personaKey);
+  const signedCognitionCall=[...indexedActiveCalls].reverse().find((call)=>call?._signedPublicCognition===true)||null;
+  const transportStale=!!d.stale&&!signedCognitionCall;
+  const activeCall=signedCognitionCall||(!d.stale?(indexedActiveCalls.at(-1)||rt.current_model_call||null):null);
   const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
   const signedName=String(signedIdentity?._personaSignedName||'');
@@ -3141,8 +3170,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   // arriving (5-min window) instead of staying green forever via the sticky models[]
   // carry-forward. Liveness = model events seen recently OR a fresh coordination act.
   const modelFresh=_modelFresh(personaKey,models);
-  const recent=!d.stale&&(modelFresh||actFresh);
-  const running=!d.stale&&_runningNow(personaKey);   // mid model-call THIS moment — the one truly working
+  const recent=!transportStale&&(modelFresh||actFresh);
+  const running=!!signedCognitionCall||(!d.stale&&_runningNow(personaKey));
   const terminalFailure=running?null:(d.terminalFailure||null);
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
@@ -3151,7 +3180,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   if(activeCall){
     const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
     const model=String(activeCall.model_id||activeCall.model||'—');
-    const purposeLabel=PURPOSE_VERB[purpose]||purpose.replace(/_/g,' ');
+    const purposeLabel=activeCall._signedPublicCognition===true
+      ?purpose:(PURPOSE_VERB[purpose]||purpose.replace(/_/g,' '));
     doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(purposeLabel)}</strong><code>${esc(model)}</code>`
       +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
   } else if(terminalFailure){
@@ -3199,7 +3229,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
   const dotCls=running?'run':(terminalFailure?'error':(recent?'on':'off'));
-  const statusBadge=d.stale
+  const statusBadge=transportStale
     ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'STALE'}</span>`
     : running ? '<span class="pc-run">MODEL CALL</span>'
     : terminalFailure ? '<span class="pc-failed">MODEL FAILED</span>'
@@ -4085,7 +4115,7 @@ function renderInteractionStream(){
   const scoped=(S.interactions||[]).filter((e)=>kernelIsFocused(e._kernel||kernelForBase(e._base)));
   const all=scoped.filter((e)=>e._t>0&&now-e._t<=leaseMs&&e._t-now<30000);
   S.ixSeen=S.ixSeen||new Set();   // _keys already painted (so only genuinely-new rows .fresh in)
-  const rows=all.filter((e)=>{ const c=_ixClass(e.kind);
+  const rows=all.filter((e)=>{ const c=_ixClass(e.kind,e);
     if(flt==='all') return true;
     if(flt==='think') return c==='think';
     if(flt==='coord') return c==='coord';
@@ -4103,11 +4133,13 @@ function renderInteractionStream(){
   // the grown height so the rows being read stay stationary; at the top, leave it pinned.
   const atTop=el.scrollTop<=4, prevH=el.scrollHeight, prevTop=el.scrollTop;
   el.innerHTML=rows.map((e)=>{
-    const c=_ixClass(e.kind); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
+    const c=_ixClass(e.kind,e); const cap=e._cap||null; const fail=_ixFailed(e.kind)||(!!cap&&cap.ok===false);
     const eventKernel=_eventKernel(e);
     const who=e.actor_kind==='persona'?_nameFor(e.actor_id,eventKernel):(e.actor_id?`${esc(e.actor_kind)}:${esc((e.actor_id||'').slice(0,10))}`:esc(e.actor_kind||'kernel'));
     const aff=_eventEndpoints(e).map((a)=>a.kind==='persona'?_nameFor(a.id,eventKernel):a.kind==='model'?`model:${a.id||''}`:`${a.kind}:${(a.id||'').slice(0,8)}`);
-    const arrow=aff.length?`<span class="ix-arrow">→</span><span class="ix-to">${esc(aff.join(', '))}</span>`:'';
+    const recipientCount=Number.isSafeInteger(e._recipientCount)&&e._recipientCount>0?e._recipientCount:0;
+    const targetLabel=recipientCount?`${recipientCount} recipient${recipientCount===1?'':'s'}`:aff.join(', ');
+    const arrow=targetLabel?`<span class="ix-arrow">→</span><span class="ix-to">${esc(targetLabel)}</span>`:'';
     const fresh=!S.ixSeen.has(e._key); if(fresh) S.ixSeen.add(e._key);
     // thread spine when this row shares a real scope_id with the one above it
     const sid=e.scope_id&&/[:/]/.test(String(e.scope_id))?String(e.scope_id):null;
@@ -4115,12 +4147,12 @@ function renderInteractionStream(){
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
     const verb=_ixVerb(e.kind);
-    // content-type chip: a persona producing CODE vs hitting an ERROR vs writing a
-    // PLAN reads instantly (the single _ctype computed once in streamPersonaCognition).
+    // Content-type chips remain available to the operator surface. Anonymous
+    // cognition rows stay neutral and use only their signed event kind.
     const ct=(e._ctype&&e._ctype!=='think')?`<span class="ix-ct ct-${e._ctype}">${e._ctype}</span>`:'';
     const msg=e._msg?`<span class="ix-msg">${ct}${esc(e._msg)}</span>`:'';
     const trust=e.signed===true
-      ? `<span class="ix-trust signed" title="lineage signature asserted by the node frame">SIGNED EVENT</span>`
+      ? `<span class="ix-trust signed" title="${esc(e._trustTitle||'lineage signature asserted by the node frame')}">${esc(e._trustLabel||'SIGNED EVENT')}</span>`
       : `<span class="ix-trust transport" title="live node transport frame; not independently signature-verified in this browser">LIVE FRAME</span>`;
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
@@ -4129,13 +4161,13 @@ function renderInteractionStream(){
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
-      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${esc(_ago(e._t))}</span></li>`;
+      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span><span class="ix-time">${e._observedState?'current snapshot':esc(_ago(e._t))}</span></li>`;
   }).join('')||(()=>{
-    // A node may publish a redacted persona-message tier. Private nodes answer the
+    // A node may publish a signed public-cognition tier. Private nodes answer the
     // same anonymous probe with 404, so an empty THINK feed must stay neutral: the
-    // browser cannot infer whether the persona is quiet or its messages are private.
+    // browser cannot infer whether the persona is quiet or its cognition is private.
     if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
-      return '<li class="l2" style="padding:10px">no public persona messages in the last 5 minutes — this node may be quiet or keep its messages private.</li>';
+      return '<li class="l2" style="padding:10px">no signed public cognition in the last 5 minutes — this node may be quiet or keep its cognition private.</li>';
     // warming: a reachable node is running but no act has streamed yet — say so on the
     // unfiltered feed rather than implying nothing is funded (honest only when warming).
     if(flt==='all' && isWarming())
@@ -4277,29 +4309,47 @@ function renderEnvFeedDoc(doc){
   return h;
 }
 // ---- 🧠 persona THINKING (02_PERSONA §4/§8-10) ----
-// A node can opt its persona messages into the public tier. Public viewers may
-// then see the persona-authored outputs/lessons/tactics returned by that endpoint;
+// A node can opt its bounded persona cognition projection into the public tier.
+// Anonymous viewers accept only the exact current-master-signed schema below;
 // private nodes answer 404. The exact thinking FRAME remains operator-only even
 // if a faulty or hostile public response includes a non-empty field.
 function renderThinking(t,{allowThinkingFrame=false}={}){
   let h='';
+  const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+  const calls=t.active_calls||[];
+  if(calls.length){
+    h+=`<div class="l2" style="margin:2px 0 3px">Active model calls — verified current snapshot</div>`
+      +calls.slice(-8).reverse().map((call)=>{
+        const started=Date.parse(String(call.started_at||''));
+        const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
+        return `<div class="think"><span class="amber">${esc(call.status||'active')}</span> ${esc(purpose)}`
+          +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
+          +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
+          +(Number.isFinite(started)?` · started ${esc(_ago(started))}`:'')+`</div>`
+          +((call.task_id||call.run_id)?`<div class="l2">${call.task_id?`task ${esc(call.task_id)}`:''}${call.task_id&&call.run_id?' · ':''}${call.run_id?`run ${esc(call.run_id)}`:''}</div>`:'')
+          +`</div>`;
+      }).join('');
+  }
   const out=t.recent_outputs||[];
   if(out.length){
-    const publicMessages=t.tier==='public';
-    h+=`<div class="l2" style="margin:2px 0 3px">${publicMessages?'Public persona-authored messages — verified broadcasts':'Recent authored output'} (newest first)</div>`
-      +out.slice(-10).reverse().map((o)=>{
+    h+=`<div class="l2" style="margin:2px 0 3px">${publicCognition?'Signed outputs and messages':'Recent authored output'} (newest first)</div>`
+      +out.slice(-12).reverse().map((o)=>{
         // the FULL text is carried in the (scroll-capped) surface so copy lifts everything,
         // not the 240-char preview. TYPE-AWARE: error/code/json/tool keep their structure
         // in a real <pre> (indentation + newlines preserved, larger scroll budget); prose
         // types (markdown/plan/think) stay clamped one-line prose. esc() on every byte.
-        const full=String(o.text||''); const ty=_cogType(full);
+        const full=String(o.text||''); const ty=publicCognition?'think':_cogType(full);
+        const recipients=Array.isArray(o.audience_persona_ids)?o.audience_persona_ids.length:0;
+        const publicMeta=publicCognition
+          ? `<div class="l2">${esc(String(o.authority||'').replace(/_/g,' '))} · ${recipients?`${recipients} addressed recipient${recipients===1?'':'s'}`:'no addressed recipients'}${o.environment_id?` · environment ${esc(o.environment_id)}`:''}</div>`
+          : '';
         if(ty==='error'||ty==='code'||ty==='json'||ty==='tool'){
           return `<div class="think llmout copy-host ctype-${ty}"><span class="ctype-tag amber">${esc(o.kind||ty)}</span> ${copyBtn()}`
-            +`<pre class="ct-pre copy-src">${esc(full)}</pre></div>`;
+            +`<pre class="ct-pre copy-src">${esc(full)}</pre>${publicMeta}</div>`;
         }
         const long=full.length>240;
         return `<div class="think llmout copy-host"><span class="amber">${esc(o.kind||'output')}</span> ${copyBtn()}`
-          +`<span class="opmsg copy-src${long?' clamp':''}">${esc(full)}</span></div>`;
+          +`<span class="opmsg copy-src${long?' clamp':''}">${esc(full)}</span>${publicMeta}</div>`;
       }).join('');
   }
   const mp=t.mode_proficiencies||{};
@@ -4310,35 +4360,35 @@ function renderThinking(t,{allowThinkingFrame=false}={}){
   }
   const lessons=t.lessons||[];
   if(lessons.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">Lessons it learned — its own words</div>`
-      +lessons.slice(-6).reverse().map((l)=>
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed lessons in current public state':'Lessons it learned — its own words'}</div>`
+      +lessons.slice(-10).reverse().map((l)=>
         `<div class="think"><span class="amber">when</span> ${esc(l.trigger||'—')} <span class="amber">→</span> ${esc(l.action||'')}`
         +(l.rationale?`<div class="l2">${esc(String(l.rationale).slice(0,260))}</div>`:'')
         +`<div class="l2">confidence ${esc(Number(l.confidence||0).toFixed(2))}</div></div>`).join('');
   }
   const tactics=t.tactics||[];
   if(tactics.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">Evolved tactics (EVOLVE-BLOCK · GEPA-signed)</div>`
-      +tactics.slice(-6).reverse().map((x)=>
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed tactics in current public state':'Evolved tactics (EVOLVE-BLOCK · GEPA-signed)'}</div>`
+      +tactics.slice(-10).reverse().map((x)=>
         `<div class="think">${esc(String(x.action||x.trigger||'').slice(0,300))}`
         +`<div class="l2">${esc(x.source||'manual')} · score ${esc(Number(x.score||0).toFixed(2))} · v${esc(x.version||1)}${x.cohort?' · '+esc(x.cohort):''}</div></div>`).join('');
   }
   const facts=t.proven_facts||[];
   if(facts.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">Shared proven facts it holds</div>`
-      +facts.slice(-4).reverse().map((s)=>`<div class="think l2">${esc(String(s).slice(0,220))}</div>`).join('');
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed proven facts in current public state':'Shared proven facts it holds'}</div>`
+      +facts.slice(-6).reverse().map((s)=>`<div class="think l2">${esc(String(s).slice(0,220))}</div>`).join('');
   }
   const tl=t.evolution_timeline||[];
   if(tl.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">Cognition timeline (signed evolution log)</div><div class="tape-mini">`
-      +tl.slice(-10).reverse().map((e)=>
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed evolution timeline':'Cognition timeline (signed evolution log)'}</div><div class="tape-mini">`
+      +tl.slice(-20).reverse().map((e)=>
         `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
         +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+`</div>`;
   }
   if(allowThinkingFrame&&t.thinking_frame)
     h+=`<details class="frame"><summary class="l2">thinking frame — the exact prompt it generates under (SOUL + evolved tactics + retrieved knowledge)</summary>`
       +`<div class="copy-host">${copyBtn()}<pre class="opout copy-src">${esc(t.thinking_frame)}</pre></div></details>`;
-  return h||'<div class="l2">no cognition recorded yet — it has not worked a task</div>';
+  return h||'<div class="l2">no cognition recorded yet</div>';
 }
 function renderThinkingRedacted(doc){
   let h='<div class="privacy-note">Detailed cognition is private. This view shows verified state transitions only.</div>';
@@ -4353,13 +4403,117 @@ function renderThinkingRedacted(doc){
       +`<span class="l2">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+'</div>';
   return h;
 }
-const PUBLIC_PERSONA_MESSAGE_FIELDS=Object.freeze([
-  'generated_at','identity_fields','identity_materialization_state','lifecycle_state','name',
-  'persona_id','recent_outputs','schema','signature_hex','signing_key_id','tier',
+const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
+  'active_calls','evolution_timeline','generated_at','identity_fields',
+  'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
+  'proven_facts','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
-  'at','author_persona_id','environment_id','kind','persona_signature_verified','text',
+  'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
 ].sort());
+const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=Object.freeze([
+  'call_id','model_id','persona_id','reasoning_effort','requested_purpose','run_id',
+  'started_at','status','task_id',
+].sort());
+const PUBLIC_PERSONA_LESSON_FIELDS=Object.freeze([
+  'action','confidence','rationale','trigger',
+].sort());
+const PUBLIC_PERSONA_TACTIC_FIELDS=Object.freeze([
+  'action','cohort','score','source','trigger','version',
+].sort());
+const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
+  'accepted','at','kind','mode','task_id',
+].sort());
+const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
+const PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS=new Set([
+  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',
+]);
+const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
+const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
+  activeCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
+  atom:512,text:4096,
+});
+function _safePublicCognitionText(value,maximum,{required=false}={}){
+  if(typeof value!=='string'||value.length>maximum||(required&&!value.trim())) return false;
+  for(let index=0;index<value.length;index++){
+    const code=value.charCodeAt(index);
+    if((code<0x20&&code!==0x09&&code!==0x0a&&code!==0x0d)||code===0x7f) return false;
+  }
+  return true;
+}
+function _safePublicCognitionAtom(value,maximum=PUBLIC_PERSONA_COGNITION_LIMITS.atom,{required=false}={}){
+  if(!_safePublicCognitionText(value,maximum,{required})||value.trim()!==value) return false;
+  for(let index=0;index<value.length;index++){
+    const code=value.charCodeAt(index); if(code<=0x20||code===0x7f) return false;
+  }
+  return true;
+}
+function _safePublicCognitionInstant(value,{required=true}={}){
+  return _safePublicCognitionAtom(value,64,{required})
+    &&(!value||(PUBLIC_PERSONA_COGNITION_INSTANT.test(value)&&Number.isFinite(Date.parse(value))));
+}
+function _validPublicPersonaOutput(output,identity){
+  if(!_exactObjectFields(output,PUBLIC_PERSONA_OUTPUT_FIELDS)
+      ||!_safePublicCognitionAtom(output.kind,128,{required:true})
+      ||!_safePublicCognitionInstant(output.at)
+      ||!_safePublicCognitionText(output.text,PUBLIC_PERSONA_COGNITION_LIMITS.text,{required:true})
+      ||!_safePublicCognitionAtom(output.author_persona_id,512,{required:true})
+      ||output.author_persona_id!==identity.signedId
+      ||!_safePublicCognitionAtom(output.environment_id,512)
+      ||!PUBLIC_PERSONA_OUTPUT_AUTHORITIES.has(output.authority)
+      ||!Array.isArray(output.audience_persona_ids)
+      ||output.audience_persona_ids.length>PUBLIC_PERSONA_COGNITION_LIMITS.audience) return false;
+  const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
+  if(communication!==(output.authority==='persona_signature')
+      ||(!communication&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
+      ||(communication&&!output.environment_id)
+      ||(!communication&&output.audience_persona_ids.length)) return false;
+  const audience=new Set();
+  for(const personaId of output.audience_persona_ids){
+    if(!_safePublicCognitionAtom(personaId,512,{required:true})||audience.has(personaId)) return false;
+    audience.add(personaId);
+  }
+  return true;
+}
+function _validPublicPersonaActiveCall(call,identity){
+  return _exactObjectFields(call,PUBLIC_PERSONA_ACTIVE_CALL_FIELDS)
+    &&_safePublicCognitionAtom(call.call_id,512,{required:true})
+    &&_safePublicCognitionAtom(call.model_id,512,{required:true})
+    &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
+    &&call.persona_id===identity.signedId
+    &&_safePublicCognitionAtom(call.reasoning_effort,128)
+    &&_safePublicCognitionText(call.requested_purpose,512)
+    &&_safePublicCognitionAtom(call.run_id,512)
+    &&_safePublicCognitionInstant(call.started_at)
+    &&call.status==='running'
+    &&_safePublicCognitionAtom(call.task_id,512);
+}
+function _validPublicPersonaLesson(lesson){
+  return _exactObjectFields(lesson,PUBLIC_PERSONA_LESSON_FIELDS)
+    &&_safePublicCognitionText(lesson.trigger,4096)
+    &&_safePublicCognitionText(lesson.action,4096,{required:true})
+    &&_safePublicCognitionText(lesson.rationale,4096)
+    &&typeof lesson.confidence==='number'&&Number.isFinite(lesson.confidence)
+    &&lesson.confidence>=0&&lesson.confidence<=1;
+}
+function _validPublicPersonaTactic(tactic){
+  return _exactObjectFields(tactic,PUBLIC_PERSONA_TACTIC_FIELDS)
+    &&_safePublicCognitionText(tactic.trigger,4096)
+    &&_safePublicCognitionText(tactic.action,4096,{required:true})
+    &&typeof tactic.score==='number'&&Number.isFinite(tactic.score)&&Math.abs(tactic.score)<=1000000
+    &&_safePublicCognitionAtom(tactic.source,256)
+    &&Number.isSafeInteger(tactic.version)&&tactic.version>=1&&tactic.version<=1000000000
+    &&_safePublicCognitionAtom(tactic.cohort,256);
+}
+function _validPublicPersonaEvolution(event){
+  return _exactObjectFields(event,PUBLIC_PERSONA_EVOLUTION_FIELDS)
+    &&_safePublicCognitionAtom(event.kind,128,{required:true})
+    &&_safePublicCognitionInstant(event.at,{required:false})
+    &&_safePublicCognitionAtom(event.mode,256)
+    &&(event.accepted===null||typeof event.accepted==='boolean')
+    &&_safePublicCognitionAtom(event.task_id,512);
+}
 function _currentInventoryPersona(kernel,pid){
   const personaKey=_personaKey(kernel,pid), row=S.personaDiscoveryByKey.get(personaKey);
   const inventory=S.providerInventories.get(String(kernel||''));
@@ -4367,36 +4521,45 @@ function _currentInventoryPersona(kernel,pid){
     &&row._inventoryGeneration===inventory.generation&&row._inventoryHash===inventory.hash
     &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)?row:null;
 }
-async function verifyPublicPersonaMessages(base,doc,{personaId,kernel}={}){
+async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
   const pid=_shortId(personaId), row=_currentInventoryPersona(kernel,pid);
   const identity=signedPersonaIdentity(row);
   if(!row||!identity||identity.canonicalId!==pid
-      ||!_exactObjectFields(doc,PUBLIC_PERSONA_MESSAGE_FIELDS)
-      ||doc.schema!=='personaos-persona-public-messages/1'||doc.tier!=='public'
-      ||String(doc.persona_id||'')!==identity.signedId||!_freshPublicGeneratedAt(doc.generated_at)
+      ||!_exactObjectFields(doc,PUBLIC_PERSONA_COGNITION_FIELDS)
+      ||doc.schema!=='personaos-persona-public-cognition/1'||doc.tier!=='public'
+      ||String(doc.persona_id||'')!==identity.signedId||!_safePublicCognitionInstant(doc.generated_at)
+      ||!_freshPublicGeneratedAt(doc.generated_at)
+      ||!_safePublicCognitionAtom(doc.persona_id,512,{required:true})
+      ||!_safePublicCognitionText(doc.name,512,{required:true})
+      ||!_safePublicCognitionAtom(doc.lifecycle_state,64,{required:true})
+      ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
       ||String(doc.name||'')!==String(row._personaSignedName||'')
-      ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>12) return false;
+      ||!Array.isArray(doc.active_calls)||doc.active_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.activeCalls
+      ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.outputs
+      ||!Array.isArray(doc.lessons)||doc.lessons.length>PUBLIC_PERSONA_COGNITION_LIMITS.lessons
+      ||!Array.isArray(doc.tactics)||doc.tactics.length>PUBLIC_PERSONA_COGNITION_LIMITS.tactics
+      ||!Array.isArray(doc.proven_facts)||doc.proven_facts.length>PUBLIC_PERSONA_COGNITION_LIMITS.facts
+      ||!Array.isArray(doc.evolution_timeline)||doc.evolution_timeline.length>PUBLIC_PERSONA_COGNITION_LIMITS.evolution) return false;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
-  if(lifecycle&&(doc.lifecycle_state!==lifecycle.lifecycleState
-      ||doc.identity_materialization_state!==lifecycle.materializationState)) return false;
-  if(lifecycle){
-    if(!doc.identity_fields||typeof doc.identity_fields!=='object'||Array.isArray(doc.identity_fields)
-        ||Object.keys(doc.identity_fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return false;
-    for(const field of ['name','characteristics','avatar']){
-      const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
-      if(!_exactObjectFields(value,['persona_authored','state'])
-          ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
-    }
+  if(!lifecycle||doc.lifecycle_state!==lifecycle.lifecycleState
+      ||doc.identity_materialization_state!==lifecycle.materializationState
+      ||!doc.identity_fields||typeof doc.identity_fields!=='object'||Array.isArray(doc.identity_fields)
+      ||Object.keys(doc.identity_fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return false;
+  for(const field of ['name','characteristics','avatar']){
+    const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
+    if(!_exactObjectFields(value,['persona_authored','state'])
+        ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
   }
-  for(const output of doc.recent_outputs){
-    if(!_exactObjectFields(output,PUBLIC_PERSONA_OUTPUT_FIELDS)
-        ||output.kind!=='PERSONA_COMMUNICATION_AUTHORED'
-        ||String(output.author_persona_id||'')!==identity.signedId
-        ||output.persona_signature_verified!==true
-        ||!String(output.environment_id||'').trim()
-        ||!String(output.text||'').trim()||String(output.text).length>4096
-        ||!Number.isFinite(Date.parse(String(output.at||'')))) return false;
+  const callIds=new Set();
+  for(const call of doc.active_calls){
+    if(!_validPublicPersonaActiveCall(call,identity)||callIds.has(call.call_id)) return false;
+    callIds.add(call.call_id);
   }
+  if(doc.recent_outputs.some((output)=>!_validPublicPersonaOutput(output,identity))
+      ||doc.lessons.some((lesson)=>!_validPublicPersonaLesson(lesson))
+      ||doc.tactics.some((tactic)=>!_validPublicPersonaTactic(tactic))
+      ||doc.proven_facts.some((fact)=>!_safePublicCognitionText(fact,4096,{required:true}))
+      ||doc.evolution_timeline.some((event)=>!_validPublicPersonaEvolution(event))) return false;
   return verifyCurrentMasterSignedDocument(base,doc);
 }
 async function refreshThinking(){
@@ -4405,24 +4568,24 @@ async function refreshThinking(){
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
-  const t=await fetchJson(endpoint);
+  const t=await fetchJson(endpoint,{maxBytes:512*1024});
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
     &&t?.schema==='personaos-persona-thinking/1'&&String(t.persona_id||'')===want;
-  const publicAccepted=!hasOperator&&await verifyPublicPersonaMessages(wantBase,t,
+  const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
     el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted}); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el3=$('#thinksec'); if(el3) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
-    :'<div class="privacy-note">No verified persona-authored public broadcasts are available. Private cognition is not exposed.</div>';
+    :'<div class="privacy-note">No verified signed public cognition is available. Private cognition is not exposed.</div>';
 }
-// LIVE persona MESSAGES: poll active personas' cognition surface and merge their
-// ACTUAL recent model outputs + newest learned lesson into the same live feed.
-// With a token this accepts the operator tier. Without one it accepts only an
-// explicit public-tier response; a private node's 404 remains a quiet no-op.
+// LIVE persona cognition: poll active personas' cognition surface and merge the
+// exact validated signed state into the same live feed. With a token this accepts
+// the operator tier. Without one it accepts only the exact public cognition
+// contract; a private node's 404 remains a quiet no-op.
 let _cogBusy=false;
 // ONE content-type classifier shared by feed / card / drawer — the substance a
 // persona's raw model output IS, computed once and ridden through on the interaction
@@ -4469,6 +4632,61 @@ function _cogPreview(msg){
   for(const ln of s.split(/\r?\n/)){ const t=ln.trim();
     if(!t||t.startsWith('#!')||/^(import |from |\/\/|#|"""|''')/.test(t)) continue; return t.slice(0,150); }
   return s.replace(/\s+/g,' ').slice(0,150);
+}
+function _publicCognitionPreview(value){
+  for(const line of String(value||'').split('\n')){
+    const text=line.trim(); if(text) return text.slice(0,150);
+  }
+  return '';
+}
+// This bounded non-cryptographic fingerprint is only a render de-duplication key.
+// Trust comes from verifyPublicPersonaCognition's whole-document signature check.
+function _publicCognitionFingerprint(value){
+  const source=canon(value); let left=2166136261,right=0x9e3779b9;
+  for(let index=0;index<source.length;index++){
+    const code=source.charCodeAt(index);
+    left=Math.imul(left^code,16777619);
+    right=Math.imul(right^(code+index),2246822519);
+  }
+  return `${source.length.toString(36)}-${(left>>>0).toString(36)}-${(right>>>0).toString(36)}`;
+}
+function _publicCognitionRows(doc){
+  const observedAt=doc.generated_at, rows=[];
+  for(const call of doc.active_calls) rows.push({
+    source:'active_call',kind:'MODEL_CALL',at:call.started_at,scope:'model',scopeId:call.task_id||call.run_id,
+    msg:[call.requested_purpose,call.model_id,call.status].filter(Boolean).join(' · '),
+    rationale:`model ${call.model_id} · ${call.status}${call.reasoning_effort?` · reasoning ${call.reasoning_effort}`:''}`,
+    cognition:true,ctype:'think',recipients:[],dedup:call,
+  });
+  for(const output of doc.recent_outputs){
+    const communication=output.authority==='persona_signature';
+    rows.push({
+      source:'output',kind:output.kind,at:output.at,
+      scope:communication?'communication':'cognition',scopeId:output.environment_id,
+      msg:output.text,rationale:output.text,cognition:!communication,ctype:'think',
+      recipients:output.audience_persona_ids,authority:output.authority,dedup:output,
+    });
+  }
+  for(const lesson of doc.lessons) rows.push({
+    source:'lesson',kind:'COGNITION_LESSON',at:observedAt,scope:'cognition',scopeId:'',
+    msg:lesson.action,rationale:[lesson.trigger,lesson.rationale].filter(Boolean).join(' · '),
+    cognition:true,ctype:'think',recipients:[],dedup:lesson,observedState:true,
+  });
+  for(const tactic of doc.tactics) rows.push({
+    source:'tactic',kind:'COGNITION_TACTIC',at:observedAt,scope:'cognition',scopeId:'',
+    msg:tactic.action,rationale:[tactic.trigger,tactic.source].filter(Boolean).join(' · '),
+    cognition:true,ctype:'think',recipients:[],dedup:tactic,observedState:true,
+  });
+  for(const fact of doc.proven_facts) rows.push({
+    source:'fact',kind:'COGNITION_PROVEN_FACT',at:observedAt,scope:'cognition',scopeId:'',
+    msg:fact,rationale:fact,cognition:true,ctype:'think',recipients:[],dedup:fact,observedState:true,
+  });
+  for(const event of doc.evolution_timeline) rows.push({
+    source:'evolution',kind:event.kind,at:event.at||observedAt,scope:'cognition',scopeId:event.task_id,
+    msg:[event.mode,event.accepted===true?'accepted':event.accepted===false?'not accepted':'',event.kind].filter(Boolean).join(' · '),
+    rationale:event.mode,cognition:true,ctype:'think',recipients:[],dedup:event,observedState:!event.at,
+  });
+  return rows;
 }
 async function streamPersonaCognition(){
   if(_cogBusy) return;
@@ -4518,38 +4736,54 @@ async function streamPersonaCognition(){
         // canonical `sid` remains only the browser join key.
         const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
         const hasOperator=!!tokenFor(endpoint);
-        const r=await fetchJson(endpoint);
+        const r=await fetchJson(endpoint,{maxBytes:512*1024});
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
-          :await verifyPublicPersonaMessages(base,r,{personaId:endpointId,kernel});
+          :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
         if(accepted){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
       }
       if(!t) continue;
-      const rows=[];
-      for(const o of (t.recent_outputs||[])) rows.push({
-        // The anonymous endpoint contract admits only verified, unaddressed
-        // PersonaCommunication broadcasts. Do not let an untrusted kind label
-        // recast those bytes as raw model output or private candidate work.
-        kind:t.schema==='personaos-persona-public-messages/1'
-          ?'PERSONA_COMMUNICATION_AUTHORED':String(o.kind||'LLM_OUTPUT'),
-        msg:o.text,at:o.at,
-      });
-      const lz=(t.lessons||[]); if(lz.length) rows.push({kind:'LLM_LESSON',msg:lz[lz.length-1].action,at:''});
+      const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+      if(publicCognition) _indexPublicCognitionActiveCalls(personaKey,t.active_calls,
+        {base:usedBase,kernel,observedAt:Date.now()});
+      const rows=publicCognition?_publicCognitionRows(t):[];
+      if(!publicCognition){
+        for(const output of (t.recent_outputs||[])) rows.push({source:'output',kind:String(output.kind||'LLM_OUTPUT'),
+          msg:output.text,at:output.at,scope:'cognition',scopeId:'',recipients:[],dedup:output});
+        const lessons=t.lessons||[]; if(lessons.length){ const lesson=lessons[lessons.length-1];
+          rows.push({source:'lesson',kind:'LLM_LESSON',msg:lesson.action,at:t.generated_at||'',scope:'cognition',
+            scopeId:'',recipients:[],dedup:lesson}); }
+      }
+      S.publicCognitionSeen=S.publicCognitionSeen||new Map();
+      let personaSeen=null;
+      if(publicCognition){
+        personaSeen=S.publicCognitionSeen.get(personaKey)||new Set();
+        S.publicCognitionSeen.delete(personaKey); S.publicCognitionSeen.set(personaKey,personaSeen);
+        while(S.publicCognitionSeen.size>NETWORK_LIMITS.cognitionPersonas*4)
+          S.publicCognitionSeen.delete(S.publicCognitionSeen.keys().next().value);
+      }
       for(const row of rows){
         const msg=String(row.msg||'').trim(); if(!msg) continue;
-        // KEY on the OUTPUT TIMESTAMP (not a content prefix) — distinct candidates often
-        // share a boilerplate prefix (#!/usr/bin/env python3, imports…), so a prefix key
-        // collapsed them into one and the feed never advanced. The timestamp is unique.
-        const key=`cog|${personaKey}|${row.kind}|${row.at||''}|${msg.length}`;
-        if(S.ixKeys.has(key)) continue; S.ixKeys.add(key); added++;
-        const preview=row.kind==='LLM_LESSON'?('learned — '+msg):_cogPreview(msg);
-        const publicMessage=row.kind==='PERSONA_COMMUNICATION_AUTHORED';
-        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],kind:row.kind,scope:publicMessage?'communication':'cognition',
-          scope_id:'',at:'',_base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
-          _msg:preview.slice(0,200),_rationale:msg,
-          _ctype:row.kind==='LLM_LESSON'?'think':_cogType(msg)});
+        const key=`cog|${personaKey}|${row.source}|${row.kind}|${_publicCognitionFingerprint(row.dedup)}`;
+        if(personaSeen?.has(key)||S.ixKeys.has(key)) continue;
+        if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
+        S.ixKeys.add(key); added++;
+        const contentPreview=publicCognition?_publicCognitionPreview(msg):_cogPreview(msg);
+        const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
+        const preview=prefix?`${prefix} — ${contentPreview}`:contentPreview;
+        const recipients=(row.recipients||[]).map((id)=>({kind:'persona',id}));
+        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
+          scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:publicCognition,
+          _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
+          _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),_ctype:publicCognition?'think':(row.ctype||_cogType(msg)),
+          _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
+          _observedState:row.observedState===true,
+          _trustLabel:publicCognition?'SIGNED COGNITION':'',
+          _trustTitle:publicCognition
+            ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'',
+        });
       }
     }
     if(added){
@@ -4653,13 +4887,13 @@ async function personaView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   S.drawerLiveFeed=(L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
-  // 🧠 what it is THINKING: public persona messages when the node opts in,
-  // full cognition/frame only with operator authority. Streams on the live cadence.
+  // Public signed cognition when the node opts in; the private thinking frame is
+  // available only with operator authority. Both stream on the live cadence.
   S.drawerThinkPid=_signedPersonaEndpointId(personaKey);
   const thinkingEndpoint=join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`);
   const operatorThinking=!!tokenFor(thinkingEndpoint);
-  html+=H(operatorThinking?'Thinking':'Authored public messages')
-    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving signed public broadcasts…'}</div></div>`;
+  html+=H(operatorThinking?'Thinking':'Signed public cognition')
+    +`<div id="thinksec" class="livesec"><div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving signed public cognition…'}</div></div>`;
   setTimeout(refreshThinking,0);
   html+=trustPanel(r);
   // Related navigation obeys the same exact authority result. Profile/status
