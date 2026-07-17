@@ -317,7 +317,7 @@ const NETWORK_LIMITS=Object.freeze({
   resolverPage:128, resolverPages:4, discoveryLogRows:24, telemetryTapeRows:2000,
   graphKernels:6, graphPersonasGlobal:30, graphPersonasFocused:36,
   environmentInitial:10, environmentStep:10, personaInitial:12, personaStep:12,
-  cognitionPersonas:24, interactionRows:120,
+  cognitionPersonas:24, cognitionRowsPerPersona:24, interactionRows:120,
 });
 const NETWORK=new NetworkStore({limits:{maxEntities:NETWORK_LIMITS.cachedRecords,
   maxPresence:NETWORK_LIMITS.cachedRecords,maxGraphExact:96,maxGraphAggregates:24,maxGraphNodes:120}});
@@ -348,7 +348,8 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   liveArtifactPublicProbes:new Map(),
   terminalCallTombstones:new Map(),
   terminalModelFailureByKernel:new Map(),
-  personaRuntimeById:new Map(), trackedLiveRuns:new Map(), openLiveFile:null,
+  personaRuntimeById:new Map(), cognitionByPersona:new Map(),
+  trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
   heartbeat:null, vitalSpikes:[], nodePos:new Map(), gnodes:new Map(), envCount:0,
@@ -448,7 +449,11 @@ function expireLivePresence(now=Date.now()){
       S.liveByPersona.delete(personaKey); S.personaRuntimeById?.delete(personaKey);
       S.lastModelSeenAt?.delete(personaKey); S.lastActiveAt?.delete(personaKey);
       S.modelCount?.delete(personaKey); S.pcardSeen?.delete(personaKey); S.pcCogSeen?.delete(personaKey);
-      S.ixByPersona?.delete(personaKey); S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
+      const retained=[...(S.cognitionByPersona?.get(personaKey)?.values()||[])]
+        .sort((a,b)=>a._t-b._t).slice(-12);
+      if(retained.length) S.ixByPersona?.set(personaKey,retained);
+      else S.ixByPersona?.delete(personaKey);
+      S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
       S.publicCognitionSeen?.delete(personaKey);
       if(S.follow===personaKey) S.follow=null;
       continue;
@@ -572,13 +577,32 @@ function _interactionPersonaKeys(event){
   return [event?.actor_kind==='persona'?_eventPersonaKey(event,event.actor_id):null,
     ..._personaEndpoints(event).map((endpoint)=>_eventPersonaKey(event,endpoint.id))].filter(Boolean);
 }
-function _refreshPersonaInteractionIndex(){
-  S.ixByPersona=new Map();
-  for(const event of (S.interactions||[])) for(const personaKey of _interactionPersonaKeys(event)){
-    const rows=S.ixByPersona.get(personaKey)||S.ixByPersona.set(personaKey,[]).get(personaKey);
-    rows.push(event);
+function _rememberPersonaCognitionEvent(event){
+  const store=S.cognitionByPersona=S.cognitionByPersona||new Map();
+  for(const personaKey of new Set(_interactionPersonaKeys(event))){
+    let rows=store.get(personaKey); if(!rows) rows=new Map();
+    if(rows.has(event._key)) rows.delete(event._key);
+    rows.set(event._key,event);
+    while(rows.size>NETWORK_LIMITS.cognitionRowsPerPersona) rows.delete(rows.keys().next().value);
+    store.delete(personaKey); store.set(personaKey,rows);
   }
-  for(const [,rows] of S.ixByPersona) if(rows.length>12) rows.splice(0,rows.length-12);
+  while(store.size>NETWORK_LIMITS.cognitionPersonas*4) store.delete(store.keys().next().value);
+}
+function _refreshPersonaInteractionIndex(){
+  const indexed=new Map();
+  for(const event of (S.interactions||[])) for(const personaKey of _interactionPersonaKeys(event)){
+    const rows=indexed.get(personaKey)||indexed.set(personaKey,new Map()).get(personaKey);
+    rows.set(event._key,event);
+  }
+  // Cognition has its own per-persona bound. Unrelated traffic may roll off the
+  // global coordination tape without making this persona's current rows vanish.
+  for(const [personaKey,retained] of (S.cognitionByPersona||new Map())){
+    const rows=indexed.get(personaKey)||indexed.set(personaKey,new Map()).get(personaKey);
+    for(const [key,event] of retained) rows.set(key,event);
+  }
+  S.ixByPersona=new Map([...indexed].map(([personaKey,events])=>[
+    personaKey,[...events.values()].sort((a,b)=>a._t-b._t).slice(-12),
+  ]));
 }
 
 function ingestLiveTelemetry(base,live,{source='poll',eventId='',verifiedCommunicationRoutes=[],
@@ -1506,10 +1530,10 @@ async function loadGlobalNodes(){
   }
   return rows;
 }
-async function discoverFrom(base,plane){
+async function discoverFrom(base,plane,knownBoot=null){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
-  const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
+  const boot=knownBoot||await fetchJson(join(base,'.well-known/personaos-discovery.json'));
   S.peerHealth=(S.peerHealth||new Map());
   if(!boot){ log('bootstrap',`no endpoint at ${where}`,false);
     const gb=S.globalAnnouncementByBase?.get(opBaseKey(where))||S.globalAnnouncementByBase?.get(String(where||'').replace(/\/$/,''));
@@ -1874,6 +1898,7 @@ function _removeRecordStoreKey(id){
     const sid=_shortId(row.did||row.record_id), key=_personaKey(row._kernel,sid);
     if(S.personaDiscoveryByKey.get(key)===row) S.personaDiscoveryByKey.delete(key);
     S.liveByPersona.delete(key); S.personaRuntimeById?.delete(key);
+    S.cognitionByPersona?.delete(key); S.ixByPersona?.delete(key);
     if(S.follow===key) S.follow=null;
   }
   try{ NETWORK.removeEntity(networkEntityKey(row._kernel,row.kind,
@@ -1978,30 +2003,45 @@ function classifyMap(){ // per-kernel scope → record map so each kernel's even
       task:first('persona'),answer:first('persona'),project:first('project')||first('env'),
       bundle,artifact:bundle,telemetry:first('telemetry'),mission:first('mission')}; }
 }
-async function resolveKernelBases(seeds){
+async function resolveKernelBases(seeds,onResolved=()=>{}){
   // Every automatic seed (this origin, signed locator, gossip, IPFS) is resolved the SAME way:
   // its bootstrap may BE a kernel (providers_url), LIST kernels (federated_kernels —
   // a multi-run node), and NAME further peers (one hop). Previously only the page's
   // own origin was expanded, so a multi-run peer node yielded zero records.
-  const visited=new Set(), kernels=[]; const queue=seeds.map((s)=>({b:s,depth:0}));
-  while(queue.length&&visited.size<NETWORK_LIMITS.monitoredBases*2){
-    const {b,depth}=queue.shift(); const key=b||'@origin';
-    if(visited.has(key)) continue; visited.add(key);
-    const boot=await fetchJson(join(b,'.well-known/personaos-discovery.json'));
-    if(!boot){ if(b) kernels.push(b); continue; }          // dead peer → discoverFrom logs it
-    S.boots.set(b||'@origin',boot); collectP2PBootstraps(boot);
-    const fks=boot.federated_kernels||[];
-    if(boot.providers_are_aggregate){ kernels.push(b); }   // public node aggregate: do not expand private runs
-    else {
-      if(boot.providers_url||!fks.length) kernels.push(b); // the base itself is a kernel (or legacy single-run)
-      for(const fk of fks.slice(0,NETWORK_LIMITS.monitoredBases)) kernels.push(join(b,fk)); // bounded multi-run window
+  const visited=new Set(), kernels=new Map(), queue=seeds.map((s)=>({b:s,depth:0}));
+  const visitLimit=NETWORK_LIMITS.monitoredBases*2;
+  const emit=(base,boot)=>{
+    const key=base||'@origin'; if(kernels.has(key)) return;
+    kernels.set(key,{base,boot});
+    if(kernels.size<=NETWORK_LIMITS.monitoredBases){
+      try{ onResolved(base,boot); }catch(e){}
     }
-    if(depth<1){
-      const httpBoots=[...(boot.peers||[]),...(boot.bootstrap_peers||[])].filter(isHttp);
-      for(const rp of httpBoots) queue.push({b:rp,depth:depth+1});
-    }
-  }
-  const unique=[...new Set(kernels)]; S.monitoringOmitted=(S.monitoringOmitted||0)+Math.max(0,unique.length-NETWORK_LIMITS.monitoredBases);
+  };
+  const pending=new Set();
+  const schedule=({b,depth})=>{
+    const key=b||'@origin';
+    if(visited.has(key)||visited.size>=visitLimit) return;
+    visited.add(key);
+    const job=fetchJson(join(b,'.well-known/personaos-discovery.json')).then((boot)=>{
+      if(!boot){ if(b) emit(b,null); return; }               // dead peer → discoverFrom logs it
+      S.boots.set(b||'@origin',boot); collectP2PBootstraps(boot);
+      const fks=boot.federated_kernels||[];
+      if(boot.providers_are_aggregate) emit(b,boot);         // public aggregate: do not expand private runs
+      else {
+        if(boot.providers_url||!fks.length) emit(b,boot);
+        for(const fk of fks.slice(0,NETWORK_LIMITS.monitoredBases)) emit(join(b,fk),null);
+      }
+      if(depth<1){
+        const peers=[...(boot.peers||[]),...(boot.bootstrap_peers||[])].filter(isHttp);
+        for(const peer of peers) schedule({b:peer,depth:depth+1});
+      }
+    }).catch(()=>{ if(b) emit(b,null); }).finally(()=>pending.delete(job));
+    pending.add(job);
+  };
+  for(const item of queue) schedule(item);
+  while(pending.size) await Promise.allSettled([...pending]);
+  const unique=[...kernels.values()].map((item)=>item.base);
+  S.monitoringOmitted=(S.monitoringOmitted||0)+Math.max(0,unique.length-NETWORK_LIMITS.monitoredBases);
   return unique.slice(0,NETWORK_LIMITS.monitoredBases);
 }
 let _discoverBusy=false;
@@ -2015,25 +2055,46 @@ async function discover(){
   // verified count and timestamp visible while that happens; "bootstrapping"
   // is truthful only before this tab has verified any node or record at all.
   if(!S.recs.size&&!(S.globalAnnouncements?.size)) $('#status').textContent='bootstrapping discovery…';
-  const [_global,_ipfs,_local]=await Promise.all([
-    loadGlobalNodes(),                                              // node1/additive ?resolver= signed locator → peers/relays
-    discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
-    discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
-  ]);
   const query=new URLSearchParams(location.search);
   const hostedPages=location.hostname==='ai-personas.github.io';
   const includeOrigin=!hostedPages||query.get('origin_discovery')==='1';
-  const seeds=[...new Set([...(includeOrigin?['']:[]), ...peerList()])];
   S.telLoaded=S.telLoaded||new Set();
-  // PARALLEL per-base discovery: a dead/slow peer must not serialize the rest.
-  const bases=await resolveKernelBases(seeds);
-  const results=await Promise.all(bases.map((b)=>
-    discoverFrom(b,'internet').then((res)=>({b,res})).catch(()=>({b,res:{boot:null,found:[]}}))));
-  for(const {b,res} of results){
-    if(res.boot) applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
-    if(res.boot) connectDiscoveryStream(b,res.boot);
-    if(res.boot){ await loadTelemetry(b); }   // aggregate static spans + live node telemetry
-  }
+  const seenSeeds=new Set(), resolvedBases=new Set(), resultJobs=[];
+  const enqueueResolved=(b,knownBoot)=>{
+    const key=b||'@origin';
+    if(resolvedBases.has(key)) return key;
+    if(resolvedBases.size>=NETWORK_LIMITS.monitoredBases){
+      S.monitoringOmitted=(S.monitoringOmitted||0)+1; return key;
+    }
+    resolvedBases.add(key);
+    const job=discoverFrom(b,'internet',knownBoot).then(async(res)=>{
+      if(!res.boot) return;
+      const accepted=applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
+      connectDiscoveryStream(b,res.boot);
+      if(accepted) scheduleRealtimeRepaint({records:true});
+      await loadTelemetry(b);                 // aggregate static spans + live node telemetry
+      scheduleRealtimeRepaint();
+    }).catch(()=>{});
+    resultJobs.push(job); return key;
+  };
+  const discoverAvailable=async()=>{
+    const seeds=[...new Set([...(includeOrigin?['']:[]),...peerList()])]
+      .filter((base)=>!seenSeeds.has(base||'@origin'));
+    for(const base of seeds) seenSeeds.add(base||'@origin');
+    if(seeds.length) await resolveKernelBases(seeds,enqueueResolved);
+  };
+  // Each locator plane contributes peers independently. As soon as one plane
+  // yields a healthy node, its verified records paint while slower peers keep
+  // resolving in the background of this same bounded discovery pass.
+  const planeJobs=[
+    loadGlobalNodes(),                                              // node1/additive ?resolver= signed locator → peers/relays
+    discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
+    discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
+  ];
+  await discoverAvailable();
+  const sourceJobs=planeJobs.map((job)=>Promise.resolve(job).catch(()=>null).then(discoverAvailable));
+  await Promise.allSettled(sourceJobs);
+  await Promise.allSettled(resultJobs);
   rebalanceDiscoveryStreams();
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
@@ -2142,10 +2203,25 @@ function warmingHTML(){
     +`</div>`;
 }
 
-// a live telemetry frame arrived (SSE) — the per-entity index + heartbeat were
-// already refreshed by indexLiveTelemetry; the livedot is driven by the real
-// heartbeat in updateVitalsCounters, so there is nothing to force here.
-function appendTelemetryEvent(payload,base,boot,reason){}
+let _realtimeRepaintQueued=false, _realtimeRecordsDirty=false;
+function scheduleRealtimeRepaint({records=false}={}){
+  _realtimeRecordsDirty=_realtimeRecordsDirty||records;
+  if(_realtimeRepaintQueued) return;
+  _realtimeRepaintQueued=true;
+  const paint=()=>{
+    const recordsChanged=_realtimeRecordsDirty;
+    _realtimeRepaintQueued=false; _realtimeRecordsDirty=false;
+    if(recordsChanged){ classifyMap(); renderGlobalKernels(); }
+    renderInteractionStream(); renderMissions(); updateVitalsCounters();
+    refreshLiveSection();
+    Promise.resolve(refreshSystemView()).catch(()=>{});
+  };
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(paint);
+  else setTimeout(paint,0);
+}
+// A verified SSE frame has already updated the per-entity indices. Coalesce a
+// burst into the next browser paint instead of waiting for the five-second poll.
+function appendTelemetryEvent(payload,base,boot,reason){ scheduleRealtimeRepaint(); }
 function connectDiscoveryStream(base,boot){
   if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
@@ -2197,7 +2273,6 @@ function connectDiscoveryStream(base,boot){
         verifiedCommunicationRoutes,publicFrameVerified});
       if(!admitted.accepted) return;
       appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
-      refreshLiveSection();   // stream into an open persona/env drawer, in place
     }
     catch(e){ return; }
   });
@@ -5020,6 +5095,11 @@ async function streamPersonaCognition(){
       }
       if(!t) continue;
       const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+      const retainedCognition=S.cognitionByPersona?.get(personaKey);
+      if(retainedCognition){
+        S.cognitionByPersona.delete(personaKey);
+        S.cognitionByPersona.set(personaKey,retainedCognition);
+      }
       if(publicCognition) _indexPublicCognitionActiveCalls(personaKey,t.active_calls,
         {base:usedBase,kernel,observedAt:Date.now()});
       const rows=publicCognition?_publicCognitionRows(t):[];
@@ -5042,7 +5122,7 @@ async function streamPersonaCognition(){
         const msg=typeof row.msg==='string'?row.msg:String(row.msg??'');
         if(!msg.trim()&&row.providerProvisional!==true) continue;
         const key=`cog|${personaKey}|${row.source}|${row.kind}|${_publicCognitionFingerprint(row.dedup)}`;
-        if(personaSeen?.has(key)||S.ixKeys.has(key)) continue;
+        if(personaSeen?.has(key)||S.ixKeys.has(key)||S.cognitionByPersona?.get(personaKey)?.has(key)) continue;
         if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
         S.ixKeys.add(key); added++;
         const contentPreview=_cognitionPreview(msg);
@@ -5052,7 +5132,7 @@ async function streamPersonaCognition(){
         const personaSigned=publicCognition&&row.personaSigned!==false;
         const trustTitle=row.trustTitle||(personaSigned
           ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'');
-        S.interactions.push({actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
+        const event={actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
           scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:personaSigned,
           _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
           _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
@@ -5062,7 +5142,8 @@ async function streamPersonaCognition(){
           _observedState:row.observedState===true,
           _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
           _trustTitle:String(trustTitle),
-        });
+        };
+        S.interactions.push(event); _rememberPersonaCognitionEvent(event);
       }
     }
     if(added){
@@ -5073,10 +5154,7 @@ async function streamPersonaCognition(){
       // per-persona index here as well; otherwise the global feed advances while
       // the corresponding collectible card remains falsely quiet.
       _refreshPersonaInteractionIndex();
-      renderInteractionStream();
-      // CARD↔FEED sync: advance the card cognition walls together with the feed (the
-      // diff-guards in refreshSystemView make the extra call cheap when nothing changed).
-      if(typeof refreshSystemView==='function') refreshSystemView();
+      scheduleRealtimeRepaint();
     }
   }catch(e){}
   finally{ _cogBusy=false; }
