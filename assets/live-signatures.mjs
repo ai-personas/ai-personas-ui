@@ -199,9 +199,12 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
   if (Object.hasOwn(options, 'expectedSinceRevision')) {
     const expected = options.expectedSinceRevision ?? null;
     const observed = document.since_revision ?? null;
-    const immutableBootstrapOrRefresh = immutableFinalizedBootstrap
-      && (expected === null || expected === document.revision);
-    if (observed !== expected && !immutableBootstrapOrRefresh) {
+    // The terminal snapshot is one fully signed immutable document. A client
+    // may have skipped any number of active generations, so its requested
+    // revision does not need to equal the final document's historical
+    // `since_revision`; lifecycle, run, node and full-document signatures are
+    // the convergence authority here.
+    if (observed !== expected && !immutableFinalizedBootstrap) {
       return failed('poll_revision_binding_mismatch');
     }
   }

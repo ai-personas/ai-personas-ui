@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -97,12 +98,15 @@ def main() -> None:
     live_signatures = (ui_root / 'assets/live-signatures.mjs').read_text(encoding='utf-8')
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
+    p2p_hints = json.loads((ui_root / 'p2p-bootstrap-hints.json').read_text(encoding='utf-8'))
     ui_checks = {
-        'default resolver is only an untrusted locator with an explicit opt-out': (
-            "DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai'" in portal
-            and "p.getAll('resolver')" in portal
+        'decentralized first contact with explicit optional resolvers': (
+            'DEFAULT_GLOBAL_DISCOVERY_ENDPOINT' not in portal
+            and "return [...new Set(p.getAll('resolver')" in portal
             and "p.get('no_global_discovery')==='1'" in portal
-            and 'the locator has no record or identity authority' in portal
+            and isinstance(p2p_hints, list)
+            and len(p2p_hints) >= 2
+            and all(isinstance(value, str) and '/wss/p2p/' in value for value in p2p_hints)
             and 'async function verifyGlobalEnvelope(env)' in portal
             and 'exp<=Date.now()' in portal
             and 'ed.verifyAsync' in portal

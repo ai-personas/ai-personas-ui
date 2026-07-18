@@ -12,11 +12,11 @@ import {
   sha256Hex,
   terminalLiveArtifactCalls,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260718-signed-terminal-v1';
+} from './live-artifacts.mjs?v=20260718-live-current-v2';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260718-signed-terminal-v2';
+} from './live-signatures.mjs?v=20260718-live-current-v2';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
@@ -193,8 +193,7 @@ function normalizedHttpsBase(value){
   }catch(_){ return ''; }
 }
 /* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
-   The node mints a process bearer at boot and temporarily stages it under
-   runs/.../_operator/token until the first model call.
+   The node mints a process bearer at boot and prints its exact temporary path.
    Saved per node base in sessionStorage; every fetch to that base carries it, unlocking owner
    intake (/task /budget /stop), full /status, /runs, /personas and the gated static tree.
    Anonymous viewers keep working — they see each node's public discovery projection only. */
@@ -281,12 +280,20 @@ async function secureDownloadFromButton(btn){
   try{
     const target=new URL(btn.dataset.url||'',location.href);
     if(!/^https?:$/.test(target.protocol)) throw new Error('unsupported download URL');
-    const response=await fetch(target.href,secureFetchInit(target.href));
-    if(!response.ok) throw new Error(`body HTTP ${response.status}`);
-    const bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
     const rawExpected=String(btn.dataset.hash||'').replace(/^sha256:/i,'').toLowerCase();
     if(rawExpected){
-      if(!/^[a-f0-9]{64}$/.test(rawExpected)) throw new Error('invalid expected SHA-256');
+      if(!/^[a-f0-9]{64}$/.test(rawExpected)) throw new Error('invalid expected SHA-256'); }
+    let bytes=null;
+    try{
+      const response=await fetch(target.href,secureFetchInit(target.href));
+      if(!response.ok) throw new Error(`body HTTP ${response.status}`);
+      bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+    }catch(httpError){
+      bytes=await fetchP2PArtifactBytes(target.href,
+        rawExpected?`sha256:${rawExpected}`:'',LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+      if(!bytes) throw httpError;
+    }
+    if(rawExpected){
       const actual=await sha256Hex(bytes);
       if(actual!==rawExpected) throw new Error('SHA-256 mismatch');
     }
@@ -309,9 +316,55 @@ function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   // instead of the colour emoji that defeated the token palette.
   b.innerHTML=icon('key')+`<span class="opbtn-label">OPERATOR${n>0?` · ${n}`:''}</span>`; }
 const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
-async function fetchJson(u,init={}){ try{ const r=await fetch(u,secureFetchInit(u,init)); if(!r.ok)return null;
-  const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
-  return JSON.parse(new TextDecoder().decode(bytes)); }catch(e){ return null; } }
+function p2pDataRouteForUrl(value){
+  let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
+  if(target.hash) return null;
+  let sinceRevision='';
+  if(target.search){
+    const keys=[...target.searchParams.keys()];
+    const values=target.searchParams.getAll('since');
+    if(keys.length!==1||keys[0]!=='since'||values.length!==1
+        ||!/^sha256:[0-9a-f]{64}$/.test(values[0])) return null;
+    sinceRevision=values[0];
+  }
+  for(const [rawBase,route] of (S.p2pDataRoutes||new Map())){
+    let base; try{ base=new URL(rawBase,location.href); }catch(_){ continue; }
+    if(target.origin!==base.origin) continue;
+    const root=base.pathname.replace(/\/+$/,'');
+    if(root&&target.pathname!==root&&!target.pathname.startsWith(root+'/')) continue;
+    let path=target.pathname.slice(root.length).replace(/^\/+/, '');
+    try{ path=decodeURIComponent(path); }catch(_){ continue; }
+    if(!path) continue;
+    return {route,path,sinceRevision,url:target.href};
+  }
+  return null;
+}
+async function fetchP2PJson(value,init={}){
+  const found=p2pDataRouteForUrl(value);
+  if(!found||!P2P?.fetchPublicJson) return null;
+  return P2P.fetchPublicJson(found.route.providerRecord,found.path,{
+    timeoutMs:Math.min(12000,Number(init.timeoutMs)||8000),
+    maxBytes:init.maxBytes||DEFAULT_JSON_MAX_BYTES,
+    sinceRevision:found.sinceRevision,
+  }).catch(()=>null);
+}
+async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024){
+  const found=p2pDataRouteForUrl(value);
+  if(!found||found.sinceRevision||!P2P?.fetchPublicBlob) return null;
+  let urlKey=''; try{ urlKey=new URL(value,location.href).href; }catch(_){ return null; }
+  const contentHash=String(expectedHash||S.p2pArtifactHashes?.get(urlKey)||'').toLowerCase();
+  if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
+  const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
+    {timeoutMs:10000,maxBytes,path:found.path}).catch(()=>null);
+  return result?.bytes||null;
+}
+async function fetchJson(u,init={}){
+  try{ const r=await fetch(u,secureFetchInit(u,init)); if(r.ok){
+    const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
+    return JSON.parse(new TextDecoder().decode(bytes)); }
+  }catch(e){}
+  return fetchP2PJson(u,init);
+}
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
 // Hard UI/backpressure ceilings. Global discovery can describe millions of
@@ -936,7 +989,7 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-live-ac2c93a-r2',import.meta.url).href;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-public-dht-v2',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
@@ -991,16 +1044,8 @@ async function loadPortalP2PBootstrapHints(){
     log('p2p',`${admitted.length} same-origin transport bootstrap hint(s) admitted; zero record authority`);
   return admitted;
 }
-async function keysFor(base,boot,{refresh=false,signal=null}={}){
+function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
   const key=base||'@origin';
-  const cached=S.keyDocs.get(key);
-  if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
-      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
-  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'),
-    {signal});
-  // A route-reconciliation deadline is not evidence that a previously verified
-  // registry became invalid. Do not let its abort erase shared cached authority.
-  if(signal?.aborted) return S.keys.get(key)||{};
   const keys={}; const entries=[]; const currentIds=new Set();
   let valid=keysDoc?.schema==='personaos-keys/1'
     &&!!String(keysDoc?.kernel_id||'')
@@ -1020,11 +1065,27 @@ async function keysFor(base,boot,{refresh=false,signal=null}={}){
   const masters=entries.filter((entry)=>entry.key_id==='kernel-master'
     &&entry.role==='master'&&entry.status==='current');
   if(masters.length!==1) valid=false;
+  if(expectedMaster&&String(masters[0]?.public_key_hex||'').toLowerCase()
+      !==String(expectedMaster).toLowerCase()) valid=false;
+  if(masters.length===1&&String(keysDoc.kernel_id||'')
+      !==`kernel:${String(masters[0].public_key_hex).toLowerCase().slice(0,16)}`) valid=false;
   if(!valid){ S.keys.delete(key); S.keyDocs.delete(key);
     log('keys',`${boot?.kernel_id||key}: current master registry invalid`,false); return {}; }
   S.keys.set(key,keys); S.keyDocs.set(key,{schema:keysDoc.schema,
     kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
   return keys;
+}
+async function keysFor(base,boot,{refresh=false,signal=null}={}){
+  const key=base||'@origin';
+  const cached=S.keyDocs.get(key);
+  if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
+      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
+  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'),
+    {signal});
+  // A route-reconciliation deadline is not evidence that a previously verified
+  // registry became invalid. Do not let its abort erase shared cached authority.
+  if(signal?.aborted) return S.keys.get(key)||{};
+  return admitKeysDocument(base,boot,keysDoc);
 }
 
 function providerPolicyPayload(policy){ const out={};
@@ -1492,28 +1553,36 @@ async function verifiedRouteHintsFromP2PResult(result,{signal=null}={}){
     const doc=item?.document, p=item?.record||{};
     const base=normalizedHttpsBase(p.base_url);
     if(!doc?.record||!expectedKey||!base
+        ||String(p.key||'')!==expectedKey
+        ||p.visibility_tier!=='public'
+        ||p.signing_key_id!=='kernel-master'
+        ||p.signing_key_role!=='master'||p.signing_key_status!=='current'
+        ||!/^[0-9a-f]{64}$/.test(String(p.public_key_hex||''))
+        ||p.host_kernel_id!==`kernel:${String(p.public_key_hex).slice(0,16)}`
+        ||!String(p.provider_peer_id||'')
+        ||!Array.isArray(p.host_multiaddrs)||!p.host_multiaddrs.length
+        ||!p.host_multiaddrs.every((value)=>
+          String(value).endsWith(`/p2p/${p.provider_peer_id}`))
         ||!Number.isSafeInteger(p.inventory_generation)||p.inventory_generation<1
         ||!/^sha256:[0-9a-f]{64}$/.test(String(p.inventory_manifest_hash||''))){
       refused++; continue;
     }
-    const pboot={kernel_id:p.host_kernel_id,keys_url:'.well-known/personaos-keys.json'};
-    const authority=await verifyHttpProviderWithKeyRefresh(
-      item,doc,pboot,base,expectedKey,{signal});
-    if(!authority.ok){ refused++; continue; }
-    const master=currentProviderMaster(base,pboot);
-    if(!master||pboot.kernel_id!==`kernel:${master.slice(0,16)}`){ refused++; continue; }
-    routeHints.push({base,kernel:pboot.kernel_id});
+    // resolveProvider returns only envelopes that the vendored transport has
+    // independently verified against this self-certifying current master and
+    // exact provider peer. Preserve the peer-bound record so subsequent JSON
+    // and blob reads can stay on libp2p instead of degrading to an HTTPS hint.
+    routeHints.push({base,kernel:p.host_kernel_id,peerId:p.provider_peer_id,
+      providerRecord:p,anchor:item});
   }
   return {routeHints,refused};
 }
-const DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai';
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
   if(p.get('no_global_discovery')==='1') return [];
-  // node1 is only an untrusted first-contact locator. Every announcement and
-  // every reached discovery record is independently signature/hash verified;
-  // the locator has no record or identity authority.
-  return [...new Set([...p.getAll('resolver'),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
+  // HTTP resolvers are explicit, additive locator hints only. The bare portal
+  // joins the public Kademlia plane and has no PersonaOS-operated directory
+  // dependency. Every reached record is independently signature/hash verified.
+  return [...new Set(p.getAll('resolver')
     .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
 async function verifyGlobalEnvelope(env){
@@ -1521,7 +1590,7 @@ async function verifyGlobalEnvelope(env){
   if(env?.schema!=='personaos-node-announcement-envelope/1'||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
   const publicKey=String(env?.public_key_hex||'');
   const kernelId=String(ann?.kernel_id||'');
-  // node1 is an untrusted locator, so a self-signature alone cannot assign an
+  // A resolver response is an untrusted locator, so a self-signature alone cannot assign an
   // arbitrary kernel id. Production kernel ids are self-certifying prefixes of
   // their stable kernel-master discovery key.
   if(env?.signing_key_id!=='kernel-master'||!/^[0-9a-f]{64}$/.test(publicKey)
@@ -1779,7 +1848,7 @@ function renderGlobalKernels(){
   const knownTotal=Math.max(g.size,Number(S.globalTotal)||0,S.kernels?.size||0);
   if(!g.size){
     el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>';
-    if(scope) scope.textContent='0 nodes · awaiting node1.personas.ai announcements';
+    if(scope) scope.textContent='0 nodes · awaiting signed peer announcements';
     if(overflow) overflow.hidden=true;
     return;
   }
@@ -1815,10 +1884,10 @@ function renderGlobalKernels(){
   const omitted=Math.max(0,knownTotal-visible.length);
   if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
-// A bare hosted URL resolves signed node announcements through
-// node1.personas.ai automatically. Same-origin/local, resolver, gossip, and
-// content-addressed P2P routes are additive evidence; viewers never enter a
-// peer URL or carry routing state in the public URL.
+// A bare hosted URL joins the shared public Kademlia plane through the shipped,
+// replaceable bootstrap commons. Same-origin/local, explicit resolver, gossip,
+// and content-addressed P2P routes are additive evidence; viewers never need to
+// carry a node URL in the public URL.
 function peerList(){
   const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
   const recentGossip=[...(S.gossipPeers||[])].reverse();
@@ -1959,7 +2028,7 @@ async function discoverViaIPFS(opts={}){
 // still required for operator authority; network position is not a credential.
 // Silent when nothing's running. From an https page: https://localhost works if the
 // node's cert is trusted; plain-http localhost is browser-policy dependent and
-// may fail before CORS, so the empty state points users at the node-served UI.
+// may fail before CORS, so the empty state explains the public P2P route.
 const LOCAL_PORTS=[8765,8805,8910];
 async function probeBase(base){
   try{
@@ -2221,7 +2290,7 @@ async function discover(){
   // yields a healthy node, its verified records paint while slower peers keep
   // resolving in the background of this same bounded discovery pass.
   const planeJobs=[
-    loadGlobalNodes(),                                              // node1/additive ?resolver= signed locator → peers/relays
+    loadGlobalNodes(),                                              // additive ?resolver= signed locator → peers/relays
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ];
@@ -2268,16 +2337,16 @@ function emptyStateHTML(){
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
-    1 · Run a node: <code>python -m personaos.node --budget 8 --port 8765</code><br>
-    ${httpsPage?`2 · This page is <b>https://</b> — browsers block fetches to a plain-http
-    LAN/localhost node. Either open the <b>node-served UI</b> at
-    <code>http://localhost:8765/</code> (same-origin), or expose the
-    node through an HTTPS tunnel (e.g. <code>cloudflared tunnel --url http://localhost:8765</code>)
-    and let the node announce its tunnel through <code>node1.personas.ai</code>.`:`2 · The node announces
-    itself through <code>node1.personas.ai</code> automatically.`}<br>
+    1 · Run a node: <code>python -m personaos.node --backend codex --budget 8 --port 8765 --libp2p</code><br>
+    ${httpsPage?`2 · This page is <b>https://</b> — browsers block direct fetches to a plain-http
+    LAN/localhost node. A public <code>--libp2p</code> launch creates HTTPS/WSS quick-tunnel routes
+    automatically; a stable deployment may supply its own <code>--public-url</code> and
+    <code>--libp2p-advertise-host</code>. A same-origin node-served shell requires both
+    <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
+    also meet over mDNS; a public node joins the shared DHT.`}<br>
     3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
-    4 · Your own node? Click <b>OPERATOR</b>, paste its token
-    (<code>runs/…/_operator/token</code>) and drive it from here: ASK / FUND / STOP, runs,
+    4 · Your own node? Click <b>OPERATOR</b>, paste the token from the exact path printed at boot
+    (default <code>runs/node/.personaos-secrets/operator.token</code>) and drive it from here: ASK / FUND / STOP, runs,
     personas, live telemetry.</div>
   </div>`;
 }
@@ -2357,17 +2426,49 @@ function scheduleRealtimeRepaint({records=false}={}){
 // cognition snapshot may have advanced. Coalesce bursts so provider deltas paint
 // quickly without turning one SSE burst into an unbounded fetch fan-out.
 let _sseCognitionTimer=0, _sseCognitionBusy=false, _sseCognitionPending=false;
-function scheduleSseCognitionRefresh(){
-  _sseCognitionPending=true;
+let _sseCognitionFullPending=false;
+const _sseCognitionPendingPersonaKeys=new Set(), _sseCognitionPendingBases=new Set();
+function scheduleSseCognitionRefresh(scope=null){
+  if(scope?.preservePending!==true){
+    const personaKeys=Array.isArray(scope?.personaKeys)?scope.personaKeys.filter(Boolean):[];
+    const hasBase=Object.prototype.hasOwnProperty.call(scope||{},'base')
+      &&typeof scope.base==='string';
+    const base=hasBase?scope.base.replace(/\/$/,''):'';
+    if(personaKeys.length&&hasBase){
+      for(const key of personaKeys) _sseCognitionPendingPersonaKeys.add(String(key));
+      _sseCognitionPendingBases.add(base);
+    }else _sseCognitionFullPending=true;
+    _sseCognitionPending=true;
+  }
   if(_sseCognitionBusy||_sseCognitionTimer) return;
   _sseCognitionTimer=setTimeout(async()=>{
     _sseCognitionTimer=0;
     if(!_sseCognitionPending) return;
-    _sseCognitionPending=false; _sseCognitionBusy=true;
-    try{ await Promise.allSettled([streamPersonaCognition(),refreshThinking()]); }
+    const full=_sseCognitionFullPending;
+    const pendingPersonaKeys=new Set(_sseCognitionPendingPersonaKeys);
+    const pendingBases=new Set(_sseCognitionPendingBases);
+    _sseCognitionPending=false; _sseCognitionFullPending=false;
+    _sseCognitionPendingPersonaKeys.clear(); _sseCognitionPendingBases.clear();
+    _sseCognitionBusy=true;
+    try{
+      const jobs=[streamPersonaCognition(full?{}:{personaKeys:[...pendingPersonaKeys],
+        bases:[...pendingBases]})];
+      const drawerKey=S.drawerThinkPid
+        ?_personaRef(S.drawerThinkPid,S.drawerLiveKernel||'').key:'';
+      if(S.drawerThinkPid&&(full||pendingPersonaKeys.has(drawerKey))) jobs.push(refreshThinking());
+      const settled=await Promise.allSettled(jobs);
+      if(settled[0]?.status==='fulfilled'&&settled[0].value===false){
+        if(full) _sseCognitionFullPending=true;
+        else{
+          for(const key of pendingPersonaKeys) _sseCognitionPendingPersonaKeys.add(key);
+          for(const pendingBase of pendingBases) _sseCognitionPendingBases.add(pendingBase);
+        }
+        _sseCognitionPending=true;
+      }
+    }
     finally{
       _sseCognitionBusy=false;
-      if(_sseCognitionPending) scheduleSseCognitionRefresh();
+      if(_sseCognitionPending) scheduleSseCognitionRefresh({preservePending:true});
     }
   },250);
 }
@@ -2428,6 +2529,38 @@ function connectDiscoveryStream(base,boot){
       scheduleSseCognitionRefresh();
     }
     catch(e){ return; }
+  });
+  es.addEventListener('cognition_invalidate',(ev)=>{
+    // This frame is intentionally content-free and conveys no authority. It
+    // can only schedule a refetch; model text is rendered solely after the
+    // fetched public cognition document verifies under the current master.
+    try{
+      const payload=JSON.parse(ev.data||'{}');
+      const expectedKernel=String(kernelForBase(base)||boot?.kernel_id||'');
+      const personaIds=Array.isArray(payload?.persona_ids)?payload.persona_ids:[];
+      if(!expectedKernel
+          ||!_exactObjectFields(payload,
+            ['generated_at','node_id','persona_ids','revision','schema'])
+          ||payload.schema!=='personaos-cognition-invalidator/1'
+          ||String(payload.node_id||'')!==expectedKernel
+          ||!/^sha256:[0-9a-f]{64}$/.test(String(payload.revision||''))
+          ||!personaIds.length||personaIds.length>256
+          ||new Set(personaIds).size!==personaIds.length
+          ||personaIds.some((value)=>typeof value!=='string'||!value
+            ||value!==value.trim()||new TextEncoder().encode(value).byteLength>240)
+          ||!_safePublicCognitionInstant(payload.generated_at)) return;
+      const known=new Map();
+      for(const id of (S.order||[])){ const record=S.recs.get(id);
+        if(record?.kind!=='persona'||record?._kernel!==expectedKernel) continue;
+        const ref=_personaRef(record.did||record.id||'',expectedKernel);
+        known.set(_signedPersonaEndpointId(ref.key),ref.key); }
+      for(const key of (S.liveByPersona||new Map()).keys()){
+        const ref=_personaRef(key); if(ref.kernel===expectedKernel)
+          known.set(_signedPersonaEndpointId(ref.key),ref.key); }
+      const personaKeys=personaIds.map((id)=>known.get(id));
+      if(personaKeys.some((value)=>!value)) return;
+      scheduleSseCognitionRefresh({base,personaKeys});
+    }catch(e){}
   });
   es.addEventListener('live_artifact_update',(ev)=>{
     const raw=ev.data||'{}';
@@ -2592,22 +2725,41 @@ async function fetchNodeStatus(base){
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
   return (did||'').replace('did:personaos:',''); }
-async function fetchText(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
-  return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes)); }catch(e){ return null; } }
+async function fetchText(u){
+  try{ const r=await fetch(u,secureFetchInit(u)); if(r.ok)
+    return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes));
+  }catch(e){}
+  const bytes=await fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  return bytes?new TextDecoder().decode(bytes):null;
+}
 // Binary-safe bounded fetch for any artifact body — returns {blob,size,type} or null.
-async function fetchBlob(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
-  const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
-  const type=r.headers.get('content-type')||'application/octet-stream';
-  const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }catch(e){ return null; } }
+async function fetchBlob(u){
+  try{ const r=await fetch(u,secureFetchInit(u)); if(r.ok){
+    const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+    const type=r.headers.get('content-type')||'application/octet-stream';
+    const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }
+  }catch(e){}
+  const bytes=await fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  if(!bytes) return null;
+  const type='application/octet-stream', b=new Blob([bytes],{type});
+  return {blob:b,size:b.size,type};
+}
 async function fetchVerifiedLiveBody(url,expectedHash){
   try{
-    const r=await fetch(url,secureFetchInit(url));
-    if(!r.ok) return {ok:false,checkOutcome:'unavailable',error:`body HTTP ${r.status}`};
-    const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+    let bytes,type='application/octet-stream';
+    try{
+      const r=await fetch(url,secureFetchInit(url));
+      if(!r.ok) throw new Error(`body HTTP ${r.status}`);
+      bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+      type=r.headers.get('content-type')||type;
+    }catch(httpError){
+      bytes=await fetchP2PArtifactBytes(url,`sha256:${expectedHash}`,
+        LIVE_ARTIFACT_LIMITS.maxFileBytes);
+      if(!bytes) throw httpError;
+    }
     const actual=await sha256Hex(bytes);
     const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
     if(!expected||actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
-    const type=r.headers.get('content-type')||'application/octet-stream';
     return {ok:true,actual,bytes,blob:new Blob([bytes],{type}),type,size:bytes.byteLength};
   }catch(e){ const error=String(e&&e.message||e);
     return {ok:false,checkOutcome:/\bexceeds\b/i.test(error)?'failed':'unavailable',error}; }
@@ -3189,22 +3341,22 @@ function _ixHeadline(event){
   return _ixVerb(event?.kind);
 }
 const PUBLIC_ACTIVITY_PROVENANCE_ORDER=Object.freeze([
-  'action','purpose','model','status','role','tool','server','run','task','missionTask','call','event','intent',
+  'action','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
   'request','message','parentMessage','sequence','latencyMs','effort','environment','persona','scopeId',
-  'evidence','dedupe','authority','authorityHash','parentHash','signingKey','authoredAt','startedAt','at','snapshotAt',
+  'evidence','dedupe','authority','authorityHash','parentHash','signingKey','authoredAt','startedAt','endedAt','at','snapshotAt',
 ]);
 const PUBLIC_ACTIVITY_CORE_PROVENANCE=new Set([
-  'action','purpose','model','status','role','tool','server','run','task','missionTask','call','event','intent',
+  'action','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
   'request','message','parentMessage','sequence','latencyMs','effort','environment','authoredAt','startedAt','at','snapshotAt',
 ]);
 const PUBLIC_ACTIVITY_PROVENANCE_LABEL=Object.freeze({
-  action:'action',purpose:'purpose',model:'model',status:'state',run:'run',task:'task',
+  action:'action',purpose:'purpose',model:'model',status:'state',callStatus:'call state',run:'run',task:'task',
   missionTask:'mission task',call:'call',event:'event',intent:'intent',request:'request',
   message:'message',parentMessage:'parent message',sequence:'seq',latencyMs:'latency ms',
   role:'role',tool:'tool',server:'server',effort:'reasoning',environment:'env',persona:'persona',scopeId:'scope',
   evidence:'evidence',dedupe:'wake key',authority:'authority',authorityHash:'authority hash',
   parentHash:'parent hash',signingKey:'signing key',authoredAt:'authored',
-  startedAt:'started',at:'at',snapshotAt:'snapshot',
+  startedAt:'started',endedAt:'ended',at:'at',snapshotAt:'snapshot',
 });
 function _boundedActivityProvenanceValue(value){
   if(typeof value==='number'&&Number.isFinite(value)) return String(value);
@@ -3384,8 +3536,37 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   let job=_personaAvatarJobs.get(cacheKey);
   if(!job){
     job=(async()=>{
+      const avatarFetch=async(sourceUrl,init={})=>{
+        const peerRouted=Boolean(p2pDataRouteForUrl(sourceUrl));
+        if(peerRouted){
+          const bytes=await fetchP2PArtifactBytes(sourceUrl,`sha256:${descriptor.sha256}`,
+            descriptor.byte_length);
+          if(bytes?.byteLength===descriptor.byte_length){
+            return new Response(bytes,{status:200,headers:{
+              'Content-Type':descriptor.mime_type,
+              'Content-Length':String(descriptor.byte_length),
+            }});
+          }
+        }
+        let httpResponse=null;
+        try{
+          httpResponse=await fetch(sourceUrl,secureFetchInit(sourceUrl,init));
+          if(httpResponse?.ok) return httpResponse;
+        }catch(_){ /* the peer-bound public-data route remains available */ }
+        const bytes=peerRouted?null:await fetchP2PArtifactBytes(
+          sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length);
+        if(bytes?.byteLength===descriptor.byte_length){
+          return new Response(bytes,{status:200,headers:{
+            'Content-Type':descriptor.mime_type,
+            'Content-Length':String(descriptor.byte_length),
+          }});
+        }
+        if(httpResponse) return httpResponse;
+        throw new Error('avatar body unavailable over HTTP and P2P');
+      };
       const loaded=await fetchVerifiedPersonaAvatar(descriptor,{
         expectedPersonaId:ref.sid,pinnedPublicKeyHex:pin,providerBase,pageUrl:location.href,
+        fetchImpl:avatarFetch,
       });
       const observedKey=loaded.descriptor.identity_public_key_hex;
       const currentPin=S.personaIdentityKeys.get(ref.key)||'';
@@ -4757,17 +4938,19 @@ function renderEnvFeedDoc(doc){
 function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   let h='';
   const publicCognition=t.schema==='personaos-persona-public-cognition/1';
-  const calls=t.active_calls||[];
-  const callsById=new Map(calls.map((call)=>[call.call_id,call]));
+  const activeCalls=t.active_calls||[];
+  const recentCalls=publicCognition?(t.recent_calls||[]):[];
+  const callsById=new Map([...recentCalls,...activeCalls]
+    .map((call)=>[call.call_id,call]));
   const taskRunCache=new Map();
   const resolveTaskRun=(runKernel,task)=>{
     const key=`${runKernel}\u0000${task}`;
     if(!taskRunCache.has(key)) taskRunCache.set(key,_verifiedPublicTaskRun(runKernel,task));
     return taskRunCache.get(key);
   };
-  if(calls.length){
+  if(activeCalls.length){
     h+=`<div class="l2" style="margin:2px 0 3px">Active model calls — verified current snapshot</div>`
-      +calls.slice(-8).reverse().map((call)=>{
+      +activeCalls.slice(-8).reverse().map((call)=>{
         const started=Date.parse(String(call.started_at||''));
         const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
         const signedMeta=publicCognition?_activityProvenanceHTML(_publicCallProvenance(call),{
@@ -4778,6 +4961,25 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
           +(Number.isFinite(started)?` · started ${esc(_ago(started))}`:'')+`</div>`
+          +((call.task_id||call.run_id)?`<div class="l2">${call.task_id?`task ${esc(call.task_id)}`:''}${call.task_id&&call.run_id?' · ':''}${call.run_id?`run ${esc(call.run_id)}`:''}</div>`:'')
+          +signedMeta+`</div>`;
+      }).join('');
+  }
+  if(recentCalls.length){
+    h+=`<div class="l2" style="margin:6px 0 3px">Recent model calls — verified finished snapshots</div>`
+      +recentCalls.slice(-8).reverse().map((call)=>{
+        const started=Date.parse(String(call.started_at||''));
+        const ended=Date.parse(String(call.ended_at||''));
+        const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
+        const signedMeta=_activityProvenanceHTML(_publicCallProvenance(call),{
+          className:'think-provenance',full:true,prepend:_eventTrustHTML({signed:true,
+            _trustLabel:'KERNEL SIGNED FINISHED CALL',
+            _trustTitle:'finished model call in the verified bounded kernel-signed public cognition snapshot'})});
+        return `<div class="think"><span class="amber">finished</span> ${esc(purpose)}`
+          +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
+          +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
+          +(Number.isFinite(ended)?` · ended ${esc(_ago(ended))}`:'')
+          +(Number.isFinite(started)&&Number.isFinite(ended)?` · ${esc(Math.max(0,ended-started))} ms`:'')+`</div>`
           +((call.task_id||call.run_id)?`<div class="l2">${call.task_id?`task ${esc(call.task_id)}`:''}${call.task_id&&call.run_id?' · ':''}${call.run_id?`run ${esc(call.run_id)}`:''}</div>`:'')
           +signedMeta+`</div>`;
       }).join('');
@@ -4796,10 +4998,14 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
             _trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning'})});
         const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
           +`${event.call_id?` · call ${esc(event.call_id)}`:''} · sequence ${esc(event.sequence)}`
-          +(event.kind==='assistant_message'?` · chunk ${esc(event.chunk_index+1)}/${esc(event.chunk_count)}`:'')
+          +(event.kind==='assistant_message'
+            ?event.stream_delta===true?' · stream delta'
+              :` · chunk ${esc(event.chunk_index+1)}/${esc(event.chunk_count)}`
+            :'')
           +`</div>${signedMeta}`;
         if(event.kind==='assistant_message'){
-          return `<div class="think llmout copy-host"><span class="amber">provisional assistant message</span> ${copyBtn()}`
+          const label=event.stream_delta===true?'provisional assistant stream delta':'provisional assistant message';
+          return `<div class="think llmout copy-host"><span class="amber">${label}</span> ${copyBtn()}`
             +`<pre class="ct-pre copy-src" data-provisional-output-index="${index}"></pre>${callMeta}</div>`;
         }
         const subject=event.kind==='tool_status'
@@ -4897,7 +5103,7 @@ function renderThinkingRedacted(doc){
 const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
   'active_calls','evolution_timeline','generated_at','identity_fields',
   'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
-  'proven_facts','provisional_outputs','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
+  'proven_facts','provisional_outputs','recent_calls','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
   'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
@@ -4928,14 +5134,18 @@ const PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS=Object.freeze([
   'parent_communication_id','payload','provenance','schema','signed_by','signing_key_id',
 ].sort());
 const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=Object.freeze([
-  'call_id','model_id','persona_id','provisional_events','reasoning_effort','requested_purpose','run_id',
+  'call_id','environment_id','model_id','persona_id','provisional_events','reasoning_effort','requested_purpose','run_id',
   'started_at','status','task_id',
+].sort());
+const PUBLIC_PERSONA_RECENT_CALL_FIELDS=Object.freeze([
+  'call_id','ended_at','environment_id','model_id','persona_id','provisional_events','reasoning_effort',
+  'requested_purpose','run_id','started_at','status','task_id',
 ].sort());
 const PUBLIC_PROVISIONAL_BASE_FIELDS=Object.freeze([
   'at','authority','kind','persona_signed','provisional','schema','sequence',
 ].sort());
 const PUBLIC_PROVISIONAL_BINDING_FIELDS=Object.freeze([
-  'call_id','model_id','persona_id',
+  'call_id','call_status','model_id','persona_id',
 ].sort());
 const PUBLIC_PROVISIONAL_KINDS=new Set([
   'assistant_message','provider_status','tool_status',
@@ -4967,7 +5177,7 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
 ]);
 const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
-  activeCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
+  activeCalls:8,recentCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
   provisionalEvents:128,provisionalTextCodePoints:16*1024,
   atom:512,lineageText:4096,exactTextBytes:512*1024,documentBytes:4*1024*1024,
 });
@@ -4994,7 +5204,9 @@ function _safePublicCognitionInstant(value,{required=true}={}){
 function _publicProvisionalEventFields(event,{bound=false}={}){
   const fields=[...PUBLIC_PROVISIONAL_BASE_FIELDS];
   if(event?.kind==='assistant_message'){
-    fields.push('chunk_count','chunk_index','sha256','text','utf8_bytes');
+    fields.push('sha256','text','utf8_bytes');
+    if(Object.prototype.hasOwnProperty.call(event,'stream_delta')) fields.push('stream_delta');
+    else fields.push('chunk_count','chunk_index');
     if(Object.prototype.hasOwnProperty.call(event,'message_id')) fields.push('message_id');
   }else if(event?.kind==='provider_status') fields.push('status');
   else if(event?.kind==='tool_status'){
@@ -5028,11 +5240,13 @@ async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
         ||[...event.text].length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalTextCodePoints
         ||!Number.isSafeInteger(event.utf8_bytes)||event.utf8_bytes<1
         ||!SHA256_CONTENT_RE.test(String(event.sha256||''))
-        ||!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
-        ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
-        ||event.chunk_count>4096||event.chunk_index>=event.chunk_count
         ||(Object.prototype.hasOwnProperty.call(event,'message_id')
           &&!_safePublicProvisionalStateToken(event.message_id))) return false;
+    if(Object.prototype.hasOwnProperty.call(event,'stream_delta')){
+      if(event.stream_delta!==true) return false;
+    }else if(!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
+        ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
+        ||event.chunk_count>4096||event.chunk_index>=event.chunk_count) return false;
     const bytes=enc.encode(event.text);
     return bytes.length===event.utf8_bytes
       &&`sha256:${await sha256Hex(bytes)}`===event.sha256;
@@ -5200,12 +5414,36 @@ function _validPublicPersonaActiveCall(call,identity,generatedAt){
     &&call.persona_id===identity.signedId
     &&_safePublicCognitionAtom(call.reasoning_effort,128)
     &&_safePublicCognitionText(call.requested_purpose,512)
+    &&_safePublicCognitionAtom(call.environment_id,512)
     &&_safePublicCognitionAtom(call.run_id,512)
     &&_safePublicCognitionInstant(call.started_at)
     &&Date.parse(call.started_at)<=Date.parse(generatedAt)
     &&call.status==='running'
     &&_safePublicCognitionAtom(call.task_id,512)
     &&Array.isArray(call.provisional_events)
+    &&call.provisional_events.length<=PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents;
+}
+function _validPublicPersonaRecentCall(call,identity,generatedAt){
+  const startedAt=Date.parse(String(call?.started_at||''));
+  const endedAt=Date.parse(String(call?.ended_at||''));
+  const snapshotAt=Date.parse(String(generatedAt||''));
+  return _exactObjectFields(call,PUBLIC_PERSONA_RECENT_CALL_FIELDS)
+    &&_safePublicCognitionAtom(call.call_id,512,{required:true})
+    &&_safePublicCognitionAtom(call.model_id,512,{required:true})
+    &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
+    &&call.persona_id===identity.signedId
+    &&_safePublicCognitionAtom(call.reasoning_effort,128)
+    &&_safePublicCognitionText(call.requested_purpose,512)
+    &&_safePublicCognitionAtom(call.environment_id,512)
+    &&_safePublicCognitionAtom(call.run_id,512)
+    &&_safePublicCognitionInstant(call.started_at)
+    &&_safePublicCognitionInstant(call.ended_at)
+    &&Number.isFinite(startedAt)&&Number.isFinite(endedAt)&&Number.isFinite(snapshotAt)
+    &&startedAt<=endedAt&&endedAt<=snapshotAt
+    &&call.status==='finished'
+    &&_safePublicCognitionAtom(call.task_id,512)
+    &&Array.isArray(call.provisional_events)
+    &&call.provisional_events.length>=1
     &&call.provisional_events.length<=PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents;
 }
 function _validPublicPersonaLesson(lesson){
@@ -5254,6 +5492,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
       ||String(doc.name||'')!==String(row._personaSignedName||'')
       ||!Array.isArray(doc.active_calls)||doc.active_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.activeCalls
+      ||!Array.isArray(doc.recent_calls)||doc.recent_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.recentCalls
       ||!Array.isArray(doc.provisional_outputs)
       ||doc.provisional_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents
       ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.outputs
@@ -5279,18 +5518,22 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
         ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
   }
   const callIds=new Set(), callsById=new Map(), flattenedProvisional=[];
-  for(const call of doc.active_calls){
-    if(!_validPublicPersonaActiveCall(call,identity,doc.generated_at)||callIds.has(call.call_id)) return false;
+  for(const call of [...doc.recent_calls,...doc.active_calls]){
+    const recent=call?.status==='finished';
+    if((recent?!_validPublicPersonaRecentCall(call,identity,doc.generated_at)
+      :!_validPublicPersonaActiveCall(call,identity,doc.generated_at))
+        ||callIds.has(call.call_id)) return false;
     callIds.add(call.call_id); callsById.set(call.call_id,call);
     let previousSequence=0,previousObservedAt=Date.parse(call.started_at);
     for(const event of call.provisional_events){
       const observedAt=Date.parse(event?.at||'');
       if(!await _validPublicProvisionalEvent(event,
         {call,generatedAt:doc.generated_at})
-          ||event.sequence<=previousSequence||observedAt<previousObservedAt) return false;
+          ||event.sequence<=previousSequence||observedAt<previousObservedAt
+          ||(recent&&observedAt>Date.parse(call.ended_at))) return false;
       previousSequence=event.sequence; previousObservedAt=observedAt;
       flattenedProvisional.push({...event,call_id:call.call_id,model_id:call.model_id,
-        persona_id:identity.signedId});
+        persona_id:identity.signedId,call_status:call.status});
     }
   }
   const expectedProvisional=flattenedProvisional.slice(-PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents);
@@ -5302,7 +5545,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
     const call=callsById.get(event?.call_id);
     if(!call||!_exactObjectFields(event,_publicProvisionalEventFields(event,{bound:true}))
         ||event.call_id!==call.call_id||event.model_id!==call.model_id
-        ||event.persona_id!==identity.signedId) return false;
+        ||event.persona_id!==identity.signedId||event.call_status!==call.status) return false;
   }
   for(const output of doc.recent_outputs)
     if(!await _validPublicPersonaOutput(output,identity,row)) return false;
@@ -5399,7 +5642,9 @@ function _publicCallProvenance(call){
     model:_publicProvenanceAtom(call?.model_id),status:_publicProvenanceAtom(call?.status),
     run:_publicProvenanceAtom(call?.run_id),task:_publicProvenanceAtom(call?.task_id),
     call:_publicProvenanceAtom(call?.call_id),effort:_publicProvenanceAtom(call?.reasoning_effort),
+    environment:_publicProvenanceAtom(call?.environment_id),
     startedAt:_publicProvenanceAtom(call?.started_at,80),
+    endedAt:_publicProvenanceAtom(call?.ended_at,80),
   };
 }
 function _publicModelEventProvenance(event,snapshotAt=''){
@@ -5416,6 +5661,7 @@ function _publicProvisionalProvenance(event,call){
   return {..._publicCallProvenance(call),model:_publicProvenanceAtom(event?.model_id),
     call:_publicProvenanceAtom(event?.call_id),at:_publicProvenanceAtom(event?.at,80),
     authority:_publicProvenanceAtom(event?.authority,256),sequence:event?.sequence,
+    callStatus:_publicProvenanceAtom(event?.call_status,256),
     status:_publicProvenanceAtom(event?.status,256),message:_publicProvenanceAtom(event?.message_id),
     tool:_publicProvenanceAtom(event?.tool_name,512)||_publicProvenanceAtom(event?.tool_type,512),
     server:_publicProvenanceAtom(event?.server,512)};
@@ -5489,16 +5735,21 @@ function _publicCognitionRows(doc,{kernel=''}={}){
     if(!runCache.has(key)) runCache.set(key,_verifiedPublicTaskRun(runKernel,task));
     return runCache.get(key);
   };
-  const callsById=new Map(doc.active_calls.map((call)=>[call.call_id,call]));
-  for(const call of doc.active_calls){
+  const calls=[...doc.recent_calls,...doc.active_calls];
+  const callsById=new Map(calls.map((call)=>[call.call_id,call]));
+  for(const call of calls){
     const provenance=_publicCallProvenance(call);
+    const finished=call.status==='finished';
     rows.push({
-      source:'active_call',kind:'MODEL_CALL',at:call.started_at,scope:'model',scopeId:call.task_id||call.run_id,
+      source:finished?'recent_call':'active_call',kind:finished?'MODEL_CALL_FINISHED':'MODEL_CALL',
+      at:finished?call.ended_at:call.started_at,scope:'model',scopeId:call.task_id||call.run_id,
       msg:[call.requested_purpose,call.model_id,call.status].filter(Boolean).join(' · '),
       rationale:`model ${call.model_id} · ${call.status}${call.reasoning_effort?` · reasoning ${call.reasoning_effort}`:''}`,
       cognition:true,ctype:'think',recipients:[],dedup:provenance,provenance,
-      trustLabel:'KERNEL SIGNED ACTIVE CALL',
-      trustTitle:'active model call in the verified current kernel-signed public cognition snapshot',
+      trustLabel:finished?'KERNEL SIGNED FINISHED CALL':'KERNEL SIGNED ACTIVE CALL',
+      trustTitle:finished
+        ?'finished model call in the verified bounded kernel-signed public cognition snapshot'
+        :'active model call in the verified current kernel-signed public cognition snapshot',
     });
   }
   for(const event of doc.provisional_outputs){
@@ -5560,10 +5811,16 @@ function _publicCognitionRows(doc,{kernel=''}={}){
   });
   return rows;
 }
-async function streamPersonaCognition(){
-  if(_cogBusy) return;
+async function streamPersonaCognition(options={}){
+  if(_cogBusy) return false;
   _cogBusy=true;
   try{
+    const scopedPersonaKeys=new Set(
+      (Array.isArray(options?.personaKeys)?options.personaKeys:[])
+        .map((value)=>String(value||'')).filter(Boolean));
+    const scopedBases=new Set(
+      (Array.isArray(options?.bases)?options.bases:[])
+        .map((value)=>String(value||'').replace(/\/$/,'')));
     S.cogBaseFor=S.cogBaseFor||new Map();   // kernel-qualified persona key -> API base
     // The bases that actually serve the personaos API are the ones that streamed LIVE telemetry
     // (the cards render from those) — NOT necessarily a discovery record's _base (which may be an
@@ -5578,18 +5835,22 @@ async function streamPersonaCognition(){
     // the bounded cache once and retains only the cognition polling window.
     function* cognitionCandidates(){
       for(const personaKey of (S.visiblePersonaIds||[])){ const ref=_personaRef(personaKey);
-        yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),selected:true,
-          base:S.liveByPersona.get(personaKey)?.base||''}; }
+        if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
+          yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),selected:true,
+            base:S.liveByPersona.get(personaKey)?.base||''}; }
       for(const [personaKey,d] of (S.liveByPersona||new Map())) if(kernelIsFocused(d?.kernel)){
-        const ref=_personaRef(personaKey); yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),
-          base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
+        const ref=_personaRef(personaKey); if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
+          yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),
+            base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
       for(const id of (S.order||[])){ const r=S.recs.get(id);
         if(r&&r.kind==='persona'&&kernelIsFocused(r._kernel)){ const ref=_personaRef(r.did||r.id||'',r._kernel);
-          yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:nodeBaseForRecord(r)}; } }
+          if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
+            yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:nodeBaseForRecord(r)}; } }
     }
     const list=selectPriorityWindow(cognitionCandidates(),{limit:NETWORK_LIMITS.cognitionPersonas,
       keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
-      searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items.filter((row)=>row.key&&row.sid);
+      searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items
+      .filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
     for(const candidate of list){ const {key:personaKey,sid,kernel,endpointId}=candidate;
       // Never probe another kernel for a colliding short id. A sticky route is
@@ -5599,7 +5860,8 @@ async function streamPersonaCognition(){
         ...[...(S.globalKernels?.get(kernel)?.bases||[])]];
       const order=[...new Set(routes.filter((b)=>b!==undefined)
         .map((b)=>String(b==='@origin'?'':b).replace(/\/$/,'')))]
-        .filter((base)=>kernelForBase(base)===kernel || (!!base&&base===candidate.base));
+        .filter((base)=>(!scopedBases.size||scopedBases.has(base))
+          &&(kernelForBase(base)===kernel || (!!base&&base===candidate.base)));
       let t=null, usedBase='';
       for(const base of order){
         // Node routes are identity-bound: a PersonaOS-born identity is exactly
@@ -5681,6 +5943,7 @@ async function streamPersonaCognition(){
     }
   }catch(e){}
   finally{ _cogBusy=false; }
+  return true;
 }
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
@@ -6258,6 +6521,13 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
   const expectedHash=advertisedHash.replace(/^sha256:/i,'').toLowerCase();
   const hashAdvertised=!!advertisedHash, validExpectedHash=/^[a-f0-9]{64}$/.test(expectedHash);
+  if(validExpectedHash&&p2pDataRouteForUrl(sourceUrl)){
+    let artifactUrl=''; try{ artifactUrl=new URL(sourceUrl,location.href).href; }catch(_){}
+    if(artifactUrl){
+      const artifacts=S.p2pArtifactHashes=S.p2pArtifactHashes||new Map();
+      artifacts.set(artifactUrl,`sha256:${expectedHash}`);
+    }
+  }
   if(hashAdvertised){
     verified=validExpectedHash
       ?await fetchVerifiedLiveBody(sourceUrl,expectedHash)
@@ -6715,8 +6985,8 @@ async function operatorView(){
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
   const bases=[...new Set([...Object.keys(m),...localBases])];
   let html=H('Operator authority — bearer token')
-    +`<div class="desc2">Each node mints a process bearer at boot and temporarily stages it at `
-    +`<code>runs/…/_operator/token</code> until the first model call. Paste it here to unlock a node's owner intake `
+    +`<div class="desc2">Each node mints a process bearer at boot and prints its exact temporary path `
+    +`(default <code>runs/node/.personaos-secrets/operator.token</code>). Capture it before the first model call, then paste it here to unlock a node's owner intake `
     +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. Loopback is a convenient `
     +`route, not authority: <b>local and remote nodes both require the token</b>.</div>`;
   html+=H('Add a node')+`<div class="opform">`
@@ -7659,17 +7929,77 @@ function _rememberP2PRouteHint(base){
   while(S.gossipPeers.size>PROVIDER_HINT_LIMITS.maxRouteHints)
     S.gossipPeers.delete(S.gossipPeers.values().next().value);
 }
-function _reconcileP2PRouteHint({base,kernel},{signal=null}={}){
+function _registerP2PDataRoute(hint,rows=[]){
+  const base=opBaseKey(hint?.base||''), providerRecord=hint?.providerRecord;
+  if(!base||!providerRecord||providerRecord.provider_peer_id!==hint.peerId) return false;
+  const routes=S.p2pDataRoutes=S.p2pDataRoutes||new Map();
+  routes.delete(base); routes.set(base,{providerRecord,kernel:hint.kernel,peerId:hint.peerId});
+  while(routes.size>NETWORK_LIMITS.cachedKernels){
+    const victim=routes.keys().next().value;
+    if(victim===base&&routes.size===1) break;
+    routes.delete(victim);
+  }
+  const artifacts=S.p2pArtifactHashes=S.p2pArtifactHashes||new Map();
+  for(const row of rows){
+    const rel=String(row?._links?.content||''), hash=String(
+      row?._links?.content_hash||row?.content_hash||'').toLowerCase();
+    if(row?.kind!=='artifact'||!rel||!/^sha256:[0-9a-f]{64}$/.test(hash)) continue;
+    let url=join(base,rel); try{ url=new URL(url,location.href).href; }catch(_){ continue; }
+    artifacts.set(url,hash);
+  }
+  while(artifacts.size>NETWORK_LIMITS.cachedRecords)
+    artifacts.delete(artifacts.keys().next().value);
+  return true;
+}
+async function _discoverFromP2P(hint,{signal=null}={}){
+  const p=hint?.providerRecord||{}, base=String(hint?.base||'').replace(/\/$/,'');
+  if(!P2P?.fetchPublicJson||!base||p.host_kernel_id!==hint.kernel
+      ||p.provider_peer_id!==hint.peerId) return {boot:null,found:[],inventory:null};
+  const keysDoc=await P2P.fetchPublicJson(p,'.well-known/personaos-keys.json',
+    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null);
+  const boot=await P2P.fetchPublicJson(p,'.well-known/personaos-discovery.json',
+    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null);
+  if(signal?.aborted||!boot||boot.kernel_id!==hint.kernel
+      ||keysDoc?.kernel_id!==hint.kernel) return {boot:null,found:[],inventory:null};
+  const keys=admitKeysDocument(base,boot,keysDoc,{expectedMaster:p.public_key_hex});
+  if(!keys['kernel-master']) return {boot:null,found:[],inventory:null};
+  const advertisedRecordCount=Number(boot.record_count);
+  const providerIndexMaxBytes=providerIndexResponseByteLimit(
+    advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
+  if(!providerIndexMaxBytes) return {boot:null,found:[],inventory:null};
+  const providerPath=String(boot.providers_url||'discovery/public/providers.json');
+  const providerIndex=await P2P.fetchPublicJson(p,providerPath,
+    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null);
+  if(signal?.aborted||!providerIndex
+      ||Number(providerIndex.document_count)!==advertisedRecordCount)
+    return {boot:null,found:[],inventory:null};
+  S.boots.set(base,boot);
+  const verified=await verifiedRowsFromProviderIndex(
+    providerIndex,base,boot,'internet','p2p provider',{signal});
+  const found=[...new Map(verified.rows.map((row)=>[
+    `${row._kernel||boot.kernel_id}\u0000${row.record_id||row.did}`,row])).values()];
+  const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
+    &&verified.refused===0
+    &&new Set(found.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
+  if(!inventory.complete) return {boot:null,found:[],inventory};
+  _registerP2PDataRoute(hint,found);
+  return {boot,found,inventory};
+}
+function _reconcileP2PRouteHint(hint,{signal=null}={}){
+  const {base,kernel}=hint;
   const id=`${kernel}\u0000${base}`;
   const active=S.providerRouteReconciliations.get(id);
   if(active) return active;
   const work=(async()=>{
-    // A signed ProviderRecord contributes only this route hint. The browser
-    // fetches the named node's complete signed inventory and performs the same
-    // current-master, manifest, chain, document and policy checks as ordinary
-    // HTTP discovery before a single row can enter the UI.
-    const resolved=await discoverFrom(base,'internet',null,
-      {expectedKernel:kernel,resolveProviderAliases:false,signal});
+    // Prefer the peer-bound public-data protocol. Its bootstrap and key registry
+    // are anchored to the self-certifying master in the already verified
+    // ProviderRecord; the complete inventory still passes the same manifest,
+    // chain, document and policy verification as HTTP before promotion.
+    let resolved=await _discoverFromP2P(hint,{signal});
+    if(!resolved.boot&&!signal?.aborted){
+      resolved=await discoverFrom(base,'internet',null,
+        {expectedKernel:kernel,resolveProviderAliases:false,signal});
+    }
     if(signal?.aborted||!resolved.boot) return {accepted:false,count:0};
     const accepted=applyVerifiedProviderInventory(
       base,resolved.boot,resolved.found,resolved.inventory);
@@ -7703,7 +8033,7 @@ async function _resolveProviderHintJob(job){
     const unique=new Map();
     for(const routeHint of routeHints){
       const base=normalizedHttpsBase(routeHint?.base), kernel=String(routeHint?.kernel||'');
-      if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{base,kernel});
+      if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...routeHint,base,kernel});
       if(unique.size>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
     }
     let reconciledRoutes=0, reconciledRecords=0;
@@ -7775,7 +8105,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260717-dynamic-bootstrap-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v2');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });

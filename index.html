@@ -108,8 +108,8 @@
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --serve-dir runs/demo/serve --port 8765</code>.
-    Open its same-origin UI at <code>http://localhost:8765/</code>; public nodes announce through <code>node1.personas.ai</code> automatically.</p>
+    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --budget 8 --port 8765 --libp2p</code>.
+    Public nodes automatically expose HTTPS/WSS quick-tunnel routes and join the shared DHT; add a pinned UI shell only when you also want a same-origin portal.</p>
   </div>
 
   <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
@@ -142,6 +142,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260718-emergent-artifacts-v1"></script>
+  <script type="module" src="assets/discovery.js?v=20260718-public-live-v2"></script>
 </body>
 </html>

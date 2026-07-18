@@ -2,8 +2,8 @@
 
 A static web portal to **discover and explore PersonaOS personas**, their environments,
 missions, artifacts, and telemetry across a P2P network. For first contact, the bare hosted shell
-uses **`https://node1.personas.ai` as an untrusted, replaceable locator**. It resolves signed
-discovery records from the nodes the browser can reach and
+joins the shared public Kademlia plane through a small, replaceable set of public libp2p bootstrap
+peers. It resolves signed discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
 raw operator `/status` runtime observations remain explicitly labelled as unsigned transport data.
@@ -18,24 +18,23 @@ and refinement mission is discovered at runtime from live nodes. First contact i
 - bounded localhost probes for a node running on the viewer's machine;
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
-- libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
-- the default `https://node1.personas.ai` rendezvous plus any additive
-  `?resolver=<https-url>` supplied by the viewer.
+- the shipped replaceable public-DHT bootstrap commons, plus libp2p bootstrap/relay multiaddrs
+  from reached nodes or explicit `?bootstrap=` / `?relay=`;
+- any optional, additive `?resolver=<https-url>` supplied explicitly by the viewer.
 
-Resolver responses are signed announcements and locators only; `node1` and custom resolvers receive
-no authority over the records or identities they point to. Use `?no_global_discovery=1` for an explicit
-resolver-free/offline session. Discovery
+Resolver responses are signed announcements and locators only; custom resolvers receive no authority
+over the records or identities they point to. The bare portal has no default resolver or PersonaOS
+data service. Use `?no_global_discovery=1` to ignore even an explicitly supplied resolver. Discovery
 records are re-resolved and re-verified every 15 seconds. If no first-contact path finds a reachable
 node, the page shows an explicit empty state. The hosted URL never needs or interprets a
 peer-routing query parameter.
 
 **Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
-IP** (browsers block mixed content). So on an **intranet**, open the **node-served** UI directly
-at `http://<node-host>:8799/` — the node serves this same shell over plain HTTP, same-origin, so
-realtime discovery works without any tunnel. For the **internet**, expose the node behind an
-**`https://` tunnel** (e.g. a Cloudflare quick-tunnel) and announce its URL through `node1`, or use
-another signed-announcement resolver. In every case trust
-is the **Ed25519 signature on each record, not the host**.
+IP** (browsers block mixed content). A same-origin, node-served shell is available only when the
+node was started with both `--ui-shell-dir` and `--ui-shell-manifest-sha256`; otherwise use the
+hosted portal or the node API directly. For the **internet**, expose the node API through HTTPS
+and its libp2p WebSocket listener through WSS, then advertise that WSS hostname. In every case
+trust is the **Ed25519 signature on each record, not the host**.
 
 ## P2P discovery - how it finds things (no trusted central registry)
 
@@ -62,7 +61,11 @@ signed records on `personaos/discovery/v1` without trusting their unsigned outer
 For each DID/hash key, it finds providers in the DHT, requests the signed envelope and exact record
 over `/personaos/provider-record/1.0.0`, verifies the ProviderRecord against the sole current master,
 then verifies the hash-bound document against its current, previous, or archived registry generation.
-Only then may it follow a bound locator. When an explicit or node-advertised bootstrap/relay is configured,
+The same peer serves bounded public JSON and SHA-256-addressed byte chunks over
+`/personaos/public-data/1.0.0`: the browser can reconcile the complete signed inventory, poll signed
+telemetry/cognition, and fetch verified artifact bytes without following the HTTPS locator. Unsigned
+bootstrap/key documents are admitted on this path only when their kernel/current master exactly match
+the already verified self-certifying ProviderRecord. When an explicit or node-advertised bootstrap/relay is configured,
 the browser also provides and finds the shared PersonaOS rendezvous multihash through that peer's
 Kademlia routing table. With no connected bootstrap/relay there is no shared DHT to query, and the
 UI does not claim otherwise.
@@ -85,8 +88,8 @@ against current, previous, or archived registry entries; live frames and Provide
 current-kernel-master-only.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
-peers; public nodes normally announce through the default untrusted locator, and any kernel can
-also be advertised through libp2p/IPFS. Every route
+peers; public nodes normally publish through libp2p, and any kernel may additionally be announced
+through an explicit resolver or IPFS. Every route
 enters the same record-resolution and signature check.
 
 **The network view is hierarchical and bounded.** Global mode renders an activity-prioritised
@@ -115,8 +118,8 @@ opaque `cursor`, optional `q`/`status`, and return an aggregate `total` (also ac
 `total_count` or `node_count`). The browser traverses at most four 128-node pages per refresh and
 sends global search to the resolver, then reports the aggregate while retaining only its bounded
 verified window. A directory can therefore describe millions of nodes without creating millions
-of DOM nodes, live connections, or ambiguous short-ID keys. The legacy whole-list response remains
-a compatibility path, not the recommended interface for a million-node directory.
+of DOM nodes, live connections, or ambiguous short-ID keys. Unpaged whole-list responses are
+rejected rather than interpreted.
 
 **Honest transport note (§3H.3).** The libp2p node is real and runs in your browser, but a
 browser can't accept inbound connections or multicast, so to actually **reach other machines** it
@@ -128,6 +131,11 @@ an offline origin's bytes are unavailable. Trust still comes from signatures and
 not from the commons carrying them. Mixed node bootstrap documents are split at the browser
 boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
 js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
+The static transport commons lists four geographically distinct, replaceable public libp2p WSS
+bootstrap peers and uses the shared public DHT. They carry location only: no bootstrap can admit a
+node or data without the current-master, signed-inventory, access-policy, and content-hash checks.
+Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
+no default relay or PersonaOS data server is required.
 
 **Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
 or `mission` record is published evidence using only its bounded signed label and optional run DID;
@@ -299,10 +307,11 @@ operator explicitly promoted public. Run state, personas, telemetry and the raw 
 **read-gated** (09_PROTOCOLS §3G.3 — `discover < read`).
 
 Authority is a **bearer token, never network position** (not even loopback). Each node mints
-a process bearer at boot and temporarily stages it at `runs/…/_operator/token`. Capture it
-before the first model call: the node then unlinks that same-UID-readable file while retaining
-the bearer in memory; a restart without the file rotates it. Click **OPERATOR**, save
-`node base URL + token`, and the portal unlocks for that node:
+a process bearer at boot and prints its exact temporary file path (the default is
+`runs/node/.personaos-secrets/operator.token`). Capture it before the first model call: the node
+then unlinks that same-UID-readable file while retaining the bearer in memory; a restart without
+the file rotates it. Click **OPERATOR**, save `node base URL + token`, and the portal unlocks for
+that node:
 
 - **full node status** — personas, runs, paused missions, budget, lineage durability;
 - **⚡ ASK** — submit a task as the owner (`POST /task`); **💰 FUND** — grant budget to resume
