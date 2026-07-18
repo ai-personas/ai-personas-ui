@@ -7504,7 +7504,8 @@ function missionCardList(){
     ].filter(Boolean):[];
     const meta=lifecycle
       ?[lifecycle.taskId.slice(0,26),`rev ${lifecycle.revision.slice(7,19)}`,
-        lifecycleSurfaces.join(' · '),lifecycle.terminalReason?`terminal ${lifecycle.terminalReason}`:'signed live lifecycle']
+        lifecycleSurfaces.join(' · '),`signed task record · ${lifecycle.terminalReason
+          ?`terminal ${lifecycle.terminalReason}`:'live lifecycle'}`]
       :[run?run.slice(0,26):'',`signed ${published.kind} record`];
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
       kernel:r._kernel||'',meta,recId:id,run,base:nodeBaseForRecord(r),recordKind:published.kind,
