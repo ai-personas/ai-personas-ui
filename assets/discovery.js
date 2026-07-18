@@ -340,13 +340,33 @@ function p2pDataRouteForUrl(value){
   return null;
 }
 async function fetchP2PJson(value,init={}){
+  if(init.signal?.aborted) return null;
   const found=p2pDataRouteForUrl(value);
   if(!found||!P2P?.fetchPublicJson) return null;
-  return P2P.fetchPublicJson(found.route.providerRecord,found.path,{
+  const request=P2P.fetchPublicJson(found.route.providerRecord,found.path,{
     timeoutMs:Math.min(12000,Number(init.timeoutMs)||8000),
     maxBytes:init.maxBytes||DEFAULT_JSON_MAX_BYTES,
     sinceRevision:found.sinceRevision,
   }).catch(()=>null);
+  return settleBeforeAbort(request,init.signal,null);
+}
+function settleBeforeAbort(request,signal,abortedValue=null){
+  if(!signal) return request;
+  if(signal.aborted) return Promise.resolve(abortedValue);
+  // Peer fetches have their own transport timeout, but callers also use a
+  // whole-job deadline. Resolve this read as soon as that deadline fires and
+  // ignore any later transport result instead of serially overrunning it.
+  return new Promise((resolve)=>{
+    let settled=false;
+    const finish=(value)=>{
+      if(settled) return; settled=true;
+      signal.removeEventListener('abort',onAbort); resolve(value);
+    };
+    const onAbort=()=>finish(abortedValue);
+    signal.addEventListener('abort',onAbort,{once:true});
+    if(signal.aborted){ onAbort(); return; }
+    request.then(finish,()=>finish(null));
+  });
 }
 async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
@@ -384,6 +404,7 @@ async function fetchJson(u,init={}){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)); }
   }catch(e){}
+  if(init.signal?.aborted) return null;
   return fetchP2PJson(u,init);
 }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
@@ -416,7 +437,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   verifiedGossipJobs:new Map(),verifiedGossipQueue:[],verifiedGossipActive:0,
   verifiedGossipWindow:[],verifiedGossipAttempts:new Map(),
   streams:new Map(), p2pInvalidations:new Map(), p2pWatchRevisions:new Map(),
-  p2pBootstraps:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
+  p2pBootstraps:new Set(), portalPeers:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
   p2pDialRetryTimer:null, p2pDialActive:0, globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
@@ -1016,7 +1037,7 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-bootstrap-commons-v3',import.meta.url).href;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-bootstrap-commons-v4',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
   maxRememberedProviders:64,providerRetryMs:30*1000,
@@ -1063,15 +1084,21 @@ function collectP2PBootstraps(boot,{dial=false}={}){
 }
 async function loadPortalP2PBootstrapHints({dial=false}={}){
   // This same-origin file is a replaceable transport commons, not a registry:
-  // it can only help the browser reach libp2p. It cannot admit a node, persona,
+  // it can only help the browser reach public peers. It cannot admit a node, persona,
   // telemetry frame or artifact; those still traverse the current-master,
   // signature, inventory and body-hash verification paths below.
   const hints=await fetchJson(PORTAL_P2P_HINTS_URL,{
     signal:AbortSignal.timeout(3000),maxBytes:PORTAL_P2P_HINTS_MAX_BYTES});
-  if(!Array.isArray(hints)) return [];
-  const admitted=rememberP2PBootstraps([hints],{dial});
+  const libp2p=Array.isArray(hints)?hints:hints?.libp2p;
+  if(!Array.isArray(libp2p)) return [];
+  const peerRoutes=(Array.isArray(hints?.https)?hints.https:[])
+    .map(normalizedHttpsBase).filter(Boolean).slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
+  for(const base of peerRoutes) S.portalPeers.add(base);
+  const admitted=rememberP2PBootstraps([libp2p],{dial});
   if(admitted.length)
     log('p2p',`${admitted.length} same-origin transport bootstrap hint(s) admitted; zero record authority`);
+  if(peerRoutes.length)
+    log('bootstrap',`${peerRoutes.length} direct peer route hint(s) admitted; records still require signature verification`);
   return admitted;
 }
 function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
@@ -1776,9 +1803,13 @@ async function discoverFrom(base,plane,knownBoot=null,
     log('bootstrap',`${where}: route hint resolved to a different kernel`,false);
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()}); return {boot:null,found:[]};
   }
-  S.boots.set(base||'@origin',boot);
-  await keysFor(base,boot,{signal});
+  const keys=await keysFor(base,boot,{signal});
   if(signal?.aborted) return {boot:null,found:[]};
+  if(!keys['kernel-master']){
+    log('keys',`${boot.kernel_id||where}: no valid current master`,false);
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    return {boot:null,found:[]};
+  }
   // The bootstrap count is the number of signed discovery documents, not the
   // number of provider lookup aliases. A compact v3 inventory may legitimately
   // publish several independently signed ProviderRecords (DID, record id,
@@ -1803,9 +1834,11 @@ async function discoverFrom(base,plane,knownBoot=null,
   const http=await verifiedRowsFromProviderIndex(
     prov,base,boot,plane,'http provider',{signal});
   const found=[...http.rows];
-  if(resolveProviderAliases&&P2P?.resolveProvider){
+  if(resolveProviderAliases&&P2P?.resolveProvider&&!signal?.aborted){
     const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
-    const resolved=await Promise.all(aliases.map((key)=>P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+    const lookups=Promise.all(aliases.map((key)=>
+      P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+    const resolved=await settleBeforeAbort(lookups,signal,[]);
     let authorityVerified=0;
     for(const result of resolved){ const verified=await verifiedRouteHintsFromP2PResult(
       result,{signal});
@@ -1819,14 +1852,24 @@ async function discoverFrom(base,plane,knownBoot=null,
     `${row._kernel||boot.kernel_id||'@unknown'}\u0000${row.record_id||row.did}`,row]));
   found.length=0; found.push(...uniqueFound.values());
   if(found.length) log('verify',`${found.length}/${http.envelopeCount} record(s) provider + record + policy verified`,true);
+  const inventory={...(http.inventory||{}),complete:http.inventory?.ok===true
+    &&http.refused===0&&new Set(found.map((row)=>row.record_id)).size===http.inventory.recordIds?.size};
+  if(!inventory.complete){
+    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    return {boot,found,inventory};
+  }
   // Bridge-cache gossip is untrusted lookup material only. It never becomes a
   // displayed record or supplies base/links/policy. A resolved current-master
   // ProviderRecord supplies only an HTTPS route; the route's complete signed
   // inventory is the sole promotion path into S.recs.
   const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
   const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived),{signal}):null;
-  for(const doc of (p2pDoc?.records||[])){
-    if(doc?.record?.visibility_tier==='public') queueProviderHints(doc.record,'bridge-cache gossip');
+  for(const doc of (p2pDoc?.records||[]).slice(0,NETWORK_LIMITS.cachedRecords)){
+    if(doc?.record?.visibility_tier!=='public') continue;
+    const verified=P2P?.verifyGossipProviderEnvelope
+      ?await P2P.verifyGossipProviderEnvelope(doc).catch(()=>null):null;
+    if(verified) await onVerifiedGossipProvider(verified);
+    else queueProviderHints(doc.record,'bridge-cache gossip');
   }
   // HTTP gossip cache is also hint-only. Self-asserted origin/kernel fields never
   // create a node or record in the UI before current-master provider resolution.
@@ -1836,14 +1879,6 @@ async function discoverFrom(base,plane,knownBoot=null,
     const record=card.record||card;
     if(record?.visibility_tier==='public') queueProviderHints(record,'HTTP gossip cache');
   }
-  if(boot.kernel_id){
-    const sources=peerSourceTags(base);
-    if(sources.length) sources.forEach((src)=>noteKernel(boot.kernel_id,src,base||location.origin,{reachable:true}));
-    else noteKernel(boot.kernel_id,'http',base||location.origin,{reachable:true});
-  }
-  S.peerHealth.set(where,{ok:true,records:found.length,kernel:boot.kernel_id||'',t:Date.now()});
-  const inventory={...(http.inventory||{}),complete:http.inventory?.ok===true
-    &&http.refused===0&&new Set(found.map((row)=>row.record_id)).size===http.inventory.recordIds?.size};
   return {boot,found,inventory};
 }
 
@@ -1948,7 +1983,7 @@ function peerList(){
   // reverse them here to keep the newest live route in the monitoring window.
   // This is the active monitoring window, not a claim that the rest of the
   // discovered population ceased to exist.
-  const all=[...new Set([...focused,...(S.localPeers||[]),
+  const all=[...new Set([...focused,...(S.localPeers||[]),...(S.portalPeers||[]),
     ...recentGossip,...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
@@ -2274,9 +2309,17 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
     const key=b||'@origin';
     if(visited.has(key)||visited.size>=visitLimit) return;
     visited.add(key);
-    const job=fetchJson(join(b,'.well-known/personaos-discovery.json')).then((boot)=>{
-      if(!boot){ if(b) emit(b,null); return; }               // dead peer → discoverFrom logs it
-      S.boots.set(b||'@origin',boot);
+    const job=fetchJson(join(b,'.well-known/personaos-discovery.json'),{
+      signal:AbortSignal.timeout(8000)}).then((boot)=>{
+      if(!boot){
+        if(b){ log('bootstrap',`no endpoint at ${b}`,false);
+          S.peerHealth=(S.peerHealth||new Map());
+          S.peerHealth.set(b,{ok:false,records:0,t:Date.now()}); }
+        return;
+      }
+      // Bootstrap fields are bounded locator input here. Identity is admitted
+      // only after discoverFrom verifies the current master and a complete
+      // signed provider inventory, so this lookup cannot paint a node chip.
       const fks=boot.federated_kernels||[];
       if(boot.providers_are_aggregate) emit(b,boot);         // public aggregate: do not expand private runs
       else {
@@ -2287,7 +2330,11 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
         const peers=[...(boot.peers||[]),...(boot.bootstrap_peers||[])].filter(isHttp);
         for(const peer of peers) schedule({b:peer,depth:depth+1});
       }
-    }).catch(()=>{ if(b) emit(b,null); }).finally(()=>pending.delete(job));
+    }).catch(()=>{
+      if(b){ log('bootstrap',`malformed endpoint at ${b}`,false);
+        S.peerHealth=(S.peerHealth||new Map());
+        S.peerHealth.set(b,{ok:false,records:0,t:Date.now()}); }
+    }).finally(()=>pending.delete(job));
     pending.add(job);
   };
   for(const item of queue) schedule(item);
@@ -2319,15 +2366,23 @@ async function discover(){
       S.monitoringOmitted=(S.monitoringOmitted||0)+1; return key;
     }
     resolvedBases.add(key);
-    const job=discoverFrom(b,'internet',knownBoot).then(async(res)=>{
+    const signal=AbortSignal.timeout(P2P_ROUTE_LIMITS.jobDeadlineMs);
+    const job=discoverFrom(b,'internet',knownBoot,{signal}).then(async(res)=>{
       if(!res.boot) return;
       const accepted=applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
+      if(!accepted) return;
+      S.boots.set(b||'@origin',res.boot);
+      const sources=peerSourceTags(b);
+      if(sources.length) sources.forEach((src)=>noteKernel(res.boot.kernel_id,src,
+        b||location.origin,{reachable:true}));
+      else noteKernel(res.boot.kernel_id,'http',b||location.origin,{reachable:true});
+      S.peerHealth=(S.peerHealth||new Map());
+      S.peerHealth.set(b||location.origin,{ok:true,records:res.found.length,
+        kernel:res.boot.kernel_id,t:Date.now()});
       connectDiscoveryStream(b,res.boot);
-      if(accepted){
-        collectP2PBootstraps(res.boot,{dial:true});
-        scheduleRealtimeRepaint({records:true});
-      }
-      await loadTelemetry(b);                 // aggregate static spans + live node telemetry
+      collectP2PBootstraps(res.boot,{dial:true});
+      scheduleRealtimeRepaint({records:true});
+      await loadTelemetry(b,{signal});        // aggregate static spans + live node telemetry
       scheduleRealtimeRepaint();
     }).catch(()=>{});
     resultJobs.push(job); return key;
@@ -2639,9 +2694,6 @@ function connectDiscoveryStream(base,boot){
     });
   };
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
-  es.addEventListener('hello',(ev)=>{
-    try{ const d=JSON.parse(ev.data||'{}'); if(d.node_id) noteKernel(d.node_id,'sse',base||location.origin,{reachable:true}); }catch(e){}
-  });
   es.addEventListener('discovery_snapshot',async (ev)=>{
     try{
       const snap=JSON.parse(ev.data||'{}');
@@ -2928,12 +2980,12 @@ function _nodeScopedBodyUrl(base,value){
 async function _liveVerificationContext(base,url,bootHint=null,refresh=false){
   const key=base||'@origin';
   let boot=bootHint||S.boots.get(key)||null;
-  if(!boot){ boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
-    if(boot) S.boots.set(key,boot); }
+  if(!boot) boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
   if(!boot?.kernel_id) return {ok:false,reason:'missing_kernel_identity'};
   await keysFor(base,boot,{refresh});
   const keyDoc=S.keyDocs.get(key)||{};
   if(keyDoc.kernelId!==boot.kernel_id) return {ok:false,reason:'kernel_key_registry_mismatch'};
+  S.boots.set(key,boot);
   return {ok:true,keyEntries:keyDoc.entries||[],expectedNodeId:boot.kernel_id,
     requirePublic:!tokenFor(url)};
 }
@@ -8153,10 +8205,11 @@ async function _discoverFromP2P(hint,{signal=null}={}){
   const p=hint?.providerRecord||{}, base=String(hint?.base||'').replace(/\/$/,'');
   if(!P2P?.fetchPublicJson||!base||p.host_kernel_id!==hint.kernel
       ||p.provider_peer_id!==hint.peerId) return {boot:null,found:[],inventory:null};
-  const keysDoc=await P2P.fetchPublicJson(p,'.well-known/personaos-keys.json',
-    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null);
-  const boot=await P2P.fetchPublicJson(p,'.well-known/personaos-discovery.json',
-    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null);
+  const keysDoc=await settleBeforeAbort(P2P.fetchPublicJson(p,'.well-known/personaos-keys.json',
+    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null),signal,null);
+  if(signal?.aborted||!keysDoc) return {boot:null,found:[],inventory:null};
+  const boot=await settleBeforeAbort(P2P.fetchPublicJson(p,'.well-known/personaos-discovery.json',
+    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null),signal,null);
   if(signal?.aborted||!boot||boot.kernel_id!==hint.kernel
       ||keysDoc?.kernel_id!==hint.kernel) return {boot:null,found:[],inventory:null};
   const keys=admitKeysDocument(base,boot,keysDoc,{expectedMaster:p.public_key_hex});
@@ -8166,12 +8219,11 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
   if(!providerIndexMaxBytes) return {boot:null,found:[],inventory:null};
   const providerPath=String(boot.providers_url||'discovery/public/providers.json');
-  const providerIndex=await P2P.fetchPublicJson(p,providerPath,
-    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null);
+  const providerIndex=await settleBeforeAbort(P2P.fetchPublicJson(p,providerPath,
+    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null),signal,null);
   if(signal?.aborted||!providerIndex
       ||Number(providerIndex.document_count)!==advertisedRecordCount)
     return {boot:null,found:[],inventory:null};
-  S.boots.set(base,boot);
   const verified=await verifiedRowsFromProviderIndex(
     providerIndex,base,boot,'internet','p2p provider',{signal});
   const found=[...new Map(verified.rows.map((row)=>[
@@ -8202,6 +8254,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
     const accepted=applyVerifiedProviderInventory(
       base,resolved.boot,resolved.found,resolved.inventory);
     if(!accepted) return {accepted:false,count:0};
+    S.boots.set(base||'@origin',resolved.boot);
     _rememberP2PRouteHint(base);
     updateP2PStatus();
     collectP2PBootstraps(resolved.boot,{dial:true});
@@ -8400,6 +8453,7 @@ async function initP2P(){
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
       onVerifiedProvider:onVerifiedGossipProvider });
+    P2P.verifyGossipProviderEnvelope=mod.verifyGossipProviderEnvelope;
     P2P.dialBootstrap=(multiaddr,options)=>
       mod.dialP2PBootstrap(P2P.node,multiaddr,options);
     P2P.node.addEventListener('peer:disconnect',(event)=>{
@@ -8433,11 +8487,13 @@ async function initP2P(){
   setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
   discoverLocalNode().catch(()=>{});                                  // is a node running on THIS machine?
   setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
-  await discover();
   await portalP2PHints;
+  // Start direct peer discovery as soon as the transport commons is known.
+  // Dead HTTPS locators continue in parallel and cannot hold libp2p startup.
+  initP2P();
+  await discover();
   prefetchNodeStatuses();
   renderMissions();
-  initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{
     maintainP2PBootstrapConnectivity().catch(()=>{});

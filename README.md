@@ -3,7 +3,7 @@
 A static web portal to **discover and explore PersonaOS personas**, their environments,
 missions, artifacts, and telemetry across a P2P network. For first contact, the bare hosted shell
 joins the shared public Kademlia plane through a small, replaceable set of public libp2p bootstrap
-peers. It resolves signed discovery records from the nodes the browser can reach and
+peers and direct HTTPS peer routes. It resolves signed discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
 raw operator `/status` runtime observations remain explicitly labelled as unsigned transport data.
@@ -18,8 +18,8 @@ and refinement mission is discovered at runtime from live nodes. First contact i
 - bounded localhost probes for a node running on the viewer's machine;
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
-- the shipped replaceable public-DHT bootstrap commons, plus libp2p bootstrap/relay multiaddrs
-  from reached nodes or explicit `?bootstrap=` / `?relay=`;
+- the shipped replaceable peer commons: HTTPS `.well-known` routes and public-DHT bootstrap peers,
+  plus libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
 - any optional, additive `?resolver=<https-url>` supplied explicitly by the viewer.
 
 Resolver responses are signed announcements and locators only; custom resolvers receive no authority
@@ -131,8 +131,9 @@ an offline origin's bytes are unavailable. Trust still comes from signatures and
 not from the commons carrying them. Mixed node bootstrap documents are split at the browser
 boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
 js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
-The static transport commons lists four geographically distinct, replaceable public libp2p WSS
-bootstrap peers and uses the shared public DHT. They carry location only: no bootstrap can admit a
+The static transport commons lists four replaceable HTTPS PersonaOS peer routes and four
+geographically distinct public libp2p WSS bootstrap peers, and uses the shared public DHT. They
+carry location only: no peer hint can admit a
 node or data without the current-master, signed-inventory, access-policy, and content-hash checks.
 Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
 no default relay or PersonaOS data server is required.

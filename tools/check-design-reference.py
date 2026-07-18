@@ -99,14 +99,18 @@ def main() -> None:
     readme = (ui_root / 'README.md').read_text(encoding='utf-8').lower()
     index = (ui_root / 'index.html').read_text(encoding='utf-8')
     p2p_hints = json.loads((ui_root / 'p2p-bootstrap-hints.json').read_text(encoding='utf-8'))
+    p2p_multiaddrs = p2p_hints.get('libp2p', []) if isinstance(p2p_hints, dict) else []
+    p2p_https_routes = p2p_hints.get('https', []) if isinstance(p2p_hints, dict) else []
     ui_checks = {
         'decentralized first contact with explicit optional resolvers': (
             'DEFAULT_GLOBAL_DISCOVERY_ENDPOINT' not in portal
             and "return [...new Set(p.getAll('resolver')" in portal
             and "p.get('no_global_discovery')==='1'" in portal
-            and isinstance(p2p_hints, list)
-            and len(p2p_hints) >= 2
-            and all(isinstance(value, str) and '/wss/p2p/' in value for value in p2p_hints)
+            and len(p2p_multiaddrs) >= 2
+            and all(isinstance(value, str) and '/wss/p2p/' in value for value in p2p_multiaddrs)
+            and len(p2p_https_routes) >= 2
+            and all(isinstance(value, str) and value.startswith('https://') for value in p2p_https_routes)
+            and 'verifyGossipProviderEnvelope' in portal
             and 'async function verifyGlobalEnvelope(env)' in portal
             and 'exp<=Date.now()' in portal
             and 'ed.verifyAsync' in portal
