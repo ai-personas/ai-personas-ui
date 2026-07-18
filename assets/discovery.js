@@ -371,6 +371,15 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024
   return result?.bytes||null;
 }
 async function fetchJson(u,init={}){
+  // A current-master-verified provider route is already a stronger transport
+  // binding than an opportunistic cross-origin HTTP attempt. Public refetches
+  // therefore stay on that peer first; operator-token requests still use HTTP.
+  const peerRouted=!tokenFor(u)&&!!p2pDataRouteForUrl(u)&&!!P2P?.fetchPublicJson;
+  if(peerRouted&&!init.signal?.aborted){
+    const peerDocument=await fetchP2PJson(u,init);
+    if(peerDocument!==null&&peerDocument!==undefined) return peerDocument;
+    return null;
+  }
   try{ const r=await fetch(u,secureFetchInit(u,init)); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)); }
@@ -404,7 +413,8 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   providerInventories:new Map(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   providerRouteReconciliations:new Map(),
-  streams:new Map(), p2pBootstraps:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
+  streams:new Map(), p2pInvalidations:new Map(), p2pWatchRevisions:new Map(),
+  p2pBootstraps:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
   p2pDialRetryTimer:null, p2pDialActive:0, globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
@@ -2514,7 +2524,98 @@ function scheduleSseCognitionRefresh(scope=null){
 // A verified SSE frame has already updated the per-entity indices. Coalesce a
 // burst into the next browser paint instead of waiting for the five-second poll.
 function appendTelemetryEvent(payload,base,boot,reason){ scheduleRealtimeRepaint(); }
+function _personaKeysForInvalidation(base,boot,personaIds){
+  const expectedKernel=String(kernelForBase(base)||boot?.kernel_id||'');
+  if(!expectedKernel||!Array.isArray(personaIds)||!personaIds.length) return null;
+  const known=new Map();
+  for(const id of (S.order||[])){ const record=S.recs.get(id);
+    if(record?.kind!=='persona'||record?._kernel!==expectedKernel) continue;
+    const ref=_personaRef(record.did||record.id||'',expectedKernel);
+    known.set(_signedPersonaEndpointId(ref.key),ref.key); }
+  for(const key of (S.liveByPersona||new Map()).keys()){
+    const ref=_personaRef(key); if(ref.kernel===expectedKernel)
+      known.set(_signedPersonaEndpointId(ref.key),ref.key); }
+  const personaKeys=personaIds.map((id)=>known.get(id));
+  return personaKeys.some((value)=>!value)?null:{expectedKernel,personaKeys};
+}
+function _clearEntityFeedCache(base){
+  const prefix=(base||'@origin')+'|';
+  for(const key of (S.entFeed||new Map()).keys()) if(key.startsWith(prefix)) S.entFeed.delete(key);
+}
+async function _refreshPeerInventory(base){
+  const route=S.p2pDataRoutes?.get(opBaseKey(base)); if(!route) return false;
+  const resolved=await _discoverFromP2P({base,kernel:route.kernel,peerId:route.peerId,
+    providerRecord:route.providerRecord}).catch(()=>null);
+  if(!resolved?.boot) return false;
+  const accepted=applyVerifiedProviderInventory(base,resolved.boot,resolved.found,resolved.inventory);
+  if(accepted){ classifyMap(); updateVitalsCounters(); renderMissions(); }
+  return accepted;
+}
+function _schedulePeerInvalidation(base,boot,event){
+  if(!event||event.kind==='heartbeat') return;
+  const baseKey=String(base||'').replace(/\/$/,'');
+  const revisionKey=`${baseKey}\u0000${event.kind}\u0000${event.run||''}`;
+  const revision=String(event.revision||event.previous_revision||'');
+  if(revision&&S.p2pWatchRevisions.get(revisionKey)===revision) return;
+  if(revision){ S.p2pWatchRevisions.delete(revisionKey); S.p2pWatchRevisions.set(revisionKey,revision);
+    while(S.p2pWatchRevisions.size>NETWORK_LIMITS.cachedKernels)
+      S.p2pWatchRevisions.delete(S.p2pWatchRevisions.keys().next().value); }
+  let pending=S.p2pInvalidations.get(baseKey);
+  if(!pending){ pending={base:baseKey,boot,kinds:new Set(),personaIds:new Set(),runs:new Map(),timer:null};
+    S.p2pInvalidations.set(baseKey,pending); }
+  pending.boot=boot||pending.boot; pending.kinds.add(event.kind);
+  for(const id of (event.persona_ids||[])) if(pending.personaIds.size<256) pending.personaIds.add(id);
+  if(event.kind==='artifact'&&event.run) pending.runs.set(event.run,event);
+  if(pending.timer) return;
+  pending.timer=setTimeout(async()=>{
+    S.p2pInvalidations.delete(baseKey);
+    const resync=pending.kinds.has('resync');
+    const jobs=[];
+    if(resync||pending.kinds.has('discovery')) jobs.push(_refreshPeerInventory(baseKey));
+    if(resync||pending.kinds.has('telemetry')){
+      _clearEntityFeedCache(baseKey); jobs.push(loadTelemetry(baseKey)); }
+    if(resync||pending.kinds.has('cognition')){
+      const scoped=_personaKeysForInvalidation(baseKey,pending.boot,[...pending.personaIds]);
+      scheduleSseCognitionRefresh(scoped?{base:baseKey,personaKeys:scoped.personaKeys}:null);
+    }
+    for(const item of pending.runs.values()) jobs.push(fetchLiveArtifacts(baseKey,item.run,{publicSeed:true}));
+    if(resync) pollLiveArtifacts();
+    await Promise.allSettled(jobs);
+    scheduleRealtimeRepaint({records:resync||pending.kinds.has('discovery')});
+    refreshSystemView(); refreshLiveSection();
+  },150);
+}
+function _ensurePeerDiscoveryStream(base,boot,route){
+  if(!P2P?.watchPublicEvents||!route?.providerRecord) return false;
+  const normalized=String(base||'').replace(/\/$/,'');
+  const key=`p2p:${opBaseKey(normalized)}`, current=S.streams.get(key);
+  if(current&&current._peerId===route.peerId&&current._kernel===route.kernel){
+    current._boot=boot||current._boot; return true; }
+  for(const [streamKey,stream] of S.streams){
+    if(String(stream?._base||'').replace(/\/$/,'')!==normalized) continue;
+    try{ stream?.close?.(); }catch(e){} S.streams.delete(streamKey);
+  }
+  const watchCount=[...S.streams.keys()].filter((value)=>String(value).startsWith('p2p:')).length;
+  if(watchCount>=NETWORK_LIMITS.monitoredBases) return false;
+  let entry;
+  try{
+    const watch=P2P.watchPublicEvents(route.providerRecord,{
+      onInvalidation:(event)=>_schedulePeerInvalidation(normalized,entry?._boot||boot,event),
+      onState:(state,detail)=>{
+        if(state==='open'&&entry?._opened!==true){ if(entry) entry._opened=true;
+          log('stream',`${normalized} peer invalidation stream connected`,true); }
+        else if(state==='retry'&&entry?._noted!==true){ if(entry) entry._noted=true;
+          log('stream',`${normalized} peer stream retrying; polling remains active${detail?`: ${detail}`:''}`,false); }
+      }
+    });
+    entry={close:watch.close,done:watch.done,_base:normalized,_boot:boot,
+      _peerId:route.peerId,_kernel:route.kernel,_opened:false,_noted:false};
+    S.streams.set(key,entry); return true;
+  }catch(_){ return false; }
+}
 function connectDiscoveryStream(base,boot){
+  const peerRoute=S.p2pDataRoutes?.get(opBaseKey(base));
+  if(peerRoute){ _ensurePeerDiscoveryStream(base,boot,peerRoute); return; }
   if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
   if(S.streams.has(url)) return;
@@ -2588,17 +2689,9 @@ function connectDiscoveryStream(base,boot){
           ||personaIds.some((value)=>typeof value!=='string'||!value
             ||value!==value.trim()||new TextEncoder().encode(value).byteLength>240)
           ||!_safePublicCognitionInstant(payload.generated_at)) return;
-      const known=new Map();
-      for(const id of (S.order||[])){ const record=S.recs.get(id);
-        if(record?.kind!=='persona'||record?._kernel!==expectedKernel) continue;
-        const ref=_personaRef(record.did||record.id||'',expectedKernel);
-        known.set(_signedPersonaEndpointId(ref.key),ref.key); }
-      for(const key of (S.liveByPersona||new Map()).keys()){
-        const ref=_personaRef(key); if(ref.kernel===expectedKernel)
-          known.set(_signedPersonaEndpointId(ref.key),ref.key); }
-      const personaKeys=personaIds.map((id)=>known.get(id));
-      if(personaKeys.some((value)=>!value)) return;
-      scheduleSseCognitionRefresh({base,personaKeys});
+      const scoped=_personaKeysForInvalidation(base,boot,personaIds);
+      if(!scoped||scoped.expectedKernel!==expectedKernel) return;
+      scheduleSseCognitionRefresh({base,personaKeys:scoped.personaKeys});
     }catch(e){}
   });
   es.addEventListener('live_artifact_update',(ev)=>{
@@ -8000,6 +8093,8 @@ function _registerP2PDataRoute(hint,rows=[]){
     const victim=routes.keys().next().value;
     if(victim===base&&routes.size===1) break;
     routes.delete(victim);
+    const stream=S.streams.get(`p2p:${victim}`);
+    try{ stream?.close?.(); }catch(e){} S.streams.delete(`p2p:${victim}`);
   }
   const artifacts=S.p2pArtifactHashes=S.p2pArtifactHashes||new Map();
   for(const row of rows){
@@ -8199,7 +8294,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v17');
+    const mod=await import('./p2p-libp2p.js?v=20260718-public-events-v18');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
