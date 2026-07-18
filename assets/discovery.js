@@ -4904,9 +4904,9 @@ const PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS=Object.freeze([
   'signing_key_id','task_id',
 ].sort());
 const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=Object.freeze([
-  'authored_at','completion_readiness','environment_id','intent','intent_id',
-  'mission_task_id','persona_id','persona_signature','schema','self_wake','signing_key_id',
-  'task_id','wake_dedupe_key','wake_event_id',
+  'authored_at','environment_id','intent','intent_id','mission_task_id','persona_id',
+  'persona_signature','schema','self_wake','signing_key_id','task_id','wake_dedupe_key',
+  'wake_event_id',
 ].sort());
 const PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS=Object.freeze([
   'addressed_to','authored_by','communication_id','environment_id','parent_communication_hash',
@@ -5055,7 +5055,7 @@ async function _validPublicPersonaAuthority(output,identity,row){
   let signature='',payload=null;
   if(output.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND){
     if(!_exactObjectFields(authority,PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS)
-        ||authority.schema!=='personaos-persona-cognitive-intent/1'
+        ||authority.schema!=='personaos-persona-cognitive-intent/2'
         ||authority.persona_id!==identity.signedId
         ||authority.environment_id!==output.environment_id
         ||authority.signing_key_id!==signingKeyId
