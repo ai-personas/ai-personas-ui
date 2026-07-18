@@ -7843,9 +7843,11 @@ function wire(){
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   const peers=n&&n.getPeers?n.getPeers().length:0;
-  const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'}`:'HTTP federation discovery';
+  const routes=S.p2pDataRoutes?.size||0;
+  el.dataset.verifiedRoutes=String(routes);
+  const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'} · ${routes} verified route${routes===1?'':'s'}`:'HTTP federation discovery';
   el.title=detail; el.setAttribute('aria-label',`Network connectivity: ${detail}`);
-  el.textContent=n?`Network · ${peers} peer${peers===1?'':'s'}`:'Network · web discovery'; }
+  el.textContent=n?`Network · ${peers} peer${peers===1?'':'s'}${routes?` · ${routes} verified route${routes===1?'':'s'}`:''}`:'Network · web discovery'; }
 function _ensureP2PRendezvousSchedule(){
   if(!P2P?.node) return;
   P2P._rendezvousConfigured=true;
@@ -8039,6 +8041,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
       base,resolved.boot,resolved.found,resolved.inventory);
     if(!accepted) return {accepted:false,count:0};
     _rememberP2PRouteHint(base);
+    updateP2PStatus();
     collectP2PBootstraps(resolved.boot,{dial:true});
     noteKernel(kernel,'p2p',base,{reachable:true});
     await loadTelemetry(base,{signal});
