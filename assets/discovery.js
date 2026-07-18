@@ -1016,7 +1016,7 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-public-dht-v2',import.meta.url).href;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-bootstrap-commons-v3',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
   maxRememberedProviders:64,providerRetryMs:30*1000,
@@ -8395,7 +8395,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-bootstrap-recovery-v20');
+    const mod=await import('./p2p-libp2p.js?v=20260718-bootstrap-commons-v21');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
