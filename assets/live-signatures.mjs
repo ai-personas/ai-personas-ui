@@ -188,7 +188,8 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
   const workspaces = document.workspaces;
   const immutableFinalizedBootstrap = isObject(lifecycle)
     && lifecycle.state === 'run_finalized'
-    && REVISION_RE.test(String(document.since_revision || ''))
+    && (document.since_revision === null
+      || REVISION_RE.test(String(document.since_revision || '')))
     && REVISION_RE.test(String(lifecycle.workspace_revision || ''))
     && typeof lifecycle.finalized_at === 'string'
     && Number.isFinite(parseKernelIso(lifecycle.finalized_at))

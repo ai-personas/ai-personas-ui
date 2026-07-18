@@ -16,7 +16,7 @@ import {
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260718-live-current-v2';
+} from './live-signatures.mjs?v=20260718-live-current-v3';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
