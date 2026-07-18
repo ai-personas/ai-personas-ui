@@ -349,11 +349,23 @@ async function fetchP2PJson(value,init={}){
   }).catch(()=>null);
 }
 async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024){
-  const found=p2pDataRouteForUrl(value);
+  let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
+  // JSON polling has its own sole `since=sha256:...` query contract in
+  // p2pDataRouteForUrl. Artifact bodies instead permit only the exact hash query
+  // emitted by a signed live-workspace snapshot. Strip it solely for peer path
+  // routing, then bind it back to the independently advertised expected hash.
+  let queryHash='';
+  if(target.search){
+    const match=/^\?sha256=([0-9a-fA-F]{64})$/.exec(target.search);
+    if(!match) return null;
+    queryHash=`sha256:${match[1].toLowerCase()}`; target.search='';
+  }
+  const found=p2pDataRouteForUrl(target.href);
   if(!found||found.sinceRevision||!P2P?.fetchPublicBlob) return null;
-  let urlKey=''; try{ urlKey=new URL(value,location.href).href; }catch(_){ return null; }
+  const urlKey=target.href;
   const contentHash=String(expectedHash||S.p2pArtifactHashes?.get(urlKey)||'').toLowerCase();
   if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
+  if(queryHash&&queryHash!==contentHash) return null;
   const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
     {timeoutMs:10000,maxBytes,path:found.path}).catch(()=>null);
   return result?.bytes||null;
@@ -739,8 +751,10 @@ function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.arti
   return arts.map((a)=>({ ...a, title:a.title||a.path||a.artifact_id||'',
     body_published:a.body_published!==undefined?a.body_published:!!a.content,
     size:a.size??a.size_bytes??a.bytes })); }
+function declaredArtifactMedia(value){ const a=value&&typeof value==='object'?value:{}, L=a._links||{};
+  return String(a.media_kind||L.media_kind||a.mime_type||L.mime_type||'').trim(); }
 function authoredArtifactLabels(value){ const a=value&&typeof value==='object'?value:{}, L=a._links||{};
-  const media=String(a.media_kind||L.media_kind||'').trim();
+  const media=declaredArtifactMedia(a);
   return artifactSemanticLabels({
     role_in_bundle:a.role_in_bundle||L.role_in_bundle||'',
     artifact_roles:a.artifact_roles||L.artifact_roles,
@@ -3028,7 +3042,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
   for(const {file,name} of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const authored=authoredArtifactLabelText(file);
     html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}">${esc(name)}</a>`
-      +`<span class="l2">${authored?`authored: ${esc(authored)} · `:''}${esc(file.media_kind||'undeclared media')} · ${fmtBytes(file.size_bytes)}</span></div>`;
+      +`<span class="l2">${authored?`authored: ${esc(authored)} · `:''}${esc(declaredArtifactMedia(file)||'undeclared media')} · ${fmtBytes(file.size_bytes)}</span></div>`;
   }
   return html;
 }
@@ -3633,6 +3647,22 @@ function _artifactStateInfo(r){
     :(state==='deprecated'||state==='rejected')?'ds-no':'ds-amber';
   return {state,files,cls};
 }
+function _boundedLatestUnique(rows,keyOf,limit){
+  const selected=new Map(); let fallback=0;
+  for(const row of (rows||[])){
+    if(!row) continue;
+    const projected=String(keyOf(row)||''), key=projected||`unkeyed:${fallback++}`;
+    if(selected.has(key)) selected.delete(key);
+    selected.set(key,row);
+    while(selected.size>limit) selected.delete(selected.keys().next().value);
+  }
+  return [...selected.values()];
+}
+function _artifactPresentationKey(r){ const L=r?._links||{};
+  const hash=String(L.content_hash||r?.content_hash||''), path=String(L.content||r?.path||r?.title||''),
+    label=String(r?.label||r?.artifact_id||'');
+  return (hash||path||label)?`${hash}\u0000${path}\u0000${label}`:String(r?._storeKey||r?.record_id||r?.did||'');
+}
 function _artifactActionHTML(r,{scope='output'}={}){
   if(!r) return '';
   const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
@@ -3643,7 +3673,7 @@ function _artifactActionHTML(r,{scope='output'}={}){
     +`<small>${esc(scope)}${info.state?` · ${esc(info.state.replace(/_/g,' '))}`:''}${info.files?` · ${info.files} files`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>${icon('chevron','ico-sm')}</button>`;
 }
 function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona worktree'}={}){
-  const rows=[...(artifacts||[])], bundles=rows.filter((r)=>r?._links?.bundle);
+  const rows=_boundedLatestUnique(artifacts,_artifactPresentationKey,32), bundles=rows.filter((r)=>r?._links?.bundle);
   const selected=bundles.length?[bundles[bundles.length-1]]:rows.slice(-2).reverse();
   if(!selected.length) return '';
   const earlier=Math.max(0,bundles.length-1);
@@ -3654,9 +3684,11 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
     +(earlier?`<div class="owned-output-history">${earlier} earlier revision${earlier===1?'':'s'} retained in signed history</div>`:'')+`</section>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
-  if(!(rows||[]).length) return '';
+  const selected=_boundedLatestUnique(rows,(row)=>
+    `${row?.base||''}\u0000${row?.run||''}\u0000${row?.workspaceId||''}`,8);
+  if(!selected.length) return '';
   return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · ArtifactBundle lifecycle unknown</small></div>`
-    +rows.slice(0,2).map((row)=>{ const terminal=[
+    +selected.slice(-2).reverse().map((row)=>{ const terminal=[
         row.terminalState?`state ${row.terminalState}`:'',
         row.terminalStatus?`status ${row.terminalStatus}`:'',
       ].filter(Boolean);
@@ -4529,11 +4561,12 @@ async function refreshSystemView(){
     const liveEnvRows=liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[];
     const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:'Live shared worktree',scope:'environment worktree'});
     const liveFileCount=liveEnvRows.reduce((total,row)=>total+(Number(row.fileCount)||0),0);
-    const artRow=liveEnvOutputs||(artifactRows.length
+    const declaredEnvOutputs=artifactRows.length
       ?_ownedOutputsHTML(artifactRows,{label:'Shared outputs',scope:'environment worktree'})
       :(manifestFiles.length?`<section class="owned-outputs env-owned-outputs"><div class="owned-outputs-head"><span>Shared outputs</span><small>environment worktree</small></div>`
         +`<button type="button" class="owned-output ds-amber" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"><span class="owned-output-icon">${icon('box','ico-sm')}</span>`
-        +`<span class="owned-output-copy"><b>${esc(manifestBundleId||'Current workspace')}</b><small>${fileCount} file${fileCount===1?'':'s'}${manifestAuthored.length?` · authored: ${esc(manifestAuthored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button></section>`:''));
+        +`<span class="owned-output-copy"><b>${esc(manifestBundleId||'Current workspace')}</b><small>${fileCount} file${fileCount===1?'':'s'}${manifestAuthored.length?` · authored: ${esc(manifestAuthored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button></section>`:'');
+    const artRow=liveEnvOutputs+declaredEnvOutputs;
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
@@ -6118,7 +6151,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
     if(myFiles.length&&!manifestFiles.length)
       html+=`<details class="artifact-index"><summary><span>Browse ${myFiles.length} signed file record${myFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary><div class="artifact-index-body atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
-        +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc((a._links||{}).media_kind||'')}</span></div>`).join('')+`</div></details>`;
+        +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc(declaredArtifactMedia(a))}</span></div>`).join('')+`</div></details>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
   if(roster.length){
@@ -6193,11 +6226,12 @@ function renderArtifactNode(node,prefix,depth,pkgRun){
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
     const authored=authoredArtifactLabels(a), semanticAttr=artifactSemanticsAttr(a);
+    const media=declaredArtifactMedia(a);
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(a.media_kind)}" data-semantics="${esc(semanticAttr)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}">${esc(f.name)}</a>`
+      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(media)}" data-semantics="${esc(semanticAttr)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}">${esc(f.name)}</a>`
       : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
     const sz=(a.size_bytes??a.size??a.bytes);
-    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${authored.length?`authored: ${esc(authored.join(' · '))} · `:''}${esc(a.media_kind||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
+    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${authored.length?`authored: ${esc(authored.join(' · '))} · `:''}${esc(media||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
 }
 function renderArtifactTree(arts,pkgRun){
@@ -6225,7 +6259,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
         const L2=r._links||{}; const h=String(L2.content_hash||'').replace('sha256:','').slice(0,10);
         const authored=authoredArtifactLabelText(r);
         return `<div class="grant"><span class="l2">${esc(r.label||'file')}</span>`
-          +`<span class="tier">${authored?`authored: ${esc(authored)} · `:''}${esc(L2.media_kind||'')}${h?` · ${h}…`:''}</span></div>`;
+          +`<span class="tier">${authored?`authored: ${esc(authored)} · `:''}${esc(declaredArtifactMedia(r))}${h?` · ${h}…`:''}</span></div>`;
       }).join('');
     }
     return {title:'deliverable (manifest)', html:mh};
@@ -6496,7 +6530,7 @@ async function liveFileView(base,run,workspaceId,path){
   const stateKey=_liveRunKey(base,run); const bodyKey=_liveFileStateKey(base,run,workspaceId,path);
   S.openLiveFile={stateKey,base,run,workspaceId,path,hash:file.sha256,bodyKey};
   const raw=!!(S.liveRawModes&&S.liveRawModes.get(bodyKey));
-  return fileView(base,file.body_url,path,file.media_kind,{
+  return fileView(base,file.body_url,path,declaredArtifactMedia(file),{
     raw,size:file.size_bytes,contentHash:file.sha256,
     authoredLabels:authoredArtifactLabels(file),
     liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source,
@@ -7242,7 +7276,7 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
     // content link still opens. _bodyPath adds the k/<run>/ prefix to hit the served bytes.
     const cpath=L.content||((r.title||r.label)?('artifacts/package/'+(r.title||r.label)):'');
     const _b=r._base||'';
-    if(cpath) return fileView(_b, /k\/run-/.test(_b)?cpath:_bodyPath(cpath,runOf(r)), r.label, L.media_kind,{
+    if(cpath) return fileView(_b, /k\/run-/.test(_b)?cpath:_bodyPath(cpath,runOf(r)), r.label, declaredArtifactMedia(r),{
       authoredLabels:authoredArtifactLabels(r),
       contentHash:L.content_hash||r.content_hash||null,
     });
@@ -8066,28 +8100,19 @@ function onGossipRecord(doc){
   // lookup aliases only and can never insert, display, or overwrite UI records.
   if(doc?.record) queueProviderHints(doc.record,'libp2p gossip');
 }
-let _p2pRendezvousCid=null;
-async function p2pRendezvousCid(){
-  if(_p2pRendezvousCid) return _p2pRendezvousCid;
-  const digest=hexToBytes(await sha256Hex(enc.encode('personaos-discovery-rendezvous/v1')));
-  const multihash=new Uint8Array(34); multihash.set([0x12,0x20]); multihash.set(digest,2);
-  _p2pRendezvousCid=Object.freeze({multihash:Object.freeze({bytes:multihash}),
-    toString:()=> 'personaos-discovery-rendezvous/v1'});
-  return _p2pRendezvousCid;
-}
 async function refreshP2PRendezvous(){
-  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting) return;
-  const cid=await p2pRendezvousCid(); const signal=AbortSignal.timeout(8000); let found=0;
+  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return;
+  const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000); let found=0;
   try{
-    await P2P.node.contentRouting.provide(cid,{signal});
     for await(const provider of P2P.node.contentRouting.findProviders(cid,{signal})){
       if(provider?.id?.equals?.(P2P.node.peerId)) continue;
+      const target=provider.multiaddrs?.[0];
+      if(!target) continue;
       found++;
-      const target=provider.multiaddrs?.[0]||provider.id;
-      if(target) P2P.node.dial(target,{signal:AbortSignal.timeout(5000)}).catch(()=>{});
-      if(found>=16) break;
+      P2P.node.dial(target,{signal:AbortSignal.timeout(5000)}).catch(()=>{});
+      break;
     }
-    log('p2p',`DHT rendezvous provided; ${found} peer provider(s) resolved`,true);
+    log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
   }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
 }
 async function initP2P(){
@@ -8105,7 +8130,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v2');
+    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v3');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
