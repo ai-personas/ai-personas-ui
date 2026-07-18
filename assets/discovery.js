@@ -3657,6 +3657,26 @@ function _personaAvatarRevision(descriptor){
 function _personaAvatarMountRevision(descriptor,signedCard){
   return descriptor?`${_personaAvatarRevision(descriptor)}:${String(signedCard?._personaIdentityPublicKeyHex||'')}`:'';
 }
+function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaRef(personaKey).key);
+  const avatarField=lifecycle?.identityFields?.avatar;
+  const lifecyclePending=avatarField?.state==='pending'&&avatarField?.personaAuthored===false;
+  if(lifecyclePending) return {
+    visible:'avatar pending · not persona-authored',
+    accessible:'avatar pending · not persona-authored; deterministic monogram shown',
+    lifecycle:'pending',
+  };
+  if(state==='failed'||signedCard?.avatar) return {
+    visible:'portrait unavailable',
+    accessible:'deterministic monogram shown; persona-authored raster avatar unavailable',
+    lifecycle:'unavailable',
+  };
+  return {
+    visible:'no persona-authored avatar',
+    accessible:'deterministic monogram shown; no persona-authored raster avatar admitted',
+    lifecycle:'absent',
+  };
+}
 function _personaAvatarHTML(personaKey){
   const ref=_personaRef(personaKey);
   // Avatar shape is inspected synchronously only to make signed descriptor
@@ -3666,13 +3686,12 @@ function _personaAvatarHTML(personaKey){
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const placeholderLabel=state==='local'?'instant local avatar':state==='failed'?'local avatar · portrait unavailable':'local avatar · verifying portrait';
-  const avatarLabel=state==='local'
-    ?'instant deterministic local avatar; no optional persona-authored raster admitted'
-    :state==='failed'
-      ?'instant deterministic local avatar; optional persona-authored raster unavailable'
-      :'instant deterministic local avatar shown while optional persona-authored raster is verified';
-  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" aria-label="${esc(avatarLabel)}">`
+  const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
+  const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
+  const avatarLabel=descriptor
+    ?'deterministic monogram shown while persona-authored raster avatar is verified'
+    :fallback.accessible;
+  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
     +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor){
@@ -3773,14 +3792,15 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
 }
 function _neutralPersonaAvatar(mount,state='failed'){
   mount.dataset.avatarState=state;
-  mount.setAttribute('aria-label',state==='local'
-    ?'instant deterministic local avatar; no optional persona-authored raster admitted'
-    :'instant deterministic local avatar; optional persona-authored raster unavailable');
   const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
   placeholder.setAttribute('aria-hidden','true');
   const ref=_personaRef(_entityKeyFromDom(mount.dataset.avatarKey||''));
+  const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
+  const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
+  mount.dataset.avatarLifecycle=fallback.lifecycle;
+  mount.setAttribute('aria-label',fallback.accessible);
   const monogram=document.createElement('strong'); monogram.textContent=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
-  const label=document.createElement('small'); label.textContent=state==='local'?'instant local avatar':'local avatar · portrait unavailable';
+  const label=document.createElement('small'); label.textContent=fallback.visible;
   placeholder.append(monogram,label);
   mount.replaceChildren(placeholder);
 }
@@ -3801,7 +3821,8 @@ async function _hydratePersonaAvatarMount(mount){
     img.decoding='async'; img.draggable=false; img.width=asset.width; img.height=asset.height;
     img.addEventListener('error',()=>{ if(mount.isConnected&&mount.contains(img)) _neutralPersonaAvatar(mount); },{once:true});
     img.src=asset.url;
-    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.setAttribute('aria-label','verified optional persona-authored raster avatar');
+    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.dataset.avatarLifecycle='materialized';
+    mount.setAttribute('aria-label','verified persona-authored raster avatar');
   }catch(e){ if(mount.isConnected&&mount.dataset.avatarRevision===revision) _neutralPersonaAvatar(mount); }
 }
 function _hydratePersonaAvatars(){
@@ -3836,6 +3857,74 @@ function _artifactPresentationKey(r){ const L=r?._links||{};
     label=String(r?.label||r?.artifact_id||'');
   return (hash||path||label)?`${hash}\u0000${path}\u0000${label}`:String(r?._storeKey||r?.record_id||r?.did||'');
 }
+function _artifactDisplayPath(r){
+  const L=r?._links||{}, authored=String(r?.path||r?.title||r?.artifact_id||'').trim();
+  if(authored) return authored;
+  const body=String(L.content||r?.content||r?.package_path||'');
+  const marker='/artifacts/package/', index=body.lastIndexOf(marker);
+  if(index>=0) return body.slice(index+marker.length);
+  return String(r?.label||'').trim()||(body.split('/').filter(Boolean).at(-1)||'artifact');
+}
+function _artifactRevisionKey(r){ const L=r?._links||{};
+  return String(L.bundle_id||r?.bundle_id||runOf(r)||'unversioned');
+}
+function _artifactRevisionOrder(rows){
+  let run='', record='';
+  for(const row of rows||[]){
+    const candidateRun=String(runOf(row)||''); if(candidateRun>run) run=candidateRun;
+    const candidateRecord=String(row?.record_id||row?.card_id||row?._storeKey||'');
+    if(candidateRecord>record) record=candidateRecord;
+  }
+  return `${run}\u0000${record}`;
+}
+function _artifactRevisionProjection(artifacts){
+  const rows=_boundedLatestUnique(artifacts,_artifactPresentationKey,LIVE_ARTIFACT_LIMITS.maxFiles*4);
+  const files=rows.filter((row)=>{ const L=row?._links||{};
+    return typeof L.content==='string'||typeof L.content_stub==='string'||row?.package_path
+      ||(L.bundle_id&&(L.content_hash||row?.content_hash)); });
+  const groups=new Map();
+  for(const file of files){ const key=_artifactRevisionKey(file);
+    (groups.get(key)||groups.set(key,[]).get(key)).push(file); }
+  const revisions=[...groups].map(([key,groupRows])=>{
+    const unique=new Map();
+    for(const row of groupRows){ const path=_artifactDisplayPath(row);
+      if(unique.has(path)) unique.delete(path); unique.set(path,row); }
+    return {key,rows:[...unique.values()].sort((a,b)=>_artifactDisplayPath(a).localeCompare(_artifactDisplayPath(b))),
+      order:_artifactRevisionOrder(groupRows)};
+  }).sort((a,b)=>a.order.localeCompare(b.order)||a.key.localeCompare(b.key));
+  const current=revisions.at(-1)||null;
+  return {rows,current,history:current?revisions.slice(0,-1).reverse():[]};
+}
+function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMetadata=false}={}){
+  if(!r) return '';
+  // The caller must establish either a provider/document-verified record or a
+  // manifest reached through a provider-verified environment route. The button
+  // remains inert otherwise, and also requires an exact advertised SHA-256.
+  // fileView performs the separate byte fetch + hash check only after selection.
+  const L=r._links||{}, label=_artifactDisplayPath(r), media=declaredArtifactMedia(r)||'undeclared media';
+  const hash=String(L.content_hash||r.content_hash||'');
+  const rawPath=String(L.content||r.content||r.package_path||'');
+  const path=rawPath&&run&&!/^(?:https?:|\/|k\/run-)/.test(rawPath)?_bodyPath(rawPath,run):rawPath;
+  const size=r.size_bytes??r.size??r.bytes??'';
+  const semantics=artifactSemanticsAttr(r), resolvedBase=String(base||r._base||'');
+  const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
+  const canPreview=verifiedMetadata===true&&!!path&&/^sha256:[0-9a-f]{64}$/i.test(hash);
+  const canInspect=verifiedMetadata===true&&!!aid;
+  if(!canPreview&&!canInspect){
+    return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — preview unavailable because manifest metadata is not independently verified">`
+      +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+      +`<small>${esc(scope)} · filename observed through a verified manifest route; manifest bytes are not independently signed or hash-bound</small></span>`
+      +`<span class="current-artifact-preview">Preview unavailable</span></div>`;
+  }
+  const action=canPreview
+    ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}"`
+    :`data-artid="${esc(aid)}"`;
+  const authored=authoredArtifactLabelText(r);
+  return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'fetch, hash-check and preview':'inspect'} ${esc(label)}">`
+    +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<small>${esc(scope)} · ${esc(media)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
+    +`<span class="current-artifact-preview">${canPreview?'Preview':'Inspect'} →</span></button>`;
+}
 function _artifactActionHTML(r,{scope='output'}={}){
   if(!r) return '';
   const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
@@ -3846,30 +3935,76 @@ function _artifactActionHTML(r,{scope='output'}={}){
     +`<small>${esc(scope)}${info.state?` · ${esc(info.state.replace(/_/g,' '))}`:''}${info.files?` · ${info.files} files`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>${icon('chevron','ico-sm')}</button>`;
 }
 function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona worktree'}={}){
-  const rows=_boundedLatestUnique(artifacts,_artifactPresentationKey,32), bundles=rows.filter((r)=>r?._links?.bundle);
-  const selected=bundles.length?[bundles[bundles.length-1]]:rows.slice(-2).reverse();
+  const projection=_artifactRevisionProjection(artifacts), rows=projection.rows;
+  if(projection.current?.rows.length){
+    const current=projection.current.rows;
+    const authored=[...new Set(current.flatMap((r)=>authoredArtifactLabels(r)))].slice(0,8);
+    const history=projection.history;
+    return `<section class="owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span>`
+      +`<small>${current.length} current unique file${current.length===1?'':'s'} · ${esc(scope)} · signed metadata</small></div>`
+      +`<div class="current-artifact-list" aria-label="${esc(label)} — current files">${current.map((r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true})).join('')}</div>`
+      +`<div class="artifact-preview-note">Select a file to fetch it on demand, verify its SHA-256, and open the preview.</div>`
+      +(authored.length?`<div class="owned-output-history">authored role claims · ${esc(authored.join(' · '))}</div>`:'')
+      +(history.length?`<div class="artifact-revision-history"><b>Revision history</b><span>${history.length} earlier signed revision${history.length===1?'':'s'} kept separate from the ${current.length}-file current workspace.</span>`
+        +history.slice(0,12).map((revision)=>`<span><code>${esc(revision.key)}</code> · ${revision.rows.length} file${revision.rows.length===1?'':'s'}</span>`).join('')
+        +(history.length>12?`<span>${history.length-12} additional earlier revisions retained in verified records</span>`:'')+`</div>`:'')+`</section>`;
+  }
+  const bundles=rows.filter((r)=>r?._links?.bundle), selected=bundles.length?[bundles.at(-1)]:rows.slice(-1);
   if(!selected.length) return '';
-  const earlier=Math.max(0,bundles.length-1);
   const authored=[...new Set(rows.flatMap((r)=>authoredArtifactLabels(r)))].slice(0,8);
   return `<section class="owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${esc(scope)}</small></div>`
     +selected.map((r)=>_artifactActionHTML(r,{scope})).join('')
     +(authored.length?`<div class="owned-output-history">authored role claims · ${esc(authored.join(' · '))}</div>`:'')
-    +(earlier?`<div class="owned-output-history">${earlier} earlier revision${earlier===1?'':'s'} retained in signed history</div>`:'')+`</section>`;
+    +(rows.length>selected.length?`<div class="owned-output-history">${rows.length-selected.length} earlier signed record${rows.length-selected.length===1?'':'s'} retained separately</div>`:'')+`</section>`;
+}
+function _liveWorkspaceRevisionOrder(row){
+  const signedTime=Date.parse(String(row?.generatedAt||''));
+  // Run ids are monotonic ULIDs minted when the causal run begins. Prefer that
+  // lineage order across resumed runs; a finalized predecessor can be served or
+  // re-observed later and must not become "current" merely because of fetch time.
+  return `${String(row?.run||'')}\u0000${Number.isFinite(signedTime)?String(signedTime).padStart(16,'0'):''}\u0000${String(row?.revision||'')}`;
+}
+function _currentLiveWorkspaceProjection(rows){
+  const bounded=_boundedLatestUnique(rows,(row)=>
+    `${row?.kernel||row?.base||''}\u0000${row?.run||''}\u0000${row?.workspaceId||''}`,48);
+  const currentByWorkspace=new Map(), history=[];
+  for(const row of bounded){
+    const key=`${row?.kernel||row?.base||''}\u0000${row?.workspaceId||row?.run||''}`, prior=currentByWorkspace.get(key);
+    if(!prior){ currentByWorkspace.set(key,row); continue; }
+    if(_liveWorkspaceRevisionOrder(row)>_liveWorkspaceRevisionOrder(prior)){
+      history.push(prior); currentByWorkspace.set(key,row);
+    }else history.push(row);
+  }
+  const current=[...currentByWorkspace.values()].sort((a,b)=>
+    _liveWorkspaceRevisionOrder(b).localeCompare(_liveWorkspaceRevisionOrder(a)));
+  history.sort((a,b)=>_liveWorkspaceRevisionOrder(b).localeCompare(_liveWorkspaceRevisionOrder(a)));
+  return {current,history};
+}
+function _liveWorkspaceCurrentFileCount(rows){
+  return _currentLiveWorkspaceProjection(rows).current.reduce((total,row)=>total+(row.files?.length||0),0);
+}
+function _liveCurrentFileActionHTML(file,row,scope){
+  const label=String(file?.path||'artifact'), authored=authoredArtifactLabelText(file);
+  return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="fetch, hash-check and preview ${esc(label)}">`
+    +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<small>${esc(scope)} · ${esc(declaredArtifactMedia(file)||'undeclared media')} · ${fmtBytes(file.size_bytes)}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
+    +`<span class="current-artifact-preview">Preview →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
-  const selected=_boundedLatestUnique(rows,(row)=>
-    `${row?.base||''}\u0000${row?.run||''}\u0000${row?.workspaceId||''}`,8);
-  if(!selected.length) return '';
-  return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · ArtifactBundle lifecycle unknown</small></div>`
-    +selected.slice(-2).reverse().map((row)=>{ const terminal=[
-        row.terminalState?`state ${row.terminalState}`:'',
-        row.terminalStatus?`status ${row.terminalStatus}`:'',
-      ].filter(Boolean);
-      return `<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
-      +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
-      +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'}${terminal.length?'':` · ${esc(row.state||'live')}`}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small>`
-      +(terminal.length?`<span class="transport-badge verified live-terminal-badge">SIGNED TERMINAL · ${esc(terminal.join(' · '))}</span>`:'')
-      +`</span>${icon('chevron','ico-sm')}</button>`; }).join('')+`</section>`;
+  const projection=_currentLiveWorkspaceProjection(rows);
+  if(!projection.current.length) return '';
+  const fileCount=projection.current.reduce((total,row)=>total+(row.files?.length||0),0);
+  return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${fileCount} current unique file${fileCount===1?'':'s'} · signed workspace snapshot</small></div>`
+    +projection.current.map((row)=>{ const terminal=[
+      row.terminalState?`state ${row.terminalState}`:'',row.terminalStatus?`status ${row.terminalStatus}`:'',
+    ].filter(Boolean);
+      return `<div class="current-workspace"><div class="current-workspace-head"><span><b>Current files</b> · <code>${esc(row.workspaceId||row.run)}</code></span><span>${row.files.length} file${row.files.length===1?'':'s'}${terminal.length?` · ${esc(terminal.join(' · '))}`:` · ${esc(row.state||'live')}`}</span></div>`
+        +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">workspace is currently empty</span>'}</div></div>`;
+    }).join('')
+    +`<div class="artifact-preview-note">Select a current file to fetch it on demand, verify its SHA-256, and open the preview. ArtifactBundle lifecycle remains separate.</div>`
+    +(projection.history.length?`<div class="artifact-revision-history"><b>Revision history</b><span>${projection.history.length} earlier signed workspace revision${projection.history.length===1?'':'s'} excluded from the current file count.</span>`
+      +projection.history.slice(0,12).map((row)=>`<span><code>${esc(row.run)}</code> · ${row.files.length} file${row.files.length===1?'':'s'} · ${esc(String(row.revision||'').slice(0,16))}</span>`).join('')
+      +(projection.history.length>12?`<span>${projection.history.length-12} additional earlier revisions retained</span>`:'')+`</div>`:'')+`</section>`;
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -4571,10 +4706,12 @@ async function refreshSystemView(){
     const k=envKey(r._kernel,sid); let b=bySid.get(k);
     if(b){ b.recId=b.recId||id; b.run=b.run||run; b.verified=true; if(b.name===b.envId) b.name=r.label||b.name;
       if(!b.type&&cap.length) b.type=cap[cap.length-1]; if(!b.exportRel) b.exportRel=exportRel;
-      if(!b.artifactManifestRel) b.artifactManifestRel=manifestRel; }
+      if(!b.artifactManifestRel) b.artifactManifestRel=manifestRel;
+      if(manifestRel&&b.artifactManifestRel===manifestRel) b.artifactManifestRouteVerified=true; }
     else { b={base:r._base||'',kernel:r._kernel||'',envId:r.did||sid,sid,
         name:r.label||sid,type:cap[cap.length-1]||'env',status:'',members:[],spans:[],
-        run,recId:id,live:false,verified:true,exportRel,artifactManifestRel:manifestRel};
+        run,recId:id,live:false,verified:true,exportRel,artifactManifestRel:manifestRel,
+        artifactManifestRouteVerified:!!manifestRel};
       bySid.set(k,b); envBlocks.push(b); }
   }
   // (2b) An env whose LIVE feed is absent (a federated env, or any env whose live
@@ -4687,18 +4824,37 @@ async function refreshSystemView(){
     const snap=state?.snapshot||{};
     for(const ws of (snap.workspaces||[])){
       const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=_shortId(ws.environment_id||'');
-      const workspaceFiles=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId);
+      const workspaceFiles=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId)
+        .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,run:state.run,workspaceId,fileCount,authored,state:ws.state||'live',
+      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,workspaceId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
-        generatedAt:String(snap.generated_at||'')};
+        generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
         (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
       if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
         (liveWorkspacesByEnv.get(ek)||liveWorkspacesByEnv.set(ek,[]).get(ek)).push(row); }
     }
   }
+  // A manifest-only generation can have one verified bundle card but no
+  // per-file cards. Resolve its manifest only from the latest run's exact route
+  // in those already provider/document-verified artifact rows. Conflicting
+  // routes or run bindings fail closed; environment titles and fetch order have
+  // no authority here.
+  await Promise.all(envBlocks.map(async(b)=>{
+    const rows=envArtifacts(b); if(!rows.length||_artifactRevisionProjection(rows).current?.rows.length) return;
+    const runs=[...new Set(rows.map((row)=>runOf(row)).filter(Boolean))].sort();
+    const run=runs.at(-1); if(!run) return;
+    const currentRows=rows.filter((row)=>runOf(row)===run);
+    const routes=[...new Set(currentRows.map((row)=>String(row?._links?.artifact_manifest||'')).filter(Boolean))];
+    if(routes.length!==1) return;
+    const route=routes[0], routeRun=(route.match(/(?:^|\/)k\/(run-[0-9A-Za-z]+)(?:\/|$)/)||[])[1]||'';
+    if(routeRun!==run) return;
+    const manifest=await fetchEntityFeed(b.base,route);
+    if(manifest?.schema!=='personaos-event-driven-artifact-manifest/1'||!Array.isArray(manifest.artifacts)) return;
+    b.artifactManifestRel=route; b.artifactManifest=manifest; b.artifactManifestRouteVerified=true;
+  }));
 
   // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
   // so the one persona actually working floats to the top of its lane instead of sitting in
@@ -4717,34 +4873,44 @@ async function refreshSystemView(){
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
   const envOutputContext=(b)=>{
-    const manifestFiles=envManifestFiles(b);
     const arts=envArtifacts(b);
-    const bundles=arts.filter((a)=>a._links&&a._links.bundle);
-    // file cards carry content_stub/content_hash (the public projection), not always a
-    // raw `content` link — count any of them so the bundle chip shows a real file count.
-    const fileCount=manifestFiles.length||arts.filter((a)=>{ const L=a._links||{};
-      return L.content||L.content_stub||L.content_hash; }).length;
-    // env-meta file count EXCLUDES the bundle wrapper (its own content_hash) so the
-    // headline agrees with the deliverable chip's "N files" instead of overcounting.
-    const metaFiles=manifestFiles.length||arts.filter((a)=>{ const L=a._links||{};
-      return (L.content||L.content_stub||L.content_hash)&&!(L.bundle); }).length;
-    const manifestBundleId=(b.artifactManifest&&b.artifactManifest.current_bundle_id)||'';
-    const manifestAuthored=[...new Set(manifestFiles.flatMap((item)=>authoredArtifactLabels(item)))].slice(0,8);
-    const artifactRows=bundles.length?bundles:arts;
+    const declaredProjection=_artifactRevisionProjection(arts);
+    const routedManifestEntries=b.artifactManifestRouteVerified===true?envManifestFiles(b):[];
+    const routedManifestFiles=routedManifestEntries.slice(0,LIVE_ARTIFACT_LIMITS.maxFiles);
+    const manifestUnique=new Map();
+    for(const file of routedManifestFiles){ const path=String(_artifactDisplayPath(file)||'').normalize('NFC')
+        .replace(/[\u0000-\u001f\u007f]/gu,' ').trim().slice(0,LIVE_ARTIFACT_LIMITS.maxPathLength);
+      if(!path) continue; if(manifestUnique.has(path)) manifestUnique.delete(path);
+      // Only the bounded filename crosses this unverified-manifest fallback.
+      // MIME, size, hashes, semantic claims and body routes remain unavailable.
+      manifestUnique.set(path,{title:path}); }
+    const currentManifestFiles=[...manifestUnique.values()];
+    const manifestRunMatch=String(b.artifactManifestRel||'').match(/(?:^|\/)k\/(run-[0-9A-Za-z]+)(?:\/|$)/);
+    const manifestRunId=manifestRun(b.artifactManifest)||(manifestRunMatch?.[1]||'');
+    // A workspace can publish several signed bundle generations. Only the latest
+    // generation is the current file set; prior generations remain history and
+    // must never be added into the headline (3 files + 4 files is 4 current, not 7).
+    const fileCount=declaredProjection.current?.rows.length||(manifestRunId?currentManifestFiles.length:0);
+    const metaFiles=fileCount;
     const liveEnvRows=liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[];
     const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:'Live shared worktree',scope:'environment worktree'});
-    const liveFileCount=liveEnvRows.reduce((total,row)=>total+(Number(row.fileCount)||0),0);
-    const declaredEnvOutputs=artifactRows.length
-      ?_ownedOutputsHTML(artifactRows,{label:'Shared outputs',scope:'environment worktree'})
-      :(manifestFiles.length?`<section class="owned-outputs env-owned-outputs"><div class="owned-outputs-head"><span>Shared outputs</span><small>environment worktree</small></div>`
-        +`<button type="button" class="owned-output ds-amber" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"><span class="owned-output-icon">${icon('box','ico-sm')}</span>`
-        +`<span class="owned-output-copy"><b>${esc(manifestBundleId||'Current workspace')}</b><small>${fileCount} file${fileCount===1?'':'s'}${manifestAuthored.length?` · authored: ${esc(manifestAuthored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button></section>`:'');
+    const liveFileCount=_liveWorkspaceCurrentFileCount(liveEnvRows);
+    const manifestOutputs=!liveFileCount&&!declaredProjection.current?.rows.length&&currentManifestFiles.length&&manifestRunId
+      ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
+        +`<div class="current-artifact-list" aria-label="Shared outputs — current manifest filenames">${currentManifestFiles.map((file)=>
+          _artifactPreviewActionHTML(file,{scope:'environment worktree',base:b.base,run:manifestRunId,verifiedMetadata:false})).join('')}</div>`
+        +`<div class="artifact-preview-note">The manifest route and run come from a verified record, but the fetched manifest bytes are not independently signed or hash-bound. Filenames remain visible; preview stays unavailable until signed file cards or a signed live snapshot supplies authoritative hashes.</div>`
+        +(routedManifestEntries.length>currentManifestFiles.length?`<div class="owned-output-history">${routedManifestEntries.length-currentManifestFiles.length} manifest entries not shown after bounded, unique-path projection</div>`:'')
+        +`<div class="artifact-revision-history"><b>Revision history</b><span>No earlier verified file-card generation is published for this manifest-only workspace.</span></div></section>`:'';
+    const declaredEnvOutputs=!liveFileCount&&declaredProjection.current?.rows.length
+      ?_ownedOutputsHTML(arts,{label:'Shared outputs',scope:'environment worktree'})
+      :manifestOutputs;
     const artRow=liveEnvOutputs+declaredEnvOutputs;
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
     const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
     const statusOk=(b.status==='active' && !departed);
     return {artRow,departed,statusTxt,statusOk,
-      metaFiles:liveEnvRows.length?liveFileCount:metaFiles};
+      metaFiles:liveFileCount||metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
@@ -7778,6 +7944,20 @@ function wire(){
     // click doesn't also open the drawer.
     const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=_entityKeyFromDom(fb.dataset.follow);
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
+    const liveFile=e.target.closest('[data-live-current-file]'); if(liveFile){ e.preventDefault(); e.stopPropagation();
+      S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(liveFile);
+      S.views=[()=>liveFileView(liveFile.dataset.liveFileBase||'',liveFile.dataset.liveFileRun,
+        liveFile.dataset.liveFileWorkspace,liveFile.dataset.liveFilePath)];
+      $('#detailwrap').classList.add('open'); renderTop(); return; }
+    const currentFile=e.target.closest('[data-current-artifact-path]'); if(currentFile){ e.preventDefault(); e.stopPropagation();
+      const size=currentFile.dataset.currentArtifactSize;
+      const options={contentHash:currentFile.dataset.currentArtifactHash||null,
+        size:size!==''&&Number.isFinite(Number(size))?Number(size):null,
+        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics)};
+      S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(currentFile);
+      S.views=[()=>fileView(currentFile.dataset.currentArtifactBase||'',currentFile.dataset.currentArtifactPath,
+        currentFile.dataset.currentArtifactTitle,currentFile.dataset.currentArtifactKind,options)];
+      $('#detailwrap').classList.add('open'); renderTop(); return; }
     const liveOutput=e.target.closest('[data-live-output-run]'); if(liveOutput){ e.stopPropagation();
       S._lastFocus=document.activeElement; S.views=[()=>operatorRunView(liveOutput.dataset.liveOutputBase||'',liveOutput.dataset.liveOutputRun)];
       markInspectionSource(liveOutput); $('#detailwrap').classList.add('open'); renderTop(); return; }

@@ -131,9 +131,10 @@ an offline origin's bytes are unavailable. Trust still comes from signatures and
 not from the commons carrying them. Mixed node bootstrap documents are split at the browser
 boundary: HTTPS values remain federation routes, while only bounded `/...` multiaddrs reach
 js-libp2p bootstrap discovery, so one HTTP peer cannot abort valid P2P dialing.
-The static transport commons lists four replaceable HTTPS PersonaOS peer routes and four
-geographically distinct public libp2p WSS bootstrap peers, and uses the shared public DHT. They
-carry location only: no peer hint can admit a
+The static transport commons lists four geographically distinct public libp2p WSS bootstrap peers
+and uses the shared public DHT. Short-lived node/tunnel routes are deliberately not committed to
+the static portal: an online publisher announces its current signed route through the DHT, gossip,
+or another reached node instead. The bootstrap peers carry location only: no peer hint can admit a
 node or data without the current-master, signed-inventory, access-policy, and content-hash checks.
 Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
 no default relay or PersonaOS data server is required.

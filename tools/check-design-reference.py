@@ -108,8 +108,8 @@ def main() -> None:
             and "p.get('no_global_discovery')==='1'" in portal
             and len(p2p_multiaddrs) >= 2
             and all(isinstance(value, str) and '/wss/p2p/' in value for value in p2p_multiaddrs)
-            and len(p2p_https_routes) >= 2
             and all(isinstance(value, str) and value.startswith('https://') for value in p2p_https_routes)
+            and all('trycloudflare.com' not in value for value in p2p_https_routes)
             and 'verifyGossipProviderEnvelope' in portal
             and 'async function verifyGlobalEnvelope(env)' in portal
             and 'exp<=Date.now()' in portal
