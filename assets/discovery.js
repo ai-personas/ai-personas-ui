@@ -1061,7 +1061,7 @@ function collectP2PBootstraps(boot,{dial=false}={}){
     boot?.reachability_profile?.relay_peers,
   ],{dial});
 }
-async function loadPortalP2PBootstrapHints(){
+async function loadPortalP2PBootstrapHints({dial=false}={}){
   // This same-origin file is a replaceable transport commons, not a registry:
   // it can only help the browser reach libp2p. It cannot admit a node, persona,
   // telemetry frame or artifact; those still traverse the current-master,
@@ -1069,7 +1069,7 @@ async function loadPortalP2PBootstrapHints(){
   const hints=await fetchJson(PORTAL_P2P_HINTS_URL,{
     signal:AbortSignal.timeout(3000),maxBytes:PORTAL_P2P_HINTS_MAX_BYTES});
   if(!Array.isArray(hints)) return [];
-  const admitted=rememberP2PBootstraps([hints]);
+  const admitted=rememberP2PBootstraps([hints],{dial});
   if(admitted.length)
     log('p2p',`${admitted.length} same-origin transport bootstrap hint(s) admitted; zero record authority`);
   return admitted;
@@ -7986,7 +7986,7 @@ function _p2pBootstrapDialState(multiaddr){
   let state=S.p2pDialStates.get(multiaddr);
   if(state) return state;
   if(S.p2pDialStates.size>=P2P_BOOTSTRAP_LIMITS.maxKnown) return null;
-  state={queued:false,active:false,retry:false,nextAt:0,attempts:0};
+  state={queued:false,active:false,retry:false,nextAt:0,attempts:0,peerId:''};
   S.p2pDialStates.set(multiaddr,state); return state;
 }
 function _scheduleP2PBootstrapRetries(){
@@ -8017,6 +8017,15 @@ function _queueP2PBootstrapDial(multiaddr){
   const state=_p2pBootstrapDialState(multiaddr); if(!state||state.queued||state.active) return;
   const now=Date.now();
   if(state.nextAt>now){ if(state.retry) _scheduleP2PBootstrapRetries(); return; }
+  if(state.peerId&&P2P.node.getConnections().some((connection)=>
+      connection.remotePeer?.toString?.()===state.peerId)){
+    // A successful bootstrap is a renewable lease, not a reason to redial an
+    // already connected peer every minute. Keep the bounded liveness check
+    // armed so a later disconnect remains recoverable.
+    state.retry=true;
+    state.nextAt=now+P2P_BOOTSTRAP_LIMITS.successfulRedialMs;
+    _scheduleP2PBootstrapRetries(); return;
+  }
   if(S.p2pDialQueue.length>=P2P_BOOTSTRAP_LIMITS.maxQueue){
     state.retry=true; state.nextAt=now+250; _scheduleP2PBootstrapRetries(); return;
   }
@@ -8033,8 +8042,9 @@ function _pumpP2PBootstrapDials(){
     // rejection boundary. A malformed locator can never strand an active slot.
     Promise.resolve().then(()=>P2P.dialBootstrap(multiaddr,
       {signal:AbortSignal.timeout(P2P_BOOTSTRAP_LIMITS.dialTimeoutMs)}))
-      .then(()=>{
-        state.attempts=0; state.retry=false;
+      .then((connection)=>{
+        state.attempts=0; state.retry=true;
+        state.peerId=connection?.remotePeer?.toString?.()||state.peerId;
         state.nextAt=Date.now()+P2P_BOOTSTRAP_LIMITS.successfulRedialMs;
         log('p2p','new browser bootstrap connected',true);
         updateP2PStatus(); _ensureP2PRendezvousSchedule();
@@ -8051,6 +8061,33 @@ function _pumpP2PBootstrapDials(){
         _pumpP2PBootstrapDials(); _scheduleP2PBootstrapRetries();
       });
   }
+}
+function _rearmDisconnectedP2PBootstrap(peerId){
+  if(!P2P?.dialBootstrap) return;
+  const exact=String(peerId||''), now=Date.now(); let matched=false;
+  for(const [multiaddr,state] of S.p2pDialStates){
+    if(exact&&state.peerId!==exact) continue;
+    matched=true; state.retry=true; state.nextAt=now;
+    _queueP2PBootstrapDial(multiaddr);
+  }
+  // The bootstrap plugin can establish a connection before the direct fallback
+  // records its peer id. If the browser has lost every connection, re-arm every
+  // admitted generic route; queue and concurrency ceilings still apply.
+  if(!matched&&!P2P.node.getConnections().length){
+    for(const multiaddr of S.p2pBootstraps){
+      const state=_p2pBootstrapDialState(multiaddr); if(!state) continue;
+      state.retry=true; state.nextAt=now; _queueP2PBootstrapDial(multiaddr);
+    }
+  }
+  _pumpP2PBootstrapDials(); _scheduleP2PBootstrapRetries();
+}
+async function maintainP2PBootstrapConnectivity(){
+  if(!P2P?.dialBootstrap||P2P.node.getConnections().length) return;
+  // A strict bare hosted page has no node URL or resolver. Re-admit already
+  // known routes immediately, then reload the same-origin replaceable transport
+  // commons so one transient startup fetch cannot strand the browser forever.
+  rememberP2PBootstraps([[...S.p2pBootstraps]],{dial:true});
+  await loadPortalP2PBootstrapHints({dial:true});
 }
 const PROVIDER_HINT_LIMITS=Object.freeze({maxPending:64,maxQueue:16,maxJobsPerMinute:16,
   maxConcurrent:2,maxKeysPerHint:5,maxRouteHints:64,cooldownMs:30000});
@@ -8358,13 +8395,17 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-verified-gossip-v19');
+    const mod=await import('./p2p-libp2p.js?v=20260718-bootstrap-recovery-v20');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
       onVerifiedProvider:onVerifiedGossipProvider });
     P2P.dialBootstrap=(multiaddr,options)=>
       mod.dialP2PBootstrap(P2P.node,multiaddr,options);
+    P2P.node.addEventListener('peer:disconnect',(event)=>{
+      updateP2PStatus();
+      _rearmDisconnectedP2PBootstrap(event.detail?.toString?.()||'');
+    });
     for(const multiaddr of list) _primeInitialP2PBootstrapDial(multiaddr);
     P2P._rendezvousConfigured=list.length>0;
     updateP2PStatus();
@@ -8398,7 +8439,10 @@ async function initP2P(){
   renderMissions();
   initP2P();   // start the real libp2p P2P node (non-blocking; HTTP discovery already populated the page)
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
-  setInterval(()=>{ discover().then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{}); }, 15000);
+  setInterval(()=>{
+    maintainP2PBootstrapConnectivity().catch(()=>{});
+    discover().then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
+  }, 15000);
   // per-entity drawer feed + node run state + the living network: re-fetch on the
   // node's live cadence so the stage, constellation and feed stream without SSE.
   setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
