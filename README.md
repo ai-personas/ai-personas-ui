@@ -206,19 +206,15 @@ Downloads use the same check, then create a short-lived `application/octet-strea
 there is no authenticated "open raw" navigation surface.
 Non-live manifest files that advertise a SHA-256 use the same fail-closed byte check before any
 repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
-Markdown, text, JSON, and CSV retain one prior signature-checked revision and show a bounded line diff when
-an open file changes. Repository-owned adapters cover Gerber/drill, KiCad, netlist/SPICE,
-waveforms, DXF, CAD/3D (including bounded IFC/STEP/STL/OBJ/glTF byte-derived inspection), PDF,
-tables, structured data, and Markdown; built-ins cover hash-checked
-images, audio/video controls, source code, tabular text, and safe download descriptors. For
-hash-checked bytes, bounded header recognition can select the closed local renderer for PNG,
-JPEG, WebP, PDF, SVG, ZIP/3MF, STEP/IFC, STL, OBJ, PLY, DXF, KiCad, Gerber, Excellon, and glTF even
-when the filename is absent or misleading; contradictions are shown explicitly. Unknown content
-never produces a blank viewer: textual bytes get a bounded plain-text view and binary
-bytes get metadata plus a bounded hex preview. HTML is displayed as source, archive/office
-formats are descriptors, and executable peer content is never run. The credential-bearing page
-imports no executable CDN modules. Markdown cannot fetch remote media, and glTF with non-data
-`uri` dependencies is rejected. Client limits cap snapshots at 2 MiB, workspaces at 64, active
+Declared Markdown, text, JSON, and tabular media retain one prior signature-checked revision and
+show a bounded line diff when an open file changes. Rich presentation is selected only from the
+media type declared in the admitted signed record or live snapshot; filenames and domain words in
+the bytes never control dispatch. The built-in generic Web-media families cover Markdown, tabular
+text, JSON, plain text, images, audio/video controls, and PDF. Undeclared, invalid, and custom media
+never produces a blank viewer: hash-checked UTF-8 bytes get a bounded plain-text view and opaque
+bytes get byte metadata plus a bounded hex preview and safe download. Executable peer content is
+never run, and the credential-bearing page imports no executable peer or CDN modules. Client
+limits cap snapshots at 2 MiB, workspaces at 64, active
 calls at 64, files at 256, paths at 16 levels/512 characters, rendered bodies at 8 MiB, and
 downloads at 32 MiB.
 
@@ -340,7 +336,7 @@ assets/discovery-authority.mjs             # provider hints, historical keys, Ac
 assets/persona-avatar.mjs                  # persona-signature + raster-byte/hash/MIME/dimension verification
 assets/network-view.mjs                    # bounded priority/search/progressive network projections
 assets/network-store.mjs                   # kernel-qualified entities, presence leases, event rings
-assets/artifact-types.mjs                  # safe local/built-in artifact dispatch manifest
+assets/artifact-types.mjs                  # signed declared-media presentation policy
 assets/public-telemetry.mjs                # exact public/operator telemetry and route projection
 assets/live-artifacts.mjs                  # pure revision/change/diff state helpers
 assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed25519 verification

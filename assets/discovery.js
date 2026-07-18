@@ -53,10 +53,8 @@ import {
   splitNetworkKey,
 } from './network-store.mjs?v=20260710-scalable-network-v1';
 import {
-  selectBuiltinArtifactRenderer,
-  selectLocalArtifactModule,
-  resolveVerifiedArtifactDispatch,
-} from './artifact-types.mjs?v=20260715-verified-sniff-v1';
+  selectDeclaredArtifactRenderer,
+} from './artifact-types.mjs?v=20260718-declared-media-v1';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -2355,6 +2353,24 @@ function scheduleRealtimeRepaint({records=false}={}){
   if(typeof requestAnimationFrame==='function') requestAnimationFrame(paint);
   else setTimeout(paint,0);
 }
+// A telemetry frame is also a concrete signal that a persona's signed public
+// cognition snapshot may have advanced. Coalesce bursts so provider deltas paint
+// quickly without turning one SSE burst into an unbounded fetch fan-out.
+let _sseCognitionTimer=0, _sseCognitionBusy=false, _sseCognitionPending=false;
+function scheduleSseCognitionRefresh(){
+  _sseCognitionPending=true;
+  if(_sseCognitionBusy||_sseCognitionTimer) return;
+  _sseCognitionTimer=setTimeout(async()=>{
+    _sseCognitionTimer=0;
+    if(!_sseCognitionPending) return;
+    _sseCognitionPending=false; _sseCognitionBusy=true;
+    try{ await Promise.allSettled([streamPersonaCognition(),refreshThinking()]); }
+    finally{
+      _sseCognitionBusy=false;
+      if(_sseCognitionPending) scheduleSseCognitionRefresh();
+    }
+  },250);
+}
 // A verified SSE frame has already updated the per-entity indices. Coalesce a
 // burst into the next browser paint instead of waiting for the five-second poll.
 function appendTelemetryEvent(payload,base,boot,reason){ scheduleRealtimeRepaint(); }
@@ -2393,7 +2409,7 @@ function connectDiscoveryStream(base,boot){
       const accepted=applyVerifiedProviderInventory(base,boot,verified.rows,inventory);
       const added=accepted?verified.rows.length:0;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
-      if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); }
+      if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); scheduleSseCognitionRefresh(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
   });
   es.addEventListener('telemetry_update',async (ev)=>{
@@ -2409,6 +2425,7 @@ function connectDiscoveryStream(base,boot){
         verifiedCommunicationRoutes,publicFrameVerified});
       if(!admitted.accepted) return;
       appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
+      scheduleSseCognitionRefresh();
     }
     catch(e){ return; }
   });
@@ -2577,8 +2594,7 @@ function personaIdFromDid(did){
   return (did||'').replace('did:personaos:',''); }
 async function fetchText(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
   return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes)); }catch(e){ return null; } }
-// Binary-safe fetch for images / PDFs / 3D meshes — returns {blob,size,type} or null.
-// Binaries are detected by extension BEFORE this is called so fetchText is never run on them.
+// Binary-safe bounded fetch for any artifact body — returns {blob,size,type} or null.
 async function fetchBlob(u){ try{ const r=await fetch(u,secureFetchInit(u)); if(!r.ok)return null;
   const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
   const type=r.headers.get('content-type')||'application/octet-stream';
@@ -2598,7 +2614,6 @@ async function fetchVerifiedLiveBody(url,expectedHash){
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
-const extOf=(p)=>{ const m=/\.([a-z0-9_]+)$/i.exec(String(p||'')); return m?m[1].toLowerCase():''; };
 const kv=(l,v)=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${v}</span></div>`;
 const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
@@ -2861,7 +2876,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
   for(const {file,name} of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const authored=authoredArtifactLabelText(file);
     html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}">${esc(name)}</a>`
-      +`<span class="l2">${authored?`authored: ${esc(authored)} · `:''}${esc(extOf(file.path)||file.media_kind||'file')} · ${fmtBytes(file.size_bytes)}</span></div>`;
+      +`<span class="l2">${authored?`authored: ${esc(authored)} · `:''}${esc(file.media_kind||'undeclared media')} · ${fmtBytes(file.size_bytes)}</span></div>`;
   }
   return html;
 }
@@ -5880,8 +5895,8 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   return {title:`<span class="kind k-env">ENV</span> ${esc(d.name||r.label)}`, html};
 }
 // ---------- deliverable-bundle artifact TREE ----------
-// Bundle-export artifacts carry their package-relative path in `title` (e.g. cad/board.step,
-// docs/assembly.md) — '/' separators are preserved. The on-disk body lives at
+// Bundle-export artifacts carry their opaque package-relative path in `title`;
+// '/' separators are preserved. The on-disk body lives at
 // artifacts/package/<title>; gating is keyed on body_published (origin_gated stub when false).
 // Group entries by path segments into a nested dir/file tree; flat packages (no '/') collapse
 // to a single-level tree with all files at the root.
@@ -6007,68 +6022,37 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
   return {title:`<span class="kind k-artifact">BUNDLE</span> ${esc(d.bundle_id||'')}`, html};
 }
 /* ====================================================================
-   MEDIA-AWARE ARTIFACT RENDERING
+   DECLARED-MEDIA ARTIFACT RENDERING
    --------------------------------------------------------------------
-   Renderer is selected by file EXTENSION (primary) then media_kind
-   (fallback). Executable renderer code is loaded only from this repository;
-   third-party CDN modules are never imported into the operator-token realm.
-   SECURITY: artifact bodies are REMOTE PEER content. Markdown is
-   rendered with local textContent-only primitives; tables / code / descriptors are built with
-   createElement + textContent (never innerHTML of raw content); SVG and
-   images are rendered as blob: <img> (never inline innerHTML). No eval.
+   A path is an opaque persona-authored identifier. It never controls the
+   renderer, and peer bytes are never searched for domain words. Rich views are
+   selected solely from media metadata in the admitted signed record/snapshot.
+   Unknown and custom media use the byte-first generic text/hex inspector.
+
+   SECURITY: artifact bodies are REMOTE PEER content. Markdown, tables, code,
+   and plain text use textContent-only primitives. Declared image/audio/video
+   and PDF bytes render through view-scoped blob URLs. No peer code is loaded.
    ==================================================================== */
 
-/* ====================================================================
-   LAZY .mjs RENDERER REGISTRY (richer deliverable viewers)
-   --------------------------------------------------------------------
-   Each enabled entry is a self-contained ES module under ./renderers/ with
-   no runtime executable dependency outside this repository.
-   These outrank the built-in text/media renderer families for
-   any ext/kind they claim; on ANY throw the host falls back to the
-   built-in renderer path (markdown/csv/code/image/pdf/plain/download).
-   DISPATCH: extension is authoritative (zero collisions across modules);
-   media_kind is the fallback (first-writer-wins, registry ordered most-
-   specific → most-generic so 'pcb'→gerber, 'eda'→netlist, 'cad'→cad3d).
-   ==================================================================== */
-// The registry and its extension/kind precedence live in a data-only module so
-// the complete dispatch matrix can be tested without a browser. Peer metadata
-// can select only repository-owned entries from that manifest.
-const pickLazyRenderer=selectLocalArtifactModule;
-async function _localDependencyOnly(){ throw new Error('external executable renderer dependencies are disabled'); }
-// Cached per-file import of the renderer module itself (lazy on first open).
-const _LAZY_MOD=new Map();
-async function _lazyModule(file){
-  if(_LAZY_MOD.has(file)) return _LAZY_MOD.get(file);
-  const p=import(/* @vite-ignore */ './renderers/'+file+'?v=20260714-ifc-inspector-v1');
-  p.catch(()=>_LAZY_MOD.delete(file));
-  _LAZY_MOD.set(file,p); return p;
-}
+// Renderers that consume bytes. All unknown media enters this path, so a custom
+// persona/tool artifact remains observable without the substrate naming it.
+const BINARY_RENDERERS=new Set(['image','audio','video','pdf','generic']);
 
-// Renderers that consume binary bytes (blob), not text. Text fetch is skipped.
-const BINARY_RENDERERS=new Set(['image','audio','video','model3d','descriptor','pdf','generic']);
-const IMG_EXT=new Set(['png','jpg','jpeg','gif','webp','svg','avif','bmp','ico','tif','tiff']);
-const TEXTY_DESCRIPTOR_EXT=new Set(['step','stp','ifc','obj','gltf','ply','kicad_pcb','kicad_sch']);
-
-function pickRenderer(title,kind){
-  return selectBuiltinArtifactRenderer(title,kind);
+function pickRenderer(kind){
+  return selectDeclaredArtifactRenderer(kind);
 }
 
 // Track blob: URLs allocated for the current view so they're revoked on change.
 function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
   onViewCleanup(()=>URL.revokeObjectURL(u)); return u; }
 
-// Nodes may deliberately serve live bodies as application/octet-stream. Assign
-// only a small renderer-controlled MIME allowlist after integrity verification;
-// never trust a peer-supplied HTML MIME for a same-origin blob URL.
-function safeRenderMime(ext,kind){
-  const byExt={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',
-    webp:'image/webp',svg:'image/svg+xml',avif:'image/avif',bmp:'image/bmp',ico:'image/x-icon',
-    tif:'image/tiff',tiff:'image/tiff',pdf:'application/pdf',mp3:'audio/mpeg',wav:'audio/wav',
-    ogg:'audio/ogg',oga:'audio/ogg',m4a:'audio/mp4',flac:'audio/flac',aac:'audio/aac',opus:'audio/ogg',
-    mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',m4v:'video/mp4',ogv:'video/ogg'};
-  if(byExt[ext]) return byExt[ext];
-  const k=String(kind||'').toLowerCase();
-  return Object.values(byExt).includes(k)?k:'application/octet-stream';
+// Nodes may serve bodies as application/octet-stream. After integrity checking,
+// restore only the exact declared Web media family selected above; arbitrary
+// declarations remain application/octet-stream.
+function safeRenderMime(kind){
+  const selected=pickRenderer(kind), media=selected.mediaType;
+  return ['image','audio','video','pdf'].includes(selected.id)
+    ?media:'application/octet-stream';
 }
 
 // Small helper: build an element with optional class/text (textContent — safe).
@@ -6119,7 +6103,8 @@ function parseCsvBounded(text,delimiter=','){
   return rows;
 }
 async function renderCsv(host,ctx){
-  const N=500, rows=parseCsvBounded(String(ctx.text||''),ctx.ext==='tsv'?'\t':','); const shown=rows.slice(0,N);
+  const delimiter=String(ctx.kind||'').toLowerCase()==='text/tab-separated-values'?'\t':',';
+  const N=500, rows=parseCsvBounded(String(ctx.text||''),delimiter); const shown=rows.slice(0,N);
   if(rows.length>N) host.appendChild(el('div','fv-note',`showing first ${N} rows`));
   const tbl=el('table','fv-table'); const head=shown[0]||[];
   const thead=el('thead'); const htr=el('tr');
@@ -6136,7 +6121,7 @@ async function renderImage(host,ctx){
   if(!fb) throw new Error('image fetch failed');
   ctx.realSize=fb.size;
   const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.ext,ctx.kind)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind)}));
   host.innerHTML='';
   const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
   img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
@@ -6145,7 +6130,7 @@ async function renderImage(host,ctx){
 async function renderMedia(host,ctx,type){
   const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${type} fetch failed`);
   ctx.realSize=fb.size; const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.ext,ctx.kind)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind)}));
   host.innerHTML=''; const media=document.createElement(type); media.className=`fv-${type}`;
   media.controls=true; media.preload='metadata'; media.src=url; media.setAttribute('playsinline','');
   media.setAttribute('controlslist','nodownload noplaybackrate'); media.setAttribute('disablepictureinpicture','');
@@ -6178,7 +6163,7 @@ async function renderGeneric(host,ctx){
     host.appendChild(plainPre(text.slice(0,400*1024),truncated?`first 400 KB · ${integrity} generic text`:`generic ${integrity} text`));
     return;
   }
-  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${ctx.ext||ctx.kind||'unknown'} · ${integrity} binary artifact`));
+  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${ctx.kind||'undeclared media'} · ${integrity} binary artifact`));
   const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); };
   add('Size',fmtBytes(bytes.length)); add('SHA-256',ctx.contentHash||(ctx.integrityVerified?'checked':'not advertised'));
   add('Rendering','safe generic inspector · executable content was not run'); host.appendChild(card);
@@ -6187,7 +6172,8 @@ async function renderGeneric(host,ctx){
 }
 async function renderCode(host,ctx){
   let body=ctx.text||'';
-  const isJson=ctx.ext==='json'||String(ctx.kind||'').toLowerCase()==='json';
+  const media=String(ctx.kind||'').toLowerCase().split(';',1)[0].trim();
+  const isJson=media==='application/json'||media.endsWith('+json');
   if(isJson){
     if((ctx.realSize??body.length)>200*1024){ host.appendChild(plainPre(body,'json > 200 KB — plain text (perf)')); return; }
     try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){}
@@ -6201,33 +6187,6 @@ async function renderCode(host,ctx){
   const pre=el('pre','filview fv-code'); const code=document.createElement('code');
   code.textContent=body;
   pre.appendChild(code); host.appendChild(pre);
-}
-async function renderModel3d(host,ctx){
-  await renderDescriptor(host,ctx);
-  host.prepend(el('div','fv-note','Interactive 3D parsing is disabled in the credential-bearing portal. Download the verified bytes for an isolated CAD tool.'));
-}
-async function renderDescriptor(host,ctx){
-  // .step / .kicad_* etc: no in-browser renderer → honest descriptor card,
-  // byte-download action, + a plain-text head preview if the body is texty.
-  host.innerHTML='';
-  const card=el('div','fv-card');
-  card.appendChild(el('div','fv-cardhd',`No in-browser viewer for .${ctx.ext||ctx.kind||'?'} — descriptor only`));
-  const add=(l,v)=>{ const r=el('div','row'); r.appendChild(el('span','l2',l));
-    r.appendChild(el('span','v2',v)); card.appendChild(r); };
-  add('Kind',ctx.kind||ctx.ext||'—');
-  add('Size',fmtBytes(ctx.realSize!=null?ctx.realSize:ctx.size));
-  add('Content hash',ctx.contentHash||'—');
-  host.appendChild(card);
-  const dl=el('div','row');
-  dl.innerHTML=secureDownloadMarkup(ctx.sourceUrl||ctx.url,ctx.title,ctx.contentHash);
-  host.appendChild(dl);
-  if(TEXTY_DESCRIPTOR_EXT.has(ctx.ext)){
-    const txt=await fetchText(ctx.url);
-    if(txt && /[\x09\x0a\x0d\x20-\x7e]/.test(txt.slice(0,200))){
-      host.appendChild(el('div','fv-note','head preview (first 4 KB)'));
-      const pre=el('pre','filview'); pre.textContent=txt.slice(0,4096); host.appendChild(pre);
-    }
-  }
 }
 async function renderPdf(host,ctx){
   const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('pdf fetch failed');
@@ -6244,12 +6203,11 @@ async function renderPlain(host,ctx){
   if(body==null){ // forced-plain view of a binary kind → best-effort text decode
     host.appendChild(loadingNode('loading…')); body=await fetchText(ctx.url); host.innerHTML='';
     if(body==null){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; } }
-  if(ctx.ext==='json'){ try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){} }
   const trunc=body.length>20000;
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
-  code:renderCode,model3d:renderModel3d,descriptor:renderDescriptor,pdf:renderPdf,plain:renderPlain,generic:renderGeneric };
+  code:renderCode,pdf:renderPdf,plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);
@@ -6290,21 +6248,11 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
   const authoredAttr=JSON.stringify(authoredLabels);
-  let pick=pickRenderer(title,kind);
+  const pick=pickRenderer(kind);
   const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
-  // Repository-owned .mjs registry takes precedence over built-in families for any
-  // ext/kind it claims (richer viewers win). Resolved once; only used when this
-  // is NOT a forced-plain/raw view (raw always shows the built-in plain text).
-  let lazyPick=forcedPlain?null:pickLazyRenderer(title,kind);
-  // fetchMode drives byte-vs-text fetch: a bytes module fetches its own
-  // ArrayBuffer inside render(), so we must NOT do a pointless text prefetch.
-  let lazyBytes=!!(lazyPick && lazyPick.entry.fetchMode==='bytes');
-  // header media-kind label reflects the chosen renderer (lazy ext if matched).
-  let lazyExt=lazyPick?lazyPick.ext:'';
-  let isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
-  let rendId=forcedPlain?'plain':(lazyPick?('lazy:'+lazyPick.entry.file):pick.id);
-  let verifiedDispatch=null, renderKind=kind;
+  const isBinary=BINARY_RENDERERS.has(pick.id);
+  const rendId=forcedPlain?'plain':pick.id;
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
   let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
@@ -6321,17 +6269,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }
     if(verified.ok){
       realSize=verified.size;
-      verifiedDispatch=resolveVerifiedArtifactDispatch(title,kind,verified.bytes);
-      if(verifiedDispatch.detected&&!forcedPlain){
-        renderKind=verifiedDispatch.selectionMediaKind;
-        pick=pickRenderer(verifiedDispatch.selectionTitle,renderKind);
-        lazyPick=pickLazyRenderer(verifiedDispatch.selectionTitle,renderKind);
-        lazyBytes=!!(lazyPick&&lazyPick.entry.fetchMode==='bytes');
-        lazyExt=lazyPick?lazyPick.ext:'';
-        isBinary=lazyPick?lazyBytes:BINARY_RENDERERS.has(pick.id);
-        rendId=lazyPick?('lazy:'+lazyPick.entry.file):pick.id;
-      }
-      if(!isBinary) text=new TextDecoder().decode(verified.bytes);
+      if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
       const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
       if(opts.liveFile&&text!=null){
         let nextCache=cache;
@@ -6350,7 +6288,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
     text=await fetchText(url); realSize=text?text.length:null;
   }
-  const ctx={ base, path, url,sourceUrl, title, kind:renderKind, ext:(lazyPick?lazyExt:pick.ext), text, realSize, size:opts.size,
+  const ctx={ base, path, url,sourceUrl, title, kind, text, realSize, size:opts.size,
     contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
@@ -6361,14 +6299,12 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
     ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
-    : (rendId!=='plain'
+    : (!isBinary&&rendId!=='plain'
         ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
-        : '<span class="l2">raw</span>');
+        : '<span class="l2">byte view</span>');
   let html=kv('File',esc(title))
-    +kv('Media kind',`${esc(kind||ctx.ext||'—')} <span class="fv-rid">· ${esc(rendId)}</span>`)
-    +(verifiedDispatch?.detected?kv('Detected format',`<span class="${verifiedDispatch.contradiction?'no':'ok'}">${verifiedDispatch.contradiction?icon('warn','ico-sm'):icon('check','ico-sm')} ${esc(verifiedDispatch.detected.label)}</span> <span class="l2">· ${esc(verifiedDispatch.detected.evidence)} · hash-checked bytes</span>`):'')
-    +(verifiedDispatch?.contradiction?`<div class="viewerr artifact-format-contradiction">Advertised filename/media metadata conflicts with the verified byte header. Rendering uses the detected ${esc(verifiedDispatch.detected.label)} format; peer code was not executed.</div>`:'')
-    +(verifiedDispatch?.inferred?`<div class="fv-note artifact-format-inferred">No usable format was advertised. The renderer was selected from the bounded header of the hash-checked bytes.</div>`:'')
+    +kv('Declared media',`${esc(pick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(rendId)}</span>`)
+    +(!pick.mediaType?`<div class="fv-note">No valid media type was declared in signed metadata. The path remains opaque and the verified bytes use the generic inspector.</div>`:'')
     +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
@@ -6382,29 +6318,18 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
         +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''))
     +`<div id="fv-body" class="fv-body"></div>`;
-  // Built-in renderer path — the fallback used when no local module
-  // matches, or when a matched local module throws (parse/empty).
-  const runLegacy=async(host,lazyErr)=>{
-    const legacyId=forcedPlain?'plain':pick.id;
-    const r=RENDERERS[legacyId]||renderPlain;
-    const legacyBinary=BINARY_RENDERERS.has(legacyId);
-    // A local .mjs viewer was matched but failed (parse / no export),
-    // and the only fallback for this ext/kind is bare plain text — say so once, so
-    // the downgrade from the expected rich view isn't silent. (When the legacy path
-    // is itself a real renderer the user still gets a good view; no note needed.)
-    if(lazyErr && r===renderPlain){
-      const why=String(lazyErr&&lazyErr.message||'load failed').slice(0,140);
-      host.appendChild(el('div','fv-note',
-        'rich '+(ctx.ext||kind||'')+' viewer unavailable ('+why+') — plain text below'));
-    }
+  const runRenderer=async(host)=>{
+    const rendererId=forcedPlain?'plain':pick.id;
+    const r=RENDERERS[rendererId]||renderPlain;
+    const rendererConsumesBytes=BINARY_RENDERERS.has(rendererId);
     try{ await r(host,ctx);   // size discovered during a binary fetch reflected by caller
     }catch(e){
       // Graceful fallback: local renderer/parse error → plain <pre>, never broken.
       host.innerHTML='';
       host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
       let body=ctx.text;
-      if(body==null){ body=legacyBinary?null:await fetchText(url); }
-      if(body==null && legacyBinary){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The byte-download action above may also be gated; hold an operator token.')); return; }
+      if(body==null){ body=rendererConsumesBytes?null:await fetchText(url); }
+      if(body==null && rendererConsumesBytes){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The byte-download action above may also be gated; hold an operator token.')); return; }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
   };
@@ -6414,42 +6339,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       ?`live body refused: ${verified?.error||'unavailable'}. Nothing is rendered unless the fetched bytes match the advertised SHA-256.`
       :'body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the byte-download action above, or hold an operator token.')); return; }
     if(verified?.ok){
-      const mime=safeRenderMime(ctx.ext,ctx.kind);
+      const mime=safeRenderMime(ctx.kind);
       url=mkBlobURL(new Blob([verified.bytes],{type:mime})); ctx.url=url;
     }
-    // LAZY MODULE FIRST (richer renderer). On ANY throw, clear and fall back to
-    // the existing legacy renderer path exactly as before — never broken/blank.
-    let lazyErr=null;
-    if(lazyPick && !forcedPlain){
-      // Immediate spinner: the local .mjs module import and body preparation
-      // paints. Without this the drawer sits blank for that whole window. Every
-      // module clears the host as its first paint, so this is replaced cleanly.
-      host.innerHTML='';
-      host.appendChild(loadingNode(`loading ${lazyPick.entry.label||ctx.ext||'rich'} viewer…`));
-      try{
-        const mod=await _lazyModule(lazyPick.entry.file);
-        if(!mod || typeof mod.render!=='function') throw new Error('no render() export');
-        // ctx per the module contract: createElement+textContent-safe el(),
-        // authenticated fetchText/fetchBytes against the resolved body url,
-        // local-only dependency guard and a view-scoped onCleanup.
-        const mctx={ host, title, path, url, ext:ctx.ext, kind, size:opts.size, contentHash:ctx.contentHash,
-          esc, el, lazy:_localDependencyOnly, onCleanup:onViewCleanup,
-          // both provided; honor fetchMode for the default fetch but never deny either.
-          text:lazyBytes?null:ctx.text,
-          fetchText:async()=>{ if(!lazyBytes && ctx.text!=null) return ctx.text; return await fetchText(url); },
-          fetchBytes:async()=>{ const fb=await fetchBlob(url); if(!fb){ return null; }
-            ctx.realSize=fb.size; const ab=await fb.blob.arrayBuffer();
-            // copy so libs that DETACH the buffer (pdf.js) can't corrupt a shared one
-            return ab.slice(0); } };
-        await mod.render(mctx);
-        if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
-        return;
-      }catch(e){
-        lazyErr=e;           // remember WHY so the fallback can explain a silent downgrade
-        host.innerHTML='';   // clear the spinner / any partial render before falling back
-      }
-    }
-    await runLegacy(host,lazyErr);
+    await runRenderer(host);
     if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
   };
   return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
@@ -7066,7 +6959,6 @@ async function operatorRunView(b,run){
 
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'<div class="viewerr">'+icon('warn','ico-sm')+' record not found — it may have been re-resolved or evicted since you clicked. Close this and reopen from the stage.</div>'};
   const L=r._links||{};
-  if(r.kind==='artifact' && _isMissionDoc(r,L)) return missionView(r);
   if(r.kind==='mission' && L.content) return missionView(r);
   if(r.kind==='persona') return personaView(r);
   if(r.kind==='env') return envView(r);
@@ -7163,11 +7055,6 @@ function tick(now){
 // (2) live artifact snapshots; (3) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
-// A mission document is the run's Design-History-File artifact. Media kinds are
-// EMERGENT registry values (a run may classify it structured_data), so match the
-// canonical filename too — the label rides inside the signed record.
-function _isMissionDoc(r,L){ return L.media_kind==='design_history'
-  || /(^|\/)design_history\.json$/i.test(r.label||''); }
 function missionCardList(){
   const cards=[]; const seen=new Set();
   const records=S.order.map((id)=>S.recs.get(id)).filter(Boolean);

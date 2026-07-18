@@ -764,12 +764,11 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .diff-skip{padding:3px 8px;color:var(--mut);font-size:var(--fs-meta);border-bottom:1px solid var(--line);text-align:center}
 
 /* ---------- media-aware file renderer ---------- */
-/* The #fv-body host is the SHARED mount for every renderer (legacy inline + the
-   lazy .mjs modules). It lives inside the detail drawer (≤460px desktop / 100vw
-   phone), so it owns the safety net the per-format modules don't: it caps its own
+/* The #fv-body host is the shared mount for every local renderer. It lives inside
+   the detail drawer (≤460px desktop / 100vw phone), so it owns the safety net: it caps its own
    height with an inner scroll, never overflows the drawer width, and clamps any
    intrinsically-wide child (an SVG with a width attr, a canvas, a raster image)
-   to the host so a wide CAD/waveform/PCB render can't escape the panel sideways. */
+   to the host so a wide artifact render cannot escape the panel sideways. */
 /* micro provenance pill */
 .fv-rid{display:inline-flex;align-items:center;color:var(--mut);font-size:var(--fs-meta);font-family:var(--mono);
   text-transform:uppercase;letter-spacing:var(--tr-caps);border:1px solid var(--line);border-radius:var(--chip-radius);padding:1px 6px}
