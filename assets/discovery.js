@@ -16,7 +16,7 @@ import {
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260718-signed-terminal-v1';
+} from './live-signatures.mjs?v=20260718-signed-terminal-v2';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,

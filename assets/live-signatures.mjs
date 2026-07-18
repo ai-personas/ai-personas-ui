@@ -189,7 +189,7 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
   const immutableFinalizedBootstrap = isObject(lifecycle)
     && lifecycle.state === 'run_finalized'
     && REVISION_RE.test(String(document.since_revision || ''))
-    && lifecycle.workspace_revision === document.since_revision
+    && REVISION_RE.test(String(lifecycle.workspace_revision || ''))
     && typeof lifecycle.finalized_at === 'string'
     && Number.isFinite(parseKernelIso(lifecycle.finalized_at))
     && lifecycle.finalized_at === document.generated_at
