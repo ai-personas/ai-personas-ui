@@ -1006,7 +1006,8 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
 const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-public-dht-v2',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
-  maxReconciliationsPerJob:8,jobDeadlineMs:30000});
+  maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
+  successfulRefreshMs:5*60*1000,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
   if(typeof value==='string') return [value];
   return Array.isArray(value)?value.slice(0,P2P_BOOTSTRAP_LIMITS.maxCandidatesPerSource):[];
@@ -7865,7 +7866,8 @@ function wire(){
 // an explicit/node-advertised bootstrap or relay connects it to a shared routing table.
 let P2P=null;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
-  const peers=n&&n.getPeers?n.getPeers().length:0;
+  const peers=n&&n.getConnections?new Set(n.getConnections()
+    .map((connection)=>connection.remotePeer?.toString?.()).filter(Boolean)).size:0;
   const routes=S.p2pDataRoutes?.size||0;
   el.dataset.verifiedRoutes=String(routes);
   const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'} · ${routes} verified route${routes===1?'':'s'}`:'HTTP federation discovery';
@@ -8128,6 +8130,9 @@ function onGossipRecord(doc){
 }
 async function refreshP2PRendezvous(){
   if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return;
+  if(P2P._rendezvousLastVerifiedAt
+      &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return;
+  const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Set());
   const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000);
   let found=0,reconciledRoutes=0,reconciledRecords=0;
   try{
@@ -8138,6 +8143,11 @@ async function refreshP2PRendezvous(){
       try{
         await P2P.node.dial(target,{signal:AbortSignal.timeout(5000)});
         found++;
+        const providerId=provider.id.toString();
+        if(seen.has(providerId)){
+          if(found>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
+          continue;
+        }
         const result=await P2P.fetchProviderInventory?.(
           provider,{timeoutMs:8000}).catch(()=>null);
         const verified=await verifiedRouteHintsFromP2PResult(
@@ -8152,14 +8162,17 @@ async function refreshP2PRendezvous(){
           const reconciled=await _reconcileP2PRouteHint(hint,{signal});
           if(reconciled.accepted){
             reconciledRoutes++; reconciledRecords+=reconciled.count;
+            seen.add(providerId);
           }
         }
       }catch(e){}
-      if(found>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+      if(reconciledRoutes||found>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
     }
     log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
-    if(reconciledRoutes)
+    if(reconciledRoutes){
+      P2P._rendezvousLastVerifiedAt=Date.now();
       log('p2p',`rendezvous: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
+    }
   }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
 }
 async function initP2P(){
