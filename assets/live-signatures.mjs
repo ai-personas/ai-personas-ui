@@ -210,6 +210,9 @@ export async function verifyLiveArtifactSnapshot(document, options = {}) {
     immutableFinalizedBootstrap,
     finalizedAt: immutableFinalizedBootstrap ? lifecycle.finalized_at : '',
     workspaceRevision: immutableFinalizedBootstrap ? lifecycle.workspace_revision : '',
+    terminalState: immutableFinalizedBootstrap ? lifecycle.state : '',
+    terminalStatus: immutableFinalizedBootstrap && typeof lifecycle.run_status === 'string'
+      ? lifecycle.run_status : '',
   };
 }
 
@@ -225,7 +228,7 @@ export async function verifyLiveArtifactEvent(document, options = {}) {
         && document.previous_revision !== options.expectedPreviousRevision) {
       return failed('broken_terminal_revision_chain');
     }
-    return {...outer, kind: 'run_ended'};
+    return {...outer, kind: 'run_ended', terminalState: document.state};
   }
   if (!isObject(document.snapshot) || !REVISION_RE.test(String(document.revision || ''))) {
     return failed('invalid_live_artifact_event');

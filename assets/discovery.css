@@ -166,6 +166,7 @@ b{color:var(--bright)}
   white-space:nowrap;vertical-align:middle}
 .transport-badge.verified{border-color:var(--up2);background:var(--up-weak);color:var(--up)}
 .transport-badge.failed{border-color:var(--down2);background:var(--down-weak);color:var(--down)}
+.live-terminal-badge{white-space:normal;overflow-wrap:anywhere;text-align:left}
 .vcounts{display:flex;gap:16px;flex-wrap:wrap}
 .stat{text-align:right;min-width:54px}
 .stat .v{font-size:var(--fs-body);font-weight:var(--w-bold);color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}

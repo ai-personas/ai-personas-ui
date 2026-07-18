@@ -224,7 +224,7 @@ export function decideLiveArtifactUpdate(previous, snapshot, meta = {}) {
   return {accept: true, refresh: false};
 }
 
-export function endLiveArtifactState(previous, event = {}) {
+export function endLiveArtifactState(previous, event = {}, verification = {}) {
   if (!previous) return null;
   if (String(event.previous_revision || '') !== String(previous.revision || '')) return null;
   const workspaces = previous.snapshot?.workspaces;
@@ -251,7 +251,9 @@ export function endLiveArtifactState(previous, event = {}) {
     : previous.snapshot;
   return {...previous, snapshot, ended: true,
     endedAt: String(event.generated_at || event.ended_at || ''),
-    endReason: String(event.reason || event.status || 'run ended')};
+    endReason: String(event.reason || event.status || 'run ended'),
+    terminalState: String(verification.terminalState || ''),
+    terminalStatus: String(verification.terminalStatus || '')};
 }
 
 export function terminalLiveArtifactCalls(...states) {
@@ -279,7 +281,9 @@ export function finalizeLiveArtifactState(previous, verification = {}) {
     : previous.snapshot;
   return {...previous, snapshot, ended: true, finalized: true,
     terminalKind: 'immutable_finalized_snapshot', endedAt: finalizedAt,
-    endReason: 'run finalized'};
+    endReason: 'run finalized',
+    terminalState: String(verification.terminalState || ''),
+    terminalStatus: String(verification.terminalStatus || '')};
 }
 
 export function liveBodyCommitIsCurrent(expected, current, openFile) {

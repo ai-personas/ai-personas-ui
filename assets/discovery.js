@@ -12,11 +12,11 @@ import {
   sha256Hex,
   terminalLiveArtifactCalls,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260716-finalized-state-v2';
+} from './live-artifacts.mjs?v=20260718-signed-terminal-v1';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260716-finalized-state-v1';
+} from './live-signatures.mjs?v=20260718-signed-terminal-v1';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
@@ -938,7 +938,7 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260717-live-e6765b1',import.meta.url).href;
+const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-live-95e6ed6',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
@@ -2778,7 +2778,7 @@ function endLiveArtifactRun(base,event,meta={}){
   if(!previous||String(event.previous_revision||'')!==String(previous.revision||'')){
     _logLiveVerificationRefusal(run,{reason:'broken_terminal_revision_chain'}); return;
   }
-  const ended=endLiveArtifactState(previous,event);
+  const ended=endLiveArtifactState(previous,event,meta.verification);
   if(ended) _applyTerminalLiveArtifactEffects(base,key,previous);
   if(ended){ ended.receivedAt=Date.now(); ended.verification={...(ended.verification||{}),
       verified:true,
@@ -2877,6 +2877,10 @@ function liveArtifactsHTML(base,run){
   const byWs=new Map(); for(const file of state.files.values()) (byWs.get(file.workspace_id)||byWs.set(file.workspace_id,[]).get(file.workspace_id)).push(file);
   const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
   const finalizedBootstrap=state.verification?.immutableFinalizedBootstrap===true;
+  const signedTerminalFields=state.ended?[
+    state.terminalState?`state ${state.terminalState}`:'',
+    state.terminalStatus?`status ${state.terminalStatus}`:'',
+  ].filter(Boolean):[];
   const trees=workspaces.map((workspaceId)=>{ const w=wsMeta.get(workspaceId)||{}; const files=byWs.get(workspaceId)||[];
     const pid=_shortId(w.persona_id||files[0]?.persona_id), kernel=snap.node_id||kernelForBase(base);
     const label=_nameFor(pid,kernel)||pid||workspaceId;
@@ -2888,7 +2892,7 @@ function liveArtifactsHTML(base,run){
   const terminalTitle=finalizedBootstrap?'Run finalized · final workspace':'Run ended · final workspace';
   const terminalNote=finalizedBootstrap?'Immutable finalized-snapshot signature checked':'Terminal-event signature checked';
   return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?terminalTitle:'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
-    +(state.ended?`<div class="fv-note">${terminalNote}${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the final captured workspace revision.</div>`:'')
+    +(state.ended?`<div class="fv-note"><span class="transport-badge verified live-terminal-badge">SIGNED TERMINAL${signedTerminalFields.length?` · ${esc(signedTerminalFields.join(' · '))}`:''}</span>. ${terminalNote}${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the final captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
@@ -3456,9 +3460,15 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
   if(!(rows||[]).length) return '';
   return `<section class="owned-outputs live-owned-outputs"><div class="owned-outputs-head"><span>${esc(label)}</span><small>workspace snapshot · signature checked · ArtifactBundle lifecycle unknown</small></div>`
-    +rows.slice(0,2).map((row)=>`<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
+    +rows.slice(0,2).map((row)=>{ const terminal=[
+        row.terminalState?`state ${row.terminalState}`:'',
+        row.terminalStatus?`status ${row.terminalStatus}`:'',
+      ].filter(Boolean);
+      return `<button type="button" class="owned-output live-output" data-live-output-run="${esc(row.run)}" data-live-output-base="${esc(row.base||'')}">`
       +`<span class="owned-output-icon">${icon('code','ico-sm')}</span><span class="owned-output-copy"><b>${esc(row.workspaceId||row.run)}</b>`
-      +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'} · ${esc(row.state||'live')}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small></span>${icon('chevron','ico-sm')}</button>`).join('')+`</section>`;
+      +`<small>${esc(scope)} · ${row.fileCount} file${row.fileCount===1?'':'s'}${terminal.length?'':` · ${esc(row.state||'live')}`}${row.authored?.length?` · authored: ${esc(row.authored.join(' · '))}`:''}</small>`
+      +(terminal.length?`<span class="transport-badge verified live-terminal-badge">SIGNED TERMINAL · ${esc(terminal.join(' · '))}</span>`:'')
+      +`</span>${icon('chevron','ico-sm')}</button>`; }).join('')+`</section>`;
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -4280,6 +4290,7 @@ async function refreshSystemView(){
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
       const row={base:state.base,run:state.run,workspaceId,fileCount,authored,state:ws.state||'live',
+        terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||'')};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
         (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
