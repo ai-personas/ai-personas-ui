@@ -399,7 +399,8 @@ const VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS=new WeakSet();
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
-  providerKeyRefreshAt:new Map(), providerHintJobs:new Map(), providerHintQueue:[],
+  providerKeyRefreshAt:new Map(), telemetryKeyRefreshAt:new Map(),
+  providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   providerRouteReconciliations:new Map(),
@@ -1089,17 +1090,23 @@ function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
     kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
   return keys;
 }
-async function keysFor(base,boot,{refresh=false,signal=null}={}){
+async function keysFor(base,boot,{refresh=false,signal=null,expectedMaster=''}={}){
   const key=base||'@origin';
   const cached=S.keyDocs.get(key);
+  const cachedMaster=currentMasterKey(cached?.entries||[]);
   if(!refresh&&S.keys.has(key)&&cached&&Date.now()-cached.at<10000
-      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)) return S.keys.get(key);
+      &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)
+      &&(!expectedMaster||cachedMaster.toLowerCase()===String(expectedMaster).toLowerCase()))
+    return S.keys.get(key);
   const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'),
     {signal});
   // A route-reconciliation deadline is not evidence that a previously verified
   // registry became invalid. Do not let its abort erase shared cached authority.
-  if(signal?.aborted) return S.keys.get(key)||{};
-  return admitKeysDocument(base,boot,keysDoc);
+  if(signal?.aborted||keysDoc==null){
+    if(expectedMaster&&cachedMaster.toLowerCase()!==String(expectedMaster).toLowerCase()) return {};
+    return S.keys.get(key)||{};
+  }
+  return admitKeysDocument(base,boot,keysDoc,{expectedMaster});
 }
 
 function providerPolicyPayload(policy){ const out={};
@@ -1284,9 +1291,25 @@ async function verifyPublicTelemetryFrame(base,live){
       ||!_exactObjectFields(live.model_status,['active_calls','recent_events'])
       ||!Array.isArray(live.model_status.active_calls)||!Array.isArray(live.model_status.recent_events))
     return false;
-  const registry=S.keyDocs.get(base||'@origin');
-  if(!registry?.kernelId||String(live.node_id||'')!==registry.kernelId) return false;
-  return verifyCurrentMasterSignedDocument(base,live);
+  const cacheKey=base||'@origin';
+  const verifyWithCurrentRegistry=async()=>{
+    const registry=S.keyDocs.get(cacheKey);
+    return !!registry?.kernelId&&String(live.node_id||'')===registry.kernelId
+      &&await verifyCurrentMasterSignedDocument(base,live);
+  };
+  if(await verifyWithCurrentRegistry()) return true;
+  const boot=S.boots.get(cacheKey);
+  if(!boot?.kernel_id||String(live.node_id||'')!==boot.kernel_id) return false;
+  const route=S.p2pDataRoutes?.get(opBaseKey(base||''));
+  const provider=route?.providerRecord;
+  const expectedMaster=provider?.host_kernel_id===boot.kernel_id
+    &&/^[0-9a-f]{64}$/i.test(String(provider?.public_key_hex||''))
+    ?String(provider.public_key_hex).toLowerCase():'';
+  const last=S.telemetryKeyRefreshAt.get(cacheKey)||0;
+  if(Date.now()-last<10000) return false;
+  S.telemetryKeyRefreshAt.set(cacheKey,Date.now());
+  await keysFor(base,boot,{refresh:true,expectedMaster});
+  return verifyWithCurrentRegistry();
 }
 async function verifyCurrentMasterSignedDocument(base,doc){
   if(!doc||typeof doc!=='object'||Array.isArray(doc)) return false;
@@ -2642,7 +2665,7 @@ async function loadTelemetry(base,{signal=null}={}){
   };
   const ingestLive=async(live)=>{
     const publicFrameVerified=await verifyPublicTelemetryFrame(base,live);
-    if(!publicFrameVerified){ log('telemetry',`${base||'@origin'}: refused invalid public telemetry signature`,false); return; }
+    if(!publicFrameVerified){ log('telemetry',`${base||'@origin'}: refused public telemetry verification`,false); return; }
     const verifiedCommunicationRoutes=await verifyPublicCommunicationRoutes(base,live);
     if(live?.schema==='personaos-live-telemetry-public/1'
         &&!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(live)){
