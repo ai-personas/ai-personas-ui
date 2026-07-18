@@ -8134,9 +8134,10 @@ async function refreshP2PRendezvous(){
       if(provider?.id?.equals?.(P2P.node.peerId)) continue;
       const target=provider.multiaddrs?.[0];
       if(!target) continue;
-      found++;
-      P2P.node.dial(target,{signal:AbortSignal.timeout(5000)}).catch(()=>{});
-      break;
+      try{
+        await P2P.node.dial(target,{signal:AbortSignal.timeout(5000)});
+        found++; break;
+      }catch(e){}
     }
     log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
   }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
