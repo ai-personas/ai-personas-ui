@@ -3895,6 +3895,52 @@ function _artifactRevisionProjection(artifacts){
   const current=revisions.at(-1)||null;
   return {rows,current,history:current?revisions.slice(0,-1).reverse():[]};
 }
+function _exactSha256Digest(value,{prefixRequired=false}={}){
+  const raw=String(value||'').trim();
+  const match=(prefixRequired?/^sha256:([0-9a-f]{64})$/i:/^(?:sha256:)?([0-9a-f]{64})$/i).exec(raw);
+  return match?match[1].toLowerCase():'';
+}
+function _signedArtifactWorkspaceBinding(r){
+  if(r?.kind!=='artifact') return null;
+  const L=r._links||{}, content=typeof L.content==='string'?L.content:'';
+  // A file card must bind the whole package route. Do not recover a run or
+  // filename from labels, extensions, bundle descriptions, or a loose suffix.
+  const route=/^\/?k\/(run-[0-9A-Za-z]+)\/artifacts\/package\/(.+)$/.exec(content);
+  if(!route) return null;
+  const authority=environmentAuthorityOfRecord(r);
+  if(authority.status!=='resolved'||!authority.environmentId) return null;
+  const linkHash=_exactSha256Digest(L.content_hash,{prefixRequired:true});
+  const recordHash=r.content_hash?_exactSha256Digest(r.content_hash,{prefixRequired:true}):linkHash;
+  if(!linkHash||!recordHash||linkHash!==recordHash) return null;
+  const mimeType=selectDeclaredArtifactRenderer(L.mime_type).mediaType;
+  if(!mimeType) return null;
+  return {record:r,kernel:String(r._kernel||''),run:route[1],environmentId:authority.environmentId,
+    path:route[2],contentHash:linkHash,mimeType,authoredLabels:authoredArtifactLabels(r)};
+}
+function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId='',workspaceId=''}={}){
+  const liveHash=_exactSha256Digest(file?.sha256), livePath=String(file?.path||'');
+  const liveEnvironmentId=environmentIdentity(file?.environment_id);
+  // The live snapshot remains the authority for workspace membership, route,
+  // size and bytes. Its file and workspace bindings must agree before a file
+  // card is even considered as a display-metadata witness.
+  if(!kernel||!run||!environmentId||!workspaceId||!liveHash||!livePath
+      ||String(file?.workspace_id||'')!==workspaceId
+      ||liveEnvironmentId!==environmentId) return null;
+  let match=null;
+  for(const id of S.order||[]){
+    const candidate=_signedArtifactWorkspaceBinding(S.recs.get(id));
+    if(!candidate||candidate.kernel!==kernel||candidate.run!==run
+        ||candidate.environmentId!==environmentId||candidate.path!==livePath
+        ||candidate.contentHash!==liveHash) continue;
+    // Two admitted records matching the same live file are ambiguous even if
+    // they happen to repeat the same MIME. Fail closed instead of picking one.
+    if(match) return null;
+    match=candidate;
+  }
+  if(!match) return null;
+  return Object.freeze({mimeType:match.mimeType,
+    authoredLabels:Object.freeze([...match.authoredLabels]),recordId:String(match.record.record_id||'')});
+}
 function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMetadata=false}={}){
   if(!r) return '';
   // The caller must establish either a provider/document-verified record or a
@@ -3984,10 +4030,13 @@ function _liveWorkspaceCurrentFileCount(rows){
   return _currentLiveWorkspaceProjection(rows).current.reduce((total,row)=>total+(row.files?.length||0),0);
 }
 function _liveCurrentFileActionHTML(file,row,scope){
-  const label=String(file?.path||'artifact'), authored=authoredArtifactLabelText(file);
+  const label=String(file?.path||'artifact');
+  const metadata=_liveFileSignedArtifactMetadata(file,row);
+  const media=metadata?metadata.mimeType:declaredArtifactMedia(file);
+  const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="fetch, hash-check and preview ${esc(label)}">`
     +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-    +`<small>${esc(scope)} · ${esc(declaredArtifactMedia(file)||'undeclared media')} · ${fmtBytes(file.size_bytes)}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
+    +`<small>${esc(scope)} · ${esc(media||'undeclared media')} · ${fmtBytes(file.size_bytes)}${metadata?' · signed file-card metadata':''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">Preview →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
@@ -4823,12 +4872,12 @@ async function refreshSystemView(){
   for(const state of S.liveArtifacts.values()){
     const snap=state?.snapshot||{};
     for(const ws of (snap.workspaces||[])){
-      const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=_shortId(ws.environment_id||'');
+      const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=environmentIdentity(ws.environment_id);
       const workspaceFiles=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId)
         .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,workspaceId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
+      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
@@ -6869,9 +6918,14 @@ async function liveFileView(base,run,workspaceId,path){
   const stateKey=_liveRunKey(base,run); const bodyKey=_liveFileStateKey(base,run,workspaceId,path);
   S.openLiveFile={stateKey,base,run,workspaceId,path,hash:file.sha256,bodyKey};
   const raw=!!(S.liveRawModes&&S.liveRawModes.get(bodyKey));
-  return fileView(base,file.body_url,path,declaredArtifactMedia(file),{
+  const workspaces=(state.snapshot?.workspaces||[]).filter((workspace)=>
+    String(workspace?.workspace_id||'')===workspaceId);
+  const environmentId=workspaces.length===1?environmentIdentity(workspaces[0]?.environment_id):'';
+  const metadata=_liveFileSignedArtifactMetadata(file,{kernel:String(state.snapshot?.node_id||''),
+    run:String(state.run||''),environmentId,workspaceId});
+  return fileView(base,file.body_url,path,metadata?metadata.mimeType:declaredArtifactMedia(file),{
     raw,size:file.size_bytes,contentHash:file.sha256,
-    authoredLabels:authoredArtifactLabels(file),
+    authoredLabels:metadata?metadata.authoredLabels:authoredArtifactLabels(file),
     liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source,
       terminalAtStart:Boolean(state.ended),endedAt:String(state.endedAt||'')},
   });
