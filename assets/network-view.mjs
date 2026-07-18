@@ -25,7 +25,11 @@ export const NETWORK_VIEW_LIMITS = Object.freeze({
 
 export const PROVIDER_INDEX_LIMITS = Object.freeze({
   framingBytes: 64 * 1024,
-  maxSignedEnvelopeBytes: 4 * 1024,
+  maxResponseBytes: 4 * 1024 * 1024,
+  // One manifest document can carry several independently signed lookup
+  // aliases in addition to its embedded signed discovery document. Bound the
+  // complete per-document contribution, not just one ProviderRecord envelope.
+  maxSignedDocumentContributionBytes: 16 * 1024,
 });
 
 /**
@@ -35,15 +39,18 @@ export const PROVIDER_INDEX_LIMITS = Object.freeze({
  * per advertised record plus independently signed lookup aliases for that
  * document. The node's bootstrap `record_count` therefore selects an aggregate
  * per-document byte budget, while the browser's existing record cache remains
- * the hard population ceiling. Invalid or over-ceiling declarations fail closed
- * before any response body is read.
+ * the hard population ceiling. A separate absolute response ceiling prevents
+ * untrusted locators from turning a large count into a monolithic allocation;
+ * larger inventories require pagination. Invalid or over-ceiling declarations
+ * fail closed before any response body is read.
  */
 export function providerIndexResponseByteLimit(recordCount, recordCeiling) {
   if (!Number.isInteger(recordCount) || recordCount < 0
       || !Number.isInteger(recordCeiling) || recordCeiling < 1
       || recordCount > recordCeiling) return 0;
-  return PROVIDER_INDEX_LIMITS.framingBytes
-    + recordCount * PROVIDER_INDEX_LIMITS.maxSignedEnvelopeBytes;
+  return Math.min(PROVIDER_INDEX_LIMITS.maxResponseBytes,
+    PROVIDER_INDEX_LIMITS.framingBytes
+      + recordCount * PROVIDER_INDEX_LIMITS.maxSignedDocumentContributionBytes);
 }
 
 export function responseByteLengthWithinLimit(byteLength, maxBytes) {

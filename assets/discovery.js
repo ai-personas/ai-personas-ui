@@ -45,7 +45,7 @@ import {
   signedPersonaIdentity,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260717-public-task-lifecycle-v1';
+} from './network-view.mjs?v=20260718-provider-index-aliases-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
