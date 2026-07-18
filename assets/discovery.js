@@ -1007,6 +1007,7 @@ const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
 const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-public-dht-v2',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
+  maxRememberedProviders:64,providerRetryMs:5*60*1000,
   successfulRefreshMs:5*60*1000,jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
   if(typeof value==='string') return [value];
@@ -8133,21 +8134,27 @@ async function refreshP2PRendezvous(){
   if(P2P._rendezvousLastVerifiedAt
       &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return;
   const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Set());
+  const recent=P2P._rendezvousProviderAttempts||(P2P._rendezvousProviderAttempts=new Map());
+  const now=Date.now();
+  for(const [providerId,attemptedAt] of recent)
+    if(now-attemptedAt>=P2P_ROUTE_LIMITS.providerRetryMs) recent.delete(providerId);
   const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000);
-  let found=0,reconciledRoutes=0,reconciledRecords=0;
+  const attemptedThisScan=new Set();
+  let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0;
   try{
     for await(const provider of P2P.node.contentRouting.findProviders(cid,{signal})){
       if(provider?.id?.equals?.(P2P.node.peerId)) continue;
+      const providerId=provider?.id?.toString?.()||'';
       const target=provider.multiaddrs?.[0];
-      if(!target) continue;
+      if(!providerId||!target||seen.has(providerId)||recent.has(providerId)
+          ||attemptedThisScan.has(providerId)) continue;
+      attemptedThisScan.add(providerId); attempted++;
+      recent.delete(providerId); recent.set(providerId,now);
+      while(recent.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
+        recent.delete(recent.keys().next().value);
       try{
         await P2P.node.dial(target,{signal:AbortSignal.timeout(5000)});
         found++;
-        const providerId=provider.id.toString();
-        if(seen.has(providerId)){
-          if(found>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
-          continue;
-        }
         const result=await P2P.fetchProviderInventory?.(
           provider,{timeoutMs:8000}).catch(()=>null);
         const verified=await verifiedRouteHintsFromP2PResult(
@@ -8162,11 +8169,13 @@ async function refreshP2PRendezvous(){
           const reconciled=await _reconcileP2PRouteHint(hint,{signal});
           if(reconciled.accepted){
             reconciledRoutes++; reconciledRecords+=reconciled.count;
-            seen.add(providerId);
+            seen.delete(providerId); seen.add(providerId);
+            while(seen.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
+              seen.delete(seen.values().next().value);
           }
         }
       }catch(e){}
-      if(reconciledRoutes||found>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
+      if(attempted>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
     }
     log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
     if(reconciledRoutes){
@@ -8190,7 +8199,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v16');
+    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v17');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
