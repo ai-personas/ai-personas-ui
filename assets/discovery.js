@@ -413,6 +413,8 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   providerInventories:new Map(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   providerRouteReconciliations:new Map(),
+  verifiedGossipJobs:new Map(),verifiedGossipQueue:[],verifiedGossipActive:0,
+  verifiedGossipWindow:[],verifiedGossipAttempts:new Map(),
   streams:new Map(), p2pInvalidations:new Map(), p2pWatchRevisions:new Map(),
   p2pBootstraps:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
   p2pDialRetryTimer:null, p2pDialActive:0, globalPeers:new Set(), gossipPeers:new Set(),
@@ -1017,8 +1019,9 @@ const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
 const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-public-dht-v2',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
-  maxRememberedProviders:64,providerRetryMs:5*60*1000,
-  successfulRefreshMs:5*60*1000,jobDeadlineMs:30000});
+  maxRememberedProviders:64,providerRetryMs:30*1000,
+  successfulRefreshMs:45*1000,verifiedGossipRetryMs:30*1000,
+  jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
   if(typeof value==='string') return [value];
   return Array.isArray(value)?value.slice(0,P2P_BOOTSTRAP_LIMITS.maxCandidatesPerSource):[];
@@ -8221,9 +8224,69 @@ function _pumpProviderHintJobs(){
   }
 }
 function onGossipRecord(doc){
-  // A record-supplied public key is self-asserted. Gossip contributes bounded
-  // lookup aliases only and can never insert, display, or overwrite UI records.
+  // Raw gossip contributes bounded lookup aliases only. The transport reports
+  // a separately verified, peer-bound envelope through onVerifiedProvider.
   if(doc?.record) queueProviderHints(doc.record,'libp2p gossip');
+}
+async function _runVerifiedGossipJob(job){
+  const controller=new AbortController();
+  const deadline=setTimeout(()=>controller.abort(),P2P_ROUTE_LIMITS.jobDeadlineMs);
+  try{
+    const reconciled=await _reconcileP2PRouteHint(job.hint,{signal:controller.signal});
+    if(!reconciled.accepted) return;
+    log('p2p',`verified gossip: 1 route · ${reconciled.count} signed inventory record(s) reconciled`,true);
+    classifyMap(); updateVitalsCounters(); refreshSystemView(); renderMissions(); refreshLiveSection();
+  }finally{ clearTimeout(deadline); }
+}
+function _pumpVerifiedGossipJobs(){
+  while(S.verifiedGossipActive<PROVIDER_HINT_LIMITS.maxConcurrent
+      &&S.verifiedGossipQueue.length){
+    const job=S.verifiedGossipQueue.shift(); S.verifiedGossipActive++;
+    S.verifiedGossipJobs.set(job.id,{state:'running',at:Date.now()});
+    _runVerifiedGossipJob(job)
+      .catch((e)=>log('p2p',`verified gossip route failed ${String(e&&e.message||e).slice(0,100)}`,false))
+      .finally(()=>{ S.verifiedGossipActive--;
+        S.verifiedGossipJobs.set(job.id,{state:'done',at:Date.now()});
+        _pumpVerifiedGossipJobs(); });
+  }
+}
+function _enqueueVerifiedGossipHint(hint){
+  const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||''),
+    peerId=String(hint?.peerId||''),provider=hint?.providerRecord||{};
+  if(!base||!kernel||!peerId) return;
+  const id=`${kernel}\u0000${base}\u0000${peerId}`,now=Date.now(),
+    generation=Number(provider.inventory_generation)||0,
+    manifestHash=String(provider.inventory_manifest_hash||''),
+    prior=S.verifiedGossipAttempts.get(id),active=S.verifiedGossipJobs.get(id);
+  if(active&&(active.state==='queued'||active.state==='running')) return;
+  if(prior&&prior.generation===generation&&prior.manifestHash===manifestHash
+      &&now-prior.at<P2P_ROUTE_LIMITS.verifiedGossipRetryMs) return;
+  S.verifiedGossipWindow=S.verifiedGossipWindow.filter((at)=>now-at<60000);
+  if(S.verifiedGossipWindow.length>=PROVIDER_HINT_LIMITS.maxJobsPerMinute
+      ||S.verifiedGossipQueue.length>=PROVIDER_HINT_LIMITS.maxQueue){
+    log('gossip','verified route work limit reached; route deferred',false); return; }
+  S.verifiedGossipWindow.push(now);
+  S.verifiedGossipAttempts.delete(id);
+  S.verifiedGossipAttempts.set(id,{at:now,generation,manifestHash});
+  while(S.verifiedGossipAttempts.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
+    S.verifiedGossipAttempts.delete(S.verifiedGossipAttempts.keys().next().value);
+  S.verifiedGossipJobs.set(id,{state:'queued',at:now});
+  while(S.verifiedGossipJobs.size>256)
+    S.verifiedGossipJobs.delete(S.verifiedGossipJobs.keys().next().value);
+  S.verifiedGossipQueue.push({id,hint:{...hint,base,kernel,peerId}});
+  _pumpVerifiedGossipJobs();
+}
+async function onVerifiedGossipProvider(result){
+  const verified=await verifiedRouteHintsFromP2PResult(result);
+  const unique=new Map();
+  for(const hint of verified.routeHints){
+    const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||''),
+      peerId=String(hint?.peerId||'');
+    if(base&&kernel&&peerId) unique.set(`${kernel}\u0000${base}\u0000${peerId}`,
+      {...hint,base,kernel,peerId});
+    if(unique.size>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+  }
+  for(const hint of unique.values()) _enqueueVerifiedGossipHint(hint);
 }
 async function refreshP2PRendezvous(){
   if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return;
@@ -8295,10 +8358,11 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-public-events-v18');
+    const mod=await import('./p2p-libp2p.js?v=20260718-verified-gossip-v19');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
-      onRecord:onGossipRecord });
+      onRecord:onGossipRecord,
+      onVerifiedProvider:onVerifiedGossipProvider });
     P2P.dialBootstrap=(multiaddr,options)=>
       mod.dialP2PBootstrap(P2P.node,multiaddr,options);
     for(const multiaddr of list) _primeInitialP2PBootstrapDial(multiaddr);
