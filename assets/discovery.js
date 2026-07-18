@@ -8128,7 +8128,8 @@ function onGossipRecord(doc){
 }
 async function refreshP2PRendezvous(){
   if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return;
-  const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000); let found=0;
+  const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000);
+  let found=0,reconciledRoutes=0,reconciledRecords=0;
   try{
     for await(const provider of P2P.node.contentRouting.findProviders(cid,{signal})){
       if(provider?.id?.equals?.(P2P.node.peerId)) continue;
@@ -8136,10 +8137,29 @@ async function refreshP2PRendezvous(){
       if(!target) continue;
       try{
         await P2P.node.dial(target,{signal:AbortSignal.timeout(5000)});
-        found++; break;
+        found++;
+        const result=await P2P.fetchProviderInventory?.(
+          provider,{timeoutMs:8000}).catch(()=>null);
+        const verified=await verifiedRouteHintsFromP2PResult(
+          result,{signal});
+        const unique=new Map();
+        for(const hint of verified.routeHints){
+          const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||'');
+          if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...hint,base,kernel});
+        }
+        for(const hint of unique.values()){
+          if(signal.aborted) break;
+          const reconciled=await _reconcileP2PRouteHint(hint,{signal});
+          if(reconciled.accepted){
+            reconciledRoutes++; reconciledRecords+=reconciled.count;
+          }
+        }
       }catch(e){}
+      if(found>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
     }
     log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
+    if(reconciledRoutes)
+      log('p2p',`rendezvous: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
   }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
 }
 async function initP2P(){
@@ -8157,7 +8177,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v14');
+    const mod=await import('./p2p-libp2p.js?v=20260718-public-dht-v15');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord });
