@@ -4237,12 +4237,22 @@ function renderPersonaCard(pid,kernel='',context={}){
     :workspaceRows.filter((row)=>Date.parse(row.generatedAt||'')===newestWorkspaceAt);
   const workspaceRuns=[...new Set(currentWorkspaceRows
     .map((row)=>typeof row?.run==='string'?row.run.trim():'').filter(Boolean))];
-  const verifiedCurrentTask=workspaceRuns.length===1
-    ?_verifiedPublicTaskForRun(ref.kernel,workspaceRuns[0]):null;
+  // An active call's exact run outranks workspace recency. This prevents a
+  // finalized predecessor from being presented as the work happening now while
+  // a new run has not emitted its first workspace snapshot yet.
+  const activeRuns=[...new Set(indexedActiveCalls
+    .map((call)=>typeof call?.run_id==='string'?call.run_id.trim():'').filter(Boolean))];
+  const hasActiveCalls=indexedActiveCalls.length>0;
+  const taskRun=activeRuns.length===1?activeRuns[0]
+    :(!hasActiveCalls&&workspaceRuns.length===1?workspaceRuns[0]:'');
+  const verifiedCurrentTask=taskRun?_verifiedPublicTaskForRun(ref.kernel,taskRun):null;
   const currentTask=typeof verifiedCurrentTask?.task==='string'?verifiedCurrentTask.task:'';
+  const workspaceIsTerminal=!hasActiveCalls&&currentWorkspaceRows.length>0
+    &&currentWorkspaceRows.every((row)=>Boolean(row.terminalState||row.terminalStatus)
+      ||row.state==='run_finalized');
   const currentTaskHTML=currentTask
-    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Current task</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
-  const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
+    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">${workspaceIsTerminal?'Latest task':'Current task'}</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
+  const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Environments</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
