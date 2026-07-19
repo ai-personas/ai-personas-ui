@@ -469,9 +469,10 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
 // counters, colours, fresh-classes, feed rows — fully live.
 const RM=(typeof matchMedia!=='undefined')&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Runtime truth for "in a model call" comes from kernel.active_model_calls, not
-// from replayed model_events or heartbeat.busy. Historical model_events remain
-// useful history, but they must not mark personas/envs as running now.
+// Runtime truth for "in a model call" comes from current kernel.active_model_calls
+// and the bounded, kernel-signed public-cognition active-call snapshot, not from
+// replayed model_events or heartbeat.busy. Historical model_events remain useful
+// history, but they must not mark personas/envs as running now.
 function _activeCalls(live){
   return telemetryActiveCalls(live).filter(Boolean);
 }
@@ -596,13 +597,20 @@ function _activeModelCallsForPersona(value,kernel=''){
   for(const call of [...telemetry,...cognition.calls]) merged.set(String(call.call_id||canon(call)),call);
   return [...merged.values()];
 }
+function _personaRunningInEnvironment(value,environment,kernel=''){
+  const ref=_personaRef(value,kernel), environmentId=environmentIdentity(environment);
+  if(!environmentId) return false;
+  return _activeModelCallsForPersona(ref.key).some((call)=>
+    environmentIdentity(call?.environment_id)===environmentId);
+}
 function _runtimeBusy(){
   return !!(S.activeModelCallCount>0);
 }
 function _envRunningNow(b){
   const sid=_shortId((b&&b.sid)||(b&&b.envId));
   if(sid && S.activeModelCallsByEnv && S.activeModelCallsByEnv.has(_environmentKey(b?.kernel,sid))) return true;
-  return !!(b&&Array.isArray(b.members)&&b.members.some((m)=>_activeModelCallsForPersona(m,b.kernel).length));
+  return !!(b&&Array.isArray(b.members)&&b.members.some((m)=>
+    _personaRunningInEnvironment(m,sid,b.kernel)));
 }
 function _latestSpanTime(spans){
   let out=0;
@@ -4116,6 +4124,10 @@ function renderPersonaCard(pid,kernel='',context={}){
   const signedCognitionCall=[...indexedActiveCalls].reverse().find((call)=>call?._signedPublicCognition===true)||null;
   const transportStale=!!d.stale&&!signedCognitionCall;
   const activeCall=signedCognitionCall||(!d.stale?(indexedActiveCalls.at(-1)||rt.current_model_call||null):null);
+  const activeEnvironmentIds=new Set(indexedActiveCalls
+    .map((call)=>environmentIdentity(call?.environment_id)).filter(Boolean));
+  const currentEnvironmentId=activeEnvironmentIds.size===1
+    ?activeEnvironmentIds.values().next().value:'';
   const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
   const signedName=String(signedIdentity?._personaSignedName||'');
@@ -4214,7 +4226,9 @@ function renderPersonaCard(pid,kernel='',context={}){
   const lastSeen=Math.max(S.lastModelSeenAt?.get(personaKey)||0, recentAct?._t||0, toolAct?._t||0);
   if(!running && !terminalFailure && lastSeen>0) doingHTML+=`<span class="pc-when">${_ago(lastSeen)}</span>`;
   const hue=_personaAvatarHue(personaKey);
-  const environments=(context.environments||[]).filter(Boolean);
+  const environments=(context.environments||[]).filter(Boolean).map((env)=>({
+    ...env,current:!!currentEnvironmentId&&environmentIdentity(env.sid)===currentEnvironmentId,
+  })).sort((left,right)=>Number(right.current)-Number(left.current));
   const workspaceRows=(context.liveWorkspaces||[]).filter((row)=>row&&typeof row.run==='string'&&row.run.trim());
   const workspaceTimes=workspaceRows.map((row)=>Date.parse(row.generatedAt||''));
   const newestWorkspaceAt=workspaceTimes.length&&workspaceTimes.every(Number.isFinite)
@@ -4229,7 +4243,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const currentTaskHTML=currentTask
     ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Current task</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
-    +environments.slice(0,4).map((env,index)=>`<button type="button" class="pc-env-chip${index===0?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
+    +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
@@ -4267,10 +4281,14 @@ function _environmentGraphId(b){
 function _environmentCommunicationGraphHTML(b){
   const refs=[...new Set((b?.members||[]).map((value)=>_personaRef(value,b?.kernel).key).filter(Boolean))];
   const scopedEvents=_environmentScopedEvents(b);
-  const memberState=(personaKey)=>{ const d=S.liveByPersona.get(personaKey)||{}, models=d.models||[];
-    const acts=S.ixByPersona?.get(personaKey)||[], latest=_latestPersonaActivityForRecency(acts);
-    const recent=_modelFresh(personaKey,models)||!!(latest&&Date.now()-latest._t<90000);
-    return {running:_runningNow(personaKey),recent}; };
+  const environmentId=environmentIdentity(b?.sid||b?.envId);
+  const memberState=(personaKey)=>{ const d=S.liveByPersona.get(personaKey)||{};
+    const models=(d.models||[]).filter((model)=>
+      environmentIdentity(model?.environment)===environmentId);
+    const recentEvent=scopedEvents.find((event)=>
+      Date.now()-event._t<90000&&_interactionPersonaKeys(event).includes(personaKey));
+    const recent=_modelFresh(personaKey,models)||!!recentEvent;
+    return {running:_personaRunningInEnvironment(personaKey,environmentId,b?.kernel),recent}; };
   // Compute each member's state/name once, then retain only the six best rows.
   // Sorting a thousand-person environment recomputed key parsing/state from every
   // comparator even though the compact graph renders six nodes; that froze search
@@ -4669,12 +4687,17 @@ function updateVitalsCounters(){
   const recPersona=recPersonaKeys.size;
   const personasN=Math.max(livePersona,recPersona);
   const now=Date.now();
-  // RUNNING = personas currently named by active_model_calls.
+  // RUNNING = verified personas currently named by either admitted live telemetry
+  // or the bounded kernel-signed public-cognition active-call projection.
   // Coordination-only traffic stays in acts/min so "running" always means LLM.
-  const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()].filter(([base])=>baseIsFocused(base==='@origin'?'':base));
-  const active=new Set(activeBases.flatMap(([base,calls])=>{ const kernel=kernelForBase(base==='@origin'?'':base);
-    return (calls||[]).map((call)=>{ const sid=_shortId(call?.persona_id);
-      return sid?_personaKey(call?.kernel_id||kernel,sid):''; }).filter(Boolean); })).size;
+  const activePersonaKeys=new Set();
+  for(const personaKey of S.personaDiscoveryByKey.keys()){
+    const ref=_personaRef(personaKey);
+    if(!kernelIsFocused(ref.kernel)
+        ||!verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)) continue;
+    if(_runningNow(personaKey)) activePersonaKeys.add(personaKey);
+  }
+  const active=activePersonaKeys.size;
   const acts=(S.interactions||[]).filter((e)=>_eventEligibleForRecency(e)
     &&now-e._t<60000&&kernelIsFocused(e._kernel||kernelForBase(e._base))).length;
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
@@ -4989,8 +5012,8 @@ async function refreshSystemView(){
   // (4) SORT lanes by activity so running/deliverable-bearing environments lead.
   // Stable sort keeps signed empty environments visible while placing them last.
   const _score=(b)=> (_envLaneLive(b).fresh?8:0)
-    + (b.members.some((m)=>_runningNow(m,b.kernel))?4:0)
-    + (b.members.some((m)=>(S.liveByPersona.get(_personaRef(m,b.kernel).key)||{}).models)?2:0)
+    + (_envRunningNow(b)?4:0)
+    + (((S.liveByEnv.get(_environmentKey(b.kernel,b.sid))||{}).models||[]).length?2:0)
     + (envHasArtifacts(b)?1:0);
   _kept.sort((a,b)=>_score(b)-_score(a));
   // Every verified environment record is an authoritative workspace identity.
