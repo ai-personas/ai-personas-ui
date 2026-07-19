@@ -8660,7 +8660,7 @@ async function refreshP2PRendezvous(){
       }catch(e){}
       if(attempted>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
     }
-    log('p2p',`DHT rendezvous resolved; ${found} peer provider(s) found`,found>0);
+    log('p2p',`DHT rendezvous scan: ${attempted} candidate provider(s) returned · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
     if(reconciledRoutes){
       P2P._rendezvousLastVerifiedAt=Date.now();
       log('p2p',`rendezvous: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
