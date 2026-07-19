@@ -1042,6 +1042,7 @@ const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
   maxRememberedProviders:64,providerRetryMs:30*1000,
   successfulRefreshMs:45*1000,verifiedGossipRetryMs:30*1000,
+  coldRetryBaseMs:3000,coldRetryMaxMs:10000,steadyRefreshMs:60000,
   jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
   if(typeof value==='string') return [value];
@@ -8257,16 +8258,31 @@ function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P
   const detail=n?`libp2p ${n.peerId.toString()} · ${peers} connected peer${peers===1?'':'s'} · ${routes} verified route${routes===1?'':'s'}`:'HTTP federation discovery';
   el.title=detail; el.setAttribute('aria-label',`Network connectivity: ${detail}`);
   el.textContent=n?`Network · ${peers} peer${peers===1?'':'s'}${routes?` · ${routes} verified route${routes===1?'':'s'}`:''}`:'Network · web discovery'; }
+function _scheduleP2PRendezvous(delayMs){
+  if(!P2P?._rendezvousConfigured||!P2P.node||P2P._rendezvousTimer
+      ||P2P._rendezvousActive) return;
+  P2P._rendezvousTimer=setTimeout(async()=>{
+    P2P._rendezvousTimer=null; P2P._rendezvousActive=true;
+    let verified=false;
+    try{ verified=await refreshP2PRendezvous(); }catch(e){}
+    finally{
+      P2P._rendezvousActive=false;
+      if(verified||P2P._rendezvousLastVerifiedAt){
+        P2P._rendezvousColdAttempts=0;
+        _scheduleP2PRendezvous(P2P_ROUTE_LIMITS.steadyRefreshMs);
+      }else{
+        const attempt=Number(P2P._rendezvousColdAttempts)||0;
+        P2P._rendezvousColdAttempts=Math.min(2,attempt+1);
+        _scheduleP2PRendezvous(Math.min(P2P_ROUTE_LIMITS.coldRetryMaxMs,
+          P2P_ROUTE_LIMITS.coldRetryBaseMs*(2**attempt)));
+      }
+    }
+  },delayMs);
+}
 function _ensureP2PRendezvousSchedule(){
   if(!P2P?.node) return;
   P2P._rendezvousConfigured=true;
-  if(!P2P._rendezvousSoon){
-    P2P._rendezvousSoon=setTimeout(()=>{
-      P2P._rendezvousSoon=null; refreshP2PRendezvous().catch(()=>{});
-    },3000);
-  }
-  if(!P2P._rendezvousTimer)
-    P2P._rendezvousTimer=setInterval(()=>refreshP2PRendezvous().catch(()=>{}),60000);
+  _scheduleP2PRendezvous(P2P_ROUTE_LIMITS.coldRetryBaseMs);
 }
 function _p2pBootstrapDialState(multiaddr){
   let state=S.p2pDialStates.get(multiaddr);
@@ -8613,9 +8629,9 @@ async function onVerifiedGossipProvider(result){
   for(const hint of unique.values()) _enqueueVerifiedGossipHint(hint);
 }
 async function refreshP2PRendezvous(){
-  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return;
+  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return false;
   if(P2P._rendezvousLastVerifiedAt
-      &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return;
+      &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return true;
   const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Set());
   const recent=P2P._rendezvousProviderAttempts||(P2P._rendezvousProviderAttempts=new Map());
   const now=Date.now();
@@ -8665,7 +8681,11 @@ async function refreshP2PRendezvous(){
       P2P._rendezvousLastVerifiedAt=Date.now();
       log('p2p',`rendezvous: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
     }
-  }catch(e){ if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); } }
+    return reconciledRoutes>0;
+  }catch(e){
+    if(!P2P._dhtNoted){ P2P._dhtNoted=true; log('p2p','DHT rendezvous unavailable through configured peers: '+String(e&&e.message||e),false); }
+    return false;
+  }
 }
 async function initP2P(){
   const params=new URLSearchParams(location.search);
