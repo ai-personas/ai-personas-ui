@@ -7552,11 +7552,9 @@ function _runRuntimeSurfaces(st){
   const take=(...names)=>{ for(const obj of candidates) for(const name of names){
     if(obj[name]!==undefined&&obj[name]!==null&&obj[name]!=='') return obj[name]; } return null; };
   const pressure=take('pressure_open','runtime_pressure_open','active_pressure');
-  const block=(pressure&&typeof pressure==='object'&&(pressure.completion_block_reason||pressure.block_reason))
-    ||take('completion_block_reason','block_reason');
   const review=take('review_eligibility','review_eligible','eligible_for_review','artifact_review_eligibility');
   const activePressure=take('active_pressure_appraisals','active_pressure_count');
-  return {pressure,block,review,activePressure};
+  return {pressure,review,activePressure};
 }
 
 async function operatorRunView(b,run){
@@ -7613,13 +7611,12 @@ async function operatorRunView(b,run){
   else html+=terminal
     ?`<div class="l2">The signature-checked ${finalizedBootstrap?'finalized snapshot':'run-ended event'} cleared active execution; no model call remains active.</div>`
     :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
-  const runtime=terminal?{pressure:null,block:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
+  const runtime=terminal?{pressure:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
   const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
   const inReview=liveCalls.some((call)=>/review/.test(String(call.requested_purpose||'')));
   html+=kv('Pressure',runtime.pressure||runtime.activePressure||inPressure
       ?`<span class="amber">${inPressure?'appraisal in progress':'open / recorded'}</span>`
       :'<span class="l2">none exposed</span>')
-    +kv('Completion block',runtime.block?`<span class="no">${esc(runtime.block)}</span>`:'<span class="l2">none exposed</span>')
     +kv('Review eligibility',runtime.review!==null?esc(typeof runtime.review==='object'?JSON.stringify(runtime.review):runtime.review)
       :(inReview?'<span class="amber">review in progress</span>':'<span class="l2">not exposed</span>'));
   html+=H('Live workspace files')
