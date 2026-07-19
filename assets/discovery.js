@@ -109,7 +109,6 @@ const _ICON_PATHS={
   env_new:'M2.5 13.5V7L8 3l5.5 4v6.5M6 13.5v-4h4v4',     // 🏗 NEW ENV (building)
   persona_new:'M8 8.5a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4zM3.5 13.5a4.5 4.5 0 0 1 9 0', // 🧬 NEW PERSONA (person)
   tool:'M11.5 2.5a3 3 0 0 1-4 4l-4.5 4.5 1.5 1.5L9 8a3 3 0 0 0 4-4l-1.5 1.5-1.5-1.5L11.5 2.5z', // 🔧 tool (wrench)
-  attest:'M9.5 3l3.5 3.5-6.5 6.5H3v-3.5L9.5 3z',         // ✍ ATTEST (pen)
   // status / glance
   lesson:'M8 2.5a3.5 3.5 0 0 0-2 6.4V11h4V8.9A3.5 3.5 0 0 0 8 2.5zM6.5 13h3', // 💡 lesson (bulb)
   task:'M5.5 8.5l1.5 1.5 3.5-4M3 3h10v10H3z',            // ⚙/task → checklist
@@ -7368,7 +7367,7 @@ async function planSection(base,run){
     const blk=(last.blocked_targets||[]);
     html+=kv('Round',`<b>r${esc(last.round)}</b> <span class="l2">${esc(last.candidates_explored||0)} candidate(s) explored`
       +(last.marginal_value!=null?` · <span class="${last.marginal_value>=0?'ok':'down'}">Δ${Number(last.marginal_value).toFixed(4)}</span>`:'')+`</span>`);
-    if(blk.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} blocked this round: ${esc(blk.join(', '))} — the mission honest-blocked rather than fabricate a value.</div>`;
+    if(blk.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} unresolved this round: ${esc(blk.join(', '))} — best-so-far evidence remains visible while personas continue through available peer, environment and tool paths.</div>`;
   }
   // OBJECTIVES / TARGETS — baseline -> current -> ideal, each stamped with the
   // evidence that credited it (MEASURED vs claimed-but-unmeasured). The plan's spine.
@@ -7448,7 +7447,7 @@ async function operatorView(){
   let html=H('Operator authority — bearer token')
     +`<div class="desc2">Each node mints a process bearer at boot and prints its exact temporary path `
     +`(default <code>runs/node/.personaos-secrets/operator.token</code>). Capture it before the first model call, then paste it here to unlock a node's owner intake `
-    +`(ASK / FUND / STOP / ATTEST), full status, runs and personas. Loopback is a convenient `
+    +`(ASK / FUND / STOP), full status, runs and personas. Loopback is a convenient `
     +`route, not authority: <b>local and remote nodes both require the token</b>.</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<label class="field"><span class="field-label">node base URL</span>`
@@ -7505,29 +7504,8 @@ async function operatorNodeView(b){
   const paused=st.paused_missions||[];
   if(paused.length) html+=H(`Paused missions (${paused.length}) — fund to resume`)+paused.map((p)=>
     `<div class="grant"><span>${esc(p.run||p.run_id||'')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
-  // A-HB (06_DOMAIN §5.5): missions BLOCKED on a HUMAN — the persona named an
-  // unavailable external capability instead of fabricating a value. The human
-  // attests once (signed bridge evidence); the next resume clears the block.
-  const att=st.attestations_needed||[];
-  html+=H(`Human attestation${att.length?` — needed (${att.length}) — mission honest-blocked`:''}`);
-  if(!att.length){
-    html+=`<div class="l2">`+(pub
-      ?`operator-only — attestation requests appear here once you have owner access. Paste the captured process bearer; if needed, open the node's localhost UI and use the same bearer there.`
-      :`${icon('check','ico-sm')} no mission is blocked on human attestation right now. When a persona honest-blocks on an external capability it cannot self-provision (a hardware instrument, a credential, a paid API…), it appears here with an <b>ATTEST</b> form.`)+`</div>`;
-  } else {
-    html+=att.map((a)=>{
-      const blocks=(a.blocks||[]).map((bk)=>
-        `<div class="grant"><span class="amber">${esc(bk.capability||bk.kind||'capability')}</span>`
-        +`<span class="l2">${esc(bk.target||'')} ${esc((bk.reason||'').slice(0,90))}</span></div>`).join('');
-      return `<div class="grant"><span>${esc(a.run)}</span><span class="l2">${esc((a.task||'').slice(0,60))}</span></div>`+blocks
-        +`<div class="opform">`
-        +`<label class="field"><span class="field-label">attestation statement</span>`
-        +`<input class="op-att-stmt" data-run="${esc(a.run)}" placeholder="what you provisioned / verified (signed into the run)"></label>`
-        +`<label class="field"><span class="field-label">smoke test (optional)</span>`
-        +`<textarea class="op-att-smoke" data-run="${esc(a.run)}" rows="2" placeholder="Python, runs in the real sandbox; a failing probe REFUSES the attestation; passing output becomes EXECUTED evidence"></textarea></label>`
-        +`<div class="oprow"><button class="btn" data-act="op-attest" data-base="${esc(b)}" data-run="${esc(a.run)}">${icon('attest')} ATTEST</button></div></div>`;
-    }).join('');
-  }
+  html+=H('Optional human input')
+    +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><label class="field"><span class="field-label">task</span>`
     +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
@@ -8153,21 +8131,6 @@ function wire(){
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
-    if(act==='op-attest'){ const b2=a.dataset.base, run=a.dataset.run, out=$('#op-out');
-      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
-      const sel=(window.CSS&&CSS.escape)?CSS.escape(run):run;
-      const inp=document.querySelector(`.op-att-stmt[data-run="${sel}"]`);
-      const smokeEl=document.querySelector(`.op-att-smoke[data-run="${sel}"]`);
-      const statement=(inp&&inp.value||'').trim();
-      const smoke_test=(smokeEl&&smokeEl.value||'').trim();
-      if(!statement){ if(out) out.textContent='describe what you provisioned/verified first — the statement is signed into the run'; opInvalid(inp); return; }
-      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-      opPending(out,smoke_test?'running smoke test in the sandbox, then signing…':'signing human attestation…');
-      opPost(b2,'attest',{run,statement,smoke_test}).then((r)=>{ done();
-        if(out){ showOpResult(out,r,(r.status>=200&&r.status<300)?'\n\n→ now FUND the mission to resume with the attested capability.':''); out.scrollIntoView({block:'nearest'}); }
-        if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
-          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3500); } });
-      return; }
     if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
       const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
       const show=(r)=>{ done();
