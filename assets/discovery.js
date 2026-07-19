@@ -3483,14 +3483,11 @@ const ARTIFACT_KINDS=new Set(['BUNDLE_CREATED','artifact_sharing_policy_created'
 // TOOL = a persona reaching for / acquiring / using a capability — the headline
 // "self-extension" story. These have human verbs in IX_VERB but would otherwise
 // fall to the muted 'activity' catch-all, indistinguishable from background noise.
-const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_BLOCKED','EXTERNAL_CAPABILITY_ACQUIRED',
+const TOOL_KINDS=new Set(['CAPABILITY_PROVISIONED','EXTERNAL_CAPABILITY_ACQUIRED',
   'ENV_MCP_TOOL_REGISTERED','ENV_MCP_TOOL_INVOKED','PROVISIONAL_TOOL_STATUS',
   'PERSONA_ACTION_AUTHORED','PERSONA_ACTION_COMPLETED','PERSONA_ACTION_FAILED']);
-// a verdict that did NOT accept → render in the rejected colour. A persona honestly
-// stuck on self-provisioning (EXTERNAL_CAPABILITY_BLOCKED) reads as fail too. NOTE:
-// the public interaction projection strips payload, so CAPABILITY_PROVISIONED's
-// ok/error fields are NOT in the client stream — only BLOCKED is markable client-side.
-const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'||kind==='EXTERNAL_CAPABILITY_BLOCKED'
+// A verdict that did not accept renders in the rejected colour.
+const _ixFailed=(kind)=>kind==='TASK_NOT_ACCEPTED'
   ||kind==='PERSONA_ACTION_FAILED';
 function _ixClass(kind,event=null){ if(event?._cognition===true
     ||(event?._providerProvisional===true&&kind==='PROVISIONAL_ASSISTANT_MESSAGE')
@@ -3522,7 +3519,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   MODEL_CALL_FAILED:'model call failed',LLM_OUTPUT:'produced',LLM_LESSON:'learned',
   PROVISIONAL_ASSISTANT_MESSAGE:'streamed assistant message',PROVISIONAL_PROVIDER_STATUS:'provider status',
   PROVISIONAL_TOOL_STATUS:'tool status',COGNITION_LESSON:'holds lesson',
-  COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',EXTERNAL_CAPABILITY_BLOCKED:'blocked on capability',
+  COGNITION_TACTIC:'holds tactic',COGNITION_PROVEN_FACT:'holds proven fact',
   EXTERNAL_CAPABILITY_ACQUIRED:'acquired capability',CAPABILITY_PROVISIONED:'provisioned tool',
   ENV_MCP_TOOL_REGISTERED:'mounted tool',ENV_MCP_TOOL_INVOKED:'used tool',
   PERSONA_ACTION_AUTHORED:'action authored',PERSONA_ACTION_COMPLETED:'action completed',
