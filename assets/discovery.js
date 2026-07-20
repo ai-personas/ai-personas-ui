@@ -7893,17 +7893,24 @@ function renderMissions(){
   const matching=window.items.length===cards.length
     ?`${cards.length} mission${cards.length===1?'':'s'}`
     :`${window.items.length} matching · ${cards.length} total`;
-  if(count) count.textContent=`${matching} · ${active.state}`;
+  const nodeLabel=String(active.kernel||'').replace(/^kernel:/,'');
+  const compactNode=nodeLabel.length>14?`${nodeLabel.slice(0,13)}…`:nodeLabel;
+  if(count) count.textContent=`${matching} · ${active.state}${compactNode?` · node ${compactNode}`:''}`;
   if(headline) headline.textContent=active.task;
-  if(eyebrow) eyebrow.textContent=cards.some((card)=>card.state==='running')?'NOW WORKING ON'
+  if(eyebrow) eyebrow.textContent=cards.some((card)=>card.state==='running')
+    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON')
     :cards.some((card)=>card.state==='failed')?'EXECUTION NEEDS ATTENTION':'MISSION EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
-  const html=window.items.length?window.items.map((c)=>
-    `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
-    +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
-    +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
-    +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`).join('')
+  const html=window.items.length?window.items.map((c)=>{
+    const cardNode=String(c.kernel||'').replace(/^kernel:/,'');
+    const compactCardNode=cardNode.length>18?`${cardNode.slice(0,17)}…`:cardNode;
+    return `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
+      +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
+      +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
+      +(compactCardNode?`<span title="${esc(c.kernel)}">node ${esc(compactCardNode)}</span>`:'')
+      +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`;
+  }).join('')
     :`<div class="mission-no-match">No missions match this network filter.</div>`;
   if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
 }
