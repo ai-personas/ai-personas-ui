@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '009e4e0da5a2ad916033b7a1b2d8bf572adf1614'
+REVIEWED_DESIGN_COMMIT = '28f0714ab2db6e1eb6ac789cf92c9a9b55675b81'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '15731a8c0dd24a18a12d2db7f65f087accb349546e986eba022151dd289499be'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '78c8040aa5b2b48943f33e2650e9e651408d81420ca6b60ddfc4b0e5e29ac78e'
 
 
 DESIGN_ANCHORS = {
@@ -36,14 +36,39 @@ DESIGN_ANCHORS = {
         'never kernel tie-breakers',
         'routing_context_pressure remains open',
         'ambiguity is never interpreted as an ephemeral route',
+        'must not inspect task text for magic verbs',
+        'human silence never creates a task-wide wait',
+        'best-so-far artifact',
     ],
     '04_PROJECT.md': [
         'never give the kernel or caller authority',
         'unresolved project-host-choice pressure/refusal',
+        'external silence alone never makes a project healthy',
+    ],
+    '02_PERSONA.md': [
+        'exact `chartersynthesisclaim` signed by every involved parent persona',
+        'not lowercase, tokenize, cluster, regex-match',
+        'missing answer never substitutes for peer agreement',
+    ],
+    '06_DOMAIN.md': [
+        'missing outside evidence is not a phase kind',
+    ],
+    '15_COORDINATION_SHAPES.md': [
+        'receiver silence expires or denies only that proposed binding',
+    ],
+    '16_POPULATION_DYNAMICS.md': [
+        'birth alone does not silently grant membership',
+        'only the exact signed author↔newborn bootstrap channel',
+    ],
+    '19_PERSONA_PRESSURE_ADDENDUM.md': [
+        'pressure is persona-authored context',
+        'completion readiness and execution resources are separate axes',
+        "each persona's latest signed appraisal is its current pressure snapshot",
     ],
     '13_DESIGN_VALIDATION.md': [
         'global discovery layer',
         'globally-verifiable lineage',
+        'principal silence alone does not make the whole persona',
     ],
 }
 
