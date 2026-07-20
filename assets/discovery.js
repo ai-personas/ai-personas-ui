@@ -3691,10 +3691,16 @@ function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=
 // exclusively from a persona-signed raster descriptor and verified bytes.
 const _PERSONA_AVATAR_CACHE_MAX_ENTRIES=96;
 const _PERSONA_AVATAR_CACHE_MAX_BYTES=64*1024*1024;
+const _PERSONA_AVATAR_BODY_RETRY_MS=Object.freeze([250,750,1500,3000,6000,12000,24000]);
 const _personaAvatarAssets=new Map();
 const _personaAvatarJobs=new Map();
 const _personaAvatarFailures=new Set();
 let _personaAvatarCacheBytes=0;
+function _personaAvatarBodyTransientError(){
+  const error=new Error('avatar body transport temporarily unavailable');
+  Object.defineProperty(error,'avatarBodyTransient',{value:true});
+  return error;
+}
 function _rememberPersonaAvatarFailure(key){
   _personaAvatarFailures.delete(key); _personaAvatarFailures.add(key);
   while(_personaAvatarFailures.size>512) _personaAvatarFailures.delete(_personaAvatarFailures.values().next().value);
@@ -3815,8 +3821,7 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
             'Content-Length':String(descriptor.byte_length),
           }});
         }
-        if(httpResponse) return httpResponse;
-        throw new Error('avatar body unavailable over HTTP and P2P');
+        throw _personaAvatarBodyTransientError();
       };
       const loaded=await fetchVerifiedPersonaAvatar(descriptor,{
         expectedPersonaId:ref.sid,pinnedPublicKeyHex:pin,providerBase,pageUrl:location.href,
@@ -3832,7 +3837,10 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         url:URL.createObjectURL(blob),byteLength:loaded.descriptor.byte_length,
         width:loaded.descriptor.width,height:loaded.descriptor.height,
       }));
-    })().catch((error)=>{ _rememberPersonaAvatarFailure(cacheKey); throw error; })
+    })().catch((error)=>{
+      if(error?.avatarBodyTransient!==true) _rememberPersonaAvatarFailure(cacheKey);
+      throw error;
+    })
       .finally(()=>_personaAvatarJobs.delete(cacheKey));
     _personaAvatarJobs.set(cacheKey,job);
   }
@@ -3870,8 +3878,28 @@ async function _hydratePersonaAvatarMount(mount){
     img.addEventListener('error',()=>{ if(mount.isConnected&&mount.contains(img)) _neutralPersonaAvatar(mount); },{once:true});
     img.src=asset.url;
     mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.dataset.avatarLifecycle='materialized';
+    delete mount.dataset.avatarRetryAttempt;
     mount.setAttribute('aria-label','verified persona-authored raster avatar');
-  }catch(e){ if(mount.isConnected&&mount.dataset.avatarRevision===revision) _neutralPersonaAvatar(mount); }
+  }catch(e){
+    if(!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
+    const attempt=Math.max(0,Number.parseInt(mount.dataset.avatarRetryAttempt||'0',10)||0);
+    const delay=e?.avatarBodyTransient===true?_PERSONA_AVATAR_BODY_RETRY_MS[attempt]:undefined;
+    if(Number.isFinite(delay)){
+      const nextAttempt=attempt+1;
+      mount.dataset.avatarRetryAttempt=String(nextAttempt);
+      mount.dataset.avatarState='waiting'; mount.dataset.avatarLifecycle='verifying';
+      mount.setAttribute('aria-label','deterministic monogram shown while persona-authored raster avatar transport retries');
+      globalThis.setTimeout(()=>{
+        if(!mount.isConnected||mount.dataset.avatarRevision!==revision
+            ||mount.dataset.avatarState!=='waiting'
+            ||mount.dataset.avatarRetryAttempt!==String(nextAttempt)) return;
+        mount.dataset.avatarState='pending';
+        _hydratePersonaAvatarMount(mount).catch(()=>{});
+      },delay);
+      return;
+    }
+    _neutralPersonaAvatar(mount);
+  }
 }
 function _hydratePersonaAvatars(){
   document.querySelectorAll('.pc-avatar[data-avatar-key]').forEach((mount)=>{
