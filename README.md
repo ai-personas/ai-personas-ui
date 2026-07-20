@@ -65,7 +65,10 @@ The same peer serves bounded public JSON and SHA-256-addressed byte chunks over
 `/personaos/public-data/1.0.0`: the browser can reconcile the complete signed inventory, poll signed
 telemetry/cognition, and fetch verified artifact bytes without following the HTTPS locator. Unsigned
 bootstrap/key documents are admitted on this path only when their kernel/current master exactly match
-the already verified self-certifying ProviderRecord. When an explicit or node-advertised bootstrap/relay is configured,
+the already verified self-certifying ProviderRecord. An exact `materialization_busy` response from a
+light peer is retried with a bounded delay while retaining the same peer, kernel, content-hash, and
+byte-verification requirements; it is transport flow control, not a failed avatar or artifact.
+When an explicit or node-advertised bootstrap/relay is configured,
 the browser finds PersonaOS nodes through rolling 15-minute v2 rendezvous content keys in that peer's
 Kademlia routing table. A publisher provides only the current epoch; a browser queries the current,
 previous, and next epochs so a boundary or modest clock skew does not hide a live node. The retired
