@@ -540,6 +540,7 @@ function heartbeatForScope(){
   return found?{running,busy,interval_s:minIv||5}:null;
 }
 function expireLivePresence(now=Date.now()){
+  _expireProviderInventories(now);
   NETWORK.sweepPresence(now);
   const lease=30000, retention=120000; let callsChanged=false;
   for(const [personaKey,state] of (S.cognitionActiveCallsByPersona||new Map()))
@@ -2240,6 +2241,28 @@ function _removeRecordStoreKey(id){
   try{ NETWORK.removeEntity(networkEntityKey(row._kernel,row.kind,
     _shortId(row.did||row.record_id))); }catch(_){ }
   S.recs.delete(id); S.order=S.order.filter((value)=>value!==id); return true;
+}
+function _providerInventoryIsCurrent(inventory,now=Date.now()){
+  const generatedAt=Number(inventory?.generatedAt), expiresAt=Number(inventory?.expiresAt);
+  return Number.isFinite(generatedAt)&&Number.isFinite(expiresAt)
+    &&expiresAt>generatedAt&&expiresAt>now;
+}
+function _expireProviderInventories(now=Date.now()){
+  let changed=false;
+  for(const [kernel,inventory] of (S.providerInventories||new Map())){
+    const expiresAt=Number(inventory?.expiresAt);
+    // Only a finite, signed expiry retires an inventory here. Malformed windows
+    // are refused before admission and also fail closed at every live consumer.
+    if(!Number.isFinite(expiresAt)||expiresAt>now) continue;
+    for(const id of (inventory?.recordKeys||[]))
+      changed=_removeRecordStoreKey(id)||changed;
+    S.providerInventories.delete(kernel);
+  }
+  if(changed){
+    classifyMap();
+    scheduleRealtimeRepaint({records:true});
+  }
+  return changed;
 }
 function applyVerifiedProviderInventory(base,boot,rows,inventory){
   if(!inventory?.complete||!inventory.ok||!boot?.kernel_id) return false;
@@ -6001,7 +6024,8 @@ function _validPublicPersonaEvolution(event){
 function _currentInventoryPersona(kernel,pid){
   const personaKey=_personaKey(kernel,pid), row=S.personaDiscoveryByKey.get(personaKey);
   const inventory=S.providerInventories.get(String(kernel||''));
-  return row&&inventory&&row._inventorySource===kernel
+  return row&&_providerInventoryIsCurrent(inventory)
+    &&row._inventorySource===kernel
     &&row._inventoryGeneration===inventory.generation&&row._inventoryHash===inventory.hash
     &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)?row:null;
 }
@@ -7852,6 +7876,18 @@ function tick(now){
 const CURRENT_MISSION_CARD_STATES=new Set(['live','running']);
 function missionCardIsCurrent(card){ return card?.currentExecution===true
   &&CURRENT_MISSION_CARD_STATES.has(card.state); }
+function _missionNodeAvailability(kernel,now=Date.now()){
+  const info=S.globalKernels?.get(String(kernel||''));
+  if(!info) return 'unobserved';
+  const hasRoute=[...(info.via||[])].some((via)=>
+    ['http','manual','local','ipfs','p2p','gossip'].includes(via));
+  const reachable=info.meta?.reachable===false
+    ?false:(info.meta?.reachable===true||hasRoute);
+  return reachable&&now-Number(info.lastSeen||0)<45000?'online':'offline';
+}
+function missionCardIsObservedCurrent(card){
+  return missionCardIsCurrent(card)&&card?.nodeAvailability==='online';
+}
 function _missionRunLabel(value){ const run=String(value||'');
   return run.length>26?`${run.slice(0,25)}…`:run; }
 function missionCardList(){
@@ -7920,7 +7956,8 @@ function missionCardList(){
       task:humanTask(project?.label||state.snapshot?.task,nodeId,state.run),
       state:activeNow?'running':'published',kernel:nodeId||kernelForBase(state.base),
       meta:[state.run.slice(0,26),`${state.files.size} ${activeNow?'live':'verified'} files`,
-        calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run};
+        calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run,
+      nodeAvailability:'online'};
     if(activeNow) cards.unshift(card); else cards.push(card);
   }
   // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
@@ -7935,12 +7972,12 @@ function missionCardList(){
       const live=liveArtifactState(base,run); const files=live?.files?.size||0;
       const calls=(live?.snapshot?.active?.calls||[]).length;
       const kernel=kernelForBase(base);
-      cards.unshift({key:'run:'+nodeRun,task:humanTask(busy,kernel,run),state:'running',kernel,meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run}); }
+      cards.unshift({key:'run:'+nodeRun,task:humanTask(busy,kernel,run),state:'running',kernel,meta:[run.slice(0,26),files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run,nodeAvailability:'online'}); }
     for(const p of (v.paused_missions||[])){
       const run=String(p.run||p.run_id||p); const nodeRun=_liveRunKey(base,run); if(!run||seen.has(nodeRun)) continue; seen.add(nodeRun);
       const kernel=kernelForBase(base);
       cards.push({key:'pause:'+nodeRun,task:humanTask(p.task,kernel,run),state:'paused',kernel,
-        meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
+        meta:[run.slice(0,26),String(p.status||'')],base,run,nodeAvailability:'online'}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
   const grouped=new Map();
   // Signed lifecycle descendants are revisions of one task lineage, not new
@@ -7964,6 +8001,15 @@ function missionCardList(){
       meta:[...new Set([...(winner.meta||[]),...lineageEntries,...(loser.meta||[])])]
         .filter(Boolean).slice(0,12)}); }
   const result=[...grouped.values()];
+  for(const card of result){
+    card.nodeAvailability=card.nodeAvailability||_missionNodeAvailability(card.kernel);
+    if(card.nodeAvailability==='online') continue;
+    const nodeState=card.nodeAvailability==='offline'?'node offline':'live node not observed';
+    const evidence=card.exactLifecycle?'cached signed lifecycle':'cached signed history';
+    const availability=`${evidence} · ${nodeState}`;
+    card.meta=[availability,...(card.meta||[]).filter((value)=>value!==availability)]
+      .filter(Boolean).slice(0,12);
+  }
   const byKernel=new Map();
   for(const card of result) (byKernel.get(card.kernel)||byKernel.set(card.kernel,[]).get(card.kernel)).push(card);
   for(const [kernel,kernelCards] of byKernel){
@@ -8006,23 +8052,29 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>missionCardIsCurrent(c)?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>missionCardIsObservedCurrent(c)?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its mission text.
   // Keep the compact mission summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
-  const active=window.items.find((c)=>missionCardIsCurrent(c))||window.items[0]||null;
+  const active=window.items.find((c)=>missionCardIsObservedCurrent(c))||window.items[0]||null;
   const matching=window.items.length===cards.length
     ?`${cards.length} mission${cards.length===1?'':'s'}`
     :`${window.items.length} matching · ${cards.length} total`;
   const nodeLabel=String(active?.kernel||'').replace(/^kernel:/,'');
   const compactNode=nodeLabel.length>14?`${nodeLabel.slice(0,13)}…`:nodeLabel;
   if(count) count.textContent=active
-    ?`${matching} · ${active.state}${compactNode?` · node ${compactNode}`:''}`:matching;
-  if(headline) headline.textContent=missionCardIsCurrent(active)
-    ?active.task:active?'Task lifecycle evidence':'No matching mission';
-  if(eyebrow) eyebrow.textContent=missionCardIsCurrent(active)
-    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON'):'MISSION EVIDENCE';
+    ?`${matching} · ${active.state}${compactNode?` · node ${compactNode}`:''}`
+      +(active.nodeAvailability==='offline'?' · offline'
+        :active.nodeAvailability==='unobserved'?' · not currently observed':'')
+    :matching;
+  const cached=!missionCardIsObservedCurrent(active)
+    &&['offline','unobserved'].includes(active?.nodeAvailability);
+  if(headline) headline.textContent=missionCardIsObservedCurrent(active)
+    ?active.task:cached?'Cached signed mission evidence':active?'Task lifecycle evidence':'No matching mission';
+  if(eyebrow) eyebrow.textContent=missionCardIsObservedCurrent(active)
+    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON')
+    :cached?'CACHED NETWORK EVIDENCE':'MISSION EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
   const html=window.items.length?window.items.map((c)=>{
