@@ -2265,7 +2265,8 @@ function _expireProviderInventories(now=Date.now()){
   return changed;
 }
 function applyVerifiedProviderInventory(base,boot,rows,inventory){
-  if(!inventory?.complete||!inventory.ok||!boot?.kernel_id) return false;
+  if(!inventory?.complete||!inventory.ok||!boot?.kernel_id
+    ||!_providerInventoryIsCurrent(inventory)) return false;
   const source=String(boot.kernel_id), prior=S.providerInventories.get(source);
   if(prior){
     if(inventory.generation<prior.generation
@@ -7879,11 +7880,11 @@ function missionCardIsCurrent(card){ return card?.currentExecution===true
 function _missionNodeAvailability(kernel,now=Date.now()){
   const info=S.globalKernels?.get(String(kernel||''));
   if(!info) return 'unobserved';
-  const hasRoute=[...(info.via||[])].some((via)=>
-    ['http','manual','local','ipfs','p2p','gossip'].includes(via));
-  const reachable=info.meta?.reachable===false
-    ?false:(info.meta?.reachable===true||hasRoute);
-  return reachable&&now-Number(info.lastSeen||0)<45000?'online':'offline';
+  // A locator announcement says where a node might be reached; it is not a
+  // successful live observation. Only an explicitly verified reachability
+  // result may promote cached signed history into current activity.
+  return info.meta?.reachable===true&&now-Number(info.lastSeen||0)<45000
+    ?'online':'offline';
 }
 function missionCardIsObservedCurrent(card){
   return missionCardIsCurrent(card)&&card?.nodeAvailability==='online';
