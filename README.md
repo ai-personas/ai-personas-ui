@@ -169,8 +169,10 @@ visibly distinct sources.
 
 **Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
 the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies
-the descriptor's persona signature, resolves only its exact provider-relative content-addressed
-path, rejects redirects, and checks raster MIME, byte length, SHA-256, and dimensions before
+the descriptor's persona signature against the record's exact signed persona ID; a normalized UI
+index key is never substituted into that identity binding. It resolves only the exact
+provider-relative content-addressed path, rejects redirects, and checks raster MIME, byte length,
+SHA-256, and dimensions before
 rendering the bytes through a temporary blob URL. A verified lifecycle shell is rendered immediately
 as an independently materializing persona; its persona-authored name, characteristics, and avatar
 may become materialized independently, and a verified adopted name does not falsely promote the

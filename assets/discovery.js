@@ -3783,6 +3783,9 @@ function _rememberPersonaAvatarAsset(key,asset){
 }
 async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   const ref=_personaRef(personaKey);
+  const signedPersona=signedPersonaIdentity(signedCard);
+  if(!signedPersona||signedPersona.canonicalId!==ref.sid)
+    throw new Error('signed persona identity binding unavailable');
   const assertedPin=String(signedCard?._personaIdentityPublicKeyHex||'');
   const rememberedPin=String(S.personaIdentityKeys.get(ref.key)||'');
   if(assertedPin&&rememberedPin&&assertedPin!==rememberedPin)
@@ -3824,7 +3827,8 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         throw _personaAvatarBodyTransientError();
       };
       const loaded=await fetchVerifiedPersonaAvatar(descriptor,{
-        expectedPersonaId:ref.sid,pinnedPublicKeyHex:pin,providerBase,pageUrl:location.href,
+        expectedPersonaId:signedPersona.signedId,pinnedPublicKeyHex:pin,
+        providerBase,pageUrl:location.href,
         fetchImpl:avatarFetch,
       });
       const observedKey=loaded.descriptor.identity_public_key_hex;
