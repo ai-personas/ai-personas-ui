@@ -45,7 +45,7 @@ import {
   signedPersonaIdentity,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260720-task-current-execution-v3';
+} from './network-view.mjs?v=20260720-pending-avatar-lifecycle-v4';
 import {
   NetworkStore,
   TelemetryAdmissionGate,

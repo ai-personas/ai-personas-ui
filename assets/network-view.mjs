@@ -494,9 +494,9 @@ function normalizedPersonaLifecycleCard(record) {
     normalizedFields[name]=Object.freeze({state:field.state,personaAuthored:field.persona_authored});
   }
   if(Object.keys(fields).sort().join('\u0000')!=='avatar\u0000characteristics\u0000name') return null;
-  const requiredMaterialized=['name','characteristics']
-    .every((name)=>normalizedFields[name].state==='materialized');
-  if((materialization==='materialized')!==requiredMaterialized) return null;
+  const allMaterialized=Object.values(normalizedFields)
+    .every((field)=>field.state==='materialized');
+  if((materialization==='materialized')!==allMaterialized) return null;
   return Object.freeze({personaId:identity.canonicalId,lifecycleState:lifecycle,
     materializationState:materialization,identityFields:Object.freeze(normalizedFields)});
 }
