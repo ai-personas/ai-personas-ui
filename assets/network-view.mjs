@@ -62,9 +62,11 @@ export function responseByteLengthWithinLimit(byteLength, maxBytes) {
 const MISSION_EVIDENCE_KINDS = new Set(['task', 'project', 'mission']);
 const MISSION_EVIDENCE_LABEL_LIMIT = 256;
 const MISSION_EVIDENCE_DID_LIMIT = 512;
-const PUBLIC_TASK_LIFECYCLE_SCHEMA = 'personaos-public-task-lifecycle/1';
+const PUBLIC_TASK_LIFECYCLE_SCHEMA = 'personaos-public-task-lifecycle/2';
+const PUBLIC_TASK_RUN_RE = /^run-[A-Za-z0-9_-]{1,180}$/;
 const PUBLIC_TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/;
 const PUBLIC_TASK_REVISION_RE = /^sha256:[0-9a-f]{64}$/;
+const PUBLIC_TASK_CURRENT_STATES = new Set(['live', 'running']);
 export const PUBLIC_TASK_RUN_POLL_LIMIT = 48;
 const MODEL_EVENT_SCAN_LIMIT = 8_192;
 const MODEL_FAILURE_REASON_LIMIT = 240;
@@ -209,13 +211,36 @@ export function publishedMissionEvidenceProjection(record) {
  */
 export function publicTaskLifecycleProjection(record) {
   const lifecycle = record?.task_lifecycle;
+  const run = String(lifecycle?.run_id || '');
+  const currentExecution = lifecycle?.current_execution;
+  const environment = String(lifecycle?.environment_id ?? '');
+  const continuedFrom = String(lifecycle?.continued_from_run ?? '');
+  const amendedFrom = String(lifecycle?.amended_from_run ?? '');
+  const resumedFrom = String(lifecycle?.resumed_from_run ?? '');
+  const rootRun = String(lifecycle?.root_run_id || '');
+  const hasParent = Boolean(continuedFrom || amendedFrom || resumedFrom);
   if (!record || record.kind !== 'task' || record._taskLifecycleVerified !== true
       || !lifecycle || typeof lifecycle !== 'object' || Array.isArray(lifecycle)
       || lifecycle.schema !== PUBLIC_TASK_LIFECYCLE_SCHEMA
       || lifecycle.kernel_id !== record._kernel
-      || typeof lifecycle.run_id !== 'string'
-      || signedMissionRun(record) !== lifecycle.run_id
+      || typeof lifecycle.run_id !== 'string' || !PUBLIC_TASK_RUN_RE.test(run)
+      || signedMissionRun(record) !== run
       || !PUBLIC_TASK_ID_RE.test(String(lifecycle.task_id || ''))
+      || typeof currentExecution !== 'boolean'
+      || typeof lifecycle.environment_id !== 'string'
+      || (environment && !PUBLIC_TASK_ID_RE.test(environment))
+      || typeof lifecycle.continued_from_run !== 'string'
+      || (continuedFrom && !PUBLIC_TASK_RUN_RE.test(continuedFrom))
+      || typeof lifecycle.amended_from_run !== 'string'
+      || (amendedFrom && !PUBLIC_TASK_RUN_RE.test(amendedFrom))
+      || typeof lifecycle.resumed_from_run !== 'string'
+      || (resumedFrom && !PUBLIC_TASK_RUN_RE.test(resumedFrom))
+      || typeof lifecycle.root_run_id !== 'string' || !PUBLIC_TASK_RUN_RE.test(rootRun)
+      || (continuedFrom && continuedFrom === run)
+      || (amendedFrom && amendedFrom === run)
+      || (resumedFrom && resumedFrom === run)
+      || (hasParent && rootRun === run)
+      || (!hasParent && rootRun !== run)
       || publicLifecycleText(lifecycle.state, 128) !== lifecycle.state
       || !PUBLIC_TASK_REVISION_RE.test(String(lifecycle.revision || ''))
       || (lifecycle.terminal_reason
@@ -227,8 +252,14 @@ export function publicTaskLifecycleProjection(record) {
   return Object.freeze({
     task,
     state: lifecycle.state,
-    run: lifecycle.run_id,
+    run,
     taskId: lifecycle.task_id,
+    currentExecution,
+    environment,
+    continuedFrom,
+    amendedFrom,
+    resumedFrom,
+    rootRun,
     revision: lifecycle.revision,
     pressure: lifecycle.pressure,
     review: lifecycle.review,
@@ -236,7 +267,8 @@ export function publicTaskLifecycleProjection(record) {
     terminalReason,
     exactLifecycle: true,
     terminalTask: Boolean(terminalReason),
-    liveTask: !terminalReason,
+    liveTask: currentExecution === true && PUBLIC_TASK_CURRENT_STATES.has(lifecycle.state),
+    lineageHistory: hasParent,
   });
 }
 

@@ -45,7 +45,7 @@ import {
   signedPersonaIdentity,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260718-provider-index-aliases-v1';
+} from './network-view.mjs?v=20260720-task-current-execution-v3';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -1244,13 +1244,22 @@ async function verifyPersonaLifecycleCard(card,record,documentKey){
     hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
 }
 const PUBLIC_TASK_LIFECYCLE_FIELDS=Object.freeze([
-  'access','block','kernel_id','links','pressure','review','revision','run_id','schema',
-  'signature_hex','signing_key_id','state','task_id','terminal_reason',
+  'access','amended_from_run','block','continued_from_run','current_execution','environment_id',
+  'kernel_id','links',
+  'pressure','resumed_from_run','review','revision','root_run_id','run_id','schema','signature_hex',
+  'signing_key_id','state','task_id','terminal_reason',
 ].sort());
 const PUBLIC_TASK_LIFECYCLE_REVISION_FIELDS=Object.freeze([
-  'schema','kernel_id','run_id','task_id','state','pressure','review','block',
-  'terminal_reason','links','access',
+  'schema','kernel_id','run_id','task_id','current_execution','environment_id',
+  'resumed_from_run','continued_from_run','amended_from_run','root_run_id','state',
+  'pressure','review','block','terminal_reason','links','access',
 ]);
+const PUBLIC_TASK_LIFECYCLE_CAPABILITY_PREFIXES=Object.freeze([
+  'task_state:','task_run:','task_id:','task_current_execution:','task_environment:',
+  'task_resumed_from:','task_continued_from:','task_amended_from:','task_root_run:',
+  'task_revision:',
+]);
+const PUBLIC_TASK_LIFECYCLE_RUN_RE=/^run-[A-Za-z0-9_-]{1,180}$/;
 const PUBLIC_TASK_LIFECYCLE_TASK_ID_RE=/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/;
 function _plainLifecycleObject(value){ return !!value&&typeof value==='object'&&!Array.isArray(value); }
 function _publicLifecycleText(value,maximum){ return typeof value==='string'&&value===value.trim()
@@ -1258,12 +1267,37 @@ function _publicLifecycleText(value,maximum){ return typeof value==='string'&&va
 async function verifyPublicTaskLifecycle(lifecycle,record,documentKey,kernelId){
   if(record?.kind!=='task'||documentKey?.key_id!=='kernel-master'
       ||!_exactObjectFields(lifecycle,PUBLIC_TASK_LIFECYCLE_FIELDS)
-      ||lifecycle.schema!=='personaos-public-task-lifecycle/1'
+      ||lifecycle.schema!=='personaos-public-task-lifecycle/2'
       ||lifecycle.kernel_id!==kernelId
       ||lifecycle.access!=='public_read_only'
       ||lifecycle.signing_key_id!=='kernel-master'
-      ||!/^run-[A-Za-z0-9_-]{1,180}$/.test(String(lifecycle.run_id||''))
+      ||typeof lifecycle.run_id!=='string'
+      ||!PUBLIC_TASK_LIFECYCLE_RUN_RE.test(lifecycle.run_id)
       ||!PUBLIC_TASK_LIFECYCLE_TASK_ID_RE.test(String(lifecycle.task_id||''))
+      ||typeof lifecycle.current_execution!=='boolean'
+      ||typeof lifecycle.environment_id!=='string'
+      ||(lifecycle.environment_id
+        &&!PUBLIC_TASK_LIFECYCLE_TASK_ID_RE.test(lifecycle.environment_id))
+      ||typeof lifecycle.continued_from_run!=='string'
+      ||(lifecycle.continued_from_run
+        &&!PUBLIC_TASK_LIFECYCLE_RUN_RE.test(lifecycle.continued_from_run))
+      ||typeof lifecycle.amended_from_run!=='string'
+      ||(lifecycle.amended_from_run
+        &&!PUBLIC_TASK_LIFECYCLE_RUN_RE.test(lifecycle.amended_from_run))
+      ||typeof lifecycle.resumed_from_run!=='string'
+      ||(lifecycle.resumed_from_run
+        &&!PUBLIC_TASK_LIFECYCLE_RUN_RE.test(lifecycle.resumed_from_run))
+      ||typeof lifecycle.root_run_id!=='string'
+      ||!PUBLIC_TASK_LIFECYCLE_RUN_RE.test(lifecycle.root_run_id)
+      ||(lifecycle.continued_from_run&&lifecycle.continued_from_run===lifecycle.run_id)
+      ||(lifecycle.amended_from_run&&lifecycle.amended_from_run===lifecycle.run_id)
+      ||(lifecycle.resumed_from_run&&lifecycle.resumed_from_run===lifecycle.run_id)
+      ||((lifecycle.continued_from_run||lifecycle.amended_from_run
+          ||lifecycle.resumed_from_run)
+        &&lifecycle.root_run_id===lifecycle.run_id)
+      ||(!(lifecycle.continued_from_run||lifecycle.amended_from_run
+          ||lifecycle.resumed_from_run)
+        &&lifecycle.root_run_id!==lifecycle.run_id)
       ||!_publicLifecycleText(lifecycle.state,128)
       ||(lifecycle.terminal_reason
         &&!_publicLifecycleText(lifecycle.terminal_reason,512))
@@ -1290,10 +1324,19 @@ async function verifyPublicTaskLifecycle(lifecycle,record,documentKey,kernelId){
     `task_state:${lifecycle.state}`,
     `task_run:${lifecycle.run_id}`,
     `task_id:${lifecycle.task_id}`,
+    `task_current_execution:${lifecycle.current_execution?'true':'false'}`,
+    `task_environment:${lifecycle.environment_id}`,
+    `task_continued_from:${lifecycle.continued_from_run}`,
+    `task_amended_from:${lifecycle.amended_from_run}`,
+    `task_resumed_from:${lifecycle.resumed_from_run}`,
+    `task_root_run:${lifecycle.root_run_id}`,
     `task_revision:${lifecycle.revision}`,
   ];
   const capabilities=Array.isArray(record.capability_summary)?record.capability_summary:[];
   if(expectedCapabilities.some((value)=>capabilities.filter((item)=>item===value).length!==1))
+    return false;
+  if(PUBLIC_TASK_LIFECYCLE_CAPABILITY_PREFIXES.some((prefix)=>
+    capabilities.filter((item)=>typeof item==='string'&&item.startsWith(prefix)).length!==1))
     return false;
   const payload={}; for(const field of Object.keys(lifecycle))
     if(field!=='signature_hex') payload[field]=lifecycle[field];
@@ -7151,9 +7194,24 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
       +kv('State',`<span class="ok">${esc(lifecycle.state)}</span>`)
       +kv('Run',`<code>${esc(lifecycle.run)}</code>`)
       +kv('Task id',`<code>${esc(lifecycle.taskId)}</code>`)
+      +kv('Current execution',lifecycle.currentExecution
+        ?'<span class="ok">true · signed current run</span>'
+        :'<span class="l2">false · durable/history evidence</span>')
+      +kv('Environment',lifecycle.environment
+        ?`<code>${esc(lifecycle.environment)}</code>`:'<span class="l2">not routed yet</span>')
       +kv('Revision',`<code>${esc(lifecycle.revision)}</code>`)
       +kv('Terminal reason',lifecycle.terminalReason
-        ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`:'<span class="l2">active / non-terminal</span>');
+        ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`
+        :lifecycle.liveTask?'<span class="ok">current live work</span>'
+          :'<span class="l2">non-terminal lifecycle evidence</span>');
+    html+=H('Signed task lineage / history')
+      +kv('Root run',`<code>${esc(lifecycle.rootRun)}</code>`)
+      +kv('Resumed from',lifecycle.resumedFrom
+        ?`<code>${esc(lifecycle.resumedFrom)}</code>`:'<span class="l2">no signed resume parent</span>')
+      +kv('Continued from',lifecycle.continuedFrom
+        ?`<code>${esc(lifecycle.continuedFrom)}</code>`:'<span class="l2">no signed continuation parent</span>')
+      +kv('Amended from',lifecycle.amendedFrom
+        ?`<code>${esc(lifecycle.amendedFrom)}</code>`:'<span class="l2">no signed amendment parent</span>');
     for(const [label,value] of [['Pressure',lifecycle.pressure],['Review',lifecycle.review],['Block',lifecycle.block]]){
       if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
       html+=H(label)+`<pre class="filview">${esc(JSON.stringify(value,null,2))}</pre>`;
@@ -7757,16 +7815,19 @@ function tick(now){
 // (2) live artifact snapshots; (3) the node's /status —
 // running/paused mission state, which the node only exposes to an operator
 // token (anonymous viewers see the public projection without run state).
+const CURRENT_MISSION_CARD_STATES=new Set(['live','running']);
+function missionCardIsCurrent(card){ return card?.currentExecution===true
+  &&CURRENT_MISSION_CARD_STATES.has(card.state); }
+function _missionRunLabel(value){ const run=String(value||'');
+  return run.length>26?`${run.slice(0,25)}…`:run; }
 function missionCardList(){
   const cards=[]; const seen=new Set();
   const records=S.order.map((id)=>S.recs.get(id)).filter(Boolean);
   const projects=records.filter((r)=>r.kind==='project');
   const projectFor=(kernel,run='')=>projects.find((p)=>p._kernel===kernel&&run&&runOf(p)===run)
     ||[...projects].reverse().find((p)=>p._kernel===kernel);
-  const humanTask=(value,kernel,run='')=>{ const raw=String(value||'').trim();
-    if(!raw||/^run[-:]/i.test(raw)||/\.json$/i.test(raw))
-      return _verifiedPublicTaskForRun(kernel,run)?.task||projectFor(kernel,run)?.label||'Untitled mission';
-    return raw; };
+  const humanTask=(value,kernel,run='')=>_verifiedPublicTaskForRun(kernel,run)?.task
+    ||projectFor(kernel,run)?.label||String(value||'').trim()||'Untitled mission';
   // Record structure decides admission; capability vocabulary never assigns
   // task state. A task card requires its independently signed lifecycle object;
   // project/mission records remain published evidence. Design-history JSON is
@@ -7782,15 +7843,27 @@ function missionCardList(){
       Object.keys(lifecycle.review||{}).length?'review':'',
       Object.keys(lifecycle.block||{}).length?'block':'',
     ].filter(Boolean):[];
+    const lineageMeta=lifecycle?[
+      lifecycle.resumedFrom?`resumes ${_missionRunLabel(lifecycle.resumedFrom)}`:'',
+      lifecycle.continuedFrom?`continues ${_missionRunLabel(lifecycle.continuedFrom)}`:'',
+      lifecycle.amendedFrom?`amends ${_missionRunLabel(lifecycle.amendedFrom)}`:'',
+      lifecycle.lineageHistory?`root ${_missionRunLabel(lifecycle.rootRun)}`:'root task',
+      lifecycle.environment?`environment ${lifecycle.environment}`:'environment pending',
+    ].filter(Boolean):[];
     const meta=lifecycle
       ?[lifecycle.taskId.slice(0,26),`rev ${lifecycle.revision.slice(7,19)}`,
-        lifecycleSurfaces.join(' · '),`signed task record · ${lifecycle.terminalReason
-          ?`terminal ${lifecycle.terminalReason}`:'live lifecycle'}`]
+        `current execution ${lifecycle.currentExecution?'true':'false'}`,
+        ...lineageMeta,lifecycleSurfaces.join(' · '),`signed task record · ${lifecycle.terminalReason
+          ?`terminal ${lifecycle.terminalReason}`:lifecycle.liveTask?'current live lifecycle':'lifecycle evidence'}`]
       :[run?run.slice(0,26):'',`signed ${published.kind} record`];
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
       kernel:r._kernel||'',meta,recId:id,run,base:nodeBaseForRecord(r),recordKind:published.kind,
       terminalTask:!!lifecycle?.terminalTask,liveTask:!!lifecycle?.liveTask,
-      exactLifecycle:!!lifecycle};
+      exactLifecycle:!!lifecycle,currentExecution:lifecycle?.currentExecution===true,
+      rootRun:lifecycle?.rootRun||run,
+      continuedFrom:lifecycle?.continuedFrom||'',amendedFrom:lifecycle?.amendedFrom||'',
+      resumedFrom:lifecycle?.resumedFrom||'',
+      lineageHistory:!!lifecycle?.lineageHistory};
     if(lifecycle) cards.unshift(card); else cards.push(card);
   }
   // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
@@ -7833,12 +7906,15 @@ function missionCardList(){
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
   const grouped=new Map();
-  const rank=(card)=>card.state==='running'?7:card.terminalTask?6:card.liveTask?5:card.state==='paused'?3
+  const rank=(card)=>missionCardIsCurrent(card)?7:card.terminalTask?6:card.state==='paused'?3
     :card.recordKind==='task'?2:card.state==='published'?1:0;
-  for(const card of scoped){ const key=`${card.kernel}::${String(card.task).toLowerCase().replace(/\s+/g,' ').trim()}`;
+  for(const card of scoped){ const key=card.run
+      ?`${card.kernel}::run::${card.run}`
+      :`${card.kernel}::record::${card.recId||card.key}`;
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
     const winner=rank(card)>rank(prev)?card:prev;
-    grouped.set(key,{...prev,...winner,key,meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,4)}); }
+    grouped.set(key,{...prev,...winner,key,
+      meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,9)}); }
   const result=[...grouped.values()];
   const byKernel=new Map();
   for(const card of result) (byKernel.get(card.kernel)||byKernel.set(card.kernel,[]).get(card.kernel)).push(card);
@@ -7882,24 +7958,23 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>c.state==='running'?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.liveTask?8e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>missionCardIsCurrent(c)?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its mission text.
   // Keep the compact mission summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
-  const active=window.items.find((c)=>c.state==='running')||window.items.find((c)=>c.state==='failed')
-    ||window.items.find((c)=>c.liveTask)||cards.find((c)=>c.state==='running')
-    ||cards.find((c)=>c.state==='failed')||window.items[0]||cards[0];
+  const active=window.items.find((c)=>missionCardIsCurrent(c))||window.items[0]||null;
   const matching=window.items.length===cards.length
     ?`${cards.length} mission${cards.length===1?'':'s'}`
     :`${window.items.length} matching · ${cards.length} total`;
-  const nodeLabel=String(active.kernel||'').replace(/^kernel:/,'');
+  const nodeLabel=String(active?.kernel||'').replace(/^kernel:/,'');
   const compactNode=nodeLabel.length>14?`${nodeLabel.slice(0,13)}…`:nodeLabel;
-  if(count) count.textContent=`${matching} · ${active.state}${compactNode?` · node ${compactNode}`:''}`;
-  if(headline) headline.textContent=active.task;
-  if(eyebrow) eyebrow.textContent=cards.some((card)=>card.state==='running')
-    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON')
-    :cards.some((card)=>card.state==='failed')?'EXECUTION NEEDS ATTENTION':'MISSION EVIDENCE';
+  if(count) count.textContent=active
+    ?`${matching} · ${active.state}${compactNode?` · node ${compactNode}`:''}`:matching;
+  if(headline) headline.textContent=missionCardIsCurrent(active)
+    ?active.task:active?'Task lifecycle evidence':'No matching mission';
+  if(eyebrow) eyebrow.textContent=missionCardIsCurrent(active)
+    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON'):'MISSION EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
   const html=window.items.length?window.items.map((c)=>{

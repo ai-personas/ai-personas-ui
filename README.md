@@ -141,13 +141,17 @@ no default relay or PersonaOS data server is required.
 
 **Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
 or `mission` record is published evidence using only its bounded signed label and optional run DID;
-open persona-authored capability vocabulary never decides whether it exists. Exactly one generic
-terminal lifecycle capability (`complete`, `completed`, `succeeded`, `failed`, `cancelled`,
-`canceled`, `aborted`, or `stopped`) supplies terminal state; otherwise exactly one `live_task`
-marker plus one bounded `task_state:` binding supplies live state. Conflicting, duplicate,
-malformed, and unknown capabilities fail closed, and prose never supplies state. Capability order
-is deliberately irrelevant because the signed payload canonicalises the list. Unsigned telemetry
-and operator-only run state remain additive sources.
+open persona-authored capability vocabulary never decides whether it exists. A task additionally
+requires the exact kernel-signed `personaos-public-task-lifecycle/2` projection. Its run, task,
+signed `current_execution` boolean, environment, immediate resume/continuation/amendment parents,
+lineage root, state, evidence surfaces, terminal reason, and revision are content-hash bound. The
+structural identifiers, boolean, state, and revision are each repeated once in the signed capability
+summary, including `task_current_execution:true|false` and explicit empty-parent bindings. Only
+`current_execution: true` together with the exact lifecycle state `running` or `live` makes that run
+current work. Resume, continuation, and amendment records remain visible as separate lineage/history
+cards; their labels, wording, similarity, arrival order, and stale status observations never promote
+them into the current-work headline. Unsigned telemetry and operator-only run state remain additive,
+visibly distinct sources.
 
 **Persona avatars are persona-signed, content-addressed raster identity.** An admitted avatar uses
 the `persona-avatar/2` contract from an Ed25519-verified public persona record. The browser verifies
@@ -183,8 +187,9 @@ buffered or blocked and is the primary path when an operator token is required.
 An anonymous page also seeds this poll from an exact run bound by a browser-verified public task
 DID in the node's current hash-chained provider inventory. The inventory supplies the matching
 bootstrapped API base; links, labels, cached gossip, and unsigned status cannot create the join.
-The browser requires that signed inventory's verified expiry to remain live, excludes exact signed
-terminal tasks, prioritises exact signed live-task evidence over published history, retains at most
+The browser requires that signed inventory's verified expiry to remain live, keeps exact signed
+terminal and superseded lineage as history, prioritises exact signed current-execution
+`running`/`live` task evidence over published history, retains at most
 48 node/run pairs, rechecks inventory authority on every anonymous cycle, and exponentially backs
 off empty endpoints.
 The UI keeps a separate ordered revision map per `(node base, run)`, compares complete snapshots,
