@@ -4285,12 +4285,13 @@ function renderPersonaCard(pid,kernel='',context={}){
   const taskRun=activeRuns.length===1?activeRuns[0]
     :(!hasActiveCalls&&workspaceRuns.length===1?workspaceRuns[0]:'');
   const verifiedCurrentTask=taskRun?_verifiedPublicTaskForRun(ref.kernel,taskRun):null;
-  const currentTask=typeof verifiedCurrentTask?.task==='string'?verifiedCurrentTask.task:'';
-  const workspaceIsTerminal=!hasActiveCalls&&currentWorkspaceRows.length>0
-    &&currentWorkspaceRows.every((row)=>Boolean(row.terminalState||row.terminalStatus)
-      ||row.state==='run_finalized');
+  // A recent or terminal workspace proves task history, not present execution.
+  // Promote its title onto the persona card only when the exact signed task
+  // lifecycle independently says this run is the current live execution.
+  const currentTask=verifiedCurrentTask?.liveTask===true
+    &&typeof verifiedCurrentTask.task==='string'?verifiedCurrentTask.task:'';
   const currentTaskHTML=currentTask
-    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">${workspaceIsTerminal?'Latest task':'Current task'}</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
+    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Current task</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Environments</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
