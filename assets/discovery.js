@@ -8723,7 +8723,11 @@ async function refreshP2PRendezvous(){
       while(recent.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
         recent.delete(recent.keys().next().value);
       try{
-        await P2P.node.dial(target,{signal:AbortSignal.timeout(5000)});
+        const components=target.getComponents?.()||[], terminal=components.at(-1);
+        if(terminal?.name==='p2p'&&terminal.value!==providerId) continue;
+        const dialTarget=terminal?.name==='p2p'
+          ?target:target.encapsulate(`/p2p/${providerId}`);
+        await P2P.node.dial(dialTarget,{signal:AbortSignal.timeout(5000)});
         found++;
         const result=await P2P.fetchProviderInventory?.(
           provider,{timeoutMs:8000}).catch(()=>null);
