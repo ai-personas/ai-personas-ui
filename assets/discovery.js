@@ -1046,7 +1046,8 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
 const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-bootstrap-commons-v4',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
-  maxReconciliationsPerJob:8,maxProvidersPerRefresh:4,
+  maxReconciliationsPerJob:8,maxRouteAttemptsPerSource:4,maxMultiaddrsPerProvider:8,
+  maxRendezvousBucketsPerRefresh:3,
   maxRememberedProviders:64,providerRetryMs:30*1000,
   successfulRefreshMs:45*1000,verifiedGossipRetryMs:30*1000,
   coldRetryBaseMs:3000,coldRetryMaxMs:10000,steadyRefreshMs:60000,
@@ -7863,7 +7864,10 @@ function missionCardList(){
       rootRun:lifecycle?.rootRun||run,
       continuedFrom:lifecycle?.continuedFrom||'',amendedFrom:lifecycle?.amendedFrom||'',
       resumedFrom:lifecycle?.resumedFrom||'',
-      lineageHistory:!!lifecycle?.lineageHistory};
+      lineageHistory:!!lifecycle?.lineageHistory,
+      lineageEntries:lifecycle&&run!==lifecycle.rootRun
+        ?[`${lifecycle.amendedFrom?'amendment':lifecycle.continuedFrom?'continuation':'resumption'} history · ${_missionRunLabel(run)} · ${projected.state}`]
+        :[]};
     if(lifecycle) cards.unshift(card); else cards.push(card);
   }
   // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
@@ -7906,15 +7910,26 @@ function missionCardList(){
         meta:[run.slice(0,26),String(p.status||'')],base,run}); } }
   const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
   const grouped=new Map();
-  const rank=(card)=>missionCardIsCurrent(card)?7:card.terminalTask?6:card.state==='paused'?3
+  // Signed lifecycle descendants are revisions of one task lineage, not new
+  // missions. A genuinely current descendant leads; otherwise the canonical
+  // root record owns the headline and terminal amendment text remains labelled
+  // history in metadata.
+  const rank=(card)=>missionCardIsCurrent(card)?8
+    :card.exactLifecycle&&card.run===card.rootRun?7
+    :card.terminalTask?6:card.state==='paused'?3
     :card.recordKind==='task'?2:card.state==='published'?1:0;
-  for(const card of scoped){ const key=card.run
-      ?`${card.kernel}::run::${card.run}`
+  for(const card of scoped){ const key=card.exactLifecycle&&card.rootRun
+      ?`${card.kernel}::lineage::${card.rootRun}`
+      :card.run?`${card.kernel}::run::${card.run}`
       :`${card.kernel}::record::${card.recId||card.key}`;
     const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
     const winner=rank(card)>rank(prev)?card:prev;
+    const loser=winner===card?prev:card;
+    const lineageEntries=[...new Set([...(prev.lineageEntries||[]),...(card.lineageEntries||[])])];
     grouped.set(key,{...prev,...winner,key,
-      meta:[...new Set([...(prev.meta||[]),...(card.meta||[])])].filter(Boolean).slice(0,9)}); }
+      lineageEntries,
+      meta:[...new Set([...(winner.meta||[]),...lineageEntries,...(loser.meta||[])])]
+        .filter(Boolean).slice(0,12)}); }
   const result=[...grouped.values()];
   const byKernel=new Map();
   for(const card of result) (byKernel.get(card.kernel)||byKernel.set(card.kernel,[]).get(card.kernel)).push(card);
@@ -8700,34 +8715,49 @@ async function onVerifiedGossipProvider(result){
   for(const hint of unique.values()) _enqueueVerifiedGossipHint(hint);
 }
 async function refreshP2PRendezvous(){
-  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCid) return false;
+  if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCids) return false;
   if(P2P._rendezvousLastVerifiedAt
       &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return true;
-  const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Set());
+  const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Map());
   const recent=P2P._rendezvousProviderAttempts||(P2P._rendezvousProviderAttempts=new Map());
   const now=Date.now();
-  for(const [providerId,attemptedAt] of recent)
-    if(now-attemptedAt>=P2P_ROUTE_LIMITS.providerRetryMs) recent.delete(providerId);
-  const cid=P2P.rendezvousCid; const signal=AbortSignal.timeout(30000);
+  for(const [routeKey,verifiedAt] of seen)
+    if(now-verifiedAt>=P2P_ROUTE_LIMITS.successfulRefreshMs) seen.delete(routeKey);
+  for(const [routeKey,attemptedAt] of recent)
+    if(now-attemptedAt>=P2P_ROUTE_LIMITS.providerRetryMs) recent.delete(routeKey);
+  const buckets=(await P2P.rendezvousCids(now).catch(()=>[]))
+    .filter((bucket)=>bucket?.cid)
+    .slice(0,P2P_ROUTE_LIMITS.maxRendezvousBucketsPerRefresh);
+  if(!buckets.length) return false;
+  const signal=AbortSignal.timeout(P2P_ROUTE_LIMITS.jobDeadlineMs);
   const attemptedThisScan=new Set();
-  let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0;
-  try{
-    for await(const provider of P2P.node.contentRouting.findProviders(cid,{signal})){
-      if(provider?.id?.equals?.(P2P.node.peerId)) continue;
-      const providerId=provider?.id?.toString?.()||'';
-      const target=provider.multiaddrs?.[0];
-      if(!providerId||!target||seen.has(providerId)||recent.has(providerId)
-          ||attemptedThisScan.has(providerId)) continue;
-      attemptedThisScan.add(providerId); attempted++;
-      recent.delete(providerId); recent.set(providerId,now);
+  let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0,queriedBuckets=0;
+  const inspectProvider=async(provider,maxNewAttempts)=>{
+    if(provider?.id?.equals?.(P2P.node.peerId)||signal.aborted) return 0;
+    const providerId=provider?.id?.toString?.()||'';
+    if(!providerId) return 0;
+    const addresses=[...new Map((provider.multiaddrs||[])
+      .map((target)=>[String(target||''),target])).values()]
+      .filter((target)=>String(target||''))
+      .slice(0,P2P_ROUTE_LIMITS.maxMultiaddrsPerProvider);
+    let routeAttempts=0;
+    for(const target of addresses){
+      if(signal.aborted||routeAttempts>=maxNewAttempts) break;
+      let terminal,dialTarget;
+      try{
+        const components=target.getComponents?.()||[]; terminal=components.at(-1);
+        if(terminal?.name==='p2p'&&String(terminal.value||'')!==providerId) continue;
+        dialTarget=terminal?.name==='p2p'?target:target.encapsulate(`/p2p/${providerId}`);
+      }catch(_){ continue; }
+      const routeKey=`${providerId}\u0000${String(target)}`;
+      if(seen.has(routeKey)||recent.has(routeKey)||attemptedThisScan.has(routeKey)) continue;
+      attemptedThisScan.add(routeKey); routeAttempts++; attempted++;
+      recent.delete(routeKey); recent.set(routeKey,now);
       while(recent.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
         recent.delete(recent.keys().next().value);
       try{
-        const components=target.getComponents?.()||[], terminal=components.at(-1);
-        if(terminal?.name==='p2p'&&terminal.value!==providerId) continue;
-        const dialTarget=terminal?.name==='p2p'
-          ?target:target.encapsulate(`/p2p/${providerId}`);
-        await P2P.node.dial(dialTarget,{signal:AbortSignal.timeout(5000)});
+        const dialSignal=AbortSignal.any([signal,AbortSignal.timeout(5000)]);
+        await P2P.node.dial(dialTarget,{signal:dialSignal});
         found++;
         const result=await P2P.fetchProviderInventory?.(
           provider,{timeoutMs:8000}).catch(()=>null);
@@ -8738,20 +8768,59 @@ async function refreshP2PRendezvous(){
           const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||'');
           if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...hint,base,kernel});
         }
+        let routeVerified=false;
         for(const hint of unique.values()){
           if(signal.aborted) break;
           const reconciled=await _reconcileP2PRouteHint(hint,{signal});
           if(reconciled.accepted){
-            reconciledRoutes++; reconciledRecords+=reconciled.count;
-            seen.delete(providerId); seen.add(providerId);
-            while(seen.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
-              seen.delete(seen.values().next().value);
+            reconciledRoutes++; reconciledRecords+=reconciled.count; routeVerified=true;
           }
         }
+        if(routeVerified){
+          seen.delete(routeKey); seen.set(routeKey,Date.now());
+          while(seen.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
+            seen.delete(seen.keys().next().value);
+          break;
+        }
       }catch(e){}
-      if(attempted>=P2P_ROUTE_LIMITS.maxProvidersPerRefresh) break;
     }
-    log('p2p',`DHT rendezvous scan: ${attempted} candidate provider(s) returned · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
+    return routeAttempts;
+  };
+  try{
+    for(const bucket of buckets){
+      if(signal.aborted) break;
+      queriedBuckets++;
+      const verifiedBeforeBucket=reconciledRoutes;
+      const direct=await P2P.findRendezvousProviders?.(bucket.cid,{
+        signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution
+      }).catch(()=>null);
+      let sourceAttempts=0,sourceCandidates=0;
+      for(const provider of direct?.providers||[]){
+        if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
+            ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) break;
+        sourceCandidates++;
+        sourceAttempts+=await inspectProvider(provider,
+          P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
+      }
+      // Direct first-contact queries merge live routes hidden by another
+      // responder's stale K-provider window, but they are only an optimization.
+      // Unless one of those routes verifies, retain standard iterative Kademlia
+      // traversal for this same temporal bucket.
+      if(reconciledRoutes===verifiedBeforeBucket){
+        sourceAttempts=0; sourceCandidates=0;
+        try{
+          for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
+            if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
+                ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) break;
+            sourceCandidates++;
+            sourceAttempts+=await inspectProvider(provider,
+              P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
+          }
+        }catch(e){}
+      }
+      if(reconciledRoutes>verifiedBeforeBucket) break;
+    }
+    log('p2p',`DHT rendezvous scan: ${queriedBuckets} temporal bucket(s) · ${attempted} route(s) tried · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
     if(reconciledRoutes){
       P2P._rendezvousLastVerifiedAt=Date.now();
       log('p2p',`rendezvous: ${reconciledRoutes} verified route(s) · ${reconciledRecords} signed inventory record(s) reconciled`,true);
@@ -8777,7 +8846,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260720-zero-peer-retry-v24');
+    const mod=await import('./p2p-libp2p.js?v=20260720-temporal-rendezvous-v26');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

@@ -66,9 +66,11 @@ The same peer serves bounded public JSON and SHA-256-addressed byte chunks over
 telemetry/cognition, and fetch verified artifact bytes without following the HTTPS locator. Unsigned
 bootstrap/key documents are admitted on this path only when their kernel/current master exactly match
 the already verified self-certifying ProviderRecord. When an explicit or node-advertised bootstrap/relay is configured,
-the browser also provides and finds the shared PersonaOS rendezvous multihash through that peer's
-Kademlia routing table. With no connected bootstrap/relay there is no shared DHT to query, and the
-UI does not claim otherwise.
+the browser finds PersonaOS nodes through rolling 15-minute v2 rendezvous content keys in that peer's
+Kademlia routing table. A publisher provides only the current epoch; a browser queries the current,
+previous, and next epochs so a boundary or modest clock skew does not hide a live node. The retired
+fixed v1 key is not queried. With no connected bootstrap/relay there is no shared DHT to query, and
+the UI does not claim otherwise.
 
 Raw gossip is **lookup-only**: a record's embedded key, label, base, links, and policy never enter
 the UI directly. The browser extracts at most five bounded content-hash/DID/global-handle/handle/id
@@ -136,6 +138,15 @@ and uses the shared public DHT. Short-lived node/tunnel routes are deliberately 
 the static portal: an online publisher announces its current signed route through the DHT, gossip,
 or another reached node instead. The bootstrap peers carry location only: no peer hint can admit a
 node or data without the current-master, signed-inventory, access-policy, and content-hash checks.
+For each rolling rendezvous bucket, the browser first asks each bounded, connected DHT first-contact
+peer for its local provider view and merges only entries that still carry a route. This prevents one
+fast response full of expired, addressless provider IDs from consuming the Kademlia result bound
+before another peer's live WSS provider is observed. The direct request is only an optimization: if
+none of its routes verifies, the browser always performs normal iterative Kademlia provider discovery
+for that bucket. It tries a bounded set of advertised routes per provider and remembers attempts by
+PeerId plus multiaddr, so one dead tunnel does not suppress a replacement route for the same node.
+Bootstrap answers remain untrusted routing hints until the same signed inventory and content
+verification succeeds.
 Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
 no default relay or PersonaOS data server is required.
 
