@@ -2318,6 +2318,11 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
     recordKeys:incoming,manifestHash:inventory.manifestHash,
     bindings:new Map(inventory.bindings||[]),base:base||'',
     generatedAt:inventory.generatedAt,expiresAt:inventory.expiresAt});
+  // Inventory admission can complete after the enclosing HTTP discovery pass
+  // (notably through a verified libp2p route). Coalesce the record/header repaint
+  // from this single authority gate so the summary cannot remain on an earlier
+  // zero-record snapshot while admitted records are already rendered elsewhere.
+  scheduleRealtimeRepaint({records:true});
   return true;
 }
 function upsert(r){
@@ -2438,6 +2443,22 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
   return unique.slice(0,NETWORK_LIMITS.monitoredBases);
 }
 let _discoverBusy=false;
+function updateDiscoverySummary(when=new Date()){
+  const status=$('#status'); if(!status) return;
+  // Count only browser-admitted state. Resolver-advertised totals are useful
+  // network-scale hints, but they are not verified record inventories and must
+  // not be presented as this tab's verified node count.
+  const admittedKernels=new Set(S.kernels||[]);
+  for(const kernel of (S.providerInventories||new Map()).keys()) if(kernel) admittedKernels.add(kernel);
+  for(const record of (S.recs||new Map()).values()) if(record?._kernel) admittedKernels.add(record._kernel);
+  const recordCount=S.recs?.size||0, kernelCount=admittedKernels.size;
+  const monitored=(S.boots&&S.boots.size)||0;
+  const refreshed=`${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} UTC`;
+  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. Discovery uses .well-known, Kademlia DHT and mDNS and refreshes every 15 seconds.`;
+  status.setAttribute('aria-label',`${recordCount} verified records across ${kernelCount} nodes; updated ${refreshed}`);
+  status.innerHTML=`<span class="ok">${recordCount}</span> verified record${recordCount===1?'':'s'} · `
+    +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
+}
 async function discover(){
   // re-entrancy guard: the 15s interval is .then()-fired-and-forgotten and can stack
   // on a slow tunnel (each run does parallel per-base fetches + telemetry loads).
@@ -2506,15 +2527,7 @@ async function discover(){
   // fresh hosted tab. Start the separately verified public artifact probe as
   // soon as discovery has established the signed task/base/run join.
   pollLiveArtifacts();
-  const when=new Date();
-  const kernelCount=Math.max(S.kernels.size||0,Number(S.globalTotal)||0);
-  const monitored=(S.boots&&S.boots.size)||0;
-  const refreshed=`${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} UTC`;
-  const status=$('#status');
-  status.title=`${S.recs.size} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. Discovery uses .well-known, Kademlia DHT and mDNS and refreshes every 15 seconds.`;
-  status.setAttribute('aria-label',`${S.recs.size} verified records across ${kernelCount} nodes; updated ${refreshed}`);
-  status.innerHTML=`<span class="ok">${S.recs.size}</span> verified record${S.recs.size===1?'':'s'} · `
-    +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
+  updateDiscoverySummary();
   }finally{ _discoverBusy=false; }
 }
 
@@ -2615,7 +2628,7 @@ function scheduleRealtimeRepaint({records=false}={}){
   const paint=()=>{
     const recordsChanged=_realtimeRecordsDirty;
     _realtimeRepaintQueued=false; _realtimeRecordsDirty=false;
-    if(recordsChanged){ classifyMap(); renderGlobalKernels(); }
+    if(recordsChanged){ classifyMap(); renderGlobalKernels(); updateDiscoverySummary(); }
     renderInteractionStream(); renderMissions(); updateVitalsCounters();
     refreshLiveSection();
     Promise.resolve(refreshSystemView()).catch(()=>{});
