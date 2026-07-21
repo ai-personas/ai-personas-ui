@@ -5034,10 +5034,6 @@ async function refreshSystemView(){
     if(b.exportRel) ed=await fetchEntityFeed(b.base,b.exportRel);
     const exportedEnvironment=environmentIdentity(ed?.environment_id);
     const exportMatches=!!exportedEnvironment&&exportedEnvironment===environmentIdentity(b.sid);
-    if(exportMatches){
-      const exportedName=String(ed.name||'').trim();
-      if(!_isMechanicalEnvironmentName(exportedName,b.sid)) b.name=exportedName;
-    }
     if(exportMatches&&Array.isArray(ed.members)&&!b.members.length){
       b.roster=ed.members;
       b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
@@ -5056,9 +5052,11 @@ async function refreshSystemView(){
       }
     }
   }));
-  // Signed labels and exported names lead the visual surface. An opaque
-  // environment identity stays available on the record, but is never used as
-  // the workspace's human-facing name.
+  // Only verified discovery labels and exact signed task context lead the
+  // visual surface. The export route has no independent document-authenticity
+  // marker, so its self-asserted name is never promoted into a workspace name.
+  // An opaque environment identity stays available on the record, but is never
+  // used as the workspace's human-facing name.
   for(const b of envBlocks){
     if(_isMechanicalEnvironmentName(b.name,b.sid)) b.name=_environmentNameFor(b.sid,b.kernel);
   }
