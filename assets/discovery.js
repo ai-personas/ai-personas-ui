@@ -2024,12 +2024,12 @@ function renderGlobalKernels(){
   if(query){ const matches=entries.filter(({kid,info})=>`${kid} ${[...info.bases].join(' ')}`.toLowerCase().includes(query));
     if(matches.length) entries=[...matches,...entries.filter((row)=>!matches.includes(row))]; }
   const visible=entries.slice(0,NETWORK_LIMITS.kernelChips);
-  el.innerHTML=visible.map(({kid,info,fresh,reachable,active},index)=>{
+  el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
-    const title=[...info.bases].join(' ')+` · via ${[...info.via].join(', ')||'unknown'}`
+    const title=`node ${kid} · ${[...info.bases].join(' ')} · via ${[...info.via].join(', ')||'unknown'}`
       +((info.meta?.recordCount||info.meta?.reachability)?` · records=${info.meta.recordCount||0} · reachability=${info.meta.reachability||''}`:'');
-    const label=`${reachable&&fresh?'Live':'Known'} node ${index+1}`;
+    const label='Public node';
     const liveRoute=active>0||(reachable&&fresh);
     return `<button type="button" class="gk ${liveRoute?'ok':'dim'}${kid===S.kernelFocus?' on':''}" data-kernel="${esc(kid)}"`
       +` aria-pressed="${kid===S.kernelFocus?'true':'false'}" title="${esc(title)}">`
@@ -3057,6 +3057,14 @@ function verificationIdentityDetails(label,value){
   return `<details class="verification-identity"><summary>Verification identity</summary>`
     +`<div class="copy-host">${copyBtn()}<code class="copy-src">${esc(exact)}</code><span class="l2">${esc(label)} · exact signed reference</span></div></details>`;
 }
+function verificationReferencesDetails(entries){
+  const exact=(entries||[]).map(([label,value])=>[String(label||''),String(value||'')])
+    .filter(([,value])=>value);
+  if(!exact.length) return '';
+  return `<details class="verification-identity"><summary>Verification references</summary>`
+    +exact.map(([label,value])=>`<div class="copy-host">${copyBtn()}<code class="copy-src">${esc(value)}</code>`
+      +`<span class="l2">${esc(label)} · exact signed reference</span></div>`).join('')+`</details>`;
+}
 const findRecByDid=(pid,kernel='')=>S.order.find((id)=>{ const r=S.recs.get(id);
   return (!kernel||r?._kernel===kernel)&&(r?.did==='did:personaos:'+pid||r?.did===pid); });
 
@@ -3668,9 +3676,15 @@ function _friendlyInstant(value){
   const local=new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(at);
   return `${_ago(at)} · ${local}`;
 }
-function _taskTextForProvenance(provenance,kernel=''){
-  const run=String(provenance?.run||'')||_verifiedPublicTaskRun(kernel,provenance?.task);
-  return _verifiedPublicTaskForRun(kernel,run)?.task||'';
+function _taskTextForExactReference(taskReference,runReference,kernel=''){
+  const task=String(taskReference||'').trim(), run=String(runReference||'').trim();
+  if(!kernel||!task) return '';
+  // A nearby run is not authority for this field. When a signed event carries a
+  // run reference, its exact lifecycle must bind to this exact task reference;
+  // without a run, only an unambiguous task→run projection may supply a label.
+  const resolvedRun=run||_verifiedPublicTaskRun(kernel,task);
+  const lifecycle=resolvedRun?_verifiedPublicTaskForRun(kernel,resolvedRun):null;
+  return lifecycle?.taskId===task?lifecycle.task||'':'';
 }
 function _humanActivityProvenance(field,value,provenance,kernel=''){
   if(PUBLIC_ACTIVITY_TIME_FIELDS.has(field)){
@@ -3680,7 +3694,7 @@ function _humanActivityProvenance(field,value,provenance,kernel=''){
   if(field==='environment') return {label:'workspace',value:_environmentNameFor(value,kernel),title:value};
   if(field==='persona') return {label:'persona',value:_nameFor(value,kernel),title:value};
   if(field==='task'||field==='missionTask'){
-    const task=_taskTextForProvenance(provenance,kernel);
+    const task=_taskTextForExactReference(value,provenance?.run,kernel);
     return task?{label:field==='missionTask'?'mission':'task',value:task,title:value}:null;
   }
   // These values remain available in the exact signed document and in the
@@ -4675,7 +4689,7 @@ function renderCoordGraph(persons,totalPersons){
     window.items.forEach((row,i)=>{ const x=n<=1?cx:80+i*(1040/(n-1));
       const records=Number(row.info.meta?.recordCount)||0;
       const summary=row.active?`${row.active} running`:(records?`${compactCount(records)} records`:(row.reachable?'reachable':'no route'));
-      upsertCore(row.kernel,+x.toFixed(1),cy,summary,{fresh:row.fresh||row.reachable,label:`NODE ${i+1}`}); coreIds.add(row.kernel); });
+      upsertCore(row.kernel,+x.toFixed(1),cy,summary,{fresh:row.fresh||row.reachable,label:'PUBLIC NODE'}); coreIds.add(row.kernel); });
     [...svg._cores.children].forEach((core)=>{ if(!coreIds.has(core.getAttribute('data-kernel-core'))) core.remove(); });
     svg._edges.innerHTML=''; svg._chords.innerHTML=''; svg._axons.innerHTML=''; svg._nodes.innerHTML=''; svg._linkfire.innerHTML='';
     const total=Math.max(rows.length,Number(S.globalTotal)||0,S.kernels?.size||0);
@@ -5018,7 +5032,13 @@ async function refreshSystemView(){
   await Promise.all(envBlocks.map(async(b)=>{
     let ed=null;
     if(b.exportRel) ed=await fetchEntityFeed(b.base,b.exportRel);
-    if(ed&&Array.isArray(ed.members)&&!b.members.length){
+    const exportedEnvironment=environmentIdentity(ed?.environment_id);
+    const exportMatches=!!exportedEnvironment&&exportedEnvironment===environmentIdentity(b.sid);
+    if(exportMatches){
+      const exportedName=String(ed.name||'').trim();
+      if(!_isMechanicalEnvironmentName(exportedName,b.sid)) b.name=exportedName;
+    }
+    if(exportMatches&&Array.isArray(ed.members)&&!b.members.length){
       b.roster=ed.members;
       b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
         return memberSid?_personaKey(b.kernel,memberSid):''; }).filter((personaKey)=>
@@ -5027,7 +5047,7 @@ async function refreshSystemView(){
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
     }
-    const manifestRel=b.artifactManifestRel||(ed&&ed.artifact_manifest)||'';
+    const manifestRel=b.artifactManifestRel||(exportMatches&&ed.artifact_manifest)||'';
     if(manifestRel){
       const mf=await fetchEntityFeed(b.base,manifestRel);
       if(mf&&Array.isArray(mf.artifacts)){
@@ -5612,7 +5632,9 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
     return taskRunCache.get(key);
   };
   const callContext=(call)=>{
-    const task=_verifiedPublicTaskForRun(kernel,call?.run_id)?.task||'';
+    const taskId=String(call?.task_id||'').trim(), runId=String(call?.run_id||'').trim();
+    const lifecycle=taskId&&runId?_verifiedPublicTaskForRun(kernel,runId):null;
+    const task=lifecycle?.taskId===taskId?lifecycle.task||'':'';
     const workspace=call?.environment_id?_environmentNameFor(call.environment_id,kernel):'';
     return [task?`task · ${task}`:'',workspace?`workspace · ${workspace}`:''].filter(Boolean);
   };
@@ -7387,34 +7409,47 @@ async function telemetryView(r){ const contentBase=r._base||'',base=nodeBaseForR
 }
 async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]; S.curBase=r._base||'';
   const anchor=r.content_hash?('sha256 '+r.content_hash.replace('sha256:','').slice(0,18)+'…'):'— (metadata only)';
-  let html=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))+kv('DID',esc(r.did))
-    +kv('Kernel',esc(r._kernel||'—'))+kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)+kv('Body anchor',esc(anchor))
-    +kv('Events (this run)',esc(r.events));
-  const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
   const lifecycle=publicTaskLifecycleProjection(r);
+  let html='';
   if(lifecycle){
-    html+=H('Exact public lifecycle')
+    const workspace=lifecycle.environment?_environmentNameFor(lifecycle.environment,r._kernel):'';
+    html+=kv('Task',`<span class="off-white">${esc(lifecycle.task)}</span>`)
       +kv('State',`<span class="ok">${esc(lifecycle.state)}</span>`)
-      +kv('Run',`<code>${esc(lifecycle.run)}</code>`)
-      +kv('Task id',`<code>${esc(lifecycle.taskId)}</code>`)
       +kv('Current execution',lifecycle.currentExecution
-        ?'<span class="ok">true · signed current run</span>'
-        :'<span class="l2">false · durable/history evidence</span>')
-      +kv('Environment',lifecycle.environment
-        ?`<code>${esc(lifecycle.environment)}</code>`:'<span class="l2">not routed yet</span>')
-      +kv('Revision',`<code>${esc(lifecycle.revision)}</code>`)
+        ?'<span class="ok">yes · signed current work</span>'
+        :'<span class="l2">no · durable history</span>')
+      +kv('Workspace',workspace
+        ?`<span title="${esc(lifecycle.environment)}">${esc(workspace)}</span>`
+        :'<span class="l2">not routed yet</span>')
       +kv('Terminal reason',lifecycle.terminalReason
         ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`
         :lifecycle.liveTask?'<span class="ok">current live work</span>'
           :'<span class="l2">non-terminal lifecycle evidence</span>');
+  }
+  html+=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))
+    +kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)
+    +kv('Body anchor',esc(anchor))+kv('Events (this run)',esc(r.events));
+  html+=verificationReferencesDetails([
+    ['record id',r.did],['node id',r._kernel],
+    ...(lifecycle?[
+      ['task id',lifecycle.taskId],['run id',lifecycle.run],['environment id',lifecycle.environment],
+      ['revision',lifecycle.revision],['root run',lifecycle.rootRun],
+      ['resumed from',lifecycle.resumedFrom],['continued from',lifecycle.continuedFrom],
+      ['amended from',lifecycle.amendedFrom],
+    ]:[]),
+  ]);
+  const gh=grants.length?grants.map((g)=>`<div class="grant"><span>${esc(g.grantee_kind)}:${esc((g.grantee_id||'').slice(0,18))||'*'}</span><span class="ok">${esc(g.access_level)}</span></div>`).join(''):'<div class="grant"><span>owner only</span><span></span></div>';
+  if(lifecycle){
     html+=H('Signed task lineage / history')
-      +kv('Root run',`<code>${esc(lifecycle.rootRun)}</code>`)
-      +kv('Resumed from',lifecycle.resumedFrom
-        ?`<code>${esc(lifecycle.resumedFrom)}</code>`:'<span class="l2">no signed resume parent</span>')
-      +kv('Continued from',lifecycle.continuedFrom
-        ?`<code>${esc(lifecycle.continuedFrom)}</code>`:'<span class="l2">no signed continuation parent</span>')
-      +kv('Amended from',lifecycle.amendedFrom
-        ?`<code>${esc(lifecycle.amendedFrom)}</code>`:'<span class="l2">no signed amendment parent</span>');
+      +kv('Origin',lifecycle.rootRun===lifecycle.run
+        ?'<span class="l2">this execution began the signed lineage</span>'
+        :'<span class="l2">continued from earlier signed work</span>')
+      +kv('Resumed',lifecycle.resumedFrom
+        ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed resume parent</span>')
+      +kv('Continued',lifecycle.continuedFrom
+        ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed continuation parent</span>')
+      +kv('Amended',lifecycle.amendedFrom
+        ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed amendment parent</span>');
     for(const [label,value] of [['Pressure',lifecycle.pressure],['Review',lifecycle.review],['Block',lifecycle.block]]){
       if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
       html+=H(label)+`<pre class="filview">${esc(JSON.stringify(value,null,2))}</pre>`;
@@ -7424,7 +7459,7 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
     +H('Source')+(r._url?`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`
       :'<div class="row"><span class="l2">withheld · discover-only metadata projection</span></div>');
-  return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(r.label)}`, html};
+  return {title:`<span class="kind k-${esc(r.kind)}">${esc(KIND_LABEL[r.kind]||r.kind)}</span> ${esc(lifecycle?.task||r.label)}`, html};
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
 async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
@@ -7834,10 +7869,9 @@ async function operatorRunView(b,run){
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const rs=st.run_state||{};
   const liveState=liveArtifactState(b,run)||_live;
-  const publicTask=_verifiedPublicTaskForRun(
-    String(liveState?.snapshot?.node_id||nodeStatus?.node_id||kernelForBase(b)||''),
-    run,
-  );
+  const runKernel=String(liveState?.snapshot?.node_id||nodeStatus?.node_id||kernelForBase(b)||'');
+  const publicTask=_verifiedPublicTaskForRun(runKernel,run);
+  const taskText=String(publicTask?.task||rs.task||'').trim();
   const finalizedBootstrap=liveState?.verification?.immutableFinalizedBootstrap===true;
   const terminal=Boolean(liveState?.ended
     &&(liveState?.verification?.terminalEventVerified||finalizedBootstrap));
@@ -7853,11 +7887,12 @@ async function operatorRunView(b,run){
     +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
     +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>')
     :'<div class="l2">Read-only live monitor. Save this node\'s operator bearer token to enable FUND and STOP.</div>';
-  html+=kv('Run',`<code>${esc(run)}</code>`)
+  html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`:'<span class="l2">Task details not published</span>')
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
     +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
-    +kv('Task',S0((rs.task||publicTask?.task||'').slice(0,200)));
+    +verificationReferencesDetails([['run id',run],['node id',runKernel],
+      ['task id',publicTask?.taskId],['environment id',publicTask?.environment],['revision',publicTask?.revision]]);
   const activeCalls=terminal?[]:(nodeStatus?.active_model_calls||[]).filter((call)=>{
     const current=liveState?.snapshot?.active?.calls||[];
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
@@ -7919,7 +7954,7 @@ async function operatorRunView(b,run){
     const name=String(path).split('/').pop();
     return `<div class="grant"><span class="l2">${esc(name)}</span><span class="l2">${esc(String(path).includes('/')?path.split('/').slice(0,-1).join('/'):'')}</span></div>`;
   }).join('');
-  return {title:`<span class="kind k-mission">RUN</span> ${esc(run)}`,html};
+  return {title:`<span class="kind k-mission">RUN</span> ${esc(taskText||'Live task')}`,html};
 }
 
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'<div class="viewerr">'+icon('warn','ico-sm')+' record not found — it may have been re-resolved or evicted since you clicked. Close this and reopen from the stage.</div>'};

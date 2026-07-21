@@ -1424,6 +1424,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   footer #status{grid-column:1/-1;overflow-wrap:anywhere}
   footer .p2p-stat{margin-left:0;min-width:0;overflow-wrap:anywhere}
   .ix-msg{flex:1 1 auto;min-width:0;max-width:none}
+  .ix-msg.complete{margin-left:0}
   /* feed collapses on phone: kind takes its own full-width first row, time+body beneath */
   .ix-kind{order:-3;flex:0 0 100%}
   .ix-cap,.ix-provenance{margin-left:50px}
