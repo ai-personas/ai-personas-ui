@@ -583,6 +583,7 @@ b{color:var(--bright)}
 .ix-think{--lane:var(--think-col);background-color:var(--think-bg)}
 .ix-think .ix-to{color:var(--think-col-hi)}
 .ix-msg{font-size:var(--fs-label);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0;max-width:none}
+.ix-msg.complete{flex:1 1 100%;margin-left:160px;white-space:pre-wrap;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;color:var(--off-white)}
 .ix-trust{display:inline-flex;align-items:center;flex:0 0 auto;padding:1px 4px;border-radius:var(--radius-sm);
   font:var(--w-semi) 8px/1.2 var(--sans);white-space:nowrap}
 .ix-trust.signed{border:1px solid var(--up2);color:var(--up);background:var(--up-weak)}
@@ -601,7 +602,7 @@ b{color:var(--bright)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:max-content;margin-top:2px}
 .ix-tool.fail .ix-cap,.ix-verify.fail .ix-cap{color:var(--down);background:var(--down-weak);border-color:var(--down2)}
 .ct-pre{font:var(--fs-meta)/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;
-  max-height:200px;overflow:auto;overscroll-behavior:contain;
+  max-height:none;overflow:visible;
   background:var(--surface-inset);border:1px solid var(--line2);border-radius:var(--radius-md);padding:8px 10px;margin:4px 0}
 .ix.fresh{animation:synin .7s ease-out}
 @keyframes synin{0%{background-color:color-mix(in srgb,var(--lane,var(--int)) 18%,transparent)}100%{background-color:transparent}}
@@ -933,7 +934,7 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 /* cognition blocks hold persona-authored text (paths, hashes, signatures, code) —
    break long unbroken tokens so a lesson/tactic/fact can't push past the drawer width */
 .think{background:var(--surface-raised);border:1px solid var(--line2);border-radius:var(--radius-md);padding:6px 9px;margin:3px 0;font-size:var(--fs-body);line-height:var(--lh-body);overflow-wrap:anywhere}
-.think.llmout{border-left:2px solid var(--think-col);background:var(--think-bg);max-height:200px;overflow:auto;overscroll-behavior:contain}
+.think.llmout{border-left:2px solid var(--think-col);background:var(--think-bg);max-height:none;overflow:visible}
 /* pre-wrap honours newlines in model output; overflow-wrap breaks a long no-whitespace
    line (minified/base64) so it wraps instead of overflowing the drawer-body */
 .opmsg{font-family:var(--mono);color:var(--dim);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -941,8 +942,8 @@ details.frame{margin:7px 0 2px} details.frame summary{cursor:pointer}
 details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 /* ---- copy affordance on long cognition/script surfaces ---- */
 .copy-host{position:relative}
-/* a relative copy button hangs top-right inside its host; .think.llmout/.opout scroll,
-   so pin it to the host's padding box and let it ride above the scrolled content */
+/* A relative copy button hangs top-right inside its host. Public cognition is
+   fully expanded; the button stays pinned to the host's padding box. */
 .copy-host>.copy-btn{position:absolute;top:5px;right:5px;z-index:2}
 .copy-btn{display:inline-flex;align-items:center;gap:4px;background:var(--surface-raised);border:1px solid var(--line2);
   color:var(--mut);border-radius:var(--radius-sm);padding:2px 6px;font:var(--w-semi) var(--fs-meta)/1 var(--sans);
@@ -958,6 +959,10 @@ details.frame pre{max-height:340px;overflow:auto;white-space:pre-wrap;overflow-w
   font:var(--w-semi) var(--fs-meta)/1.6 var(--sans);color:var(--think-col-hi);letter-spacing:var(--tr-caps);
   background:linear-gradient(90deg,transparent,var(--think-bg) 40%)}
 .opout{font-family:var(--mono)}
+.verification-identity{margin:8px 0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-inset)}
+.verification-identity>summary{cursor:pointer;padding:7px 10px;color:var(--mut);font:var(--w-semi) var(--fs-meta)/1.2 var(--sans);letter-spacing:var(--tr-caps);text-transform:uppercase}
+.verification-identity>.copy-host{display:flex;flex-direction:column;gap:5px;padding:8px 10px 10px;border-top:1px solid var(--line)}
+.verification-identity code{padding-right:48px;color:var(--dim);font:var(--fs-meta)/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* ===================== VISUAL REFRESH · NETWORK OBSERVATORY =====================
    This layer gives the dense live workspace a clear depth hierarchy without
@@ -1273,7 +1278,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .pc-message{position:relative;border-left:2px solid var(--lane,var(--line2));background:linear-gradient(90deg,color-mix(in srgb,var(--lane,var(--int)) 7%,transparent),transparent 62%)}
 .pc-message.inbound{margin-left:13px;border-left-color:var(--int)}.pc-message.outbound{margin-right:13px;border-left-color:var(--up)}
 .pc-message.observed{border-left-style:dashed}.pc-message-route{color:var(--off-white)!important;font:700 9px/1.25 var(--mono);letter-spacing:.01em}
-.pc-message-body{color:var(--dim)!important;font-style:italic}.pc-message.fresh{animation:message-arrive .65s var(--ease-out)}
+.pc-activity-copy .pc-message-body{color:var(--dim)!important;font-style:normal;white-space:pre-wrap;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}.pc-message.fresh{animation:message-arrive .65s var(--ease-out)}
 .pc-message-provenance{margin-top:2px;white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
 .pc-message-provenance .ix-trust{overflow:visible}.pc-message-provenance .ix-prov{max-width:100%;white-space:normal;overflow:hidden}
 .pc-message-provenance .ix-prov code{max-width:190px}.pc-message-provenance .ix-prov small{color:var(--mut)}
@@ -1763,7 +1768,7 @@ body{overflow-x:hidden;overflow-y:auto}
 .pc-message-stream .pc-section-head>span:first-child::before{content:'MOVE LOG · ';color:color-mix(in srgb,hsl(var(--avatar-hue) 80% 72%) 66%,var(--int))}
 .pc-message-stream ol{border-width:2px;border-color:color-mix(in srgb,hsl(var(--avatar-hue) 74% 62%) 26%,var(--line))}
 .pc-message-stream .pc-message:nth-child(n+3){display:none}
-.pc-message-stream ol:has(.pc-message:nth-child(3))::after{content:'Open card for full activity';display:block;padding:7px 10px;border-top:1px solid var(--line);color:var(--mut);font:700 8px/1 var(--mono);letter-spacing:.08em;text-align:center;text-transform:uppercase}
+.pc-message-stream ol:has(.pc-message:nth-child(3))::after{content:'Open card for complete messages and cognition';display:block;padding:7px 10px;border-top:1px solid var(--line);color:var(--mut);font:700 8px/1 var(--mono);letter-spacing:.08em;text-align:center;text-transform:uppercase}
 .pcard .owned-output~.owned-output{display:none}
 .pcard .owned-output-history{display:none}
 .pc-stats{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid color-mix(in srgb,hsl(var(--avatar-hue) 72% 62%) 22%,var(--line))}

@@ -190,9 +190,12 @@ persona/environment feed must use their exact public schemas, bind the current n
 and verify under the sole current kernel master. Public communication topology admits only exact,
 independently signed direct or broadcast route metadata. A persona card's public activity stream
 comes only from the exact whole-document-signed `personaos-persona-public-cognition/1` endpoint for
-that current-inventory persona. It renders bounded active calls, outputs/messages, learned state,
-proven facts, and evolution entries without inferring content type or relabelling communication
-kinds; addressed messages retain their verified recipient count. A wrong author/subject, extra field,
+that current-inventory persona. It renders the complete already-bounded public window of active
+calls, provider-stream events, outputs/messages, learned state, proven facts, and evolution entries;
+persona-authored text is not visually clipped or shortened. Human names, workspace labels, task
+context, state, and friendly local time lead the surface. Exact persona/environment/run/task/call
+references and ISO instants remain secondary verification detail rather than primary labels.
+Addressed messages retain their verified recipients without inferring content type. A wrong author/subject, extra field,
 invalid nested shape, stale document, or changed byte is rejected. Private thinking frames remain
 available only through the bearer-gated operator schema. Anonymous cognition refresh remains bounded
 GET-only polling; viewing this surface cannot submit persona actions.
@@ -292,7 +295,8 @@ Click any discovered record for deep detail with its trust state visible:
 
 A real-time **LIVING NETWORK** UI makes the personas legible through an original collectible-card
 visual language: the signed display name and verified raster portrait are the card hero, while each
-card's bounded message stream shows its own observed model requests and coordination signals.
+card's bounded message stream shows the complete text of its newest observed model requests and
+coordination signals; the persona drawer shows the full admitted public cognition window.
 Environment cards carry a smaller live avatar constellation and message ticker. The global
 coordination constellation still fires as messages flow, and the heartbeat-driven system vital
 keeps the page alive. Persona cards expose task/LLM execution state, the current model/purpose, and
