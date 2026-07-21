@@ -3686,15 +3686,36 @@ function _taskTextForExactReference(taskReference,runReference,kernel=''){
   const lifecycle=resolvedRun?_verifiedPublicTaskForRun(kernel,resolvedRun):null;
   return lifecycle?.taskId===task?lifecycle.task||'':'';
 }
+function _taskContextForExactReferences(taskReference,runReference,environmentReference,kernel=''){
+  const task=String(taskReference||'').trim(), run=String(runReference||'').trim();
+  const environment=environmentIdentity(environmentReference);
+  if(!kernel||!task||!run||!environment) return null;
+  const lifecycle=_verifiedPublicTaskForRun(kernel,run);
+  return lifecycle?.taskId===task
+      &&environmentIdentity(lifecycle.environment)===environment
+    ?lifecycle:null;
+}
 function _humanActivityProvenance(field,value,provenance,kernel=''){
   if(PUBLIC_ACTIVITY_TIME_FIELDS.has(field)){
     const friendly=_friendlyInstant(value);
     return friendly?{label:PUBLIC_ACTIVITY_PROVENANCE_LABEL[field]||field,value:friendly,title:value}:null;
   }
-  if(field==='environment') return {label:'workspace',value:_environmentNameFor(value,kernel),title:value};
+  if(field==='environment'){
+    // A model-call context carries all three references. Promote its workspace
+    // label only when one verified lifecycle binds that exact run, task and env.
+    const contextual=provenance?.run&&provenance?.task
+      ?_taskContextForExactReferences(provenance.task,provenance.run,value,kernel):null;
+    if((provenance?.run||provenance?.task)&&!contextual) return null;
+    const environment=contextual?.environment||value;
+    return {label:'workspace',value:_environmentNameFor(environment,kernel),title:value};
+  }
   if(field==='persona') return {label:'persona',value:_nameFor(value,kernel),title:value};
   if(field==='task'||field==='missionTask'){
-    const task=_taskTextForExactReference(value,provenance?.run,kernel);
+    const contextual=provenance?.run&&provenance?.environment
+      ?_taskContextForExactReferences(value,provenance.run,provenance.environment,kernel):null;
+    const task=contextual?.task
+      ||(!(provenance?.run&&provenance?.environment)
+        ?_taskTextForExactReference(value,provenance?.run,kernel):'');
     return task?{label:field==='missionTask'?'mission':'task',value:task,title:value}:null;
   }
   // These values remain available in the exact signed document and in the
@@ -3765,17 +3786,23 @@ function _isMechanicalEnvironmentName(value,sid=''){
   return !name||['env','environment'].includes(name.toLowerCase())||name===id||name===`env:${id}`||name.startsWith('did:personaos:');
 }
 function _environmentNameFor(value,kernel=''){
-  const ref=_environmentRef(value,kernel), names=new Set(), tasks=new Set();
+  const ref=_environmentRef(value,kernel), candidateNames=new Set(), names=new Set();
+  const taskIds=new Set(), tasks=new Set();
   for(const id of (S.order||[])){
     const record=S.recs.get(id); if(ref.kernel!=='@unknown'&&record?._kernel!==ref.kernel) continue;
     if(record?.kind==='env'&&environmentIdentity(_envSid(record)||record.did)===ref.sid){
       const label=String(record.label||'').trim();
-      if(!_isMechanicalEnvironmentName(label,ref.sid)) names.add(label);
+      if(!_isMechanicalEnvironmentName(label,ref.sid)) candidateNames.add(label);
     }
     const lifecycle=record?.kind==='task'?publicTaskLifecycleProjection(record):null;
-    if(environmentIdentity(lifecycle?.environment)===ref.sid&&typeof lifecycle.task==='string'&&lifecycle.task.trim())
-      tasks.add(lifecycle.task.trim());
+    if(environmentIdentity(lifecycle?.environment)===ref.sid){
+      if(typeof lifecycle.taskId==='string'&&lifecycle.taskId.trim()) taskIds.add(lifecycle.taskId.trim());
+      if(typeof lifecycle.task==='string'&&lifecycle.task.trim()) tasks.add(lifecycle.task.trim());
+    }
   }
+  // An env export may use its exact bound task reference as a placeholder label.
+  // Equality to the verified lifecycle is authority, not an identifier pattern.
+  for(const label of candidateNames) if(!taskIds.has(label)) names.add(label);
   if(names.size===1) return names.values().next().value;
   if(tasks.size===1){ const task=tasks.values().next().value;
     return `Workspace for ${[...task].slice(0,96).join('')}${[...task].length>96?'…':''}`; }
@@ -5058,7 +5085,7 @@ async function refreshSystemView(){
   // An opaque environment identity stays available on the record, but is never
   // used as the workspace's human-facing name.
   for(const b of envBlocks){
-    if(_isMechanicalEnvironmentName(b.name,b.sid)) b.name=_environmentNameFor(b.sid,b.kernel);
+    b.name=_environmentNameFor(b.sid,b.kernel);
   }
   // Redacted environment feeds may intentionally omit their roster. Associate a
   // persona with a shared environment only when live model or interaction
@@ -5616,6 +5643,90 @@ function renderEnvFeedDoc(doc){
 // Anonymous viewers accept only the exact current-master-signed schema below.
 // Persona-signed final output remains distinct from closed, kernel-observed
 // provisional provider events; the exact thinking FRAME remains operator-only.
+function _provisionalPresentationRows(events){
+  const source=Array.isArray(events)?events:[], rows=[];
+  for(let index=0;index<source.length;index++){
+    const first=source[index];
+    if(first?.kind!=='assistant_message'){
+      rows.push({event:first,events:[first],assistant:false,text:'',firstSequence:first?.sequence,
+        lastSequence:first?.sequence,complete:false,mode:'status',presentationKey:''});
+      continue;
+    }
+    const stream=first.stream_delta===true, messageId=String(first.message_id||'');
+    const callId=String(first.call_id||''), group=[first];
+    // Stream deltas need the provider's exact message binding. Indexed chunks
+    // can also be joined without one because their verified 0..count-1 shape
+    // supplies an unambiguous boundary inside one exact call.
+    if(messageId||!stream){
+      while(index+1<source.length){
+        const previous=group[group.length-1], next=source[index+1];
+        const sameBinding=next?.kind==='assistant_message'
+          &&String(next.call_id||'')===callId&&String(next.message_id||'')===messageId
+          &&next.sequence===previous.sequence+1;
+        const sameShape=stream
+          ?next?.stream_delta===true
+          :next?.stream_delta!==true&&next?.chunk_count===first.chunk_count
+            &&next?.chunk_index===previous.chunk_index+1;
+        if(!sameBinding||!sameShape) break;
+        group.push(next); index++;
+      }
+    }
+    const last=group[group.length-1], chunkCount=stream?null:first.chunk_count;
+    const complete=!stream&&Number.isSafeInteger(chunkCount)
+      &&first.chunk_index===0&&group.length===chunkCount
+      &&last.chunk_index===chunkCount-1;
+    rows.push({
+      event:last,events:group,assistant:true,mode:stream?'stream':'chunks',complete,
+      text:group.map((event)=>event.text).join(''),firstSequence:first.sequence,
+      lastSequence:last.sequence,chunkCount,
+      // An exact provider message binding, or an indexed chunk boundary inside
+      // one call, is stable enough to replace a growing presentation row.
+      presentationKey:messageId?['message',callId,messageId].join('\u0000')
+        :!stream?['chunks',callId,'',String(first.sequence),String(chunkCount)].join('\u0000'):'',
+    });
+  }
+  // Tool/provider status can legitimately occur between deltas for the same
+  // exact provider message. Present those admitted text segments as one logical
+  // window while retaining the intervening status rows in chronological order.
+  const streamGroups=new Map();
+  rows.forEach((row,index)=>{
+    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
+    if(row.mode!=='stream'||!messageId||!callId) return;
+    const key=`${callId}\u0000${messageId}`;
+    const group=streamGroups.get(key)||{events:[],text:'',firstSequence:row.firstSequence,
+      lastSequence:row.lastSequence,lastIndex:index,lastRow:row};
+    group.events.push(...row.events); group.text+=row.text;
+    group.lastSequence=row.lastSequence; group.lastIndex=index; group.lastRow=row;
+    streamGroups.set(key,group);
+  });
+  const presented=rows.flatMap((row,index)=>{
+    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
+    if(row.mode!=='stream'||!messageId||!callId) return [row];
+    const group=streamGroups.get(`${callId}\u0000${messageId}`);
+    if(!group||group.lastIndex!==index) return [];
+    return [{...group.lastRow,events:group.events,text:group.text,
+      firstSequence:group.firstSequence,lastSequence:group.lastSequence}];
+  });
+  // Select exactly one presentation for each exact provider message. A full
+  // indexed set is strongest; until it arrives, an aggregated live stream is
+  // more informative than a partial indexed window. Source events remain in
+  // the signed document and its verification path.
+  const choices=new Map();
+  presented.forEach((row,index)=>{
+    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
+    if(!row.assistant||!messageId||!callId) return;
+    const key=`${callId}\u0000${messageId}`;
+    const priority=row.complete?3:row.mode==='stream'?2:1;
+    const prior=choices.get(key);
+    if(!prior||priority>prior.priority||(priority===prior.priority&&index>prior.index))
+      choices.set(key,{index,priority});
+  });
+  return presented.filter((row,index)=>{
+    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
+    if(!row.assistant||!messageId||!callId) return true;
+    return choices.get(`${callId}\u0000${messageId}`)?.index===index;
+  });
+}
 function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   let h='';
   const publicCognition=t.schema==='personaos-persona-public-cognition/1';
@@ -5630,10 +5741,10 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
     return taskRunCache.get(key);
   };
   const callContext=(call)=>{
-    const taskId=String(call?.task_id||'').trim(), runId=String(call?.run_id||'').trim();
-    const lifecycle=taskId&&runId?_verifiedPublicTaskForRun(kernel,runId):null;
-    const task=lifecycle?.taskId===taskId?lifecycle.task||'':'';
-    const workspace=call?.environment_id?_environmentNameFor(call.environment_id,kernel):'';
+    const lifecycle=_taskContextForExactReferences(
+      call?.task_id,call?.run_id,call?.environment_id,kernel);
+    const task=lifecycle?.task||'';
+    const workspace=lifecycle?_environmentNameFor(lifecycle.environment,kernel):'';
     return [task?`task · ${task}`:'',workspace?`workspace · ${workspace}`:''].filter(Boolean);
   };
   if(activeCalls.length){
@@ -5674,25 +5785,41 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   }
   const provisional=publicCognition?(t.provisional_outputs||[]):[];
   if(provisional.length){
-    const visibleProvisional=provisional.map((event,index)=>({event,index}));
+    const visibleProvisional=_provisionalPresentationRows(provisional);
     h+=`<div class="privacy-note">Live provider stream — kernel-observed and provisional, not persona-signed cognition or hidden reasoning.</div>`
-      +visibleProvisional.map(({event,index})=>{
+      +visibleProvisional.map((presented,index)=>{ const event=presented.event;
         const call=callsById.get(event.call_id);
         const provenance=_publicProvisionalProvenance(event,call);
+        if(presented.assistant&&presented.firstSequence!==presented.lastSequence)
+          provenance.sequence=`${presented.firstSequence}–${presented.lastSequence}`;
+        const trustLabel=presented.assistant
+          ?presented.complete?'KERNEL OBSERVED · COMPLETE CHUNK SET':'KERNEL OBSERVED · ADMITTED WINDOW'
+          :'KERNEL OBSERVED · PROVISIONAL';
+        const trustTitle=presented.assistant
+          ?presented.complete
+            ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
+            :'verified kernel-signed public snapshot; all displayed text is from the admitted bounded provider-event window, whose beginning and end are not asserted'
+          :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning';
         const signedMeta=_activityProvenanceHTML(provenance,{className:'think-provenance',full:true,kernel,
-          prepend:_eventTrustHTML({signed:true,_trustLabel:'KERNEL OBSERVED · PROVISIONAL',
-            _trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning'})});
+          prepend:_eventTrustHTML({signed:true,_trustLabel:trustLabel,_trustTitle:trustTitle})});
+        const sequence=presented.firstSequence===presented.lastSequence
+          ?String(presented.firstSequence):`${presented.firstSequence}–${presented.lastSequence}`;
+        const assistantWindow=presented.mode==='stream'
+          ?`${presented.events.length} verified delta${presented.events.length===1?'':'s'} · admitted stream window`
+          :presented.complete
+            ?`${presented.events.length}/${presented.chunkCount} verified chunks · complete chunk set`
+            :`${presented.events.length}/${presented.chunkCount} verified chunks · admitted chunk window`;
         const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
-          +` · sequence ${esc(event.sequence)}`
-          +(event.kind==='assistant_message'
-            ?event.stream_delta===true?' · stream delta'
-              :` · chunk ${esc(event.chunk_index+1)}/${esc(event.chunk_count)}`
-            :'')
+          +` · sequence ${esc(sequence)}`
+          +(presented.assistant?` · ${esc(assistantWindow)}`:'')
           +`</div>${signedMeta}`;
-        if(event.kind==='assistant_message'){
-          const label=event.stream_delta===true?'provisional assistant stream delta':'provisional assistant message';
+        if(presented.assistant){
+          const label=presented.mode==='stream'
+            ?'provisional assistant stream · admitted window'
+            :presented.complete?'provisional assistant message · complete chunk set'
+              :'provisional assistant message · admitted chunk window';
           return `<div class="think llmout copy-host"><span class="amber">${label}</span> ${copyBtn()}`
-            +`<pre class="ct-pre copy-src" data-provisional-output-index="${index}"></pre>${callMeta}</div>`;
+            +`<pre class="ct-pre copy-src" data-provisional-presentation-index="${index}"></pre>${callMeta}</div>`;
         }
         const subject=event.kind==='tool_status'
           ?[event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
@@ -5765,10 +5892,11 @@ function hydrateThinkingOutputText(host,doc){
     target.textContent=typeof text==='string'?text:String(text??'');
   }
   const provisional=Array.isArray(doc?.provisional_outputs)?doc.provisional_outputs:[];
-  for(const target of host.querySelectorAll('[data-provisional-output-index]')){
-    const index=Number(target.dataset.provisionalOutputIndex);
-    const text=Number.isSafeInteger(index)&&index>=0&&index<provisional.length
-      ?provisional[index]?.text:'';
+  const presented=_provisionalPresentationRows(provisional);
+  for(const target of host.querySelectorAll('[data-provisional-presentation-index]')){
+    const index=Number(target.dataset.provisionalPresentationIndex);
+    const text=Number.isSafeInteger(index)&&index>=0&&index<presented.length
+      ?presented[index]?.text:'';
     target.textContent=typeof text==='string'?text:String(text??'');
   }
 }
@@ -6462,21 +6590,31 @@ function _publicCognitionRows(doc,{kernel=''}={}){
         :'active model call in the verified current kernel-signed public cognition snapshot',
     });
   }
-  for(const event of doc.provisional_outputs){
-    const assistant=event.kind==='assistant_message', tool=event.kind==='tool_status';
+  for(const presented of _provisionalPresentationRows(doc.provisional_outputs)){
+    const event=presented.event;
+    const assistant=presented.assistant, tool=event.kind==='tool_status';
     const kind=assistant?'PROVISIONAL_ASSISTANT_MESSAGE':tool?'PROVISIONAL_TOOL_STATUS':'PROVISIONAL_PROVIDER_STATUS';
     const statusDetail=tool
       ?[event.status,event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
       :[event.status,event.model_id].filter(Boolean).join(' · ');
     const call=callsById.get(event.call_id);
     const provenance=_publicProvisionalProvenance(event,call);
+    if(assistant&&presented.firstSequence!==presented.lastSequence)
+      provenance.sequence=`${presented.firstSequence}–${presented.lastSequence}`;
     rows.push({
       source:'provisional',kind,at:event.at,scope:'provider',scopeId:event.call_id,
-      msg:assistant?event.text:statusDetail,rationale:assistant?event.text:statusDetail,
-      exactText:assistant?event.text:'',cognition:false,providerProvisional:true,ctype:'think',
-      recipients:[],authority:event.authority,dedup:event,personaSigned:false,provenance,
-      trustLabel:'KERNEL OBSERVED · PROVISIONAL',
-      trustTitle:'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning',
+      msg:assistant?presented.text:statusDetail,rationale:assistant?presented.text:statusDetail,
+      exactText:assistant?presented.text:'',cognition:false,providerProvisional:true,ctype:'think',
+      recipients:[],authority:event.authority,dedup:assistant?presented.events:event,
+      presentationKey:assistant?presented.presentationKey:'',personaSigned:false,provenance,
+      trustLabel:assistant
+        ?presented.complete?'KERNEL OBSERVED · COMPLETE CHUNK SET':'KERNEL OBSERVED · ADMITTED WINDOW'
+        :'KERNEL OBSERVED · PROVISIONAL',
+      trustTitle:assistant
+        ?presented.complete
+          ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
+          :'verified kernel-signed public snapshot; all displayed text is from the admitted bounded provider-event window, whose beginning and end are not asserted'
+        :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning',
     });
   }
   for(const output of doc.recent_outputs){
@@ -6617,9 +6755,22 @@ async function streamPersonaCognition(options={}){
       for(const row of rows){
         const msg=typeof row.msg==='string'?row.msg:String(row.msg??'');
         if(!msg.trim()&&row.providerProvisional!==true) continue;
-        const key=`cog|${personaKey}|${row.source}|${row.kind}|${_publicCognitionFingerprint(row.dedup)}`;
-        if(personaSeen?.has(key)||S.ixKeys.has(key)||S.cognitionByPersona?.get(personaKey)?.has(key)) continue;
-        if(personaSeen){ personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value); }
+        const revision=_publicCognitionFingerprint(row.dedup);
+        const presentationKey=typeof row.presentationKey==='string'?row.presentationKey:'';
+        const identity=presentationKey?_publicCognitionFingerprint(presentationKey):revision;
+        const key=`cog|${personaKey}|${row.source}|${row.kind}|${identity}`;
+        const interactionIndex=presentationKey
+          ?S.interactions.findIndex((event)=>event?._key===key):-1;
+        const prior=presentationKey
+          ?S.cognitionByPersona?.get(personaKey)?.get(key)
+            ||(interactionIndex>=0?S.interactions[interactionIndex]:null)
+          :null;
+        const known=personaSeen?.has(key)||S.ixKeys.has(key)
+          ||S.cognitionByPersona?.get(personaKey)?.has(key);
+        if((!presentationKey&&known)||(presentationKey&&prior?._presentationRevision===revision)) continue;
+        if(personaSeen&&!personaSeen.has(key)){
+          personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value);
+        }
         S.ixKeys.add(key); added++;
         const contentPreview=_cognitionPreview(msg);
         const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
@@ -6639,8 +6790,11 @@ async function streamPersonaCognition(options={}){
           _provenance:row.provenance&&typeof row.provenance==='object'?row.provenance:null,
           _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
           _trustTitle:String(trustTitle),
+          _presentationRevision:presentationKey?revision:'',
         };
-        S.interactions.push(event); _rememberPersonaCognitionEvent(event);
+        if(presentationKey&&interactionIndex>=0) S.interactions[interactionIndex]=event;
+        else S.interactions.push(event);
+        _rememberPersonaCognitionEvent(event);
       }
     }
     if(added){
@@ -6782,14 +6936,13 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const ld=d.lineage_digest||{};
   // de-dup scalars the live tiles + the 'Members (N)' header already carry
   // (name is in the title; status + member count are live tiles): keep only the rest.
-  const environmentIdentity=String(d.environment_id||r.did||r.label||'');
-  const workspaceName=_isMechanicalEnvironmentName(d.name||r.label,environmentIdentity)
-    ?_environmentNameFor(environmentIdentity,r._kernel):String(d.name||r.label);
+  const environmentReference=String(d.environment_id||r.did||r.label||'');
+  const workspaceName=_environmentNameFor(environmentReference,r._kernel);
   let html=kv('Workspace',`<b>${esc(workspaceName)}</b>`)
     +kv('Type',`<span class="cap">${esc(d.env_type||'—')}</span>`)
     +kv('Env rules',S0(d.rule_count))
     +kv('Lineage events',S0(ld.event_count))
-    +verificationIdentityDetails('environment id',environmentIdentity);
+    +verificationIdentityDetails('environment id',environmentReference);
   // MODEL-PER-ROLE: the distinct models in use across this environment's personas
   // (the env's own model_events) — what THIS workspace is actually running on.
   const _envLiveModels=(S.liveByEnv.get(_environmentKey(r._kernel,d.environment_id||r.did))||{}).models||[];
