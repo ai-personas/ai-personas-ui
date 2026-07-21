@@ -5915,7 +5915,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
       ||!/^[0-9a-f]{64}$/.test(publicKey)
       ||!_safePublicCognitionAtom(authority.action_id,512,{required:true})
       ||!_safePublicCognitionAtom(authority.task_id,512)
-      ||!_safePublicCognitionAtom(authority.model_call_id,512,{required:true})
+      ||!_safePublicCognitionAtom(authority.model_call_id,512)
       ||!_safePublicCognitionAtom(authority.action_name,512,{required:true})
       ||!SHA256_CONTENT_RE.test(String(authority.action_descriptor_hash||''))
       ||!SHA256_CONTENT_RE.test(String(authority.authored_text_hash||''))
