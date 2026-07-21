@@ -454,7 +454,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   liveArtifactPublicProbes:new Map(),
   terminalCallTombstones:new Map(),
   terminalModelFailureByKernel:new Map(),
-  personaRuntimeById:new Map(), cognitionByPersona:new Map(),
+  personaRuntimeById:new Map(), cognitionByPersona:new Map(), verifiedPublicCognitionByPersona:new Map(),
   trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
@@ -563,6 +563,7 @@ function expireLivePresence(now=Date.now()){
       else S.ixByPersona?.delete(personaKey);
       S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
       S.publicCognitionSeen?.delete(personaKey);
+      S.verifiedPublicCognitionByPersona?.delete(personaKey);
       if(S.follow===personaKey) S.follow=null;
       continue;
     }
@@ -702,6 +703,16 @@ function _rememberPersonaCognitionEvent(event){
     store.delete(personaKey); store.set(personaKey,rows);
   }
   while(store.size>NETWORK_LIMITS.cognitionPersonas*4) store.delete(store.keys().next().value);
+}
+// The live feed has already performed the full current-master/public-tier
+// verification. Retain only a tiny, short-lived document window so a persona
+// inspector opened between feed ticks can render that same verified stream.
+function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
+  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public') return;
+  const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
+  store.delete(personaKey);
+  store.set(personaKey,{doc,base,kernel,personaId,observedAt:Date.now()});
+  while(store.size>4) store.delete(store.keys().next().value);
 }
 function _refreshPersonaInteractionIndex(){
   const indexed=new Map();
@@ -2236,6 +2247,7 @@ function _removeRecordStoreKey(id){
     if(S.personaDiscoveryByKey.get(key)===row) S.personaDiscoveryByKey.delete(key);
     S.liveByPersona.delete(key); S.personaRuntimeById?.delete(key);
     S.cognitionByPersona?.delete(key); S.ixByPersona?.delete(key);
+    S.verifiedPublicCognitionByPersona?.delete(key);
     if(S.follow===key) S.follow=null;
   }
   try{ NETWORK.removeEntity(networkEntityKey(row._kernel,row.kind,
@@ -3295,6 +3307,16 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
   }
   return html;
 }
+function _isAuthenticatedActiveCallCapture(capture,{ended=false}={}){
+  return !ended
+    &&capture?.schema==='personaos-live-artifact-capture-boundary/1'
+    &&capture.state==='authenticated_active_native_call_observation'
+    &&capture.in_call_file_streaming===true&&capture.provisional===true;
+}
+function _activeCallCaptureBadgeHTML(active){
+  return active
+    ?`<span class="transport-badge live-capture-badge" title="Kernel-authenticated workspace observation during an active native model call; provisional until call completion.">ACTIVE CALL CAPTURE · PROVISIONAL</span>`:'';
+}
 function liveArtifactsHTML(base,run){
   const state=liveArtifactState(base,run);
   if(!state) return `<div class="live-artifacts waiting"><div class="live-artifacts-head"><span class="loading-inline">waiting for a workspace snapshot</span><span class="transport-badge">AWAITING KERNEL-SIGNED SNAPSHOT</span></div><div class="l2">Polling every 3 seconds; only snapshots and SSE events whose Ed25519 signatures check are applied.</div></div>`;
@@ -3308,12 +3330,8 @@ function liveArtifactsHTML(base,run){
   const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
   const finalizedBootstrap=state.verification?.immutableFinalizedBootstrap===true;
   const capture=snap.capture_boundary;
-  const activeCallCapture=!state.ended
-    &&capture?.schema==='personaos-live-artifact-capture-boundary/1'
-    &&capture.state==='authenticated_active_native_call_observation'
-    &&capture.in_call_file_streaming===true&&capture.provisional===true;
-  const captureBadge=activeCallCapture
-    ?`<span class="transport-badge live-capture-badge" title="Kernel-authenticated workspace observation during an active native model call; provisional until call completion.">ACTIVE CALL CAPTURE · PROVISIONAL</span>`:'';
+  const activeCallCapture=_isAuthenticatedActiveCallCapture(capture,{ended:state.ended});
+  const captureBadge=_activeCallCaptureBadgeHTML(activeCallCapture);
   const signedTerminalFields=state.ended?[
     state.terminalState?`state ${state.terminalState}`:'',
     state.terminalStatus?`status ${state.terminalStatus}`:'',
@@ -4158,7 +4176,9 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
     +projection.current.map((row)=>{ const terminal=[
       row.terminalState?`state ${row.terminalState}`:'',row.terminalStatus?`status ${row.terminalStatus}`:'',
     ].filter(Boolean);
-      return `<div class="current-workspace"><div class="current-workspace-head"><span><b>Current files</b> · <code>${esc(row.workspaceId||row.run)}</code></span><span>${row.files.length} file${row.files.length===1?'':'s'}${terminal.length?` · ${esc(terminal.join(' · '))}`:` · ${esc(row.state||'live')}`}</span></div>`
+      const captureBadge=_activeCallCaptureBadgeHTML(_isAuthenticatedActiveCallCapture(
+        row.captureBoundary,{ended:row.ended}));
+      return `<div class="current-workspace"><div class="current-workspace-head"><span><b>Current files</b> · <code>${esc(row.workspaceId||row.run)}</code></span><span>${captureBadge}${captureBadge?' · ':''}${row.files.length} file${row.files.length===1?'':'s'}${terminal.length?` · ${esc(terminal.join(' · '))}`:` · ${esc(String(row.state||'live').replace(/_/g,' '))}`}</span></div>`
         +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">workspace is currently empty</span>'}</div></div>`;
     }).join('')
     +`<div class="artifact-preview-note">Select a current file to fetch it on demand, verify its SHA-256, and open the preview. ArtifactBundle lifecycle remains separate.</div>`
@@ -5015,6 +5035,7 @@ async function refreshSystemView(){
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
       const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
+        captureBoundary:snap.capture_boundary||null,ended:state.ended===true,
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
@@ -6122,6 +6143,22 @@ async function refreshThinking(){
     el.innerHTML='<div class="privacy-note">No current-master-verified node route is available for public activity.</div>';
     return;
   }
+  const personaKey=_personaKey(wantKernel,want);
+  const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
+  let retainedAccepted=false;
+  if(retained&&retained.kernel===wantKernel&&retained.personaId===want
+      &&Date.now()-Number(retained.observedAt||0)<=30000
+      &&_freshPublicGeneratedAt(retained.doc?.generated_at)){
+    retainedAccepted=await verifyPublicPersonaCognition(retained.base,retained.doc,
+      {personaId:want,kernel:wantKernel});
+    if(retainedAccepted){
+      const current=$('#thinksec');
+      if(current&&S.drawerThinkPid===want&&S.drawerLiveBase===wantBase&&S.drawerLiveKernel===wantKernel){
+        current.innerHTML=renderThinking(retained.doc,{kernel:wantKernel});
+        hydrateThinkingOutputText(current,retained.doc);
+      }
+    }
+  }
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
   const t=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
@@ -6132,11 +6169,13 @@ async function refreshThinking(){
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
+    if(publicAccepted) _rememberVerifiedPublicCognition(personaKey,t,
+      {base:wantBase,kernel:wantKernel,personaId:want});
     el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
     hydrateThinkingOutputText(el2,t); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
-  const el3=$('#thinksec'); if(el3) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
+  const el3=$('#thinksec'); if(el3&&!retainedAccepted) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
     :'<div class="privacy-note">No verified signed public cognition is available. Private cognition is not exposed.</div>';
 }
 // LIVE persona activity: poll active personas and merge the exact validated
@@ -6438,6 +6477,8 @@ async function streamPersonaCognition(options={}){
       }
       if(!t) continue;
       const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+      if(publicCognition) _rememberVerifiedPublicCognition(personaKey,t,
+        {base:usedBase,kernel,personaId:endpointId});
       const retainedCognition=S.cognitionByPersona?.get(personaKey);
       if(retainedCognition){
         S.cognitionByPersona.delete(personaKey);
