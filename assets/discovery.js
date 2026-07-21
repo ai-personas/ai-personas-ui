@@ -191,11 +191,10 @@ function normalizedHttpsBase(value){
     return url.toString().replace(/\/$/,'');
   }catch(_){ return ''; }
 }
-/* ---------- operator authority (A5-01/A5-08: a BEARER TOKEN, never network position) ----------
-   The node mints a process bearer at boot and prints its exact temporary path.
-   Saved per node base in sessionStorage; every fetch to that base carries it, unlocking owner
-   intake (/task /budget /stop), full /status, /runs, /personas and the gated static tree.
-   Anonymous viewers keep working — they see each node's public discovery projection only. */
+/* ---------- node authority (A5-01/A5-08: explicit node policy, never network position) ----------
+   Public reachability may grant bearer-equivalent read/control authority. Every other mode
+   retains the process bearer boundary. The browser learns that distinction only from the
+   exact /status response: discovery cards and loopback position never grant authority. */
 function opTokens(){
   // Clear credentials written by older portal builds instead of silently retaining
   // durable authority that model-authored same-origin content could have observed.
@@ -209,7 +208,7 @@ function opSaveTokens(m){
 }
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
 // Loopback detection is only a discovery/convenience hint. Network position never
-// grants operator authority; protected calls still require the bearer token.
+// grants authority; the node's returned status projection decides whether a bearer is needed.
 const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostname;
   return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'; }catch(e){ return false; } };
 function tokenFor(u){
@@ -563,7 +562,6 @@ function expireLivePresence(now=Date.now()){
       else S.ixByPersona?.delete(personaKey);
       S.ixCountBySid?.delete(personaKey); S.cogBaseFor?.delete(personaKey);
       S.publicCognitionSeen?.delete(personaKey);
-      S.verifiedPublicCognitionByPersona?.delete(personaKey);
       if(S.follow===personaKey) S.follow=null;
       continue;
     }
@@ -712,8 +710,9 @@ function _rememberPersonaCognitionEvent(event){
   while(store.size>NETWORK_LIMITS.cognitionPersonas*4) store.delete(store.keys().next().value);
 }
 // The live feed has already performed the full current-master/public-tier
-// verification. Retain only a tiny, short-lived document window so a persona
-// inspector opened between feed ticks can render that same verified stream.
+// verification. Keep the latest admitted document for each monitored persona:
+// signed messages and assembled provider output are durable activity history,
+// not presence signals that should disappear when the 30-second live lease ends.
 function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
   if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public') return;
   const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
@@ -2219,7 +2218,7 @@ async function discoverLocalNode(opts={}){
   const before=[...S.localPeers].sort().join('|'), after=[...found].sort().join('|');
   S.localPeers=found;                      // rebuild each cycle: a stopped local node drops off
   if(after!==before){
-    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — paste its bearer token for operator controls`,true);
+    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — open its control console; access follows that node's policy`,true);
     if(!rediscover) return found;
     discover().then(()=>{ renderMissions(); }).catch(()=>{});
   }
@@ -2997,11 +2996,32 @@ function runtimeForPersona(value,kernel=''){ const ref=_personaRef(value,kernel)
   return runtime; }
 // Node /status cache — 4s TTL so active calls and run discovery keep the 2-5s live cadence.
 const statusCache=new Map();
+function fullNodeStatusProjection(status){
+  return status?.schema==='personaos-node-status/1';
+}
+function nodeStatusAccess(base,status){
+  const key=base||'@origin', cached=statusCache.get(key);
+  const exactCachedMode=cached?.v===status?cached.credentialed:!!tokenFor(join(base,'status'));
+  const granted=fullNodeStatusProjection(status);
+  return {granted,bare:granted&&!exactCachedMode,bearer:granted&&exactCachedMode};
+}
+function freshBarePublicStatusBases(now=Date.now()){
+  const bases=[];
+  for(const [key,hit] of statusCache){
+    if(now-Number(hit?.ts||0)>15000) continue;
+    const base=key==='@origin'?'':key;
+    if(nodeStatusAccess(base,hit?.v).bare) bases.push(base);
+  }
+  return bases;
+}
 async function fetchNodeStatus(base){
-  const key=base||'@origin'; const hit=statusCache.get(key);
-  if(hit&&(Date.now()-hit.ts)<4000) return hit.v;
-  const v=await fetchJson(join(base,'status'));
-  if(v){ statusCache.set(key,{v,ts:Date.now()}); indexRuntimeStatus(base,v); }
+  const key=base||'@origin', endpoint=join(base,'status');
+  const credentialed=!!tokenFor(endpoint), hit=statusCache.get(key);
+  // Never reuse a bearer-derived full projection after a credential is removed,
+  // or a bare public projection immediately after a bearer is added.
+  if(hit&&hit.credentialed===credentialed&&(Date.now()-hit.ts)<4000) return hit.v;
+  const v=await fetchJson(endpoint);
+  if(v){ statusCache.set(key,{v,ts:Date.now(),credentialed}); indexRuntimeStatus(base,v); }
   return v||null;
 }
 function personaIdFromDid(did){
@@ -4329,8 +4349,8 @@ function _personaActivityHTML(acts,personaKey){
     .slice(0,2).forEach(add);
   candidates.forEach(add);
   rows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No signed or observed activity is available in the retained public window.</div></section>`;
-  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Live persona activity</span><small><i></i> verified and observed stream</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Public persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No signed or observed activity has been retained for this persona.</div></section>`;
+  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Public persona activity</span><small><i></i> live + retained verified history</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
     +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
@@ -5407,6 +5427,16 @@ function _applyFollow(){
     g.querySelectorAll('[data-gp]').forEach((n)=>n.classList.toggle('gn-followed',n.dataset.gp===fdom)); }
 }
 
+// A verified public-cognition row is durable history even after it stops being
+// "live now". Presence/model-call styling still expires on its short lease; only
+// the exact public activity text remains available to the reader.
+function _durablePublicPersonaActivity(event){
+  return event?.actor_kind==='persona'&&(
+    event?._cognition===true
+    ||event?._providerProvisional===true
+    ||(event?.signed===true&&typeof event?._exactText==='string'&&!!event._exactText.trim()));
+}
+
 // the live COORDINATION FEED — the heartbeat of who→whom:what. Newest slides in
 // at the top (.fresh); adjacent acts sharing a real scope_id get a per-task
 // THREAD SPINE so you can watch one task ripple produce→verify→ship. The kernel
@@ -5416,8 +5446,14 @@ function renderInteractionStream(){
   const el=$('#sysStream'); if(!el) return;
   const flt=S.sysFlt||'all';
   const now=Date.now(), leaseMs=5*60*1000;
-  const scoped=(S.interactions||[]).filter((e)=>kernelIsFocused(e._kernel||kernelForBase(e._base)));
-  const all=scoped.filter((e)=>e._t>0&&now-e._t<=leaseMs&&e._t-now<30000);
+  const retained=new Map((S.interactions||[]).map((event)=>[event._key,event]));
+  for(const events of (S.cognitionByPersona||new Map()).values())
+    for(const [key,event] of events) retained.set(key,event);
+  const scoped=[...retained.values()]
+    .filter((e)=>kernelIsFocused(e._kernel||kernelForBase(e._base)))
+    .sort((left,right)=>Number(left?._t||0)-Number(right?._t||0));
+  const all=scoped.filter((e)=>e._t>0&&e._t-now<30000
+    &&(now-e._t<=leaseMs||_durablePublicPersonaActivity(e)));
   S.ixSeen=S.ixSeen||new Set();   // _keys already painted (so only genuinely-new rows .fresh in)
   const rows=all.filter((e)=>{ const c=_ixClass(e.kind,e);
     if(flt==='all') return true;
@@ -5471,7 +5507,7 @@ function renderInteractionStream(){
     // same anonymous probe with 404, so an empty THINK feed must stay neutral: the
     // browser cannot infer whether the persona is quiet or its cognition is private.
     if(flt==='think' && Object.keys((typeof opTokens==='function'?opTokens():{})).length===0)
-      return '<li class="l2" style="padding:10px">no signed public cognition in the last 5 minutes — this node may be quiet or keep its cognition private.</li>';
+      return '<li class="l2" style="padding:10px">no signed public cognition has been retained — this node may be quiet or keep its cognition private.</li>';
     // warming: a reachable node is running but no act has streamed yet — say so on the
     // unfiltered feed rather than implying nothing is funded (honest only when warming).
     if(flt==='all' && isWarming())
@@ -5487,7 +5523,7 @@ function renderInteractionStream(){
     // presence check so the intentional empty-string label (all) survives the lookup
     const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
-    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity in the last 5 minutes — fund or resume a mission to watch personas coordinate.</li>';
+    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity is currently retained — fund or resume a mission to watch personas coordinate.</li>';
   })();
   if(!atTop) el.scrollTop=prevTop+(el.scrollHeight-prevH);
   // headline count must match what the reader sees: the grand total only for the
@@ -5495,7 +5531,9 @@ function renderInteractionStream(){
   const r=$('#sysStreamRate'); if(r){
     const narrowed=(flt!=='all')||!!f;
     const shown=f?rows.filter(matches).length:rows.length;
-    r.textContent=narrowed?`${shown} of ${all.length} recent acts`:`${all.length} recent acts · 5m window`;
+    const durable=all.filter(_durablePublicPersonaActivity).length;
+    r.textContent=narrowed?`${shown} of ${all.length} activity records`
+      :`${all.length} activity records${durable?` · ${durable} retained persona history`:''}`;
   }
   // self-filter so an active search query keeps filtering the feed even when this is
   // called directly (tab-switch / follow toggle / cognition merge), not only via the 5s caller.
@@ -5503,7 +5541,7 @@ function renderInteractionStream(){
   // prune the 'seen' set to the live ring unconditionally — a node streaming ONLY
   // cognition/model events never hits the indexLiveTelemetry prune, so ixSeen would
   // otherwise leak for the page's life.
-  const liveKeys=new Set((S.interactions||[]).map((e)=>e._key));
+  const liveKeys=new Set(scoped.map((e)=>e._key));
   for(const k of [...S.ixSeen]) if(!liveKeys.has(k)) S.ixSeen.delete(k);
 }
 
@@ -5534,6 +5572,23 @@ async function fetchEntityFeed(base,rel){
     _ingestVerifiedEntityRoutes(base,v);
   }
   m.set(key,{v,ts:Date.now()}); return v;
+}
+// fetchEntityFeed stores a public entity document only after its exact shape,
+// current-master signature, route and subject binding verify. Reuse that admitted
+// document in inspectors so a slow peer refresh cannot replace public telemetry
+// with a misleading "no telemetry" placeholder.
+function _retainedVerifiedEntityFeed(kind,id,kernel){
+  const persona=kind==='persona', expected=_shortId(id); let selected=null;
+  for(const hit of (S.entFeed||new Map()).values()){
+    const doc=hit?.v;
+    if(!isPublicEntityTelemetryDocument(doc)
+        ||(persona?!isPersonaTelemetryDocument(doc):!isEnvironmentTelemetryDocument(doc))) continue;
+    const subject=_shortId(persona?doc.persona_id:doc.environment_id);
+    const owner=String(doc.kernel_id||doc.node_id||'');
+    if(subject!==expected||owner!==String(kernel||'')) continue;
+    if(!selected||Number(hit.ts||0)>Number(selected.ts||0)) selected=hit;
+  }
+  return selected?.v||null;
 }
 function _ingestVerifiedEntityRoutes(base,doc){
   const routes=publicCommunicationRouteEvents(VERIFIED_COMMUNICATION_ROUTES.get(doc)||[]);
@@ -5727,7 +5782,7 @@ function _provisionalPresentationRows(events){
     return choices.get(`${callId}\u0000${messageId}`)?.index===index;
   });
 }
-function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
+function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=false}={}){
   let h='';
   const publicCognition=t.schema==='personaos-persona-public-cognition/1';
   const activeCalls=t.active_calls||[];
@@ -5748,14 +5803,18 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
     return [task?`task · ${task}`:'',workspace?`workspace · ${workspace}`:''].filter(Boolean);
   };
   if(activeCalls.length){
-    h+=`<div class="l2" style="margin:2px 0 3px">Active model calls — verified current snapshot</div>`
+    h+=`<div class="l2" style="margin:2px 0 3px">${retainedSnapshot
+      ?'Calls active when this verified snapshot was captured — retained history, not current execution'
+      :'Active model calls — verified current snapshot'}</div>`
       +[...activeCalls].reverse().map((call)=>{
         const started=Date.parse(String(call.started_at||''));
         const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
         const signedMeta=publicCognition?_activityProvenanceHTML(_publicCallProvenance(call),{
           className:'think-provenance',full:true,kernel,prepend:_eventTrustHTML({signed:true,
-            _trustLabel:'KERNEL SIGNED ACTIVE CALL',
-            _trustTitle:'active model call in the verified current kernel-signed public cognition snapshot'})}):'';
+            _trustLabel:retainedSnapshot?'KERNEL SIGNED SNAPSHOT CALL':'KERNEL SIGNED ACTIVE CALL',
+            _trustTitle:retainedSnapshot
+              ?'model call recorded as active when this retained kernel-signed public cognition snapshot was captured; not a current execution claim'
+              :'active model call in the verified current kernel-signed public cognition snapshot'})}):'';
         return `<div class="think"><span class="amber">${esc(call.status||'active')}</span> ${esc(purpose)}`
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
@@ -5786,7 +5845,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   const provisional=publicCognition?(t.provisional_outputs||[]):[];
   if(provisional.length){
     const visibleProvisional=_provisionalPresentationRows(provisional);
-    h+=`<div class="privacy-note">Live provider stream — kernel-observed and provisional, not persona-signed cognition or hidden reasoning.</div>`
+    h+=`<div class="privacy-note">${retainedSnapshot?'Retained provider-stream snapshot':'Live provider stream'} — kernel-observed and provisional, not persona-signed cognition or hidden reasoning${retainedSnapshot?', and not current execution':''}.</div>`
       +visibleProvisional.map((presented,index)=>{ const event=presented.event;
         const call=callsById.get(event.call_id);
         const provenance=_publicProvisionalProvenance(event,call);
@@ -5853,7 +5912,9 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   }
   const lessons=t.lessons||[];
   if(lessons.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed lessons in current public state':'Lessons it learned — its own words'}</div>`
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition
+      ?retainedSnapshot?'Signed lessons in retained public snapshot':'Signed lessons in current public state'
+      :'Lessons it learned — its own words'}</div>`
       +[...lessons].reverse().map((l)=>
         `<div class="think"><span class="amber">when</span> ${esc(l.trigger||'—')} <span class="amber">→</span> ${esc(l.action||'')}`
         +(l.rationale?`<div class="l2">${esc(String(l.rationale))}</div>`:'')
@@ -5861,14 +5922,18 @@ function renderThinking(t,{allowThinkingFrame=false,kernel=''}={}){
   }
   const tactics=t.tactics||[];
   if(tactics.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed tactics in current public state':'Evolved tactics (EVOLVE-BLOCK · GEPA-signed)'}</div>`
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition
+      ?retainedSnapshot?'Signed tactics in retained public snapshot':'Signed tactics in current public state'
+      :'Evolved tactics (EVOLVE-BLOCK · GEPA-signed)'}</div>`
       +[...tactics].reverse().map((x)=>
         `<div class="think">${esc(String(x.action||x.trigger||''))}`
         +`<div class="l2">${esc(x.source||'manual')} · score ${esc(Number(x.score||0).toFixed(2))} · v${esc(x.version||1)}${x.cohort?' · '+esc(x.cohort):''}</div></div>`).join('');
   }
   const facts=t.proven_facts||[];
   if(facts.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed proven facts in current public state':'Shared proven facts it holds'}</div>`
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition
+      ?retainedSnapshot?'Signed proven facts in retained public snapshot':'Signed proven facts in current public state'
+      :'Shared proven facts it holds'}</div>`
       +[...facts].reverse().map((s)=>`<div class="think l2">${esc(String(s))}</div>`).join('');
   }
   const tl=t.evolution_timeline||[];
@@ -6373,25 +6438,27 @@ async function refreshThinking(){
   if(!S.drawerThinkPid) return;
   const el=$('#thinksec'); if(!el) return;
   const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
-  if(!wantBase){
-    el.innerHTML='<div class="privacy-note">No current-master-verified node route is available for public activity.</div>';
-    return;
-  }
   const personaKey=_personaKey(wantKernel,want);
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
-  let retainedAccepted=false;
-  if(retained&&retained.kernel===wantKernel&&retained.personaId===want
-      &&Date.now()-Number(retained.observedAt||0)<=30000
-      &&_freshPublicGeneratedAt(retained.doc?.generated_at)){
-    retainedAccepted=await verifyPublicPersonaCognition(retained.base,retained.doc,
-      {personaId:want,kernel:wantKernel});
-    if(retainedAccepted){
-      const current=$('#thinksec');
-      if(current&&S.drawerThinkPid===want&&S.drawerLiveBase===wantBase&&S.drawerLiveKernel===wantKernel){
-        current.innerHTML=renderThinking(retained.doc,{kernel:wantKernel});
-        hydrateThinkingOutputText(current,retained.doc);
-      }
+  let retainedRendered=false;
+  // This exact object reached the store only after whole-document verification.
+  // Repaint it immediately while a fresh peer fetch is in flight; freshness is
+  // liveness metadata, not a reason to erase already admitted signed history.
+  if(retained&&retained.kernel===wantKernel&&retained.personaId===want){
+    retainedRendered=true;
+    const current=$('#thinksec');
+    if(current&&S.drawerThinkPid===want&&S.drawerLiveBase===wantBase&&S.drawerLiveKernel===wantKernel){
+      const observed=_friendlyInstant(retained.doc?.generated_at);
+      current.innerHTML=(observed
+        ?`<div class="privacy-note">Retained verified public activity · snapshot ${esc(observed)} · refreshing…</div>`:'')
+        +renderThinking(retained.doc,{kernel:wantKernel,retainedSnapshot:true});
+      hydrateThinkingOutputText(current,retained.doc);
     }
+  }
+  if(!wantBase){
+    if(!retainedRendered)
+      el.innerHTML='<div class="privacy-note">No current-master-verified node route is available for public activity.</div>';
+    return;
   }
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
@@ -6409,7 +6476,7 @@ async function refreshThinking(){
     hydrateThinkingOutputText(el2,t); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
-  const el3=$('#thinksec'); if(el3&&!retainedAccepted) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
+  const el3=$('#thinksec'); if(el3&&!retainedRendered) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
     :'<div class="privacy-note">No verified signed public cognition is available. Private cognition is not exposed.</div>';
 }
 // LIVE persona activity: poll active personas and merge the exact validated
@@ -6814,7 +6881,13 @@ async function streamPersonaCognition(options={}){
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
+  const retained=_retainedVerifiedEntityFeed(
+    S.drawerLiveKind,S.drawerLiveId,S.drawerLiveKernel);
+  if(retained) el.innerHTML=S.drawerLiveKind==='persona'
+    ?renderPersonaFeedDoc(retained,_personaKey(S.drawerLiveKernel,S.drawerLiveId))
+    :renderEnvFeedDoc(retained);
   const fallback=()=>{ const el2=$('#livesec'); if(!el2) return;
+    if(retained) return;
     el2.innerHTML=S.drawerLiveKind==='persona'
       ?renderPersonaLive(S.drawerLiveId,null,S.drawerLiveKernel)
       :renderEnvLive(S.drawerLiveId,S.drawerLiveKernel); };
@@ -6892,7 +6965,11 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
   S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
   S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
+  const retainedPersonaTelemetry=_retainedVerifiedEntityFeed(
+    'persona',S.drawerLiveId,S.drawerLiveKernel);
+  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${retainedPersonaTelemetry
+    ?renderPersonaFeedDoc(retainedPersonaTelemetry,personaKey)
+    :renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // Public activity combines persona-signed final output with explicitly
   // provisional kernel observations; the private thinking frame remains
@@ -7010,7 +7087,11 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const envId=d.environment_id||r.did;
   S.drawerLiveKind='env'; S.drawerLiveId=envId; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
   S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
+  const retainedEnvironmentTelemetry=_retainedVerifiedEntityFeed(
+    'env',envId,S.drawerLiveKernel);
+  html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${retainedEnvironmentTelemetry
+    ?renderEnvFeedDoc(retainedEnvironmentTelemetry)
+    :renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   html+=trustPanel(r);
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
@@ -7572,10 +7653,10 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
       +kv('Workspace',workspace
         ?`<span title="${esc(lifecycle.environment)}">${esc(workspace)}</span>`
         :'<span class="l2">not routed yet</span>')
-      +kv('Terminal reason',lifecycle.terminalReason
+      +kv('Acceptance / handoff',lifecycle.terminalReason
         ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`
         :lifecycle.liveTask?'<span class="ok">current live work</span>'
-          :'<span class="l2">non-terminal lifecycle evidence</span>');
+          :'<span class="l2">verdict unknown · available for handoff or continuation</span>');
   }
   html+=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))
     +kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)
@@ -7885,50 +7966,53 @@ async function opPost(base,path,body){ const u=join(base,path);
 async function operatorView(){
   const m=opTokens();
   // Surface loopback nodes automatically for convenience, but never treat network
-  // position as authority. The same bearer-token rule applies locally and remotely.
+  // position as authority. The opened node's full /status response is decisive.
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
-  const bases=[...new Set([...Object.keys(m),...localBases])];
-  let html=H('Operator authority — bearer token')
-    +`<div class="desc2">Each node mints a process bearer at boot and prints its exact temporary path `
-    +`(default <code>runs/node/.personaos-secrets/operator.token</code>). Capture it before the first model call, then paste it here to unlock a node's owner intake `
-    +`(ASK / FUND / STOP), full status, runs and personas. Loopback is a convenient `
-    +`route, not authority: <b>local and remote nodes both require the token</b>.</div>`;
+  // Status prefetch may prove a remote route bearerless. Include only fresh bare
+  // full-status results here; a discovery card by itself never enters this list.
+  const publicBases=freshBarePublicStatusBases();
+  const bases=[...new Set([...Object.keys(m),...localBases,...publicBases])];
+  let html=H('Node control authority')
+    +`<div class="desc2">A node in public reachability can return its full status and grant bearer-equivalent ASK / FUND / STOP access without a token. `
+    +`Other access modes mint a process bearer at boot (default <code>runs/node/.personaos-secrets/operator.token</code>). `
+    +`The UI trusts only the projection actually returned by <code>/status</code>; discovery and loopback position never grant authority.</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<label class="field"><span class="field-label">node base URL</span>`
     +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
-    +`<label class="field"><span class="field-label">operator token</span>`
-    +`<input id="op-token" type="password" placeholder="paste the captured process bearer"></label>`
+    +`<label class="field"><span class="field-label">operator token · gated nodes</span>`
+    +`<input id="op-token" type="password" placeholder="paste a bearer when node policy requires it"></label>`
     +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
-  for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]);
+  for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]), pub=publicBases.includes(b);
     html+=`<div class="grant"><span>${esc(b)}${loc?' <span class="l2">· local route</span>':''}</span>`
-    +`<span><a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
+    +`<span>${pub?'<span class="ok">public policy · no bearer</span> · ':''}<a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
     +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ${icon('x','ico-sm')}</a>`:'')+`</span></div>`; }
-  if(!bases.length) html+=`<div class="l2">no operator tokens saved and no local node discovered — this browser is an anonymous public viewer. Run a node locally (it appears here automatically), then paste its token.</div>`;
+  if(!bases.length) html+=`<div class="l2">no saved gated-node credentials and no local node route discovered. Public nodes remain accessible from their verified live cards; gated nodes can be added here with a bearer.</div>`;
   return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
 }
 
 async function operatorNodeView(b){
   const key=opBaseKey(b);
   const mixed=location.protocol==='https:'&&/^http:\/\//i.test(key);
-  const st=await fetchJson(join(b,'status'))||{};
+  const st=await fetchNodeStatus(b)||{};
   const reached=!!st.schema;
-  const pub=st.schema==='personaos-node-status-public/1';
-  const loc=isLocalBase(b), tokd=Object.keys(opTokens()).includes(key);
+  const access=nodeStatusAccess(b,st), full=access.granted;
+  const limited=st.schema==='personaos-node-status-public/1';
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   let html='';
   if(!reached){
     html+=`<div class="desc2"><span class="no">can't reach this node from this page</span>`
       +(mixed
-        ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's own console directly, then paste and use the captured process bearer there: <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
+        ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's own console directly; that node's policy will say whether a bearer is needed: <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
         :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
     return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
   }
-  if(!pub&&!tokd) html+=`<div class="desc2"><span class="ok">operator projection granted by node policy</span>.</div>`;
-  else if(pub) html+=`<div class="desc2"><span class="no">token missing or rejected</span> — the node returned its public projection. Paste this node's bearer token in the operator console.</div>`;
+  if(access.bare) html+=`<div class="desc2"><span class="ok">full read/control projection granted by public node policy</span> — no bearer required.</div>`;
+  else if(access.bearer) html+=`<div class="desc2"><span class="ok">full read/control projection granted</span> — the node accepted this browser's bearer.</div>`;
+  else if(limited) html+=`<div class="desc2"><span class="no">limited public projection</span> — full authority was not granted; a saved bearer may be missing or rejected, or this node's policy requires one.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
-    +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(pub?'—':'<span class="no">in-memory only</span>'))
+    +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(limited?'—':'<span class="no">in-memory only</span>'))
     +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
     +kv('Artifact tier',S0(st.artifact_tier))
     +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
@@ -7951,6 +8035,11 @@ async function operatorNodeView(b){
     `<div class="grant"><span>${esc(p.run||p.run_id||'')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
   html+=H('Optional human input')
     +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
+  if(!full){
+    html+=H('Node controls')
+      +`<div class="l2">This response did not grant full status authority. Run reads and ASK / FUND / STOP remain gated; remove a rejected saved credential or present a valid bearer when node policy requires one.</div>`;
+    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
+  }
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><label class="field"><span class="field-label">task</span>`
     +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
@@ -8009,12 +8098,14 @@ function _runRuntimeSurfaces(st){
 async function operatorRunView(b,run){
   S.curBase=b;
   const trackKey=_liveRunKey(b,run); S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
-  const hasOperatorStatus=!!tokenFor(join(b,'status'));
-  const [stRaw,artsRaw,_live,nodeStatus]=await Promise.all([
-    hasOperatorStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):Promise.resolve(null),
-    hasOperatorStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):Promise.resolve(null),
-    fetchLiveArtifacts(b,run),
-    fetchNodeStatus(b),
+  // The status document is the authority result. A bare request to a public node
+  // returns the same full schema as an accepted bearer; a non-public anonymous
+  // request returns only personaos-node-status-public/1 and remains read-gated.
+  const [nodeStatus,_live]=await Promise.all([fetchNodeStatus(b),fetchLiveArtifacts(b,run)]);
+  const statusAccess=nodeStatusAccess(b,nodeStatus), hasFullStatus=statusAccess.granted;
+  const [stRaw,artsRaw]=await Promise.all([
+    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):Promise.resolve(null),
+    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):Promise.resolve(null),
   ]);
   const st=stRaw||{}, arts=artsRaw||{};
   const S0=(v)=>esc((v===''||v==null)?'—':v);
@@ -8031,16 +8122,21 @@ async function operatorRunView(b,run){
   // a paused mission card opens this view directly, so give it inline resume/stop
   // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
   // console-level #op-run-target, and read #opr-budget when present.
-  const canOperate=!terminal&&hasOperatorStatus;
+  const canOperate=!terminal&&hasFullStatus;
   let html=canOperate?('<div class="opform"><div class="oprow">'
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
     +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
     +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>')
-    :'<div class="l2">Read-only live monitor. Save this node\'s operator bearer token to enable FUND and STOP.</div>';
+    :(terminal?'<div class="l2">This run has ended; FUND and STOP are no longer applicable.</div>'
+      :'<div class="l2">Read-only live monitor. FUND and STOP appear only when this node returns its full status projection; public node policy can grant that without a bearer.</div>');
+  const accepted=rs.accepted===true
+    ?`<span class="ok">${icon('check','ico-sm')} yes</span>`
+    :rs.accepted===false?'<span class="no">no</span>'
+      :'<span class="l2">unknown · available for handoff or continuation</span>';
   html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`:'<span class="l2">Task details not published</span>')
     +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
-    +kv('Accepted',rs.accepted?`<span class="ok">${icon('check','ico-sm')} yes</span>`:'<span class="no">no</span>')
+    +kv('Acceptance / handoff',accepted)
     +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
     +verificationReferencesDetails([['run id',run],['node id',runKernel],
       ['task id',publicTask?.taskId],['environment id',publicTask?.environment],['revision',publicTask?.revision]]);
@@ -8256,7 +8352,8 @@ function missionCardList(){
     const meta=lifecycle
       ?[`current execution ${lifecycle.currentExecution?'yes':'no'}`,
         ...lineageMeta,lifecycleSurfaces.join(' · '),`signed task record · ${lifecycle.terminalReason
-          ?`terminal ${lifecycle.terminalReason}`:lifecycle.liveTask?'current live lifecycle':'lifecycle evidence'}`]
+          ?`terminal ${lifecycle.terminalReason}`:lifecycle.liveTask?'current live lifecycle'
+            :'acceptance unknown · handoff or continuation available'}`]
       :[`signed ${published.kind} record`];
     const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
       kernel:r._kernel||'',meta,recId:id,run,base:nodeBaseForRecord(r),recordKind:published.kind,
