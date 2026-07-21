@@ -12,7 +12,7 @@ import {
   sha256Hex,
   terminalLiveArtifactCalls,
   transitionLiveArtifacts,
-} from './live-artifacts.mjs?v=20260718-live-current-v2';
+} from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
@@ -3307,6 +3307,13 @@ function liveArtifactsHTML(base,run){
   const byWs=new Map(); for(const file of state.files.values()) (byWs.get(file.workspace_id)||byWs.set(file.workspace_id,[]).get(file.workspace_id)).push(file);
   const workspaces=[...new Set([...(snap.workspaces||[]).map((w)=>w.workspace_id),...byWs.keys()])].sort();
   const finalizedBootstrap=state.verification?.immutableFinalizedBootstrap===true;
+  const capture=snap.capture_boundary;
+  const activeCallCapture=!state.ended
+    &&capture?.schema==='personaos-live-artifact-capture-boundary/1'
+    &&capture.state==='authenticated_active_native_call_observation'
+    &&capture.in_call_file_streaming===true&&capture.provisional===true;
+  const captureBadge=activeCallCapture
+    ?`<span class="transport-badge live-capture-badge" title="Kernel-authenticated workspace observation during an active native model call; provisional until call completion.">ACTIVE CALL CAPTURE · PROVISIONAL</span>`:'';
   const signedTerminalFields=state.ended?[
     state.terminalState?`state ${state.terminalState}`:'',
     state.terminalStatus?`status ${state.terminalStatus}`:'',
@@ -3321,7 +3328,7 @@ function liveArtifactsHTML(base,run){
   const revision=String(state.revision||'');
   const terminalTitle=finalizedBootstrap?'Run finalized · final workspace':'Run ended · final workspace';
   const terminalNote=finalizedBootstrap?'Immutable finalized-snapshot signature checked':'Terminal-event signature checked';
-  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?terminalTitle:'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></div>`
+  return `<div class="live-artifacts verified${state.ended?' ended':''}" role="status" aria-live="polite" aria-atomic="false"><div class="live-artifacts-head"><span><span class="livedot2"></span><b>${state.ended?terminalTitle:'Live workspaces'}</b> · ${snap.indexed_file_count??state.files.size} indexed</span><span class="live-artifacts-badges">${captureBadge}<span class="transport-badge verified">WORKSPACE SNAPSHOT · SIGNATURE CHECKED</span></span></div>`
     +(state.ended?`<div class="fv-note"><span class="transport-badge verified live-terminal-badge">SIGNED TERMINAL${signedTerminalFields.length?` · ${esc(signedTerminalFields.join(' · '))}`:''}</span>. ${terminalNote}${state.endedAt?` at ${esc(state.endedAt)}`:''}. Polling stopped; this is the final captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><code title="${esc(revision)}">${esc(revision.slice(0,20))}…</code></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')

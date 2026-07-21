@@ -718,6 +718,8 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .live-artifacts-head,.live-revision,.live-workspace-head,.live-call,.persona-runtime-row>div{
   display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .live-artifacts-head{padding:8px 10px;border-bottom:1px solid var(--line2);background:var(--surface-head);font-size:var(--fs-label)}
+.live-artifacts-badges{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}
+.live-capture-badge{white-space:nowrap}
 .live-revision{padding:5px 10px;color:var(--dim);font-size:var(--fs-meta);border-bottom:1px solid var(--line)}
 .live-revision>span{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .live-revision code{max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

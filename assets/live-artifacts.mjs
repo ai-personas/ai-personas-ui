@@ -143,6 +143,24 @@ function snapshotFileByteLimit(snapshot) {
   return Math.min(value, LIVE_ARTIFACT_LIMITS.maxAdvertisedFileBytes);
 }
 
+function liveArtifactCaptureBoundary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.schema !== 'personaos-live-artifact-capture-boundary/1'
+      || !['authenticated_call_completion', 'authenticated_active_native_call_observation']
+        .includes(value.state)
+      || typeof value.in_call_file_streaming !== 'boolean') return null;
+  const provisionalPresent = Object.prototype.hasOwnProperty.call(value, 'provisional');
+  if (provisionalPresent && typeof value.provisional !== 'boolean') return null;
+  if (value.provisional === true
+      && value.state !== 'authenticated_active_native_call_observation') return null;
+  return {
+    schema: value.schema,
+    state: value.state,
+    in_call_file_streaming: value.in_call_file_streaming,
+    ...(provisionalPresent ? {provisional: value.provisional} : {}),
+  };
+}
+
 function publicFile(file, maxAdvertisedBytes) {
   if (!file || typeof file !== 'object') return null;
   const workspaceId = String(file.workspace_id || '');
@@ -186,6 +204,7 @@ export function sanitizeLiveArtifactSnapshot(snapshot) {
   const calls = (Array.isArray(active.calls) ? active.calls : [])
     .slice(0, LIVE_ARTIFACT_LIMITS.maxActiveCalls)
     .filter((item) => item && typeof item === 'object');
+  const captureBoundary = liveArtifactCaptureBoundary(source.capture_boundary);
   return {
     schema: String(source.schema || ''),
     node_id: String(source.node_id || ''),
@@ -200,6 +219,7 @@ export function sanitizeLiveArtifactSnapshot(snapshot) {
     indexed_file_count: files.length,
     total_size_bytes: files.reduce((total, file) => total + file.size_bytes, 0),
     limits: {max_file_bytes: maxAdvertisedBytes},
+    ...(captureBoundary ? {capture_boundary: captureBoundary} : {}),
     files,
     truncated: Boolean(source.truncated || rejected),
     omitted_file_count: Math.max(Number(source.omitted_file_count) || 0, 0) + rejected,
