@@ -3848,38 +3848,41 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   let job=_personaAvatarJobs.get(cacheKey);
   if(!job){
     job=(async()=>{
-      const avatarFetch=async(sourceUrl,init={})=>{
-        const peerRouted=Boolean(p2pDataRouteForUrl(sourceUrl));
-        if(peerRouted){
-          const bytes=await fetchP2PArtifactBytes(sourceUrl,`sha256:${descriptor.sha256}`,
-            descriptor.byte_length);
-          if(bytes?.byteLength===descriptor.byte_length){
-            return new Response(bytes,{status:200,headers:{
-              'Content-Type':descriptor.mime_type,
-              'Content-Length':String(descriptor.byte_length),
-            }});
-          }
-        }
-        let httpResponse=null;
-        try{
-          httpResponse=await fetch(sourceUrl,secureFetchInit(sourceUrl,init));
-          if(httpResponse?.ok) return httpResponse;
-        }catch(_){ /* the peer-bound public-data route remains available */ }
-        const bytes=peerRouted?null:await fetchP2PArtifactBytes(
-          sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length);
-        if(bytes?.byteLength===descriptor.byte_length){
-          return new Response(bytes,{status:200,headers:{
-            'Content-Type':descriptor.mime_type,
-            'Content-Length':String(descriptor.byte_length),
-          }});
-        }
-        throw _personaAvatarBodyTransientError();
-      };
-      const loaded=await fetchVerifiedPersonaAvatar(descriptor,{
+      const raceAbort=new AbortController();
+      const verifyWith=(fetchImpl)=>fetchVerifiedPersonaAvatar(descriptor,{
         expectedPersonaId:signedPersona.signedId,pinnedPublicKeyHex:pin,
-        providerBase,pageUrl:location.href,
-        fetchImpl:avatarFetch,
+        providerBase,pageUrl:location.href,fetchImpl,
       });
+      const peerAttempt=verifyWith(async(sourceUrl)=>{
+        if(!p2pDataRouteForUrl(sourceUrl)) throw _personaAvatarBodyTransientError();
+        const bytes=await settleBeforeAbort(fetchP2PArtifactBytes(
+          sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),raceAbort.signal,null);
+        if(bytes?.byteLength!==descriptor.byte_length) throw _personaAvatarBodyTransientError();
+        return new Response(bytes,{status:200,headers:{
+          'Content-Type':descriptor.mime_type,
+          'Content-Length':String(descriptor.byte_length),
+        }});
+      });
+      const httpAttempt=verifyWith(async(sourceUrl,init={})=>{
+        try{
+          const response=await fetch(sourceUrl,secureFetchInit(sourceUrl,{
+            ...init,signal:raceAbort.signal,
+          }));
+          if(response?.ok) return response;
+        }catch(_){ /* the peer-bound public-data route remains available */ }
+        throw _personaAvatarBodyTransientError();
+      });
+      let loaded;
+      try{
+        loaded=await Promise.any([peerAttempt,httpAttempt]);
+      }catch(error){
+        const failures=Array.from(error?.errors||[error]);
+        const refusal=failures.find((failure)=>failure?.avatarBodyTransient!==true);
+        if(refusal) throw refusal;
+        throw _personaAvatarBodyTransientError();
+      }finally{
+        raceAbort.abort();
+      }
       const observedKey=loaded.descriptor.identity_public_key_hex;
       const currentPin=S.personaIdentityKeys.get(ref.key)||'';
       if(currentPin&&currentPin!==observedKey) throw new Error('persona identity key pin mismatch');
