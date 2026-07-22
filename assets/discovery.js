@@ -6587,7 +6587,6 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!_safePublicCognitionText(doc.name,512)
       ||!_safePublicCognitionAtom(doc.lifecycle_state,64,{required:true})
       ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
-      ||String(doc.name||'')!==String(row._personaSignedName||'')
       ||!Array.isArray(doc.active_calls)
       ||!Array.isArray(doc.recent_calls)
       ||!Array.isArray(doc.provisional_outputs)
@@ -6605,9 +6604,11 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
   // A lifecycle shell legitimately has no persona-authored name yet. Bind
   // emptiness to the independently verified name-field state: a pending name
   // must remain empty, while a materialized name must remain non-empty. The
-  // exact equality to the signed discovery label above still applies in both
-  // cases, so cognition cannot invent or replace either identity state.
-  if((lifecycle.identityFields.name.state==='materialized')!==Boolean(doc.name)) return false;
+  // materialized value must equal the current-inventory signed discovery name,
+  // so cognition cannot invent a name or turn a pending fallback label into one.
+  const materializedName=lifecycle.identityFields.name.state==='materialized';
+  const expectedName=materializedName?String(row._personaSignedName||''):'';
+  if(materializedName!==Boolean(doc.name)||String(doc.name||'')!==expectedName) return false;
   for(const field of ['name','characteristics','avatar']){
     const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
     if(!_exactObjectFields(value,['persona_authored','state'])
