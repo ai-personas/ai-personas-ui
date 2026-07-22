@@ -6241,7 +6241,7 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS=Object.freeze([
   ...PUBLIC_PERSONA_OUTPUT_FIELDS,
   'authored_output','persona_authority','persona_authority_hash',
 ].sort());
-const PUBLIC_PERSONA_ACTION_OUTPUT_FIELDS=Object.freeze([
+const PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS=Object.freeze([
   ...PUBLIC_PERSONA_OUTPUT_FIELDS,
   'persona_authority','persona_authority_hash',
 ].sort());
@@ -6283,9 +6283,6 @@ const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lin
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
 const PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND='PERSONA_COGNITIVE_INTENT';
-const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
-  PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND,PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND,
-]);
 const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
   atom:512,lineageText:32*1024*1024,exactTextBytes:32*1024*1024,
@@ -6387,6 +6384,13 @@ async function _validPublicPersonaAuthority(output,identity,row){
     payload={};
     for(const field of Object.keys(authority)) if(field!=='persona_signature') payload[field]=authority[field];
   }else if(output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND){
+    const payload=authority?.payload;
+    const authoredOutputPresent=Object.hasOwn(output,'authored_output');
+    const exactTextBound=authoredOutputPresent
+      ?payload&&typeof payload==='object'&&!Array.isArray(payload)
+        &&canon(payload.authored_output)===canon(output.authored_output)
+      :payload&&typeof payload==='object'&&!Array.isArray(payload)
+        &&typeof payload.message==='string'&&payload.message===output.text;
     if(!_exactObjectFields(authority,PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS)
         ||authority.schema!=='personaos-persona-communication/1'
         ||authority.authored_by!==identity.signedId
@@ -6394,8 +6398,7 @@ async function _validPublicPersonaAuthority(output,identity,row){
         ||authority.signing_key_id!==signingKeyId
         ||!Array.isArray(authority.addressed_to)
         ||canon(authority.addressed_to)!==canon(output.audience_persona_ids)
-        ||!authority.payload||typeof authority.payload!=='object'||Array.isArray(authority.payload)
-        ||canon(authority.payload.authored_output)!==canon(output.authored_output)) return false;
+        ||!exactTextBound) return false;
     signature=String(authority.signed_by||'');
     payload={};
     for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
@@ -6467,10 +6470,16 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
   return verified;
 }
 async function _validPublicPersonaOutput(output,identity,row){
-  const personaExact=PUBLIC_PERSONA_EXACT_OUTPUT_KINDS.has(output?.kind);
+  const communication=output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
+  const cognitiveExact=output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND;
+  const authoredOutputPresent=Object.hasOwn(output||{},'authored_output');
+  const personaExact=communication||cognitiveExact;
   const actionExact=output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
-  const outputFields=actionExact?PUBLIC_PERSONA_ACTION_OUTPUT_FIELDS
-    :personaExact?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS:PUBLIC_PERSONA_OUTPUT_FIELDS;
+  const outputFields=actionExact?PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS
+    :(cognitiveExact||communication&&authoredOutputPresent)
+      ?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS
+      :communication?PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS
+        :PUBLIC_PERSONA_OUTPUT_FIELDS;
   if(!_exactObjectFields(output,outputFields)
       ||!_safePublicCognitionAtom(output.kind,128,{required:true})
       ||!_safePublicCognitionInstant(output.at)
@@ -6480,7 +6489,6 @@ async function _validPublicPersonaOutput(output,identity,row){
       ||!_safePublicCognitionAtom(output.environment_id,512)
       ||!PUBLIC_PERSONA_OUTPUT_AUTHORITIES.has(output.authority)
       ||!Array.isArray(output.audience_persona_ids)) return false;
-  const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
   if((personaExact||actionExact)!==(output.authority==='persona_signature')
       ||((personaExact||actionExact)&&!output.environment_id)
       ||(!communication&&output.audience_persona_ids.length)
@@ -6493,8 +6501,9 @@ async function _validPublicPersonaOutput(output,identity,row){
   }
   if(actionExact) return await _validPublicPersonaActionAuthority(output,identity,row);
   if(!personaExact) return true;
-  return await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)
-    &&await _validPublicPersonaAuthority(output,identity,row);
+  if((cognitiveExact||authoredOutputPresent)
+      &&!await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)) return false;
+  return await _validPublicPersonaAuthority(output,identity,row);
 }
 function _validPublicPersonaActiveCall(call,identity,generatedAt){
   return _exactObjectFields(call,PUBLIC_PERSONA_ACTIVE_CALL_FIELDS)
