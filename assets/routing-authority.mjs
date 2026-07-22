@@ -137,18 +137,3 @@ export function resolveEnvironmentAuthority(record, links = {}, {verified = fals
   return Object.freeze({status: 'absent', environmentId: '', candidates: [],
     basis: '', reason: 'no_verified_environment_reference'});
 }
-
-/** Resolve a run-path compatibility join only when exactly one environment owns it. */
-export function resolveUniqueRunEnvironment(environmentKeys) {
-  const candidates = new Set();
-  for (const value of environmentKeys || []) {
-    const id = text(value);
-    // These are internal NetworkStore keys, whose canonical separator is NUL;
-    // they are never copied from a transport field or rendered as HTML.
-    if (id && id.length <= MAX_REFERENCE_LENGTH) candidates.add(id);
-  }
-  const ids = sorted(candidates);
-  if (ids.length === 1) return Object.freeze({status: 'resolved', environmentKey: ids[0], candidates: ids});
-  if (ids.length > 1) return Object.freeze({status: 'ambiguous', environmentKey: '', candidates: ids});
-  return Object.freeze({status: 'absent', environmentKey: '', candidates: []});
-}

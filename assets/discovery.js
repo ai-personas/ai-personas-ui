@@ -26,7 +26,6 @@ import {
   projectRecordSurface,
   providerLookupHints,
   recordVerificationEntries,
-  signedPersonaLabel,
   validateProviderInventoryWindow,
 } from './discovery-authority.mjs?v=20260715-provider-window-v1';
 import {
@@ -43,9 +42,10 @@ import {
   selectVerifiedPublicTaskRunTargets,
   selectPriorityWindow,
   signedPersonaIdentity,
+  verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260720-pending-avatar-lifecycle-v4';
+} from './network-view.mjs?v=20260722-participation-authority-v5';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -59,12 +59,11 @@ import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
   personaIdentityKeyPin,
-} from './persona-avatar.mjs?v=20260712-persona-raster-v2';
+} from './persona-avatar.mjs?v=20260722-persona-raster-v3';
 import {
   environmentIdentity,
   resolveEnvironmentAuthority,
-  resolveUniqueRunEnvironment,
-} from './routing-authority.mjs?v=20260715-persona-routing-authority-v1';
+} from './routing-authority.mjs?v=20260722-exact-environment-authority-v2';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -396,14 +395,18 @@ async function fetchJson(u,init={}){
   if(peerRouted&&!init.signal?.aborted){
     const peerDocument=await fetchP2PJson(u,init);
     if(peerDocument!==null&&peerDocument!==undefined) return peerDocument;
-    return null;
+    // A verified provider route is authority for the peer binding, not a lease
+    // on the only usable transport. A disconnected relay must not suppress the
+    // same independently verified public document on the provider's HTTPS route.
   }
   try{ const r=await fetch(u,secureFetchInit(u,init)); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)); }
   }catch(e){}
   if(init.signal?.aborted) return null;
-  return fetchP2PJson(u,init);
+  // The peer route was already tried first above. Do not pay the same failed
+  // transport timeout twice before the next live refresh.
+  return peerRouted?null:fetchP2PJson(u,init);
 }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
@@ -1262,6 +1265,94 @@ async function verifyPersonaLifecycleCard(card,record,documentKey){
   try{ return await ed.verifyAsync(hexToBytes(card.signature_hex),enc.encode(canon(payload)),
     hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
 }
+const PERSONA_PARTICIPATION_ENVELOPE_FIELDS=Object.freeze([
+  'card','path','persona_id','schema','signature_hex','signing_key_id','ttl_seconds',
+].sort());
+const PERSONA_PARTICIPATION_REQUIRED_FIELDS=Object.freeze([
+  'accepts_inbound_from','charter_hash','description','expires_at','federation_visibility',
+  'identity_authority','kernel_a2a_url','kernel_provider','name','persona_id','rate_limit',
+  'schema','signing_key_id','soul_hash','soul_version','visibility','voice_hash',
+]);
+const PERSONA_PARTICIPATION_ALLOWED_FIELDS=new Set([
+  ...PERSONA_PARTICIPATION_REQUIRED_FIELDS,
+  'avatar','characteristic_identity','display_name_alias','participation_status',
+]);
+const PERSONA_PARTICIPATION_EXPIRES_RE=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
+function _plainPersonaParticipationObject(value){
+  return !!value&&typeof value==='object'&&!Array.isArray(value);
+}
+function _exactPersonaParticipationName(value){
+  return typeof value==='string'&&[...value].length<=80&&enc.encode(value).length<=320
+    &&!/\p{Cc}/u.test(value);
+}
+function _exactPersonaParticipationDescription(value){
+  return typeof value==='string'&&[...value].length<=240&&enc.encode(value).length<=960;
+}
+function _currentPersonaParticipationExpiry(value,now=Date.now()){
+  if(typeof value!=='string') return false;
+  const match=PERSONA_PARTICIPATION_EXPIRES_RE.exec(value);
+  if(!match) return false;
+  const [,yearText,monthText,dayText,hourText,minuteText,secondText,fraction='',zone]=match;
+  const year=Number(yearText),month=Number(monthText),day=Number(dayText);
+  const hour=Number(hourText),minute=Number(minuteText),second=Number(secondText);
+  if(hour>23||minute>59||second>59) return false;
+  const wall=new Date(0); wall.setUTCFullYear(year,month-1,day);
+  wall.setUTCHours(hour,minute,second,0);
+  if(wall.getUTCFullYear()!==year||wall.getUTCMonth()!==month-1
+      ||wall.getUTCDate()!==day||wall.getUTCHours()!==hour
+      ||wall.getUTCMinutes()!==minute||wall.getUTCSeconds()!==second) return false;
+  let offsetMinutes=0;
+  if(zone!=='Z'){
+    const offsetHour=Number(zone.slice(1,3)),offsetMinute=Number(zone.slice(4,6));
+    if(offsetHour>23||offsetMinute>59) return false;
+    offsetMinutes=(offsetHour*60+offsetMinute)*(zone[0]==='+'?1:-1);
+  }
+  const expiresAt=wall.getTime()+(fraction?Number(`0.${fraction}`)*1000:0)
+    -offsetMinutes*60_000;
+  return Number.isFinite(expiresAt)&&expiresAt>now;
+}
+async function verifyPersonaParticipationCard(envelope,record,identity,publicKeyHex){
+  if(record?.kind!=='persona'||!identity||!/^[0-9a-f]{64}$/.test(publicKeyHex)
+      ||!_exactObjectFields(envelope,PERSONA_PARTICIPATION_ENVELOPE_FIELDS)) return null;
+  const personaId=identity.signedId, keyId=`persona:${personaId}`, card=envelope.card;
+  if(!_plainPersonaParticipationObject(card)
+      ||PERSONA_PARTICIPATION_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(card,field))
+      ||Object.keys(card).some((field)=>!PERSONA_PARTICIPATION_ALLOWED_FIELDS.has(field))
+      ||envelope.schema!=='persona-card/3'||card.schema!=='persona-card/3'
+      ||envelope.persona_id!==personaId||card.persona_id!==personaId
+      ||envelope.path!==`.well-known/personas/${personaId}.json`
+      ||envelope.signing_key_id!==keyId||card.signing_key_id!==keyId
+      ||record.identity_signing_key_id!==keyId
+      ||String(record.identity_public_key_hex||'')!==publicKeyHex
+      ||record.visibility_tier!=='public'
+      ||card.visibility!=='public'||card.federation_visibility!=='public'
+      ||card.name!==record.label||!_exactPersonaParticipationName(card.name)
+      ||!_exactPersonaParticipationDescription(card.description)
+      ||!Number.isSafeInteger(envelope.ttl_seconds)
+      ||envelope.ttl_seconds<1||envelope.ttl_seconds>86400
+      ||!_currentPersonaParticipationExpiry(card.expires_at)
+      ||!/^[0-9a-f]{128}$/i.test(String(envelope.signature_hex||''))
+      ||!Number.isSafeInteger(card.soul_version)
+      ||!_plainPersonaParticipationObject(card.rate_limit)
+      ||!_plainPersonaParticipationObject(card.identity_authority)) return null;
+  for(const field of ['charter_hash','voice_hash','soul_hash','kernel_provider','kernel_a2a_url',
+    'accepts_inbound_from']) if(typeof card[field]!=='string') return null;
+  for(const field of ['display_name_alias','characteristic_identity'])
+    if(Object.hasOwn(card,field)&&(!_plainPersonaParticipationObject(card[field])
+      ||Object.keys(card[field]).length===0)) return null;
+  if(Object.keys(card.identity_authority).length===0) return null;
+  if(Object.hasOwn(card,'participation_status')
+      &&(typeof card.participation_status!=='string'||!card.participation_status))
+    return null;
+  // Profile enrichment is not participation authority. Bind its exact signed
+  // bytes to the outer record, but let the independent avatar hydration gate
+  // validate descriptor, identity signature, body hash, MIME, and dimensions.
+  if(canon(card.avatar||{})!==canon(record.avatar||{})) return null;
+  let signatureVerified=false;
+  try{ signatureVerified=await ed.verifyAsync(hexToBytes(envelope.signature_hex),
+    enc.encode(canon(card)),hexToBytes(publicKeyHex)); }catch(_){ signatureVerified=false; }
+  return signatureVerified?Object.freeze({envelope,name:card.name}):null;
+}
 const PUBLIC_TASK_LIFECYCLE_FIELDS=Object.freeze([
   'access','amended_from_run','block','continued_from_run','current_execution','environment_id',
   'kernel_id','links',
@@ -1603,8 +1694,14 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   // Keep the pin internal; absence is normal and never invents one.
   const identityPublicKeyHex=personaIdentity
     ?personaIdentityKeyPin(doc.record,personaIdentity.signedId):'';
+  const participation=identityPublicKeyHex
+    ?await verifyPersonaParticipationCard(
+      doc.persona_card,doc.record,personaIdentity,identityPublicKeyHex):null;
   const lifecycleVerified=personaId
     ?await verifyPersonaLifecycleCard(doc.persona_lifecycle_card,doc.record,signature.entry):false;
+  const lifecycleObservationState=!personaId?'refused'
+    :lifecycleVerified?'verified'
+      :doc.persona_lifecycle_card==null?'pending':'refused';
   const taskLifecycleVerified=r.kind==='task'
     ?await verifyPublicTaskLifecycle(doc.task_lifecycle,doc.record,signature.entry,k):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
@@ -1617,7 +1714,11 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     _providerBase:meta.providerBaseVerified===true?opBaseKey(base):'',
     _personaIdentityPublicKeyHex:identityPublicKeyHex,
     _personaIdentitySigningKeyId:personaId?String(doc.record.identity_signing_key_id||''):'',
+    _personaParticipationVerified:!!participation,
+    _personaParticipationName:participation?.name||'',
+    persona_card:participation?.envelope||null,
     _personaLifecycleVerified:lifecycleVerified,
+    _personaLifecycleObservationState:personaId?lifecycleObservationState:'',
     persona_lifecycle_card:lifecycleVerified?doc.persona_lifecycle_card:null,
     _taskLifecycleVerified:taskLifecycleVerified,
     task_lifecycle:taskLifecycleVerified?doc.task_lifecycle:null,
@@ -2355,10 +2456,17 @@ function upsert(r){
     host_environment_ids:Array.isArray(r.host_environment_ids)?r.host_environment_ids.slice(0,64):r.host_environment_ids,
     candidate_environment_ids:Array.isArray(r.candidate_environment_ids)?r.candidate_environment_ids.slice(0,64):r.candidate_environment_ids,
     _personaAuthoredRole:r.kind==='persona'?personaAuthoredRole(r):'',
-    _personaSignedName:r.kind==='persona'?signedPersonaLabel(r):'',
+    _personaSignedName:r.kind==='persona'?String(r.label||''):'',
     _personaIdentityPublicKeyHex:r.kind==='persona'?(r._personaIdentityPublicKeyHex||''):'',
     _personaIdentitySigningKeyId:r.kind==='persona'?(r._personaIdentitySigningKeyId||''):'',
+    _personaParticipationVerified:r.kind==='persona'&&r._personaParticipationVerified===true,
+    _personaParticipationName:r.kind==='persona'&&r._personaParticipationVerified===true
+      ?String(r._personaParticipationName||''):'',
+    persona_card:r.kind==='persona'&&r._personaParticipationVerified===true&&r.persona_card
+      ?r.persona_card:null,
     _personaLifecycleVerified:r.kind==='persona'&&r._personaLifecycleVerified===true,
+    _personaLifecycleObservationState:r.kind==='persona'
+      ?String(r._personaLifecycleObservationState||'refused'):'',
     persona_lifecycle_card:r.kind==='persona'&&r.persona_lifecycle_card
       ?r.persona_lifecycle_card:null,
     _taskLifecycleVerified:r.kind==='task'&&r._taskLifecycleVerified===true,
@@ -2551,7 +2659,7 @@ function emptyStateHTML(){
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
-    1 · Run a node: <code>python -m personaos.node --backend codex --budget 8 --port 8765 --libp2p</code><br>
+    1 · Run a public node: <code>python -m personaos.node --backend codex --port 8765 --libp2p --public-access</code><br>
     ${httpsPage?`2 · This page is <b>https://</b> — browsers block direct fetches to a plain-http
     LAN/localhost node. A public <code>--libp2p</code> launch creates HTTPS/WSS quick-tunnel routes
     automatically; a stable deployment may supply its own <code>--public-url</code> and
@@ -2559,9 +2667,10 @@ function emptyStateHTML(){
     <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
     also meet over mDNS; a public node joins the shared DHT.`}<br>
     3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
-    4 · Your own node? Click <b>OPERATOR</b>, paste the token from the exact path printed at boot
-    (default <code>runs/node/.personaos-secrets/operator.token</code>) and drive it from here: ASK / FUND / STOP, runs,
-    personas, live telemetry.</div>
+    4 · Your own node? Click <b>OPERATOR</b> and enter its URL. A public node grants control
+    without a token; gated modes use the token from the exact path printed at boot (default
+    <code>runs/node/.personaos-secrets/operator.token</code>). Drive it from here: ASK / FUND / STOP,
+    runs, personas, and live telemetry.</div>
   </div>`;
 }
 
@@ -2975,6 +3084,12 @@ const dcache=new Map();
 async function dfetch(base,path){ if(!path) return null; const k=base+'|'+path;
   if(dcache.has(k)) return dcache.get(k); const v=await fetchJson(join(base,path)); dcache.set(k,v);
   while(dcache.size>512) dcache.delete(dcache.keys().next().value); return v; }
+async function contentBoundDocument(base,path,expectedHash){
+  const document=await dfetch(base,path);
+  if(!document||!expectedHash) return null;
+  const observed=`sha256:${await sha256Hex(enc.encode(canon(document)))}`;
+  return observed===String(expectedHash)?document:null;
+}
 function indexRuntimeStatus(base,status){
   if(!status||typeof status!=='object') return;
   const baseKey=base||'@origin';
@@ -3454,7 +3569,7 @@ function trustPanel(r){
 // ---------- live per-entity activity (what is happening INSIDE this persona / env) ----------
 const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate',judge:'judging (PoLL)',
   safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
-  domain_probe_perceiver:'probing domain',domain_probe_abducer:'abducing domain',answer:'answering',
+  answer:'answering',
   pressure:'appraising completion pressure',pressure_appraisal:'appraising completion pressure',
   peer_pressure_appraisal:'independent pressure review',artifact_review:'reviewing artifact evidence',
   artifact_generation:'building artifacts',artifact_revision:'revising artifacts'};
@@ -3463,7 +3578,7 @@ const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate
 // → the roles/purposes each served, busiest first, as mono <code> chips. Honest:
 // pure live telemetry; renders nothing when idle.
 const _modelLabel=(value)=>{ const v=String(value||'').trim(); return /^[a-z0-9][a-z0-9._:/+@-]{0,95}$/i.test(v)?v:'model unavailable'; };
-const _modelFacet=(value)=>{ const v=String(value||'').trim(); return v.length<=64&&/^[a-z0-9][a-z0-9 _./:+-]*$/i.test(v)?v:''; };
+const _modelFacet=(value)=>String(value??'').trim();
 function _modelSummary(models){
   if(!models||!models.length) return '';
   const byM=new Map();
@@ -3607,7 +3722,7 @@ function renderEnvLaneLive(b){
    signed labels, while workspace snapshots are kernel-signed. */
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
-  domain_probe_perceiver:'probe domain',domain_probe_abducer:'abduce domain',answer:'answer',verifier:'verify',
+  answer:'answer',verifier:'verify',
   pressure:'appraise completion pressure',pressure_appraisal:'appraise completion pressure',
   peer_pressure_appraisal:'independently appraise pressure',artifact_review:'review artifact evidence',
   artifact_generation:'build artifacts',artifact_revision:'revise artifacts'};
@@ -3802,18 +3917,29 @@ const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',too
 const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s ago':s<3600?(s/60|0)+'m ago':s<86400?(s/3600|0)+'h ago':(s/86400|0)+'d ago';};
 const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
-const _isMechanicalPersonaName=(value,sid='')=>{ const v=String(value||'').trim(), id=_shortId(sid||'');
-  return !v||v===id||new RegExp(`^(?:identity|persona)\\s+${id.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}$`,'i').test(v)
-    ||/^(?:identity|persona)\s+[A-Z0-9]{16,}$/i.test(v); };
 const _personaAlias=(_sid)=>'Unnamed persona';
-const _displayPersonaName=(value,sid='')=>_isMechanicalPersonaName(value,sid)?_personaAlias(sid):String(value).trim();
+const _displayPersonaName=(value,sid='')=>typeof value==='string'&&value
+  ?value:_personaAlias(sid);
 const _personaMonogram=(value,sid='')=>{ const name=_displayPersonaName(value,sid), id=_shortId(sid||'');
-  if(!_isMechanicalPersonaName(value,sid)){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
+  if(typeof value==='string'&&value){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
   return (id.slice(-2)||'AI').toUpperCase(); };
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   return _displayPersonaName(_PERSONA_NAME.get(ref.key),ref.sid); }
+function providerVerifiedPersonaObservation(personaKey){
+  const ref=_personaRef(personaKey), record=S.personaDiscoveryByKey.get(ref.key);
+  const identity=signedPersonaIdentity(record);
+  if(record?.kind!=='persona'||identity?.canonicalId!==ref.sid) return null;
+  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,ref.key);
+  const identityVerified=verifiedPersonaIdentityPresent(S.personaDiscoveryByKey,ref.key);
+  const identityProofState=identityVerified?'verified'
+    :(lifecycle?.materializationState==='pending'
+      ||record._personaLifecycleObservationState==='pending'?'pending':'refused');
+  return {ref,record,identity,lifecycle,identityVerified,identityProofState};
+}
 function _signedPersonaNameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
-  return _displayPersonaName(S.personaDiscoveryByKey.get(ref.key)?._personaSignedName,ref.sid); }
+  const observation=providerVerifiedPersonaObservation(ref.key);
+  return _displayPersonaName(observation?.identityVerified
+    ?observation.record._personaParticipationName:'',ref.sid); }
 function _isMechanicalEnvironmentName(value,sid=''){
   const name=String(value||'').trim(), id=environmentIdentity(sid||'');
   return !name||['env','environment'].includes(name.toLowerCase())||name===id||name===`env:${id}`||name.startsWith('did:personaos:');
@@ -3868,8 +3994,10 @@ function _coordRole(sid,_summary,kernel=''){
   // S.personaDiscoveryByKey contains only Ed25519-verified discovery rows.
   // Never turn a name, capability, origin, lifecycle flag, or operator fitness
   // into a role. An explicit signed/persona-authored role stays open vocabulary.
-  const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
-  return signedCard?._personaAuthoredRole||_ROLE_NOT_DECLARED;
+  const observation=providerVerifiedPersonaObservation(ref.key);
+  return observation?.identityVerified
+    ?observation.record._personaAuthoredRole||_ROLE_NOT_DECLARED
+    :_ROLE_NOT_DECLARED;
 }
 const _coordRoleClass=(role)=>role===_ROLE_NOT_DECLARED?'role-undesignated':'role-declared';
 // per-persona "is fresh" detector for realtime streaming: did its model-event
@@ -3884,15 +4012,57 @@ function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=
 // exclusively from a persona-signed raster descriptor and verified bytes.
 const _PERSONA_AVATAR_CACHE_MAX_ENTRIES=96;
 const _PERSONA_AVATAR_CACHE_MAX_BYTES=64*1024*1024;
-const _PERSONA_AVATAR_BODY_RETRY_MS=Object.freeze([250,750,1500,3000,6000,12000,24000]);
+const _PERSONA_AVATAR_FETCH_CONCURRENCY=4;
+const _PERSONA_AVATAR_ATTEMPT_TIMEOUT_MS=15000;
+const _PERSONA_AVATAR_MOUNT_TIMEOUT_MS=5000;
+const _PERSONA_AVATAR_RETRY_BASE_MS=500;
+const _PERSONA_AVATAR_RETRY_MAX_MS=30000;
 const _personaAvatarAssets=new Map();
 const _personaAvatarJobs=new Map();
+const _personaAvatarJobControllers=new Set();
+const _personaAvatarFetchQueue=[];
+const _personaAvatarMountUrls=new Map();
 const _personaAvatarFailures=new Set();
 let _personaAvatarCacheBytes=0;
+let _personaAvatarActiveFetches=0;
+let _personaAvatarPageActive=true;
 function _personaAvatarBodyTransientError(){
   const error=new Error('avatar body transport temporarily unavailable');
   Object.defineProperty(error,'avatarBodyTransient',{value:true});
   return error;
+}
+function _personaAvatarRetryDelay(attempt){
+  const exponent=Math.min(16,Math.max(0,Number(attempt)||0));
+  return Math.min(_PERSONA_AVATAR_RETRY_MAX_MS,_PERSONA_AVATAR_RETRY_BASE_MS*(2**exponent));
+}
+function _personaAvatarRouteError(error,signal){
+  if(error?.avatarBodyTransient===true) return error;
+  if(!signal.aborted&&error?.personaAvatarPermanent===true) return error;
+  // Response status/redirect, transfer encoding, declared length, and response
+  // MIME/body/hash/dimensions are route observations: tunnels, gateways and a
+  // just-published body can repair them without a descriptor revision. They
+  // remain fail-closed for display while retrying. Only descriptor authority,
+  // key and path failures are session-stable.
+  return _personaAvatarBodyTransientError();
+}
+function _drainPersonaAvatarFetchQueue(){
+  while(_personaAvatarPageActive
+      &&_personaAvatarActiveFetches<_PERSONA_AVATAR_FETCH_CONCURRENCY
+      &&_personaAvatarFetchQueue.length){
+    const entry=_personaAvatarFetchQueue.shift();
+    if(entry.signal.aborted){ entry.reject(_personaAvatarBodyTransientError()); continue; }
+    _personaAvatarActiveFetches+=1;
+    Promise.resolve().then(entry.run).then(entry.resolve,entry.reject).finally(()=>{
+      _personaAvatarActiveFetches=Math.max(0,_personaAvatarActiveFetches-1);
+      _drainPersonaAvatarFetchQueue();
+    });
+  }
+}
+function _queuePersonaAvatarFetch(run,signal){
+  return new Promise((resolve,reject)=>{
+    _personaAvatarFetchQueue.push({run,signal,resolve,reject});
+    _drainPersonaAvatarFetchQueue();
+  });
 }
 function _rememberPersonaAvatarFailure(key){
   _personaAvatarFailures.delete(key); _personaAvatarFailures.add(key);
@@ -3901,8 +4071,12 @@ function _rememberPersonaAvatarFailure(key){
 function _personaAvatarRevision(descriptor){
   return descriptor?`${descriptor.sha256}:${descriptor.identity_signature_hex}`:'';
 }
+function _personaAvatarProviderBase(signedCard){
+  return String(signedCard?._providerBase||signedCard?._base||'');
+}
 function _personaAvatarMountRevision(descriptor,signedCard){
-  return descriptor?`${_personaAvatarRevision(descriptor)}:${String(signedCard?._personaIdentityPublicKeyHex||'')}`:'';
+  return descriptor?`${_personaAvatarRevision(descriptor)}:${String(signedCard?._personaIdentityPublicKeyHex||'')}`
+    +`:${_personaAvatarProviderBase(signedCard)}`:'';
 }
 function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaRef(personaKey).key);
@@ -3924,11 +4098,15 @@ function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
     lifecycle:'absent',
   };
 }
-function _personaAvatarHTML(personaKey){
+function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const ref=_personaRef(personaKey);
   // Avatar shape is inspected synchronously only to make signed descriptor
   // changes observable to the keyed stage diff. No image appears until the
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
+  if(!identityVerified){
+    return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
+      +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>AI</strong><small>identity proof pending · portrait withheld</small></span></span>`;
+  }
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
@@ -3941,28 +4119,43 @@ function _personaAvatarHTML(personaKey){
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
     +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
 }
-async function _decodePersonaAvatarBlob(blob,descriptor){
+async function _decodePersonaAvatarBlob(blob,descriptor,signal=null){
   if(typeof createImageBitmap==='function'){
-    const bitmap=await createImageBitmap(blob);
+    let bitmap;
+    try{ bitmap=await createImageBitmap(blob); }
+    catch(_){ throw _personaAvatarBodyTransientError(); }
     try{
+      if(signal?.aborted) throw _personaAvatarBodyTransientError();
       if(bitmap.width!==descriptor.width||bitmap.height!==descriptor.height)
-        throw new Error('decoded avatar dimensions mismatch');
+        throw _personaAvatarBodyTransientError();
     }finally{ try{ bitmap.close(); }catch(e){} }
     return;
   }
-  if(typeof Image!=='function') throw new Error('raster decoder unavailable');
-  const probeUrl=URL.createObjectURL(blob);
+  if(typeof Image!=='function') throw _personaAvatarBodyTransientError();
+  let probeUrl;
+  try{ probeUrl=URL.createObjectURL(blob); }
+  catch(_){ throw _personaAvatarBodyTransientError(); }
+  const probe=new Image();
   try{
-    const probe=new Image();
-    await new Promise((resolve,reject)=>{ probe.onload=resolve; probe.onerror=()=>reject(new Error('avatar decode failed'));
-      probe.src=probeUrl; });
+    await new Promise((resolve,reject)=>{
+      let settled=false;
+      const finish=(action)=>{ if(settled) return; settled=true;
+        signal?.removeEventListener('abort',onAbort); action(); };
+      const onAbort=()=>finish(()=>reject(_personaAvatarBodyTransientError()));
+      probe.onload=()=>finish(resolve);
+      probe.onerror=()=>finish(()=>reject(_personaAvatarBodyTransientError()));
+      if(signal?.aborted){ onAbort(); return; }
+      signal?.addEventListener('abort',onAbort,{once:true}); probe.src=probeUrl;
+    });
     if(probe.naturalWidth!==descriptor.width||probe.naturalHeight!==descriptor.height)
-      throw new Error('decoded avatar dimensions mismatch');
-  }finally{ URL.revokeObjectURL(probeUrl); }
+      throw _personaAvatarBodyTransientError();
+  }finally{
+    probe.onload=null; probe.onerror=null; URL.revokeObjectURL(probeUrl);
+  }
 }
 function _rememberPersonaAvatarAsset(key,asset){
   const prior=_personaAvatarAssets.get(key);
-  if(prior){ _personaAvatarCacheBytes-=prior.byteLength; URL.revokeObjectURL(prior.url); }
+  if(prior) _personaAvatarCacheBytes-=prior.byteLength;
   _personaAvatarAssets.delete(key); _personaAvatarAssets.set(key,asset);
   _personaAvatarCacheBytes+=asset.byteLength;
   while(_personaAvatarAssets.size>_PERSONA_AVATAR_CACHE_MAX_ENTRIES
@@ -3970,9 +4163,18 @@ function _rememberPersonaAvatarAsset(key,asset){
     const oldestKey=_personaAvatarAssets.keys().next().value;
     if(oldestKey===undefined||(_personaAvatarAssets.size===1&&oldestKey===key)) break;
     const oldest=_personaAvatarAssets.get(oldestKey); _personaAvatarAssets.delete(oldestKey);
-    _personaAvatarCacheBytes-=oldest.byteLength; URL.revokeObjectURL(oldest.url);
+    _personaAvatarCacheBytes-=oldest.byteLength;
   }
   return asset;
+}
+function _releasePersonaAvatarMountUrl(mount){
+  const url=_personaAvatarMountUrls.get(mount);
+  if(!url) return;
+  _personaAvatarMountUrls.delete(mount); URL.revokeObjectURL(url);
+}
+function _releaseDisconnectedPersonaAvatarMountUrls(){
+  for(const mount of _personaAvatarMountUrls.keys())
+    if(!mount.isConnected) _releasePersonaAvatarMountUrl(mount);
 }
 async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   const ref=_personaRef(personaKey);
@@ -3984,69 +4186,89 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   if(assertedPin&&rememberedPin&&assertedPin!==rememberedPin)
     throw new Error('persona identity key pin changed');
   const pin=assertedPin||rememberedPin;
-  const providerBase=String(signedCard?._providerBase||signedCard?._base||'');
+  const providerBase=_personaAvatarProviderBase(signedCard);
   const cacheKey=[ref.key,_personaAvatarRevision(descriptor),providerBase,pin].join('\u0000');
   const cached=_personaAvatarAssets.get(cacheKey);
   if(cached){ _personaAvatarAssets.delete(cacheKey); _personaAvatarAssets.set(cacheKey,cached); return cached; }
   if(_personaAvatarFailures.has(cacheKey)) throw new Error('avatar previously refused');
   let job=_personaAvatarJobs.get(cacheKey);
   if(!job){
-    job=(async()=>{
-      const raceAbort=new AbortController();
-      const verifyWith=(fetchImpl)=>fetchVerifiedPersonaAvatar(descriptor,{
-        expectedPersonaId:signedPersona.signedId,pinnedPublicKeyHex:pin,
-        providerBase,pageUrl:location.href,fetchImpl,
+    const controller=new AbortController(); _personaAvatarJobControllers.add(controller);
+    job=_queuePersonaAvatarFetch(async()=>{
+      const timeout=globalThis.setTimeout(()=>controller.abort(),_PERSONA_AVATAR_ATTEMPT_TIMEOUT_MS);
+      const aborted=new Promise((_,reject)=>{
+        if(controller.signal.aborted){ reject(_personaAvatarBodyTransientError()); return; }
+        controller.signal.addEventListener('abort',
+          ()=>reject(_personaAvatarBodyTransientError()),{once:true});
       });
-      const peerAttempt=verifyWith(async(sourceUrl)=>{
-        if(!p2pDataRouteForUrl(sourceUrl)) throw _personaAvatarBodyTransientError();
-        const bytes=await settleBeforeAbort(fetchP2PArtifactBytes(
-          sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),raceAbort.signal,null);
-        if(bytes?.byteLength!==descriptor.byte_length) throw _personaAvatarBodyTransientError();
-        return new Response(bytes,{status:200,headers:{
-          'Content-Type':descriptor.mime_type,
-          'Content-Length':String(descriptor.byte_length),
-        }});
-      });
-      const httpAttempt=verifyWith(async(sourceUrl,init={})=>{
+      const attempt=(async()=>{
+        const verifyWith=async(fetchImpl)=>{
+          try{
+            return await fetchVerifiedPersonaAvatar(descriptor,{
+              expectedPersonaId:signedPersona.signedId,pinnedPublicKeyHex:pin,
+              providerBase,pageUrl:location.href,fetchImpl,
+            });
+          }catch(error){
+            throw _personaAvatarRouteError(error,controller.signal);
+          }
+        };
+        const peerAttempt=verifyWith(async(sourceUrl)=>{
+          if(!p2pDataRouteForUrl(sourceUrl)) throw _personaAvatarBodyTransientError();
+          const bytes=await settleBeforeAbort(fetchP2PArtifactBytes(
+            sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),controller.signal,null);
+          if(bytes?.byteLength!==descriptor.byte_length) throw _personaAvatarBodyTransientError();
+          return new Response(bytes,{status:200,headers:{
+            'Content-Type':descriptor.mime_type,
+            'Content-Length':String(descriptor.byte_length),
+          }});
+        });
+        const httpAttempt=verifyWith(async(sourceUrl,init={})=>{
+          try{
+            const response=await fetch(sourceUrl,secureFetchInit(sourceUrl,{
+              ...init,signal:controller.signal,
+            }));
+            if(response?.ok) return response;
+          }catch(_){ /* the peer-bound public-data route remains available */ }
+          throw _personaAvatarBodyTransientError();
+        });
+        let loaded;
         try{
-          const response=await fetch(sourceUrl,secureFetchInit(sourceUrl,{
-            ...init,signal:raceAbort.signal,
-          }));
-          if(response?.ok) return response;
-        }catch(_){ /* the peer-bound public-data route remains available */ }
-        throw _personaAvatarBodyTransientError();
-      });
-      let loaded;
-      try{
-        loaded=await Promise.any([peerAttempt,httpAttempt]);
-      }catch(error){
-        const failures=Array.from(error?.errors||[error]);
-        const refusal=failures.find((failure)=>failure?.avatarBodyTransient!==true);
-        if(refusal) throw refusal;
-        throw _personaAvatarBodyTransientError();
-      }finally{
-        raceAbort.abort();
-      }
-      const observedKey=loaded.descriptor.identity_public_key_hex;
-      const currentPin=S.personaIdentityKeys.get(ref.key)||'';
-      if(currentPin&&currentPin!==observedKey) throw new Error('persona identity key pin mismatch');
-      S.personaIdentityKeys.set(ref.key,observedKey);
-      const blob=new Blob([loaded.bytes],{type:loaded.descriptor.mime_type});
-      await _decodePersonaAvatarBlob(blob,loaded.descriptor);
-      return _rememberPersonaAvatarAsset(cacheKey,Object.freeze({
-        url:URL.createObjectURL(blob),byteLength:loaded.descriptor.byte_length,
-        width:loaded.descriptor.width,height:loaded.descriptor.height,
-      }));
-    })().catch((error)=>{
+          loaded=await Promise.any([peerAttempt,httpAttempt]);
+        }catch(error){
+          const failures=Array.from(error?.errors||[error]);
+          const refusal=failures.find((failure)=>failure?.avatarBodyTransient!==true);
+          if(refusal) throw refusal;
+          throw _personaAvatarBodyTransientError();
+        }
+        if(controller.signal.aborted) throw _personaAvatarBodyTransientError();
+        const observedKey=loaded.descriptor.identity_public_key_hex;
+        const currentPin=S.personaIdentityKeys.get(ref.key)||'';
+        if(currentPin&&currentPin!==observedKey) throw new Error('persona identity key pin mismatch');
+        const blob=new Blob([loaded.bytes],{type:loaded.descriptor.mime_type});
+        await _decodePersonaAvatarBlob(blob,loaded.descriptor,controller.signal);
+        if(controller.signal.aborted) throw _personaAvatarBodyTransientError();
+        S.personaIdentityKeys.set(ref.key,observedKey);
+        return _rememberPersonaAvatarAsset(cacheKey,Object.freeze({
+          blob,byteLength:loaded.descriptor.byte_length,
+          width:loaded.descriptor.width,height:loaded.descriptor.height,
+        }));
+      })();
+      try{ return await Promise.race([attempt,aborted]); }
+      finally{ globalThis.clearTimeout(timeout); controller.abort(); }
+    },controller.signal).catch((error)=>{
       if(error?.avatarBodyTransient!==true) _rememberPersonaAvatarFailure(cacheKey);
       throw error;
     })
-      .finally(()=>_personaAvatarJobs.delete(cacheKey));
+      .finally(()=>{
+        _personaAvatarJobControllers.delete(controller);
+        if(_personaAvatarJobs.get(cacheKey)===job) _personaAvatarJobs.delete(cacheKey);
+      });
     _personaAvatarJobs.set(cacheKey,job);
   }
   return job;
 }
 function _neutralPersonaAvatar(mount,state='failed'){
+  _releasePersonaAvatarMountUrl(mount);
   mount.dataset.avatarState=state;
   const placeholder=document.createElement('span'); placeholder.className='pc-avatar-placeholder';
   placeholder.setAttribute('aria-hidden','true');
@@ -4060,8 +4282,27 @@ function _neutralPersonaAvatar(mount,state='failed'){
   placeholder.append(monogram,label);
   mount.replaceChildren(placeholder);
 }
+function _schedulePersonaAvatarRetry(mount,revision){
+  if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
+  _releasePersonaAvatarMountUrl(mount);
+  if(!mount.querySelector('.pc-avatar-placeholder')) _neutralPersonaAvatar(mount);
+  const attempt=Math.max(0,Number.parseInt(mount.dataset.avatarRetryAttempt||'0',10)||0);
+  const nextAttempt=Math.min(32,attempt+1);
+  mount.dataset.avatarRetryAttempt=String(nextAttempt);
+  mount.dataset.avatarState='waiting'; mount.dataset.avatarLifecycle='verifying';
+  const label=mount.querySelector('.pc-avatar-placeholder small');
+  if(label) label.textContent='verifying persona-authored avatar';
+  mount.setAttribute('aria-label','deterministic monogram shown while persona-authored raster avatar transport retries');
+  globalThis.setTimeout(()=>{
+    if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision
+        ||mount.dataset.avatarState!=='waiting'
+        ||mount.dataset.avatarRetryAttempt!==String(nextAttempt)) return;
+    mount.dataset.avatarState='pending';
+    _hydratePersonaAvatarMount(mount).catch(()=>{});
+  },_personaAvatarRetryDelay(attempt));
+}
 async function _hydratePersonaAvatarMount(mount){
-  if(!mount?.isConnected||mount.dataset.avatarState!=='pending') return;
+  if(!_personaAvatarPageActive||!mount?.isConnected||mount.dataset.avatarState!=='pending') return;
   const personaKey=_entityKeyFromDom(mount.dataset.avatarKey||'');
   const signedCard=S.personaDiscoveryByKey.get(personaKey)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
@@ -4072,44 +4313,65 @@ async function _hydratePersonaAvatarMount(mount){
   mount.dataset.avatarState='loading';
   try{
     const asset=await _loadPersonaAvatarAsset(personaKey,signedCard,descriptor);
-    if(!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
+    if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
     const img=document.createElement('img'); img.alt=''; img.setAttribute('aria-hidden','true');
     img.decoding='async'; img.draggable=false; img.width=asset.width; img.height=asset.height;
-    img.addEventListener('error',()=>{ if(mount.isConnected&&mount.contains(img)) _neutralPersonaAvatar(mount); },{once:true});
-    img.src=asset.url;
-    mount.replaceChildren(img); mount.dataset.avatarState='ready'; mount.dataset.avatarLifecycle='materialized';
-    delete mount.dataset.avatarRetryAttempt;
-    mount.setAttribute('aria-label','verified persona-authored raster avatar');
+    let objectUrl;
+    try{ objectUrl=URL.createObjectURL(asset.blob); }
+    catch(_){ throw _personaAvatarBodyTransientError(); }
+    _releasePersonaAvatarMountUrl(mount); _personaAvatarMountUrls.set(mount,objectUrl);
+    const displayTimeout=globalThis.setTimeout(()=>{
+      if(mount.isConnected&&mount.contains(img)&&mount.dataset.avatarRevision===revision
+          &&mount.dataset.avatarState==='loading') _schedulePersonaAvatarRetry(mount,revision);
+    },_PERSONA_AVATAR_MOUNT_TIMEOUT_MS);
+    img.addEventListener('load',()=>{
+      globalThis.clearTimeout(displayTimeout);
+      if(!mount.isConnected||!mount.contains(img)||mount.dataset.avatarRevision!==revision) return;
+      mount.dataset.avatarState='ready'; mount.dataset.avatarLifecycle='materialized';
+      delete mount.dataset.avatarRetryAttempt;
+      mount.setAttribute('aria-label','verified persona-authored raster avatar');
+    },{once:true});
+    img.addEventListener('error',()=>{
+      globalThis.clearTimeout(displayTimeout);
+      if(mount.isConnected&&mount.contains(img)&&mount.dataset.avatarRevision===revision)
+        _schedulePersonaAvatarRetry(mount,revision);
+    },{once:true});
+    mount.replaceChildren(img); img.src=objectUrl;
   }catch(e){
     if(!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
-    const attempt=Math.max(0,Number.parseInt(mount.dataset.avatarRetryAttempt||'0',10)||0);
-    const delay=e?.avatarBodyTransient===true?_PERSONA_AVATAR_BODY_RETRY_MS[attempt]:undefined;
-    if(Number.isFinite(delay)){
-      const nextAttempt=attempt+1;
-      mount.dataset.avatarRetryAttempt=String(nextAttempt);
-      mount.dataset.avatarState='waiting'; mount.dataset.avatarLifecycle='verifying';
-      mount.setAttribute('aria-label','deterministic monogram shown while persona-authored raster avatar transport retries');
-      globalThis.setTimeout(()=>{
-        if(!mount.isConnected||mount.dataset.avatarRevision!==revision
-            ||mount.dataset.avatarState!=='waiting'
-            ||mount.dataset.avatarRetryAttempt!==String(nextAttempt)) return;
-        mount.dataset.avatarState='pending';
-        _hydratePersonaAvatarMount(mount).catch(()=>{});
-      },delay);
-      return;
-    }
+    if(!_personaAvatarPageActive){ mount.dataset.avatarState='pending'; return; }
+    if(e?.avatarBodyTransient===true){ _schedulePersonaAvatarRetry(mount,revision); return; }
     _neutralPersonaAvatar(mount);
   }
 }
 function _hydratePersonaAvatars(){
+  _releaseDisconnectedPersonaAvatarMountUrls();
   document.querySelectorAll('.pc-avatar[data-avatar-key]').forEach((mount)=>{
     if(mount.dataset.avatarState==='pending') _hydratePersonaAvatarMount(mount).catch(()=>{});
   });
 }
 window.addEventListener('pagehide',()=>{
-  for(const asset of _personaAvatarAssets.values()) URL.revokeObjectURL(asset.url);
+  _personaAvatarPageActive=false;
+  for(const controller of _personaAvatarJobControllers) controller.abort();
+  for(const entry of _personaAvatarFetchQueue.splice(0))
+    entry.reject(_personaAvatarBodyTransientError());
+  for(const mount of _personaAvatarMountUrls.keys()) _releasePersonaAvatarMountUrl(mount);
   _personaAvatarAssets.clear(); _personaAvatarCacheBytes=0;
-},{once:true});
+});
+window.addEventListener('pageshow',()=>{
+  _personaAvatarPageActive=true;
+  document.querySelectorAll('.pc-avatar[data-avatar-key]').forEach((mount)=>{
+    if(['loading','ready','waiting'].includes(mount.dataset.avatarState)) mount.dataset.avatarState='pending';
+  });
+  _drainPersonaAvatarFetchQueue(); _hydratePersonaAvatars();
+});
+if(typeof MutationObserver==='function'){
+  let cleanupQueued=false;
+  new MutationObserver(()=>{
+    if(cleanupQueued||!_personaAvatarMountUrls.size) return;
+    cleanupQueued=true; queueMicrotask(()=>{ cleanupQueued=false; _releaseDisconnectedPersonaAvatarMountUrls(); });
+  }).observe(document.documentElement,{childList:true,subtree:true});
+}
 function _artifactStateInfo(r){
   const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
   const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
@@ -4400,14 +4662,17 @@ function renderPersonaCard(pid,kernel='',context={}){
     .map((call)=>environmentIdentity(call?.environment_id)).filter(Boolean));
   const currentEnvironmentId=activeEnvironmentIds.size===1
     ?activeEnvironmentIds.values().next().value:'';
-  const signedIdentity=S.personaDiscoveryByKey.get(personaKey)||null;
-  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
-  const signedName=String(signedIdentity?._personaSignedName||'');
-  const hasSignedIdentity=!!signedIdentity;
-  const hasSignedName=hasSignedIdentity&&!_isMechanicalPersonaName(signedName,sid);
+  const identityObservation=providerVerifiedPersonaObservation(personaKey);
+  const signedIdentity=identityObservation?.record||null;
+  const identityVerified=identityObservation?.identityVerified===true;
+  const lifecycle=identityObservation?.lifecycle||null;
+  const signedName=identityVerified?String(signedIdentity?._personaParticipationName||''):'';
+  const hasSignedIdentity=identityVerified;
+  const hasSignedName=hasSignedIdentity&&!!signedName;
   const name=_displayPersonaName(signedName,sid);
-  const role=_coordRole(sid,s,ref.kernel);
-  const state=s.lifecycle_state||lifecycle?.lifecycleState||'';
+  const role=identityVerified?_coordRole(sid,s,ref.kernel):_ROLE_NOT_DECLARED;
+  const identityProofState=identityObservation?.identityProofState||'refused';
+  const state=lifecycle?.lifecycleState||(identityVerified?s.lifecycle_state:'OBSERVED');
   const identityPending=lifecycle?.materializationState==='pending';
   const namePending=lifecycle?.identityFields?.name?.state==='pending'
     ||s.identity_name_pending===true;
@@ -4529,11 +4794,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
-  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':'unpublished'}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${identityPending?icon('warn','ico-sm')+' IDENTITY MATERIALIZING':hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':icon('warn','ico-sm')+' IDENTITY UNPUBLISHED'}</span><span>LIVE PUBLIC ACTIVITY</span></div>`
-    +`<header class="pc-profile">${_personaAvatarHTML(personaKey)}`
+  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(name)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':identityPending?icon('warn','ico-sm')+' IDENTITY MATERIALIZING':icon('warn','ico-sm')+` SIGNED PERSONA RECORD · IDENTITY PROOF ${identityProofState.toUpperCase()}`}</span><span>LIVE PUBLIC ACTIVITY</span></div>`
+    +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' signed display name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' signed identity · name pending':icon('warn','ico-sm')+' signed name unavailable'}</span><span class="pc-idline">${esc(role)}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' verified participation name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` outer record verified · identity proof ${identityProofState}`}</span><span class="pc-idline">${esc(role)}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -4613,9 +4878,10 @@ function _environmentCommunicationGraphHTML(b){
     return `<path class="env-comm-edge edge-${esc(cls)}" d="M ${from.x.toFixed(2)} ${from.y.toFixed(2)} Q ${mx.toFixed(2)} ${my.toFixed(2)} ${to.x.toFixed(2)} ${to.y.toFixed(2)}" marker-end="url(#${markerId})"><title>${esc(label)}</title></path>`;
   }).join('');
   const nodes=shown.map((personaKey)=>{ const ref=_personaRef(personaKey), state=states.get(personaKey)||{};
+    const identityVerified=providerVerifiedPersonaObservation(personaKey)?.identityVerified===true;
     const stateLabel=state.running?'model call':(state.recent?'recent':'ready');
     return `<button type="button" class="env-persona-node ${state.running?'running':state.recent?'recent':'idle'}" style="--node-x:${positions.get(personaKey).x}%;--node-y:${positions.get(personaKey).y}%" data-pcard="${esc(ref.sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" title="open ${esc(_signedPersonaNameFor(personaKey))}">`
-      +`<span class="env-node-portrait">${_personaAvatarHTML(personaKey)}<i aria-hidden="true"></i></span>`
+      +`<span class="env-node-portrait">${_personaAvatarHTML(personaKey,{identityVerified})}<i aria-hidden="true"></i></span>`
       +`<strong>${esc(_signedPersonaNameFor(personaKey))}</strong><small>${esc(stateLabel)}</small></button>`;
   }).join('');
   const directEvents=scopedEvents.filter((event)=>event.actor_kind==='persona'&&_personaEndpoints(event).length).slice(-3).reverse();
@@ -4957,27 +5223,23 @@ function updateVitalsCounters(){
   const setV=(id,val)=>{ const el=$(id); if(!el) return; const v=el.querySelector('.v');
     if(v.textContent!==String(val)){ v.textContent=val; v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); } };
   const livePersona=[...S.liveByPersona.entries()].filter(([personaKey,d])=>
-    kernelIsFocused(d?.kernel)&&verifiedPersonaRenderable(
-      S.personaDiscoveryByKey, personaKey,
-    )).length;
+    kernelIsFocused(d?.kernel)&&!!providerVerifiedPersonaObservation(personaKey)).length;
   const recPersonaKeys=new Set();
   for(const id of S.order){ const r=S.recs.get(id);
     if(r?.kind!=='persona'||!kernelIsFocused(r._kernel)) continue;
     const sid=_shortId(r.did||r.record_id), personaKey=sid?_personaKey(r._kernel,sid):'';
-    if(personaKey&&verifiedPersonaRenderable(
-      S.personaDiscoveryByKey,personaKey)) recPersonaKeys.add(personaKey);
+    if(personaKey&&providerVerifiedPersonaObservation(personaKey)) recPersonaKeys.add(personaKey);
   }
   const recPersona=recPersonaKeys.size;
   const personasN=Math.max(livePersona,recPersona);
   const now=Date.now();
-  // RUNNING = verified personas currently named by either admitted live telemetry
-  // or the bounded kernel-signed public-cognition active-call projection.
+  // RUNNING = provider/document-verified persona observations currently named by
+  // either admitted live telemetry or kernel-signed public cognition.
   // Coordination-only traffic stays in acts/min so "running" always means LLM.
   const activePersonaKeys=new Set();
   for(const personaKey of S.personaDiscoveryByKey.keys()){
     const ref=_personaRef(personaKey);
-    if(!kernelIsFocused(ref.kernel)
-        ||!verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)) continue;
+    if(!kernelIsFocused(ref.kernel)||!providerVerifiedPersonaObservation(personaKey)) continue;
     if(_runningNow(personaKey)) activePersonaKeys.add(personaKey);
   }
   const active=activePersonaKeys.size;
@@ -4987,9 +5249,12 @@ function updateVitalsCounters(){
   // unverified live interactions are NOT signed and must never inflate this.
   const signed=S.order.filter((id)=>kernelIsFocused(S.recs.get(id)?._kernel)).length;
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  setV('#st-auth',hasOp?'read':'discover');
-  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp);
-    authEl.title=hasOp?'operator token saved — read-level views unlocked':'anonymous — discover-level public projection only'; }
+  const publicControl=freshBarePublicStatusBases(now).length>0;
+  setV('#st-auth',hasOp?'bearer':publicControl?'public':'discover');
+  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp||publicControl);
+    authEl.title=hasOp?'operator bearer saved — gated node controls unlocked'
+      :publicControl?'public node — complete tokenless projection available'
+        :'no full node status observed yet — discovery remains public and tokenless'; }
   setV('#st-personas',compactCount(personasN)); setV('#st-active',compactCount(active)); setV('#st-envs',compactCount(S.envCount));
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',compactCount(acts)); setV('#st-signed',compactCount(signed));
@@ -5035,9 +5300,7 @@ async function refreshSystemView(){
       const members=(feed.members||[]).map((member)=>{
         const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
         const memberSid=_shortId(raw); return memberSid?_personaKey(kernel,memberSid):'';
-      }).filter((personaKey)=>verifiedPersonaRenderable(
-        S.personaDiscoveryByKey, personaKey,
-      ));
+      }).filter((personaKey)=>!!providerVerifiedPersonaObservation(personaKey));
       const sid=_shortId(eid);
       return {base,kernel,envId:eid,sid,name:feed.name||eid,type:feed.env_type||'',
         status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,
@@ -5077,16 +5340,10 @@ async function refreshSystemView(){
   // instead of a "no members" lane — the env's people don't vanish on restart.
   S.observedEnvironmentCount=envBlocks.length;
   const prefetchLimit=Math.min(512,Math.max(40,S.environmentWindow*3));
-  let prefetchWindow=selectPriorityWindow(envBlocks,{
+  const prefetchWindow=selectPriorityWindow(envBlocks,{
     query:S.q||'',limit:prefetchLimit,keyOf:(b)=>envKey(b.kernel,b.sid),
     priorityOf:(b)=>(b.live?1e6:0)+(b.status==='active'?1e5:0)+Math.min(9999,b.members.length),
     searchTextOf:(b)=>`${b.kernel} ${b.name} ${b.type} ${b.status} ${b.members.map((m)=>_nameFor(m,b.kernel)).join(' ')}`,
-  });
-  // A query may target an export-only persona whose roster is not loaded yet.
-  // Keep a bounded activity window as a legacy fallback; cursor-aware servers
-  // can answer that query directly without this client probing every env.
-  if(S.q&&!prefetchWindow.items.length) prefetchWindow=selectPriorityWindow(envBlocks,{
-    limit:prefetchLimit,keyOf:(b)=>envKey(b.kernel,b.sid),priorityOf:(b)=>(b.live?1e6:0)+b.members.length,
   });
   envBlocks.length=0; envBlocks.push(...prefetchWindow.items);
   await Promise.all(envBlocks.map(async(b)=>{
@@ -5097,8 +5354,8 @@ async function refreshSystemView(){
     if(exportMatches&&Array.isArray(ed.members)&&!b.members.length){
       b.roster=ed.members;
       b.members=ed.members.map((m)=>{ const memberSid=_shortId(m.persona_id||m.id||'');
-        return memberSid?_personaKey(b.kernel,memberSid):''; }).filter((personaKey)=>
-        verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey));
+        return memberSid?_personaKey(b.kernel,memberSid):''; })
+        .filter((personaKey)=>!!providerVerifiedPersonaObservation(personaKey));
       b.members.forEach((m)=>assigned.add(m));
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
@@ -5130,53 +5387,33 @@ async function refreshSystemView(){
       sid=_shortId(hit?.scope_id||''); }
     if(!sid) continue;
     const ref=_personaRef(personaKey), block=bySid.get(envKey(d.kernel||ref.kernel,sid));
-    if(block&&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)
+    if(block&&providerVerifiedPersonaObservation(personaKey)
       &&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
   }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
   const orphans=[...S.liveByPersona.entries()].filter(([personaKey,d])=>{ const ref=_personaRef(personaKey);
     return kernelIsFocused(d?.kernel||ref.kernel)&&!assigned.has(personaKey)
-      &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey);
+      &&!!providerVerifiedPersonaObservation(personaKey);
   }).map(([personaKey])=>personaKey);
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
-    const sid=_shortId(r.did||r.record_id); if(r.label) _PERSONA_NAME.set(_personaKey(r._kernel,sid),r.label); } }
-  // Artifacts join to an exact verified environment reference first. A run path
-  // is only a compatibility join when exactly ONE observed environment owns
-  // that run. With multiple hosts we surface routing pressure and attach the
-  // artifact to none of them; activity/array order never fabricates a winner.
+    const sid=_shortId(r.did||r.record_id), personaKey=_personaKey(r._kernel,sid);
+    if(providerVerifiedPersonaObservation(personaKey)?.identityVerified===true
+        &&r._personaParticipationName)
+      _PERSONA_NAME.set(personaKey,r._personaParticipationName);
+    else _PERSONA_NAME.delete(personaKey); } }
+  // Artifacts join only through their exact verified environment authority.
+  // A run, title, owner or observation order can never manufacture that binding.
   const artByEnv=new Map();
   const artByPersona=new Map();
-  const runHosts=new Map();
-  // Resolve legacy run-path joins against the complete verified record cache,
-  // not only the visible card window. A paginated-away second host must still
-  // make the run ambiguous.
-  for(const id of S.order){ const envRecord=S.recs.get(id);
-    if(envRecord?.kind!=='env'||!kernelIsFocused(envRecord._kernel)) continue;
-    const envRun=runForEnv(envRecord); if(!envRun) continue;
-    const rk=envKey(envRecord._kernel,envRun);
-    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk))
-      .add(envKey(envRecord._kernel,_envSid(envRecord)));
-  }
-  for(const b of envBlocks){ if(!b.run) continue; const rk=envKey(b.kernel,b.run);
-    (runHosts.get(rk)||runHosts.set(rk,new Set()).get(rk))
-      .add(envKey(b.kernel,b.sid)); }
   const unresolvedArtifacts=[];
   for(const id of S.order){ const r=S.recs.get(id);
     if(r.kind!=='artifact'||!kernelIsFocused(r._kernel)) continue;
     const authority=environmentAuthorityOfRecord(r);
     let target='';
     if(authority.status==='resolved') target=envKey(r._kernel,authority.environmentId);
-    else if(authority.status==='absent'){
-      const run=runOf(r);
-      const runResolution=resolveUniqueRunEnvironment(
-        run?[...(runHosts.get(envKey(r._kernel,run))||[])]:[],
-      );
-      if(runResolution.status==='resolved') target=runResolution.environmentKey;
-      else if(runResolution.status==='ambiguous') unresolvedArtifacts.push({record:r,
-        authority:{status:'ambiguous',reason:'project_host_choice',candidates:runResolution.candidates}});
-    }else unresolvedArtifacts.push({record:r,authority});
+    else unresolvedArtifacts.push({record:r,authority});
     if(target) (artByEnv.get(target)||artByEnv.set(target,[]).get(target)).push(r);
     const owner=_shortId(r._access?.owner_persona_id||'');
     if(owner&&!target){ const pk=_personaKey(r._kernel,owner);
@@ -5235,7 +5472,8 @@ async function refreshSystemView(){
       +(rt.task_execution_state==='paused_participant'?5e6:0)+Math.min(9999,(S.ixCountBySid?.get(ref.key)||0)); };
   const _personaSearch=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
     const d=S.liveByPersona.get(ref.key)||{}, s=d.summary||{}, rt=runtimeForPersona(ref.key)||{};
-    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${s.name||''} ${s.role||''} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
+    const identityVerified=providerVerifiedPersonaObservation(ref.key)?.identityVerified===true;
+    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${identityVerified?s.name||'':''} ${identityVerified?s.role||'':''} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
@@ -5330,7 +5568,7 @@ async function refreshSystemView(){
   // persona receives the exact environments whose roster or telemetry names it.
   const personaContexts=new Map();
   const ensurePersona=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
-    if(!ref.sid||!verifiedPersonaRenderable(S.personaDiscoveryByKey,ref.key)) return null;
+    if(!ref.sid||!providerVerifiedPersonaObservation(ref.key)) return null;
     let context=personaContexts.get(ref.key); if(!context){ context={key:ref.key,kernel:ref.kernel,environments:[]}; personaContexts.set(ref.key,context); }
     return context; };
   for(const b of _baseCandidates) for(const member of b.members){ const context=ensurePersona(member,b.kernel); if(!context) continue;
@@ -5381,9 +5619,9 @@ async function refreshSystemView(){
     +`</div>`:'';
   const routingPressure=unresolvedArtifacts.length
     ?`<div class="routing-pressure" role="status"><strong>${icon('warn','ico-sm')} Environment routing unresolved</strong>`
-      +`<span>${unresolvedArtifacts.length} signed artifact${unresolvedArtifacts.length===1?'':'s'} ${unresolvedArtifacts.length===1?'has':'have'} multiple or conflicting environment contexts. No environment was selected; the artifact remains visible only as unresolved routing pressure.</span>`
-      +`<span class="routing-pressure-items">${unresolvedArtifacts.slice(0,4).map(({record,authority})=>
-        `<span><b>${esc(record.label||record.record_id||'artifact')}</b> · ${esc((authority.candidates||[]).length)} candidate${(authority.candidates||[]).length===1?'':'s'}</span>`).join('')}`
+      +`<span>${unresolvedArtifacts.length} signed artifact${unresolvedArtifacts.length===1?'':'s'} ${unresolvedArtifacts.length===1?'lacks':'lack'} one unambiguous exact verified environment reference. No environment was inferred from its run, title, owner, or observation order.</span>`
+      +`<span class="routing-pressure-items">${unresolvedArtifacts.slice(0,4).map(({record,authority})=>{ const count=(authority.candidates||[]).length;
+        return `<span><b>${esc(record.label||record.record_id||'artifact')}</b> · ${count?`${esc(count)} candidate${count===1?'':'s'}`:esc(authority.reason||'environment reference absent')}</span>`; }).join('')}`
       +`${unresolvedArtifacts.length>4?`<span>+${unresolvedArtifacts.length-4} more</span>`:''}</span></div>`:'';
   let html=summary+routingPressure+bodyHTML;
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
@@ -5845,7 +6083,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         const signedMeta=_activityProvenanceHTML(_publicCallProvenance(call),{
           className:'think-provenance',full:true,kernel,prepend:_eventTrustHTML({signed:true,
             _trustLabel:'KERNEL SIGNED FINISHED CALL',
-            _trustTitle:'finished model call in the verified bounded kernel-signed public cognition snapshot'})});
+            _trustTitle:'finished model call in the verified kernel-signed public cognition snapshot'})});
         return `<div class="think"><span class="amber">finished</span> ${esc(purpose)}`
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
@@ -5870,7 +6108,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         const trustTitle=presented.assistant
           ?presented.complete
             ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
-            :'verified kernel-signed public snapshot; all displayed text is from the admitted bounded provider-event window, whose beginning and end are not asserted'
+            :'verified kernel-signed public snapshot; all displayed text is from the admitted provider-event stream, whose beginning and end are not asserted'
           :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning';
         const signedMeta=_activityProvenanceHTML(provenance,{className:'think-provenance',full:true,kernel,
           prepend:_eventTrustHTML({signed:true,_trustLabel:trustLabel,_trustTitle:trustTitle})});
@@ -6032,21 +6270,6 @@ const PUBLIC_PERSONA_RECENT_CALL_FIELDS=Object.freeze([
   'call_id','ended_at','environment_id','model_id','persona_id','provisional_events','reasoning_effort',
   'requested_purpose','run_id','started_at','status','task_id',
 ].sort());
-const PUBLIC_PROVISIONAL_BASE_FIELDS=Object.freeze([
-  'at','authority','kind','persona_signed','provisional','schema','sequence',
-].sort());
-const PUBLIC_PROVISIONAL_BINDING_FIELDS=Object.freeze([
-  'call_id','call_status','model_id','persona_id',
-].sort());
-const PUBLIC_PROVISIONAL_KINDS=new Set([
-  'assistant_message','provider_status','tool_status',
-]);
-const PUBLIC_PROVISIONAL_PROVIDER_STATUSES=new Set([
-  'turn_completed','turn_failed','turn_started',
-]);
-const PUBLIC_PROVISIONAL_TOOL_STATUSES=new Set([
-  'completed','failed','started',
-]);
 const PUBLIC_PERSONA_LESSON_FIELDS=Object.freeze([
   'action','confidence','rationale','trigger',
 ].sort());
@@ -6058,9 +6281,6 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
-const PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS=new Set([
-  'ANSWER_DRAFTED','CANDIDATE_PRODUCED','CANDIDATE_REPAIRED',
-]);
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
 const PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND='PERSONA_COGNITIVE_INTENT';
 const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
@@ -6068,9 +6288,8 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_KINDS=new Set([
 ]);
 const PUBLIC_PERSONA_COGNITION_INSTANT=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const PUBLIC_PERSONA_COGNITION_LIMITS=Object.freeze({
-  activeCalls:8,recentCalls:8,outputs:12,lessons:10,tactics:10,facts:6,evolution:20,audience:64,
-  provisionalEvents:128,provisionalTextCodePoints:16*1024,
-  atom:512,lineageText:4096,exactTextBytes:512*1024,documentBytes:4*1024*1024,
+  atom:512,lineageText:32*1024*1024,exactTextBytes:32*1024*1024,
+  documentBytes:32*1024*1024,
 });
 const PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE=new Map();
 function _safePublicCognitionText(value,maximum,{required=false}={}){
@@ -6092,34 +6311,12 @@ function _safePublicCognitionInstant(value,{required=true}={}){
   return _safePublicCognitionAtom(value,64,{required})
     &&(!value||(PUBLIC_PERSONA_COGNITION_INSTANT.test(value)&&Number.isFinite(Date.parse(value))));
 }
-function _publicProvisionalEventFields(event,{bound=false}={}){
-  const fields=[...PUBLIC_PROVISIONAL_BASE_FIELDS];
-  if(event?.kind==='assistant_message'){
-    fields.push('sha256','text','utf8_bytes');
-    if(Object.prototype.hasOwnProperty.call(event,'stream_delta')) fields.push('stream_delta');
-    else fields.push('chunk_count','chunk_index');
-    if(Object.prototype.hasOwnProperty.call(event,'message_id')) fields.push('message_id');
-  }else if(event?.kind==='provider_status') fields.push('status');
-  else if(event?.kind==='tool_status'){
-    fields.push('status','tool_type');
-    for(const field of ['server','tool_name'])
-      if(Object.prototype.hasOwnProperty.call(event,field)) fields.push(field);
-  }
-  if(bound) fields.push(...PUBLIC_PROVISIONAL_BINDING_FIELDS);
-  return fields.sort();
-}
-function _safePublicProvisionalStateToken(value){
-  return typeof value==='string'&&value.length>=1&&value.length<=180
-    &&value.trim()===value&&/^[A-Za-z0-9:_.@/+\-]+$/.test(value)
-    &&!value.startsWith('/')&&!value.startsWith('./')&&!value.startsWith('../')
-    &&!value.startsWith('~/')&&!value.includes('/../')&&!/^[A-Za-z]:\//.test(value);
-}
 async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
-  if(!_exactObjectFields(event,_publicProvisionalEventFields(event))
+  if(!event||typeof event!=='object'||Array.isArray(event)
       ||event.schema!=='personaos-provisional-cognition/1'
       ||event.authority!=='kernel_observed_provider_event'
       ||event.persona_signed!==false||event.provisional!==true
-      ||!PUBLIC_PROVISIONAL_KINDS.has(event.kind)
+      ||!_safePublicCognitionAtom(event.kind,128,{required:true})
       ||!Number.isSafeInteger(event.sequence)||event.sequence<1
       ||!_safePublicCognitionInstant(event.at)) return false;
   const observed=Date.parse(event.at), started=Date.parse(String(call?.started_at||''));
@@ -6128,28 +6325,32 @@ async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
       ||observed<started||observed>generated) return false;
   if(event.kind==='assistant_message'){
     if(typeof event.text!=='string'||!event.text
-        ||[...event.text].length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalTextCodePoints
         ||!Number.isSafeInteger(event.utf8_bytes)||event.utf8_bytes<1
         ||!SHA256_CONTENT_RE.test(String(event.sha256||''))
         ||(Object.prototype.hasOwnProperty.call(event,'message_id')
-          &&!_safePublicProvisionalStateToken(event.message_id))) return false;
+          &&!_safePublicCognitionText(event.message_id,180,{required:true}))) return false;
     if(Object.prototype.hasOwnProperty.call(event,'stream_delta')){
       if(event.stream_delta!==true) return false;
     }else if(!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
         ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
-        ||event.chunk_count>4096||event.chunk_index>=event.chunk_count) return false;
+        ||event.chunk_index>=event.chunk_count) return false;
     const bytes=enc.encode(event.text);
     return bytes.length===event.utf8_bytes
       &&`sha256:${await sha256Hex(bytes)}`===event.sha256;
   }
-  if(event.kind==='provider_status') return PUBLIC_PROVISIONAL_PROVIDER_STATUSES.has(event.status);
-  if(!PUBLIC_PROVISIONAL_TOOL_STATUSES.has(event.status)
-      ||!_safePublicCognitionText(event.tool_type,160,{required:true})
-      ||event.tool_type.trim()!==event.tool_type) return false;
-  for(const field of ['server','tool_name']) if(Object.prototype.hasOwnProperty.call(event,field)){
-    if(!_safePublicCognitionText(event[field],240,{required:true})
-        ||event[field].trim()!==event[field]) return false;
+  if(event.kind==='provider_status')
+    return _safePublicCognitionAtom(event.status,256,{required:true});
+  if(event.kind==='tool_status'){
+    if(!_safePublicCognitionAtom(event.status,256,{required:true})
+        ||!_safePublicCognitionText(event.tool_type,160,{required:true})
+        ||event.tool_type.trim()!==event.tool_type) return false;
+    for(const field of ['server','tool_name']) if(Object.prototype.hasOwnProperty.call(event,field)){
+      if(!_safePublicCognitionText(event[field],240,{required:true})
+          ||event[field].trim()!==event[field]) return false;
+    }
   }
+  // Unknown provider event kinds remain visible as exact kernel-signed data.
+  // Their semantics are not inferred and no fixed vocabulary controls admission.
   return true;
 }
 async function _validPublicPersonaAuthoredOutput(authored,exactText){
@@ -6278,11 +6479,9 @@ async function _validPublicPersonaOutput(output,identity,row){
       ||output.author_persona_id!==identity.signedId
       ||!_safePublicCognitionAtom(output.environment_id,512)
       ||!PUBLIC_PERSONA_OUTPUT_AUTHORITIES.has(output.authority)
-      ||!Array.isArray(output.audience_persona_ids)
-      ||output.audience_persona_ids.length>PUBLIC_PERSONA_COGNITION_LIMITS.audience) return false;
+      ||!Array.isArray(output.audience_persona_ids)) return false;
   const communication=output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
   if((personaExact||actionExact)!==(output.authority==='persona_signature')
-      ||(!personaExact&&!actionExact&&!PUBLIC_PERSONA_LINEAGE_OUTPUT_KINDS.has(output.kind))
       ||((personaExact||actionExact)&&!output.environment_id)
       ||(!communication&&output.audience_persona_ids.length)
       ||(!personaExact&&!actionExact&&!_safePublicCognitionText(output.text,
@@ -6311,8 +6510,7 @@ function _validPublicPersonaActiveCall(call,identity,generatedAt){
     &&Date.parse(call.started_at)<=Date.parse(generatedAt)
     &&call.status==='running'
     &&_safePublicCognitionAtom(call.task_id,512)
-    &&Array.isArray(call.provisional_events)
-    &&call.provisional_events.length<=PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents;
+    &&Array.isArray(call.provisional_events);
 }
 function _validPublicPersonaRecentCall(call,identity,generatedAt){
   const startedAt=Date.parse(String(call?.started_at||''));
@@ -6333,9 +6531,7 @@ function _validPublicPersonaRecentCall(call,identity,generatedAt){
     &&startedAt<=endedAt&&endedAt<=snapshotAt
     &&call.status==='finished'
     &&_safePublicCognitionAtom(call.task_id,512)
-    &&Array.isArray(call.provisional_events)
-    &&call.provisional_events.length>=1
-    &&call.provisional_events.length<=PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents;
+    &&Array.isArray(call.provisional_events);
 }
 function _validPublicPersonaLesson(lesson){
   return _exactObjectFields(lesson,PUBLIC_PERSONA_LESSON_FIELDS)
@@ -6383,15 +6579,14 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!_safePublicCognitionAtom(doc.lifecycle_state,64,{required:true})
       ||!_safePublicCognitionAtom(doc.identity_materialization_state,64,{required:true})
       ||String(doc.name||'')!==String(row._personaSignedName||'')
-      ||!Array.isArray(doc.active_calls)||doc.active_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.activeCalls
-      ||!Array.isArray(doc.recent_calls)||doc.recent_calls.length>PUBLIC_PERSONA_COGNITION_LIMITS.recentCalls
+      ||!Array.isArray(doc.active_calls)
+      ||!Array.isArray(doc.recent_calls)
       ||!Array.isArray(doc.provisional_outputs)
-      ||doc.provisional_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents
-      ||!Array.isArray(doc.recent_outputs)||doc.recent_outputs.length>PUBLIC_PERSONA_COGNITION_LIMITS.outputs
-      ||!Array.isArray(doc.lessons)||doc.lessons.length>PUBLIC_PERSONA_COGNITION_LIMITS.lessons
-      ||!Array.isArray(doc.tactics)||doc.tactics.length>PUBLIC_PERSONA_COGNITION_LIMITS.tactics
-      ||!Array.isArray(doc.proven_facts)||doc.proven_facts.length>PUBLIC_PERSONA_COGNITION_LIMITS.facts
-      ||!Array.isArray(doc.evolution_timeline)||doc.evolution_timeline.length>PUBLIC_PERSONA_COGNITION_LIMITS.evolution) return false;
+      ||!Array.isArray(doc.recent_outputs)
+      ||!Array.isArray(doc.lessons)
+      ||!Array.isArray(doc.tactics)
+      ||!Array.isArray(doc.proven_facts)
+      ||!Array.isArray(doc.evolution_timeline)) return false;
   if(!await verifyCurrentMasterSignedDocument(base,doc)) return false;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
   if(!lifecycle||doc.lifecycle_state!==lifecycle.lifecycleState
@@ -6428,15 +6623,14 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
         persona_id:identity.signedId,call_status:call.status});
     }
   }
-  const expectedProvisional=flattenedProvisional.slice(-PUBLIC_PERSONA_COGNITION_LIMITS.provisionalEvents);
+  const expectedProvisional=flattenedProvisional;
   if(canon(doc.provisional_outputs)!==canon(expectedProvisional)) return false;
   // Exact equality to the independently validated nested records proves content
   // integrity without hashing every assistant chunk twice. Close the flattened
   // shape explicitly and bind its transport identifiers to the owning call.
   for(const event of doc.provisional_outputs){
     const call=callsById.get(event?.call_id);
-    if(!call||!_exactObjectFields(event,_publicProvisionalEventFields(event,{bound:true}))
-        ||event.call_id!==call.call_id||event.model_id!==call.model_id
+    if(!call||event.call_id!==call.call_id||event.model_id!==call.model_id
         ||event.persona_id!==identity.signedId||event.call_status!==call.status) return false;
   }
   for(const output of doc.recent_outputs)
@@ -6666,17 +6860,19 @@ function _publicCognitionRows(doc,{kernel=''}={}){
       cognition:true,ctype:'think',recipients:[],dedup:provenance,provenance,
       trustLabel:finished?'KERNEL SIGNED FINISHED CALL':'KERNEL SIGNED ACTIVE CALL',
       trustTitle:finished
-        ?'finished model call in the verified bounded kernel-signed public cognition snapshot'
+        ?'finished model call in the verified kernel-signed public cognition snapshot'
         :'active model call in the verified current kernel-signed public cognition snapshot',
     });
   }
   for(const presented of _provisionalPresentationRows(doc.provisional_outputs)){
     const event=presented.event;
     const assistant=presented.assistant, tool=event.kind==='tool_status';
-    const kind=assistant?'PROVISIONAL_ASSISTANT_MESSAGE':tool?'PROVISIONAL_TOOL_STATUS':'PROVISIONAL_PROVIDER_STATUS';
+    const kind=assistant?'PROVISIONAL_ASSISTANT_MESSAGE'
+      :tool?'PROVISIONAL_TOOL_STATUS':String(event.kind||'PROVISIONAL_PROVIDER_EVENT');
     const statusDetail=tool
       ?[event.status,event.tool_type,event.tool_name,event.server].filter(Boolean).join(' · ')
-      :[event.status,event.model_id].filter(Boolean).join(' · ');
+      :[event.status,event.model_id,event.tool_type,event.tool_name,event.server]
+        .filter(Boolean).join(' · ');
     const call=callsById.get(event.call_id);
     const provenance=_publicProvisionalProvenance(event,call);
     if(assistant&&presented.firstSequence!==presented.lastSequence)
@@ -6693,7 +6889,7 @@ function _publicCognitionRows(doc,{kernel=''}={}){
       trustTitle:assistant
         ?presented.complete
           ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
-          :'verified kernel-signed public snapshot; all displayed text is from the admitted bounded provider-event window, whose beginning and end are not asserted'
+          :'verified kernel-signed public snapshot; all displayed text is from the admitted provider-event stream, whose beginning and end are not asserted'
         :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning',
     });
   }
@@ -6928,45 +7124,55 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   // the token-gated operator console). /status is a fallback for liveness.
   const prof=(L.profile?await dfetch(contentBase,L.profile):null)||{};
   const ns=base?(await fetchNodeStatus(base)||{}):{};
-  const pid=prof.persona_id||personaIdFromDid(r.did);
+  // The provider/document-signed outer record owns the observation key. A profile
+  // may enrich it only after nested identity verification; it cannot redirect the
+  // drawer to a different persona while that proof is pending or refused.
+  const pid=personaIdFromDid(r.did)||prof.persona_id;
   const personaKey=_personaKey(r._kernel,pid||r.did);
-  const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,personaKey);
+  const identityObservation=providerVerifiedPersonaObservation(personaKey);
+  const identityVerified=identityObservation?.identityVerified===true;
+  const identityProofState=identityObservation?.identityProofState||'refused';
+  const lifecycle=identityObservation?.lifecycle||null;
   const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
   const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
-  const rawDisplayName=String(ps.name||r._personaSignedName||'');
+  const rawDisplayName=identityVerified?String(r._personaParticipationName||''):'';
   const displayName=_displayPersonaName(rawDisplayName,pid||r.did);
-  const role=ps.role||(ps.membership||{}).role||r._personaAuthoredRole||_ROLE_NOT_DECLARED;
-  const state=ps.lifecycle_state||lifecycle?.lifecycleState||'—';
+  const role=identityVerified
+    ?r._personaAuthoredRole||_ROLE_NOT_DECLARED:_ROLE_NOT_DECLARED;
+  const state=lifecycle?.lifecycleState||(identityVerified?ps.lifecycle_state:'observed');
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
   // and the title already shows (name): keep only rows the grid does NOT carry.
   const personaIdentity=String(pid||r.did||'');
-  let html=kv('Role',`<span class="cap">${esc(role)}</span>`)
+  let html=(!identityVerified
+      ?`<div class="viewerr">${icon('warn','ico-sm')} The provider/document-signed persona observation is public, but its nested identity proof is ${esc(identityProofState)}. Name, role, characteristics, and portrait remain withheld.</div>`:'')
+    +kv('Role',`<span class="cap">${esc(role)}</span>`)
     +(lifecycle?kv('Identity materialization',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
     +(lifecycle?kv('Identity fields',['name','characteristics','avatar'].map((field)=>{
       const value=lifecycle.identityFields[field];
       return `<span class="cap ${value.state==='pending'?'amber':'ok'}">${esc(field)} ${esc(value.state)}</span>`;
     }).join(' ')):'')
-    +kv('Archetype',S0(ps.archetype))
-    +kv('Disposition',S0(ps.primary_disposition))
-    +(ps.identity_name_state?kv('Identity name',ps.identity_name_pending
+    +(identityVerified?kv('Archetype',S0(ps.archetype)):'')
+    +(identityVerified?kv('Disposition',S0(ps.primary_disposition)):'')
+    +(identityVerified&&ps.identity_name_state?kv('Identity name',ps.identity_name_pending
       ?`<span class="amber">pending</span> <span class="l2">${esc(ps.identity_name_pending_reason||'')}</span>`
       :`<span class="ok">${esc(ps.identity_name_state)}</span>`):'')
     +(ps.brain_fragment_count!=null?kv('Brain',`fragments ${esc(ps.brain_fragment_count)} · contexts ${esc(ps.brain_context_count??0)} · compiles ${esc(ps.brain_compile_count??0)}`):'')
     +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
-    +kv('Soul version',S0(ps.soul_version))
-    +(ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'')
+    +(identityVerified?kv('Soul version',S0(ps.soul_version)):'')
+    +(identityVerified&&ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'')
     +verificationIdentityDetails('persona id',personaIdentity);
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
   const _liveModels=(S.liveByPersona.get(_personaKey(r._kernel,pid||r.did))||{}).models||[];
   if(_liveModels.length) html+=kv('Model',_modelSummary(_liveModels));
-  if(ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
-  if((ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
-  if((ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
+  if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
+  if(identityVerified&&(ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
+  if(identityVerified&&(ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
   // what this persona CAN DO — its advertised capabilities (filtering the generic
   // project_workspace marker, same as the env lanes do).
-  const caps=(ps.capability_summary||r.capability_summary||[]).filter((c)=>c&&c!=='project_workspace');
+  const caps=identityVerified?(ps.capability_summary||r.capability_summary||[])
+    .filter((c)=>c&&c!=='project_workspace'):[];
   if(caps.length) html+=H('Capabilities')+chipsOf(caps);
   // THE PLAN — use the persona's direct run or its one exact verified env
   // association. Never borrow the first env on a multi-env kernel.
@@ -7043,21 +7249,15 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   // the drawer answers "what is this env trying to DO", not only "what did it make".
   const _run=runForEnv(r);
   if(_run&&base) html+=await planSection(base,_run);
-  // Deliverables produced in THIS environment. New exports publish an env-current
-  // manifest; older exports fall back to signed records joined by env id or run id.
+  // Deliverables produced in THIS environment. Artifact records participate only
+  // when their independently verified authority names this exact environment.
   const manifestRel=L.artifact_manifest||d.artifact_manifest||'';
   const manifest=manifestRel?await dfetch(contentBase,manifestRel):null;
   const manifestFiles=manifestArtifacts(manifest);
   const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
-  const _runHostKeys=_run?S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='env'
-    &&x._kernel===r._kernel&&runForEnv(x)===_run).map((x)=>_environmentKey(r._kernel,_envSid(x))):[];
-  const _runAuthority=resolveUniqueRunEnvironment(_runHostKeys);
-  const _thisEnvKey=_environmentKey(r._kernel,_sid);
   const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'
     &&(()=>{ const authority=environmentAuthorityOfRecord(x);
-      if(authority.status==='resolved') return authority.environmentId===_sid;
-      return authority.status==='absent'&&_run&&runOf(x)===_run
-        &&_runAuthority.status==='resolved'&&_runAuthority.environmentKey===_thisEnvKey; })());
+      return authority.status==='resolved'&&authority.environmentId===_sid; })());
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
   const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
   if(manifestFiles.length){
@@ -7708,12 +7908,13 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
 }
 const kernelRec=(kid,kind)=>S.order.find((id)=>{ const r=S.recs.get(id); return r._kernel===kid && r.kind===kind; });
 async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
-  // DomainContext export (06_DOMAIN): the served domain doc is a DIRECT document
-  // (domains/<id>.json: domain_id, name, stage, safety_critical, physical_harm_class).
-  const d=(L.export?await dfetch(base,L.export):null)||{};
+  // The exact deep document is accepted only when its canonical hash matches the
+  // content anchor inside the already verified signed discovery record.
+  const d=(L.export?await contentBoundDocument(base,L.export,r.content_hash):null)||{};
   let html=kv('Domain',S0(d.domain_id||r.did))
     +kv('Name',S0(d.name||r.label))
-    +kv('Stage',`<span class="cap">${esc(d.stage||'emergent')}</span>`)
+    +kv('Origin',S0(d.origin))
+    +kv('Stage',`<span class="cap">${S0(d.stage)}</span>`)
     +kv('Safety critical',d.safety_critical?'<span class="no">● yes</span>':'<span class="dim">no</span>')
     +kv('Physical harm class',d.physical_harm_class?`<span class="no">${esc(d.physical_harm_class)}</span>`:'—')
     +(d.information_hazard_class?kv('Info hazard',esc(d.information_hazard_class)):'')
@@ -8026,7 +8227,9 @@ async function operatorNodeView(b){
   else if(limited) html+=`<div class="desc2"><span class="no">limited public projection</span> — full authority was not granted; a saved bearer may be missing or rejected, or this node's policy requires one.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(limited?'—':'<span class="no">in-memory only</span>'))
-    +kv('Budget',S0(st.budget_candidates)+' cand/task · pending '+S0(st.pending_budget??0))
+    +kv('Model-call budget',st.task_model_call_budget==null
+      ?`unbounded when omitted · queued ${S0(st.pending_budget??0)}`
+      :`${S0(st.task_model_call_budget)} per task · queued ${S0(st.pending_budget??0)}`)
     +kv('Artifact tier',S0(st.artifact_tier))
     +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
   const personas=st.personas||[];
@@ -8475,10 +8678,10 @@ function missionCardList(){
   }
   return result;
 }
-// The strip needs each node's run state (the token-gated part of /status);
+// The strip needs each node's run state from /status;
 // prefetch statuses for every discovered base so running/paused missions show
-// without first opening a drawer. Anonymous viewers get the public projection
-// (no run state) and the strip stays honest — records only.
+// without first opening a drawer. Public nodes expose the complete projection
+// tokenlessly; gated nodes still return only what their access mode permits.
 function prefetchNodeStatuses(){
   const candidates=[...S.boots.keys()].map((key)=>{ const base=key==='@origin'?'':key;
     return {base,focused:!!S.kernelFocus&&baseIsFocused(base),active:(S.activeModelCallsByBase?.get(key)||[]).length>0,
@@ -8736,8 +8939,21 @@ function wire(){
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
     if(act==='op-save'){ let raw=$('#op-base').value.trim(); if(raw && !/^https?:\/\//i.test(raw)) raw=(location.protocol==='https:'?'https://':'http://')+raw; const nb=opBaseKey(raw), tv=$('#op-token').value.trim();
-      if(nb&&tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); }
-      else { const msg=$('#op-save-msg'); if(msg) msg.textContent = !nb ? 'enter the node base URL first' : 'enter the operator token first'; }
+      const msg=$('#op-save-msg');
+      if(!nb){ if(msg) msg.textContent='enter the node base URL first'; return; }
+      if(tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); return; }
+      if(msg) msg.textContent='checking whether this node grants public tokenless control…';
+      a.disabled=true; a.setAttribute('aria-busy','true');
+      fetchNodeStatus(nb).then((status)=>{
+        if(!status){ if(msg) msg.textContent='could not reach a public node at this URL'; }
+        else if(nodeStatusAccess(nb,status).bare){
+          S.portalPeers.add(nb);
+          const kernel=String(status?.node_id||status?.kernel_id||'');
+          if(kernel) noteKernel(kernel,'manual',nb,{reachable:true});
+          S.views[S.views.length-1]=()=>operatorNodeView(nb); renderTop(); discover();
+        }else if(msg) msg.textContent='this node did not grant a full public projection; enter its operator token';
+      }).catch(()=>{ if(msg) msg.textContent='could not reach a public node at this URL'; })
+        .finally(()=>{ a.disabled=false; a.removeAttribute('aria-busy'); });
       return; }
     if(act==='op-del'){ const m2=opTokens(); delete m2[a.dataset.base]; opSaveTokens(m2);
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }

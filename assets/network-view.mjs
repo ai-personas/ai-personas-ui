@@ -1,5 +1,3 @@
-import {normalizePersonaAvatar} from './persona-avatar.mjs';
-
 /*
  * Bounded, DOM-free helpers for projecting a very large PersonaOS network into
  * small UI windows.  Every collection helper consumes an iterable in one pass
@@ -408,25 +406,11 @@ export function signedPersonaIdentity(record) {
     ? Object.freeze({signedId, canonicalId}) : null;
 }
 
-function nonMechanicalPersonaLabel(value, personaId) {
-  if (typeof value !== 'string' || !personaId) return '';
-  const label = value.normalize('NFC').trim();
-  if (!label || [...label].length > 240 || /[\u0000-\u001f\u007f]/u.test(label)) return '';
-  const fold = (text) => text.normalize('NFKC').toLocaleLowerCase('en-US')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  const labelFold = fold(label), idFold = fold(personaId);
-  if (!labelFold || !idFold || labelFold === idFold
-      || ['persona', 'identity', 'agent'].some((prefix) =>
-        labelFold === `${prefix} ${idFold}`)) return '';
-  return label;
-}
-
 /**
- * A persona card needs one complete, already-verified public identity record.
- * Telemetry cannot manufacture identity. Signed name and characteristics are
- * required; a raster portrait is optional profile enrichment. When one is
- * present, its persona binding is still enforced here and its signature/bytes
- * are verified again at the asynchronous image hydration boundary.
+ * Participation comes only from the independently persona-signed public card
+ * admitted on the provider row. The kernel-signed lifecycle binds that card's
+ * DID and persona key to the same observation, without requiring any profile
+ * field to have materialized.
  */
 export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey) {
   if (!(personaDiscoveryByKey instanceof Map) || typeof personaKey !== 'string'
@@ -438,16 +422,23 @@ export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey
   if (!identity || keyParts.length !== 3 || keyParts[1] !== 'persona'
       || keyParts[2] !== identity.canonicalId) return false;
   const lifecycle = normalizedPersonaLifecycleCard(record);
-  if (record._personaLifecycleVerified !== true
-      || lifecycle?.materializationState !== 'materialized') return false;
   const personaId = identity.signedId;
-  const signedName = nonMechanicalPersonaLabel(record._personaSignedName, personaId);
-  const avatar = normalizePersonaAvatar(record.avatar);
   const identityPin = String(record._personaIdentityPublicKeyHex || '');
-  const avatarValid = record.avatar == null || (!!avatar
-    && avatar.persona_id === personaId
-    && avatar.identity_public_key_hex === identityPin);
-  return !!signedName && /^[0-9a-f]{64}$/.test(identityPin) && avatarValid;
+  const identityKeyId = String(record._personaIdentitySigningKeyId || '');
+  const envelope = record.persona_card, card = envelope?.card;
+  const expiresAt = Date.parse(String(card?.expires_at || ''));
+  return record._personaParticipationVerified === true
+    && record._personaLifecycleVerified === true && !!lifecycle
+    && /^[0-9a-f]{64}$/.test(identityPin)
+    && identityKeyId === `persona:${personaId}`
+    && envelope?.schema === 'persona-card/3'
+    && envelope.persona_id === personaId && card?.persona_id === personaId
+    && envelope.signing_key_id === identityKeyId && card.signing_key_id === identityKeyId
+    && envelope.path === `.well-known/personas/${personaId}.json`
+    && Number.isSafeInteger(envelope.ttl_seconds)
+    && envelope.ttl_seconds >= 1 && envelope.ttl_seconds <= 86400
+    && Number.isFinite(expiresAt) && expiresAt > Date.now()
+    && record._personaParticipationName === card.name;
 }
 
 function normalizedPersonaLifecycleCard(record) {

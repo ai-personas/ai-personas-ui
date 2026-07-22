@@ -37,6 +37,18 @@ const MAX_AVATAR_EDGE = 8192;
 const MAX_AVATAR_PIXELS = 64 * 1024 * 1024;
 const textEncoder = new TextEncoder();
 
+export class PersonaAvatarVerificationError extends Error {
+  constructor(message, {permanent = false} = {}) {
+    super(message);
+    this.name = 'PersonaAvatarVerificationError';
+    Object.defineProperty(this, 'personaAvatarPermanent', {value: permanent});
+  }
+}
+
+function avatarVerificationError(message, permanent = false) {
+  return new PersonaAvatarVerificationError(message, {permanent});
+}
+
 function canonical(value) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -285,7 +297,9 @@ export async function verifyPersonaAvatarBytes(value, descriptorValue) {
 async function readExactResponseBytes(response, expectedLength) {
   if (!response.body || typeof response.body.getReader !== 'function') {
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength !== expectedLength) throw new Error('avatar byte length mismatch');
+    if (bytes.byteLength !== expectedLength) {
+      throw avatarVerificationError('avatar byte length mismatch');
+    }
     return bytes;
   }
   const reader = response.body.getReader();
@@ -298,14 +312,16 @@ async function readExactResponseBytes(response, expectedLength) {
       total += value.byteLength;
       if (total > expectedLength || total > MAX_AVATAR_BYTES) {
         await reader.cancel();
-        throw new Error('avatar byte length mismatch');
+        throw avatarVerificationError('avatar byte length mismatch');
       }
       chunks.push(value);
     }
   } finally {
     try { reader.releaseLock(); } catch (_error) { /* no-op */ }
   }
-  if (total !== expectedLength) throw new Error('avatar byte length mismatch');
+  if (total !== expectedLength) {
+    throw avatarVerificationError('avatar byte length mismatch');
+  }
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
@@ -326,9 +342,13 @@ export async function fetchVerifiedPersonaAvatar(value, {
     expectedPersonaId,
     pinnedPublicKeyHex,
   });
-  if (!descriptor) throw new Error('avatar identity signature refused');
+  if (!descriptor) {
+    throw avatarVerificationError('avatar identity signature refused', true);
+  }
   const sourceUrl = resolvePersonaAvatarBodyUrl(descriptor.body_path, {providerBase, pageUrl});
-  if (!sourceUrl || typeof fetchImpl !== 'function') throw new Error('avatar body path refused');
+  if (!sourceUrl || typeof fetchImpl !== 'function') {
+    throw avatarVerificationError('avatar body path refused', true);
+  }
   const response = await fetchImpl(sourceUrl, {
     method: 'GET',
     cache: 'no-store',
@@ -338,22 +358,26 @@ export async function fetchVerifiedPersonaAvatar(value, {
     headers: {Accept: descriptor.mime_type},
   });
   if (!response?.ok || response.redirected || (response.url && response.url !== sourceUrl)) {
-    throw new Error('avatar response refused');
+    throw avatarVerificationError('avatar response refused');
   }
   const contentEncoding = String(response.headers?.get('content-encoding') || '').trim().toLowerCase();
-  if (contentEncoding && contentEncoding !== 'identity') throw new Error('encoded avatar body refused');
+  if (contentEncoding && contentEncoding !== 'identity') {
+    throw avatarVerificationError('encoded avatar body refused');
+  }
   const mimeType = String(response.headers?.get('content-type') || '')
     .split(';', 1)[0].trim().toLowerCase();
   if (mimeType !== descriptor.mime_type || !Object.hasOwn(MIME_EXTENSIONS, mimeType)) {
-    throw new Error('avatar MIME mismatch');
+    throw avatarVerificationError('avatar MIME header mismatch');
   }
   const declaredLength = String(response.headers?.get('content-length') || '').trim();
   if (declaredLength && (!/^\d+$/.test(declaredLength)
       || Number(declaredLength) !== descriptor.byte_length)) {
-    throw new Error('avatar declared byte length mismatch');
+    throw avatarVerificationError('avatar declared byte length mismatch');
   }
   const bytes = await readExactResponseBytes(response, descriptor.byte_length);
-  if (!await verifyPersonaAvatarBytes(bytes, descriptor)) throw new Error('avatar bytes refused');
+  if (!await verifyPersonaAvatarBytes(bytes, descriptor)) {
+    throw avatarVerificationError('avatar bytes refused');
+  }
   return Object.freeze({descriptor, bytes, sourceUrl});
 }
 
