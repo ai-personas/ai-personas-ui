@@ -2445,6 +2445,10 @@ function upsert(r){
     description:r.description||'',
     _storeKey:id,record_id:r.record_id||r.card_id,
     capability_summary:r.capability_summary||[],interfaces:r.interfaces||[],content_hash:r.content_hash||'',content_locator_ref:r.content_locator_ref||'',
+    // This is a signed artifact-record fact. Preserve the exact boolean so the
+    // UI can distinguish a currently published workspace file without guessing
+    // from its path, media type, label, task, or bundle description.
+    in_progress:r.kind==='artifact'&&r.in_progress===true,
     // Keep only the bounded environment-authority fields from this already
     // verified discovery row. Unsigned status/profile observations never enter
     // the routing resolver.
@@ -4492,13 +4496,14 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const size=r.size_bytes??r.size??r.bytes??'';
   const semantics=artifactSemanticsAttr(r), resolvedBase=String(base||r._base||'');
   const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
+  const inProgress=r.in_progress===true;
   const canPreview=verifiedMetadata===true&&!!path&&/^sha256:[0-9a-f]{64}$/i.test(hash);
   const canInspect=verifiedMetadata===true&&!!aid;
   if(!canPreview&&!canInspect){
     return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — preview unavailable because manifest metadata is not independently verified">`
       +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-      +`<small>${esc(scope)} · filename observed through a verified manifest route; manifest bytes are not independently signed or hash-bound</small></span>`
-      +`<span class="current-artifact-preview">Preview unavailable</span></div>`;
+      +`<small>${esc(scope)}${inProgress?' · signed in-progress workspace file':''} · filename observed through a verified manifest route; manifest bytes are not independently signed or hash-bound</small></span>`
+      +`<span class="current-artifact-preview">${inProgress?'In progress · ':''}Preview unavailable</span></div>`;
   }
   const action=canPreview
     ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}"`
@@ -4506,8 +4511,8 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const authored=authoredArtifactLabelText(r);
   return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'fetch, hash-check and preview':'inspect'} ${esc(label)}">`
     +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-    +`<small>${esc(scope)} · ${esc(media)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
-    +`<span class="current-artifact-preview">${canPreview?'Preview':'Inspect'} →</span></button>`;
+    +`<small>${esc(scope)}${inProgress?' · signed in-progress workspace file':''} · ${esc(media)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
+    +`<span class="current-artifact-preview">${inProgress?'In progress · ':''}${canPreview?'Preview':'Inspect'} →</span></button>`;
 }
 function _artifactActionHTML(r,{scope='output'}={}){
   if(!r) return '';
@@ -4522,10 +4527,11 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
   const projection=_artifactRevisionProjection(artifacts), rows=projection.rows;
   if(projection.current?.rows.length){
     const current=projection.current.rows;
+    const inProgress=current.filter((r)=>r?.in_progress===true).length;
     const authored=[...new Set(current.flatMap((r)=>authoredArtifactLabels(r)))].slice(0,8);
     const history=projection.history;
     return `<section class="owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span>`
-      +`<small>${current.length} current unique file${current.length===1?'':'s'} · ${esc(scope)} · signed metadata</small></div>`
+      +`<small>${current.length} current unique file${current.length===1?'':'s'} · ${esc(scope)} · ${inProgress?`${inProgress} signed in progress`:'signed metadata'}</small></div>`
       +`<div class="current-artifact-list" aria-label="${esc(label)} — current files">${current.map((r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true})).join('')}</div>`
       +`<div class="artifact-preview-note">Select a file to fetch it on demand, verify its SHA-256, and open the preview.</div>`
       +(authored.length?`<div class="owned-output-history">authored role claims · ${esc(authored.join(' · '))}</div>`:'')
