@@ -45,7 +45,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260722-participation-authority-v5';
+} from './network-view.mjs?v=20260723-persona-card-v4-v6';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -1322,7 +1322,14 @@ const PERSONA_PARTICIPATION_REQUIRED_FIELDS=Object.freeze([
 ]);
 const PERSONA_PARTICIPATION_ALLOWED_FIELDS=new Set([
   ...PERSONA_PARTICIPATION_REQUIRED_FIELDS,
-  'avatar','characteristic_identity','display_name_alias','participation_status',
+  'avatar','capabilities_summary','characteristic_identity','display_name_alias',
+  'participation_status',
+]);
+const PERSONA_CAPABILITY_REQUIRED_FIELDS=Object.freeze([
+  'description','name','skill_hash','skill_id',
+]);
+const PERSONA_CAPABILITY_ALLOWED_FIELDS=new Set([
+  ...PERSONA_CAPABILITY_REQUIRED_FIELDS,'lineage_parent_skill_id',
 ]);
 const PERSONA_PARTICIPATION_EXPIRES_RE=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 function _plainPersonaParticipationObject(value){
@@ -1334,6 +1341,30 @@ function _exactPersonaParticipationName(value){
 }
 function _exactPersonaParticipationDescription(value){
   return typeof value==='string'&&[...value].length<=240&&enc.encode(value).length<=960;
+}
+function _exactPersonaCapabilityText(value,maximum,required=true){
+  return typeof value==='string'&&value===value.trim()&&(!required||!!value)
+    &&enc.encode(value).length<=maximum
+    &&!/[\u0000-\u001f\u007f]/u.test(value);
+}
+function _exactPersonaCapabilitiesSummary(value){
+  if(value===undefined) return [];
+  if(!Array.isArray(value)||value.length>64) return null;
+  const seen=new Set(),out=[];
+  for(const item of value){
+    if(!_plainPersonaParticipationObject(item)
+        ||PERSONA_CAPABILITY_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(item,field))
+        ||Object.keys(item).some((field)=>!PERSONA_CAPABILITY_ALLOWED_FIELDS.has(field))
+        ||!_exactPersonaCapabilityText(item.skill_id,180)
+        ||!_exactPersonaCapabilityText(item.name,240)
+        ||!_exactPersonaCapabilityText(item.description,1600)
+        ||!_exactPersonaCapabilityText(item.skill_hash,180)
+        ||(Object.hasOwn(item,'lineage_parent_skill_id')
+          &&!_exactPersonaCapabilityText(item.lineage_parent_skill_id,180,false))
+        ||seen.has(item.skill_id)) return null;
+    seen.add(item.skill_id); out.push({...item});
+  }
+  return out;
 }
 function _currentPersonaParticipationExpiry(value,now=Date.now()){
   if(typeof value!=='string') return false;
@@ -1365,7 +1396,7 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
   if(!_plainPersonaParticipationObject(card)
       ||PERSONA_PARTICIPATION_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(card,field))
       ||Object.keys(card).some((field)=>!PERSONA_PARTICIPATION_ALLOWED_FIELDS.has(field))
-      ||envelope.schema!=='persona-card/3'||card.schema!=='persona-card/3'
+      ||envelope.schema!=='persona-card/4'||card.schema!=='persona-card/4'
       ||envelope.persona_id!==personaId||card.persona_id!==personaId
       ||envelope.path!==`.well-known/personas/${personaId}.json`
       ||envelope.signing_key_id!==keyId||card.signing_key_id!==keyId
@@ -1382,6 +1413,8 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
       ||!Number.isSafeInteger(card.soul_version)
       ||!_plainPersonaParticipationObject(card.rate_limit)
       ||!_plainPersonaParticipationObject(card.identity_authority)) return null;
+  const capabilitiesSummary=_exactPersonaCapabilitiesSummary(card.capabilities_summary);
+  if(capabilitiesSummary===null) return null;
   for(const field of ['charter_hash','voice_hash','soul_hash','kernel_provider','kernel_a2a_url',
     'accepts_inbound_from']) if(typeof card[field]!=='string') return null;
   for(const field of ['display_name_alias','characteristic_identity'])
@@ -1398,7 +1431,9 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
   let signatureVerified=false;
   try{ signatureVerified=await ed.verifyAsync(hexToBytes(envelope.signature_hex),
     enc.encode(canon(card)),hexToBytes(publicKeyHex)); }catch(_){ signatureVerified=false; }
-  return signatureVerified?Object.freeze({envelope,name:card.name}):null;
+  return signatureVerified?Object.freeze({
+    envelope,name:card.name,capabilitiesSummary:Object.freeze(capabilitiesSummary),
+  }):null;
 }
 const PUBLIC_TASK_LIFECYCLE_FIELDS=Object.freeze([
   'access','amended_from_run','block','continued_from_run','current_execution','environment_id',
@@ -1763,6 +1798,7 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     _personaIdentitySigningKeyId:personaId?String(doc.record.identity_signing_key_id||''):'',
     _personaParticipationVerified:!!participation,
     _personaParticipationName:participation?.name||'',
+    _personaCapabilitiesSummary:participation?.capabilitiesSummary||[],
     persona_card:participation?.envelope||null,
     _personaLifecycleVerified:lifecycleVerified,
     _personaLifecycleObservationState:personaId?lifecycleObservationState:'',
@@ -2513,6 +2549,9 @@ function upsert(r){
     _personaParticipationVerified:r.kind==='persona'&&r._personaParticipationVerified===true,
     _personaParticipationName:r.kind==='persona'&&r._personaParticipationVerified===true
       ?String(r._personaParticipationName||''):'',
+    _personaCapabilitiesSummary:r.kind==='persona'&&r._personaParticipationVerified===true
+      &&Array.isArray(r._personaCapabilitiesSummary)
+      ?r._personaCapabilitiesSummary.slice(0,64):[],
     persona_card:r.kind==='persona'&&r._personaParticipationVerified===true&&r.persona_card
       ?r.persona_card:null,
     _personaLifecycleVerified:r.kind==='persona'&&r._personaLifecycleVerified===true,
@@ -3274,6 +3313,20 @@ const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B'
 const kv=(l,v)=>`<div class="row"><span class="l2">${esc(l)}</span><span class="v2">${v}</span></div>`;
 const H=(t)=>`<h4>${esc(t)}</h4>`;
 const chipsOf=(a)=>`<div class="caps">${(a||[]).filter(Boolean).map((c)=>`<span class="cap">${esc(c)}</span>`).join('')||'<span class="l2">—</span>'}</div>`;
+function authoredCapabilitiesHTML(capabilities){
+  const items=Array.isArray(capabilities)?capabilities.slice(0,64):[];
+  if(!items.length) return '';
+  const namesById=new Map(items.map((item)=>[String(item?.skill_id||''),String(item?.name||'')]));
+  return `<div class="persona-capability-list">${items.map((capability)=>{
+    const name=String(capability?.name||''), description=String(capability?.description||'');
+    const parent=String(capability?.lineage_parent_skill_id||'');
+    const parentName=namesById.get(parent)||'';
+    return `<article class="persona-capability-detail"><strong>${esc(name)}</strong>`
+      +`<p>${esc(description)}</p>`
+      +(parentName?`<small>Derived from ${esc(parentName)}</small>`:'')
+      +`</article>`;
+  }).join('')}</div>`;
+}
 const recLink=(id,txt)=>`<a href="#" data-act="rec" data-id="${esc(id)}">${esc(txt)}</a>`;
 function verificationIdentityDetails(label,value){
   const exact=String(value||''); if(!exact) return '';
@@ -4838,6 +4891,24 @@ function renderPersonaCard(pid,kernel='',context={}){
       :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
   const lifecycleState=(state||'ACTIVE').toUpperCase();
   const lifecycleBadge=`<span class="pc-life${lifecycleState==='ACTIVE'?'':' off'}">${esc(lifecycleState==='ACTIVE'?'AVAILABLE':lifecycleState.toLowerCase())}</span>`;
+  const authoredCapabilities=identityVerified&&Array.isArray(
+    signedIdentity?._personaCapabilitiesSummary)
+    ?signedIdentity._personaCapabilitiesSummary:[];
+  const authoredCapabilityNames=new Map(authoredCapabilities.map((item)=>[
+    String(item?.skill_id||''),String(item?.name||''),
+  ]));
+  const capabilityHTML=authoredCapabilities.length
+    ?`<section class="pc-capabilities"><span class="pc-current-label">Authored capabilities</span><div>`
+      +authoredCapabilities.slice(0,2).map((capability)=>{
+        const parent=String(capability.lineage_parent_skill_id||'');
+        const parentName=authoredCapabilityNames.get(parent)||'';
+        return `<div class="pc-cap-item" title="${esc(capability.description)}">`
+          +`<strong>${esc(capability.name)}</strong><span>${esc(capability.description)}</span>`
+          +(parentName?`<small>Derived from ${esc(parentName)}</small>`:'')+`</div>`;
+      }).join('')
+      +(authoredCapabilities.length>2
+        ?`<span class="pc-cap-more">+${authoredCapabilities.length-2} more in profile</span>`:'')
+      +`</div></section>`:'';
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
@@ -4882,7 +4953,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' verified participation name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` outer record verified · identity proof ${identityProofState}`}</span><span class="pc-idline">${esc(role)}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
     +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My live worktree',scope:'persona worktree'})
     +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
@@ -7277,9 +7348,10 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   if(identityVerified&&(ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
   // what this persona CAN DO — its advertised capabilities (filtering the generic
   // project_workspace marker, same as the env lanes do).
-  const caps=identityVerified?(ps.capability_summary||r.capability_summary||[])
-    .filter((c)=>c&&c!=='project_workspace'):[];
-  if(caps.length) html+=H('Capabilities')+chipsOf(caps);
+  const authoredCapabilities=identityVerified&&Array.isArray(r._personaCapabilitiesSummary)
+    ?r._personaCapabilitiesSummary:[];
+  if(authoredCapabilities.length) html+=H('Authored capabilities')
+    +authoredCapabilitiesHTML(authoredCapabilities);
   // THE PLAN — use the persona's direct run or its one exact verified env
   // association. Never borrow the first env on a multi-env kernel.
   const _personaEnv=envRecordForAuthority(r);
@@ -9701,7 +9773,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260720-public-blob-busy-retry-v27');
+    const mod=await import('./p2p-libp2p.js?v=20260723-persona-card-v4-v28');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
