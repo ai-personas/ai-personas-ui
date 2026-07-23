@@ -408,18 +408,40 @@ async function fetchJson(u,init={}){
   // transport timeout twice before the next live refresh.
   return peerRouted?null:fetchP2PJson(u,init);
 }
+const responsivePublicJsonJobs=new Map();
 async function fetchResponsivePublicJson(u,init={}){
   if(tokenFor(u)) return fetchJson(u,init);
-  const signal=init.signal||AbortSignal.timeout(8000);
-  try{
-    const r=await fetch(u,secureFetchInit(u,{...init,signal}));
-    if(r.ok){
-      const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
-      return JSON.parse(new TextDecoder().decode(bytes));
-    }
-  }catch(_){}
-  if(init.signal?.aborted) return null;
-  return fetchJson(u,init);
+  const callerSignal=init.signal;
+  if(callerSignal?.aborted) return null;
+  const maxBytes=init.maxBytes||DEFAULT_JSON_MAX_BYTES;
+  const key=`${String(u)}\u0000${maxBytes}`;
+  let job=responsivePublicJsonJobs.get(key);
+  if(!job){
+    const transportSignal=AbortSignal.timeout(15000);
+    // This shared job is deliberately anonymous and GET-only. Do not inherit
+    // caller headers or consult token state again after it starts.
+    const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
+    const request=(async()=>{
+      try{
+        const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
+          redirect:'error',referrerPolicy:'no-referrer'});
+        if(r.ok){
+          const bytes=await readBoundedResponseBytes(r,maxBytes);
+          return JSON.parse(new TextDecoder().decode(bytes));
+        }
+      }catch(_){}
+      if(transportSignal.aborted) return null;
+      return fetchP2PJson(u,transportInit);
+    })();
+    job=request.finally(()=>{
+      if(responsivePublicJsonJobs.get(key)===job) responsivePublicJsonJobs.delete(key);
+    });
+    responsivePublicJsonJobs.set(key,job);
+  }
+  // A drawer refresh and the background cognition stream can ask for the same
+  // public document. Each caller may stop waiting independently; its deadline
+  // must not cancel the shared anonymous transport needed by the other view.
+  return settleBeforeAbort(job,callerSignal,null);
 }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
@@ -3153,11 +3175,16 @@ function runtimeForPersona(value,kernel=''){ const ref=_personaRef(value,kernel)
   return runtime; }
 // Node /status cache — 4s TTL so active calls and run discovery keep the 2-5s live cadence.
 const statusCache=new Map();
+const statusFetchJobs=new Map();
+function currentStatusCacheHit(baseKey,hit=statusCache.get(baseKey)){
+  const base=baseKey==='@origin'?'':baseKey;
+  return hit&&hit.credential===tokenFor(join(base,'status'))?hit:null;
+}
 function fullNodeStatusProjection(status){
   return status?.schema==='personaos-node-status/1';
 }
 function nodeStatusAccess(base,status){
-  const key=base||'@origin', cached=statusCache.get(key);
+  const key=base||'@origin', cached=currentStatusCacheHit(key);
   const exactCachedMode=cached?.v===status?cached.credentialed:!!tokenFor(join(base,'status'));
   const granted=fullNodeStatusProjection(status);
   return {granted,bare:granted&&!exactCachedMode,bearer:granted&&exactCachedMode};
@@ -3165,7 +3192,7 @@ function nodeStatusAccess(base,status){
 function freshBarePublicStatusBases(now=Date.now()){
   const bases=[];
   for(const [key,hit] of statusCache){
-    if(now-Number(hit?.ts||0)>15000) continue;
+    if(!currentStatusCacheHit(key,hit)||now-Number(hit?.ts||0)>15000) continue;
     const base=key==='@origin'?'':key;
     if(nodeStatusAccess(base,hit?.v).bare) bases.push(base);
   }
@@ -3173,13 +3200,32 @@ function freshBarePublicStatusBases(now=Date.now()){
 }
 async function fetchNodeStatus(base){
   const key=base||'@origin', endpoint=join(base,'status');
-  const credentialed=!!tokenFor(endpoint), hit=statusCache.get(key);
+  const credential=tokenFor(endpoint), credentialed=!!credential, hit=currentStatusCacheHit(key);
   // Never reuse a bearer-derived full projection after a credential is removed,
-  // or a bare public projection immediately after a bearer is added.
-  if(hit&&hit.credentialed===credentialed&&(Date.now()-hit.ts)<4000) return hit.v;
-  const v=await fetchJson(endpoint);
-  if(v){ statusCache.set(key,{v,ts:Date.now(),credentialed}); indexRuntimeStatus(base,v); }
-  return v||null;
+  // a bare public projection immediately after a bearer is added, or a response
+  // obtained under a different bearer.
+  if(hit&&hit.credential===credential&&(Date.now()-hit.ts)<4000) return hit.v;
+  if(credentialed){
+    const v=await fetchJson(endpoint);
+    if(tokenFor(endpoint)!==credential) return null;
+    if(v){ statusCache.set(key,{v,ts:Date.now(),credentialed:true,credential}); indexRuntimeStatus(base,v); }
+    return v||null;
+  }
+  const requestKey=key;
+  const pending=statusFetchJobs.get(requestKey);
+  if(pending) return pending;
+  let job;
+  const request=(async()=>{
+    const v=await fetchResponsivePublicJson(endpoint);
+    if(tokenFor(endpoint)) return null;
+    if(v){ statusCache.set(key,{v,ts:Date.now(),credentialed:false,credential:''}); indexRuntimeStatus(base,v); }
+    return v||null;
+  })();
+  job=request.finally(()=>{
+    if(statusFetchJobs.get(requestKey)===job) statusFetchJobs.delete(requestKey);
+  });
+  statusFetchJobs.set(requestKey,job);
+  return job;
 }
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
@@ -3438,7 +3484,7 @@ function endLiveArtifactRun(base,event,meta={}){
 function pollLiveArtifacts(){
   const targets=new Map(); const now=Date.now();
   for(const [baseKey,hit] of statusCache){
-    if(!hit?.ts||now-hit.ts>15000) continue;
+    if(!currentStatusCacheHit(baseKey,hit)||!hit?.ts||now-hit.ts>15000) continue;
     const base=baseKey==='@origin'?'':baseKey;
     for(const run of (hit?.v?.stoppable_runs||[])) targets.set(_liveRunKey(base,run),{base,run});
   }
@@ -6467,7 +6513,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
       ||authority.signing_key_id!==signingKeyId
       ||!/^[0-9a-f]{64}$/.test(publicKey)
       ||!_safePublicCognitionAtom(authority.action_id,512,{required:true})
-      ||!SHA256_CONTENT_RE.test(String(authority.action_invocation_id||''))
+      ||!_safePublicCognitionAtom(authority.action_invocation_id,512,{required:true})
       ||!_safePublicCognitionAtom(authority.task_id,512)
       ||!_safePublicCognitionAtom(authority.model_call_id,512)
       ||!_safePublicCognitionAtom(authority.action_name,512,{required:true})
@@ -8680,6 +8726,7 @@ function missionCardList(){
   // a phantom card forever. Drop entries older than ~4 poll windows of the 8s serve-TTL.
   const fresh=Date.now()-32000;
   for(const [baseKey,hit] of statusCache){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
+    if(!currentStatusCacheHit(baseKey,hit)) continue;
     if(!(hit.ts>fresh)) continue;
     const busy=String((v.heartbeat||{}).busy||'');
     for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run);
