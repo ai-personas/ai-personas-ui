@@ -414,7 +414,8 @@ async function fetchResponsivePublicJson(u,init={}){
   const callerSignal=init.signal;
   if(callerSignal?.aborted) return null;
   const maxBytes=init.maxBytes||DEFAULT_JSON_MAX_BYTES;
-  const key=`${String(u)}\u0000${maxBytes}`;
+  const peerOnly=init.peerOnly===true;
+  const key=`${String(u)}\u0000${maxBytes}\u0000${peerOnly?'peer':'any'}`;
   let job=responsivePublicJsonJobs.get(key);
   if(!job){
     const transportSignal=AbortSignal.timeout(15000);
@@ -422,6 +423,12 @@ async function fetchResponsivePublicJson(u,init={}){
     // caller headers or consult token state again after it starts.
     const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
     const request=(async()=>{
+      // Once a current-master-verified provider route exists, keep anonymous
+      // public reads on that exact peer. The signed HTTPS locator remains
+      // presentation metadata; it is not a fallback data plane.
+      if(p2pDataRouteForUrl(u)&&P2P?.fetchPublicJson)
+        return fetchP2PJson(u,transportInit);
+      if(peerOnly) return null;
       try{
         const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
           redirect:'error',referrerPolicy:'no-referrer'});
@@ -6391,7 +6398,7 @@ function hydrateThinkingOutputText(host,doc){
   for(const target of host.querySelectorAll('[data-thinking-output-index]')){
     const index=Number(target.dataset.thinkingOutputIndex);
     const text=Number.isSafeInteger(index)&&index>=0&&index<outputs.length
-      ?outputs[index]?.text:'';
+      ?_publicPersonaOutputDisplayText(outputs[index]):'';
     target.textContent=typeof text==='string'?text:String(text??'');
   }
   const provisional=Array.isArray(doc?.provisional_outputs)?doc.provisional_outputs:[];
@@ -6431,6 +6438,10 @@ const PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS=Object.freeze([
 const PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS=Object.freeze([
   ...PUBLIC_PERSONA_OUTPUT_FIELDS,
   'persona_authority','persona_authority_hash',
+].sort());
+const PUBLIC_PERSONA_STRUCTURED_OUTPUT_FIELDS=Object.freeze([
+  ...PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS,
+  'structured_cognition',
 ].sort());
 const PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS=Object.freeze([
   'schema','sha256','text','utf8_bytes',
@@ -6657,15 +6668,60 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
   }
   return verified;
 }
+async function _validPublicPersonaStructuredAuthority(output,identity,row){
+  const authority=output.persona_authority;
+  const structured=output.structured_cognition;
+  const publicKey=String(row?._personaIdentityPublicKeyHex||'').toLowerCase();
+  const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
+  if(!authority||typeof authority!=='object'||Array.isArray(authority)
+      ||!structured||typeof structured!=='object'||Array.isArray(structured)
+      ||!Object.keys(structured).length
+      ||Object.hasOwn(structured,'signed_by')
+      ||authority.persona_id!==identity.signedId
+      ||authority.environment_id!==output.environment_id
+      ||authority.signing_key_id!==signingKeyId
+      ||!_safePublicCognitionAtom(authority.schema,512,{required:true})
+      ||!_safePublicCognitionInstant(authority.authored_at)
+      ||!/^[0-9a-f]{64}$/.test(publicKey)
+      ||!SHA256_CONTENT_RE.test(String(output.persona_authority_hash||''))
+      ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
+    return false;
+  let parsed;
+  try{ parsed=JSON.parse(output.text); }catch(_){ return false; }
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)
+      ||canon(parsed)!==canon(structured)
+      ||!Object.keys(structured).every((field)=>Object.hasOwn(authority,field)
+        &&canon(authority[field])===canon(structured[field]))) return false;
+  const signature=String(authority.signed_by||'');
+  if(!/^[0-9a-f]{128}$/.test(signature)) return false;
+  const cacheKey=`structured:${publicKey}:${output.persona_authority_hash}:${signature}`;
+  if(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.get(cacheKey)===true) return true;
+  const payload={};
+  for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+  let verified=false;
+  try{ verified=await ed.verifyAsync(hexToBytes(signature),enc.encode(canon(payload)),hexToBytes(publicKey)); }
+  catch(_){ verified=false; }
+  if(verified){
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(cacheKey);
+    PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.set(cacheKey,true);
+    while(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.size>512)
+      PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.delete(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.keys().next().value);
+  }
+  return verified;
+}
 async function _validPublicPersonaOutput(output,identity,row){
   const communication=output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND;
   const cognitiveExact=output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND;
   const authoredOutputPresent=Object.hasOwn(output||{},'authored_output');
-  const personaExact=communication||cognitiveExact;
   const actionExact=output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
+  const structuredExact=!communication&&!cognitiveExact&&!actionExact
+    &&output?.authority==='persona_signature'
+    &&Object.hasOwn(output||{},'structured_cognition');
+  const personaExact=communication||cognitiveExact||structuredExact;
   const outputFields=actionExact?PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS
     :(cognitiveExact||communication&&authoredOutputPresent)
       ?PUBLIC_PERSONA_EXACT_OUTPUT_FIELDS
+      :structuredExact?PUBLIC_PERSONA_STRUCTURED_OUTPUT_FIELDS
       :communication?PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS
         :PUBLIC_PERSONA_OUTPUT_FIELDS;
   if(!_exactObjectFields(output,outputFields)
@@ -6688,6 +6744,7 @@ async function _validPublicPersonaOutput(output,identity,row){
     audience.add(personaId);
   }
   if(actionExact) return await _validPublicPersonaActionAuthority(output,identity,row);
+  if(structuredExact) return await _validPublicPersonaStructuredAuthority(output,identity,row);
   if(!personaExact) return true;
   if((cognitiveExact||authoredOutputPresent)
       &&!await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)) return false;
@@ -6871,6 +6928,7 @@ async function refreshThinking(){
   const hasOperator=!!tokenFor(endpoint);
   const t=await fetchResponsivePublicJson(endpoint,{
     maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+    peerOnly:true,
   });
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
@@ -6993,8 +7051,19 @@ function _publicOutputTrust(output){
     label:'PERSONA SIGNED MESSAGE',
     title:'persona communication signature and authored-output hash verified, inside the verified kernel-signed public cognition document',
   };
+  if(output?.authority==='persona_signature') return {
+    label:'PERSONA SIGNED COGNITION',
+    title:'persona signature, authority hash, and displayed structured fields verified inside the kernel-signed public cognition document',
+  };
   return {label:'KERNEL SIGNED LINEAGE',
     title:'exact lineage output in the verified kernel-signed public cognition document'};
+}
+function _publicPersonaOutputDisplayText(output){
+  const structured=output?.structured_cognition;
+  if(output?.authority==='persona_signature'
+      &&structured&&typeof structured==='object'&&!Array.isArray(structured))
+    return canon(structured);
+  return typeof output?.text==='string'?output.text:String(output?.text??'');
 }
 function _publicOutputLabel(output){
   if(output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND) return 'persona message';
@@ -7049,6 +7118,13 @@ function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun
       provenance.event=_publicProvenanceAtom(source.event_id)
         ||_publicProvenanceAtom(source.wake_event_id);
     }
+  }else if(output?.authority==='persona_signature'){
+    const authority=output.persona_authority||{};
+    provenance.task=_publicProvenanceAtom(authority.task_id);
+    provenance.missionTask=_publicProvenanceAtom(authority.mission_task_id);
+    provenance.authoredAt=_publicProvenanceAtom(authority.authored_at,80);
+    provenance.signingKey=_publicProvenanceAtom(authority.signing_key_id);
+    provenance.authorityHash=_publicProvenanceAtom(output.persona_authority_hash,1024);
   }
   return _withVerifiedTaskRun(provenance,kernel,resolveRun);
 }
@@ -7111,12 +7187,13 @@ function _publicCognitionRows(doc,{kernel=''}={}){
     const action=output.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
     const provenance=_publicOutputProvenance(output,kernel,resolveRun);
     const trust=_publicOutputTrust(output);
+    const displayText=_publicPersonaOutputDisplayText(output);
     rows.push({
       source:'output',kind:output.kind,at:output.at,
       scope:communication?'communication':action?'action':'cognition',
       scopeId:provenance.task||output.environment_id,
-      msg:output.text,rationale:output.text,cognition:!communication&&!action,ctype:action?'tool':'think',
-      exactText:output.text,recipients:output.audience_persona_ids,
+      msg:displayText,rationale:displayText,cognition:!communication&&!action,ctype:action?'tool':'think',
+      exactText:displayText,recipients:output.audience_persona_ids,
       authority:output.authority,dedup:output,provenance,
       trustLabel:trust.label,trustTitle:trust.title,
     });
@@ -7209,6 +7286,7 @@ async function streamPersonaCognition(options={}){
         const hasOperator=!!tokenFor(endpoint);
         const r=await fetchResponsivePublicJson(endpoint,{
           maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+          peerOnly:true,
         });
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'

@@ -269,14 +269,16 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`28f0714ab2db6e1eb6ac789cf92c9a9b55675b81`: 22 Markdown files with manifest SHA-256
-`78c8040aa5b2b48943f33e2650e9e651408d81420ca6b60ddfc4b0e5e29ac78e`. CI fails when either
+`d85bc4d9ec5b4b0805a0af10d503849dfbffb739`: 22 Markdown files with manifest SHA-256
+`f579e382864378608378824de64e4c3631a434d2ff1ea807348987fedb29daaa`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
 place. They also pin persona-authored asynchronous clarification, exact-action external latency,
 best-so-far artifact visibility, identity/genesis membership separation, birth-provenance-scoped
-bootstrap communication, and persona-owned completion readiness.
+bootstrap communication, persona-owned completion readiness and continuation, PersonaCard v4
+skill-summary privacy, exact persona-workspace transport, complete unranked action discovery, and
+task reception preceding bootstrap observation turns.
 
 ## Explore
 

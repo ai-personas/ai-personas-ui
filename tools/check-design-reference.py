@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '28f0714ab2db6e1eb6ac789cf92c9a9b55675b81'
+REVIEWED_DESIGN_COMMIT = 'd85bc4d9ec5b4b0805a0af10d503849dfbffb739'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '78c8040aa5b2b48943f33e2650e9e651408d81420ca6b60ddfc4b0e5e29ac78e'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'f579e382864378608378824de64e4c3631a434d2ff1ea807348987fedb29daaa'
 
 
 DESIGN_ANCHORS = {
@@ -31,6 +31,7 @@ DESIGN_ANCHORS = {
         'mdns / multicast',
         'discover < read (r) < write (rw) < admin',
         'no infrastructure *whatsoever*',
+        'persona-card/4',
     ],
     '03_TASKS.md': [
         'never kernel tie-breakers',
@@ -49,6 +50,7 @@ DESIGN_ANCHORS = {
         'exact `chartersynthesisclaim` signed by every involved parent persona',
         'not lowercase, tokenize, cluster, regex-match',
         'missing answer never substitutes for peer agreement',
+        'bounded signed skill summaries',
     ],
     '06_DOMAIN.md': [
         'missing outside evidence is not a phase kind',
@@ -64,11 +66,17 @@ DESIGN_ANCHORS = {
         'pressure is persona-authored context',
         'completion readiness and execution resources are separate axes',
         "each persona's latest signed appraisal is its current pressure snapshot",
+        'persona_continuation_unbound',
+        'bounded catalog of currently admissible, kernel-verified actions',
+        'canonical persona workspace',
+        '`task_received` is the first semantic model turn',
+        'must not additionally require an inline artifact package',
     ],
     '13_DESIGN_VALIDATION.md': [
         'global discovery layer',
         'globally-verifiable lineage',
         'principal silence alone does not make the whole persona',
+        'kernel never selects the profession or specialization',
     ],
 }
 
@@ -180,7 +188,10 @@ def main() -> None:
         'reviewed design pin documented': REVIEWED_DESIGN_COMMIT in readme,
         'ambiguous environments remain unresolved': (
             'resolveEnvironmentAuthority' in portal
-            and 'resolveUniqueRunEnvironment' in portal
+            and "if(authority.status==='resolved') target=envKey(" in portal
+            and 'else unresolvedArtifacts.push({record:r,authority});' in portal
+            and 'resolveUniqueRunEnvironment' not in portal
+            and 'const runHosts=' not in portal
             and 'routing_context_pressure' in routing_authority
             and 'activity_recency' not in routing_authority
             and 'const _dgroups=' not in portal
