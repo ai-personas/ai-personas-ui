@@ -758,6 +758,20 @@ function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',pers
   store.set(personaKey,{doc,base,kernel,personaId,observedAt:Date.now()});
   while(store.size>4) store.delete(store.keys().next().value);
 }
+function _personaModelHistory(personaKey,fallback=[]){
+  const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
+  const doc=retained?.doc;
+  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public')
+    return fallback;
+  const models=[...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>({
+    t:Date.parse(call.ended_at||call.started_at||'')||0,
+    purpose:String(call.requested_purpose||'model'),
+    model:String(call.model_id||''),
+    role:'',
+    environment:_shortId(call.environment_id),
+  })).filter((call)=>call.model).sort((left,right)=>left.t-right.t);
+  return models.length?models:fallback;
+}
 function _refreshPersonaInteractionIndex(){
   const indexed=new Map();
   for(const event of (S.interactions||[])) for(const personaKey of _interactionPersonaKeys(event)){
@@ -4046,11 +4060,17 @@ const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s ago':s<3600?(s/60|0)+'m ago':s<86400?(s/3600|0)+'h ago':(s/86400|0)+'d ago';};
 const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
 const _personaAlias=(_sid)=>'Unnamed persona';
-const _displayPersonaName=(value,sid='')=>typeof value==='string'&&value
-  ?value:_personaAlias(sid);
-const _personaMonogram=(value,sid='')=>{ const name=_displayPersonaName(value,sid), id=_shortId(sid||'');
-  if(typeof value==='string'&&value){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
-  return (id.slice(-2)||'AI').toUpperCase(); };
+function _personaDisplayNameCandidate(value,sid=''){
+  const name=typeof value==='string'?value.trim():'', id=_shortId(sid||'');
+  if(!name||name===id||name===`persona:${id}`
+      ||(name.startsWith('did:personaos:')&&_shortId(name)===id)) return '';
+  return name;
+}
+const _displayPersonaName=(value,sid='')=>
+  _personaDisplayNameCandidate(value,sid)||_personaAlias(sid);
+const _personaMonogram=(value,sid='')=>{ const name=_personaDisplayNameCandidate(value,sid);
+  if(name){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
+  return 'AI'; };
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   return _displayPersonaName(_PERSONA_NAME.get(ref.key),ref.sid); }
 function providerVerifiedPersonaObservation(personaKey){
@@ -4064,10 +4084,16 @@ function providerVerifiedPersonaObservation(personaKey){
       ||record._personaLifecycleObservationState==='pending'?'pending':'refused');
   return {ref,record,identity,lifecycle,identityVerified,identityProofState};
 }
+function _personaAuthoredNameForObservation(observation){
+  const field=observation?.lifecycle?.identityFields?.name;
+  return observation?.identityVerified===true&&field?.state==='materialized'
+    &&field?.personaAuthored===true
+    ?_personaDisplayNameCandidate(
+      observation.record?._personaParticipationName,observation.ref?.sid):'';
+}
 function _signedPersonaNameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   const observation=providerVerifiedPersonaObservation(ref.key);
-  return _displayPersonaName(observation?.identityVerified
-    ?observation.record._personaParticipationName:'',ref.sid); }
+  return _displayPersonaName(_personaAuthoredNameForObservation(observation),ref.sid); }
 function _isMechanicalEnvironmentName(value,sid=''){
   const name=String(value||'').trim(), id=environmentIdentity(sid||'');
   return !name||['env','environment'].includes(name.toLowerCase())||name===id||name===`env:${id}`||name.startsWith('did:personaos:');
@@ -4786,7 +4812,8 @@ function _personaActivityHTML(acts,personaKey){
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
   const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
-  const models=d.models||[]; const last=models[models.length-1];
+  const models=_personaModelHistory(personaKey,d.models||[]);
+  const last=models[models.length-1];
   const rt=runtimeForPersona(personaKey)||{};
   const indexedActiveCalls=_activeModelCallsForPersona(personaKey);
   const signedCognitionCall=[...indexedActiveCalls].reverse().find((call)=>call?._signedPublicCognition===true)||null;
@@ -4800,7 +4827,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const signedIdentity=identityObservation?.record||null;
   const identityVerified=identityObservation?.identityVerified===true;
   const lifecycle=identityObservation?.lifecycle||null;
-  const signedName=identityVerified?String(signedIdentity?._personaParticipationName||''):'';
+  const signedName=_personaAuthoredNameForObservation(identityObservation);
   const hasSignedIdentity=identityVerified;
   const hasSignedName=hasSignedIdentity&&!!signedName;
   const name=_displayPersonaName(signedName,sid);
@@ -5551,9 +5578,10 @@ async function refreshSystemView(){
   // refresh the friendly-name map from discovered persona records
   for(const id of S.order){ const r=S.recs.get(id); if(r.kind==='persona'){
     const sid=_shortId(r.did||r.record_id), personaKey=_personaKey(r._kernel,sid);
-    if(providerVerifiedPersonaObservation(personaKey)?.identityVerified===true
-        &&r._personaParticipationName)
-      _PERSONA_NAME.set(personaKey,r._personaParticipationName);
+    const authoredName=_personaAuthoredNameForObservation(
+      providerVerifiedPersonaObservation(personaKey));
+    if(authoredName)
+      _PERSONA_NAME.set(personaKey,authoredName);
     else _PERSONA_NAME.delete(personaKey); } }
   // Artifacts join only through their exact verified environment authority.
   // A run, title, owner or observation order can never manufacture that binding.
@@ -7312,7 +7340,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const lifecycle=identityObservation?.lifecycle||null;
   const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
   const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
-  const rawDisplayName=identityVerified?String(r._personaParticipationName||''):'';
+  const rawDisplayName=_personaAuthoredNameForObservation(identityObservation);
   const displayName=_displayPersonaName(rawDisplayName,pid||r.did);
   const role=identityVerified
     ?r._personaAuthoredRole||_ROLE_NOT_DECLARED:_ROLE_NOT_DECLARED;
@@ -7341,7 +7369,9 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     +verificationIdentityDetails('persona id',personaIdentity);
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
-  const _liveModels=(S.liveByPersona.get(_personaKey(r._kernel,pid||r.did))||{}).models||[];
+  const _personaModelKey=_personaKey(r._kernel,pid||r.did);
+  const _liveModelState=S.liveByPersona.get(_personaModelKey)||{};
+  const _liveModels=_personaModelHistory(_personaModelKey,_liveModelState.models||[]);
   if(_liveModels.length) html+=kv('Model',_modelSummary(_liveModels));
   if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
   if(identityVerified&&(ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
