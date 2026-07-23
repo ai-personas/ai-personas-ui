@@ -752,11 +752,16 @@ function _rememberPersonaCognitionEvent(event){
 // signed messages and assembled provider output are durable activity history,
 // not presence signals that should disappear when the 30-second live lease ends.
 function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
-  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public') return;
+  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public') return false;
   const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
+  const modelProjection=canon([...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>[
+    call.model_id,call.requested_purpose,call.environment_id,call.started_at,call.ended_at||'',
+  ]));
+  const modelHistoryChanged=store.get(personaKey)?.modelProjection!==modelProjection;
   store.delete(personaKey);
-  store.set(personaKey,{doc,base,kernel,personaId,observedAt:Date.now()});
+  store.set(personaKey,{doc,base,kernel,personaId,modelProjection,observedAt:Date.now()});
   while(store.size>4) store.delete(store.keys().next().value);
+  return modelHistoryChanged;
 }
 function _personaModelHistory(personaKey,fallback=[]){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
@@ -6874,8 +6879,13 @@ async function refreshThinking(){
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
-    if(publicAccepted) _rememberVerifiedPublicCognition(personaKey,t,
-      {base:wantBase,kernel:wantKernel,personaId:want});
+    if(publicAccepted){
+      const modelHistoryChanged=_rememberVerifiedPublicCognition(personaKey,t,
+        {base:wantBase,kernel:wantKernel,personaId:want});
+      // The drawer and the card consume the same kernel-qualified cognition
+      // projection. Repaint the card when this asynchronous fetch hydrates it.
+      if(modelHistoryChanged) scheduleRealtimeRepaint();
+    }
     el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
     hydrateThinkingOutputText(el2,t); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
@@ -7178,7 +7188,8 @@ async function streamPersonaCognition(options={}){
       keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
       searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items
       .filter((row)=>row.key&&row.sid);
-    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set(); let added=0;
+    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
+    let added=0, cognitionHydrated=false;
     for(const candidate of list){ const {key:personaKey,sid,kernel,endpointId}=candidate;
       // Never probe another kernel for a colliding short id. A sticky route is
       // retained only while it still resolves to this persona's owning kernel.
@@ -7208,8 +7219,10 @@ async function streamPersonaCognition(options={}){
       }
       if(!t) continue;
       const publicCognition=t.schema==='personaos-persona-public-cognition/1';
-      if(publicCognition) _rememberVerifiedPublicCognition(personaKey,t,
-        {base:usedBase,kernel,personaId:endpointId});
+      if(publicCognition){
+        cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
+          {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
+      }
       const retainedCognition=S.cognitionByPersona?.get(personaKey);
       if(retainedCognition){
         S.cognitionByPersona.delete(personaKey);
@@ -7288,6 +7301,9 @@ async function streamPersonaCognition(options={}){
       _refreshPersonaInteractionIndex();
       scheduleRealtimeRepaint();
     }
+    // A verified snapshot can hydrate model history without adding a new feed
+    // row. Paint that state now instead of waiting for another telemetry tick.
+    else if(cognitionHydrated) scheduleRealtimeRepaint();
   }catch(e){}
   finally{ _cogBusy=false; }
   return true;
