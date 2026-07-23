@@ -2207,6 +2207,51 @@ function kernelActivity(info){
   }
   return active;
 }
+function _kernelDisplayContext(kernelId){
+  const activeTasks=new Set(), tasks=new Set(), environmentIds=new Set();
+  const environmentNames=new Set();
+  for(const id of (S.order||[])){
+    const record=S.recs.get(id);
+    if(record?._kernel!==kernelId) continue;
+    const lifecycle=publicTaskLifecycleProjection(record);
+    if(lifecycle){
+      tasks.add(lifecycle.task);
+      if(lifecycle.liveTask) activeTasks.add(lifecycle.task);
+    }
+    if(record.kind==='env'){
+      const sid=_envSid(record), label=String(record.label||'').trim();
+      if(sid) environmentIds.add(sid);
+      if(!_isMechanicalEnvironmentName(label,sid)) environmentNames.add(label);
+    }
+  }
+  const taskSet=activeTasks.size?activeTasks:tasks;
+  let label='', source='';
+  if(taskSet.size===1){
+    label=taskSet.values().next().value;
+    source=activeTasks.size?'signed current task':'signed task';
+  }else if(activeTasks.size>1){
+    label=`${activeTasks.size} active tasks`;
+    source='signed current tasks';
+  }else if(environmentIds.size===1&&environmentNames.size===1){
+    label=environmentNames.values().next().value;
+    source='signed workspace';
+  }else if(environmentIds.size===1){
+    label='Shared workspace';
+    source='signed workspace';
+  }else if(environmentIds.size>1){
+    label=`${environmentIds.size} workspaces`;
+    source='signed workspaces';
+  }else if(tasks.size>1){
+    label=`${tasks.size} tasks`;
+    source='signed tasks';
+  }
+  if(!label) return {label:'Public node',detail:'public node'};
+  const chars=[...String(label)];
+  return {
+    label:chars.length>52?chars.slice(0,51).join('')+'…':chars.join(''),
+    detail:`${source}: ${label}`,
+  };
+}
 function renderGlobalKernels(){
   const el=$('#globalKernels'); if(!el) return;
   const g=S.globalKernels||new Map();
@@ -2236,13 +2281,13 @@ function renderGlobalKernels(){
   el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
-    const title=`node ${kid} · ${[...info.bases].join(' ')} · via ${[...info.via].join(', ')||'unknown'}`
+    const context=_kernelDisplayContext(kid);
+    const title=`${context.detail} · ${[...info.bases].join(' ')} · via ${[...info.via].join(', ')||'unknown'}`
       +((info.meta?.recordCount||info.meta?.reachability)?` · records=${info.meta.recordCount||0} · reachability=${info.meta.reachability||''}`:'');
-    const label='Public node';
     const liveRoute=active>0||(reachable&&fresh);
     return `<button type="button" class="gk ${liveRoute?'ok':'dim'}${kid===S.kernelFocus?' on':''}" data-kernel="${esc(kid)}"`
       +` aria-pressed="${kid===S.kernelFocus?'true':'false'}" title="${esc(title)}">`
-      +`<span class="dot ${liveRoute?'live':''}"></span>${esc(label)}`
+      +`<span class="dot ${liveRoute?'live':''}"></span>${esc(context.label)}`
       +(active?` <span class="n k">${active} RUNNING</span>`:via)+`</button>`;
   }).join('');
   if(scope) scope.textContent=S.kernelFocus
@@ -4823,6 +4868,7 @@ function _personaActivityHTML(acts,personaKey){
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
+  const enrichmentPending=context.enrichmentPending===true;
   const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
   const models=_personaModelHistory(personaKey,d.models||[]);
   const last=models[models.length-1];
@@ -4984,6 +5030,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Environments</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
+    :enrichmentPending
+      ?`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">loading verified workspace details…</span></div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':identityPending?icon('warn','ico-sm')+' IDENTITY MATERIALIZING':icon('warn','ico-sm')+` SIGNED PERSONA RECORD · IDENTITY PROOF ${identityProofState.toUpperCase()}`}</span><span>LIVE PUBLIC ACTIVITY</span></div>`
@@ -5458,9 +5506,44 @@ function updateVitalsCounters(){
     dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
+function _paintVerifiedPersonaShells(host){
+  if(host.querySelector('.pcard')) return;
+  const query=String(S.q||'').trim().toLowerCase();
+  const candidates=[...S.personaDiscoveryByKey.keys()].filter((personaKey)=>{
+    const ref=_personaRef(personaKey);
+    if(!kernelIsFocused(ref.kernel)||!providerVerifiedPersonaObservation(personaKey)) return false;
+    return !query||`${_signedPersonaNameFor(personaKey)} ${_coordRole(ref.sid,{},ref.kernel)}`.toLowerCase().includes(query);
+  });
+  if(!candidates.length) return;
+  const visible=candidates.slice(0,NETWORK_LIMITS.personaInitial);
+  S.visiblePersonaIds.clear();
+  visible.forEach((personaKey)=>S.visiblePersonaIds.add(personaKey));
+  const cards=visible.map((personaKey)=>{
+    const ref=_personaRef(personaKey);
+    return renderPersonaCard(personaKey,ref.kernel,{enrichmentPending:true});
+  }).join('');
+  const hidden=Math.max(0,candidates.length-visible.length);
+  const html=`<div class="stage-summary"><div><strong>${compactCount(visible.length)} ${visible.length===1?'persona':'personas'} on screen</strong>`
+    +` <span class="scope-copy">· loading signed environments and artifacts</span></div></div>`
+    +`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
+    +`<h2>Verified personas</h2></div><p role="status">Verified personas found; loading live workspace details.</p></header>`
+    +`<div class="persona-deck">${cards}</div>`
+    +(hidden?`<div class="persona-window-note"><span>${hidden} additional verified ${hidden===1?'persona':'personas'} will appear with the enriched view</span></div>`:'')
+    +`</section>`;
+  host.dataset.h=html;
+  host.innerHTML=html;
+  rebindInspectionSource();
+  _hydratePersonaAvatars();
+  _applyFollow();
+}
+
 let _sysBusy=false, _sysQueued=false;
 async function refreshSystemView(){
   const host=$('#sysEnvs'); if(!host) return;
+  // Provider inventory verification often finishes before slower environment,
+  // artifact and telemetry enrichment. Paint those already-admitted persona
+  // identities immediately, while naming the still-pending join honestly.
+  _paintVerifiedPersonaShells(host);
   if(_sysBusy){ _sysQueued=true; return; }
   // re-entrancy guard (mirrors _cogBusy): the 5s interval fires this unconditionally,
   // and its many serial awaited fetches can overrun the interval on a slow link, so
