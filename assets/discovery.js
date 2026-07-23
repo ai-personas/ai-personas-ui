@@ -53,8 +53,8 @@ import {
   splitNetworkKey,
 } from './network-store.mjs?v=20260710-scalable-network-v1';
 import {
-  selectDeclaredArtifactRenderer,
-} from './artifact-types.mjs?v=20260718-declared-media-v1';
+  selectArtifactRenderer,
+} from './artifact-types.mjs?v=20260723-public-cognition-media-v2';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -408,6 +408,19 @@ async function fetchJson(u,init={}){
   // transport timeout twice before the next live refresh.
   return peerRouted?null:fetchP2PJson(u,init);
 }
+async function fetchResponsivePublicJson(u,init={}){
+  if(tokenFor(u)) return fetchJson(u,init);
+  const signal=init.signal||AbortSignal.timeout(8000);
+  try{
+    const r=await fetch(u,secureFetchInit(u,{...init,signal}));
+    if(r.ok){
+      const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    }
+  }catch(_){}
+  if(init.signal?.aborted) return null;
+  return fetchJson(u,init);
+}
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
 // Hard UI/backpressure ceilings. Global discovery can describe millions of
@@ -735,9 +748,17 @@ function _refreshPersonaInteractionIndex(){
     const rows=indexed.get(personaKey)||indexed.set(personaKey,new Map()).get(personaKey);
     for(const [key,event] of retained) rows.set(key,event);
   }
-  S.ixByPersona=new Map([...indexed].map(([personaKey,events])=>[
-    personaKey,[...events.values()].sort((a,b)=>a._t-b._t).slice(-12),
-  ]));
+  S.ixByPersona=new Map([...indexed].map(([personaKey,events])=>{
+    const ordered=[...events.values()].sort((a,b)=>a._t-b._t);
+    const selected=new Map();
+    // Keep exact public persona text visible even when frequently refreshed
+    // model-status snapshots have newer observation times.
+    for(const event of ordered.filter(_durablePublicPersonaActivity).slice(-4))
+      selected.set(event._key,event);
+    for(let index=ordered.length-1;index>=0&&selected.size<12;index--)
+      selected.set(ordered[index]._key,ordered[index]);
+    return [personaKey,[...selected.values()].sort((a,b)=>a._t-b._t)];
+  }));
 }
 
 function ingestLiveTelemetry(base,live,{source='poll',eventId='',verifiedCommunicationRoutes=[],
@@ -815,6 +836,10 @@ function manifestArtifacts(m){ const arts=(m&&Array.isArray(m.artifacts))?m.arti
     size:a.size??a.size_bytes??a.bytes })); }
 function declaredArtifactMedia(value){ const a=value&&typeof value==='object'?value:{}, L=a._links||{};
   return String(a.media_kind||L.media_kind||a.mime_type||L.mime_type||'').trim(); }
+function artifactMediaPresentation(value,path=''){
+  const fallbackPath=path||_artifactDisplayPath(value);
+  return selectArtifactRenderer(declaredArtifactMedia(value),{path:fallbackPath});
+}
 function authoredArtifactLabels(value){ const a=value&&typeof value==='object'?value:{}, L=a._links||{};
   const media=declaredArtifactMedia(a);
   return artifactSemanticLabels({
@@ -3797,19 +3822,19 @@ function _ixHeadline(event){
   return _ixVerb(event?.kind);
 }
 const PUBLIC_ACTIVITY_PROVENANCE_ORDER=Object.freeze([
-  'action','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
-  'request','message','parentMessage','sequence','latencyMs','effort','environment','persona','scopeId',
+  'action','actionId','invocation','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
+  'request','message','parentMessage','sequence','latencyMs','effort','effortSource','environment','persona','scopeId',
   'evidence','dedupe','authority','authorityHash','parentHash','signingKey','authoredAt','startedAt','endedAt','at','snapshotAt',
 ]);
 const PUBLIC_ACTIVITY_CORE_PROVENANCE=new Set([
-  'action','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
-  'request','message','parentMessage','sequence','latencyMs','effort','environment','authoredAt','startedAt','at','snapshotAt',
+  'action','actionId','invocation','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
+  'request','message','parentMessage','sequence','latencyMs','effort','effortSource','environment','authoredAt','startedAt','at','snapshotAt',
 ]);
 const PUBLIC_ACTIVITY_PROVENANCE_LABEL=Object.freeze({
-  action:'action',purpose:'purpose',model:'model',status:'state',callStatus:'call state',run:'run',task:'task',
+  action:'action',actionId:'action id',invocation:'invocation',purpose:'purpose',model:'model',status:'state',callStatus:'call state',run:'run',task:'task',
   missionTask:'mission task',call:'call',event:'event',intent:'intent',request:'request',
   message:'message',parentMessage:'parent message',sequence:'seq',latencyMs:'latency ms',
-  role:'role',tool:'tool',server:'server',effort:'reasoning',environment:'env',persona:'persona',scopeId:'scope',
+  role:'role',tool:'tool',server:'server',effort:'reasoning',effortSource:'reasoning source',environment:'env',persona:'persona',scopeId:'scope',
   evidence:'evidence',dedupe:'wake key',authority:'authority',authorityHash:'authority hash',
   parentHash:'parent hash',signingKey:'signing key',authoredAt:'authored',
   startedAt:'started',endedAt:'ended',at:'at',snapshotAt:'snapshot',
@@ -3819,7 +3844,7 @@ function _boundedActivityProvenanceValue(value){
   return typeof value==='string'&&value.length<=4096?value:'';
 }
 const PUBLIC_ACTIVITY_REFERENCE_FIELDS=new Set([
-  'run','task','missionTask','call','event','intent','request','message','parentMessage',
+  'actionId','invocation','run','task','missionTask','call','event','intent','request','message','parentMessage',
   'evidence','dedupe','authority','authorityHash','parentHash','signingKey','scopeId',
 ]);
 const PUBLIC_ACTIVITY_TIME_FIELDS=new Set(['authoredAt','startedAt','endedAt','at','snapshotAt']);
@@ -4454,7 +4479,7 @@ function _signedArtifactWorkspaceBinding(r){
   const linkHash=_exactSha256Digest(L.content_hash,{prefixRequired:true});
   const recordHash=r.content_hash?_exactSha256Digest(r.content_hash,{prefixRequired:true}):linkHash;
   if(!linkHash||!recordHash||linkHash!==recordHash) return null;
-  const mimeType=selectDeclaredArtifactRenderer(L.mime_type).mediaType;
+  const mimeType=selectArtifactRenderer(L.mime_type).mediaType;
   if(!mimeType) return null;
   return {record:r,kernel:String(r._kernel||''),run:route[1],environmentId:authority.environmentId,
     path:route[2],contentHash:linkHash,mimeType,authoredLabels:authoredArtifactLabels(r)};
@@ -4489,7 +4514,9 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   // manifest reached through a provider-verified environment route. The button
   // remains inert otherwise, and also requires an exact advertised SHA-256.
   // fileView performs the separate byte fetch + hash check only after selection.
-  const L=r._links||{}, label=_artifactDisplayPath(r), media=declaredArtifactMedia(r)||'undeclared media';
+  const L=r._links||{}, label=_artifactDisplayPath(r);
+  const mediaSelection=artifactMediaPresentation(r,label);
+  const media=mediaSelection.mediaType||'undeclared media';
   const hash=String(L.content_hash||r.content_hash||'');
   const rawPath=String(L.content||r.content||r.package_path||'');
   const path=rawPath&&run&&!/^(?:https?:|\/|k\/run-)/.test(rawPath)?_bodyPath(rawPath,run):rawPath;
@@ -4576,7 +4603,9 @@ function _liveWorkspaceCurrentFileCount(rows){
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact');
   const metadata=_liveFileSignedArtifactMetadata(file,row);
-  const media=metadata?metadata.mimeType:declaredArtifactMedia(file);
+  const media=metadata
+    ?selectArtifactRenderer(metadata.mimeType,{path:label}).mediaType
+    :artifactMediaPresentation(file,label).mediaType;
   const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="fetch, hash-check and preview ${esc(label)}">`
     +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
@@ -6075,6 +6104,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         return `<div class="think"><span class="amber">${esc(call.status||'active')}</span> ${esc(purpose)}`
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
+          +(call.reasoning_effort_source?` · ${esc(call.reasoning_effort_source.replace(/_/g,' '))}`:'')
           +(Number.isFinite(started)?` · started ${esc(_ago(started))}`:'')+`</div>`
           +(callContext(call).length?`<div class="l2">${callContext(call).map(esc).join(' · ')}</div>`:'')
           +signedMeta+`</div>`;
@@ -6093,6 +6123,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         return `<div class="think"><span class="amber">finished</span> ${esc(purpose)}`
           +`<div class="l2"><code>${esc(call.model_id||'model not declared')}</code>`
           +(call.reasoning_effort?` · reasoning ${esc(call.reasoning_effort)}`:'')
+          +(call.reasoning_effort_source?` · ${esc(call.reasoning_effort_source.replace(/_/g,' '))}`:'')
           +(Number.isFinite(ended)?` · ended ${esc(_ago(ended))}`:'')
           +(Number.isFinite(started)&&Number.isFinite(ended)?` · ${esc(Math.max(0,ended-started))} ms`:'')+`</div>`
           +(callContext(call).length?`<div class="l2">${callContext(call).map(esc).join(' · ')}</div>`:'')
@@ -6255,9 +6286,9 @@ const PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS=Object.freeze([
   'schema','sha256','text','utf8_bytes',
 ].sort());
 const PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS=Object.freeze([
-  'action_arguments','action_descriptor_hash','action_id','action_name','authored_text',
-  'authored_text_hash','environment_id','model_call_id','persona_id','schema','signed_by',
-  'signing_key_id','task_id',
+  'action_arguments','action_descriptor_hash','action_id','action_invocation_id','action_name',
+  'authored_text','authored_text_hash','environment_id','model_call_id','persona_id','schema',
+  'signed_by','signing_key_id','task_id',
 ].sort());
 const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=Object.freeze([
   'authored_at','environment_id','intent','intent_id','mission_task_id','persona_id',
@@ -6269,11 +6300,11 @@ const PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS=Object.freeze([
   'parent_communication_id','payload','provenance','schema','signed_by','signing_key_id',
 ].sort());
 const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=Object.freeze([
-  'call_id','environment_id','model_id','persona_id','provisional_events','reasoning_effort','requested_purpose','run_id',
+  'call_id','environment_id','model_id','persona_id','provisional_events','reasoning_effort','reasoning_effort_source','requested_purpose','run_id',
   'started_at','status','task_id',
 ].sort());
 const PUBLIC_PERSONA_RECENT_CALL_FIELDS=Object.freeze([
-  'call_id','ended_at','environment_id','model_id','persona_id','provisional_events','reasoning_effort',
+  'call_id','ended_at','environment_id','model_id','persona_id','provisional_events','reasoning_effort','reasoning_effort_source',
   'requested_purpose','run_id','started_at','status','task_id',
 ].sort());
 const PUBLIC_PERSONA_LESSON_FIELDS=Object.freeze([
@@ -6390,13 +6421,13 @@ async function _validPublicPersonaAuthority(output,identity,row){
     payload={};
     for(const field of Object.keys(authority)) if(field!=='persona_signature') payload[field]=authority[field];
   }else if(output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND){
-    const payload=authority?.payload;
+    const authorityPayload=authority?.payload;
     const authoredOutputPresent=Object.hasOwn(output,'authored_output');
     const exactTextBound=authoredOutputPresent
-      ?payload&&typeof payload==='object'&&!Array.isArray(payload)
-        &&canon(payload.authored_output)===canon(output.authored_output)
-      :payload&&typeof payload==='object'&&!Array.isArray(payload)
-        &&typeof payload.message==='string'&&payload.message===output.text;
+      ?authorityPayload&&typeof authorityPayload==='object'&&!Array.isArray(authorityPayload)
+        &&canon(authorityPayload.authored_output)===canon(output.authored_output)
+      :authorityPayload&&typeof authorityPayload==='object'&&!Array.isArray(authorityPayload)
+        &&typeof authorityPayload.message==='string'&&authorityPayload.message===output.text;
     if(!_exactObjectFields(authority,PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS)
         ||authority.schema!=='personaos-persona-communication/1'
         ||authority.authored_by!==identity.signedId
@@ -6429,13 +6460,14 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
   const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
   if(!authority||typeof authority!=='object'||Array.isArray(authority)
       ||!_exactObjectFields(authority,PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS)
-      ||authority.schema!=='personaos-authenticated-persona-action/1'
+      ||authority.schema!=='personaos-authenticated-persona-action/2'
       ||authority.persona_id!==identity.signedId
       ||authority.environment_id!==output.environment_id
       ||signingKeyId!==`persona:${identity.signedId}`
       ||authority.signing_key_id!==signingKeyId
       ||!/^[0-9a-f]{64}$/.test(publicKey)
       ||!_safePublicCognitionAtom(authority.action_id,512,{required:true})
+      ||!SHA256_CONTENT_RE.test(String(authority.action_invocation_id||''))
       ||!_safePublicCognitionAtom(authority.task_id,512)
       ||!_safePublicCognitionAtom(authority.model_call_id,512)
       ||!_safePublicCognitionAtom(authority.action_name,512,{required:true})
@@ -6518,6 +6550,7 @@ function _validPublicPersonaActiveCall(call,identity,generatedAt){
     &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
     &&call.persona_id===identity.signedId
     &&_safePublicCognitionAtom(call.reasoning_effort,128)
+    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:true})
     &&_safePublicCognitionText(call.requested_purpose,512)
     &&_safePublicCognitionAtom(call.environment_id,512)
     &&_safePublicCognitionAtom(call.run_id,512)
@@ -6537,6 +6570,7 @@ function _validPublicPersonaRecentCall(call,identity,generatedAt){
     &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
     &&call.persona_id===identity.signedId
     &&_safePublicCognitionAtom(call.reasoning_effort,128)
+    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:true})
     &&_safePublicCognitionText(call.requested_purpose,512)
     &&_safePublicCognitionAtom(call.environment_id,512)
     &&_safePublicCognitionAtom(call.run_id,512)
@@ -6685,7 +6719,9 @@ async function refreshThinking(){
   }
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
-  const t=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
+  const t=await fetchResponsivePublicJson(endpoint,{
+    maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+  });
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
@@ -6764,6 +6800,7 @@ function _publicCallProvenance(call){
     model:_publicProvenanceAtom(call?.model_id),status:_publicProvenanceAtom(call?.status),
     run:_publicProvenanceAtom(call?.run_id),task:_publicProvenanceAtom(call?.task_id),
     call:_publicProvenanceAtom(call?.call_id),effort:_publicProvenanceAtom(call?.reasoning_effort),
+    effortSource:_publicProvenanceAtom(call?.reasoning_effort_source),
     environment:_publicProvenanceAtom(call?.environment_id),
     startedAt:_publicProvenanceAtom(call?.started_at,80),
     endedAt:_publicProvenanceAtom(call?.ended_at,80),
@@ -6816,11 +6853,16 @@ function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun
     at:_publicProvenanceAtom(output?.at,80),authority:_publicProvenanceAtom(output?.authority,128),
   };
   if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND){
+    const authority=output.persona_authority||{};
     try{
       const action=JSON.parse(output.text), args=action.arguments||{};
       provenance.action=_publicProvenanceAtom(action.action);
       provenance.run=_publicProvenanceAtom(args.run_id);
-      provenance.task=_publicProvenanceAtom(args.task_id);
+      provenance.task=_publicProvenanceAtom(authority.task_id)
+        ||_publicProvenanceAtom(args.task_id);
+      provenance.call=_publicProvenanceAtom(authority.model_call_id);
+      provenance.actionId=_publicProvenanceAtom(authority.action_id);
+      provenance.invocation=_publicProvenanceAtom(authority.action_invocation_id);
       provenance.event=_publicProvenanceAtom(args.event_id);
       provenance.request=_publicProvenanceAtom(args.request_id);
       provenance.status=_publicProvenanceAtom(args.status,256)
@@ -7009,7 +7051,9 @@ async function streamPersonaCognition(options={}){
         // canonical `sid` remains only the browser join key.
         const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
         const hasOperator=!!tokenFor(endpoint);
-        const r=await fetchJson(endpoint,{maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
+        const r=await fetchResponsivePublicJson(endpoint,{
+          maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+        });
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
@@ -7477,8 +7521,8 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
 // persona/tool artifact remains observable without the substrate naming it.
 const BINARY_RENDERERS=new Set(['image','audio','video','pdf','generic']);
 
-function pickRenderer(kind){
-  return selectDeclaredArtifactRenderer(kind);
+function pickRenderer(kind,path='',responseMedia=''){
+  return selectArtifactRenderer(kind,{path,responseMedia});
 }
 
 // Track blob: URLs allocated for the current view so they're revoked on change.
@@ -7488,8 +7532,8 @@ function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
 // Nodes may serve bodies as application/octet-stream. After integrity checking,
 // restore only the exact declared Web media family selected above; arbitrary
 // declarations remain application/octet-stream.
-function safeRenderMime(kind){
-  const selected=pickRenderer(kind), media=selected.mediaType;
+function safeRenderMime(kind,path='',responseMedia=''){
+  const selected=pickRenderer(kind,path,responseMedia), media=selected.mediaType;
   return ['image','audio','video','pdf'].includes(selected.id)
     ?media:'application/octet-stream';
 }
@@ -7560,7 +7604,7 @@ async function renderImage(host,ctx){
   if(!fb) throw new Error('image fetch failed');
   ctx.realSize=fb.size;
   const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia)}));
   host.innerHTML='';
   const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
   img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
@@ -7569,7 +7613,7 @@ async function renderImage(host,ctx){
 async function renderMedia(host,ctx,type){
   const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${type} fetch failed`);
   ctx.realSize=fb.size; const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia)}));
   host.innerHTML=''; const media=document.createElement(type); media.className=`fv-${type}`;
   media.controls=true; media.preload='metadata'; media.src=url; media.setAttribute('playsinline','');
   media.setAttribute('controlslist','nodownload noplaybackrate'); media.setAttribute('disablepictureinpicture','');
@@ -7692,11 +7736,11 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
   const authoredAttr=JSON.stringify(authoredLabels);
-  const pick=pickRenderer(kind);
+  let pick=pickRenderer(kind,title);
   const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
-  const isBinary=BINARY_RENDERERS.has(pick.id);
-  const rendId=forcedPlain?'plain':pick.id;
+  let isBinary=BINARY_RENDERERS.has(pick.id);
+  let rendId=forcedPlain?'plain':pick.id;
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
   let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
@@ -7720,6 +7764,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }
     if(verified.ok){
       realSize=verified.size;
+      pick=pickRenderer(kind,title,verified.type);
+      isBinary=BINARY_RENDERERS.has(pick.id);
+      rendId=forcedPlain?'plain':pick.id;
       if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
       const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
       if(opts.liveFile&&text!=null){
@@ -7739,7 +7786,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
     text=await fetchText(url); realSize=text?text.length:null;
   }
-  const ctx={ base, path, url,sourceUrl, title, kind, text, realSize, size:opts.size,
+  const ctx={ base, path, url,sourceUrl, title, kind:pick.mediaType||kind,
+    responseMedia:verified?.type||'',text, realSize, size:opts.size,
     contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
@@ -7753,9 +7801,15 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     : (!isBinary&&rendId!=='plain'
         ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
         : '<span class="l2">byte view</span>');
+  const mediaSource={
+    declared:'signed artifact metadata',
+    response:'hash-checked body response',
+    path:'signed path suffix fallback',
+    none:'no type metadata',
+  }[pick.source]||'type metadata';
   let html=kv('File',esc(title))
-    +kv('Declared media',`${esc(pick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(rendId)}</span>`)
-    +(!pick.mediaType?`<div class="fv-note">No valid media type was declared in signed metadata. The path remains opaque and the verified bytes use the generic inspector.</div>`:'')
+    +kv('Media',`${esc(pick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(rendId)} · ${esc(mediaSource)}</span>`)
+    +(!pick.mediaType?`<div class="fv-note">No safe media type was available. Verified bytes use the generic text/hex inspector.</div>`:'')
     +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
     +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
@@ -7790,7 +7844,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       ?`live body refused: ${verified?.error||'unavailable'}. Nothing is rendered unless the fetched bytes match the advertised SHA-256.`
       :'body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the byte-download action above, or hold an operator token.')); return; }
     if(verified?.ok){
-      const mime=safeRenderMime(ctx.kind);
+      const mime=safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia);
       url=mkBlobURL(new Blob([verified.bytes],{type:mime})); ctx.url=url;
     }
     await runRenderer(host);
@@ -9646,6 +9700,7 @@ async function initP2P(){
   await discover();
   prefetchNodeStatuses();
   renderMissions();
+  streamPersonaCognition();
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{
     maintainP2PBootstrapConnectivity().catch(()=>{});
