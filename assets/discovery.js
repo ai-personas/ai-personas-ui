@@ -9904,7 +9904,8 @@ async function refreshP2PRendezvous(){
         }
         let routeVerified=false;
         for(const hint of unique.values()){
-          if(signal.aborted) break;
+          if(signal.aborted
+              ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
           const reconciled=await _reconcileP2PRouteHint(hint,{signal});
           if(reconciled.accepted){
             reconciledRoutes++; reconciledRecords+=reconciled.count; routeVerified=true;
@@ -9924,35 +9925,35 @@ async function refreshP2PRendezvous(){
     for(const bucket of buckets){
       if(signal.aborted) break;
       queriedBuckets++;
-      const verifiedBeforeBucket=reconciledRoutes;
       const direct=await P2P.findRendezvousProviders?.(bucket.cid,{
         signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution
       }).catch(()=>null);
       let sourceAttempts=0,sourceCandidates=0;
       for(const provider of direct?.providers||[]){
         if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
-            ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) break;
+            ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource
+            ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
         sourceCandidates++;
         sourceAttempts+=await inspectProvider(provider,
           P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
       }
       // Direct first-contact queries merge live routes hidden by another
-      // responder's stale K-provider window, but they are only an optimization.
-      // Unless one of those routes verifies, retain standard iterative Kademlia
-      // traversal for this same temporal bucket.
-      if(reconciledRoutes===verifiedBeforeBucket){
-        sourceAttempts=0; sourceCandidates=0;
-        try{
-          for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
-            if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
-                ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) break;
-            sourceCandidates++;
-            sourceAttempts+=await inspectProvider(provider,
-              P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
-          }
-        }catch(e){}
-      }
-      if(reconciledRoutes>verifiedBeforeBucket) break;
+      // responder's stale K-provider window, but one verified direct route does
+      // not prove that window is complete. Give iterative Kademlia its own
+      // existing bounded budget so unseen providers cannot be starved by an
+      // older healthy route.
+      sourceAttempts=0; sourceCandidates=0;
+      try{
+        for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
+          if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
+              ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource
+              ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+          sourceCandidates++;
+          sourceAttempts+=await inspectProvider(provider,
+            P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
+        }
+      }catch(e){}
+      if(reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
     }
     log('p2p',`DHT rendezvous scan: ${queriedBuckets} temporal bucket(s) · ${attempted} route(s) tried · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
     if(reconciledRoutes){
