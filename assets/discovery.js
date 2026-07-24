@@ -7656,7 +7656,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
       html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
     if(myFiles.length&&!manifestFiles.length)
       html+=`<details class="artifact-index"><summary><span>Browse ${myFiles.length} signed file record${myFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary><div class="artifact-index-body atree">`+myFiles.map((a)=>
-        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a.record_id||a.card_id||a.id||'')}">${esc(a.label||a.record_id||'file')}</a>`
+        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a._storeKey||recordStoreKey(a))}">${esc(a.label||a.record_id||'file')}</a>`
         +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc(declaredArtifactMedia(a))}</span></div>`).join('')+`</div></details>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
