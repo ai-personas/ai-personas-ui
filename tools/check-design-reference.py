@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '84bc0ae4498b0e90c9c6e3b8d917375b2e5ef0eb'
+REVIEWED_DESIGN_COMMIT = 'e3836c87042611731d5a2d890dbaf27c845c41aa'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '185e8b8469497b103ffa455fe7aebc25195796af3b1175c84f88b6f22d95233b'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '1ee20c9a5fb723f6afea6b420b6f11fcffb98d325ad0995ac1c516d026681791'
 
 
 DESIGN_ANCHORS = {
@@ -43,6 +43,7 @@ DESIGN_ANCHORS = {
         'human silence never creates a task-wide wait',
         'best-so-far artifact',
         'population-aware convergence',
+        'not semantic completion: when signed persona messages',
     ],
     '04_PROJECT.md': [
         'never give the kernel or caller authority',
@@ -69,6 +70,7 @@ DESIGN_ANCHORS = {
     '19_PERSONA_PRESSURE_ADDENDUM.md': [
         'pressure is persona-authored context',
         'completion readiness and execution resources are separate axes',
+        'budget exhaustion also does not manufacture quiescence',
         "each persona's latest signed appraisal is its current pressure snapshot",
         'persona_continuation_unbound',
         'bounded catalog of currently admissible, kernel-verified actions',

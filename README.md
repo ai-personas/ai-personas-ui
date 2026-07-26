@@ -288,8 +288,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`84bc0ae4498b0e90c9c6e3b8d917375b2e5ef0eb`: 22 Markdown files with manifest SHA-256
-`185e8b8469497b103ffa455fe7aebc25195796af3b1175c84f88b6f22d95233b`. CI fails when either
+`e3836c87042611731d5a2d890dbaf27c845c41aa`: 22 Markdown files with manifest SHA-256
+`1ee20c9a5fb723f6afea6b420b6f11fcffb98d325ad0995ac1c516d026681791`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
@@ -297,7 +297,9 @@ place. They also pin persona-authored asynchronous clarification, exact-action e
 best-so-far artifact visibility, identity/genesis membership separation, birth-provenance-scoped
 bootstrap communication, persona-owned completion readiness and continuation, PersonaCard v4
 skill-summary privacy, exact persona-workspace transport, complete unranked action discovery, and
-task reception preceding bootstrap observation turns.
+task reception preceding bootstrap observation turns. It now also pins the rule that budget
+exhaustion with pending causal persona work stays explicitly non-quiescent and resumable while its
+signed best-so-far bytes remain inspectable without acquiring completion authority.
 
 ## Explore
 
