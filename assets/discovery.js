@@ -6230,7 +6230,7 @@ async function refreshSystemView(){
     const membershipRow=b.members.length?'':'<div class="env-card-empty">Waiting for the first participant</div>';
     const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
     const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
-    return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
+    return `<article class="env-card record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
       +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
       +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE · ${esc(type)}</span>`
