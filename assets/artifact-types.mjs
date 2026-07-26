@@ -22,6 +22,10 @@ const PATH_MEDIA_TYPES = Object.freeze({
   dxf:'image/vnd.dxf',
   obj:'model/obj',
   stl:'model/stl',
+  step:'model/step',
+  stp:'model/step',
+  ifc:'model/ifc',
+  ply:'model/ply',
   gltf:'model/gltf+json',
   glb:'model/gltf-binary',
   json:'application/json',
@@ -117,6 +121,7 @@ const STRONG_CONTENT_MEDIA_TYPES = new Set([
   'audio/mpeg','audio/wav','audio/flac','audio/ogg','audio/mp4',
   'video/mp4','video/quicktime','video/webm','video/ogg','video/x-msvideo',
   'font/woff','font/woff2','application/wasm','application/vnd.sqlite3',
+  'image/vnd.dxf','model/step','model/ifc','model/stl','model/obj','model/ply',
 ]);
 
 function declaredMediaType(value) {
@@ -134,8 +139,11 @@ function declaredMediaType(value) {
 export function selectDeclaredArtifactRenderer(mediaKind) {
   const mediaType=declaredMediaType(mediaKind);
   let id='generic';
-  if(['image/vnd.dxf','image/x-dxf','application/dxf','application/x-dxf','model/obj']
-    .includes(mediaType)) id='plain';
+  if(['image/vnd.dxf','image/x-dxf','application/dxf','application/x-dxf']
+    .includes(mediaType)) id='dxf';
+  else if(['model/step','application/step','application/x-step','model/ifc',
+    'application/x-ifc','model/obj','model/stl','model/ply','model/gltf+json',
+    'model/gltf-binary'].includes(mediaType)) id='cad3d';
   else if(mediaType==='text/markdown') id='markdown';
   else if(mediaType==='text/csv'||mediaType==='text/tab-separated-values') id='csv';
   else if(mediaType.startsWith('image/')) id='image';
@@ -220,6 +228,19 @@ function textualMediaType(bytes) {
   try{ text=new TextDecoder('utf-8',{fatal:true}).decode(sample).replace(/^\uFEFF/,'').trimStart(); }
   catch(_){ return ''; }
   if(!text) return 'text/plain';
+  if(/^ISO-10303-21;/i.test(text))
+    return /FILE_SCHEMA\s*\(\s*\([^)]*['"]IFC/i.test(text)?'model/ifc':'model/step';
+  if(/^\s*0\s*\r?\nSECTION\b/i.test(text)
+      &&/\r?\n\s*2\s*\r?\n(?:HEADER|ENTITIES|TABLES|BLOCKS)\b/i.test(text))
+    return 'image/vnd.dxf';
+  if(/^\s*solid(?:\s|$)/i.test(text)&&/\bfacet\s+normal\b/i.test(text)
+      &&/\bouter\s+loop\b/i.test(text)) return 'model/stl';
+  const objLines=text.split(/\r?\n/).slice(0,2048);
+  if(objLines.filter((line)=>/^\s*v\s+[-+.0-9eE]+\s+[-+.0-9eE]+\s+[-+.0-9eE]+(?:\s|$)/.test(line)).length>=3
+      &&objLines.some((line)=>/^\s*f\s+\d+(?:\/\S*)?\s+\d+(?:\/\S*)?\s+\d+(?:\/\S*)?/.test(line)))
+    return 'model/obj';
+  if(/^ply\r?\nformat\s+(?:ascii|binary_(?:little|big)_endian)\s+1\.0\b/i.test(text))
+    return 'model/ply';
   if(/^%YAML(?:\s|$)/.test(text)) return 'application/yaml';
   if(/^<\?xml(?:\s|\?>)/i.test(text)) return 'application/xml';
   if(/^<!doctype\s+html\b/i.test(text)||/^<html\b/i.test(text)) return 'text/html';
@@ -265,6 +286,11 @@ export function sniffArtifactMediaType(value) {
   if(ascii(bytes,0,4)==='wOF2') return 'font/woff2';
   if(bytesStartWith(bytes,[0x00,0x61,0x73,0x6d])) return 'application/wasm';
   if(ascii(bytes,0,16)==='SQLite format 3\u0000') return 'application/vnd.sqlite3';
+  if(bytes.length>=84){
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    const triangles=view.getUint32(80,true);
+    if(triangles>0&&84+(triangles*50)===bytes.length) return 'model/stl';
+  }
   return textualMediaType(bytes);
 }
 
@@ -280,6 +306,11 @@ export function artifactTypeLabel(mediaKind) {
     'application/vnd.openxmlformats-officedocument.presentationml.presentation':'PowerPoint presentation',
     'application/vnd.oasis.opendocument.text':'OpenDocument text','application/vnd.oasis.opendocument.spreadsheet':'OpenDocument spreadsheet',
     'application/vnd.oasis.opendocument.presentation':'OpenDocument presentation','application/epub+zip':'EPUB book',
+    'image/vnd.dxf':'DXF drawing','image/x-dxf':'DXF drawing','application/dxf':'DXF drawing',
+    'application/x-dxf':'DXF drawing','model/step':'STEP CAD model','application/step':'STEP CAD model',
+    'application/x-step':'STEP CAD model','model/ifc':'IFC building model','application/x-ifc':'IFC building model',
+    'model/obj':'OBJ 3D model','model/stl':'STL 3D model','model/ply':'PLY 3D model',
+    'model/gltf+json':'glTF 3D model','model/gltf-binary':'GLB 3D model',
   };
   if(exact[media]) return exact[media];
   if(media.startsWith('image/')) return `${media.slice(6).replace('jpeg','JPEG').replace('png','PNG').replace('svg+xml','SVG').replace('webp','WebP').replace('avif','AVIF').toUpperCase()} image`;

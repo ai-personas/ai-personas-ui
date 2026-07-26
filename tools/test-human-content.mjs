@@ -21,6 +21,25 @@ assert.deepEqual(humanActivityPresentation('MODEL_CALL_SUCCEEDED',{
 });
 assert.equal(humanActivityPresentation('MODEL_CALL',{purpose:'model'}).context,
   'working through the task');
+assert.deepEqual(humanActivityPresentation('PERSONA_ACTION_AUTHORED',{
+  action: 'command_exec',
+  actionPurpose: 'Run the package validator against the current review files',
+}), {
+  headline: 'Ran a workspace command',
+  summary: 'Run the package validator against the current review files.',
+  duration: '',
+  context: '',
+});
+assert.equal(humanActivityPresentation('PERSONA_ACTION_AUTHORED',{
+  action: 'propose_persona_birth',
+}).headline, 'Proposed a new specialist');
+assert.equal(humanActivityPresentation('PERSONA_ACTION_AUTHORED',{
+  action: 'discover_coordination_actions',
+}).headline, 'Checked available collaboration actions');
+assert.equal(humanActivityPresentation('PERSONA_PRESSURE_APPRAISAL_AUTHORED').headline,
+  'Assessed whether more work is needed');
+assert.equal(humanActivityPresentation('PERSONA_COGNITIVE_INTENT').headline,
+  'Chose the next work step');
 
 assert.equal(humanizeMachineKey('next_needed_effect'), 'Next needed effect');
 assert.equal(isMachineIdentifier('run-01KYZ123456789ABCDEFGH'), true);
@@ -61,5 +80,11 @@ assert.doesNotMatch(readable, /run-01/);
 const portalSource = readFileSync(new URL('../assets/discovery.js', import.meta.url), 'utf8');
 assert.doesNotMatch(portalSource, /workspace is currently empty/i);
 assert.match(portalSource, /signed live-run capture, not a claim that the durable workspace is empty/i);
+assert.match(portalSource, /signedIdentity\.description/,
+  'persona cards must fall back to the verified public self-description');
+assert.match(portalSource, /exactProjection=exactText\?structuredContentProjection/,
+  'signed JSON cognition must be projected into human text on the card');
+assert.doesNotMatch(portalSource, /__personaosDebugState/,
+  'release builds must not expose mutable internal UI state');
 
 console.log('human-content tests passed');

@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '697493106776030806b959f3d54f183a4f9ec1d6'
+REVIEWED_DESIGN_COMMIT = '70c361e8eee74f57c1cb8bbefe4acf79499297ad'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '7669148b169793267f481cea07203a2598cecdfd876e0952fc2e0056500a22ae'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'fe8e98f3e41ebc11072132a9439212011a5cc63a3140598f9ebe2849b4869a9d'
 
 
 DESIGN_ANCHORS = {
@@ -34,7 +34,10 @@ DESIGN_ANCHORS = {
         'persona-card/4',
         'last-resort first-contact cache',
         'transport readiness',
+        '20-second absolute first-contact ceiling',
+        'multiple independently dialable wss',
         'not a global discovery transport',
+        'current signed observation of durable persona-authored history',
     ],
     '03_TASKS.md': [
         'never kernel tie-breakers',
@@ -44,6 +47,8 @@ DESIGN_ANCHORS = {
         'human silence never creates a task-wide wait',
         'best-so-far artifact',
         'population-aware convergence',
+        'population context is observable',
+        'exact-revision reviewer replicas',
         'not semantic completion: when signed persona messages',
     ],
     '04_PROJECT.md': [
@@ -67,6 +72,7 @@ DESIGN_ANCHORS = {
         'birth alone does not silently grant membership',
         'only the exact signed author↔newborn bootstrap channel',
         'completion is not a population-pressure shortcut',
+        'supply visibility without host judgment',
     ],
     '19_PERSONA_PRESSURE_ADDENDUM.md': [
         'pressure is persona-authored context',

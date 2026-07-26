@@ -1,6 +1,7 @@
 export const LOCATOR_FALLBACK_COLD_GRACE_MS = 4500;
+export const LOCATOR_FALLBACK_PEER_PROBE_MAX_MS = 20000;
 export const LOCATOR_FALLBACK_HEALTH_CHECK_MS = 15000;
-export const LOCATOR_FALLBACK_RETRY_MS = 2500;
+export const LOCATOR_FALLBACK_RETRY_MS = 10000;
 
 /**
  * Full node status is an operator/detail projection, not the global discovery
@@ -31,7 +32,10 @@ export function locatorFallbackDecision({
   startedAtMs = nowMs,
   verifiedP2PRouteCount = 0,
   healthyDirectPeerCount = 0,
+  peerProbeExpected = false,
+  peerProbeComplete = false,
   coldGraceMs = LOCATOR_FALLBACK_COLD_GRACE_MS,
+  peerProbeMaxMs = LOCATOR_FALLBACK_PEER_PROBE_MAX_MS,
 } = {}) {
   if (!locatorEnabled) {
     return {
@@ -54,6 +58,22 @@ export function locatorFallbackDecision({
       queryLocator: false,
       mode: 'p2p_direct_warming',
       nextCheckMs: Math.max(250, remainingGraceMs),
+    };
+  }
+  // A configured browser peer network gets one real, bounded rendezvous pass
+  // before the optional HTTP locator is touched. A fixed grace alone races a
+  // healthy DHT on normal WebRTC/WSS startup, causing the locator to become the
+  // primary path by accident. The maximum prevents a wedged peer probe from
+  // suppressing fallback forever.
+  const peerProbeRemainingMs = Math.max(
+    0,
+    Number(peerProbeMaxMs) - elapsedMs,
+  );
+  if (peerProbeExpected && !peerProbeComplete && peerProbeRemainingMs > 0) {
+    return {
+      queryLocator: false,
+      mode: 'p2p_first_contact_in_progress',
+      nextCheckMs: Math.max(250, Math.min(1000, peerProbeRemainingMs)),
     };
   }
   return {

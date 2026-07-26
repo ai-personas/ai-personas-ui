@@ -19,12 +19,25 @@ const ACTIVITY_HEADLINES = Object.freeze({
   PROVISIONAL_ASSISTANT_MESSAGE: 'Drafting an update',
   PERSONA_COMMUNICATION_AUTHORED: 'Shared an update',
   PERSONA_COMMUNICATION_INTENT_RECORDED: 'Prepared an update for collaborators',
+  PERSONA_COMMUNICATION_DELIVERY_RECORDED: 'Delivered an update to collaborators',
+  PERSONA_COGNITIVE_INTENT: 'Chose the next work step',
+  PERSONA_PRESSURE_APPRAISAL_AUTHORED: 'Assessed whether more work is needed',
+  PERSONA_SITUATION_SUFFICIENCY_JUDGED: 'Assessed whether the evidence is sufficient',
+  PERSONA_SUFFICIENCY_SITUATION_OBSERVED: 'Reviewed the current completion evidence',
   PERSONA_INVITATION_AUTHORED: 'Invited a collaborator',
   PERSONA_INVITATION_RESPONSE_AUTHORED: 'Responded to an invitation',
   PERSONA_BIRTH_NEED_AUTHORED: 'Identified a need for a new specialist',
   PERSONA_BIRTH_PROPOSAL_AUTHORED: 'Proposed a new specialist',
   PERSONA_BIRTH_ADMITTED: 'Welcomed a new specialist',
   PERSONA_BIRTH_REFUSED: 'Decided not to add a specialist',
+  PERSONA_DISPLAY_NAME_ADOPTED: 'Chose a public name',
+  PERSONA_CHARACTERISTICS_ADOPTED: 'Shared a public self-description',
+  PERSONA_CHARACTERISTICS_REVISED: 'Updated a public self-description',
+  PERSONA_RASTER_AVATAR_ADMITTED: 'Adopted a public portrait',
+  PERSONA_MODEL_CHOICE_RECORDED: 'Selected a model for the next work step',
+  PERSONA_RESOURCE_STATE_OBSERVED: 'Reviewed the available execution resources',
+  PERSONA_WORKSPACE_STATE_CHANGED: 'Updated the shared workspace',
+  PERSONA_TURN_EFFECT_RECEIPT_RECORDED: 'Confirmed the result of a work step',
   MEMBER_JOINED: 'Joined the workspace',
   ENV_MEMBER_ADMITTED: 'Joined the workspace',
   ENV_MEMBER_RE_ADMITTED: 'Rejoined the workspace',
@@ -45,6 +58,46 @@ const ACTIVITY_HEADLINES = Object.freeze({
   ENV_MCP_TOOL_INVOKED: 'Used a workspace tool',
   EXTERNAL_CAPABILITY_ACQUIRED: 'Added a new capability',
   CAPABILITY_PROVISIONED: 'Prepared a new capability',
+});
+
+// Persona actions are open vocabulary, but the built-in action surface has
+// stable names. Translate those names into work a person can understand while
+// leaving the exact signed action available in the verification disclosure.
+const ACTION_HEADLINES = Object.freeze({
+  command_exec: 'Ran a workspace command',
+  code_exec: 'Ran code in the workspace',
+  managed_process_launch: 'Started a workspace process',
+  managed_process_inspect: 'Checked a running workspace process',
+  managed_process_write: 'Sent input to a workspace process',
+  managed_process_wait: 'Waited for a workspace process',
+  managed_process_signal: 'Signalled a workspace process',
+  managed_process_stop: 'Stopped a workspace process',
+  inspect_workspace_file: 'Inspected a workspace file',
+  inspect_execution_capabilities: 'Checked available engineering tools',
+  discover_mcp_capabilities: 'Looked for a needed tool',
+  acquire_mcp_candidate: 'Acquired a new tool',
+  author_provisioning_recipe: 'Prepared a reusable tool setup',
+  discover_coordination_definitions: 'Reviewed available collaboration patterns',
+  discover_coordination_actions: 'Checked available collaboration actions',
+  author_coordination_definition: 'Created a reusable collaboration pattern',
+  author_coordination_action: 'Recorded a collaboration step',
+  record_persona_state: 'Recorded the current working state',
+  persona_schedule_wake: 'Scheduled a follow-up check',
+  discover_personas: 'Looked for collaborators',
+  persona_message: 'Messaged a collaborator',
+  propose_persona_birth: 'Proposed a new specialist',
+  record_situation_sufficiency_judgment: 'Assessed whether the work is ready',
+  declare_artifact: 'Published a deliverable',
+  declare_observation: 'Recorded an evidence-backed observation',
+  record_outcome_disposition: 'Recorded the work outcome',
+  goal_progress: 'Updated progress toward the goal',
+  task_progress: 'Updated task progress',
+  blackboard_post: 'Shared a workspace note',
+  request_external_artifact: 'Requested an external artifact',
+  inspect_external_artifact_state: 'Checked an external artifact request',
+  admit_persona_avatar: 'Adopted a public portrait',
+  adopt_persona_display_name: 'Adopted a public name',
+  adopt_persona_characteristics: 'Described how I work',
 });
 
 const PURPOSE_CONTEXT = Object.freeze({
@@ -108,9 +161,15 @@ export function humanActivityPresentation(kind, provenance = {}) {
   const authoredAction=clean(provenance?.action);
   const actionUsable=authoredAction&&!isMachineIdentifier(authoredAction)
     &&!/^[_A-Z0-9:-]+$/.test(authoredAction)&&authoredAction.length<=180;
-  const headline=(actionUsable?authoredAction:ACTIVITY_HEADLINES[machineKind])
+  const knownAction=ACTION_HEADLINES[authoredAction.toLowerCase()]||'';
+  const authoredPurpose=clean(provenance?.actionPurpose);
+  const purposeUsable=authoredPurpose&&!isMachineIdentifier(authoredPurpose)
+    &&authoredPurpose.length<=600;
+  const headline=(knownAction||(actionUsable?authoredAction:ACTIVITY_HEADLINES[machineKind]))
     ||humanizeMachineKey(machineKind||'activity');
-  const summary=context
+  const summary=purposeUsable
+    ?`${authoredPurpose}${/[.!?]$/.test(authoredPurpose)?'':'.'}`
+    :context
     ?`${context[0].toUpperCase()}${context.slice(1)}.`:'';
   return Object.freeze({headline,summary,duration,context});
 }

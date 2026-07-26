@@ -288,8 +288,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`697493106776030806b959f3d54f183a4f9ec1d6`: 22 Markdown files with manifest SHA-256
-`7669148b169793267f481cea07203a2598cecdfd876e0952fc2e0056500a22ae`. CI fails when either
+`70c361e8eee74f57c1cb8bbefe4acf79499297ad`: 22 Markdown files with manifest SHA-256
+`fe8e98f3e41ebc11072132a9439212011a5cc63a3140598f9ebe2849b4869a9d`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
@@ -300,6 +300,11 @@ skill-summary privacy, exact persona-workspace transport, complete unranked acti
 task reception preceding bootstrap observation turns. It now also pins the rule that budget
 exhaustion with pending causal persona work stays explicitly non-quiescent and resumable while its
 signed best-so-far bytes remain inspectable without acquiring completion authority.
+The pin additionally covers bounded signed active-peer cards without host-authored role inference,
+exact-revision reviewer replicas, exact recovery of interrupted terminal publication, and token-free
+renewal of signed public-cognition observations without presenting retained history as current thought.
+It also pins completion-aware first-contact timing, locator retry anti-amplification, and bounded
+multi-route WSS/circuit failover for one stable peer identity.
 
 ## Explore
 

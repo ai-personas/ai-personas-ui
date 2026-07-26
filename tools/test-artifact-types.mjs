@@ -29,6 +29,18 @@ const json=new TextEncoder().encode('{"bedrooms":4}');
 assert.equal(sniffArtifactMediaType(json),'application/json');
 assert.equal(selectArtifactRenderer('',{contentMedia:sniffArtifactMediaType(json)}).id,'code');
 
+const ifc=new TextEncoder().encode("ISO-10303-21;\nHEADER;FILE_SCHEMA(('IFC4'));ENDSEC;\nDATA;\n#1=IFCPROJECT('id');\nENDSEC;\nEND-ISO-10303-21;");
+assert.equal(sniffArtifactMediaType(ifc),'model/ifc');
+assert.deepEqual(selectArtifactRenderer('application/octet-stream',{
+  path:'opaque-model',contentMedia:sniffArtifactMediaType(ifc),
+}),{id:'cad3d',mediaType:'model/ifc',source:'bytes'});
+assert.equal(artifactTypeLabel('model/ifc'),'IFC building model');
+
+const dxf=new TextEncoder().encode('0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n1\n21\n1\n0\nENDSEC\n0\nEOF\n');
+assert.equal(sniffArtifactMediaType(dxf),'image/vnd.dxf');
+assert.equal(selectArtifactRenderer('',{path:'plan.dxf'}).id,'dxf');
+assert.equal(artifactTypeLabel('image/vnd.dxf'),'DXF drawing');
+
 const zip=Uint8Array.from([0x50,0x4b,0x03,0x04,0,0,0,0]);
 assert.deepEqual(selectArtifactRenderer('',{
   path:'floor-schedule.xlsx',contentMedia:sniffArtifactMediaType(zip),

@@ -45,7 +45,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260723-persona-card-v4-v6';
+} from './network-view.mjs?v=20260726-active-runs-v7';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -56,7 +56,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260726-human-artifacts-v1';
+} from './artifact-types.mjs?v=20260726-engineering-preview-v1';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -69,9 +69,10 @@ import {
 import {
   friendlyDuration,
   humanActivityPresentation,
+  humanizeMachineKey,
   operatorResponseText,
   structuredContentProjection,
-} from './human-content.mjs?v=20260726-human-first-v2';
+} from './human-content.mjs?v=20260726-human-first-v4';
 import {
   expiredProviderKernels,
   reconcileResolverDirectory,
@@ -79,7 +80,7 @@ import {
 import {
   locatorFallbackDecision,
   shouldPrefetchNodeStatus,
-} from './discovery-strategy.mjs?v=20260726-status-scope-v2';
+} from './discovery-strategy.mjs?v=20260726-p2p-first-contact-v3';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -431,7 +432,8 @@ async function fetchResponsivePublicJson(u,init={}){
   if(callerSignal?.aborted) return null;
   const maxBytes=init.maxBytes||DEFAULT_JSON_MAX_BYTES;
   const peerOnly=init.peerOnly===true;
-  const key=`${String(u)}\u0000${maxBytes}\u0000${peerOnly?'peer':'any'}`;
+  const verifiedDirectFallback=init.verifiedDirectFallback===true;
+  const key=`${String(u)}\u0000${maxBytes}\u0000${peerOnly?'peer':'any'}\u0000${verifiedDirectFallback?'direct-fallback':'strict'}`;
   let job=responsivePublicJsonJobs.get(key);
   if(!job){
     const transportSignal=AbortSignal.timeout(15000);
@@ -439,12 +441,16 @@ async function fetchResponsivePublicJson(u,init={}){
     // caller headers or consult token state again after it starts.
     const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
     const request=(async()=>{
-      // Once a current-master-verified provider route exists, keep anonymous
-      // public reads on that exact peer. The signed HTTPS locator remains
-      // presentation metadata; it is not a fallback data plane.
-      if(p2pDataRouteForUrl(u)&&P2P?.fetchPublicJson)
-        return fetchP2PJson(u,transportInit);
-      if(peerOnly) return null;
+      // The peer-bound protocol is primary. For rapidly changing, separately
+      // signed documents (such as public cognition), callers may explicitly
+      // allow the same verified provider's direct HTTPS route only after the
+      // P2P read fails. This never consults the global locator service.
+      if(p2pDataRouteForUrl(u)&&P2P?.fetchPublicJson){
+        const peerDocument=await fetchP2PJson(u,transportInit);
+        if(peerDocument!==null&&peerDocument!==undefined) return peerDocument;
+        if(!verifiedDirectFallback) return null;
+      }
+      if(peerOnly&&!verifiedDirectFallback) return null;
       try{
         const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
           redirect:'error',referrerPolicy:'no-referrer'});
@@ -516,6 +522,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   terminalCallTombstones:new Map(),
   terminalModelFailureByKernel:new Map(),
   personaRuntimeById:new Map(), cognitionByPersona:new Map(), verifiedPublicCognitionByPersona:new Map(),
+  publicCognitionFetchAfter:new Map(),
   trackedLiveRuns:new Map(), openLiveFile:null,
   // living-network state: heartbeat (always-on baseline), vital-sign spike queue,
   // persistent constellation node positions/elements, env count, persona-follow.
@@ -2647,6 +2654,7 @@ function _removeRecordStoreKey(id){
     S.liveByPersona.delete(key); S.personaRuntimeById?.delete(key);
     S.cognitionByPersona?.delete(key); S.ixByPersona?.delete(key);
     S.verifiedPublicCognitionByPersona?.delete(key);
+    S.publicCognitionFetchAfter?.delete(key);
     if(S.follow===key) S.follow=null;
   }
   try{ NETWORK.removeEntity(networkEntityKey(row._kernel,row.kind,
@@ -3025,6 +3033,8 @@ function _currentLocatorFallbackDecision(now=Date.now()){
     startedAtMs:_globalRefreshStartedAt,
     verifiedP2PRouteCount:S.p2pDataRoutes?.size||0,
     healthyDirectPeerCount:_healthyDirectPeerCount(now),
+    peerProbeExpected:P2P?._rendezvousConfigured===true&&!!P2P?.node,
+    peerProbeComplete:P2P?._rendezvousFirstAttemptCompleted===true,
   });
 }
 function scheduleFastGlobalRefresh(delayMs){
@@ -3045,8 +3055,12 @@ async function refreshGlobalDirectoryFast(){
     const result=await loadGlobalNodes();
     pruneExpiredDiscoveryState();
     const warming=Date.now()-_globalRefreshStartedAt<30000;
-    nextDelay=Number(result?.pollAfterMs)
+    const resolverSuggestedDelay=Number(result?.pollAfterMs)
       ||(warming||!result?.announcements?.length?2500:7000);
+    // One fallback response is enough to try every signed route it supplied.
+    // Treat the server hint as a freshness suggestion, not permission for
+    // every open tab to amplify reads while direct/P2P reconciliation runs.
+    nextDelay=Math.max(Number(fallback.nextCheckMs)||0,resolverSuggestedDelay);
     if(result?.changed){
       classifyMap(); renderGlobalKernels(); updateVitalsCounters(); refreshSystemView();
       discover({refreshGlobal:false,trailing:true}).then(()=>{
@@ -3193,8 +3207,8 @@ function scheduleSseCognitionRefresh(scope=null){
     _sseCognitionPendingPersonaKeys.clear(); _sseCognitionPendingBases.clear();
     _sseCognitionBusy=true;
     try{
-      const jobs=[streamPersonaCognition(full?{}:{personaKeys:[...pendingPersonaKeys],
-        bases:[...pendingBases]})];
+      const jobs=[streamPersonaCognition(full?{force:true}:{personaKeys:[...pendingPersonaKeys],
+        bases:[...pendingBases],force:true})];
       const drawerKey=S.drawerThinkPid
         ?_personaRef(S.drawerThinkPid,S.drawerLiveKernel||'').key:'';
       if(S.drawerThinkPid&&(full||pendingPersonaKeys.has(drawerKey))) jobs.push(refreshThinking());
@@ -5247,6 +5261,7 @@ function _personaActivityHTML(acts,personaKey){
         ?`${selfName}${targetLabel?` → ${targetLabel}`:''}`
         :`${actor}${targetLabel?` → ${targetLabel}`:` → ${selfName}`}`;
       const exactText=typeof e._exactText==='string'&&e._exactText.trim()?e._exactText:'';
+      const exactProjection=exactText?structuredContentProjection(exactText):null;
       const presentation=humanActivityPresentation(e.kind,e._provenance||{});
       const observedDetail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').trim();
       const direction=mine?'outbound':(actorKey?'inbound':'observed');
@@ -5254,7 +5269,13 @@ function _personaActivityHTML(acts,personaKey){
       // Model telemetry often carries transport summaries such as
       // "200 · 26036 ms" as its message. Keep those values in the collapsed
       // verification disclosure and use human work context on the card.
-      const detail=exactText||(modelUpdate?presentation.summary:(observedDetail||presentation.summary));
+      // Signed persona outputs are often JSON envelopes. Keep those exact
+      // bytes in verification details and put their authored message or
+      // purpose—not raw JSON—on the human-facing card.
+      const exactHumanText=exactProjection?.headline
+        &&exactProjection.headline!==String(e._provenance?.action||'')
+        ?exactProjection.headline:'';
+      const detail=exactHumanText||(modelUpdate?presentation.summary:(observedDetail||presentation.summary));
       const routeLabel=exactText
         ?`${selfName} · ${e._cognition===true?'Shared thought':'Shared update'}`
         :modelUpdate?`${selfName} · Work update`:route;
@@ -5285,6 +5306,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   const identityVerified=identityObservation?.identityVerified===true;
   const characteristics=identityVerified&&signedIdentity?._personaCharacteristics
     ?signedIdentity._personaCharacteristics:null;
+  const signedDescription=identityVerified&&signedIdentity
+    ?String(signedIdentity.description||'').trim():'';
   const lifecycle=identityObservation?.lifecycle||null;
   const signedName=_personaAuthoredNameForObservation(identityObservation);
   const hasSignedIdentity=identityVerified;
@@ -5395,10 +5418,12 @@ function renderPersonaCard(pid,kernel='',context={}){
       +(authoredCapabilities.length>2
         ?`<span class="pc-cap-more">+${authoredCapabilities.length-2} more in profile</span>`:'')
       +`</div></section>`:'';
-  const aboutHTML=characteristics
+  const identityStatement=String(characteristics?.identity_statement||signedDescription).trim();
+  const workingStyle=String(characteristics?.working_style||'').trim();
+  const aboutHTML=identityStatement||workingStyle
     ?`<section class="pc-about"><div class="pc-section-head"><span>About me</span><small>${icon('check','ico-sm')} self-described</small></div>`
-      +`<p>${esc(characteristics.identity_statement)}</p>`
-      +`<div class="pc-working-style"><b>How I work</b><span>${esc(characteristics.working_style)}</span></div></section>`:'';
+      +(identityStatement?`<p>${esc(identityStatement)}</p>`:'')
+      +(workingStyle?`<div class="pc-working-style"><b>How I work</b><span>${esc(workingStyle)}</span></div>`:'')+'</section>':'';
   const identityLine=role!==_ROLE_NOT_DECLARED?role:(characteristics?.public_tone||'Participating persona');
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
@@ -7421,6 +7446,7 @@ async function refreshThinking(){
   const t=await fetchResponsivePublicJson(endpoint,{
     maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
     peerOnly:true,
+    verifiedDirectFallback:true,
   });
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
@@ -7573,6 +7599,7 @@ function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun
     try{
       const action=JSON.parse(output.text), args=action.arguments||{};
       provenance.action=_publicProvenanceAtom(action.action);
+      provenance.actionPurpose=_publicProvenanceAtom(args.purpose,600);
       provenance.run=_publicProvenanceAtom(args.run_id);
       provenance.task=_publicProvenanceAtom(authority.task_id)
         ||_publicProvenanceAtom(args.task_id);
@@ -7727,6 +7754,7 @@ async function streamPersonaCognition(options={}){
     const scopedBases=new Set(
       (Array.isArray(options?.bases)?options.bases:[])
         .map((value)=>String(value||'').replace(/\/$/,'')));
+    const urgent=options?.force===true||scopedPersonaKeys.size>0||scopedBases.size>0;
     S.cogBaseFor=S.cogBaseFor||new Map();   // kernel-qualified persona key -> API base
     // The bases that actually serve the personaos API are the ones that streamed LIVE telemetry
     // (the cards render from those) — NOT necessarily a discovery record's _base (which may be an
@@ -7760,6 +7788,7 @@ async function streamPersonaCognition(options={}){
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
     let added=0, cognitionHydrated=false;
     for(const candidate of list){ const {key:personaKey,sid,kernel,endpointId}=candidate;
+      if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) continue;
       // Never probe another kernel for a colliding short id. A sticky route is
       // retained only while it still resolves to this persona's owning kernel.
       const routes=[S.cogBaseFor.get(personaKey),candidate.base,
@@ -7779,13 +7808,20 @@ async function streamPersonaCognition(options={}){
         const r=await fetchResponsivePublicJson(endpoint,{
           maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
           peerOnly:true,
+          verifiedDirectFallback:true,
         });
         const accepted=hasOperator
           ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
           :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
         if(accepted){
-          t=r; usedBase=base; S.cogBaseFor.set(personaKey,base); break; }
+          t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
+          if(r?.schema==='personaos-persona-public-cognition/1'){
+            S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
+            while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
+              S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
+          }
+          break; }
       }
       if(!t) continue;
       const publicCognition=t.schema==='personaos-persona-public-cognition/1';
@@ -8264,7 +8300,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
 
 // Renderers that consume bytes. All unknown media enters this path, so a custom
 // persona/tool artifact remains observable without the substrate naming it.
-const BINARY_RENDERERS=new Set(['image','audio','video','pdf','archive','generic']);
+const BINARY_RENDERERS=new Set(['image','audio','video','pdf','archive','cad3d','generic']);
 
 function pickRenderer(kind,path='',responseMedia='',contentMedia=''){
   return selectArtifactRenderer(kind,{path,responseMedia,contentMedia});
@@ -8391,6 +8427,207 @@ function hexPreview(bytes,limit=512){
     out.push(`${i.toString(16).padStart(8,'0')}  ${hex}  |${ascii}|`); }
   return out.join('\n');
 }
+
+/* ---------- bounded engineering-format previews ----------
+   These parsers operate only on the selected artifact after its advertised
+   hash has been checked. They derive presentation geometry/metadata locally;
+   no peer code, external dependency, or embedded reference is executed. */
+const SVG_NS='http://www.w3.org/2000/svg';
+const MAX_DXF_RENDER_POINTS=50000;
+function svgEl(tag,attrs={}){ const node=document.createElementNS(SVG_NS,tag);
+  for(const [key,value] of Object.entries(attrs)) node.setAttribute(key,String(value));
+  return node; }
+function dxfUnitLabel(text){
+  const code=/\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(\d+)/i.exec(text)?.[1]||'';
+  return ({0:'unitless',1:'inches',2:'feet',4:'millimetres',5:'centimetres',6:'metres'})[code]||'not declared';
+}
+function parseDxfEntities(text){
+  const source=String(text||'').slice(0,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  const lines=source.split(/\r?\n/), pairs=[];
+  for(let index=0;index+1<lines.length&&pairs.length<250000;index+=2){
+    const code=Number.parseInt(lines[index].trim(),10);
+    if(Number.isFinite(code)) pairs.push({code,value:lines[index+1].trim()});
+  }
+  const entities=[]; let section='', current=null;
+  const flush=()=>{ if(current&&entities.length<5000) entities.push(current); current=null; };
+  for(let index=0;index<pairs.length;index++){
+    const pair=pairs[index];
+    if(pair.code===0&&pair.value==='SECTION'){
+      flush(); section=pairs[index+1]?.code===2?pairs[++index].value:''; continue;
+    }
+    if(pair.code===0&&pair.value==='ENDSEC'){ flush(); section=''; continue; }
+    if(section!=='ENTITIES') continue;
+    if(pair.code===0){
+      flush();
+      if(!['EOF','SEQEND'].includes(pair.value)) current={type:pair.value,values:new Map(),ordered:[]};
+      continue;
+    }
+    if(!current) continue;
+    const values=current.values.get(pair.code)||[]; values.push(pair.value);
+    current.values.set(pair.code,values); current.ordered.push(pair);
+  }
+  flush(); return {entities,truncated:entities.length>=5000,units:dxfUnitLabel(source)};
+}
+const dxfValues=(entity,code)=>entity?.values?.get(code)||[];
+const dxfValue=(entity,code,index=0)=>dxfValues(entity,code)[index]??'';
+const dxfNumber=(entity,code,index=0)=>{ const value=Number(dxfValue(entity,code,index)); return Number.isFinite(value)?value:null; };
+function dxfPolylinePoints(entity,limit=MAX_DXF_RENDER_POINTS){
+  const points=[]; let pending=null, truncated=false;
+  const appendPending=()=>{ if(pending?.x==null||pending?.y==null) return;
+    if(points.length<limit) points.push(pending); else truncated=true; };
+  for(const pair of entity.ordered){
+    if(pair.code===10){ appendPending();
+      const x=Number(pair.value); pending=Number.isFinite(x)?{x,y:null}:null; }
+    else if(pair.code===20&&pending){ const y=Number(pair.value); if(Number.isFinite(y)) pending.y=y; }
+  }
+  appendPending(); return {points,truncated};
+}
+function dxfGeometry(parsed){
+  const geometry=[], layers=new Set(), typeCounts=new Map(), points=[]; let truncated=false;
+  const addPoint=(x,y)=>{ if(!Number.isFinite(x)||!Number.isFinite(y)) return false;
+    if(points.length>=MAX_DXF_RENDER_POINTS){ truncated=true; return false; }
+    points.push({x,y}); return true; };
+  for(const entity of parsed.entities){
+    typeCounts.set(entity.type,(typeCounts.get(entity.type)||0)+1);
+    const layer=String(dxfValue(entity,8)||'0').slice(0,80); layers.add(layer);
+    if(points.length>=MAX_DXF_RENDER_POINTS){ truncated=true; continue; }
+    if(entity.type==='LINE'){
+      const x1=dxfNumber(entity,10),y1=dxfNumber(entity,20),x2=dxfNumber(entity,11),y2=dxfNumber(entity,21);
+      if([x1,y1,x2,y2].every(Number.isFinite)){ geometry.push({type:'line',layer,x1,y1,x2,y2}); addPoint(x1,y1); addPoint(x2,y2); }
+    }else if(entity.type==='LWPOLYLINE'){
+      const remaining=Math.max(0,MAX_DXF_RENDER_POINTS-points.length);
+      const polyline=dxfPolylinePoints(entity,remaining), vertices=polyline.points;
+      truncated=truncated||polyline.truncated; if(vertices.length>1){
+        const closed=(Number(dxfValue(entity,70))&1)===1;
+        geometry.push({type:'polyline',layer,vertices,closed}); vertices.forEach(({x,y})=>addPoint(x,y)); }
+    }else if(entity.type==='CIRCLE'||entity.type==='ARC'){
+      const x=dxfNumber(entity,10),y=dxfNumber(entity,20),r=dxfNumber(entity,40);
+      if([x,y,r].every(Number.isFinite)&&r>0){ const start=dxfNumber(entity,50),end=dxfNumber(entity,51);
+        geometry.push({type:entity.type.toLowerCase(),layer,x,y,r,start,end}); addPoint(x-r,y-r); addPoint(x+r,y+r); }
+    }else if(['TEXT','MTEXT'].includes(entity.type)){
+      const x=dxfNumber(entity,10),y=dxfNumber(entity,20),height=dxfNumber(entity,40)||0.18;
+      const value=String(dxfValue(entity,1)||dxfValue(entity,3)||'').replace(/\\P/g,' ').slice(0,240);
+      if(Number.isFinite(x)&&Number.isFinite(y)&&value){ geometry.push({type:'text',layer,x,y,height,value}); addPoint(x,y); }
+    }
+  }
+  return {geometry,layers:[...layers].sort(),typeCounts,points,truncated};
+}
+function dxfLayerColour(layer){ let hash=0; for(const char of String(layer)) hash=(hash*31+char.charCodeAt(0))>>>0;
+  return `hsl(${(hash%240)+160} 72% 66%)`; }
+async function renderDxf(host,ctx){
+  const text=String(ctx.text||''); const parsed=parseDxfEntities(text), drawing=dxfGeometry(parsed);
+  host.innerHTML='';
+  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd','DXF drawing · verified-byte preview'));
+  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); };
+  add('Entities read',parsed.entities.length+(parsed.truncated?' · first 5,000':''));
+  add('Geometry shown',drawing.geometry.length+(drawing.truncated?' · bounded preview':'')); add('Layers',drawing.layers.length||'none'); add('Drawing units',parsed.units);
+  card.appendChild(el('div','fv-note','The browser drew supported DXF primitives from the hash-checked file. This preview is for inspection; the verified download remains the source for CAD editing and fabrication checks.'));
+  host.appendChild(card);
+  if(!drawing.points.length){ host.appendChild(plainPre(text.slice(0,64*1024),'No supported LINE, LWPOLYLINE, CIRCLE, ARC, TEXT, or MTEXT geometry was found; showing bounded DXF source.')); return; }
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const point of drawing.points){ minX=Math.min(minX,point.x); maxX=Math.max(maxX,point.x);
+    minY=Math.min(minY,point.y); maxY=Math.max(maxY,point.y); }
+  if(maxX===minX){ minX-=1; maxX+=1; } if(maxY===minY){ minY-=1; maxY+=1; }
+  const width=1000,padding=32,aspect=(maxY-minY)/(maxX-minX),height=Math.max(360,Math.min(760,Math.round((width-padding*2)*aspect+padding*2)));
+  const scale=Math.min((width-padding*2)/(maxX-minX),(height-padding*2)/(maxY-minY));
+  const px=(x)=>padding+(x-minX)*scale, py=(y)=>height-padding-(y-minY)*scale;
+  const svg=svgEl('svg',{class:'fv-dxf',viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':`${ctx.title} DXF geometry preview`});
+  svg.appendChild(svgEl('rect',{x:0,y:0,width,height,class:'fv-dxf-bg'}));
+  for(const item of drawing.geometry){ const stroke=dxfLayerColour(item.layer);
+    if(item.type==='line') svg.appendChild(svgEl('line',{x1:px(item.x1),y1:py(item.y1),x2:px(item.x2),y2:py(item.y2),stroke,class:'fv-dxf-line'}));
+    else if(item.type==='polyline'){
+      const path=item.vertices.map((point,index)=>`${index?'L':'M'}${px(point.x)} ${py(point.y)}`).join(' ')+(item.closed?' Z':'');
+      svg.appendChild(svgEl('path',{d:path,stroke,fill:'none',class:'fv-dxf-line'}));
+    }else if(item.type==='circle') svg.appendChild(svgEl('circle',{cx:px(item.x),cy:py(item.y),r:item.r*scale,stroke,fill:'none',class:'fv-dxf-line'}));
+    else if(item.type==='arc'){
+      const start=(Number.isFinite(item.start)?item.start:0)*Math.PI/180,end=(Number.isFinite(item.end)?item.end:360)*Math.PI/180;
+      const a={x:px(item.x+item.r*Math.cos(start)),y:py(item.y+item.r*Math.sin(start))};
+      const b={x:px(item.x+item.r*Math.cos(end)),y:py(item.y+item.r*Math.sin(end))};
+      let delta=(Number.isFinite(item.end)?item.end:360)-(Number.isFinite(item.start)?item.start:0); while(delta<0) delta+=360;
+      svg.appendChild(svgEl('path',{d:`M${a.x} ${a.y} A${item.r*scale} ${item.r*scale} 0 ${delta>180?1:0} 0 ${b.x} ${b.y}`,stroke,fill:'none',class:'fv-dxf-line'}));
+    }else if(item.type==='text'){
+      const label=svgEl('text',{x:px(item.x),y:py(item.y),fill:stroke,'font-size':Math.max(7,Math.min(24,item.height*scale)),'data-layer':item.layer});
+      label.textContent=item.value; svg.appendChild(label);
+    }
+  }
+  host.appendChild(svg);
+  const legend=el('div','fv-dxf-legend'); drawing.layers.slice(0,16).forEach((layer)=>{ const item=el('span');
+    const swatch=el('i'); swatch.style.background=dxfLayerColour(layer); item.appendChild(swatch); item.appendChild(document.createTextNode(layer)); legend.appendChild(item); });
+  if(drawing.layers.length>16) legend.appendChild(el('span',null,`+${drawing.layers.length-16} more layers`)); host.appendChild(legend);
+  const details=document.createElement('details'); details.className='fv-source';
+  const summary=document.createElement('summary'); summary.textContent='DXF entity summary and bounded source'; details.appendChild(summary);
+  const counts=el('div','fv-entity-grid'); [...drawing.typeCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([type,count])=>{
+    const row=el('span'); row.appendChild(el('b',null,type)); row.appendChild(el('small',null,count)); counts.appendChild(row); });
+  details.appendChild(counts); details.appendChild(plainPre(text.slice(0,64*1024),text.length>64*1024?'first 64 KB':'')); host.appendChild(details);
+}
+
+function cadFormat(ctx){
+  const media=String(ctx.detectedMedia||ctx.kind||'').toLowerCase();
+  if(media.includes('ifc')) return 'ifc'; if(media.includes('step')) return 'step';
+  if(media.includes('stl')) return 'stl'; if(media.includes('obj')) return 'obj';
+  if(media.includes('ply')) return 'ply'; if(media.includes('gltf-binary')) return 'glb';
+  if(media.includes('gltf')) return 'gltf';
+  const leaf=String(ctx.title||'').toLowerCase().split(/[?#]/,1)[0];
+  return (leaf.match(/\.([a-z0-9]+)$/)||[])[1]||'cad';
+}
+function inspectCadBytes(bytes,format){
+  const result={facts:[],types:new Map(),preview:'',warning:''};
+  const decoded=()=>new TextDecoder().decode(bytes.subarray(0,Math.min(bytes.length,LIVE_ARTIFACT_LIMITS.maxFileBytes)));
+  if(format==='stl'){
+    if(bytes.length>=84){ const triangles=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(80,true);
+      if(triangles>0&&84+triangles*50===bytes.length){ result.facts.push(['Encoding','binary STL'],['Triangles',triangles]); return result; } }
+    const text=decoded(); result.facts.push(['Encoding',/^\s*solid\b/i.test(text)?'ASCII STL':'unrecognised STL'],['Facets inspected',(text.match(/^\s*facet\s+normal\b/gmi)||[]).length]); result.preview=text.slice(0,20000); return result;
+  }
+  if(format==='gltf'||format==='glb'){
+    if(format==='glb'){ result.facts.push(['Container','binary glTF'],['Size',fmtBytes(bytes.length)]); return result; }
+    const text=decoded(); try{ const document=JSON.parse(text), external=[];
+      const pending=[document]; while(pending.length&&external.length<32){ const value=pending.pop();
+        if(Array.isArray(value)){ pending.push(...value); continue; } if(!value||typeof value!=='object') continue;
+        for(const [key,child] of Object.entries(value)){ if(key==='uri'&&typeof child==='string'&&!child.startsWith('data:')) external.push(child);
+          else if(child&&typeof child==='object') pending.push(child); } }
+      result.facts.push(['Scenes',document.scenes?.length||0],['Nodes',document.nodes?.length||0],['Meshes',document.meshes?.length||0],['External dependencies',external.length?`${external.length} declared · not fetched`:'none declared']);
+    }catch(_){ result.warning='The glTF JSON could not be parsed.'; } result.preview=text.slice(0,20000); return result;
+  }
+  const text=decoded(); result.preview=text.slice(0,20000);
+  if(format==='ifc'||format==='step'){
+    const schema=/FILE_SCHEMA\s*\(\s*\(\s*['"]([^'"]+)/i.exec(text)?.[1]||'';
+    let entities=0; for(const match of text.matchAll(/^#\d+\s*=\s*([A-Z][A-Z0-9_]*)/gmi)){
+      entities++; const type=match[1].toUpperCase(); result.types.set(type,(result.types.get(type)||0)+1); }
+    result.facts.push(['STEP envelope',/^ISO-10303-21;/i.test(text.trimStart())?'recognised':'not recognised']);
+    if(schema) result.facts.push(['Schema',schema]); result.facts.push(['Entities inspected',entities]);
+    if(format==='ifc') result.facts.push(['IFC entity types',result.types.size]);
+    const declaration=/FILE_DESCRIPTION\s*\(\s*\(\s*['"]([^'"]+)/i.exec(text)?.[1]||'';
+    if(declaration) result.facts.push(['Author declaration',declaration.slice(0,240)]);
+    if(/\b(?:NOT VALIDATED|IFC-LIKE)\b/i.test(declaration)) result.warning='The file itself says it is schematic or not validated IFC. Treat it as coordination data, not an authoritative BIM model.';
+    return result;
+  }
+  if(format==='obj'){
+    let vertices=0,normals=0,faces=0,lines=0,materials=0;
+    for(const line of text.split(/\r?\n/)){ if(/^v\s/.test(line)) vertices++; else if(/^vn\s/.test(line)) normals++; else if(/^f\s/.test(line)) faces++; else if(/^l\s/.test(line)) lines++; else if(/^(?:mtllib|usemtl)\s/.test(line)) materials++; }
+    result.facts.push(['Vertices',vertices],['Normals',normals],['Faces',faces],['Line elements',lines],['Material references',materials?`${materials} declared · not fetched`:'none declared']); return result;
+  }
+  if(format==='ply'){
+    const header=text.slice(0,Math.max(0,text.indexOf('end_header')+10)); result.preview=header;
+    result.facts.push(['PLY header',/^ply\s*$/m.test(header)?'recognised':'not recognised']);
+    for(const name of ['vertex','face']){ const count=new RegExp(`^element\\s+${name}\\s+(\\d+)`,'mi').exec(header)?.[1]; if(count) result.facts.push([`${humanizeMachineKey(name)} elements`,count]); }
+    const encoding=/^format\s+([^\s]+)/mi.exec(header)?.[1]; if(encoding) result.facts.push(['Encoding',encoding]); return result;
+  }
+  result.facts.push(['Format',format.toUpperCase()]); return result;
+}
+async function renderCad3d(host,ctx){
+  const bytes=await artifactBytes(ctx,'CAD model'),format=cadFormat(ctx),inspection=inspectCadBytes(bytes,format);
+  host.innerHTML=''; const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${format.toUpperCase()} · verified-byte model inspection`));
+  for(const [label,value] of inspection.facts){ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); }
+  if(inspection.warning) card.appendChild(el('div','fv-warn',inspection.warning));
+  card.appendChild(el('div','fv-note','The model facts below were derived locally from the hash-checked file. Embedded code and external model dependencies were not loaded. Use the verified original in a compatible CAD/BIM tool for authoritative geometry and fabrication review.'));
+  host.appendChild(card);
+  if(inspection.types.size){ const typeWrap=el('div','fv-entity-grid');
+    [...inspection.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,30).forEach(([type,count])=>{ const item=el('span'); item.appendChild(el('b',null,type)); item.appendChild(el('small',null,count)); typeWrap.appendChild(item); });
+    host.appendChild(el('div','fv-note','Entity inventory · most frequent types')); host.appendChild(typeWrap); }
+  if(inspection.preview){ const details=document.createElement('details'); details.className='fv-source';
+    const summary=document.createElement('summary'); summary.textContent='Bounded model source/header'; details.appendChild(summary);
+    details.appendChild(plainPre(inspection.preview,inspection.preview.length>=20000?'first 20 KB':'')); host.appendChild(details); }
+}
 function zipDirectoryEntries(bytes,limit=200){
   if(bytes.length<22) return [];
   const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
@@ -8488,7 +8725,8 @@ async function renderPlain(host,ctx){
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
-  code:renderCode,pdf:renderPdf,archive:renderArchive,plain:renderPlain,generic:renderGeneric };
+  dxf:renderDxf,cad3d:renderCad3d,code:renderCode,pdf:renderPdf,archive:renderArchive,
+  plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);
@@ -9967,6 +10205,7 @@ function _scheduleP2PRendezvous(delayMs){
     let verified=false;
     try{ verified=await refreshP2PRendezvous(); }catch(e){}
     finally{
+      P2P._rendezvousFirstAttemptCompleted=true;
       P2P._rendezvousActive=false;
       if(verified||P2P._rendezvousLastVerifiedAt){
         P2P._rendezvousColdAttempts=0;

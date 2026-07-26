@@ -279,8 +279,10 @@ export function publicTaskLifecycleProjection(record) {
  * admitted both the record and policy signatures, and the same record remains
  * present in the kernel's unexpired current hash-chained provider inventory.
  * The API base comes from that inventory and must still resolve to a bootstrap
- * for the same kernel. Exact live-task evidence ranks before terminal/history
- * tasks, and the caller supplies the already-bounded browser record cache.
+ * for the same kernel. Automatic background polling selects exact current
+ * executions only; a deliberate detail view may opt into a small bounded
+ * terminal/history window. This prevents every viewer from repeatedly probing
+ * obsolete run endpoints merely because signed history remains discoverable.
  * Every response still needs its own public artifact policy and signature.
  * This helper retains at most
  * PUBLIC_TASK_RUN_POLL_LIMIT unique base/run pairs.
@@ -302,6 +304,8 @@ export function selectVerifiedPublicTaskRunTargets(
   );
   const focusedKernel = typeof options.focusedKernel === 'string'
     ? options.focusedKernel : '';
+  const includeHistorical = options.includeHistorical === true;
+  const historicalLimit = Math.min(4, requestedLimit);
   const liveTargets = new Map();
   const fallbackTargets = new Map();
 
@@ -349,8 +353,8 @@ export function selectVerifiedPublicTaskRunTargets(
       if (liveTargets.size >= requestedLimit) break;
       continue;
     }
-    if (!liveTargets.has(key) && !fallbackTargets.has(key)
-        && fallbackTargets.size < requestedLimit) fallbackTargets.set(key, target);
+    if (includeHistorical && !liveTargets.has(key) && !fallbackTargets.has(key)
+        && fallbackTargets.size < historicalLimit) fallbackTargets.set(key, target);
   }
   return [...liveTargets.values(), ...fallbackTargets.values()]
     .slice(0, requestedLimit);
