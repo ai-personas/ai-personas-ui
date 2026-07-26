@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   LOCATOR_FALLBACK_COLD_GRACE_MS,
   locatorFallbackDecision,
+  shouldPrefetchNodeStatus,
 } from '../assets/discovery-strategy.mjs';
 
 const start = 1_000_000;
@@ -47,5 +48,10 @@ const fallback = locatorFallbackDecision({
 assert.equal(fallback.queryLocator, true);
 assert.equal(fallback.mode, 'fallback_locator');
 assert.equal(fallback.nextCheckMs, 2500);
+
+assert.equal(shouldPrefetchNodeStatus(), false);
+assert.equal(shouldPrefetchNodeStatus({credentialed: true}), true);
+assert.equal(shouldPrefetchNodeStatus({focused: true}), true);
+assert.equal(shouldPrefetchNodeStatus({credentialed: false, focused: false}), false);
 
 console.log('discovery strategy tests passed');

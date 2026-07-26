@@ -78,7 +78,8 @@ import {
 } from './global-directory.mjs?v=20260726-fast-global-v1';
 import {
   locatorFallbackDecision,
-} from './discovery-strategy.mjs?v=20260726-p2p-first-v1';
+  shouldPrefetchNodeStatus,
+} from './discovery-strategy.mjs?v=20260726-status-scope-v2';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -9487,14 +9488,17 @@ function missionCardList(){
   }
   return result;
 }
-// The strip needs each node's run state from /status;
-// prefetch statuses for every discovered base so running/paused missions show
-// without first opening a drawer. Public nodes expose the complete projection
-// tokenlessly; gated nodes still return only what their access mode permits.
+// Full /status is intentionally scoped to authenticated or explicitly focused
+// nodes. Global missions, personas, environments, and live work arrive through
+// signed discovery/telemetry; polling every anonymous peer's rich status here
+// would turn each hosted-UI viewer into a distributed projection storm.
 function prefetchNodeStatuses(){
   const candidates=[...S.boots.keys()].map((key)=>{ const base=key==='@origin'?'':key;
-    return {base,focused:!!S.kernelFocus&&baseIsFocused(base),active:(S.activeModelCallsByBase?.get(key)||[]).length>0,
-      priority:(S.activeModelCallsByBase?.get(key)||[]).length}; }).filter((row)=>!S.kernelFocus||row.focused);
+    const focused=!!S.kernelFocus&&baseIsFocused(base);
+    return {base,focused,credentialed:!!tokenFor(join(base,'status')),
+      active:(S.activeModelCallsByBase?.get(key)||[]).length>0,
+      priority:(S.activeModelCallsByBase?.get(key)||[]).length}; })
+    .filter((row)=>shouldPrefetchNodeStatus(row));
   const window=selectMonitoringBases(candidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64});
   for(const base of window.bases){
     fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }

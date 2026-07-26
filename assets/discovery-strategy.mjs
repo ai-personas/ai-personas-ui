@@ -3,6 +3,20 @@ export const LOCATOR_FALLBACK_HEALTH_CHECK_MS = 15000;
 export const LOCATOR_FALLBACK_RETRY_MS = 2500;
 
 /**
+ * Full node status is an operator/detail projection, not the global discovery
+ * transport. Background polling is justified only for a node the viewer has
+ * authenticated to or deliberately focused. Signed discovery and telemetry
+ * keep the unfocused global population live without making every browser ask
+ * every node to rebuild an expensive status document.
+ */
+export function shouldPrefetchNodeStatus({
+  credentialed = false,
+  focused = false,
+} = {}) {
+  return Boolean(credentialed || focused);
+}
+
+/**
  * Decide whether an optional HTTP announcement locator may be queried.
  *
  * A verified libp2p data route or a recently successful direct node read is
