@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   friendlyDuration,
   humanActivityPresentation,
@@ -56,5 +57,9 @@ const readable = operatorResponseText({
 assert.match(readable, /^Request succeeded\./);
 assert.match(readable, /Task queued\./);
 assert.doesNotMatch(readable, /run-01/);
+
+const portalSource = readFileSync(new URL('../assets/discovery.js', import.meta.url), 'utf8');
+assert.doesNotMatch(portalSource, /workspace is currently empty/i);
+assert.match(portalSource, /signed live-run capture, not a claim that the durable workspace is empty/i);
 
 console.log('human-content tests passed');

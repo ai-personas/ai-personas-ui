@@ -3986,7 +3986,7 @@ function liveArtifactsHTML(base,run){
     const label=_nameFor(pid,kernel)||pid||workspaceId;
     const workspaceState=state.ended?'final snapshot':(w.state||'run_active').replace(/_/g,' ');
     return `<section class="live-workspace"><div class="live-workspace-head"><span title="${esc(workspaceId)}"><b>${esc(label)}</b> · personal worktree</span><span class="${!state.ended&&w.state==='model_call_active'?'ok':'l2'}">${esc(workspaceState)} · ${files.length} file${files.length===1?'':'s'}</span></div>`
-      +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">workspace is currently empty</div>'}</div></section>`;
+      +`<div class="atree">${_renderLiveTreeNode(_liveTreeBuild(files),'',0,state,workspaceId)||'<div class="l2">No files were captured in this signed run snapshot.</div>'}</div></section>`;
   }).join('');
   const revision=String(state.revision||'');
   const terminalTitle=finalizedBootstrap?'Run finalized · final workspace':'Run ended · final workspace';
@@ -5121,15 +5121,18 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
   // surface. Durable environment outputs remain visible through independently
   // verified file cards, so this does not imply that published work vanished.
   if(!fileCount&&projection.current.every((row)=>row.ended===true)) return '';
-  return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${fileCount} current file${fileCount===1?'':'s'}</small></div>`
+  const captureSummary=fileCount
+    ?`${fileCount} current file${fileCount===1?'':'s'}`
+    :'No new live-run files yet';
+  return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${captureSummary}</small></div>`
     +projection.current.map((row)=>{
       const updated=_friendlyInstant(row.generatedAt);
       const exact=[row.workspaceId?`workspace ${row.workspaceId}`:'',row.run?`run ${row.run}`:'',row.revision?`revision ${row.revision}`:''].filter(Boolean).join(' · ');
-      const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Waiting for the first file';
+      const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Live run started; no files captured yet';
       return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>${esc(workspaceStatus)}</b>${updated?` · ${esc(updated)}`:''}</span><span>${row.files.length} file${row.files.length===1?'':'s'}</span></div>`
-        +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">workspace is currently empty</span>'}</div></div>`;
+        +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>'}</div></div>`;
     }).join('')
-    +`<div class="artifact-preview-note">Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.</div>`
+    +`<div class="artifact-preview-note">${fileCount?'Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.':'This is the signed live-run capture, not a claim that the durable workspace is empty.'}</div>`
     +(projection.history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${projection.history.length} earlier workspace version${projection.history.length===1?'':'s'} retained.</span>`
       +projection.history.slice(0,12).map((row)=>`<span title="${esc(`run ${row.run||''} · revision ${row.revision||''}`)}">Earlier version${_friendlyInstant(row.generatedAt)?` · ${esc(_friendlyInstant(row.generatedAt))}`:''} · ${row.files.length} file${row.files.length===1?'':'s'}</span>`).join('')
       +(projection.history.length>12?`<span>${projection.history.length-12} additional earlier revisions retained</span>`:'')+`</div>`:'')+`</section>`;
