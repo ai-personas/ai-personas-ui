@@ -6,6 +6,66 @@ const HUMAN_PRIORITY = [
 
 const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
+const ACTIVITY_HEADLINES = Object.freeze({
+  MODEL_CALL: 'Working through a model-assisted step',
+  MODEL_SELECTED: 'Prepared a model for the next work step',
+  MODEL_CALL_SUCCEEDED: 'Finished a model-assisted work step',
+  MODEL_CALL_FAILED: 'A model-assisted work step needs attention',
+  LLM_OUTPUT: 'Shared a completed response',
+  LLM_LESSON: 'Captured a lesson from the work',
+  COGNITION_LESSON: 'Shared a lesson',
+  COGNITION_TACTIC: 'Shared an approach',
+  COGNITION_PROVEN_FACT: 'Shared a verified finding',
+  PROVISIONAL_ASSISTANT_MESSAGE: 'Drafting an update',
+  PERSONA_COMMUNICATION_AUTHORED: 'Shared an update',
+  PERSONA_COMMUNICATION_INTENT_RECORDED: 'Prepared an update for collaborators',
+  PERSONA_INVITATION_AUTHORED: 'Invited a collaborator',
+  PERSONA_INVITATION_RESPONSE_AUTHORED: 'Responded to an invitation',
+  PERSONA_BIRTH_NEED_AUTHORED: 'Identified a need for a new specialist',
+  PERSONA_BIRTH_PROPOSAL_AUTHORED: 'Proposed a new specialist',
+  PERSONA_BIRTH_ADMITTED: 'Welcomed a new specialist',
+  PERSONA_BIRTH_REFUSED: 'Decided not to add a specialist',
+  MEMBER_JOINED: 'Joined the workspace',
+  ENV_MEMBER_ADMITTED: 'Joined the workspace',
+  ENV_MEMBER_RE_ADMITTED: 'Rejoined the workspace',
+  BLACKBOARD_POST: 'Shared a workspace note',
+  GOAL_PROGRESS_REPORTED: 'Reported progress toward the goal',
+  TASK_PROGRESS_REPORTED: 'Reported task progress',
+  CANDIDATE_PRODUCED: 'Produced a candidate answer',
+  CANDIDATE_REPAIRED: 'Improved the candidate answer',
+  VERIFIER_VERDICT: 'Reviewed the proposed result',
+  ANSWER_EVALUATED: 'Evaluated the answer',
+  SAFETY_CHECKED: 'Completed a safety review',
+  TASK_COMPLETED: 'Completed the task',
+  TASK_ACCEPTED: 'Accepted the result',
+  TASK_NOT_ACCEPTED: 'Requested another improvement pass',
+  PERSONA_ACTION_AUTHORED: 'Planned an action',
+  PERSONA_ACTION_COMPLETED: 'Completed an action',
+  PERSONA_ACTION_FAILED: 'An action needs attention',
+  ENV_MCP_TOOL_INVOKED: 'Used a workspace tool',
+  EXTERNAL_CAPABILITY_ACQUIRED: 'Added a new capability',
+  CAPABILITY_PROVISIONED: 'Prepared a new capability',
+});
+
+const PURPOSE_CONTEXT = Object.freeze({
+  candidate: 'developing a candidate answer',
+  repair: 'improving the candidate answer',
+  judge: 'evaluating the proposed result',
+  safety: 'checking the result for safety',
+  objective: 'clarifying the goals',
+  classifier: 'understanding the task',
+  optimize_tactics: 'improving the working approach',
+  answer: 'developing the answer',
+  verifier: 'checking the result independently',
+  pressure: 'checking whether the work is truly ready',
+  pressure_appraisal: 'checking whether the work is truly ready',
+  peer_pressure_appraisal: 'independently checking whether the work is ready',
+  artifact_review: 'reviewing the deliverables',
+  artifact_generation: 'creating the deliverables',
+  artifact_revision: 'improving the deliverables',
+  model: 'working through the task',
+});
+
 export function isTechnicalKey(key) {
   return TECHNICAL_KEY.test(String(key || ''));
 }
@@ -26,6 +86,33 @@ export function isMachineIdentifier(value) {
   if (/^[0-9a-f]{32,}$/i.test(text) || /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(text)) return true;
   if (/^[A-Z0-9_-]{24,}$/i.test(text) && /\d/.test(text)) return true;
   return false;
+}
+
+export function friendlyDuration(value) {
+  const ms=Number(value);
+  if(!Number.isFinite(ms)||ms<0) return '';
+  if(ms<1000) return 'less than a second';
+  const seconds=Math.round(ms/1000);
+  if(seconds<60) return `${seconds} second${seconds===1?'':'s'}`;
+  const minutes=Math.floor(seconds/60), remainder=seconds%60;
+  if(minutes<60) return `${minutes} minute${minutes===1?'':'s'}${remainder?` ${remainder} second${remainder===1?'':'s'}`:''}`;
+  const hours=Math.floor(minutes/60), minuteRemainder=minutes%60;
+  return `${hours} hour${hours===1?'':'s'}${minuteRemainder?` ${minuteRemainder} minute${minuteRemainder===1?'':'s'}`:''}`;
+}
+
+export function humanActivityPresentation(kind, provenance = {}) {
+  const machineKind=String(kind||'').trim().toUpperCase();
+  const purpose=String(provenance?.purpose||'').trim();
+  const context=PURPOSE_CONTEXT[purpose]||'';
+  const duration=friendlyDuration(provenance?.latencyMs);
+  const authoredAction=clean(provenance?.action);
+  const actionUsable=authoredAction&&!isMachineIdentifier(authoredAction)
+    &&!/^[_A-Z0-9:-]+$/.test(authoredAction)&&authoredAction.length<=180;
+  const headline=(actionUsable?authoredAction:ACTIVITY_HEADLINES[machineKind])
+    ||humanizeMachineKey(machineKind||'activity');
+  const summary=context
+    ?`${context[0].toUpperCase()}${context.slice(1)}.`:'';
+  return Object.freeze({headline,summary,duration,context});
 }
 
 function scalar(value) {

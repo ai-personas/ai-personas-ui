@@ -1,10 +1,25 @@
 import assert from 'node:assert/strict';
 import {
+  friendlyDuration,
+  humanActivityPresentation,
   humanizeMachineKey,
   isMachineIdentifier,
   operatorResponseText,
   structuredContentProjection,
 } from '../assets/human-content.mjs';
+
+assert.equal(friendlyDuration(37_966), '38 seconds');
+assert.equal(friendlyDuration(61_000), '1 minute 1 second');
+assert.deepEqual(humanActivityPresentation('MODEL_CALL_SUCCEEDED',{
+  purpose: 'artifact_review', status: 200, latencyMs: 37_966,
+}), {
+  headline: 'Finished a model-assisted work step',
+  summary: 'Reviewing the deliverables.',
+  duration: '38 seconds',
+  context: 'reviewing the deliverables',
+});
+assert.equal(humanActivityPresentation('MODEL_CALL',{purpose:'model'}).context,
+  'working through the task');
 
 assert.equal(humanizeMachineKey('next_needed_effect'), 'Next needed effect');
 assert.equal(isMachineIdentifier('run-01KYZ123456789ABCDEFGH'), true);

@@ -53,8 +53,10 @@ import {
   splitNetworkKey,
 } from './network-store.mjs?v=20260710-scalable-network-v1';
 import {
+  artifactTypeLabel,
   selectArtifactRenderer,
-} from './artifact-types.mjs?v=20260723-public-cognition-media-v2';
+  sniffArtifactMediaType,
+} from './artifact-types.mjs?v=20260726-human-artifacts-v1';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -65,9 +67,11 @@ import {
   resolveEnvironmentAuthority,
 } from './routing-authority.mjs?v=20260722-exact-environment-authority-v2';
 import {
+  friendlyDuration,
+  humanActivityPresentation,
   operatorResponseText,
   structuredContentProjection,
-} from './human-content.mjs?v=20260726-human-first-v1';
+} from './human-content.mjs?v=20260726-human-first-v2';
 import {
   expiredProviderKernels,
   reconcileResolverDirectory,
@@ -1401,6 +1405,19 @@ function _exactPersonaCapabilitiesSummary(value){
   }
   return out;
 }
+function _exactPersonaCharacteristics(value){
+  if(!_plainPersonaParticipationObject(value)
+      ||value.schema!=='persona-characteristic-card/1'
+      ||!_plainPersonaParticipationObject(value.characteristics)) return null;
+  const source=value.characteristics, out={};
+  for(const field of ['identity_statement','public_tone','working_style']){
+    const text=source[field];
+    if(typeof text!=='string'||text!==text.trim()||!text
+        ||enc.encode(text).length>1600||/[\u0000-\u001f\u007f]/u.test(text)) return null;
+    out[field]=text;
+  }
+  return Object.freeze(out);
+}
 function _currentPersonaParticipationExpiry(value,now=Date.now()){
   if(typeof value!=='string') return false;
   const match=PERSONA_PARTICIPATION_EXPIRES_RE.exec(value);
@@ -1466,8 +1483,10 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
   let signatureVerified=false;
   try{ signatureVerified=await ed.verifyAsync(hexToBytes(envelope.signature_hex),
     enc.encode(canon(card)),hexToBytes(publicKeyHex)); }catch(_){ signatureVerified=false; }
+  const characteristics=_exactPersonaCharacteristics(card.characteristic_identity);
   return signatureVerified?Object.freeze({
     envelope,name:card.name,capabilitiesSummary:Object.freeze(capabilitiesSummary),
+    characteristics,
   }):null;
 }
 const PUBLIC_TASK_LIFECYCLE_FIELDS=Object.freeze([
@@ -1841,6 +1860,7 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     _personaParticipationVerified:!!participation,
     _personaParticipationName:participation?.name||'',
     _personaCapabilitiesSummary:participation?.capabilitiesSummary||[],
+    _personaCharacteristics:participation?.characteristics||null,
     persona_card:participation?.envelope||null,
     _personaLifecycleVerified:lifecycleVerified,
     _personaLifecycleObservationState:personaId?lifecycleObservationState:'',
@@ -2762,6 +2782,8 @@ function upsert(r){
     _personaCapabilitiesSummary:r.kind==='persona'&&r._personaParticipationVerified===true
       &&Array.isArray(r._personaCapabilitiesSummary)
       ?r._personaCapabilitiesSummary.slice(0,64):[],
+    _personaCharacteristics:r.kind==='persona'&&r._personaParticipationVerified===true
+      &&r._personaCharacteristics?{...r._personaCharacteristics}:null,
     persona_card:r.kind==='persona'&&r._personaParticipationVerified===true&&r.persona_card
       ?r.persona_card:null,
     _personaLifecycleVerified:r.kind==='persona'&&r._personaLifecycleVerified===true,
@@ -3981,7 +4003,7 @@ function _modelSummary(models){
     +`<span class="l2">${esc([...e.roles].slice(0,4).join(', ')||'model')}${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span></div>`).join('');
 }
 function _liveFeed(models,{historical=false}={}){
-  if(!models||!models.length) return '<div class="l2">idle — no recent model calls</div>';
+  if(!models||!models.length) return '<div class="l2">No model-assisted work was observed recently.</div>';
   // A persona legitimately produces, repairs AND evolves its own tactics — so SUMMARISE
   // its recent model calls by PURPOSE with a count (newest purpose first), instead of a
   // repeating row per call that reads like a glitch ("repairing candidate" ×6 in a row).
@@ -3990,21 +4012,22 @@ function _liveFeed(models,{historical=false}={}){
     const e=byP.get(k)||{n:0,model:_modelLabel(m.model),role:_modelFacet(m.role),seen:i}; e.n++; e.model=_modelLabel(m.model); if(_modelFacet(m.role)) e.role=_modelFacet(m.role); e.seen=i++; byP.set(k,e); }
   const order=[...byP.entries()].sort((a,b)=>b[1].seen-a[1].seen);   // most-recently-used purpose first
   return order.map(([p,e])=>{
-    const lbl=PURPOSE_LABEL[p]||p;
-    return `<div class="grant"><span class="l2">${historical?'':'<span class="livedot2"></span>'}${esc(lbl)}`
+    const lbl=humanActivityPresentation('MODEL_CALL',{purpose:p}).context||PURPOSE_LABEL[p]||p;
+    return `<div class="grant" title="model ${esc(e.model)}${e.role&&e.role!=='-'?` · role ${esc(e.role)}`:''}"><span class="l2">${historical?'':'<span class="livedot2"></span>'}${esc(_sentenceStart(lbl))}`
       +`${e.n>1?` <span class="rr-count">×${e.n}</span>`:''}</span>`
-      +`<span><code>${esc(e.model)}</code>${e.role&&e.role!=='-'&&e.role!==p?` <span class="l2">${esc(e.role)}</span>`:''}</span></div>`;
+      +`<span class="l2">${e.n} step${e.n===1?'':'s'}</span></div>`;
   }).join('');
 }
 function _terminalModelFailureHTML(failure){
   if(!failure) return '';
-  const purpose=PURPOSE_LABEL[failure.purpose]||String(failure.purpose||'model call').replace(/_/g,' ');
+  const purpose=humanActivityPresentation('MODEL_CALL',{purpose:failure.purpose}).context
+    ||PURPOSE_LABEL[failure.purpose]||String(failure.purpose||'model call').replace(/_/g,' ');
   const detail=[failure.model?`model ${failure.model}`:'',failure.status?`HTTP ${failure.status}`:'']
     .filter(Boolean).join(' · ');
   return `<div class="model-failure" role="status"><div><span>${icon('warn','ico-sm')}</span>`
-    +`<b>Model call failed</b><small>${esc(purpose)}${detail?` · ${esc(detail)}`:''}</small></div>`
+    +`<b>A work step needs attention</b><small>${esc(_sentenceStart(purpose))}</small></div>`
     +(failure.reason?`<p>${esc(failure.reason)}</p>`:'')
-    +`<span class="ix-trust transport">UNSIGNED LIVE TELEMETRY</span></div>`;
+    +(detail?`<details class="activity-technical"><summary>Technical details</summary><div><code>${esc(detail)}</code><span class="ix-trust transport">OBSERVED LIVE</span></div></details>`:'')+`</div>`;
 }
 function renderPersonaLive(pid,profileFallback,kernel=''){
   // profileFallback (the served persona card) lets the grid render for IDLE personas too
@@ -4019,8 +4042,8 @@ function renderPersonaLive(pid,profileFallback,kernel=''){
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   if(s.lifecycle_state!=null||s.reputation_score!=null||s.experience_tasks!=null){
     h+=`<div class="livegrid">`
-      +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
+      +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state==='ACTIVE'?'Available':_sentenceStart(String(s.lifecycle_state||'observed').replace(/_/g,' ')))}</div><div class="lmk">availability</div></div>`
+      +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks worked</div></div>`
       +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
       +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
         +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
@@ -4031,15 +4054,16 @@ function renderPersonaLive(pid,profileFallback,kernel=''){
   const running=_activeModelCallsForPersona(ref.key).length>0;
   const terminalFailure=running?null:(d.terminalFailure||null);
   if(rt){
-    h+=`<div class="sublabel">Runtime state · unsigned status telemetry</div>`
-      +kv('Task execution',esc(rt.task_execution_state||'unmarked'))
-      +kv('LLM execution',esc(rt.llm_execution_state||'unmarked'));
+    h+=`<div class="sublabel">Current participation</div>`
+      +kv('Task',esc(_humanTaskExecutionState(rt.task_execution_state||'not_participating')))
+      +kv('Model-assisted step',esc(rt.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(rt.llm_execution_state||'not reported').replace(/_/g,' '))));
     const call=rt.current_model_call;
-    if(call) h+=kv('Current model call',`<span class="ok">${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')}</span> · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}`);
+    if(call){ const purpose=humanActivityPresentation('MODEL_CALL',{purpose:call.requested_purpose}).context;
+      h+=kv('Working on',`<span class="ok" title="model ${esc(call.model_id||'not reported')}">${esc(_sentenceStart(purpose||call.requested_purpose||'the current task'))}</span>`); }
   }
   if(terminalFailure) h+=`<div class="sublabel">Terminal execution status</div>`
     +_terminalModelFailureHTML(terminalFailure);
-  h+=`<div class="sublabel">${running?'Doing now':'Model selection history'}</div>`
+  h+=`<div class="sublabel">${running?'Working now':'Recent model-assisted work'}</div>`
     +_liveFeed(d.models,{historical:!running});
   return h;
 }
@@ -4049,11 +4073,11 @@ function renderEnvLive(eid,kernel=''){
   const sp=d.spans||[];
   if(sp.length){
     const counts={}; sp.forEach((s)=>{counts[s.kind]=(counts[s.kind]||0)+1;});
-    h+=`<div class="sublabel">Lineage events</div>`
+    h+=`<div class="sublabel">Recent work</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>
-        `<div class="grant"><span class="l2">${esc(k)}</span><span class="ok">${esc(v)}</span></div>`).join('');
+        `<div class="grant"><span class="l2">${esc(_ixHeadline({kind:k,_provenance:{}}))}</span><span class="ok">${esc(v)}</span></div>`).join('');
   }
-  h+=`<div class="sublabel">Model activity in this env</div>`+_liveFeed(d.models);
+  h+=`<div class="sublabel">Model-assisted work</div>`+_liveFeed(d.models);
   return h;
 }
 
@@ -4093,13 +4117,15 @@ function renderEnvLaneLive(b){
   const live=_envLaneLive(b);
   if(!live.spans.length&&!live.models.length) return '';
   const recent=live.spans.slice(-4).reverse().map((s)=>
-    `<span class="env-live-chip ${s.signed?'ok':''}" title="${s.signed?'signed lineage event':'live event'}">${esc(s.kind.replace(/_/g,' '))}</span>`).join('');
+    `<span class="env-live-chip ${s.signed?'ok':''}" title="${s.signed?'verified work update':'observed live update'}">${esc(_ixHeadline({kind:s.kind,_provenance:{}}))}</span>`).join('');
   const envRunning=_envRunningNow(b);
   const latestModel=live.models.length?live.models[live.models.length-1]:null;
+  const modelPurpose=latestModel
+    ?humanActivityPresentation('MODEL_CALL',{purpose:latestModel.purpose}).context:'';
   const model=latestModel
-    ? `<span class="env-live-chip ${envRunning?'model':''}">${envRunning?'<span class="livedot2"></span>':'last: '}${esc(PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'model')} · <code>${esc(latestModel.model||'—')}</code></span>`
+    ? `<span class="env-live-chip ${envRunning?'model':''}" title="model ${esc(latestModel.model||'not reported')}">${envRunning?'<span class="livedot2"></span>Working on ':'Most recently: '}${esc(modelPurpose||PURPOSE_LABEL[latestModel.purpose]||latestModel.purpose||'the task')}</span>`
     : '';
-  const state=live.fresh?'live now':live.recent?'recent':'history';
+  const state=live.fresh?'Working now':live.recent?'Updated recently':'Earlier work';
   return `<div class="env-live${live.fresh?' hot':''}"><span class="env-live-label">${state}</span>${model}${recent}</div>`;
 }
 
@@ -4178,11 +4204,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PERSONA_ACTION_FAILED:'action failed'};
 const _ixVerb=(kind)=>IX_VERB[kind]||String(kind||'acted').toLowerCase().replace(/_/g,' ');
 function _ixHeadline(event){
-  const provenance=event?._provenance||{};
-  if(provenance.action) return String(provenance.action);
-  if(event?.kind==='MODEL_CALL'&&provenance.purpose)
-    return `model · ${provenance.purpose}`;
-  return _ixVerb(event?.kind);
+  return humanActivityPresentation(event?.kind,event?._provenance||{}).headline;
 }
 const PUBLIC_ACTIVITY_PROVENANCE_ORDER=Object.freeze([
   'action','actionId','invocation','purpose','model','status','callStatus','role','tool','server','run','task','missionTask','call','event','intent',
@@ -4292,6 +4314,32 @@ function _eventTrustHTML(event){
     ? `<span class="ix-trust signed" title="${esc(event._trustTitle||'lineage signature asserted by the admitted node frame')}">${esc(event._trustLabel||'SIGNED EVENT')}</span>`
     : `<span class="ix-trust transport" title="${esc(event?._trustTitle||'live node transport frame; not independently signature-verified in this browser')}">${esc(event?._trustLabel||'LIVE FRAME')}</span>`;
 }
+function _activityTrustBadgeHTML(event){
+  return event?.signed===true
+    ?`<span class="ix-trust signed" title="${esc(event._trustTitle||'verified signed activity')}">${icon('check','ico-sm')} Verified</span>`
+    :`<span class="ix-trust transport" title="${esc(event?._trustTitle||'observed live activity; not independently signature-verified in this browser')}">Observed live</span>`;
+}
+function _activityPrimaryContextHTML(event,{className='activity-context',kernel=''}={}){
+  const provenance=event?._provenance||{}, fragments=[];
+  const add=(human)=>{ if(!human||fragments.some((item)=>item.label===human.label&&item.value===human.value)) return;
+    fragments.push(human); };
+  for(const field of ['task','missionTask','environment']){
+    const source=Array.isArray(provenance[field])?provenance[field][0]:provenance[field];
+    const value=_boundedActivityProvenanceValue(source); if(!value) continue;
+    add(_humanActivityProvenance(field,value,provenance,kernel));
+  }
+  const duration=friendlyDuration(provenance.latencyMs);
+  if(duration) fragments.push({label:'took',value:duration,title:`${provenance.latencyMs} ms`});
+  if(!fragments.length) return '';
+  return `<span class="${esc(className)}">${fragments.map((item)=>
+    `<span class="activity-context-item" title="${esc(item.title||item.value)}"><small>${esc(item.label)}</small><span>${esc(item.value)}</span></span>`).join('')}</span>`;
+}
+function _activityTechnicalHTML(event,kernel=''){
+  const details=_activityProvenanceFragments(event?._provenance,{full:true,kernel});
+  const trust=_eventTrustHTML(event);
+  if(!details&&!trust) return '';
+  return `<details class="activity-technical"><summary>Verification & technical details</summary><div>${trust}${details}</div></details>`;
+}
 function _activityProvenanceHTML(provenance,{className='ix-provenance',prepend='',full=false,kernel=''}={}){
   const fragments=_activityProvenanceFragments(provenance,{full,kernel});
   return fragments||prepend?`<span class="${esc(className)}">${prepend}${fragments}</span>`:'';
@@ -4300,7 +4348,7 @@ function _eventTimeHTML(event){
   const provenance=event?._provenance||{};
   const exact=String(provenance.at||provenance.startedAt||provenance.snapshotAt||event?.at||'');
   const valid=Number.isFinite(Date.parse(exact));
-  const label=event?._observedState?'snapshot':_ago(event?._t||Date.now());
+  const label=_ago(event?._t||Date.now());
   return `<time${valid?` datetime="${esc(exact)}" title="${esc(exact)}"`:''}>${esc(label)}</time>`;
 }
 // per-row feed kind glyph keyed to the _ixClass lane (inherits the lane colour via
@@ -4408,6 +4456,14 @@ function _coordRole(sid,_summary,kernel=''){
     :_ROLE_NOT_DECLARED;
 }
 const _coordRoleClass=(role)=>role===_ROLE_NOT_DECLARED?'role-undesignated':'role-declared';
+function _humanTaskExecutionState(value){
+  return ({
+    paused_participant:'Paused',run_participant:'Working',not_participating:'Ready',
+    completed_participant:'Finished',failed_participant:'Needs attention',
+  })[String(value||'')]||String(value||'').replace(/_/g,' ');
+}
+function _sentenceStart(value){ const text=String(value||'').trim();
+  return text?text[0].toUpperCase()+text.slice(1):''; }
 // per-persona "is fresh" detector for realtime streaming: did its model-event
 // count grow since the last render? (drives the slide-in animation + node pulse)
 function _personaGrew(personaKey,count){
@@ -4896,6 +4952,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const L=r._links||{}, label=_artifactDisplayPath(r);
   const mediaSelection=artifactMediaPresentation(r,label);
   const media=mediaSelection.mediaType||'undeclared media';
+  const typeLabel=artifactTypeLabel(mediaSelection.mediaType);
   const hash=String(L.content_hash||r.content_hash||'');
   const rawPath=String(L.content||r.content||r.package_path||'');
   const path=rawPath&&run&&!/^(?:https?:|\/|k\/run-)/.test(rawPath)?_bodyPath(rawPath,run):rawPath;
@@ -4906,19 +4963,19 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const canPreview=verifiedMetadata===true&&!!path&&/^sha256:[0-9a-f]{64}$/i.test(hash);
   const canInspect=verifiedMetadata===true&&!!aid;
   if(!canPreview&&!canInspect){
-    return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — preview unavailable because manifest metadata is not independently verified">`
-      +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-      +`<small>${esc(scope)}${inProgress?' · signed in-progress workspace file':''} · filename observed through a verified manifest route; manifest bytes are not independently signed or hash-bound</small></span>`
-      +`<span class="current-artifact-preview">${inProgress?'In progress · ':''}Preview unavailable</span></div>`;
+    return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — file not ready to open">`
+      +`<span class="current-artifact-icon">${icon('task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+      +`<small>${esc(typeLabel)} · The filename is available, but verified file bytes have not arrived yet.</small></span>`
+      +`<span class="current-artifact-preview">${inProgress?'Still being created':'Not ready to open'}</span></div>`;
   }
   const action=canPreview
     ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}"`
     :`data-artid="${esc(aid)}"`;
   const authored=authoredArtifactLabelText(r);
-  return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'fetch, hash-check and preview':'inspect'} ${esc(label)}">`
-    +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-    +`<small>${esc(scope)}${inProgress?' · signed in-progress workspace file':''} · ${esc(media)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
-    +`<span class="current-artifact-preview">${inProgress?'In progress · ':''}${canPreview?'Preview':'Inspect'} →</span></button>`;
+  return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
+    +`<span class="current-artifact-icon">${icon(mediaSelection.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
+    +`<span class="current-artifact-preview">${inProgress?'Still being created · ':''}${canPreview?'Open file':'View details'} →</span></button>`;
 }
 function _artifactActionHTML(r,{scope='output'}={}){
   if(!r) return '';
@@ -4927,7 +4984,7 @@ function _artifactActionHTML(r,{scope='output'}={}){
   const authored=authoredArtifactLabelText(r);
   return `<button type="button" class="owned-output ${info.cls}" data-artid="${esc(aid)}" title="open ${esc(label)}">`
     +`<span class="owned-output-icon">${icon('box','ico-sm')}</span><span class="owned-output-copy"><b>${esc(label)}</b>`
-    +`<small>${esc(scope)}${info.state?` · ${esc(info.state.replace(/_/g,' '))}`:''}${info.files?` · ${info.files} files`:''}${authored?` · authored: ${esc(authored)}`:''}</small></span>${icon('chevron','ico-sm')}</button>`;
+    +`<small>${info.files?`${info.files} file${info.files===1?'':'s'}`:esc(_sentenceStart(scope))}${authored?` · ${esc(authored)}`:''}</small></span><span class="current-artifact-preview">Open details →</span></button>`;
 }
 function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona worktree'}={}){
   const projection=_artifactRevisionProjection(artifacts), rows=projection.rows;
@@ -4937,11 +4994,11 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
     const authored=[...new Set(current.flatMap((r)=>authoredArtifactLabels(r)))].slice(0,8);
     const history=projection.history;
     return `<section class="owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span>`
-      +`<small>${current.length} current unique file${current.length===1?'':'s'} · ${esc(scope)} · ${inProgress?`${inProgress} signed in progress`:'signed metadata'}</small></div>`
+      +`<small>${current.length} file${current.length===1?'':'s'} ready to open${inProgress?` · ${inProgress} still being created`:''}</small></div>`
       +`<div class="current-artifact-list" aria-label="${esc(label)} — current files">${current.map((r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true})).join('')}</div>`
       +`<div class="artifact-preview-note">Select a file to fetch it on demand, verify its SHA-256, and open the preview.</div>`
-      +(authored.length?`<div class="owned-output-history">authored role claims · ${esc(authored.join(' · '))}</div>`:'')
-      +(history.length?`<div class="artifact-revision-history"><b>Revision history</b><span>${history.length} earlier signed revision${history.length===1?'':'s'} kept separate from the ${current.length}-file current workspace.</span>`
+    +(authored.length?`<div class="owned-output-history">Purpose · ${esc(authored.join(' · '))}</div>`:'')
+    +(history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${history.length} earlier version${history.length===1?'':'s'} retained.</span>`
         +history.slice(0,12).map((revision)=>`<span title="${esc(revision.key)}">Earlier version · ${revision.rows.length} file${revision.rows.length===1?'':'s'}</span>`).join('')
         +(history.length>12?`<span>${history.length-12} additional earlier revisions retained in verified records</span>`:'')+`</div>`:'')+`</section>`;
   }
@@ -4982,32 +5039,35 @@ function _liveWorkspaceCurrentFileCount(rows){
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact');
   const metadata=_liveFileSignedArtifactMetadata(file,row);
-  const media=metadata
-    ?selectArtifactRenderer(metadata.mimeType,{path:label}).mediaType
-    :artifactMediaPresentation(file,label).mediaType;
+  const presentation=metadata
+    ?selectArtifactRenderer(metadata.mimeType,{path:label})
+    :artifactMediaPresentation(file,label);
+  const media=presentation.mediaType;
   const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
-  return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="fetch, hash-check and preview ${esc(label)}">`
-    +`<span class="current-artifact-icon">${icon('code','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
-    +`<small>${esc(scope)} · ${esc(media||'undeclared media')} · ${fmtBytes(file.size_bytes)}${metadata?' · signed file-card metadata':''}${authored?` · authored: ${esc(authored)}`:''}</small></span>`
-    +`<span class="current-artifact-preview">Preview →</span></button>`;
+  const proof=[media||'type not declared',metadata?'signed file-card metadata':'signed workspace metadata',scope].join(' · ');
+  return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="${esc(`Open ${label}. ${proof}`)}">`
+    +`<span class="current-artifact-icon">${icon(presentation.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
+    +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
   const projection=_currentLiveWorkspaceProjection(rows);
   if(!projection.current.length) return '';
   const fileCount=projection.current.reduce((total,row)=>total+(row.files?.length||0),0);
-  return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${fileCount} current unique file${fileCount===1?'':'s'} · signed workspace snapshot</small></div>`
-    +projection.current.map((row)=>{ const terminal=[
-      row.terminalState?`state ${row.terminalState}`:'',row.terminalStatus?`status ${row.terminalStatus}`:'',
-    ].filter(Boolean);
-      const captureBadge=_activeCallCaptureBadgeHTML(_isAuthenticatedActiveCallCapture(
-        row.captureBoundary,{ended:row.ended}));
+  // A finalized, empty scratch worktree is not a useful "current files"
+  // surface. Durable environment outputs remain visible through independently
+  // verified file cards, so this does not imply that published work vanished.
+  if(!fileCount&&projection.current.every((row)=>row.ended===true)) return '';
+  return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${fileCount} current file${fileCount===1?'':'s'}</small></div>`
+    +projection.current.map((row)=>{
       const updated=_friendlyInstant(row.generatedAt);
       const exact=[row.workspaceId?`workspace ${row.workspaceId}`:'',row.run?`run ${row.run}`:'',row.revision?`revision ${row.revision}`:''].filter(Boolean).join(' · ');
-      return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>Current files</b>${updated?` · ${esc(updated)}`:''}</span><span>${captureBadge}${captureBadge?' · ':''}${row.files.length} file${row.files.length===1?'':'s'}${terminal.length?` · ${esc(terminal.join(' · '))}`:` · ${esc(String(row.state||'live').replace(/_/g,' '))}`}</span></div>`
+      const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Waiting for the first file';
+      return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>${esc(workspaceStatus)}</b>${updated?` · ${esc(updated)}`:''}</span><span>${row.files.length} file${row.files.length===1?'':'s'}</span></div>`
         +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">workspace is currently empty</span>'}</div></div>`;
     }).join('')
-    +`<div class="artifact-preview-note">Select a current file to fetch it on demand, verify its SHA-256, and open the preview. ArtifactBundle lifecycle remains separate.</div>`
-    +(projection.history.length?`<div class="artifact-revision-history"><b>Revision history</b><span>${projection.history.length} earlier signed workspace revision${projection.history.length===1?'':'s'} excluded from the current file count.</span>`
+    +`<div class="artifact-preview-note">Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.</div>`
+    +(projection.history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${projection.history.length} earlier workspace version${projection.history.length===1?'':'s'} retained.</span>`
       +projection.history.slice(0,12).map((row)=>`<span title="${esc(`run ${row.run||''} · revision ${row.revision||''}`)}">Earlier version${_friendlyInstant(row.generatedAt)?` · ${esc(_friendlyInstant(row.generatedAt))}`:''} · ${row.files.length} file${row.files.length===1?'':'s'}</span>`).join('')
       +(projection.history.length>12?`<span>${projection.history.length-12} additional earlier revisions retained</span>`:'')+`</div>`:'')+`</section>`;
 }
@@ -5038,8 +5098,8 @@ function _personaActivityHTML(acts,personaKey){
     .slice(0,2).forEach(add);
   candidates.forEach(add);
   rows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Public persona activity</span><small>quiet now</small></div><div class="pc-activity-empty">No signed or observed activity has been retained for this persona.</div></section>`;
-  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Public persona activity</span><small><i></i> live + retained verified history</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
+  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small><i></i> updates as they happen</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
     +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
@@ -5054,14 +5114,23 @@ function _personaActivityHTML(acts,personaKey){
         ?`${selfName}${targetLabel?` → ${targetLabel}`:''}`
         :`${actor}${targetLabel?` → ${targetLabel}`:` → ${selfName}`}`;
       const exactText=typeof e._exactText==='string'&&e._exactText.trim()?e._exactText:'';
-      const detail=exactText||String(e._msg||e._cap?.capability||e._cap?.tool_name||'').trim();
+      const presentation=humanActivityPresentation(e.kind,e._provenance||{});
+      const observedDetail=String(e._msg||e._cap?.capability||e._cap?.tool_name||'').trim();
       const direction=mine?'outbound':(actorKey?'inbound':'observed');
-      const provenance=_activityProvenanceHTML(e._provenance,{className:'pc-message-provenance',
-        prepend:_eventTrustHTML(e),kernel});
+      const modelUpdate=e.kind==='MODEL_CALL'||String(e.kind||'').startsWith('MODEL_');
+      // Model telemetry often carries transport summaries such as
+      // "200 · 26036 ms" as its message. Keep those values in the collapsed
+      // verification disclosure and use human work context on the card.
+      const detail=exactText||(modelUpdate?presentation.summary:(observedDetail||presentation.summary));
+      const routeLabel=exactText
+        ?`${selfName} · ${e._cognition===true?'Shared thought':'Shared update'}`
+        :modelUpdate?`${selfName} · Work update`:route;
+      const context=_activityPrimaryContextHTML(e,{className:'pc-message-context',kernel});
+      const technical=_activityTechnicalHTML(e,kernel);
       return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
-        +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(route)}</span>`
-        +`<b>${esc(_ixHeadline(e))}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
-        +provenance+`</span>${_eventTimeHTML(e)}</li>`; }).join('')+`</ol></section>`;
+        +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(routeLabel)} ${_activityTrustBadgeHTML(e)}</span>`
+        +`<b>${esc(presentation.headline)}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
+        +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('')+`</ol></section>`;
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
@@ -5081,6 +5150,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   const identityObservation=providerVerifiedPersonaObservation(personaKey);
   const signedIdentity=identityObservation?.record||null;
   const identityVerified=identityObservation?.identityVerified===true;
+  const characteristics=identityVerified&&signedIdentity?._personaCharacteristics
+    ?signedIdentity._personaCharacteristics:null;
   const lifecycle=identityObservation?.lifecycle||null;
   const signedName=_personaAuthoredNameForObservation(identityObservation);
   const hasSignedIdentity=identityVerified;
@@ -5110,30 +5181,30 @@ function renderPersonaCard(pid,kernel='',context={}){
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
-  let doingHTML, focusLabel='Current move';
+  let doingHTML, focusLabel="What I'm doing now";
   if(activeCall){
     const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
     const model=String(activeCall.model_id||activeCall.model||'—');
-    const purposeLabel=activeCall._signedPublicCognition===true
-      ?purpose:(PURPOSE_VERB[purpose]||purpose.replace(/_/g,' '));
-    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong>${esc(purposeLabel)}</strong><code>${esc(model)}</code>`
+    const purposeLabel=humanActivityPresentation('MODEL_CALL',{purpose}).context
+      ||PURPOSE_VERB[purpose]||purpose.replace(/_/g,' ');
+    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong title="model ${esc(model)}">${esc(_sentenceStart(purposeLabel))}</strong>`
       +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
   } else if(terminalFailure){
-    focusLabel='Execution status';
+    focusLabel='Work status';
     const purpose=PURPOSE_VERB[terminalFailure.purpose]
       ||String(terminalFailure.purpose||'model call').replace(/_/g,' ');
-    doingHTML=`<span class="pc-failure-mark">${icon('warn','ico-sm')}</span><strong>Model call failed</strong>`
-      +(terminalFailure.model?`<code>${esc(terminalFailure.model)}</code>`:'')
-      +`<span class="pc-when">${esc(purpose)}${terminalFailure.status?` · HTTP ${esc(terminalFailure.status)}`:''}</span>`;
+    doingHTML=`<span class="pc-failure-mark">${icon('warn','ico-sm')}</span><strong>A work step needs attention</strong>`
+      +`<span class="pc-when"${terminalFailure.model?` title="model ${esc(terminalFailure.model)}${terminalFailure.status?` · HTTP ${esc(terminalFailure.status)}`:''}"`:''}>${esc(_sentenceStart(purpose))}</span>`;
   } else if(hasModels){
-    const purposeLabel=PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
-    focusLabel=modelFresh?'Recent model activity':'Last model activity';
-    const verb=modelFresh?purposeLabel:('last '+purposeLabel);
-    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(verb)}</strong><code>${esc(last.model)}</code>`;
+    const purposeLabel=humanActivityPresentation('MODEL_CALL',{purpose:last.purpose}).context
+      ||PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
+    focusLabel=modelFresh?'Recent work':'Most recent work';
+    const verb=_sentenceStart(purposeLabel||'working through the task');
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong title="model ${esc(last.model)}">${esc(verb)}</strong>`;
   } else if(actFresh){
-    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixVerb(recentAct.kind))}</strong>`;
+    doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixHeadline(recentAct))}</strong>`;
   } else {
-    focusLabel='Next move'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
+    focusLabel='Availability'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
   }
   // TOOL chip: the persona's headline self-extension act (provision / acquire / use /
   // block) within the live window. doingHTML is model-purpose-only when hasModels, so a
@@ -5160,19 +5231,19 @@ function renderPersonaCard(pid,kernel='',context={}){
     +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
     +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
     +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
-    +(rt.task_execution_state?`<span class="tag runtime-tag" title="task execution state from unsigned node status">${icon('task','ico-sm')} ${esc(rt.task_execution_state.replace(/_/g,' '))}</span>`:'');
+    +(rt.task_execution_state?`<span class="tag runtime-tag" title="live task participation status">${icon('task','ico-sm')} ${esc(_humanTaskExecutionState(rt.task_execution_state))}</span>`:'');
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
   const dotCls=running?'run':(terminalFailure?'error':(recent?'on':'off'));
   const statusBadge=transportStale
-    ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'STALE'}</span>`
-    : running ? '<span class="pc-run">MODEL CALL</span>'
-    : terminalFailure ? '<span class="pc-failed">MODEL FAILED</span>'
+    ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'UPDATE DELAYED'}</span>`
+    : running ? '<span class="pc-run">WORKING NOW</span>'
+    : terminalFailure ? '<span class="pc-failed">NEEDS ATTENTION</span>'
     : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
-      :rt.task_execution_state==='run_participant'?'<span class="pc-recent">RUN ACTIVE</span>'
-      :(recent?'<span class="pc-recent">RECENT</span>':'<span class="pc-idle">IDLE</span>'));
+      :rt.task_execution_state==='run_participant'?'<span class="pc-recent">WORKING</span>'
+      :(recent?'<span class="pc-recent">RECENT UPDATE</span>':'<span class="pc-idle">READY</span>'));
   const lifecycleState=(state||'ACTIVE').toUpperCase();
-  const lifecycleBadge=`<span class="pc-life${lifecycleState==='ACTIVE'?'':' off'}">${esc(lifecycleState==='ACTIVE'?'AVAILABLE':lifecycleState.toLowerCase())}</span>`;
+  const lifecycleBadge=lifecycleState==='ACTIVE'?'':`<span class="pc-life off">${esc(lifecycleState.toLowerCase())}</span>`;
   const authoredCapabilities=identityVerified&&Array.isArray(
     signedIdentity?._personaCapabilitiesSummary)
     ?signedIdentity._personaCapabilitiesSummary:[];
@@ -5180,7 +5251,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     String(item?.skill_id||''),String(item?.name||''),
   ]));
   const capabilityHTML=authoredCapabilities.length
-    ?`<section class="pc-capabilities"><span class="pc-current-label">Authored capabilities</span><div>`
+    ?`<section class="pc-capabilities"><span class="pc-current-label">What I can contribute</span><div>`
       +authoredCapabilities.slice(0,2).map((capability)=>{
         const parent=String(capability.lineage_parent_skill_id||'');
         const parentName=authoredCapabilityNames.get(parent)||'';
@@ -5191,6 +5262,11 @@ function renderPersonaCard(pid,kernel='',context={}){
       +(authoredCapabilities.length>2
         ?`<span class="pc-cap-more">+${authoredCapabilities.length-2} more in profile</span>`:'')
       +`</div></section>`:'';
+  const aboutHTML=characteristics
+    ?`<section class="pc-about"><div class="pc-section-head"><span>About me</span><small>${icon('check','ico-sm')} self-described</small></div>`
+      +`<p>${esc(characteristics.identity_statement)}</p>`
+      +`<div class="pc-working-style"><b>How I work</b><span>${esc(characteristics.working_style)}</span></div></section>`:'';
+  const identityLine=role!==_ROLE_NOT_DECLARED?role:(characteristics?.public_tone||'Participating persona');
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
@@ -5223,24 +5299,24 @@ function renderPersonaCard(pid,kernel='',context={}){
   const currentTask=verifiedCurrentTask?.liveTask===true
     &&typeof verifiedCurrentTask.task==='string'?verifiedCurrentTask.task:'';
   const currentTaskHTML=currentTask
-    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Current task</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
-  const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Environments</span><div>`
+    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
+  const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
     :enrichmentPending
-      ?`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">loading verified workspace details…</span></div></section>`
-    :`<section class="pc-environments independent"><span class="pc-current-label">Environment</span><div><span class="pc-env-none">working independently</span></div></section>`;
+      ?`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">loading workspace details…</span></div></section>`
+    :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">working independently</span></div></section>`;
   return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PERSONA':identityPending?icon('warn','ico-sm')+' IDENTITY MATERIALIZING':icon('warn','ico-sm')+` SIGNED PERSONA RECORD · IDENTITY PROOF ${identityProofState.toUpperCase()}`}</span><span>LIVE PUBLIC ACTIVITY</span></div>`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PUBLIC WORK LOG</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' verified participation name':identityPending?icon('check','ico-sm')+' signed lifecycle · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` outer record verified · identity proof ${identityProofState}`}</span><span class="pc-idline">${esc(role)}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-idline">${esc(identityLine)}</span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +aboutHTML+capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
     +_personaActivityHTML(acts,personaKey)
-    +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My live worktree',scope:'persona worktree'})
-    +_ownedOutputsHTML(context.artifacts,{label:'My outputs',scope:'persona worktree'})
+    +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
+    +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +'</article>';
 }
@@ -5285,8 +5361,8 @@ function _environmentCommunicationGraphHTML(b){
       return (state.running?2:0)+(state.recent?1:0); }}).items;
   const shownSet=new Set(shown), hidden=Math.max(0,refs.length-shown.length);
   if(!shown.length) return {activeCount,eventCount:scopedEvents.length,directCount:0,
-    html:`<section class="env-network empty"><div class="env-network-head"><span>Active constellation</span><small>0 observed members</small></div>`
-      +`<div class="env-network-empty">No persona roster has been observed for this signed environment yet.</div></section>`};
+    html:`<section class="env-network empty"><div class="env-network-head"><span>People working together</span><small>No participants yet</small></div>`
+      +`<div class="env-network-empty">No participants have joined this workspace yet.</div></section>`};
 
   const positions=new Map();
   shown.forEach((key,index)=>{ const count=shown.length;
@@ -5325,9 +5401,9 @@ function _environmentCommunicationGraphHTML(b){
     const actor=_nameFor(_eventPersonaKey(event,event.actor_id));
     const recipients=_personaEndpoints(event).map((endpoint)=>_nameFor(_eventPersonaKey(event,endpoint.id))).slice(0,3);
     return `<li><span>${esc(actor)} <b>→</b> ${esc(recipients.join(', '))}</span><small>${esc(_ixVerb(event.kind))} · ${esc(_ago(event._t))}</small></li>`;
-  }).join('')}</ol>`:`<div class="env-comm-quiet">No explicit persona→persona message observed in the last five minutes.</div>`;
+  }).join('')}</ol>`:`<div class="env-comm-quiet">No person-to-person collaboration was observed in the last five minutes.</div>`;
   return {activeCount,eventCount:scopedEvents.length,directCount:edges.size,
-    html:`<section class="env-network"><div class="env-network-head"><span>Active constellation</span><small>${activeCount} working · ${edges.size} direct channel${edges.size===1?'':'s'}</small></div>`
+    html:`<section class="env-network"><div class="env-network-head"><span>People working together</span><small>${activeCount} working now · ${edges.size} direct conversation${edges.size===1?'':'s'}</small></div>`
       +`<div class="env-network-canvas"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="${markerId}" markerWidth="5" markerHeight="5" refX="4.3" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z"></path></marker></defs>${edgeHTML}</svg>${nodes}</div>`
       +(hidden?`<div class="env-network-more">+${hidden} additional member${hidden===1?'':'s'} in the verified roster</div>`:'')+feed+`</section>`};
 }
@@ -5984,29 +6060,31 @@ async function refreshSystemView(){
       :manifestOutputs;
     const artRow=liveEnvOutputs+declaredEnvOutputs;
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
-    const statusTxt=departed?'archived':(b.status||(b.live?'—':'discovered'));
+    const rawStatus=String(b.status||(b.live?'':'discovered')).toLowerCase();
+    const statusTxt=departed?'Archived':({active:'Open',running:'Working',paused:'Paused',idle:'Ready',discovered:'Discovered'})[rawStatus]
+      ||_sentenceStart(rawStatus||'Available');
     const statusOk=(b.status==='active' && !departed);
     return {artRow,departed,statusTxt,statusOk,
       metaFiles:liveFileCount||metaFiles};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
-    const membershipRow=b.members.length?'':'<div class="env-card-empty">awaiting members</div>';
+    const membershipRow=b.members.length?'':'<div class="env-card-empty">Waiting for the first participant</div>';
     const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
     const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
     return `<article class="env-card" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
       +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
-      +`<div class="env-identity"><span class="env-kicker">WORKSPACE LOCATION · ${esc(type)}</span>`
+      +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE · ${esc(type)}</span>`
       +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-card-id">${b.live?'LIVE PUBLIC WORKSPACE':'SIGNED WORKSPACE'}</span></div>`
+      +`<span class="env-card-id">${b.live?'UPDATES LIVE':'VERIFIED WORKSPACE'}</span></div>`
       +`<span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span></header>`
       +`<section class="env-card-stats" aria-label="workspace facts">`
       +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
       +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
-      +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>signals · 5m</small></span>`
+      +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>updates · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?(b.verified?'live telemetry + verified identity':'unsigned live telemetry'):'verified record'}</span><span>environment-owned outputs</span></div></article>`;
+      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'People and files update live':'Workspace profile verified'}</span><span>Open for full history</span></div></article>`;
   };
   // (3) Preserve every exact environment identity. Shared titles, rosters,
   // tasks, or run references are observations, never authority to collapse one
@@ -6074,11 +6152,11 @@ async function refreshSystemView(){
   const morePersonas=hiddenPersonas?`<div class="persona-window-note"><span>showing ${personaWindow.returned} of ${personaWindow.matched} matching personas</span>`
     +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(deckKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenPersonas)} more</button></div>`:'';
   const personaSection=personaCards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
-    +`<h2>People doing the work</h2></div><p>Each card owns its identity, portrait, activity and personal worktree.</p></header>`
+    +`<h2>People doing the work</h2></div><p>Meet each persona, see what they are doing and read the updates they chose to share.</p></header>`
     +`<div class="persona-deck">${personaCards}</div>${morePersonas}</section>`:'';
   const environmentCards=envBlocks.map(environmentCardHTML).join('');
   const environmentSection=environmentCards?`<section class="environment-section"><header class="stage-section-head compact"><div><span class="section-kicker">ENVIRONMENT INDEX</span>`
-    +`<h2>Shared workspaces</h2></div><p>Open a workspace for its shared state and environment-scoped outputs.</p></header>`
+    +`<h2>Shared workspaces</h2></div><p>See who is working together, what changed recently and which files they produced.</p></header>`
     +`<div class="environment-grid">${environmentCards}</div></section>`:'';
   S.artsColdLoaded=true;
   const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
@@ -6209,12 +6287,15 @@ function renderInteractionStream(){
     const threaded=sid&&sid===prevScope; prevScope=sid;
     const spine=threaded?`<span class="ix-spine${fresh?' grow':''}" style="--thread:${_threadHue(sid)}"></span>`:'';
     // read the row like a live MESSAGE: "<persona> <verb> → <to> · <detail>".
-    const verb=_ixHeadline(e);
+    const presentation=humanActivityPresentation(e.kind,e._provenance||{});
+    const verb=presentation.headline;
     const completeText=flt==='think'&&typeof e._exactText==='string'&&e._exactText.trim()
       ?e._exactText:String(e._msg||'');
-    const msg=completeText?`<span class="ix-msg${completeText===e._exactText?' complete':''}">${esc(completeText)}</span>`:'';
-    const trust=_eventTrustHTML(e);
-    const provenance=_activityProvenanceHTML(e._provenance,{kernel:eventKernel});
+    const humanDetail=completeText||presentation.summary;
+    const msg=humanDetail?`<span class="ix-msg${completeText===e._exactText?' complete':''}">${esc(humanDetail)}</span>`:'';
+    const trust=_activityTrustBadgeHTML(e);
+    const context=_activityPrimaryContextHTML(e,{className:'ix-human-context',kernel:eventKernel});
+    const technical=_activityTechnicalHTML(e,eventKernel);
     // capability/tool detail from the backend _cap projection: WHICH capability + its error
     const capDetail=cap&&(cap.capability||cap.tool_name)
       ?`<span class="ix-cap">${esc(cap.capability||cap.tool_name)}${cap.ok===false&&cap.error?' · '+esc(String(cap.error).split('\n')[0].slice(0,90)):''}</span>`:'';
@@ -6223,8 +6304,8 @@ function renderInteractionStream(){
     return `<li class="ix ix-${c}${fail?' fail':''}${fresh?' fresh':''}${threaded?' threaded':''}${(f&&!matches(e))?' dimmed':''}"${ttl}>`
       +spine+`<span class="ix-kind">${_ixGlyph(c)}${esc(verb)}</span>`
       +`<span class="ix-from">${esc(who)}</span>${arrow}${msg}${capDetail}${trust}`
-      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span>${provenance}`
-      +`<span class="ix-time">${_eventTimeHTML(e)}</span></li>`;
+      +`<span class="ix-scope">${esc((e.scope==='cognition'||e.scope==='model')?'':e.scope||'')}</span>${context}`
+      +`<span class="ix-time">${_eventTimeHTML(e)}</span>${technical}</li>`;
   }).join('')||(()=>{
     // A node may publish a signed public-cognition tier. Private nodes answer the
     // same anonymous probe with 404, so an empty THINK feed must stay neutral: the
@@ -6345,20 +6426,18 @@ function feedModels(doc){ return telemetryModelEvents(doc).filter((m)=>(m.kind||
 // before reaching this renderer. Keep every signed status row distinct: the
 // current public contract has no event ID with which identical calls could be merged.
 function _verifiedPublicModelStatusHTML(doc){
-  const events=telemetryModelEvents(doc); if(!events.length) return '<div class="l2">no model status published</div>';
+  const events=telemetryModelEvents(doc); if(!events.length) return '<div class="l2">No recent model-assisted work was published.</div>';
   return events.slice(-16).reverse().map((event)=>{
     const provenance=_publicModelEventProvenance(event,doc.generated_at);
-    const missing=[['model id',provenance.model],['call id',provenance.call],['run id',provenance.run],
-      ['task id',provenance.task],['event id',provenance.event],['event timestamp',provenance.at]]
-      .filter(([,value])=>!value).map(([label])=>label);
-    const trust=_eventTrustHTML({signed:true,_trustLabel:'KERNEL SIGNED SNAPSHOT',
-      _trustTitle:'model-status entry in the verified kernel-signed public telemetry document'});
-    return `<div class="think"><span class="amber">${esc(_ixVerb(event.kind||'MODEL_EVENT'))}</span>`
-      +([provenance.status,Number.isFinite(event.latency_ms)?`${event.latency_ms} ms`:null]
-        .filter(Boolean).length?` · ${esc([provenance.status,Number.isFinite(event.latency_ms)?`${event.latency_ms} ms`:null].filter(Boolean).join(' · '))}`:'')
-      +_activityProvenanceHTML(provenance,{className:'think-provenance',prepend:trust,full:true,
-        kernel:String(doc.kernel_id||doc.node_id||'')})
-      +(missing.length?`<div class="l2">not published for this event: ${esc(missing.join(', '))}</div>`:'')+`</div>`;
+    const projected={...event,signed:true,_provenance:provenance,
+      _trustLabel:'KERNEL SIGNED SNAPSHOT',
+      _trustTitle:'model-status entry in the verified kernel-signed public telemetry document'};
+    const presentation=humanActivityPresentation(event.kind||'MODEL_EVENT',provenance);
+    const context=_activityPrimaryContextHTML(projected,{className:'think-human-context',
+      kernel:String(doc.kernel_id||doc.node_id||'')});
+    return `<div class="think human-model-status"><div><strong>${esc(presentation.headline)}</strong>${_activityTrustBadgeHTML(projected)}</div>`
+      +(presentation.summary?`<p>${esc(presentation.summary)}</p>`:'')+context
+      +_activityTechnicalHTML(projected,String(doc.kernel_id||doc.node_id||''))+`</div>`;
   }).join('');
 }
 function renderPersonaFeedDoc(doc,personaKey=''){
@@ -6367,8 +6446,8 @@ function renderPersonaFeedDoc(doc,personaKey=''){
   // internals + GEPA cohort only with an operator token.
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   h+=`<div class="livegrid">`
-    +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state||'—')}</div><div class="lmk">state</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks</div></div>`
+    +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state==='ACTIVE'?'Available':_sentenceStart(String(s.lifecycle_state||'observed').replace(/_/g,' ')))}</div><div class="lmk">availability</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks worked</div></div>`
     +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
     +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
       +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
@@ -6378,9 +6457,9 @@ function renderPersonaFeedDoc(doc,personaKey=''){
   if(hasOp&&(s.evolution_trace_count!=null||s.accepted_trace_count!=null))
     h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials${s.gepa_cohort_id?' · cohort '+esc(String(s.gepa_cohort_id).slice(0,18)):''}</div>`;
   if(s.task_execution_state||s.llm_execution_state){
-    h+=`<div class="sublabel">Runtime state · unsigned status telemetry</div>`
-      +kv('Task execution',esc(s.task_execution_state||'unmarked'))
-      +kv('LLM execution',esc(s.llm_execution_state||'unmarked'));
+    h+=`<div class="sublabel">Current participation</div>`
+      +kv('Task',esc(_humanTaskExecutionState(s.task_execution_state||'not_participating')))
+      +kv('Model-assisted step',esc(s.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(s.llm_execution_state||'not reported').replace(/_/g,' '))));
   }
   const ref=_personaRef(personaKey||doc.persona_id||'');
   const running=_activeModelCallsForPersona(ref.key).length>0;
@@ -6388,31 +6467,31 @@ function renderPersonaFeedDoc(doc,personaKey=''){
   const feedFailure=projected.byPersona.get(doc.persona_id)||projected.latest;
   const indexedFailure=S.liveByPersona.get(ref.key)?.terminalFailure||null;
   const terminalFailure=running?null:(indexedFailure||feedFailure||null);
-  if(terminalFailure) h+=`<div class="sublabel">Terminal execution status</div>`
+  if(terminalFailure) h+=`<div class="sublabel">Work status</div>`
     +_terminalModelFailureHTML(terminalFailure);
-  h+=`<div class="sublabel">${isPublicEntityTelemetryDocument(doc)?'Verified model status':running?'Doing now':'Model selection history'}</div>`
+  h+=`<div class="sublabel">${isPublicEntityTelemetryDocument(doc)?'Recent verified work':running?'Working now':'Recent model-assisted work'}</div>`
     +(isPublicEntityTelemetryDocument(doc)?_verifiedPublicModelStatusHTML(doc)
       :_liveFeed(feedModels(doc),{historical:!running}));
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="sublabel">Lifecycle / lineage</div>`
+    h+=`<div class="sublabel">Recent work updates</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k2,v])=>
-        `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
+        `<div class="grant"><span class="l2">${esc(_ixHeadline({kind:k2,_provenance:{}}))}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
   return h;
 }
 function renderEnvFeedDoc(doc){
   let h=`<div class="livegrid">`
-    +`<div class="lm"><div class="lmv ${String(doc.status)==='active'?'ok':''}">${esc(doc.status||'—')}</div><div class="lmk">status</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(doc.env_type||'—')}</div><div class="lmk">type</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(doc.member_count??(doc.members||[]).length)}</div><div class="lmk">members</div></div>`
-    +`<div class="lm"><div class="lmv">${esc((doc.spans||[]).length)}</div><div class="lmk">events</div></div>`
+    +`<div class="lm"><div class="lmv ${String(doc.status)==='active'?'ok':''}">${esc(String(doc.status)==='active'?'Open':_sentenceStart(doc.status||'Available'))}</div><div class="lmk">availability</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(String(doc.env_type||'workspace').replace(/_/g,' '))}</div><div class="lmk">workspace kind</div></div>`
+    +`<div class="lm"><div class="lmv">${esc(doc.member_count??(doc.members||[]).length)}</div><div class="lmk">people</div></div>`
+    +`<div class="lm"><div class="lmv">${esc((doc.spans||[]).length)}</div><div class="lmk">updates</div></div>`
     +`</div>`;
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
-    h+=`<div class="sublabel">Lineage events (this env)</div>`
+    h+=`<div class="sublabel">Recent work in this workspace</div>`
       +Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k2,v])=>
-        `<div class="grant"><span class="l2">${esc(k2)}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
-  h+=`<div class="sublabel">Model activity in this env <span class="dim">(own feed)</span></div>`
+        `<div class="grant"><span class="l2">${esc(_ixHeadline({kind:k2,_provenance:{}}))}</span><span class="ok">${esc(v)}</span></div>`).join(''); }
+  h+=`<div class="sublabel">Model-assisted work</div>`
     +(isPublicEntityTelemetryDocument(doc)?_verifiedPublicModelStatusHTML(doc):_liveFeed(feedModels(doc)));
   return h;
 }
@@ -7723,30 +7802,40 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
   // and the title already shows (name): keep only rows the grid does NOT carry.
   const personaIdentity=String(pid||r.did||'');
-  let html=(!identityVerified
-      ?`<div class="viewerr">${icon('warn','ico-sm')} The provider/document-signed persona observation is public, but its nested identity proof is ${esc(identityProofState)}. Name, role, characteristics, and portrait remain withheld.</div>`:'')
-    +kv('Role',`<span class="cap">${esc(role)}</span>`)
-    +(lifecycle?kv('Identity materialization',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
-    +(lifecycle?kv('Identity fields',['name','characteristics','avatar'].map((field)=>{
+  const drawerCharacteristics=identityVerified&&r._personaCharacteristics
+    ?r._personaCharacteristics:null;
+  const availability=String(state||'').toUpperCase()==='ACTIVE'?'Available'
+    :_sentenceStart(String(state||'observed').replace(/_/g,' '));
+  const identityDetails=(lifecycle?kv('Profile creation',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
+    +(lifecycle?kv('Profile fields',['name','characteristics','avatar'].map((field)=>{
       const value=lifecycle.identityFields[field];
       return `<span class="cap ${value.state==='pending'?'amber':'ok'}">${esc(field)} ${esc(value.state)}</span>`;
     }).join(' ')):'')
-    +(identityVerified?kv('Archetype',S0(ps.archetype)):'')
-    +(identityVerified?kv('Disposition',S0(ps.primary_disposition)):'')
-    +(identityVerified&&ps.identity_name_state?kv('Identity name',ps.identity_name_pending
+    +(identityVerified&&ps.identity_name_state?kv('Name proof',ps.identity_name_pending
       ?`<span class="amber">pending</span> <span class="l2">${esc(ps.identity_name_pending_reason||'')}</span>`
       :`<span class="ok">${esc(ps.identity_name_state)}</span>`):'')
-    +(ps.brain_fragment_count!=null?kv('Brain',`fragments ${esc(ps.brain_fragment_count)} · contexts ${esc(ps.brain_context_count??0)} · compiles ${esc(ps.brain_compile_count??0)}`):'')
+    +(ps.brain_fragment_count!=null?kv('Private-state counters',`fragments ${esc(ps.brain_fragment_count)} · contexts ${esc(ps.brain_context_count??0)} · compiles ${esc(ps.brain_compile_count??0)}`):'')
     +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
     +(identityVerified?kv('Soul version',S0(ps.soul_version)):'')
-    +(identityVerified&&ps.born_specialist?kv('Origin','<span class="amber">born specialist (genesis)</span>'):'')
     +verificationIdentityDetails('persona id',personaIdentity);
+  let html=(!identityVerified
+      ?`<div class="viewerr">${icon('warn','ico-sm')} This public persona profile is still being verified. Name, self-description and portrait stay hidden until that finishes.</div>`:'')
+    +kv('Availability',`<span class="${availability==='Available'?'ok':''}">${esc(availability)}</span>`)
+    +(role!==_ROLE_NOT_DECLARED?kv('Role',`<span class="cap">${esc(role)}</span>`):'')
+    +(drawerCharacteristics?H(`About ${displayName}`)
+      +`<div class="persona-about-view"><p>${esc(drawerCharacteristics.identity_statement)}</p>`
+      +`<div><b>How I work</b><span>${esc(drawerCharacteristics.working_style)}</span></div>`
+      +`<small>${esc(drawerCharacteristics.public_tone)}</small></div>`:'')
+    +(identityVerified?kv('Archetype',S0(ps.archetype)):'')
+    +(identityVerified?kv('Disposition',S0(ps.primary_disposition)):'')
+    +(identityVerified&&ps.born_specialist?kv('Origin','<span class="amber">Born as a specialist for this work</span>'):'')
+    +(identityDetails?`<details class="profile-technical"><summary>Profile verification details</summary><div>${identityDetails}</div></details>`:'');
   // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
   // picks one per role/purpose) — surfaced right under identity when it has live model calls.
   const _personaModelKey=_personaKey(r._kernel,pid||r.did);
   const _liveModelState=S.liveByPersona.get(_personaModelKey)||{};
   const _liveModels=_personaModelHistory(_personaModelKey,_liveModelState.models||[]);
-  if(_liveModels.length) html+=kv('Model',_modelSummary(_liveModels));
+  if(_liveModels.length) html+=kv('Recent model use',_modelSummary(_liveModels));
   if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
   if(identityVerified&&(ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
   if(identityVerified&&(ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
@@ -7754,7 +7843,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   // project_workspace marker, same as the env lanes do).
   const authoredCapabilities=identityVerified&&Array.isArray(r._personaCapabilitiesSummary)
     ?r._personaCapabilitiesSummary:[];
-  if(authoredCapabilities.length) html+=H('Authored capabilities')
+  if(authoredCapabilities.length) html+=H('What I can contribute')
     +authoredCapabilitiesHTML(authoredCapabilities);
   // THE PLAN — use the persona's direct run or its one exact verified env
   // association. Never borrow the first env on a multi-env kernel.
@@ -7768,7 +7857,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   const retainedPersonaTelemetry=_retainedVerifiedEntityFeed(
     'persona',S.drawerLiveId,S.drawerLiveKernel);
-  html+=H('● Live · inside this persona')+`<div id="livesec" class="livesec">${retainedPersonaTelemetry
+  html+=H('● Current work status')+`<div id="livesec" class="livesec">${retainedPersonaTelemetry
     ?renderPersonaFeedDoc(retainedPersonaTelemetry,personaKey)
     :renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
@@ -7778,7 +7867,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   S.drawerThinkPid=base?_signedPersonaEndpointId(personaKey):null;
   const thinkingEndpoint=base?join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`):'';
   const operatorThinking=!!thinkingEndpoint&&!!tokenFor(thinkingEndpoint);
-  html+=H(operatorThinking?'Thinking':'Live public activity')
+  html+=H(operatorThinking?'Private thinking':'Shared thoughts and work updates')
     +`<div id="thinksec" class="livesec">${base
       ?`<div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving verified public activity…'}</div>`
       :'<div class="privacy-note">No current-master-verified node route is available for public activity.</div>'}</div>`;
@@ -8031,8 +8120,9 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
    --------------------------------------------------------------------
    A path is an opaque persona-authored identifier. It never controls the
    renderer, and peer bytes are never searched for domain words. Rich views are
-   selected solely from media metadata in the admitted signed record/snapshot.
-   Unknown and custom media use the byte-first generic text/hex inspector.
+   selected from admitted media metadata plus bounded file signatures inspected
+   only after the fetched bytes match their advertised SHA-256. Format detection
+   is presentation-only authority. Unknown media use the generic inspector.
 
    SECURITY: artifact bodies are REMOTE PEER content. Markdown, tables, code,
    and plain text use textContent-only primitives. Declared image/audio/video
@@ -8041,10 +8131,10 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
 
 // Renderers that consume bytes. All unknown media enters this path, so a custom
 // persona/tool artifact remains observable without the substrate naming it.
-const BINARY_RENDERERS=new Set(['image','audio','video','pdf','generic']);
+const BINARY_RENDERERS=new Set(['image','audio','video','pdf','archive','generic']);
 
-function pickRenderer(kind,path='',responseMedia=''){
-  return selectArtifactRenderer(kind,{path,responseMedia});
+function pickRenderer(kind,path='',responseMedia='',contentMedia=''){
+  return selectArtifactRenderer(kind,{path,responseMedia,contentMedia});
 }
 
 // Track blob: URLs allocated for the current view so they're revoked on change.
@@ -8054,8 +8144,8 @@ function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
 // Nodes may serve bodies as application/octet-stream. After integrity checking,
 // restore only the exact declared Web media family selected above; arbitrary
 // declarations remain application/octet-stream.
-function safeRenderMime(kind,path='',responseMedia=''){
-  const selected=pickRenderer(kind,path,responseMedia), media=selected.mediaType;
+function safeRenderMime(kind,path='',responseMedia='',contentMedia=''){
+  const selected=pickRenderer(kind,path,responseMedia,contentMedia), media=selected.mediaType;
   return ['image','audio','video','pdf'].includes(selected.id)
     ?media:'application/octet-stream';
 }
@@ -8121,24 +8211,33 @@ async function renderCsv(host,ctx){
   tbl.appendChild(tb);
   const scroll=el('div','fv-tablewrap'); scroll.appendChild(tbl); host.appendChild(scroll);
 }
+async function artifactBytes(ctx,label='artifact'){
+  if(ctx.verifiedBytes instanceof Uint8Array){ ctx.realSize=ctx.verifiedBytes.byteLength; return ctx.verifiedBytes; }
+  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${label} body unavailable`);
+  ctx.realSize=fb.size; return new Uint8Array(await fb.blob.arrayBuffer());
+}
 async function renderImage(host,ctx){
-  const fb=await fetchBlob(ctx.url);
-  if(!fb) throw new Error('image fetch failed');
-  ctx.realSize=fb.size;
-  const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia)}));
+  const bytes=await artifactBytes(ctx,'image');
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}));
   host.innerHTML='';
   const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
+  img.addEventListener('error',()=>{ host.innerHTML='';
+    const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',artifactTypeLabel(ctx.kind)));
+    card.appendChild(el('p','fv-note','This browser cannot display this image format. The verified original remains available from the download action above.'));
+    host.appendChild(card); },{once:true});
   img.src=url;   // blob: URL — SVG too (NOT inline innerHTML)
   host.appendChild(img);
 }
 async function renderMedia(host,ctx,type){
-  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${type} fetch failed`);
-  ctx.realSize=fb.size; const bytes=await fb.blob.arrayBuffer();
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia)}));
+  const bytes=await artifactBytes(ctx,type);
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}));
   host.innerHTML=''; const media=document.createElement(type); media.className=`fv-${type}`;
   media.controls=true; media.preload='metadata'; media.src=url; media.setAttribute('playsinline','');
   media.setAttribute('controlslist','nodownload noplaybackrate'); media.setAttribute('disablepictureinpicture','');
+  media.addEventListener('error',()=>{ host.innerHTML='';
+    const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',artifactTypeLabel(ctx.kind)));
+    card.appendChild(el('p','fv-note',`This browser cannot play this ${type} format. The verified original remains available from the download action above.`));
+    host.appendChild(card); },{once:true});
   media.setAttribute('aria-label',ctx.title); host.appendChild(media);
 }
 const renderAudio=(host,ctx)=>renderMedia(host,ctx,'audio');
@@ -8159,9 +8258,51 @@ function hexPreview(bytes,limit=512){
     out.push(`${i.toString(16).padStart(8,'0')}  ${hex}  |${ascii}|`); }
   return out.join('\n');
 }
+function zipDirectoryEntries(bytes,limit=200){
+  if(bytes.length<22) return [];
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  const floor=Math.max(0,bytes.length-65557); let end=-1;
+  for(let offset=bytes.length-22;offset>=floor;offset--){
+    if(view.getUint32(offset,true)===0x06054b50){ end=offset; break; }
+  }
+  if(end<0||end+22>bytes.length) return [];
+  const total=Math.min(view.getUint16(end+10,true),limit), central=view.getUint32(end+16,true);
+  if(central>=bytes.length) return [];
+  const decoder=new TextDecoder('utf-8'), entries=[]; let offset=central;
+  for(let index=0;index<total&&offset+46<=bytes.length;index++){
+    if(view.getUint32(offset,true)!==0x02014b50) break;
+    const compressed=view.getUint32(offset+20,true), size=view.getUint32(offset+24,true);
+    const nameLength=view.getUint16(offset+28,true), extraLength=view.getUint16(offset+30,true);
+    const commentLength=view.getUint16(offset+32,true), next=offset+46+nameLength+extraLength+commentLength;
+    if(offset+46+nameLength>bytes.length||next>bytes.length) break;
+    const name=decoder.decode(bytes.subarray(offset+46,offset+46+nameLength))
+      .replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,300);
+    if(name) entries.push({name,size,compressed,directory:name.endsWith('/')});
+    offset=next;
+  }
+  return entries;
+}
+async function renderArchive(host,ctx){
+  const bytes=await artifactBytes(ctx,'archive'); host.innerHTML='';
+  const label=artifactTypeLabel(ctx.kind);
+  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',label));
+  const zipContainer=ctx.kind==='application/zip'||ctx.detectedMedia==='application/zip';
+  const note=el('p','fv-note',zipContainer
+    ?'Archive contents are listed without opening or running any embedded files.'
+    :'This packaged format is kept intact. Download the verified original to open it in a compatible application.');
+  card.appendChild(note); host.appendChild(card);
+  if(!zipContainer) return;
+  const entries=zipDirectoryEntries(bytes);
+  if(!entries.length){ host.appendChild(el('div','fv-note','No readable ZIP directory was found. The original file is still available above.')); return; }
+  const list=el('div','fv-archive-list');
+  entries.forEach((entry)=>{ const row=el('div','fv-archive-entry');
+    row.appendChild(el('span',null,entry.name)); row.appendChild(el('small',null,entry.directory?'folder':fmtBytes(entry.size)));
+    list.appendChild(row); });
+  host.appendChild(el('div','fv-note',`${entries.length} contained item${entries.length===1?'':'s'}${entries.length===200?' · first 200 shown':''}`));
+  host.appendChild(list);
+}
 async function renderGeneric(host,ctx){
-  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('artifact body unavailable');
-  ctx.realSize=fb.size; const bytes=new Uint8Array(await fb.blob.arrayBuffer()); host.innerHTML='';
+  const bytes=await artifactBytes(ctx); host.innerHTML='';
   const integrity=ctx.integrityVerified?'hash-checked':'unhashed';
   if(bytesLookTextual(bytes)){
     const text=new TextDecoder().decode(bytes), truncated=text.length>400*1024;
@@ -8197,10 +8338,9 @@ async function renderCode(host,ctx){
   pre.appendChild(code); host.appendChild(pre);
 }
 async function renderPdf(host,ctx){
-  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error('pdf fetch failed');
-  const bytes=await fb.blob.arrayBuffer();
-  if(new TextDecoder('latin1').decode(bytes.slice(0,5))!=='%PDF-') throw new Error('invalid PDF header');
-  ctx.realSize=fb.size; const url=mkBlobURL(new Blob([bytes],{type:'application/pdf'}));
+  const bytes=await artifactBytes(ctx,'PDF');
+  if(new TextDecoder('latin1').decode(bytes.subarray(0,5))!=='%PDF-') throw new Error('invalid PDF header');
+  const url=mkBlobURL(new Blob([bytes],{type:'application/pdf'}));
   host.innerHTML='';
   const obj=document.createElement('iframe'); obj.className='fv-pdf'; obj.src=url; obj.title=ctx.title;
   obj.setAttribute('sandbox',''); obj.referrerPolicy='no-referrer';
@@ -8215,7 +8355,7 @@ async function renderPlain(host,ctx){
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
-  code:renderCode,pdf:renderPdf,plain:renderPlain,generic:renderGeneric };
+  code:renderCode,pdf:renderPdf,archive:renderArchive,plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);
@@ -8267,7 +8407,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   let isBinary=BINARY_RENDERERS.has(pick.id);
   let rendId=forcedPlain?'plain':pick.id;
   // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
-  let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='';
+  let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='', detectedMedia='';
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
   const expectedHash=advertisedHash.replace(/^sha256:/i,'').toLowerCase();
   const hashAdvertised=!!advertisedHash, validExpectedHash=/^[a-f0-9]{64}$/.test(expectedHash);
@@ -8289,7 +8429,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }
     if(verified.ok){
       realSize=verified.size;
-      pick=pickRenderer(kind,title,verified.type);
+      detectedMedia=sniffArtifactMediaType(verified.bytes);
+      pick=pickRenderer(kind,title,verified.type,detectedMedia);
       isBinary=BINARY_RENDERERS.has(pick.id);
       rendId=forcedPlain?'plain':pick.id;
       if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
@@ -8312,7 +8453,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     text=await fetchText(url); realSize=text?text.length:null;
   }
   const ctx={ base, path, url,sourceUrl, title, kind:pick.mediaType||kind,
-    responseMedia:verified?.type||'',text, realSize, size:opts.size,
+    declaredMedia:kind||'',responseMedia:verified?.type||'',detectedMedia,
+    verifiedBytes:verified?.ok?verified.bytes:null,text, realSize, size:opts.size,
     contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
@@ -8322,31 +8464,39 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
-    ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">rich view ←</a>`
+    ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">formatted view ←</a>`
     : (!isBinary&&rendId!=='plain'
-        ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">raw text</a>`
-        : '<span class="l2">byte view</span>');
+        ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">plain text view</a>`
+        : `<span class="l2">${isBinary?'format preview':'plain text view'}</span>`);
   const mediaSource={
     declared:'signed artifact metadata',
     response:'hash-checked body response',
+    bytes:'hash-checked content signature',
     path:'signed path suffix fallback',
     none:'no type metadata',
   }[pick.source]||'type metadata';
-  let html=kv('File',esc(title))
-    +kv('Media',`${esc(pick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(rendId)} · ${esc(mediaSource)}</span>`)
-    +(!pick.mediaType?`<div class="fv-note">No safe media type was available. Verified bytes use the generic text/hex inspector.</div>`:'')
-    +(authoredLabels.length?kv('Authored role claims',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
-    +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
-    +`<div class="row"><span class="l2">view</span><span class="v2">${rawTog} · `
-    +`${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}</span></div>`
-    +(opts.liveFile?kv('Live revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
+  const technicalMedia=pick.mediaType||kind||'undeclared';
+  const verificationRows=kv('Media details',`${esc(technicalMedia)} <span class="fv-rid">· ${esc(rendId)} renderer · ${esc(mediaSource)}</span>`)
+    +(detectedMedia?kv('Observed byte format',`<code>${esc(detectedMedia)}</code>`):'')
+    +(opts.liveFile?kv('Workspace revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
       +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">SNAPSHOT SIGNATURE CHECKED · ${byteCheckLabel}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
-      +(isBinary?'<div class="fv-note">Current hash-bound bytes are rerendered when the file changes. Geometric/media diff is not claimed for this format.</div>':'')+liveDiff
       :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''))
+        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''));
+  let html=kv('File',esc(title))
+    +kv('Type',`<strong>${esc(artifactTypeLabel(pick.mediaType||kind))}</strong>`)
+    +(!pick.mediaType?`<div class="fv-note">This file type is not yet recognised, so it opens in a safe general-purpose inspector.</div>`:'')
+    +(authoredLabels.length?kv('Purpose',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
+    +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
+    +`<div class="row"><span class="l2">Open as</span><span class="v2">${rawTog} · `
+    +`${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}</span></div>`
+    +(hashAdvertised?`<div class="fv-integrity ${verified?.ok?'ok':'no'}">${verified?.ok
+      ?`${icon('check','ico-sm')} Verified file — downloaded bytes match the workspace record.`
+      :`${icon('x','ico-sm')} This file could not be verified and will not be previewed.`}</div>`:'')
+    +`<details class="fv-technical"><summary>Verification & file details</summary><div>${verificationRows}</div></details>`
+    +liveDiff
     +`<div id="fv-body" class="fv-body"></div>`;
   const runRenderer=async(host)=>{
     const rendererId=forcedPlain?'plain':pick.id;
@@ -8356,20 +8506,23 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     }catch(e){
       // Graceful fallback: local renderer/parse error → plain <pre>, never broken.
       host.innerHTML='';
-      host.appendChild(el('div','fv-note','renderer unavailable ('+esc(e&&e.message||'error')+') — plain text'));
+      host.appendChild(el('div','fv-note','The format preview is unavailable ('+String(e&&e.message||'error')+').'));
       let body=ctx.text;
       if(body==null){ body=rendererConsumesBytes?null:await fetchText(url); }
-      if(body==null && rendererConsumesBytes){ host.appendChild(el('div','fv-note','body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. The byte-download action above may also be gated; hold an operator token.')); return; }
+      if(body==null&&rendererConsumesBytes&&ctx.verifiedBytes&&rendererId!=='generic'){
+        await renderGeneric(host,{...ctx,kind:ctx.detectedMedia||ctx.kind}); return;
+      }
+      if(body==null && rendererConsumesBytes){ host.appendChild(el('div','fv-note','The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.')); return; }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
   };
   const mount=async(root)=>{
     const host=root.querySelector('#fv-body'); if(!host) return;
     if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note',opts.liveFile
-      ?`live body refused: ${verified?.error||'unavailable'}. Nothing is rendered unless the fetched bytes match the advertised SHA-256.`
-      :'body unavailable — the bytes are read-gated (read+ tier), the node is offline, or this file 404s. Use the byte-download action above, or hold an operator token.')); return; }
+      ?`The current file cannot be shown: ${verified?.error||'it is unavailable'}. The preview stays closed unless the downloaded bytes exactly match the workspace record.`
+      :'The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.')); return; }
     if(verified?.ok){
-      const mime=safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia);
+      const mime=safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia);
       url=mkBlobURL(new Blob([verified.bytes],{type:mime})); ctx.url=url;
     }
     await runRenderer(host);
@@ -9382,6 +9535,7 @@ function wire(){
   // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
   // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
+    if(e.target.closest('summary')) return;
     // the ◎ follow button lives INSIDE the card, so Enter/Space would otherwise walk up to
     // the .pc-card and open the drawer — short-circuit it so follow is keyboard-reachable.
     const fb=e.target.closest('[data-follow]'); if(fb){ e.preventDefault(); fb.click(); return; }
@@ -9415,6 +9569,9 @@ function wire(){
     // click doesn't also open the drawer.
     const fb=e.target.closest('[data-follow]'); if(fb){ e.stopPropagation(); const fid=_entityKeyFromDom(fb.dataset.follow);
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
+    // Verification disclosures inside a persona card are independently
+    // interactive; opening one must not also navigate away to the card drawer.
+    if(e.target.closest('details')){ e.stopPropagation(); return; }
     const liveFile=e.target.closest('[data-live-current-file]'); if(liveFile){ e.preventDefault(); e.stopPropagation();
       S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(liveFile);
       S.views=[()=>liveFileView(liveFile.dataset.liveFileBase||'',liveFile.dataset.liveFileRun,
