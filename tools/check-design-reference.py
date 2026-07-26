@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '6f4956c30ca1b66a20ac3797ae2ce02350d806e3'
+REVIEWED_DESIGN_COMMIT = '84bc0ae4498b0e90c9c6e3b8d917375b2e5ef0eb'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '66f1c4de009534bbdc163c8d7a65b2665aaa5a192f9199f47ff713f56eb5f445'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '185e8b8469497b103ffa455fe7aebc25195796af3b1175c84f88b6f22d95233b'
 
 
 DESIGN_ANCHORS = {
@@ -33,6 +33,7 @@ DESIGN_ANCHORS = {
         'no infrastructure *whatsoever*',
         'persona-card/4',
         'last-resort first-contact cache',
+        'transport readiness',
     ],
     '03_TASKS.md': [
         'never kernel tie-breakers',

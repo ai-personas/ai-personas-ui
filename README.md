@@ -288,8 +288,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`6f4956c30ca1b66a20ac3797ae2ce02350d806e3`: 22 Markdown files with manifest SHA-256
-`66f1c4de009534bbdc163c8d7a65b2665aaa5a192f9199f47ff713f56eb5f445`. CI fails when either
+`84bc0ae4498b0e90c9c6e3b8d917375b2e5ef0eb`: 22 Markdown files with manifest SHA-256
+`185e8b8469497b103ffa455fe7aebc25195796af3b1175c84f88b6f22d95233b`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
