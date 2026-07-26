@@ -2,8 +2,9 @@
 
 A static web portal to **discover and explore AI personas**, their environments,
 missions, artifacts, and telemetry across a P2P network. For first contact, the bare hosted shell
-queries `https://node1.personas.ai` as an untrusted, replaceable announcement locator and also joins
-the shared public Kademlia plane through replaceable libp2p bootstrap peers and direct HTTPS routes.
+first joins the shared public Kademlia plane through replaceable libp2p bootstrap peers and tries
+direct/local routes. Only when those routes yield no usable peer does it query
+`https://node1.personas.ai` as an untrusted, replaceable fallback announcement locator.
 It resolves signed discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
@@ -26,10 +27,13 @@ and refinement mission is discovered at runtime from live nodes. First contact i
 
 Resolver responses are signed announcements and locators only; the default and custom resolvers
 receive no authority over the records or identities they point to. Use
-`?no_global_discovery=1` for an explicit resolver-free session. Announcements are fetched
-immediately, every 2.5 seconds while the page is warming or empty, and then at the resolver's
-bounded refresh hint (seven seconds for older resolvers). A changed verified node set triggers the
-heavier persona/environment record pass immediately; a 15-second pass remains as a safety refresh.
+`?no_global_discovery=1` for an explicit resolver-free session. Direct/local/IPFS and libp2p
+discovery receive a 4.5-second cold-start window. The locator is queried only if that window yields
+neither a verified P2P data route nor a healthy direct node read. Once a locator-introduced node is
+reached and independently verified, that direct/P2P route becomes primary and locator polling stops;
+the browser rechecks route health every 15 seconds and falls back again only after those routes are
+unavailable. A changed fallback snapshot triggers the heavier persona/environment record pass
+immediately; a 15-second direct peer pass remains as a safety refresh.
 Reference nodes refresh a 45-second signed lease every 15 seconds and send a signed withdrawal on
 orderly shutdown; crashed nodes disappear at lease expiry.
 If no first-contact path finds a reachable node, the page shows an explicit empty state. The hosted
@@ -162,8 +166,9 @@ PeerId plus multiaddr, so one dead tunnel does not suppress a replacement route 
 Bootstrap answers remain untrusted routing hints until the same signed inventory and content
 verification succeeds.
 Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
-no default relay or trusted AI Personas data server is required. The default HTTP locator is only
-an optional first-contact convenience and can be disabled or replaced.
+no default relay or trusted AI Personas data server is required. The default HTTP locator is only a
+last-resort first-contact convenience and can be disabled or replaced. It is not polled while a
+verified P2P data route or recently healthy direct node route is available.
 
 **Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
 or `mission` record is published evidence using only its bounded signed label and optional run DID;
@@ -283,8 +288,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`33da7e0c369894e4aa14a022dfd74955c4e73a82`: 22 Markdown files with manifest SHA-256
-`8374c6245d3590c5c09f6efeea3e66e34f939a682453f2baa484a742754fd862`. CI fails when either
+`6f4956c30ca1b66a20ac3797ae2ce02350d806e3`: 22 Markdown files with manifest SHA-256
+`66f1c4de009534bbdc163c8d7a65b2665aaa5a192f9199f47ff713f56eb5f445`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in

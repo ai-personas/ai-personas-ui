@@ -77,6 +77,9 @@ import {
   reconcileResolverDirectory,
 } from './global-directory.mjs?v=20260726-fast-global-v1';
 import {
+  locatorFallbackDecision,
+} from './discovery-strategy.mjs?v=20260726-p2p-first-v1';
+import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
   isEnvironmentTelemetryDocument,
@@ -2657,16 +2660,35 @@ function _providerInventoryIsCurrent(inventory,now=Date.now()){
 function retireProviderInventory(kernelId,reason='provider lease expired'){
   const source=String(kernelId||''), inventory=S.providerInventories.get(source);
   if(!inventory) return false;
-  let removed=0;
+  let removed=0, kernelChanged=false;
   for(const id of (inventory.recordKeys||[])) if(_removeRecordStoreKey(id)) removed++;
   S.providerInventories.delete(source);
   for(const [base,boot] of (S.boots||new Map())){
     if(String(boot?.kernel_id||'')!==source) continue;
     S.boots.delete(base); S.peerHealth?.delete(base);
   }
+  for(const [base,route] of (S.p2pDataRoutes||new Map())){
+    if(String(route?.kernel||'')!==source) continue;
+    S.p2pDataRoutes.delete(base);
+    const stream=S.streams.get(`p2p:${base}`);
+    try{ stream?.close?.(); }catch(_){ }
+    S.streams.delete(`p2p:${base}`);
+  }
+  const kernelInfo=S.globalKernels?.get(source);
+  if(kernelInfo){
+    kernelChanged=true;
+    for(const via of ['http','p2p','gossip','ipfs','local']){
+      kernelInfo.via?.delete(via);
+      kernelInfo.sourceBases?.delete(via);
+      kernelInfo.seenBySource?.delete(via);
+    }
+    kernelInfo.bases=new Set([...(kernelInfo.sourceBases?.values?.()||[])]
+      .flatMap((values)=>[...values]));
+    kernelChanged=_dropKernelDirectoryEntry(source,{retireRecords:false})||kernelChanged;
+  }
   if(removed) log('discovery',_kernelDisplayContext(source).label+': removed '+removed
     +' expired public record'+(removed===1?'':'s')+' · '+reason);
-  return removed>0;
+  return removed>0||kernelChanged;
 }
 function _expireProviderInventories(now=Date.now()){
   let changed=false;
@@ -2884,7 +2906,10 @@ function updateDiscoverySummary(when=new Date()){
   const recordCount=S.recs?.size||0, kernelCount=admittedKernels.size;
   const monitored=(S.boots&&S.boots.size)||0;
   const refreshed=`${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} UTC`;
-  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. The global directory refreshes within a few seconds and changed nodes are inspected immediately.`;
+  const discoveryMode=S.locatorDiscoveryMode==='fallback_locator'
+    ?'The optional announcement locator is supplying fallback first contact.'
+    :'Direct and libp2p peer discovery are primary; the optional announcement locator is standing by.';
+  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. ${discoveryMode}`;
   status.setAttribute('aria-label',`${recordCount} verified records across ${kernelCount} nodes; updated ${refreshed}`);
   status.innerHTML=`<span class="ok">${recordCount}</span> verified record${recordCount===1?'':'s'} · `
     +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
@@ -2919,9 +2944,11 @@ async function discover({refreshGlobal=true,trailing=false}={}){
       if(!accepted) return;
       S.boots.set(b||'@origin',res.boot);
       const sources=peerSourceTags(b);
-      if(sources.length) sources.forEach((src)=>noteKernel(res.boot.kernel_id,src,
-        b||location.origin,{reachable:true}));
-      else noteKernel(res.boot.kernel_id,'http',b||location.origin,{reachable:true});
+      const directTransport=S.p2pDataRoutes?.has(opBaseKey(b||location.origin))
+        ?'p2p':'http';
+      noteKernel(res.boot.kernel_id,directTransport,b||location.origin,{reachable:true});
+      sources.filter((src)=>src!==directTransport).forEach((src)=>
+        noteKernel(res.boot.kernel_id,src,b||location.origin,{reachable:true}));
       S.peerHealth=(S.peerHealth||new Map());
       S.peerHealth.set(b||location.origin,{ok:true,records:res.found.length,
         kernel:res.boot.kernel_id,t:Date.now()});
@@ -2939,11 +2966,10 @@ async function discover({refreshGlobal=true,trailing=false}={}){
     for(const base of seeds) seenSeeds.add(base||'@origin');
     if(seeds.length) await resolveKernelBases(seeds,enqueueResolved);
   };
-  // Each locator plane contributes peers independently. As soon as one plane
-  // yields a healthy node, its verified records paint while slower peers keep
-  // resolving in the background of this same bounded discovery pass.
+  // Direct/P2P locator planes get the first bounded opportunity. The optional
+  // HTTP directory is queried only after that window produces no verified
+  // P2P data route or healthy direct node read.
   const planeJobs=[
-    refreshGlobal?loadGlobalNodes():Promise.resolve(null),          // fast locator has its own adaptive cadence
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ];
@@ -2951,6 +2977,15 @@ async function discover({refreshGlobal=true,trailing=false}={}){
   const sourceJobs=planeJobs.map((job)=>Promise.resolve(job).catch(()=>null).then(discoverAvailable));
   await Promise.allSettled(sourceJobs);
   await Promise.allSettled(resultJobs);
+  if(refreshGlobal){
+    const fallback=_currentLocatorFallbackDecision();
+    S.locatorDiscoveryMode=fallback.mode;
+    if(fallback.queryLocator){
+      await loadGlobalNodes().catch(()=>null);
+      await discoverAvailable();
+      await Promise.allSettled(resultJobs);
+    }
+  }
   rebalanceDiscoveryStreams();
   classifyMap(); renderGlobalKernels(); updateVitalsCounters();
   refreshSystemView();
@@ -2970,6 +3005,27 @@ async function discover({refreshGlobal=true,trailing=false}={}){
 
 let _globalRefreshTimer=null, _globalRefreshBusy=false;
 const _globalRefreshStartedAt=Date.now();
+function _healthyDirectPeerCount(now=Date.now()){
+  const locatorBases=new Set(globalDiscoveryEndpoints()
+    .map((base)=>String(base||'').replace(/\/$/,'')));
+  let count=0;
+  for(const [base,health] of (S.peerHealth||new Map())){
+    const normalized=String(base||'').replace(/\/$/,'');
+    if(!normalized||locatorBases.has(normalized)||health?.ok!==true) continue;
+    const observedAt=Number(health?.t)||0;
+    if(observedAt&&now-observedAt<=45000) count++;
+  }
+  return count;
+}
+function _currentLocatorFallbackDecision(now=Date.now()){
+  return locatorFallbackDecision({
+    locatorEnabled:globalDiscoveryEndpoints().length>0,
+    nowMs:now,
+    startedAtMs:_globalRefreshStartedAt,
+    verifiedP2PRouteCount:S.p2pDataRoutes?.size||0,
+    healthyDirectPeerCount:_healthyDirectPeerCount(now),
+  });
+}
 function scheduleFastGlobalRefresh(delayMs){
   clearTimeout(_globalRefreshTimer);
   _globalRefreshTimer=setTimeout(refreshGlobalDirectoryFast,Math.max(1000,delayMs));
@@ -2978,6 +3034,13 @@ async function refreshGlobalDirectoryFast(){
   if(_globalRefreshBusy){ scheduleFastGlobalRefresh(1000); return; }
   _globalRefreshBusy=true; let nextDelay=7000;
   try{
+    const fallback=_currentLocatorFallbackDecision();
+    S.locatorDiscoveryMode=fallback.mode;
+    if(!fallback.queryLocator){
+      pruneExpiredDiscoveryState();
+      nextDelay=fallback.nextCheckMs;
+      return;
+    }
     const result=await loadGlobalNodes();
     pruneExpiredDiscoveryState();
     const warming=Date.now()-_globalRefreshStartedAt<30000;

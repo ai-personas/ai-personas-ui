@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '33da7e0c369894e4aa14a022dfd74955c4e73a82'
+REVIEWED_DESIGN_COMMIT = '6f4956c30ca1b66a20ac3797ae2ce02350d806e3'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '8374c6245d3590c5c09f6efeea3e66e34f939a682453f2baa484a742754fd862'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '66f1c4de009534bbdc163c8d7a65b2665aaa5a192f9199f47ff713f56eb5f445'
 
 
 DESIGN_ANCHORS = {
@@ -32,6 +32,7 @@ DESIGN_ANCHORS = {
         'discover < read (r) < write (rw) < admin',
         'no infrastructure *whatsoever*',
         'persona-card/4',
+        'last-resort first-contact cache',
     ],
     '03_TASKS.md': [
         'never kernel tie-breakers',
@@ -40,6 +41,7 @@ DESIGN_ANCHORS = {
         'must not inspect task text for magic verbs',
         'human silence never creates a task-wide wait',
         'best-so-far artifact',
+        'population-aware convergence',
     ],
     '04_PROJECT.md': [
         'never give the kernel or caller authority',
@@ -61,6 +63,7 @@ DESIGN_ANCHORS = {
     '16_POPULATION_DYNAMICS.md': [
         'birth alone does not silently grant membership',
         'only the exact signed author↔newborn bootstrap channel',
+        'completion is not a population-pressure shortcut',
     ],
     '19_PERSONA_PRESSURE_ADDENDUM.md': [
         'pressure is persona-authored context',
@@ -151,6 +154,8 @@ def main() -> None:
             and 'ed.verifyAsync' in portal
             and '_exactObjectFields(env,GLOBAL_ENVELOPE_FIELDS)' in portal
             and ('if(!verified.ok)' in portal or 'if(!result.ok)' in portal)
+            and 'locatorFallbackDecision' in portal
+            and '_currentLocatorFallbackDecision' in portal
         ),
         'durable operator credential storage': "localStorage.setItem('personaos_operator'" not in portal,
         'tokenized EventSource URL': 'new EventSource(esUrl)' not in portal,
