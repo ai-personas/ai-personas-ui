@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '70c361e8eee74f57c1cb8bbefe4acf79499297ad'
+REVIEWED_DESIGN_COMMIT = '41d33dccf04f67c3a7b410955592184ef2f78d77'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'fe8e98f3e41ebc11072132a9439212011a5cc63a3140598f9ebe2849b4869a9d'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'd41c19536349cd239293569d191a80a980adb84d3b92489c4826abe267319b51'
 
 
 DESIGN_ANCHORS = {
@@ -50,6 +50,7 @@ DESIGN_ANCHORS = {
         'population context is observable',
         'exact-revision reviewer replicas',
         'not semantic completion: when signed persona messages',
+        'process absence, elapsed time, an idle registry',
     ],
     '04_PROJECT.md': [
         'never give the kernel or caller authority',
