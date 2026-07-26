@@ -188,8 +188,10 @@ SHA-256, and dimensions before
 rendering the bytes through a temporary blob URL. A verified lifecycle shell is rendered immediately
 as an independently materializing persona; its persona-authored name, characteristics, and avatar
 may become materialized independently, and a verified adopted name does not falsely promote the
-remaining identity fields. Every card immediately renders a deterministic local monogram derived
-from its verified identity key and name. That instant local avatar is a presentation fallback, not
+remaining identity fields. Until a persona-authored name arrives, the card uses an explicit stable-ID
+label (for example, `Persona 01J9ZX`) rather than calling the person unnamed. Every card immediately
+renders a deterministic local monogram derived from its verified identity key and name. That instant
+local avatar is a presentation fallback, not
 persona-authored identity evidence; an optional verified persona-authored raster replaces it only
 after the existing signature and byte checks pass. Temporary body-transport unavailability remains
 bounded retryable state and is never cached as an identity, signature, hash, MIME, or decode refusal.

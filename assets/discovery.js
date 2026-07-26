@@ -4309,7 +4309,11 @@ const _IX_GLYPH={think:'lesson',coord:'arrow',verify:'check',artifact:'task',too
 const _ixGlyph=(cls)=>icon(_IX_GLYPH[cls]||'dot','ico-sm ix-glyph');
 const _ago=(t)=>{const s=Math.max(0,(Date.now()-t)/1000|0);return s<5?'now':s<60?s+'s ago':s<3600?(s/60|0)+'m ago':s<86400?(s/3600|0)+'h ago':(s/86400|0)+'d ago';};
 const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly name
-const _personaAlias=(_sid)=>'Unnamed persona';
+function _personaTechnicalToken(sid=''){
+  return _shortId(sid).replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase();
+}
+const _personaAlias=(sid)=>{const token=_personaTechnicalToken(sid);
+  return token?`Persona ${token}`:'Persona identity pending';};
 function _personaDisplayNameCandidate(value,sid=''){
   const name=typeof value==='string'?value.trim():'', id=_shortId(sid||'');
   if(!name||name===id||name===`persona:${id}`
@@ -4320,7 +4324,7 @@ const _displayPersonaName=(value,sid='')=>
   _personaDisplayNameCandidate(value,sid)||_personaAlias(sid);
 const _personaMonogram=(value,sid='')=>{ const name=_personaDisplayNameCandidate(value,sid);
   if(name){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
-  return 'AI'; };
+  return _personaTechnicalToken(sid).slice(0,2)||'ID'; };
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   return _displayPersonaName(_PERSONA_NAME.get(ref.key),ref.sid); }
 function providerVerifiedPersonaObservation(personaKey){
