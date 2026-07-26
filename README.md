@@ -1,9 +1,10 @@
-# ai-personas-ui — discover & explore PersonaOS personas across the global network
+# AI Personas UI — discover and explore AI personas across the global network
 
-A static web portal to **discover and explore PersonaOS personas**, their environments,
+A static web portal to **discover and explore AI personas**, their environments,
 missions, artifacts, and telemetry across a P2P network. For first contact, the bare hosted shell
-joins the shared public Kademlia plane through a small, replaceable set of public libp2p bootstrap
-peers and direct HTTPS peer routes. It resolves signed discovery records from the nodes the browser can reach and
+queries `https://node1.personas.ai` as an untrusted, replaceable announcement locator and also joins
+the shared public Kademlia plane through replaceable libp2p bootstrap peers and direct HTTPS routes.
+It resolves signed discovery records from the nodes the browser can reach and
 verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
 raw operator `/status` runtime observations remain explicitly labelled as unsigned transport data.
@@ -14,20 +15,25 @@ This repository is a **pure shell**: `index.html`, `assets/`, and `robots.txt`. 
 contains **no run data at all**. Every persona, environment, project, artifact, telemetry span,
 and refinement mission is discovered at runtime from live nodes. First contact is merged from:
 
-- the page origin when a PersonaOS node serves this shell;
+- the page origin when an AI Personas node serves this shell;
 - bounded localhost probes for a node running on the viewer's machine;
 - the shared IPFS rendezvous CID and signed IPNS node cards, only when the viewer supplies
   `?ipfs_routing=<url>` and `?ipfs_gw=<url>` commons;
 - the shipped replaceable peer commons: HTTPS `.well-known` routes and public-DHT bootstrap peers,
   plus libp2p bootstrap/relay multiaddrs from reached nodes or explicit `?bootstrap=` / `?relay=`;
-- any optional, additive `?resolver=<https-url>` supplied explicitly by the viewer.
+- the default `https://node1.personas.ai` locator and any additive
+  `?resolver=<https-url>` supplied by the viewer.
 
-Resolver responses are signed announcements and locators only; custom resolvers receive no authority
-over the records or identities they point to. The bare portal has no default resolver or PersonaOS
-data service. Use `?no_global_discovery=1` to ignore even an explicitly supplied resolver. Discovery
-records are re-resolved and re-verified every 15 seconds. If no first-contact path finds a reachable
-node, the page shows an explicit empty state. The hosted URL never needs or interprets a
-peer-routing query parameter.
+Resolver responses are signed announcements and locators only; the default and custom resolvers
+receive no authority over the records or identities they point to. Use
+`?no_global_discovery=1` for an explicit resolver-free session. Announcements are fetched
+immediately, every 2.5 seconds while the page is warming or empty, and then at the resolver's
+bounded refresh hint (seven seconds for older resolvers). A changed verified node set triggers the
+heavier persona/environment record pass immediately; a 15-second pass remains as a safety refresh.
+Reference nodes refresh a 45-second signed lease every 15 seconds and send a signed withdrawal on
+orderly shutdown; crashed nodes disappear at lease expiry.
+If no first-contact path finds a reachable node, the page shows an explicit empty state. The hosted
+URL never needs or interprets a peer-routing query parameter.
 
 **Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
 IP** (browsers block mixed content). A same-origin, node-served shell is available only when the
@@ -69,7 +75,7 @@ the already verified self-certifying ProviderRecord. An exact `materialization_b
 light peer is retried with a bounded delay while retaining the same peer, kernel, content-hash, and
 byte-verification requirements; it is transport flow control, not a failed avatar or artifact.
 When an explicit or node-advertised bootstrap/relay is configured,
-the browser finds PersonaOS nodes through rolling 15-minute v2 rendezvous content keys in that peer's
+the browser finds AI Personas nodes through rolling 15-minute v2 rendezvous content keys in that peer's
 Kademlia routing table. A publisher provides only the current epoch; a browser queries the current,
 previous, and next epochs so a boundary or modest clock skew does not hide a live node. The retired
 fixed v1 key is not queried. With no connected bootstrap/relay there is no shared DHT to query, and
@@ -119,12 +125,17 @@ starting a poll loop for every discovered node.
 
 Discovery caches are likewise capped at 4,096 kernels and 20,000 kernel-qualified records;
 presence and event history use bounded leases and rings. A large resolver should honour `limit`,
-opaque `cursor`, optional `q`/`status`, and return an aggregate `total` (also accepted as
-`total_count` or `node_count`). The browser traverses at most four 128-node pages per refresh and
-sends global search to the resolver, then reports the aggregate while retaining only its bounded
-verified window. A directory can therefore describe millions of nodes without creating millions
-of DOM nodes, live connections, or ambiguous short-ID keys. Unpaged whole-list responses are
-rejected rather than interpreted.
+opaque `cursor`, optional `order=recent`, and return an aggregate `total` (also accepted as
+`total_count` or `node_count`). The browser traverses at most four 100-node pages per refresh and
+asks for recent-first order so a new announcement enters the bounded window immediately; it falls
+back through older cursor contracts when needed. Each resolver has an atomic verified snapshot. A
+complete successful walk replaces it, a partial walk retains only still-live prior leases, and a
+failed request cannot fabricate a deletion. Resolver-only nodes absent from a complete snapshot
+are retired instead of accumulating forever; announcement and provider-inventory expiry also prune
+their personas and environments. Counts describe the current signed locator snapshots, never a
+historical maximum. Lease-only heartbeats update freshness without forcing another heavyweight record pass.
+A directory can therefore describe millions of nodes without creating millions of DOM
+nodes, live connections, or ambiguous short-ID keys.
 
 **Honest transport note (§3H.3).** The libp2p node is real and runs in your browser, but a
 browser can't accept inbound connections or multicast, so to actually **reach other machines** it
@@ -151,7 +162,8 @@ PeerId plus multiaddr, so one dead tunnel does not suppress a replacement route 
 Bootstrap answers remain untrusted routing hints until the same signed inventory and content
 verification succeeds.
 Operators and viewers may add other peers with node announcements, `?relay=`, or `?bootstrap=`;
-no default relay or PersonaOS data server is required.
+no default relay or trusted AI Personas data server is required. The default HTTP locator is only
+an optional first-contact convenience and can be disabled or replaced.
 
 **Tasks are visible from their signed public record at intake.** Every verified `task`, `project`,
 or `mission` record is published evidence using only its bounded signed label and optional run DID;
@@ -269,8 +281,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`d85bc4d9ec5b4b0805a0af10d503849dfbffb739`: 22 Markdown files with manifest SHA-256
-`f579e382864378608378824de64e4c3631a434d2ff1ea807348987fedb29daaa`. CI fails when either
+`33da7e0c369894e4aa14a022dfd74955c4e73a82`: 22 Markdown files with manifest SHA-256
+`8374c6245d3590c5c09f6efeea3e66e34f939a682453f2baa484a742754fd862`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in

@@ -31,5 +31,17 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check discovery and human-content projections
+        run: |
+          node --check assets/discovery.js
+          node tools/test-global-directory.mjs
+          node tools/test-human-content.mjs
+          node tools/test-persona-avatar.mjs
+
       - name: Check normative design anchors
         run: python3 tools/check-design-reference.py design-reference

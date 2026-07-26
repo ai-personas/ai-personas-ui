@@ -65,6 +65,14 @@ import {
   resolveEnvironmentAuthority,
 } from './routing-authority.mjs?v=20260722-exact-environment-authority-v2';
 import {
+  operatorResponseText,
+  structuredContentProjection,
+} from './human-content.mjs?v=20260726-human-first-v1';
+import {
+  expiredProviderKernels,
+  reconcileResolverDirectory,
+} from './global-directory.mjs?v=20260726-fast-global-v1';
+import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
   isEnvironmentTelemetryDocument,
@@ -458,7 +466,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 // population is reported as an aggregate instead of silently disappearing.
 const NETWORK_LIMITS=Object.freeze({
   kernelChips:10, monitoredBases:12, cachedKernels:4096, cachedRecords:20000,
-  resolverPage:128, resolverPages:4, discoveryLogRows:24, telemetryTapeRows:2000,
+  resolverPage:100, resolverPages:4, discoveryLogRows:24, telemetryTapeRows:2000,
   graphKernels:6, graphPersonasGlobal:30, graphPersonasFocused:36,
   environmentInitial:10, environmentStep:10, personaInitial:12, personaStep:12,
   cognitionPersonas:24, cognitionRowsPerPersona:24, interactionRows:120,
@@ -483,6 +491,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   p2pBootstraps:new Set(), portalPeers:new Set(), p2pDialQueue:[], p2pDialStates:new Map(),
   p2pDialRetryTimer:null, p2pDialActive:0, globalPeers:new Set(), gossipPeers:new Set(),
   globalAnnouncements:new Map(), globalAnnouncementByBase:new Map(), views:[], curBase:'',
+  resolverSnapshots:new Map(), resolverFingerprint:'', globalLastSuccessAt:0,
   bundleDirs:new Set(), bundleDirsOpen:new Set(),
   // Live per-entity telemetry index: base → latest live telemetry doc, plus
   // derived per-persona / per-env activity. Lets each persona + env view show
@@ -1641,10 +1650,17 @@ const PROVIDER_INVENTORY_FIELDS=Object.freeze([
 const PROVIDER_MANIFEST_FIELDS=Object.freeze(['document_hash','record_id','record_url']);
 const SHA256_CONTENT_RE=/^sha256:[0-9a-f]{64}$/;
 async function verifyProviderInventory(index,base,boot){
-  const expectedBase=String(base||location.origin).replace(/\/$/,'');
+  const requestedBase=String(base||'').replace(/\/$/,'');
+  const expectedBase=String(requestedBase||location.origin).replace(/\/$/,'');
+  const inventoryBase=String(index?.base||'').replace(/\/$/,'');
+  // The node protocol uses an empty base only for a same-origin inventory.
+  // Normalize that local transport alias to the page origin; never allow an
+  // empty value to bind a remotely fetched resolver/global-node inventory.
+  const baseMatches=inventoryBase===expectedBase
+    ||(!requestedBase&&!inventoryBase);
   if(!_exactObjectFields(index,PROVIDER_INVENTORY_FIELDS)
       ||index.schema!=='dht-provider-index/3'||index.kernel_id!==boot?.kernel_id
-      ||String(index.base||'').replace(/\/$/,'')!==expectedBase
+      ||!baseMatches
       ||index.signing_key_id!=='kernel-master'||index.visibility!=='public'
       ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
       ||index.version!==index.inventory_generation
@@ -1935,18 +1951,29 @@ async function verifiedRouteHintsFromP2PResult(result,{signal=null}={}){
   }
   return {routeHints,refused};
 }
+const DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai';
+const GLOBAL_ENVELOPE_FIELDS=Object.freeze([
+  'announcement','public_key_hex','schema','signature_hex','signing_key_id',
+].sort());
+const GLOBAL_ANNOUNCEMENT_FIELDS=Object.freeze([
+  'base_url','expires_at','generated_at','kernel_id','libp2p_multiaddrs','node_id',
+  'public_bundle_hash','public_discovery','reachability_class','record_count','schema','sequence',
+].sort());
 function globalDiscoveryEndpoints(){
   const p=new URLSearchParams(location.search);
   if(p.get('no_global_discovery')==='1') return [];
-  // HTTP resolvers are explicit, additive locator hints only. The bare portal
-  // joins the public Kademlia plane and has no PersonaOS-operated directory
-  // dependency. Every reached record is independently signature/hash verified.
-  return [...new Set(p.getAll('resolver')
+  // The community directory and any explicit resolvers are untrusted,
+  // replaceable first-contact locators. Every announcement, provider inventory,
+  // record, policy, and identity is independently verified in this browser.
+  return [...new Set([...p.getAll('resolver'),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
     .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
 }
 async function verifyGlobalEnvelope(env){
   const ann=env?.announcement;
-  if(env?.schema!=='personaos-node-announcement-envelope/1'||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
+  if(!_exactObjectFields(env,GLOBAL_ENVELOPE_FIELDS)
+      ||!_exactObjectFields(ann,GLOBAL_ANNOUNCEMENT_FIELDS)
+      ||env?.schema!=='personaos-node-announcement-envelope/1'
+      ||ann?.schema!=='personaos-node-announcement/1') return {ok:false};
   const publicKey=String(env?.public_key_hex||'');
   const kernelId=String(ann?.kernel_id||'');
   // A resolver response is an untrusted locator, so a self-signature alone cannot assign an
@@ -1954,119 +1981,158 @@ async function verifyGlobalEnvelope(env){
   // their stable kernel-master discovery key.
   if(env?.signing_key_id!=='kernel-master'||!/^[0-9a-f]{64}$/.test(publicKey)
     ||!/^[0-9a-f]{128}$/.test(String(env?.signature_hex||''))
-    ||!/kernel:[0-9a-f]{16}/.test(kernelId)
+    ||!/^kernel:[0-9a-f]{16}$/.test(kernelId)
     ||kernelId!==`kernel:${publicKey.slice(0,16)}`) return {ok:false};
-  const exp=Date.parse(ann.expires_at||'');
-  if(!Number.isFinite(exp)||exp<=Date.now()) return {ok:false};
+  const generated=Date.parse(ann.generated_at||''), exp=Date.parse(ann.expires_at||'');
+  const now=Date.now(), ttl=exp-generated;
+  let parsedBase=null; try{ parsedBase=new URL(String(ann.base_url||'')); }catch(_){ }
+  const multiaddrs=ann.libp2p_multiaddrs;
+  if(!parsedBase||!['http:','https:'].includes(parsedBase.protocol)
+      ||parsedBase.username||parsedBase.password||parsedBase.search||parsedBase.hash
+      ||String(ann.base_url||'').endsWith('/')
+      ||!['public','nat_private','intranet_only'].includes(ann.reachability_class)
+      ||ann.public_discovery!==true||ann.public_bundle_hash!==''
+      ||!Number.isSafeInteger(ann.record_count)||ann.record_count<0||ann.record_count>100000
+      ||!Number.isSafeInteger(ann.sequence)||ann.sequence<0
+      ||!Array.isArray(multiaddrs)||multiaddrs.length>64
+      ||multiaddrs.some((value)=>typeof value!=='string'||!value.startsWith('/')
+        ||value.length>2048||/[\s\u0000-\u001f\u007f]/.test(value))
+      ||JSON.stringify(multiaddrs)!==JSON.stringify([...new Set(multiaddrs)].sort())
+      ||!Number.isFinite(generated)||!Number.isFinite(exp)||generated>now+300000
+      ||exp<=now||exp<=generated||ttl>900000||exp>now+1200000)
+    return {ok:false};
   let ok=false;
   try{ ok=await ed.verifyAsync(hexToBytes(env.signature_hex),enc.encode(canon(ann)),hexToBytes(publicKey)); }catch(e){}
   if(!ok) return {ok:false};
-  if(Object.prototype.hasOwnProperty.call(env,'public_bundle')||ann.public_bundle_hash) return {ok:false};
   return {ok:true,ann};
 }
+let _globalLoadPromise=null;
 async function loadGlobalNodes(){
+  if(_globalLoadPromise) return _globalLoadPromise;
+  _globalLoadPromise=_loadGlobalNodes();
+  try{ return await _globalLoadPromise; }
+  finally{ _globalLoadPromise=null; }
+}
+async function _loadGlobalNodes(){
   const endpoints=globalDiscoveryEndpoints();
+  const previousFingerprint=String(S.resolverFingerprint||'');
+  const previousTotal=Number(S.globalTotal)||0;
   if(!endpoints.length){
-    S.globalPeers=new Set(); S.globalAnnouncements=new Map(); S.globalAnnouncementByBase=new Map();
-    return [];
+    const directory=reconcileResolverDirectory(S.resolverSnapshots,[],{nowMs:Date.now()});
+    applyResolverDirectory(directory);
+    return {changed:directory.fingerprint!==previousFingerprint||directory.total!==previousTotal,
+      successfulResolvers:0,announcements:[],total:0,pollAfterMs:5000};
   }
-  const freshPeers=new Set();
-  S.globalAnnouncements=new Map(); S.globalAnnouncementByBase=new Map();
-  const rows=[];
-  const boots=await Promise.all(endpoints.map((ep)=>
-    fetchJson(join(ep,'/v1/bootstrap')).then((d)=>({ep,d})).catch(()=>({ep,d:null}))));
-  for(const {ep,d} of boots){
-    if(!d) continue;
-    // Resolver bootstrap peers are transport-only first contact. Dialling one
-    // grants it no record authority; every provider and inventory remains
-    // independently current-master verified in this browser.
-    const addrs=rememberP2PBootstraps(
-      [d.libp2p_multiaddrs,d.relay_multiaddrs],{dial:true});
-    if(addrs.length) log('global',`${ep}: ${addrs.length} bootstrap multiaddr(s)`);
-  }
-  // Traverse only a fixed number of small cursor pages. In global mode a search
-  // is sent to the resolver, allowing a kernel outside the sampled first page to
-  // surface without materialising the fleet. The paged contract is mandatory;
-  // an unpaged legacy response is intentionally not interpreted.
-  const resolverQuery=!S.kernelFocus?String(S.q||'').trim():'';
-  const docs=await Promise.all(endpoints.map(async(ep)=>{
-    const allNodes=[]; let advertisedTotal=0, cursor='', pages=0;
-    while(pages<NETWORK_LIMITS.resolverPages&&allNodes.length<NETWORK_LIMITS.cachedKernels){
-      const params=new URLSearchParams({limit:String(NETWORK_LIMITS.resolverPage),status:'active'});
-      if(resolverQuery) params.set('q',resolverQuery);
+
+  // Relay/bootstrap hints and signed node pages start together. A slow
+  // bootstrap response cannot delay a fresh directory snapshot.
+  const bootPromise=Promise.all(endpoints.map((endpoint)=>
+    fetchJson(join(endpoint,'/v1/bootstrap'),{signal:AbortSignal.timeout(3000)})
+      .then((document)=>({endpoint,document}))
+      .catch(()=>({endpoint,document:null}))));
+  const pagesPromise=Promise.all(endpoints.map(async(endpoint)=>{
+    // One dead or pathological locator must not hold the first useful paint.
+    // Share one bounded deadline across the whole cursor walk rather than
+    // giving every page a fresh timeout.
+    const resolverSignal=AbortSignal.timeout(5000);
+    const envelopes=[]; let total=0, cursor='', pages=0, successful=false;
+    let complete=false, revision='', pollAfterMs=0, queryMode='recent';
+    while(pages<NETWORK_LIMITS.resolverPages
+        &&envelopes.length<NETWORK_LIMITS.cachedKernels){
+      const params=new URLSearchParams({limit:String(NETWORK_LIMITS.resolverPage)});
+      if(queryMode==='recent'){
+        params.set('order','recent'); params.set('status','active');
+      }else if(queryMode==='active') params.set('status','active');
       if(cursor) params.set('cursor',cursor);
-      const d=await fetchJson(join(ep,`/v1/nodes?${params}`));
-      if(!d) break;
-      const pageNodes=Array.isArray(d.nodes)?d.nodes:[];
-      allNodes.push(...pageNodes.slice(0,NETWORK_LIMITS.cachedKernels-allNodes.length));
-      advertisedTotal=Math.max(advertisedTotal,
-        Number(d.total??d.total_count??d.node_count??d.count??allNodes.length)||allNodes.length);
-      pages++;
-      const next=String(d.next_cursor??d.pagination?.next_cursor??'');
-      if(!next||next===cursor) break; cursor=next;
+      let document=await fetchJson(join(endpoint,'/v1/nodes?'+params.toString()),
+        {signal:resolverSignal});
+      // Fall back through the two older resolver contracts once. All three
+      // return the same self-signed envelopes; only ordering/query syntax differs.
+      if(!document&&!pages&&queryMode==='recent'){
+        queryMode='active'; params.delete('order');
+        document=await fetchJson(join(endpoint,'/v1/nodes?'+params.toString()),
+          {signal:resolverSignal});
+      }
+      if(!document&&!pages&&queryMode==='active'){
+        queryMode='legacy'; params.delete('status');
+        document=await fetchJson(join(endpoint,'/v1/nodes?'+params.toString()),
+          {signal:resolverSignal});
+      }
+      if(!document||!Array.isArray(document.nodes)) break;
+      successful=true; pages+=1;
+      revision=String(document.revision??document.change_id??revision);
+      const hintSeconds=Number(document.refresh_after_s);
+      if(Number.isFinite(hintSeconds)&&hintSeconds>=1&&hintSeconds<=30)
+        pollAfterMs=pollAfterMs?Math.min(pollAfterMs,hintSeconds*1000):hintSeconds*1000;
+      envelopes.push(...document.nodes.slice(
+        0,NETWORK_LIMITS.cachedKernels-envelopes.length));
+      total=Math.max(total,
+        Number(document.total??document.total_count??document.node_count
+          ??document.count??envelopes.length)||envelopes.length);
+      const next=String(document.next_cursor??document.pagination?.next_cursor??'');
+      if(!next||next===cursor){ complete=true; break; }
+      cursor=next;
     }
-    return {ep,allNodes,advertisedTotal,pages};
+    if(!successful) return {endpoint,successful:false,complete:false,total:0,
+      announcements:[],pages:0,revision:'',pollAfterMs:0};
+    const verified=await Promise.all(envelopes.map(verifyGlobalEnvelope));
+    const announcements=[]; let refused=0;
+    for(const result of verified){
+      if(!result.ok){ refused+=1; continue; }
+      announcements.push(result.ann);
+    }
+    if(refused) log('global',endpoint+': '+refused
+      +' announcement signature/hash failed or lease expired; refused',false);
+    return {endpoint,successful:true,complete,total,announcements,pages,revision,
+      pollAfterMs,refused};
   }));
-  for(const {ep,allNodes,advertisedTotal,pages} of docs){
-    S.globalTotal=Math.max(Number(S.globalTotal)||0,advertisedTotal);
-    const nodes=allNodes.slice(0,NETWORK_LIMITS.cachedKernels);
-    if(!nodes.length) continue;
-    log('global',`${ep}: ${nodes.length}/${advertisedTotal} announced node(s) in ${pages} bounded page(s)`);
-    for(const env of nodes){
-      const verified=await verifyGlobalEnvelope(env);
-      if(!verified.ok){ log('global','announcement signature/hash failed',false); continue; }
-      const ann=verified.ann, kid=ann.kernel_id||'';
-      const base=String(ann.base_url||'').replace(/\/$/,'');
-      const announced={...ann,source_endpoint:ep};
-      if(kid) S.globalAnnouncements.set(kid,announced);
-      if(base) S.globalAnnouncementByBase.set(base,announced);
-      noteKernel(kid,'resolver',base||ep,{
-        announced:true,
-        recordCount:ann.record_count||0,
-        reachability:ann.reachability_class||'',
-        publicDiscovery:!!ann.public_discovery,
-      });
-      rememberP2PBootstraps([ann.libp2p_multiaddrs],{dial:true});
-      if(base) freshPeers.add(base);
-    }
+
+  const [boots,results]=await Promise.all([bootPromise,pagesPromise]);
+  for(const {endpoint,document} of boots){
+    if(!document) continue;
+    const addrs=rememberP2PBootstraps(
+      [document.libp2p_multiaddrs,document.relay_multiaddrs],{dial:true});
+    if(addrs.length) log('global',endpoint+': '+addrs.length+' bootstrap multiaddr(s)');
   }
-  S.globalPeers=freshPeers;
-  if(S.globalPeers.size) log('resolver',`verified optional resolver peer(s): ${[...S.globalPeers].slice(0,4).join(', ')}`,true);
-  // Paint verified announcements immediately. A public tunnel can take longer to
-  // deliver its provider index and record documents; hiding an already-verified
-  // node until that entire second phase finishes makes a healthy bootstrap look
-  // like an empty network.
+
+  const firstSuccessfulSnapshot=!S.globalLastSuccessAt;
+  const directory=reconcileResolverDirectory(S.resolverSnapshots,results,{nowMs:Date.now()});
+  applyResolverDirectory(directory);
+  if(directory.successfulResolvers) S.globalLastSuccessAt=Date.now();
+  const changed=directory.fingerprint!==previousFingerprint||directory.total!==previousTotal;
+  if(changed||firstSuccessfulSnapshot){
+    for(const result of results.filter((item)=>item.successful))
+      log('global',result.endpoint+': '+result.announcements.length+'/'+result.total
+        +' signed node announcement(s) in '+result.pages+' bounded page(s)',true);
+    if(S.globalPeers.size) log('resolver','verified current resolver peer(s): '
+      +[...S.globalPeers].slice(0,4).join(', '),true);
+  }
+
+  // Paint the verified node set before provider inventories arrive. People and
+  // workspaces follow in the change-triggered discovery pass below.
   const announced=[...S.globalAnnouncements.values()];
-  if(announced.length){
-    renderGlobalKernels();
-    // A resolver announcement has kernel identity/lease data but no persona
-    // topology. Keep an already-rendered focused persona projection until the
-    // authoritative entity-feed refresh below replaces it. That refresh still
-    // sends an exact empty projection when the final persona departs; this only
-    // prevents the locator phase from creating a transient 1→0→1 race.
-    const graph=$('#sysGraph');
-    const focusedProjectionRendered=!!graph?._nodes?.childElementCount
-      &&(!!S.kernelFocus||Math.max(S.globalKernels?.size||0,S.kernels?.size||0,
-        Number(S.globalTotal)||0)<=1);
-    if(!focusedProjectionRendered) renderCoordGraph([],0);
-    updateVitalsCounters();
-    if(!S.recs.size){
-      const expected=announced.reduce((n,a)=>n+(Number(a.record_count)||0),0);
-      const sample=String(announced[0]?.kernel_id||'node').replace(/^kernel:/,'');
-      const host=$('#sysEnvs');
-      if(host) host.innerHTML=`<section class="discovery-progress" role="status" aria-live="polite">
-        <div class="discovery-orbit" aria-hidden="true"><span></span><i></i></div>
-        <div><span class="discovery-kicker">SIGNED NODE ANNOUNCEMENT VERIFIED</span>
-          <h2>${esc(sample.length>18?sample.slice(0,17)+'…':sample)}</h2>
-          <p>Node identity and lease verified. Fetching and checking ${compactCount(expected)} signed public record${expected===1?'':'s'}…</p>
-          <div class="discovery-steps"><span class="done">01 · locate</span><span class="done">02 · verify node</span><span class="active">03 · verify records</span></div>
-        </div>
-      </section>`;
-      const status=$('#status');
-      if(status) status.innerHTML=`<span class="ok">${announced.length}</span> signed node announcement${announced.length===1?'':'s'} verified · fetching ${compactCount(expected)} public record${expected===1?'':'s'}…`;
-    }
-  }
-  return rows;
+  renderGlobalKernels(); updateVitalsCounters();
+  if(announced.length&&!S.recs.size){
+    const expected=announced.reduce((count,item)=>count+(Number(item.record_count)||0),0);
+    const host=$('#sysEnvs');
+    if(host) host.innerHTML='<section class="discovery-progress" role="status" aria-live="polite">'
+      +'<div class="discovery-orbit" aria-hidden="true"><span></span><i></i></div>'
+      +'<div><span class="discovery-kicker">LIVE NODES VERIFIED</span>'
+      +'<h2>'+announced.length+' node'+(announced.length===1?'':'s')+' found</h2>'
+      +'<p>Fetching and checking '+compactCount(expected)+' signed public record'
+      +(expected===1?'':'s')+' for people and workspaces…</p>'
+      +'<div class="discovery-steps"><span class="done">01 · locate</span>'
+      +'<span class="done">02 · verify nodes</span>'
+      +'<span class="active">03 · show people and workspaces</span></div></div></section>';
+    const status=$('#status');
+    if(status) status.innerHTML='<span class="ok">'+announced.length+'</span> live node'
+      +(announced.length===1?'':'s')+' verified · loading people and workspaces…';
+  }else if(changed&&!announced.length&&!S.recs.size) refreshSystemView();
+  const pollAfterMs=results.map((result)=>Number(result.pollAfterMs)||0)
+    .filter(Boolean).reduce((minimum,value)=>Math.min(minimum,value),Infinity);
+  return {changed,successfulResolvers:directory.successfulResolvers,
+    announcements:announced,total:directory.total,
+    pollAfterMs:Number.isFinite(pollAfterMs)?pollAfterMs:0};
 }
 async function discoverFrom(base,plane,knownBoot=null,
   {expectedKernel='',resolveProviderAliases=true,signal=null}={}){
@@ -2178,8 +2244,17 @@ function noteKernel(kernelId,via,base,meta={}){
   if(!kernelId) return;
   rememberKernel(kernelId);
   const g=S.globalKernels=(S.globalKernels||new Map());
-  const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),lastSeen:0,meta:{}};
-  cur.via.add(via); if(base) cur.bases.add(base); cur.lastSeen=Date.now();
+  const cur=g.get(kernelId)||{via:new Set(),bases:new Set(),sourceBases:new Map(),
+    seenBySource:new Map(),lastSeen:0,meta:{}};
+  cur.sourceBases=cur.sourceBases instanceof Map?cur.sourceBases:new Map();
+  cur.seenBySource=cur.seenBySource instanceof Map?cur.seenBySource:new Map();
+  cur.via.add(via); cur.seenBySource.set(via,Date.now());
+  if(base){
+    if(!cur.sourceBases.has(via)) cur.sourceBases.set(via,new Set());
+    cur.sourceBases.get(via).add(base);
+  }
+  cur.bases=new Set([...cur.sourceBases.values()].flatMap((values)=>[...values]));
+  cur.lastSeen=Date.now();
   cur.meta={...(cur.meta||{}),...(meta||{})};
   // Reinsert so Map iteration is an LRU order. Keep the focused kernel pinned;
   // an old idle aggregate may be rediscovered later without making this tab's
@@ -2192,6 +2267,45 @@ function noteKernel(kernelId,via,base,meta={}){
     const victim=[...g.keys()].find((id)=>id!==S.kernelFocus); if(!victim) break;
     g.delete(victim); S.kernelOverflow++;
   }
+}
+function _dropKernelDirectoryEntry(kernelId,{retireRecords=false}={}){
+  const info=S.globalKernels?.get(kernelId);
+  if(info?.via?.size) return false;
+  S.globalKernels?.delete(kernelId); S.kernels?.delete(kernelId);
+  if(S.kernelFocus===kernelId) S.kernelFocus=null;
+  try{ NETWORK.removeEntity(networkEntityKey(kernelId,'kernel',kernelId)); }catch(_){ }
+  if(retireRecords) retireProviderInventory(kernelId,'node announcement lease ended');
+  return true;
+}
+function applyResolverDirectory(directory){
+  const affected=[];
+  for(const [kernelId,info] of (S.globalKernels||new Map())){
+    if(!info?.via?.has('resolver')) continue;
+    affected.push(kernelId);
+    info.via.delete('resolver'); info.via.delete('unreachable');
+    info.sourceBases?.delete('resolver'); info.sourceBases?.delete('unreachable');
+    info.seenBySource?.delete('resolver'); info.seenBySource?.delete('unreachable');
+    info.bases=new Set([...(info.sourceBases?.values?.()||[])]
+      .flatMap((values)=>[...values]));
+  }
+  S.resolverSnapshots=directory.snapshots;
+  S.globalAnnouncements=directory.announcements;
+  S.globalAnnouncementByBase=directory.announcementByBase;
+  S.globalPeers=directory.peers;
+  S.globalTotal=directory.total;
+  S.resolverFingerprint=directory.fingerprint;
+  for(const [kernelId,announcement] of directory.announcements){
+    const base=String(announcement.base_url||'').replace(/\/$/,'');
+    noteKernel(kernelId,'resolver',base||announcement.source_endpoint,{
+      announced:true,
+      recordCount:Number(announcement.record_count)||0,
+      reachability:String(announcement.reachability_class||''),
+      publicDiscovery:!!announcement.public_discovery,
+      announcementExpiresAt:Date.parse(String(announcement.expires_at||''))||0,
+    });
+    rememberP2PBootstraps([announcement.libp2p_multiaddrs],{dial:true});
+  }
+  for(const kernelId of affected) _dropKernelDirectoryEntry(kernelId,{retireRecords:true});
 }
 function kernelForBase(base){
   const key=base||'@origin';
@@ -2520,20 +2634,45 @@ function _providerInventoryIsCurrent(inventory,now=Date.now()){
   return Number.isFinite(generatedAt)&&Number.isFinite(expiresAt)
     &&expiresAt>generatedAt&&expiresAt>now;
 }
+function retireProviderInventory(kernelId,reason='provider lease expired'){
+  const source=String(kernelId||''), inventory=S.providerInventories.get(source);
+  if(!inventory) return false;
+  let removed=0;
+  for(const id of (inventory.recordKeys||[])) if(_removeRecordStoreKey(id)) removed++;
+  S.providerInventories.delete(source);
+  for(const [base,boot] of (S.boots||new Map())){
+    if(String(boot?.kernel_id||'')!==source) continue;
+    S.boots.delete(base); S.peerHealth?.delete(base);
+  }
+  if(removed) log('discovery',_kernelDisplayContext(source).label+': removed '+removed
+    +' expired public record'+(removed===1?'':'s')+' · '+reason);
+  return removed>0;
+}
 function _expireProviderInventories(now=Date.now()){
   let changed=false;
-  for(const [kernel,inventory] of (S.providerInventories||new Map())){
-    const expiresAt=Number(inventory?.expiresAt);
-    // Only a finite, signed expiry retires an inventory here. Malformed windows
-    // are refused before admission and also fail closed at every live consumer.
-    if(!Number.isFinite(expiresAt)||expiresAt>now) continue;
-    for(const id of (inventory?.recordKeys||[]))
-      changed=_removeRecordStoreKey(id)||changed;
-    S.providerInventories.delete(kernel);
-  }
+  for(const kernel of expiredProviderKernels(S.providerInventories,now))
+    changed=retireProviderInventory(kernel)||changed;
   if(changed){
     classifyMap();
     scheduleRealtimeRepaint({records:true});
+  }
+  return changed;
+}
+function pruneExpiredDiscoveryState(now=Date.now()){
+  let changed=false;
+  const priorFingerprint=String(S.resolverFingerprint||'');
+  const resolverFailures=[...(S.resolverSnapshots||new Map()).keys()]
+    .map((endpoint)=>({endpoint,successful:false}));
+  const directory=reconcileResolverDirectory(
+    S.resolverSnapshots,resolverFailures,{nowMs:now});
+  if(directory.fingerprint!==priorFingerprint
+      ||directory.total!==(Number(S.globalTotal)||0)){
+    applyResolverDirectory(directory); changed=true;
+  }
+  changed=_expireProviderInventories(now)||changed;
+  if(changed){
+    classifyMap(); renderGlobalKernels(); updateVitalsCounters();
+    refreshSystemView(); renderMissions(); refreshLiveSection();
   }
   return changed;
 }
@@ -2711,7 +2850,7 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
   S.monitoringOmitted=(S.monitoringOmitted||0)+Math.max(0,unique.length-NETWORK_LIMITS.monitoredBases);
   return unique.slice(0,NETWORK_LIMITS.monitoredBases);
 }
-let _discoverBusy=false;
+let _discoverBusy=false, _discoverQueued=false;
 function updateDiscoverySummary(when=new Date()){
   const status=$('#status'); if(!status) return;
   // Count only browser-admitted state. Resolver-advertised totals are useful
@@ -2723,15 +2862,16 @@ function updateDiscoverySummary(when=new Date()){
   const recordCount=S.recs?.size||0, kernelCount=admittedKernels.size;
   const monitored=(S.boots&&S.boots.size)||0;
   const refreshed=`${String(when.getUTCHours()).padStart(2,'0')}:${String(when.getUTCMinutes()).padStart(2,'0')} UTC`;
-  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. Discovery uses .well-known, Kademlia DHT and mDNS and refreshes every 15 seconds.`;
+  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. The global directory refreshes within a few seconds and changed nodes are inspected immediately.`;
   status.setAttribute('aria-label',`${recordCount} verified records across ${kernelCount} nodes; updated ${refreshed}`);
   status.innerHTML=`<span class="ok">${recordCount}</span> verified record${recordCount===1?'':'s'} · `
     +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
 }
-async function discover(){
-  // re-entrancy guard: the 15s interval is .then()-fired-and-forgotten and can stack
-  // on a slow tunnel (each run does parallel per-base fetches + telemetry loads).
-  if(_discoverBusy) return; _discoverBusy=true;
+async function discover({refreshGlobal=true,trailing=false}={}){
+  // A fixed safety refresh can overlap an event-triggered refresh on a slow
+  // route. Coalesce one trailing pass when the verified node set changed.
+  if(_discoverBusy){ if(trailing) _discoverQueued=true; return {queued:trailing}; }
+  _discoverBusy=true;
   try{
   $('#log').innerHTML='';
   // A periodic refresh may wait on a slow public tunnel. Keep the last fully
@@ -2781,7 +2921,7 @@ async function discover(){
   // yields a healthy node, its verified records paint while slower peers keep
   // resolving in the background of this same bounded discovery pass.
   const planeJobs=[
-    loadGlobalNodes(),                                              // additive ?resolver= signed locator → peers/relays
+    refreshGlobal?loadGlobalNodes():Promise.resolve(null),          // fast locator has its own adaptive cadence
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
     discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ];
@@ -2797,7 +2937,39 @@ async function discover(){
   // soon as discovery has established the signed task/base/run join.
   pollLiveArtifacts();
   updateDiscoverySummary();
-  }finally{ _discoverBusy=false; }
+  }finally{
+    _discoverBusy=false;
+    if(_discoverQueued){
+      _discoverQueued=false;
+      queueMicrotask(()=>discover({refreshGlobal:false}).catch(()=>{}));
+    }
+  }
+}
+
+let _globalRefreshTimer=null, _globalRefreshBusy=false;
+const _globalRefreshStartedAt=Date.now();
+function scheduleFastGlobalRefresh(delayMs){
+  clearTimeout(_globalRefreshTimer);
+  _globalRefreshTimer=setTimeout(refreshGlobalDirectoryFast,Math.max(1000,delayMs));
+}
+async function refreshGlobalDirectoryFast(){
+  if(_globalRefreshBusy){ scheduleFastGlobalRefresh(1000); return; }
+  _globalRefreshBusy=true; let nextDelay=7000;
+  try{
+    const result=await loadGlobalNodes();
+    pruneExpiredDiscoveryState();
+    const warming=Date.now()-_globalRefreshStartedAt<30000;
+    nextDelay=Number(result?.pollAfterMs)
+      ||(warming||!result?.announcements?.length?2500:7000);
+    if(result?.changed){
+      classifyMap(); renderGlobalKernels(); updateVitalsCounters(); refreshSystemView();
+      discover({refreshGlobal:false,trailing:true}).then(()=>{
+        renderMissions(); refreshLiveSection();
+      }).catch(()=>{});
+    }
+  }finally{
+    _globalRefreshBusy=false; scheduleFastGlobalRefresh(nextDelay);
+  }
 }
 
 // ---------- empty state: never a silent blank network ----------
@@ -2811,7 +2983,7 @@ function emptyStateHTML(){
     ||'<div class="l2">no peers attempted yet</div>';
   const httpsPage=location.protocol==='https:';
   return `<div class="empty-card">
-    <h3>${icon('warn')} No live PersonaOS personas discovered yet</h3>
+    <h3>${icon('warn')} No live AI Personas discovered yet</h3>
     <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
 	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
 	    unverified operator-status execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
@@ -2820,14 +2992,14 @@ function emptyStateHTML(){
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
-    1 · Run a public node: <code>python -m personaos.node --backend codex --port 8765 --libp2p --public-access</code><br>
+    1 · From the AI Personas repository, run <code>./start-node.sh</code>.<br>
     ${httpsPage?`2 · This page is <b>https://</b> — browsers block direct fetches to a plain-http
     LAN/localhost node. A public <code>--libp2p</code> launch creates HTTPS/WSS quick-tunnel routes
     automatically; a stable deployment may supply its own <code>--public-url</code> and
     <code>--libp2p-advertise-host</code>. A same-origin node-served shell requires both
     <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
     also meet over mDNS; a public node joins the shared DHT.`}<br>
-    3 · The network re-polls every 15 s — personas appear the moment a node responds.<br>
+    3 · The global directory refreshes every few seconds and inspects changed nodes immediately.<br>
     4 · Your own node? Click <b>OPERATOR</b> and enter its URL. A public node grants control
     without a token; gated modes use the token from the exact path printed at boot (default
     <code>runs/node/.personaos-secrets/operator.token</code>). Drive it from here: ASK / FUND / STOP,
@@ -3411,6 +3583,27 @@ function verificationReferencesDetails(entries){
   return `<details class="verification-identity"><summary>Verification references</summary>`
     +exact.map(([label,value])=>`<div class="copy-host">${copyBtn()}<code class="copy-src">${esc(value)}</code>`
       +`<span class="l2">${esc(label)} · exact signed reference</span></div>`).join('')+`</details>`;
+}
+function structuredContentHTML(value,{label='Exact response JSON'}={}){
+  const projection=structuredContentProjection(value);
+  if(!projection.parsed)
+    return `<span class="opmsg copy-src">${esc(projection.paragraphs[0]||'')}</span>`;
+  const paragraphs=projection.paragraphs.filter((text)=>text!==projection.headline).slice(0,3)
+    .map((text)=>`<p>${esc(text)}</p>`).join('');
+  const facts=projection.facts.slice(0,10).map((fact)=>
+    `<div class="structured-fact"><span>${esc(fact.label)}</span><b>${esc(fact.value)}</b></div>`).join('');
+  const items=projection.items.length
+    ?`<ul>${projection.items.slice(0,12).map((item)=>`<li>${esc(item)}</li>`).join('')}</ul>`:'';
+  return `<div class="structured-content" data-structured-content="readable"><strong>${esc(projection.headline)}</strong>${paragraphs}${facts?`<div class="structured-facts">${facts}</div>`:''}${items}</div>`
+    +`<details class="verification-identity structured-raw"><summary>${esc(label)}</summary>`
+    +`<div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(projection.raw)}</pre></div></details>`;
+}
+function structuredInlineText(value){
+  const projection=structuredContentProjection(value);
+  if(!projection.parsed) return projection.paragraphs[0]||'';
+  if(projection.headline&&projection.headline!=='Structured response') return projection.headline;
+  const fact=projection.facts[0]; if(fact) return `${fact.label}: ${fact.value}`;
+  return projection.items[0]||projection.headline;
 }
 const findRecByDid=(pid,kernel='')=>S.order.find((id)=>{ const r=S.recs.get(id);
   return (!kernel||r?._kernel===kernel)&&(r?.did==='did:personaos:'+pid||r?.did===pid); });
@@ -7968,6 +8161,8 @@ async function renderGeneric(host,ctx){
   const integrity=ctx.integrityVerified?'hash-checked':'unhashed';
   if(bytesLookTextual(bytes)){
     const text=new TextDecoder().decode(bytes), truncated=text.length>400*1024;
+    if(/^[{[]/.test(text.trim())){ try{ JSON.parse(text); const view=el('div','fv-human-json');
+      view.innerHTML=structuredContentHTML(text,{label:'Exact artifact JSON'}); host.appendChild(view); return; }catch(e){} }
     host.appendChild(plainPre(text.slice(0,400*1024),truncated?`first 400 KB · ${integrity} generic text`:`generic ${integrity} text`));
     return;
   }
@@ -7984,7 +8179,8 @@ async function renderCode(host,ctx){
   const isJson=media==='application/json'||media.endsWith('+json');
   if(isJson){
     if((ctx.realSize??body.length)>200*1024){ host.appendChild(plainPre(body,'json > 200 KB — plain text (perf)')); return; }
-    try{ body=JSON.stringify(JSON.parse(body),null,2); }catch(e){}
+    try{ JSON.parse(body); const view=el('div','fv-human-json');
+      view.innerHTML=structuredContentHTML(body,{label:'Exact artifact JSON'}); host.appendChild(view); return; }catch(e){}
   }
   // highlight.js tokenises the WHOLE string on the main thread; a multi-MB generated
   // bundle / huge xml would freeze the UI for seconds. The JSON path is already capped
@@ -8292,7 +8488,7 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
         ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed amendment parent</span>');
     for(const [label,value] of [['Pressure',lifecycle.pressure],['Review',lifecycle.review],['Block',lifecycle.block]]){
       if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
-      html+=H(label)+`<pre class="filview">${esc(JSON.stringify(value,null,2))}</pre>`;
+      html+=H(label)+structuredContentHTML(value,{label:`Exact ${label.toLowerCase()} JSON`});
     }
     html+=`<div class="fv-note"><span class="ok">${icon('check','ico-sm')} kernel signature and content-hash revision verified</span> · anonymous read-only lifecycle projection; no operator capability is present.</div>`;
   }
@@ -8539,14 +8735,17 @@ async function missionView(r){
   return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html:missionDocHTML(ref)};
 }
 /* ---------- operator console views ---------- */
-// Render an opPost result into the #op-out pane with legible hints for the two most
-// common operator failures (bad/missing token; unreachable node), then the raw JSON.
+// Render operator results for people first. Exact JSON remains available in a
+// collapsed audit disclosure instead of dominating the action result.
 function showOpResult(out,r,suffix){
   let hint='';
-  if(r.status===401||r.status===403) hint='authorization failed — this node rejected the token. Re-check it in the OPERATOR console (forget, then re-paste).\n\n';
-  else if(r.status===0) hint='could not reach the node'+((r.body&&r.body.error)?' — '+String(r.body.error).slice(0,200):'')+'\n\n';
-  const head=r.status===0?'HTTP 0 (no response)':`HTTP ${r.status}`;
-  out.textContent=hint+head+'\n'+JSON.stringify(r.body,null,1).slice(0,1600)+(suffix||'');
+  if(r.status===401||r.status===403) hint='Authorization failed — this node rejected the token. Re-check it in the operator console.\n';
+  else if(r.status===0) hint='The node could not be reached.\n';
+  const human=hint+operatorResponseText(r.body,r.status)+(suffix||'');
+  const projection=structuredContentProjection(r.body);
+  out.innerHTML=`<div class="op-result-summary">${esc(human)}</div>`
+    +(projection.parsed?`<details class="verification-identity structured-raw"><summary>Technical response</summary>`
+      +`<div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(projection.raw)}</pre></div></details>`:'');
   // colour the result pane off the status the call already computed: 2xx = ok (green
   // edge), everything else (auth/guard/unreachable) = err (danger edge). Additive
   // classes the design system styles; cleared each render so a retry re-derives them.
@@ -8631,25 +8830,27 @@ async function operatorNodeView(b){
   if(personas.length) html+=H(`Personas (${personas.length})`)+personas.map((p)=>{
     const call=(st.active_model_calls||[]).find((c)=>_shortId(c.persona_id)===_shortId(p.persona_id));
     const taskState=p.task_execution_state||'unmarked', llmState=p.llm_execution_state||'unmarked';
-    return `<div class="persona-runtime-row"><div><b>${esc(p.name||p.persona_id)}</b>`
+    return `<div class="persona-runtime-row"><div><b>${esc(_displayPersonaName(p.name,p.persona_id))}</b>`
       +`<span class="runtime-pills"><span class="runtime-pill ${taskState==='running_llm'?'hot':''}">${esc(taskState.replace(/_/g,' '))}</span><span class="runtime-pill">LLM ${esc(llmState.replace(/_/g,' '))}</span></span></div>`
       +(call?`<div class="runtime-call"><span class="livedot2"></span>${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')} · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</div>`
         :`<div class="l2">${esc(p.lifecycle_state||'')} · ${esc(p.experience_tasks??0)} task(s)</div>`)+`</div>`;
   }).join('');
   const runs=st.runs||[];
-  if(runs.length) html+=H(`Runs (${runs.length})`)+runs.slice(-12).reverse().map((r)=>{
+  if(runs.length) html+=H(`Runs (${runs.length})`)+runs.slice(-12).reverse().map((r,index)=>{
     const id=typeof r==='string'?r:(r.run||r.run_id||'');
-    return `<div class="grant"><span><a href="#" data-act="op-run" data-base="${esc(b)}" data-run="${esc(id)}">${esc(id)}</a></span>`
+    const task=typeof r==='object'?String(r.task||r.text||'').trim():'';
+    const label=task||_verifiedPublicTaskForRun(st.node_id||'',id)?.task||`Mission ${index+1}`;
+    return `<div class="grant"><span><a href="#" data-act="op-run" data-base="${esc(b)}" data-run="${esc(id)}">${esc(label)}</a></span>`
       +`<span class="l2">${esc(typeof r==='object'?(r.status||''):'')}</span></div>`; }).join('');
   const paused=st.paused_missions||[];
   if(paused.length) html+=H(`Paused missions (${paused.length}) — fund to resume`)+paused.map((p)=>
-    `<div class="grant"><span>${esc(p.run||p.run_id||'')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
+    `<div class="grant"><span>${esc(p.task||'Paused mission')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
   html+=H('Optional human input')
     +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
   if(!full){
     html+=H('Node controls')
       +`<div class="l2">This response did not grant full status authority. Run reads and ASK / FUND / STOP remain gated; remove a rejected saved credential or present a valid bearer when node policy requires one.</div>`;
-    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
+    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
   }
   html+=H('Ask the node — owner intake')
     +`<div class="opform"><label class="field"><span class="field-label">task</span>`
@@ -8658,22 +8859,10 @@ async function operatorNodeView(b){
     +`<input id="op-budget" type="number" min="1" placeholder="optional for ASK · required for FUND"></label>`
     +`<button class="btn btn-primary" data-act="op-ask" data-base="${esc(b)}" title="start a new mission from the task above (budget optional)">${icon('ask')} ASK</button>`
     +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run — resumes a paused mission (needs a run id target, or it funds the node intake)">${icon('fund')} FUND</button>`
-    +`<label class="field"><span class="field-label">run id (optional)</span>`
-    +`<input id="op-run-target" placeholder="stop / fund target"></label>`
+    +`<label class="field"><span class="field-label">mission reference (advanced)</span>`
+    +`<input id="op-run-target" placeholder="paste a mission reference to stop or fund"></label>`
     +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">${icon('stop')} STOP</button></div>`
-    +`<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>`;
-  // Owner-class creation: environments form via the full §12c/§15 ceremony;
-  // personas are OPERATOR-seeded souls (personas still never self-author).
-  html+=H('Create — environment / persona (owner authority)')
-    +`<div class="opform"><div class="oprow">`
-    +`<label class="field"><span class="field-label">environment name</span><input id="op-env-name" placeholder="new environment"></label>`
-    +`<label class="field"><span class="field-label">charter (optional)</span><input id="op-env-desc" placeholder="purpose / charter line"></label>`
-    +`<button class="btn" data-act="op-newenv" data-base="${esc(b)}">${icon('env_new')} NEW ENV</button></div>`
-    +`<div class="oprow">`
-    +`<label class="field"><span class="field-label">persona name</span><input id="op-p-name" placeholder="new persona"></label>`
-    +`<label class="field"><span class="field-label">role</span><input id="op-p-role" placeholder="default member"></label>`
-    +`<label class="field"><span class="field-label">description (optional)</span><input id="op-p-desc" placeholder="short description"></label>`
-    +`<button class="btn" data-act="op-newpersona" data-base="${esc(b)}">${icon('persona_new')} NEW PERSONA</button></div></div>`;
+    +`<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>`;
   // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
   // persona-authored, FSM-promoted env tools (invocable below, kernel-mediated).
   const mcp=await fetchJson(join(b,'mcp/tools'));
@@ -8692,7 +8881,8 @@ async function operatorNodeView(b){
       +`<label class="field"><span class="field-label">args JSON</span><input id="op-mcp-args" placeholder='{"code":"print(42)"}'></label>`
       +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">${icon('tool')} CALL</button></div></div>`;
   }
-  return {title:`<span class="kind k-env">OPERATOR</span> ${esc(st.node_id||b)}`,html};
+  html+=verificationReferencesDetails([['node id',st.node_id||''],['node URL',b]]);
+  return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
 }
 
 function _runRuntimeSurfaces(st){
@@ -8738,7 +8928,7 @@ async function operatorRunView(b,run){
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
     +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
-    +'<pre id="op-out" class="opout" role="status" aria-live="polite"></pre></div>')
+    +'<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>')
     :(terminal?'<div class="l2">This run has ended; FUND and STOP are no longer applicable.</div>'
       :'<div class="l2">Read-only live monitor. FUND and STOP appear only when this node returns its full status projection; public node policy can grant that without a bearer.</div>');
   const accepted=rs.accepted===true
@@ -9355,32 +9545,16 @@ function wire(){
       S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
-    if(act==='op-newenv'||act==='op-newpersona'||act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
+    if(act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
       const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
-      const show=(r)=>{ done();
-        if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
-        // leave the result readable, then refresh the console so the new entity shows
-        if(r.status>=200&&r.status<300){ S.views[S.views.length-1]=()=>operatorNodeView(b2);
-          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
-      if(act==='op-newenv'){ const nf=$('#op-env-name'); const name=(nf?.value||'').trim();
-        if(!name){ if(out) out.textContent='enter an environment name first'; opInvalid(nf); return; }
-        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        opPending(out,'forming environment (full §12c ceremony)…');
-        opPost(b2,'env',{name,description:($('#op-env-desc')?.value||'').trim()}).then(show); }
-      else if(act==='op-newpersona'){ const nf=$('#op-p-name'); const name=(nf?.value||'').trim();
-        if(!name){ if(out) out.textContent='enter a persona name first'; opInvalid(nf); return; }
-        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        opPending(out,'seeding persona…');
-        opPost(b2,'persona',{name,role:($('#op-p-role')?.value||'').trim()||'member',
-          description:($('#op-p-desc')?.value||'').trim()}).then(show); }
-      else { const tf=$('#op-mcp-tool'); const tool=(tf?.value||'').trim();
-        if(!tool){ if(out) out.textContent='enter a tool name first'; opInvalid(tf); return; }
-        const af=$('#op-mcp-args'); let args={}; try{ args=JSON.parse((af?.value||'').trim()||'{}'); }
-        catch(e){ if(out) out.textContent='args must be valid JSON'; opInvalid(af); return; }
-        if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-        opPending(out,'calling (kernel-mediated, sandboxed)…');
-        opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
-          .then((r)=>{ done(); if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); } }); }
+      const tf=$('#op-mcp-tool'); const tool=(tf?.value||'').trim();
+      if(!tool){ if(out) out.textContent='enter a tool name first'; opInvalid(tf); return; }
+      const af=$('#op-mcp-args'); let args={}; try{ args=JSON.parse((af?.value||'').trim()||'{}'); }
+      catch(e){ if(out) out.textContent='args must be valid JSON'; opInvalid(af); return; }
+      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
+      opPending(out,'calling (kernel-mediated, sandboxed)…');
+      opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
+        .then((r)=>{ done(); if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); } });
       return; }
     if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
       // a run-scoped control (operatorRunView's inline FUND/STOP) carries the run on the
@@ -9390,8 +9564,8 @@ function wire(){
       // run it just funded/halted and re-fetches THAT run's status), not the parent node.
       const isRunScoped=!!a.dataset.run;
       const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
-      // ASK/FUND/STOP mutate node state — leave the JSON visible briefly, then re-render
-      // the console so the new run / updated paused list shows (mirrors op-newenv).
+      // ASK/FUND/STOP mutate node state — leave the result visible briefly, then
+      // re-render the console so the new run / updated paused list shows.
       const show=(r)=>{ done();
         if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
         if(r.status>=200&&r.status<300){ const bi=$('#opr-budget')||$('#op-budget'); if(bi) bi.value='';   // clear the budget so the 3s re-render window can't double-fund
@@ -10025,13 +10199,14 @@ async function initP2P(){
   // Dead HTTPS locators continue in parallel and cannot hold libp2p startup.
   initP2P();
   await discover();
+  scheduleFastGlobalRefresh(2500);
   prefetchNodeStatuses();
   renderMissions();
   streamPersonaCognition();
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{
     maintainP2PBootstrapConnectivity().catch(()=>{});
-    discover().then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
+    discover({refreshGlobal:false}).then(()=>{ renderMissions(); refreshLiveSection(); }).catch(()=>{});
   }, 15000);
   // per-entity drawer feed + node run state + the living network: re-fetch on the
   // node's live cadence so the stage, constellation and feed stream without SSE.

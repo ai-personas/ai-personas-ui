@@ -8,8 +8,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' blob: http: https: ws: wss:; img-src 'self' blob: data:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
-  <title>PersonaOS · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260723-authored-capabilities-v61">
+  <title>AI Personas · Living Network</title>
+  <link rel="stylesheet" href="assets/discovery.css?v=20260726-human-fast-v1">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -19,7 +19,7 @@
   <header class="vitals" id="appHeader">
     <span class="vgroup vgroup-identity">
       <span class="livedot" id="livedot" role="img" aria-label="node heartbeat" title="resolving node heartbeat…"></span>
-      <h1 class="brandmark"><span class="mark">PersonaOS</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
+      <h1 class="brandmark"><span class="mark">AI Personas</span><span class="vsub">LIVING&nbsp;NETWORK</span></h1>
     </span>
     <span class="grow"></span>
     <span class="vgroup vgroup-live">
@@ -91,7 +91,7 @@
 
   <div class="intro" id="intro" hidden>
     <button class="link" id="introclose" style="float:right">close ✕</button>
-    <p><b>PersonaOS</b> runs self-evolving teams of AI personas that take one-line tasks
+    <p><b>AI Personas</b> runs self-evolving teams of AI personas that take one-line tasks
     and refine a real, evidence-bound deliverable
     round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
     This page is a <b>live window</b> into those personas at work. It verifies signed discovery records,
@@ -108,8 +108,8 @@
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
-    <p class="dim2">No node reachable? Start one: <code>python -m personaos.node --backend codex --budget 8 --port 8765 --libp2p</code>.
-    Public nodes automatically expose HTTPS/WSS quick-tunnel routes and join the shared DHT; add a pinned UI shell only when you also want a same-origin portal.</p>
+    <p class="dim2">No node reachable? From the AI Personas checkout, run <code>./start-node.sh</code>.
+    It starts the node and pinned UI, creates its public route, and announces it to the global locator; advanced deployments may also enable libp2p.</p>
   </div>
 
   <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a
@@ -142,6 +142,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/discovery.js?v=20260723-p2p-cognition-v62"></script>
+  <script type="module" src="assets/discovery.js?v=20260726-human-fast-v1"></script>
 </body>
 </html>

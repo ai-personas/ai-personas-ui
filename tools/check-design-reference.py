@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = 'd85bc4d9ec5b4b0805a0af10d503849dfbffb739'
+REVIEWED_DESIGN_COMMIT = '33da7e0c369894e4aa14a022dfd74955c4e73a82'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'f579e382864378608378824de64e4c3631a434d2ff1ea807348987fedb29daaa'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '8374c6245d3590c5c09f6efeea3e66e34f939a682453f2baa484a742754fd862'
 
 
 DESIGN_ANCHORS = {
@@ -135,9 +135,9 @@ def main() -> None:
     p2p_multiaddrs = p2p_hints.get('libp2p', []) if isinstance(p2p_hints, dict) else []
     p2p_https_routes = p2p_hints.get('https', []) if isinstance(p2p_hints, dict) else []
     ui_checks = {
-        'decentralized first contact with explicit optional resolvers': (
-            'DEFAULT_GLOBAL_DISCOVERY_ENDPOINT' not in portal
-            and "return [...new Set(p.getAll('resolver')" in portal
+        'decentralized first contact with an untrusted default locator': (
+            "DEFAULT_GLOBAL_DISCOVERY_ENDPOINT='https://node1.personas.ai'" in portal
+            and "...p.getAll('resolver')" in portal
             and "p.get('no_global_discovery')==='1'" in portal
             and len(p2p_multiaddrs) >= 2
             and all(isinstance(value, str) and '/wss/p2p/' in value for value in p2p_multiaddrs)
@@ -145,10 +145,12 @@ def main() -> None:
             and all('trycloudflare.com' not in value for value in p2p_https_routes)
             and 'verifyGossipProviderEnvelope' in portal
             and 'async function verifyGlobalEnvelope(env)' in portal
-            and 'exp<=Date.now()' in portal
+            and 'exp<=now' in portal
+            and 'ttl>900000' in portal
+            and 'ann.public_discovery!==true' in portal
             and 'ed.verifyAsync' in portal
-            and "Object.prototype.hasOwnProperty.call(env,'public_bundle')" in portal
-            and 'if(!verified.ok)' in portal
+            and '_exactObjectFields(env,GLOBAL_ENVELOPE_FIELDS)' in portal
+            and ('if(!verified.ok)' in portal or 'if(!result.ok)' in portal)
         ),
         'durable operator credential storage': "localStorage.setItem('personaos_operator'" not in portal,
         'tokenized EventSource URL': 'new EventSource(esUrl)' not in portal,
