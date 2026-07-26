@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = 'e3836c87042611731d5a2d890dbaf27c845c41aa'
+REVIEWED_DESIGN_COMMIT = '697493106776030806b959f3d54f183a4f9ec1d6'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = '1ee20c9a5fb723f6afea6b420b6f11fcffb98d325ad0995ac1c516d026681791'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = '7669148b169793267f481cea07203a2598cecdfd876e0952fc2e0056500a22ae'
 
 
 DESIGN_ANCHORS = {
@@ -34,6 +34,7 @@ DESIGN_ANCHORS = {
         'persona-card/4',
         'last-resort first-contact cache',
         'transport readiness',
+        'not a global discovery transport',
     ],
     '03_TASKS.md': [
         'never kernel tie-breakers',
@@ -159,6 +160,7 @@ def main() -> None:
             and ('if(!verified.ok)' in portal or 'if(!result.ok)' in portal)
             and 'locatorFallbackDecision' in portal
             and '_currentLocatorFallbackDecision' in portal
+            and 'shouldPrefetchNodeStatus' in portal
         ),
         'durable operator credential storage': "localStorage.setItem('personaos_operator'" not in portal,
         'tokenized EventSource URL': 'new EventSource(esUrl)' not in portal,
