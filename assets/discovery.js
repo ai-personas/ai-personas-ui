@@ -3544,6 +3544,8 @@ function runtimeForPersona(value,kernel=''){ const ref=_personaRef(value,kernel)
 // Node /status cache — 4s TTL so active calls and run discovery keep the 2-5s live cadence.
 const statusCache=new Map();
 const statusFetchJobs=new Map();
+const liveStatusCache=new Map();
+const liveStatusFetchJobs=new Map();
 function currentStatusCacheHit(baseKey,hit=statusCache.get(baseKey)){
   const base=baseKey==='@origin'?'':baseKey;
   return hit&&hit.credential===tokenFor(join(base,'status'))?hit:null;
@@ -3594,6 +3596,71 @@ async function fetchNodeStatus(base){
   });
   statusFetchJobs.set(requestKey,job);
   return job;
+}
+async function fetchNodeLiveStatus(base){
+  const key=base||'@origin', endpoint=join(base,'status/live');
+  const credential=tokenFor(endpoint); let hit=liveStatusCache.get(key);
+  if(hit&&hit.credential!==credential){ liveStatusCache.delete(key); hit=null; }
+  if(hit&&(Date.now()-hit.ts)<2000) return hit.v;
+  const pending=liveStatusFetchJobs.get(key); if(pending) return pending;
+  let job;
+  const request=(async()=>{
+    const v=await fetchResponsivePublicJson(endpoint);
+    if(tokenFor(endpoint)!==credential) return null;
+    if(v?.schema==='personaos-node-live-status/1'){
+      liveStatusCache.set(key,{v,ts:Date.now(),credential});
+      indexRuntimeStatus(base,v);
+      return v;
+    }
+    return null;
+  })();
+  job=request.finally(()=>{
+    if(liveStatusFetchJobs.get(key)===job) liveStatusFetchJobs.delete(key);
+  });
+  liveStatusFetchJobs.set(key,job);
+  return job;
+}
+function overlayNodeLiveStatus(status,live){
+  if(!live) return status||null;
+  if(!status) return live;
+  const merged={...status};
+  for(const key of ['personas','live_run_model_pools','active_persona_count',
+    'environment_member_persona_ids','active_run_persona_ids','paused_run_persona_ids',
+    'running_llm_persona_ids','active_model_calls','stoppable_run','stoppable_runs',
+    'pending_budget','public_discovery_version','public_discovery_record_count',
+    'global_discovery','global_discovery_consumer','heartbeat','generated_at']){
+    if(Object.prototype.hasOwnProperty.call(live,key)) merged[key]=live[key];
+  }
+  // Preserve the full response schema: live data may update observations but
+  // must never manufacture read/control authority.
+  merged.schema=status.schema;
+  return merged;
+}
+async function fetchNodeStatusWithLive(base){
+  const [statusResult,liveResult]=await Promise.allSettled([
+    fetchNodeStatus(base),fetchNodeLiveStatus(base),
+  ]);
+  const status=statusResult.status==='fulfilled'?statusResult.value:null;
+  const live=liveResult.status==='fulfilled'?liveResult.value:null;
+  return overlayNodeLiveStatus(status,live);
+}
+function currentRuntimeStatusEntries(now=Date.now(),maxAge=15000){
+  const keys=new Set([...statusCache.keys(),...liveStatusCache.keys()]);
+  const rows=[];
+  for(const key of keys){
+    const full=currentStatusCacheHit(key), live=liveStatusCache.get(key);
+    const base=key==='@origin'?'':key;
+    const currentCredential=tokenFor(join(base,'status/live'));
+    const currentFull=full&&now-Number(full.ts||0)<=maxAge?full:null;
+    const currentLive=live&&live.credential===currentCredential
+      &&now-Number(live.ts||0)<=maxAge?live:null;
+    if(!currentFull&&!currentLive) continue;
+    rows.push([key,{
+      v:overlayNodeLiveStatus(currentFull?.v||null,currentLive?.v||null),
+      ts:Math.max(Number(currentFull?.ts||0),Number(currentLive?.ts||0)),
+    }]);
+  }
+  return rows;
 }
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
@@ -3886,8 +3953,7 @@ function endLiveArtifactRun(base,event,meta={}){
 }
 function pollLiveArtifacts(){
   const targets=new Map(); const now=Date.now();
-  for(const [baseKey,hit] of statusCache){
-    if(!currentStatusCacheHit(baseKey,hit)||!hit?.ts||now-hit.ts>15000) continue;
+  for(const [baseKey,hit] of currentRuntimeStatusEntries(now,15000)){
     const base=baseKey==='@origin'?'':baseKey;
     for(const run of (hit?.v?.stoppable_runs||[])) targets.set(_liveRunKey(base,run),{base,run});
   }
@@ -7848,7 +7914,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   // reputation_score [0,1] — never raw operator fitness (that lives only in
   // the token-gated operator console). /status is a fallback for liveness.
   const prof=(L.profile?await dfetch(contentBase,L.profile):null)||{};
-  const ns=base?(await fetchNodeStatus(base)||{}):{};
+  const ns=base?(await fetchNodeStatusWithLive(base)||{}):{};
   // The provider/document-signed outer record owns the observation key. A profile
   // may enrich it only after nested identity verification; it cannot redirect the
   // drawer to a different persona while that proof is pending or refused.
@@ -7965,7 +8031,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   // (environments/<id>.json) — env_type, status, members, lineage_digest,
   // rule_count. /status is only a liveness fallback when no export link exists.
   const d=(L.export?await dfetch(contentBase,L.export):null)||{};
-  const ns=d.environment_id||!base?{}:(await fetchNodeStatus(base)||{});
+  const ns=d.environment_id||!base?{}:(await fetchNodeStatusWithLive(base)||{});
   const members=d.members||[];
   const ld=d.lineage_digest||{};
   // de-dup scalars the live tiles + the 'Members (N)' header already carry
@@ -9027,7 +9093,7 @@ async function operatorView(){
 async function operatorNodeView(b){
   const key=opBaseKey(b);
   const mixed=location.protocol==='https:'&&/^http:\/\//i.test(key);
-  const st=await fetchNodeStatus(b)||{};
+  const st=await fetchNodeStatusWithLive(b)||{};
   const reached=!!st.schema;
   const access=nodeStatusAccess(b,st), full=access.granted;
   const limited=st.schema==='personaos-node-status-public/1';
@@ -9126,7 +9192,9 @@ async function operatorRunView(b,run){
   // The status document is the authority result. A bare request to a public node
   // returns the same full schema as an accepted bearer; a non-public anonymous
   // request returns only personaos-node-status-public/1 and remains read-gated.
-  const [nodeStatus,_live]=await Promise.all([fetchNodeStatus(b),fetchLiveArtifacts(b,run)]);
+  const [nodeStatus,_live]=await Promise.all([
+    fetchNodeStatusWithLive(b),fetchLiveArtifacts(b,run),
+  ]);
   const statusAccess=nodeStatusAccess(b,nodeStatus), hasFullStatus=statusAccess.granted;
   const [stRaw,artsRaw]=await Promise.all([
     hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):Promise.resolve(null),
@@ -9418,8 +9486,7 @@ function missionCardList(){
   // on success, so a vanished node's last 'run-X RUNNING' would otherwise linger here as
   // a phantom card forever. Drop entries older than ~4 poll windows of the 8s serve-TTL.
   const fresh=Date.now()-32000;
-  for(const [baseKey,hit] of statusCache){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
-    if(!currentStatusCacheHit(baseKey,hit)) continue;
+  for(const [baseKey,hit] of currentRuntimeStatusEntries(Date.now(),32000)){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
     if(!(hit.ts>fresh)) continue;
     const busy=String((v.heartbeat||{}).busy||'');
     for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run);
@@ -9501,7 +9568,16 @@ function prefetchNodeStatuses(){
     .filter((row)=>shouldPrefetchNodeStatus(row));
   const window=selectMonitoringBases(candidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64});
   for(const base of window.bases){
-    fetchNodeStatus(base).then(()=>{ renderMissions(); pollLiveArtifacts(); }).catch(()=>{}); }
+    fetchNodeLiveStatus(base)
+      .then(()=>{ renderMissions(); pollLiveArtifacts(); })
+      .catch(()=>{});
+    const row=candidates.find((item)=>item.base===base);
+    if(row?.focused||row?.credentialed){
+      fetchNodeStatus(base)
+        .then(()=>{ renderMissions(); pollLiveArtifacts(); })
+        .catch(()=>{});
+    }
+  }
 }
 function renderMissions(){
   const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'),
