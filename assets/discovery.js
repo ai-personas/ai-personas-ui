@@ -10642,12 +10642,19 @@ async function refreshP2PRendezvous(){
     return routeAttempts;
   };
   try{
-    for(const bucket of buckets){
-      if(signal.aborted) break;
-      queriedBuckets++;
-      const direct=await P2P.findRendezvousProviders?.(bucket.cid,{
+    // Give every adjacent temporal bucket a direct first-contact chance in
+    // parallel. A sequential current-bucket traversal could consume the whole
+    // job deadline exactly at an epoch rollover and starve the already
+    // pre-published next bucket.
+    const directBuckets=await Promise.all(buckets.map(async(bucket)=>({
+      bucket,
+      direct:await P2P.findRendezvousProviders?.(bucket.cid,{
         signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution
-      }).catch(()=>null);
+      }).catch(()=>null)
+    })));
+    queriedBuckets=directBuckets.length;
+    for(const {direct} of directBuckets){
+      if(signal.aborted) break;
       let sourceAttempts=0,sourceCandidates=0;
       for(const provider of direct?.providers||[]){
         if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
@@ -10657,12 +10664,15 @@ async function refreshP2PRendezvous(){
         sourceAttempts+=await inspectProvider(provider,
           P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
       }
-      // Direct first-contact queries merge live routes hidden by another
-      // responder's stale K-provider window, but one verified direct route does
-      // not prove that window is complete. Give iterative Kademlia its own
-      // existing bounded budget so unseen providers cannot be starved by an
-      // older healthy route.
-      sourceAttempts=0; sourceCandidates=0;
+      if(reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+    }
+    // Direct first-contact queries merge live routes hidden by another
+    // responder's stale K-provider window, but one verified direct route does
+    // not prove that window is complete. Give iterative Kademlia its own
+    // remaining bounded budget after every temporal bucket had a direct chance.
+    for(const bucket of buckets){
+      if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+      let sourceAttempts=0,sourceCandidates=0;
       try{
         for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
           if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
@@ -10673,7 +10683,6 @@ async function refreshP2PRendezvous(){
             P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
         }
       }catch(e){}
-      if(reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
     }
     log('p2p',`DHT rendezvous scan: ${queriedBuckets} temporal bucket(s) · ${attempted} route(s) tried · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
     if(reconciledRoutes){

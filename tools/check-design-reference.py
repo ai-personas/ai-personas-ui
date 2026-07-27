@@ -10,9 +10,9 @@ import subprocess
 from pathlib import Path
 
 
-REVIEWED_DESIGN_COMMIT = '41d33dccf04f67c3a7b410955592184ef2f78d77'
+REVIEWED_DESIGN_COMMIT = '394b82dc187eae4e8fb61caddaa9466282d804cb'
 REVIEWED_MARKDOWN_COUNT = 22
-REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'd41c19536349cd239293569d191a80a980adb84d3b92489c4826abe267319b51'
+REVIEWED_MARKDOWN_MANIFEST_SHA256 = 'e827c2bb303b6383379606a8c495ebfaa0f72d653b34a66710a7e8ec05ec6453'
 
 
 DESIGN_ANCHORS = {
@@ -35,6 +35,7 @@ DESIGN_ANCHORS = {
         'last-resort first-contact cache',
         'transport readiness',
         '20-second absolute first-contact ceiling',
+        'pre-announce the immediately following key',
         'multiple independently dialable wss',
         'not a global discovery transport',
         'current signed observation of durable persona-authored history',

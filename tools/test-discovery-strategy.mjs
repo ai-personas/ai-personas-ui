@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {
   LOCATOR_FALLBACK_COLD_GRACE_MS,
   LOCATOR_FALLBACK_PEER_PROBE_MAX_MS,
@@ -107,5 +109,14 @@ assert.deepEqual(selectVerifiedPublicTaskRunTargets(
 'automatic artifact polling must exclude signed terminal history');
 assert.equal(selectVerifiedPublicTaskRunTargets(
   [terminalTask,liveTask],inventory,boots,{nowMs:start,includeHistorical:true}).length,2);
+
+const portal=fs.readFileSync(fileURLToPath(new URL('../assets/discovery.js',import.meta.url)),'utf8');
+const parallelTemporalQueries=portal.indexOf('const directBuckets=await Promise.all(buckets.map');
+const iterativeTraversal=portal.indexOf('// remaining bounded budget after every temporal bucket',
+  parallelTemporalQueries);
+assert.ok(parallelTemporalQueries>=0,
+  'adjacent temporal rendezvous buckets must receive concurrent direct queries');
+assert.ok(iterativeTraversal>parallelTemporalQueries,
+  'direct adjacent-bucket queries must run before iterative Kademlia traversal');
 
 console.log('discovery strategy tests passed');

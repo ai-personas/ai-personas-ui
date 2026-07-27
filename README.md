@@ -288,8 +288,8 @@ The distinction is intentional:
 The scheduled `design-validation.yml` workflow checks the
 [`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
 Monday and on UI changes. The last reviewed design commit is
-`41d33dccf04f67c3a7b410955592184ef2f78d77`: 22 Markdown files with manifest SHA-256
-`d41c19536349cd239293569d191a80a980adb84d3b92489c4826abe267319b51`. CI fails when either
+`394b82dc187eae4e8fb61caddaa9466282d804cb`: 22 Markdown files with manifest SHA-256
+`e827c2bb303b6383379606a8c495ebfaa0f72d653b34a66710a7e8ec05ec6453`. CI fails when either
 HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
 before updating the pin. Semantic checks for decentralised discovery, the access ladder,
 content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
@@ -303,6 +303,8 @@ signed best-so-far bytes remain inspectable without acquiring completion authori
 The pin additionally covers bounded signed active-peer cards without host-authored role inference,
 exact-revision reviewer replicas, exact recovery of interrupted terminal publication, and token-free
 renewal of signed public-cognition observations without presenting retained history as current thought.
+It also pins rollover-safe DHT first contact: publishers pre-announce the next temporal bucket and
+browsers query the adjacent buckets concurrently before any iterative traversal or locator fallback.
 It also pins completion-aware first-contact timing, locator retry anti-amplification, and bounded
 multi-route WSS/circuit failover for one stable peer identity.
 
