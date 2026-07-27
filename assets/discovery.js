@@ -8652,18 +8652,82 @@ function zipDirectoryEntries(bytes,limit=200){
   }
   return entries;
 }
+const MAX_ARCHIVE_INSPECTION_BYTES=32*1024*1024;
+function tarText(bytes,start,length){
+  return new TextDecoder('utf-8').decode(bytes.subarray(start,start+length))
+    .replace(/\0.*$/s,'').replace(/[\u0000-\u001f\u007f]/g,' ').trim();
+}
+function tarOctal(bytes,start,length){
+  const value=tarText(bytes,start,length).replace(/^0+/,'')||'0';
+  return /^[0-7]+$/.test(value)?Number.parseInt(value,8):Number.NaN;
+}
+function tarHeaderChecksum(bytes,offset){
+  let sum=0; for(let index=0;index<512;index++)
+    sum+=(index>=148&&index<156)?32:bytes[offset+index];
+  return sum;
+}
+function tarDirectoryEntries(bytes,limit=200){
+  const entries=[]; let offset=0,zeroBlocks=0;
+  while(offset+512<=bytes.length&&entries.length<limit){
+    const header=bytes.subarray(offset,offset+512);
+    if(header.every((value)=>value===0)){ zeroBlocks++; offset+=512; if(zeroBlocks>=2) break; continue; }
+    zeroBlocks=0;
+    const expected=tarOctal(bytes,offset+148,8),observed=tarHeaderChecksum(bytes,offset);
+    if(!Number.isFinite(expected)||expected!==observed) break;
+    const name=tarText(bytes,offset,100),prefix=tarText(bytes,offset+345,155);
+    const fullName=(prefix?`${prefix}/${name}`:name).slice(0,300);
+    const size=tarOctal(bytes,offset+124,12),type=String.fromCharCode(bytes[offset+156]||48);
+    if(!fullName||!Number.isSafeInteger(size)||size<0) break;
+    entries.push({name:fullName,size,directory:type==='5'||fullName.endsWith('/')});
+    const padded=Math.ceil(size/512)*512;
+    if(!Number.isSafeInteger(padded)||offset+512+padded<offset) break;
+    offset+=512+padded;
+  }
+  return entries;
+}
+async function gunzipBounded(bytes,limit=MAX_ARCHIVE_INSPECTION_BYTES){
+  if(typeof DecompressionStream!=='function') return null;
+  const reader=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const chunks=[]; let total=0;
+  try{
+    while(true){ const {done,value}=await reader.read(); if(done) break;
+      const chunk=value instanceof Uint8Array?value:new Uint8Array(value||0);
+      total+=chunk.byteLength;
+      if(total>limit){ await reader.cancel(); throw new Error('expanded archive exceeds the safe preview limit'); }
+      chunks.push(chunk);
+    }
+  }finally{ try{ reader.releaseLock(); }catch(_){} }
+  const output=new Uint8Array(total); let offset=0;
+  for(const chunk of chunks){ output.set(chunk,offset); offset+=chunk.byteLength; }
+  return output;
+}
 async function renderArchive(host,ctx){
   const bytes=await artifactBytes(ctx,'archive'); host.innerHTML='';
-  const label=artifactTypeLabel(ctx.kind);
+  const media=String(ctx.detectedMedia||ctx.kind||'').toLowerCase();
+  const label=artifactTypeLabel(media);
   const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',label));
-  const zipContainer=ctx.kind==='application/zip'||ctx.detectedMedia==='application/zip';
-  const note=el('p','fv-note',zipContainer
-    ?'Archive contents are listed without opening or running any embedded files.'
-    :'This packaged format is kept intact. Download the verified original to open it in a compatible application.');
-  card.appendChild(note); host.appendChild(card);
-  if(!zipContainer) return;
-  const entries=zipDirectoryEntries(bytes);
-  if(!entries.length){ host.appendChild(el('div','fv-note','No readable ZIP directory was found. The original file is still available above.')); return; }
+  const zipContainer=media==='application/zip';
+  const gzipContainer=['application/gzip','application/x-gzip'].includes(media);
+  const tarContainer=media==='application/x-tar';
+  let entries=[],containerLabel='archive';
+  if(zipContainer){ entries=zipDirectoryEntries(bytes); containerLabel='ZIP'; }
+  else if(tarContainer){ entries=tarDirectoryEntries(bytes); containerLabel='Tar'; }
+  else if(gzipContainer){
+    containerLabel='Gzip';
+    try{ const expanded=await gunzipBounded(bytes);
+      if(expanded){ const tarEntries=tarDirectoryEntries(expanded);
+        if(tarEntries.length){ entries=tarEntries; containerLabel='Gzip-compressed tar'; } }
+    }catch(error){ card.appendChild(el('div','fv-warn',String(error?.message||'Archive expansion was refused.'))); }
+  }
+  card.appendChild(el('p','fv-note',entries.length
+    ?`${containerLabel} contents are listed after bounded local inspection. Embedded files were not opened or run.`
+    :'This packaged format is kept intact. Download the verified original to open it in a compatible application.'));
+  host.appendChild(card);
+  if(!entries.length){
+    if(zipContainer||tarContainer||gzipContainer)
+      host.appendChild(el('div','fv-note',`No readable ${containerLabel} directory was found in the bounded preview. The original file is still available above.`));
+    return;
+  }
   const list=el('div','fv-archive-list');
   entries.forEach((entry)=>{ const row=el('div','fv-archive-entry');
     row.appendChild(el('span',null,entry.name)); row.appendChild(el('small',null,entry.directory?'folder':fmtBytes(entry.size)));
