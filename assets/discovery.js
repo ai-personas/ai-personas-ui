@@ -805,6 +805,8 @@ function _personaModelHistory(personaKey,fallback=[]){
     model:String(call.model_id||''),
     role:'',
     environment:_shortId(call.environment_id),
+    run:String(call.run_id||''),
+    task:String(call.task_id||''),
   })).filter((call)=>call.model).sort((left,right)=>left.t-right.t);
   return models.length?models:fallback;
 }
@@ -972,7 +974,8 @@ function indexLiveTelemetry(base,live,meta={}){
   me.forEach((m,i)=>{
     if((m.kind||'')!=='MODEL_SELECTED') return;
     const rec={t:_modelEventTime(m,modelBaseT-((me.length-i)*200)), purpose:String(m.requested_purpose||m.purpose||m.role||'model'),
-      model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||''),environment:_shortId(m.environment_id)};
+      model:String(m.model_id||'—'), role:String(m.role||''), reason:String(m.reason||''),
+      environment:_shortId(m.environment_id),run:String(m.run_id||''),task:String(m.task_id||'')};
     const pid=_shortId(m.persona_id); if(pid){ (byP.get(pid)||byP.set(pid,[]).get(pid)).push(rec); }
     const eid=_shortId(m.environment_id); if(eid){ (byE.get(eid)||byE.set(eid,[]).get(eid)).push(rec); }
   });
@@ -4587,6 +4590,49 @@ function _modelFresh(value,models,kernel=''){
   const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
   return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
 }
+function _taskLifecycleRecordOrder(record,lifecycle){
+  const recordId=String(record?.record_id||record?.card_id||'');
+  const ulid=/^rec:([0-9A-HJKMNP-TV-Z]{26})$/.exec(recordId)?.[1]||'';
+  return `${ulid?'2':'1'}${ulid||String(lifecycle?.run||'')}`;
+}
+function _latestTaskLifecycle(kernel,{task='',environment=''}={}){
+  const taskId=String(task||''), envId=environmentIdentity(environment), matches=[];
+  for(const id of (S.order||[])){
+    const record=S.recs.get(id); if(record?._kernel!==kernel) continue;
+    const lifecycle=publicTaskLifecycleProjection(record); if(!lifecycle) continue;
+    if(taskId&&lifecycle.taskId!==taskId) continue;
+    if(!taskId&&envId&&environmentIdentity(lifecycle.environment)!==envId) continue;
+    matches.push({lifecycle,order:_taskLifecycleRecordOrder(record,lifecycle)});
+  }
+  matches.sort((left,right)=>left.order.localeCompare(right.order));
+  return matches.at(-1)?.lifecycle||null;
+}
+function _completedTaskForPersonaWork(model,kernel='',acts=[],personaKey=''){
+  if(!kernel) return null;
+  let lifecycle=model?.run?_verifiedPublicTaskForRun(kernel,model.run):null;
+  if(!lifecycle&&model?.task){
+    const run=_verifiedPublicTaskRun(kernel,model.task);
+    if(run) lifecycle=_verifiedPublicTaskForRun(kernel,run);
+  }
+  // Some aggregate model events intentionally omit task/run identifiers. In
+  // that case bind the model observation to the persona's newest exact
+  // task-scoped activity, then to the latest signed lifecycle for that task.
+  // Only if no task-scoped event survived the bounded activity window do we
+  // fall back to the exact workspace id carried by the model event. The card
+  // says "workspace task" because that fallback proves environment outcome,
+  // not sole authorship by this persona.
+  if(!lifecycle){
+    const task=[...(acts||[])].reverse()
+      .filter((event)=>event?.actor_kind==='persona'
+        &&_eventPersonaKey(event,event.actor_id)===personaKey)
+      .map((event)=>String(event?._provenance?.task||'')).find(Boolean)||'';
+    if(task||model?.environment)
+      lifecycle=_latestTaskLifecycle(kernel,{task,environment:model?.environment||''});
+  }
+  const state=String(lifecycle?.state||'').toLowerCase();
+  return lifecycle?.terminalTask===true&&lifecycle.currentExecution===false
+    &&(state==='complete'||state==='completed')?lifecycle:null;
+}
 function _eventEligibleForRecency(event){
   const at=Number(event?._t);
   return event?._observedState!==true&&Number.isFinite(at)&&at>0;
@@ -5354,6 +5400,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const recent=!transportStale&&(modelFresh||actFresh);
   const running=!!signedCognitionCall||(!d.stale&&_runningNow(personaKey));
   const terminalFailure=running?null:(d.terminalFailure||null);
+  const completedTask=running?null:_completedTaskForPersonaWork(last,ref.kernel,acts,personaKey);
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
@@ -5371,6 +5418,10 @@ function renderPersonaCard(pid,kernel='',context={}){
       ||String(terminalFailure.purpose||'model call').replace(/_/g,' ');
     doingHTML=`<span class="pc-failure-mark">${icon('warn','ico-sm')}</span><strong>A work step needs attention</strong>`
       +`<span class="pc-when"${terminalFailure.model?` title="model ${esc(terminalFailure.model)}${terminalFailure.status?` · HTTP ${esc(terminalFailure.status)}`:''}"`:''}>${esc(_sentenceStart(purpose))}</span>`;
+  } else if(completedTask){
+    focusLabel='Latest outcome';
+    doingHTML=`<span class="pc-rest">${icon('check','ico-sm')}</span><strong>Workspace task completed and ready for handoff</strong>`
+      +'<span class="pc-when">Signed completion recorded for the shared workspace</span>';
   } else if(hasModels){
     const purposeLabel=humanActivityPresentation('MODEL_CALL',{purpose:last.purpose}).context
       ||PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
