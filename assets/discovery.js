@@ -4516,10 +4516,24 @@ function _personaDisplayNameCandidate(value,sid=''){
       ||(name.startsWith('did:personaos:')&&_shortId(name)===id)) return '';
   return name;
 }
+const _PERSONA_ROLE_SUFFIX=/\b(?:architect|author|builder|cad|cam|coordinator|contributor|designer|developer|director|engineer|expert|facilitator|lead|maker|manager|model(?:er|ling)?|planner|producer|researcher|reviewer|specialist|strategist|technologist|writer)\b/iu;
+function _personaNameRolePresentation(value,sid=''){
+  const exactName=_personaDisplayNameCandidate(value,sid);
+  if(!exactName) return {name:_personaAlias(sid),embeddedRole:'',exactName:''};
+  const comma=exactName.lastIndexOf(','), personName=comma>0?exactName.slice(0,comma).trim():'',
+    role=comma>0?exactName.slice(comma+1).trim():'';
+  // Some early identities placed the persona's role after a comma in the
+  // immutable signed name. Keep those bytes untouched, but present the human
+  // name and role in their proper visual fields. Open-vocabulary suffixes that
+  // do not clearly read as a role remain part of the name.
+  if(personName&&role&&role.length<=120&&_PERSONA_ROLE_SUFFIX.test(role))
+    return {name:personName,embeddedRole:role,exactName};
+  return {name:exactName,embeddedRole:'',exactName};
+}
 const _displayPersonaName=(value,sid='')=>
-  _personaDisplayNameCandidate(value,sid)||_personaAlias(sid);
+  _personaNameRolePresentation(value,sid).name;
 const _personaMonogram=(value,sid='')=>{ const name=_personaDisplayNameCandidate(value,sid);
-  if(name){ const parts=name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
+  if(name){ const parts=_personaNameRolePresentation(name,sid).name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
   return _personaTechnicalToken(sid).slice(0,2)||'ID'; };
 function _nameFor(value,kernel=''){ const ref=_personaRef(value,kernel);
   return _displayPersonaName(_PERSONA_NAME.get(ref.key),ref.sid); }
@@ -4751,17 +4765,17 @@ function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
   const lifecyclePending=avatarField?.state==='pending'&&avatarField?.personaAuthored===false;
   if(lifecyclePending) return {
     visible:'avatar pending · not persona-authored',
-    accessible:'avatar pending · not persona-authored; deterministic monogram shown',
+    accessible:'avatar pending · not persona-authored; neutral person silhouette shown',
     lifecycle:'pending',
   };
   if(state==='failed'||signedCard?.avatar) return {
     visible:'portrait unavailable',
-    accessible:'deterministic monogram shown; persona-authored raster avatar unavailable',
+    accessible:'neutral person silhouette shown; persona-authored raster avatar unavailable',
     lifecycle:'unavailable',
   };
   return {
     visible:'no persona-authored avatar',
-    accessible:'deterministic monogram shown; no persona-authored raster avatar admitted',
+    accessible:'neutral person silhouette shown; no persona-authored raster avatar admitted',
     lifecycle:'absent',
   };
 }
@@ -4772,19 +4786,18 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   if(!identityVerified){
     return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
-      +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>AI</strong><small>identity proof pending · portrait withheld</small></span></span>`;
+      +`<span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>identity proof pending · portrait withheld</small></span></span>`;
   }
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
-  const monogram=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
   const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
   const avatarLabel=descriptor
-    ?'deterministic monogram shown while persona-authored raster avatar is verified'
+    ?'neutral person silhouette shown while persona-authored raster avatar is verified'
     :fallback.accessible;
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
-    +`<span class="pc-avatar-placeholder" aria-hidden="true"><strong>${esc(monogram)}</strong><small>${esc(placeholderLabel)}</small></span></span>`;
+    +`<span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor,signal=null){
   if(typeof createImageBitmap==='function'){
@@ -4944,9 +4957,10 @@ function _neutralPersonaAvatar(mount,state='failed'){
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
   mount.dataset.avatarLifecycle=fallback.lifecycle;
   mount.setAttribute('aria-label',fallback.accessible);
-  const monogram=document.createElement('strong'); monogram.textContent=_personaMonogram(_PERSONA_NAME.get(ref.key),ref.sid);
+  const silhouette=document.createElement('span'); silhouette.className='pc-avatar-silhouette';
+  silhouette.append(document.createElement('i'));
   const label=document.createElement('small'); label.textContent=fallback.visible;
-  placeholder.append(monogram,label);
+  placeholder.append(silhouette,label);
   mount.replaceChildren(placeholder);
 }
 function _schedulePersonaAvatarRetry(mount,revision){
@@ -4959,7 +4973,7 @@ function _schedulePersonaAvatarRetry(mount,revision){
   mount.dataset.avatarState='waiting'; mount.dataset.avatarLifecycle='verifying';
   const label=mount.querySelector('.pc-avatar-placeholder small');
   if(label) label.textContent='verifying persona-authored avatar';
-  mount.setAttribute('aria-label','deterministic monogram shown while persona-authored raster avatar transport retries');
+  mount.setAttribute('aria-label','neutral person silhouette shown while persona-authored raster avatar transport retries');
   globalThis.setTimeout(()=>{
     if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision
         ||mount.dataset.avatarState!=='waiting'
@@ -5070,6 +5084,59 @@ function _artifactDisplayPath(r){
   if(index>=0) return body.slice(index+marker.length);
   return String(r?.label||'').trim()||(body.split('/').filter(Boolean).at(-1)||'artifact');
 }
+const _ARTIFACT_COMPOUND_EXTENSIONS=Object.freeze([
+  'tar.bz2','tar.gz','tar.lz','tar.xz','tar.zst','nii.gz','blend.gz',
+]);
+const _ARTIFACT_ACRONYMS=Object.freeze(new Map([
+  ['api','API'],['bim','BIM'],['cad','CAD'],['cam','CAM'],['csv','CSV'],
+  ['dxf','DXF'],['gltf','glTF'],['glb','GLB'],['hv4','HV4'],['ifc','IFC'],
+  ['json','JSON'],['mep','MEP'],['obj','OBJ'],['pdf','PDF'],['qa','QA'],
+  ['svg','SVG'],['ui','UI'],['ux','UX'],['xml','XML'],
+]));
+function _artifactExtensionParts(filename){
+  const value=String(filename||''), lower=value.toLowerCase();
+  const compound=_ARTIFACT_COMPOUND_EXTENSIONS.find((extension)=>lower.endsWith(`.${extension}`));
+  if(compound) return {stem:value.slice(0,-compound.length-1),extension:compound};
+  const match=/\.([A-Za-z0-9][A-Za-z0-9+_-]{0,15})$/.exec(value);
+  return match&&match.index>0
+    ?{stem:value.slice(0,match.index),extension:match[1]}
+    :{stem:value,extension:''};
+}
+function _humanizeArtifactSegment(value,{title=false}={}){
+  let text=String(value||'').normalize('NFC')
+    .replace(/([a-z0-9])([A-Z])/g,'$1 $2')
+    .replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+  text=text.replace(/\brev\s*([A-Za-z0-9]+)\b/gi,'Revision $1');
+  const words=text.split(' ').filter(Boolean).map((word,index)=>{
+    const acronym=_ARTIFACT_ACRONYMS.get(word.toLowerCase());
+    if(acronym) return acronym;
+    if(!title) return word;
+    return index===0?word.charAt(0).toUpperCase()+word.slice(1):word;
+  });
+  return words.join(' ')||'Untitled file';
+}
+function _artifactFilePresentation(path){
+  const exactPath=String(path||'artifact').normalize('NFC'), segments=exactPath
+    .replace(/\\/g,'/').split('/').filter(Boolean);
+  const filename=segments.at(-1)||exactPath||'artifact';
+  const parts=_artifactExtensionParts(filename);
+  const folders=segments.slice(0,-1).filter((segment,index,array)=>
+    !(segment==='artifacts'&&array[index+1]==='package')&&segment!=='package');
+  const visibleFolders=folders.slice(-3).map((segment)=>_humanizeArtifactSegment(segment));
+  return Object.freeze({
+    exactPath,filename,stem:parts.stem,
+    title:_humanizeArtifactSegment(parts.stem,{title:true}),
+    extension:parts.extension,
+    extensionLabel:parts.extension?`.${parts.extension.toUpperCase()}`:'',
+    folderLabel:`${folders.length>visibleFolders.length?'… / ':''}${visibleFolders.join(' / ')}`,
+  });
+}
+function _artifactFileIdentityHTML(presentation){
+  const item=presentation||_artifactFilePresentation('artifact');
+  return `<span class="artifact-file-title" title="${esc(item.exactPath)}"><b>${esc(item.title)}</b>`
+    +(item.extensionLabel?`<span class="artifact-extension-badge" aria-label="file format ${esc(item.extensionLabel)}">${esc(item.extensionLabel)}</span>`:'')+'</span>'
+    +(item.folderLabel?`<span class="artifact-file-location"><small>Folder</small><span>${esc(item.folderLabel)}</span></span>`:'');
+}
 function _artifactRevisionKey(r){ const L=r?._links||{};
   return String(L.bundle_id||r?.bundle_id||runOf(r)||'unversioned');
 }
@@ -5152,7 +5219,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   // manifest reached through a provider-verified environment route. The button
   // remains inert otherwise, and also requires an exact advertised SHA-256.
   // fileView performs the separate byte fetch + hash check only after selection.
-  const L=r._links||{}, label=_artifactDisplayPath(r);
+  const L=r._links||{}, label=_artifactDisplayPath(r), filePresentation=_artifactFilePresentation(label);
   const mediaSelection=artifactMediaPresentation(r,label);
   const media=mediaSelection.mediaType||'undeclared media';
   const typeLabel=artifactTypeLabel(mediaSelection.mediaType);
@@ -5167,7 +5234,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const canInspect=verifiedMetadata===true&&!!aid;
   if(!canPreview&&!canInspect){
     return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — file not ready to open">`
-      +`<span class="current-artifact-icon">${icon('task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+      +`<span class="current-artifact-icon">${icon('task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
       +`<small>${esc(typeLabel)} · The filename is available, but verified file bytes have not arrived yet.</small></span>`
       +`<span class="current-artifact-preview">${inProgress?'Still being created':'Not ready to open'}</span></div>`;
   }
@@ -5176,7 +5243,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
     :`data-artid="${esc(aid)}"`;
   const authored=authoredArtifactLabelText(r);
   return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
-    +`<span class="current-artifact-icon">${icon(mediaSelection.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<span class="current-artifact-icon">${icon(mediaSelection.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
     +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">${inProgress?'Still being created · ':''}${canPreview?'Open file':'View details'} →</span></button>`;
 }
@@ -5240,7 +5307,7 @@ function _liveWorkspaceCurrentFileCount(rows){
   return _currentLiveWorkspaceProjection(rows).current.reduce((total,row)=>total+(row.files?.length||0),0);
 }
 function _liveCurrentFileActionHTML(file,row,scope){
-  const label=String(file?.path||'artifact');
+  const label=String(file?.path||'artifact'), filePresentation=_artifactFilePresentation(label);
   const metadata=_liveFileSignedArtifactMetadata(file,row);
   const presentation=metadata
     ?selectArtifactRenderer(metadata.mimeType,{path:label})
@@ -5249,7 +5316,7 @@ function _liveCurrentFileActionHTML(file,row,scope){
   const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
   const proof=[media||'type not declared',metadata?'signed file-card metadata':'signed workspace metadata',scope].join(' · ');
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="${esc(`Open ${label}. ${proof}`)}">`
-    +`<span class="current-artifact-icon">${icon(presentation.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy"><b>${esc(label)}</b>`
+    +`<span class="current-artifact-icon">${icon(presentation.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
     +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
@@ -5379,8 +5446,14 @@ function renderPersonaCard(pid,kernel='',context={}){
   const signedName=_personaAuthoredNameForObservation(identityObservation);
   const hasSignedIdentity=identityVerified;
   const hasSignedName=hasSignedIdentity&&!!signedName;
-  const name=_displayPersonaName(signedName,sid);
-  const role=identityVerified?_coordRole(sid,s,ref.kernel):_ROLE_NOT_DECLARED;
+  const nameRole=_personaNameRolePresentation(signedName,sid);
+  const name=nameRole.name;
+  const authoredRole=identityVerified?_coordRole(sid,s,ref.kernel):_ROLE_NOT_DECLARED;
+  // A role embedded in an early signed name is a presentation field, not new
+  // coordination authority. It can explain the human-facing card without
+  // changing routing, membership, or capability semantics.
+  const role=authoredRole!==_ROLE_NOT_DECLARED?authoredRole
+    :(identityVerified&&nameRole.embeddedRole?nameRole.embeddedRole:_ROLE_NOT_DECLARED);
   const identityProofState=identityObservation?.identityProofState||'refused';
   const state=lifecycle?.lifecycleState||(identityVerified?s.lifecycle_state:'OBSERVED');
   const identityPending=lifecycle?.materializationState==='pending';
@@ -5496,7 +5569,12 @@ function renderPersonaCard(pid,kernel='',context={}){
     ?`<section class="pc-about"><div class="pc-section-head"><span>About me</span><small>${icon('check','ico-sm')} self-described</small></div>`
       +(identityStatement?`<p>${esc(identityStatement)}</p>`:'')
       +(workingStyle?`<div class="pc-working-style"><b>How I work</b><span>${esc(workingStyle)}</span></div>`:'')+'</section>':'';
-  const identityLine=role!==_ROLE_NOT_DECLARED?role:(characteristics?.public_tone||'Participating persona');
+  const identityLine=role!==_ROLE_NOT_DECLARED?role:'Role not yet self-described';
+  const identityLineTitle=authoredRole!==_ROLE_NOT_DECLARED
+    ?'Explicit persona-authored role in the verified profile'
+    :nameRole.embeddedRole
+      ?`Role separated for display from the exact signed identity name: ${nameRole.exactName}`
+      :'No persona-authored role is present in the verified profile';
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
@@ -5540,7 +5618,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PUBLIC WORK LOG</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-idline">${esc(identityLine)}</span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==name?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-role-line" title="${esc(identityLineTitle)}"><small>Self-described role</small><strong>${esc(identityLine)}</strong></span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +aboutHTML+capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -8050,9 +8128,12 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
   const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
   const rawDisplayName=_personaAuthoredNameForObservation(identityObservation);
-  const displayName=_displayPersonaName(rawDisplayName,pid||r.did);
-  const role=identityVerified
+  const drawerNameRole=_personaNameRolePresentation(rawDisplayName,pid||r.did);
+  const displayName=drawerNameRole.name;
+  const explicitRole=identityVerified
     ?r._personaAuthoredRole||_ROLE_NOT_DECLARED:_ROLE_NOT_DECLARED;
+  const role=explicitRole!==_ROLE_NOT_DECLARED?explicitRole
+    :(identityVerified&&drawerNameRole.embeddedRole?drawerNameRole.embeddedRole:_ROLE_NOT_DECLARED);
   const state=lifecycle?.lifecycleState||(identityVerified?ps.lifecycle_state:'observed');
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
@@ -8278,11 +8359,12 @@ function renderArtifactNode(node,prefix,depth,pkgRun){
     if(!collapsed) h+=`<div class="tkids">${renderArtifactNode(child,key,depth+1,pkgRun)}</div>`; }
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
+    const filePresentation=_artifactFilePresentation(f.path);
     const authored=authoredArtifactLabels(a), semanticAttr=artifactSemanticsAttr(a);
     const media=declaredArtifactMedia(a);
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(media)}" data-semantics="${esc(semanticAttr)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}">${esc(f.name)}</a>`
-      : `<span class="tgated">${esc(f.name)} <span class="no">· origin_gated</span></span>`;
+      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(media)}" data-semantics="${esc(semanticAttr)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(filePresentation.title)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span></a>`
+      : `<span class="tgated" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(filePresentation.title)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span> <span class="no">· origin_gated</span></span>`;
     const sz=(a.size_bytes??a.size??a.bytes);
     h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${authored.length?`authored: ${esc(authored.join(' · '))} · `:''}${esc(media||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
@@ -9099,6 +9181,7 @@ async function liveFileView(base,run,workspaceId,path){
 // fileView builds the header synchronously, then mounts the chosen renderer
 // asynchronously into #fv-body, with a graceful <pre> fallback on any failure.
 async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
+  const filePresentation=_artifactFilePresentation(title);
   const authoredLabels=artifactSemanticLabels({
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
@@ -9178,7 +9261,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     none:'no type metadata',
   }[pick.source]||'type metadata';
   const technicalMedia=pick.mediaType||kind||'undeclared';
-  const verificationRows=kv('Media details',`${esc(technicalMedia)} <span class="fv-rid">· ${esc(rendId)} renderer · ${esc(mediaSource)}</span>`)
+  const verificationRows=kv('Exact path',`<code class="exact-path">${esc(filePresentation.exactPath)}</code>`)
+    +kv('Media details',`${esc(technicalMedia)} <span class="fv-rid">· ${esc(rendId)} renderer · ${esc(mediaSource)}</span>`)
     +(detectedMedia?kv('Observed byte format',`<code>${esc(detectedMedia)}</code>`):'')
     +(opts.liveFile?kv('Workspace revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
       +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
@@ -9187,7 +9271,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
         +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''));
-  let html=kv('File',esc(title))
+  let html=kv('Name',`<span class="fv-human-file-name"><strong>${esc(filePresentation.title)}</strong>${filePresentation.extensionLabel?`<span class="artifact-extension-badge">${esc(filePresentation.extensionLabel)}</span>`:''}</span>`)
+    +kv('Filename',`<code>${esc(filePresentation.filename)}</code>`)
+    +(filePresentation.folderLabel?kv('Folder',esc(filePresentation.folderLabel)):'')
     +kv('Type',`<strong>${esc(artifactTypeLabel(pick.mediaType||kind))}</strong>`)
     +(!pick.mediaType?`<div class="fv-note">This file type is not yet recognised, so it opens in a safe general-purpose inspector.</div>`:'')
     +(authoredLabels.length?kv('Purpose',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
@@ -9230,7 +9316,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     await runRenderer(host);
     if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
   };
-  return {title:`<span class="kind k-artifact">FILE</span> ${esc(title)}`, html, mount};
+  return {title:`<span class="kind k-artifact">FILE</span> <span class="fv-drawer-file-name">${esc(filePresentation.title)}${filePresentation.extensionLabel?` <em>${esc(filePresentation.extensionLabel)}</em>`:''}</span>`, html, mount};
 }
 async function telemetryView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // 01_KERNEL §8/§11: live telemetry nests OTel/lineage under `kernel`
