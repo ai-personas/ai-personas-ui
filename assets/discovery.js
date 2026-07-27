@@ -45,7 +45,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260726-active-runs-v7';
+} from './network-view.mjs?v=20260727-latest-outcome-v8';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -3986,7 +3986,8 @@ function pollLiveArtifacts(){
   // API base; links, labels and unsigned status never invent a run/base join.
   const publicTargets=selectVerifiedPublicTaskRunTargets(
     S.recs.values(),S.providerInventories,S.boots,
-    {focusedKernel:S.kernelFocus||'',limit:48},
+    {focusedKernel:S.kernelFocus||'',limit:48,
+      includeHistorical:true,latestOutcomeOnly:true},
   );
   const currentPublicKeys=new Set();
   for(const item of publicTargets){

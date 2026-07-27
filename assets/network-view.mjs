@@ -305,9 +305,12 @@ export function selectVerifiedPublicTaskRunTargets(
   const focusedKernel = typeof options.focusedKernel === 'string'
     ? options.focusedKernel : '';
   const includeHistorical = options.includeHistorical === true;
+  const latestOutcomeOnly = options.latestOutcomeOnly === true;
   const historicalLimit = Math.min(4, requestedLimit);
   const liveTargets = new Map();
   const fallbackTargets = new Map();
+  const latestOutcomeByWorkspace = new Map();
+  const historicalByRun = new Map();
 
   for (const record of iterableOf(records)) {
     if (!record || record.kind !== 'task' || record.visibility_tier !== 'public'
@@ -345,6 +348,15 @@ export function selectVerifiedPublicTaskRunTargets(
 
     const key = `${base}\u0000${run}`;
     const target = Object.freeze({base, run, kernel, recordKey});
+    if (includeHistorical && latestOutcomeOnly) {
+      const recordId = String(record.record_id || record.card_id || '');
+      const recordUlid = /^rec:([0-9A-HJKMNP-TV-Z]{26})$/.exec(recordId)?.[1] || '';
+      const order = `${recordUlid ? '2' : '1'}${recordUlid || run}`;
+      const prior = historicalByRun.get(run);
+      if (!prior || order > prior.order) {
+        historicalByRun.set(run, {lifecycle, order, target});
+      }
+    }
     if (lifecycle.liveTask) {
       fallbackTargets.delete(key);
       if (!liveTargets.has(key) && liveTargets.size < requestedLimit) {
@@ -353,10 +365,42 @@ export function selectVerifiedPublicTaskRunTargets(
       if (liveTargets.size >= requestedLimit) break;
       continue;
     }
-    if (includeHistorical && !liveTargets.has(key) && !fallbackTargets.has(key)
-        && fallbackTargets.size < historicalLimit) fallbackTargets.set(key, target);
+    if (!includeHistorical || liveTargets.has(key)) continue;
+    if (latestOutcomeOnly) {
+      if (!lifecycle.terminalTask) continue;
+      const workspaceKey = `${kernel}\u0000${lifecycle.environment || run}`;
+      const order = historicalByRun.get(run)?.order || run;
+      const prior = latestOutcomeByWorkspace.get(workspaceKey);
+      if (!prior || order > prior.order) {
+        latestOutcomeByWorkspace.set(workspaceKey, {lifecycle, order, target});
+      }
+      continue;
+    }
+    if (!fallbackTargets.has(key) && fallbackTargets.size < historicalLimit) {
+      fallbackTargets.set(key, target);
+    }
   }
-  return [...liveTargets.values(), ...fallbackTargets.values()]
+  const latestOutcomes = [];
+  if (latestOutcomeOnly) {
+    const seenRuns = new Set();
+    const roots = [...latestOutcomeByWorkspace.values()]
+      .sort((left, right) => right.order.localeCompare(left.order));
+    for (const root of roots) {
+      let item = root;
+      while (item && latestOutcomes.length < historicalLimit) {
+        const run = item.lifecycle.run;
+        if (!seenRuns.has(run)) {
+          latestOutcomes.push(item.target);
+          seenRuns.add(run);
+        }
+        const parent = item.lifecycle.resumedFrom
+          || item.lifecycle.continuedFrom || item.lifecycle.amendedFrom;
+        item = parent ? historicalByRun.get(parent) : null;
+      }
+      if (latestOutcomes.length >= historicalLimit) break;
+    }
+  } else latestOutcomes.push(...fallbackTargets.values());
+  return [...liveTargets.values(), ...latestOutcomes]
     .slice(0, requestedLimit);
 }
 
