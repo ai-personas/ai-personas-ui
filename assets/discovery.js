@@ -4422,7 +4422,7 @@ function _humanActivityProvenance(field,value,provenance,kernel=''){
     const task=contextual?.task
       ||(!(provenance?.run&&provenance?.environment)
         ?_taskTextForExactReference(value,provenance?.run,kernel):'');
-    return task?{label:field==='missionTask'?'mission':'task',value:task,title:value}:null;
+    return task?{label:field==='missionTask'?'mission':'task',value:_compactHumanLabel(task),title:task}:null;
   }
   // These values remain available in the exact signed document and in the
   // chip tooltip, but a call/run/hash/intent identifier is verification
@@ -4544,6 +4544,17 @@ function _isMechanicalEnvironmentName(value,sid=''){
   const name=String(value||'').trim(), id=environmentIdentity(sid||'');
   return !name||['env','environment'].includes(name.toLowerCase())||name===id||name===`env:${id}`||name.startsWith('did:personaos:');
 }
+function _compactHumanLabel(value,limit=88){
+  const text=String(value||'').normalize('NFC').replace(/\s+/gu,' ').trim();
+  const chars=[...text],maximum=Math.max(32,Math.min(160,Number(limit)||88));
+  if(chars.length<=maximum) return text;
+  const visible=chars.slice(0,maximum+1).join('');
+  const punctuation=[...visible.matchAll(/[.!?;:](?=\s|$)/gu)].map((match)=>match.index+1)
+    .filter((index)=>index>=Math.floor(maximum*.55)&&index<=maximum);
+  let end=punctuation.at(-1)||visible.lastIndexOf(' ',maximum);
+  if(end<Math.floor(maximum*.55)) end=maximum;
+  return `${visible.slice(0,end).replace(/[\s,;:.-]+$/u,'')}…`;
+}
 function _environmentNameFor(value,kernel=''){
   const ref=_environmentRef(value,kernel), candidateNames=new Set(), names=new Set();
   const taskIds=new Set(), tasks=new Set();
@@ -4562,9 +4573,10 @@ function _environmentNameFor(value,kernel=''){
   // An env export may use its exact bound task reference as a placeholder label.
   // Equality to the verified lifecycle is authority, not an identifier pattern.
   for(const label of candidateNames) if(!taskIds.has(label)) names.add(label);
-  if(names.size===1) return names.values().next().value;
+  if(names.size===1){ const name=names.values().next().value;
+    return tasks.has(name)?`Workspace for ${_compactHumanLabel(name)}`:_compactHumanLabel(name,104); }
   if(tasks.size===1){ const task=tasks.values().next().value;
-    return `Workspace for ${[...task].slice(0,96).join('')}${[...task].length>96?'…':''}`; }
+    return `Workspace for ${_compactHumanLabel(task)}`; }
   return 'Shared workspace';
 }
 // RUNNING NOW vs merely recent: a persona is "running" iff the node currently
@@ -5244,7 +5256,15 @@ function _personaActivityHTML(acts,personaKey){
   candidates.filter(({event})=>typeof event?._exactText==='string'&&event._exactText.trim())
     .slice(0,2).forEach(add);
   candidates.forEach(add);
-  rows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
+  // The card shows only the first two rows. Keep exact persona-authored text in
+  // those human-facing slots before sorting within each evidence class by
+  // recency; otherwise a pair of newer mechanical kernel observations can
+  // conceal the actual thought that explains what the persona concluded.
+  rows.sort((left,right)=>{
+    const leftAuthored=typeof left.event?._exactText==='string'&&left.event._exactText.trim()?1:0;
+    const rightAuthored=typeof right.event?._exactText==='string'&&right.event._exactText.trim()?1:0;
+    return rightAuthored-leftAuthored||Number(right.event?._t||0)-Number(left.event?._t||0);
+  });
   if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
   return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small><i></i> updates as they happen</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
     +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
@@ -5457,7 +5477,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const currentTask=verifiedCurrentTask?.liveTask===true
     &&typeof verifiedCurrentTask.task==='string'?verifiedCurrentTask.task:'';
   const currentTaskHTML=currentTask
-    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong>${esc(currentTask)}</strong></div></section>`:'';
+    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong title="${esc(currentTask)}">${esc(_compactHumanLabel(currentTask,104))}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
