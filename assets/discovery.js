@@ -5137,6 +5137,70 @@ function _artifactFileIdentityHTML(presentation){
     +(item.extensionLabel?`<span class="artifact-extension-badge" aria-label="file format ${esc(item.extensionLabel)}">${esc(item.extensionLabel)}</span>`:'')+'</span>'
     +(item.folderLabel?`<span class="artifact-file-location"><small>Folder</small><span>${esc(item.folderLabel)}</span></span>`:'');
 }
+function _artifactFormatTileHTML(presentation){
+  const item=presentation||_artifactFilePresentation('artifact');
+  const format=(item.extensionLabel||'FILE').replace(/^\./,'');
+  return `<span class="artifact-format-tile${format.length>5?' long-format':''}" aria-label="${esc(format)} file format"><small>Format</small><strong>${esc(format)}</strong></span>`;
+}
+const _ARTIFACT_PRESENTATION_GROUPS=Object.freeze([
+  Object.freeze({id:'cad',label:'CAD & 3D models',description:'Models, exchange geometry, and fabrication drawings',extensions:new Set(['3dm','3mf','blend','dae','dwg','dxf','fbx','glb','gltf','ifc','iges','igs','obj','ply','skp','step','stl','stp'])}),
+  Object.freeze({id:'drawing',label:'Drawings & images',description:'Sheets, diagrams, renders, and visual references',extensions:new Set(['apng','bmp','gif','heic','jpeg','jpg','png','svg','svgz','tif','tiff','webp'])}),
+  Object.freeze({id:'document',label:'Documents',description:'Narratives, specifications, reports, and read-me files',extensions:new Set(['doc','docx','html','htm','md','odt','pdf','rtf','txt'])}),
+  Object.freeze({id:'data',label:'Data & schedules',description:'Schedules, manifests, structured data, and tables',extensions:new Set(['csv','json','ods','parquet','tsv','xls','xlsx','xml','yaml','yml'])}),
+  Object.freeze({id:'package',label:'Packages & exports',description:'Archives and bundled delivery files',extensions:new Set(['7z','bz2','gz','rar','tar','tar.bz2','tar.gz','tar.xz','tar.zst','tgz','xz','zip','zst'])}),
+  Object.freeze({id:'code',label:'Code & technical files',description:'Source, configuration, scripts, and other technical formats',extensions:new Set(['c','cc','cpp','css','go','h','hpp','ini','java','js','jsx','kt','m','mjs','py','rs','sh','sql','toml','ts','tsx'])}),
+]);
+function _artifactPresentationGroup(path){
+  const presentation=_artifactFilePresentation(path), extension=presentation.extension.toLowerCase();
+  const group=_ARTIFACT_PRESENTATION_GROUPS.find((candidate)=>candidate.extensions.has(extension));
+  return {presentation,group:group||Object.freeze({id:'other',label:'Other files',description:'Additional verified deliverables'})};
+}
+function _artifactRevisionRank(path){
+  const matches=[...String(path||'').matchAll(/(?:^|[^a-z0-9])rev(?:ision)?[\s_-]*([a-z]|\d+)(?=$|[^a-z0-9])/gi)];
+  if(!matches.length) return null;
+  const token=matches.at(-1)[1].toUpperCase();
+  return /^\d+$/.test(token)?Number(token):token.charCodeAt(0)-64;
+}
+function _artifactPresentationTime(row){
+  const links=row?._links||{};
+  for(const value of [row?.mtime,row?.modified_at,row?.updated_at,row?.generated_at,row?.created_at,
+    links.modified_at,links.updated_at,links.generated_at]){
+    const parsed=typeof value==='number'?value:Date.parse(String(value||''));
+    if(Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+function _artifactNewestFirst(a,b,pathOf){
+  const pathA=String(pathOf(a)||''),pathB=String(pathOf(b)||'');
+  const revisionA=_artifactRevisionRank(pathA),revisionB=_artifactRevisionRank(pathB);
+  if(revisionA!==null&&revisionB!==null&&revisionA!==revisionB) return revisionB-revisionA;
+  const timeA=_artifactPresentationTime(a),timeB=_artifactPresentationTime(b);
+  if(timeA!==timeB) return timeB-timeA;
+  return pathB.localeCompare(pathA,undefined,{numeric:true,sensitivity:'base'});
+}
+function _artifactGroupedListHTML(items,{pathOf,render,ariaLabel='Current files'}={}){
+  const rows=Array.isArray(items)?items:[];
+  if(rows.length<8) return `<div class="current-artifact-list" aria-label="${esc(ariaLabel)}">${rows.map(render).join('')}</div>`;
+  const groups=new Map();
+  for(const row of rows){
+    const projected=_artifactPresentationGroup(pathOf(row));
+    const bucket=groups.get(projected.group.id)||{...projected.group,rows:[],formats:new Set()};
+    bucket.rows.push(row);
+    if(projected.presentation.extensionLabel) bucket.formats.add(projected.presentation.extensionLabel);
+    groups.set(projected.group.id,bucket);
+  }
+  const ordered=[..._ARTIFACT_PRESENTATION_GROUPS.map((group)=>groups.get(group.id)).filter(Boolean),groups.get('other')].filter(Boolean);
+  for(const group of ordered) group.rows.sort((a,b)=>_artifactNewestFirst(a,b,pathOf));
+  const primary=groups.has('cad')?'cad':ordered[0]?.id;
+  const overview=`<div class="artifact-format-overview" aria-label="File groups">${ordered.map((group)=>
+    `<span class="artifact-format-summary${group.id==='cad'?' cad':''}"><small>${esc(group.label)}</small><strong>${group.rows.length}</strong><em>${esc([...group.formats].slice(0,5).join(' · ')||'mixed formats')}</em></span>`).join('')}</div>`;
+  const grouped=ordered.map((group)=>`<details class="artifact-file-group group-${esc(group.id)}"${group.id===primary?' open':''}><summary>`
+    +`<span class="artifact-group-copy"><strong>${esc(group.label)}</strong><small>${esc(group.description)}</small></span>`
+    +`<span class="artifact-group-formats">${[...group.formats].slice(0,6).map((format)=>`<em>${esc(format)}</em>`).join('')}</span>`
+    +`<span class="artifact-group-count">${group.rows.length} file${group.rows.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
+    +`<div class="artifact-group-list">${group.rows.map(render).join('')}</div></details>`).join('');
+  return overview+`<div class="artifact-file-groups" aria-label="${esc(ariaLabel)}">${grouped}</div>`;
+}
 function _artifactRevisionKey(r){ const L=r?._links||{};
   return String(L.bundle_id||r?.bundle_id||runOf(r)||'unversioned');
 }
@@ -5234,7 +5298,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const canInspect=verifiedMetadata===true&&!!aid;
   if(!canPreview&&!canInspect){
     return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — file not ready to open">`
-      +`<span class="current-artifact-icon">${icon('task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
+      +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
       +`<small>${esc(typeLabel)} · The filename is available, but verified file bytes have not arrived yet.</small></span>`
       +`<span class="current-artifact-preview">${inProgress?'Still being created':'Not ready to open'}</span></div>`;
   }
@@ -5243,7 +5307,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
     :`data-artid="${esc(aid)}"`;
   const authored=authoredArtifactLabelText(r);
   return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
-    +`<span class="current-artifact-icon">${icon(mediaSelection.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
+    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
     +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">${inProgress?'Still being created · ':''}${canPreview?'Open file':'View details'} →</span></button>`;
 }
@@ -5265,7 +5329,8 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
     const history=projection.history;
     return `<section class="owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span>`
       +`<small>${current.length} file${current.length===1?'':'s'} ready to open${inProgress?` · ${inProgress} still being created`:''}</small></div>`
-      +`<div class="current-artifact-list" aria-label="${esc(label)} — current files">${current.map((r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true})).join('')}</div>`
+      +_artifactGroupedListHTML(current,{pathOf:_artifactDisplayPath,
+        render:(r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true}),ariaLabel:`${label} — current files`})
       +`<div class="artifact-preview-note">Select a file to fetch it on demand, verify its SHA-256, and open the preview.</div>`
     +(authored.length?`<div class="owned-output-history">Purpose · ${esc(authored.join(' · '))}</div>`:'')
     +(history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${history.length} earlier version${history.length===1?'':'s'} retained.</span>`
@@ -5316,7 +5381,7 @@ function _liveCurrentFileActionHTML(file,row,scope){
   const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
   const proof=[media||'type not declared',metadata?'signed file-card metadata':'signed workspace metadata',scope].join(' · ');
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="${esc(`Open ${label}. ${proof}`)}">`
-    +`<span class="current-artifact-icon">${icon(presentation.id==='archive'?'box':'task','ico-sm')}</span><span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
+    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
     +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
@@ -5337,7 +5402,9 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       const exact=[row.workspaceId?`workspace ${row.workspaceId}`:'',row.run?`run ${row.run}`:'',row.revision?`revision ${row.revision}`:''].filter(Boolean).join(' · ');
       const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Live run started; no files captured yet';
       return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>${esc(workspaceStatus)}</b>${updated?` · ${esc(updated)}`:''}</span><span>${row.files.length} file${row.files.length===1?'':'s'}</span></div>`
-        +`<div class="current-artifact-list">${row.files.map((file)=>_liveCurrentFileActionHTML(file,row,scope)).join('')||'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>'}</div></div>`;
+        +(row.files.length?_artifactGroupedListHTML(row.files,{pathOf:(file)=>String(file?.path||''),
+          render:(file)=>_liveCurrentFileActionHTML(file,row,scope),ariaLabel:`${label} — current files`})
+          :'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>')+'</div>';
     }).join('')
     +`<div class="artifact-preview-note">${fileCount?'Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.':'This is the signed live-run capture, not a claim that the durable workspace is empty.'}</div>`
     +(projection.history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${projection.history.length} earlier workspace version${projection.history.length===1?'':'s'} retained.</span>`
@@ -6373,8 +6440,9 @@ async function refreshSystemView(){
       ?'Earlier captured worktrees':'Live shared worktree',scope:'environment worktree'});
     const manifestOutputs=!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
       ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
-        +`<div class="current-artifact-list" aria-label="Shared outputs — current manifest filenames">${currentManifestFiles.map((file)=>
-          _artifactPreviewActionHTML(file,{scope:'environment worktree',base:b.base,run:manifestRunId,verifiedMetadata:false})).join('')}</div>`
+        +_artifactGroupedListHTML(currentManifestFiles,{pathOf:(file)=>String(file?.title||''),
+          render:(file)=>_artifactPreviewActionHTML(file,{scope:'environment worktree',base:b.base,run:manifestRunId,verifiedMetadata:false}),
+          ariaLabel:'Shared outputs — current manifest filenames'})
         +`<div class="artifact-preview-note">The manifest route and run come from a verified record, but the fetched manifest bytes are not independently signed or hash-bound. Filenames remain visible; preview stays unavailable until signed file cards or a signed live snapshot supplies authoritative hashes.</div>`
         +(routedManifestEntries.length>currentManifestFiles.length?`<div class="owned-output-history">${routedManifestEntries.length-currentManifestFiles.length} manifest entries not shown after bounded, unique-path projection</div>`:'')
         +`<div class="artifact-revision-history"><b>Revision history</b><span>No earlier verified file-card generation is published for this manifest-only workspace.</span></div></section>`:'';
@@ -10372,7 +10440,10 @@ function wire(){
       S.follow=(S.follow===fid)?null:fid; _applyFollow(); renderInteractionStream(); return; }
     // Verification disclosures inside a persona card are independently
     // interactive; opening one must not also navigate away to the card drawer.
-    if(e.target.closest('details')){ e.stopPropagation(); return; }
+    const disclosure=e.target.closest('details');
+    if(disclosure&&!e.target.closest('[data-live-current-file],[data-current-artifact-path],[data-artid]')){
+      e.stopPropagation(); return;
+    }
     const liveFile=e.target.closest('[data-live-current-file]'); if(liveFile){ e.preventDefault(); e.stopPropagation();
       S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(liveFile);
       S.views=[()=>liveFileView(liveFile.dataset.liveFileBase||'',liveFile.dataset.liveFileRun,
