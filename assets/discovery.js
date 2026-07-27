@@ -6276,26 +6276,41 @@ async function refreshSystemView(){
     const fileCount=declaredProjection.current?.rows.length||(manifestRunId?currentManifestFiles.length:0);
     const metaFiles=fileCount;
     const liveEnvRows=liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[];
-    const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:'Live shared worktree',scope:'environment worktree'});
+    const liveProjection=_currentLiveWorkspaceProjection(liveEnvRows);
     const liveFileCount=_liveWorkspaceCurrentFileCount(liveEnvRows);
-    const manifestOutputs=!liveFileCount&&!declaredProjection.current?.rows.length&&currentManifestFiles.length&&manifestRunId
+    const newestLiveRun=[...new Set(liveProjection.current
+      .filter((row)=>(row.files?.length||0)>0).map((row)=>String(row.run||'')).filter(Boolean))]
+      .sort().at(-1)||'';
+    const declaredCurrentRows=declaredProjection.current?.rows||[];
+    const newestDeclaredRun=[...new Set(declaredCurrentRows.map((row)=>runOf(row)).filter(Boolean))]
+      .sort().at(-1)||manifestRunId;
+    // A personal worktree snapshot is useful live evidence, but it is not
+    // authority to hide a later, durably published environment generation.
+    // In particular, an older artifact-rich snapshot must not mask a newer
+    // reviewed package merely because later scratch worktrees captured zero
+    // files. Keep both evidence lanes visible and put the newest published
+    // generation first when its monotonic run id outranks the live capture.
+    const publishedOutranksLive=!!newestDeclaredRun&&(!newestLiveRun||newestDeclaredRun>newestLiveRun);
+    const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:publishedOutranksLive
+      ?'Earlier captured worktrees':'Live shared worktree',scope:'environment worktree'});
+    const manifestOutputs=!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
       ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
         +`<div class="current-artifact-list" aria-label="Shared outputs — current manifest filenames">${currentManifestFiles.map((file)=>
           _artifactPreviewActionHTML(file,{scope:'environment worktree',base:b.base,run:manifestRunId,verifiedMetadata:false})).join('')}</div>`
         +`<div class="artifact-preview-note">The manifest route and run come from a verified record, but the fetched manifest bytes are not independently signed or hash-bound. Filenames remain visible; preview stays unavailable until signed file cards or a signed live snapshot supplies authoritative hashes.</div>`
         +(routedManifestEntries.length>currentManifestFiles.length?`<div class="owned-output-history">${routedManifestEntries.length-currentManifestFiles.length} manifest entries not shown after bounded, unique-path projection</div>`:'')
         +`<div class="artifact-revision-history"><b>Revision history</b><span>No earlier verified file-card generation is published for this manifest-only workspace.</span></div></section>`:'';
-    const declaredEnvOutputs=!liveFileCount&&declaredProjection.current?.rows.length
-      ?_ownedOutputsHTML(arts,{label:'Shared outputs',scope:'environment worktree'})
+    const declaredEnvOutputs=declaredCurrentRows.length
+      ?_ownedOutputsHTML(arts,{label:publishedOutranksLive?'Current published outputs':'Published shared outputs',scope:'environment worktree'})
       :manifestOutputs;
-    const artRow=liveEnvOutputs+declaredEnvOutputs;
+    const artRow=declaredEnvOutputs+liveEnvOutputs;
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
     const rawStatus=String(b.status||(b.live?'':'discovered')).toLowerCase();
     const statusTxt=departed?'Archived':({active:'Open',running:'Working',paused:'Paused',idle:'Ready',discovered:'Discovered'})[rawStatus]
       ||_sentenceStart(rawStatus||'Available');
     const statusOk=(b.status==='active' && !departed);
     return {artRow,departed,statusTxt,statusOk,
-      metaFiles:liveFileCount||metaFiles};
+      metaFiles:publishedOutranksLive?(metaFiles||liveFileCount):(liveFileCount||metaFiles)};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
