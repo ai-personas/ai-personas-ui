@@ -283,31 +283,6 @@ The distinction is intentional:
 - **raw operator-status runtime/model-call frame**: unsigned node transport telemetry, labelled separately;
 - **opened live file body**: bytes independently checked against the signed advertised SHA-256.
 
-## Design reference validation
-
-The scheduled `design-validation.yml` workflow checks the
-[`ai-personas-design`](https://github.com/ai-personas/ai-personas-design) `master` branch every
-Monday and on UI changes. The last reviewed design commit is
-`394b82dc187eae4e8fb61caddaa9466282d804cb`: 22 Markdown files with manifest SHA-256
-`e827c2bb303b6383379606a8c495ebfaa0f72d653b34a66710a7e8ec05ec6453`. CI fails when either
-HEAD or any Markdown input differs and instructs maintainers to review the complete upstream diff
-before updating the pin. Semantic checks for decentralised discovery, the access ladder,
-content integrity, globally-verifiable lineage, and honest relay/bootstrap commons remain in
-place. They also pin persona-authored asynchronous clarification, exact-action external latency,
-best-so-far artifact visibility, identity/genesis membership separation, birth-provenance-scoped
-bootstrap communication, persona-owned completion readiness and continuation, PersonaCard v4
-skill-summary privacy, exact persona-workspace transport, complete unranked action discovery, and
-task reception preceding bootstrap observation turns. It now also pins the rule that budget
-exhaustion with pending causal persona work stays explicitly non-quiescent and resumable while its
-signed best-so-far bytes remain inspectable without acquiring completion authority.
-The pin additionally covers bounded signed active-peer cards without host-authored role inference,
-exact-revision reviewer replicas, exact recovery of interrupted terminal publication, and token-free
-renewal of signed public-cognition observations without presenting retained history as current thought.
-It also pins rollover-safe DHT first contact: publishers pre-announce the next temporal bucket and
-browsers query the adjacent buckets concurrently before any iterative traversal or locator fallback.
-It also pins completion-aware first-contact timing, locator retry anti-amplification, and bounded
-multi-route WSS/circuit failover for one stable peer identity.
-
 ## Explore
 
 Click any discovered record for deep detail with its trust state visible:
@@ -413,7 +388,6 @@ assets/live-signatures.mjs                 # live metadata + AccessPolicy Ed2551
 assets/routing-authority.mjs               # fail-closed exact/ambiguous environment association
 assets/noble-ed25519.js                    # vendored verifier (MIT)
 assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay + gossip + configured DHT client)
-tools/check-design-reference.py             # scheduled normative-design drift guard
 ```
 
 There is **no `k/` and no `.well-known/` in this repo** — those are *run* surfaces served by a
