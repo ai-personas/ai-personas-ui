@@ -122,6 +122,7 @@ const STRONG_CONTENT_MEDIA_TYPES = new Set([
   'video/mp4','video/quicktime','video/webm','video/ogg','video/x-msvideo',
   'font/woff','font/woff2','application/wasm','application/vnd.sqlite3',
   'image/vnd.dxf','model/step','model/ifc','model/stl','model/obj','model/ply',
+  'model/gltf+json','model/gltf-binary',
 ]);
 
 function declaredMediaType(value) {
@@ -246,7 +247,10 @@ function textualMediaType(bytes) {
   if(/^<!doctype\s+html\b/i.test(text)||/^<html\b/i.test(text)) return 'text/html';
   if(/^<svg(?:\s|>)/i.test(text)||/^<\?xml[\s\S]{0,512}<svg(?:\s|>)/i.test(text)) return 'image/svg+xml';
   if(/^[{[]/.test(text)){
-    try{ JSON.parse(text); return 'application/json'; }catch(_){}
+    try{ const document=JSON.parse(text);
+      if(document?.asset?.version&&Array.isArray(document?.meshes)
+          &&Array.isArray(document?.accessors)) return 'model/gltf+json';
+      return 'application/json'; }catch(_){}
   }
   return 'text/plain';
 }
@@ -284,6 +288,10 @@ export function sniffArtifactMediaType(value) {
   const iso=isoBaseMediaType(bytes); if(iso) return iso;
   if(ascii(bytes,0,4)==='wOFF') return 'font/woff';
   if(ascii(bytes,0,4)==='wOF2') return 'font/woff2';
+  if(ascii(bytes,0,4)==='glTF'&&bytes.length>=12){
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    if(view.getUint32(4,true)===2&&view.getUint32(8,true)>=12) return 'model/gltf-binary';
+  }
   if(bytesStartWith(bytes,[0x00,0x61,0x73,0x6d])) return 'application/wasm';
   if(ascii(bytes,0,16)==='SQLite format 3\u0000') return 'application/vnd.sqlite3';
   if(bytes.length>=84){

@@ -265,7 +265,10 @@ Declared Markdown, text, JSON, and tabular media retain one prior signature-chec
 show a bounded line diff when an open file changes. Rich presentation is selected only from the
 media type declared in the admitted signed record or live snapshot; filenames and domain words in
 the bytes never control dispatch. The built-in generic Web-media families cover Markdown, tabular
-text, JSON, plain text, images, audio/video controls, and PDF. Undeclared, invalid, and custom media
+text, JSON, plain text, images, audio/video controls, PDF, bounded DXF inspection, and CAD/BIM
+inspection. Hash-verified OBJ, STL, ASCII PLY, and self-contained glTF/GLB geometry also receives a
+lazy local interactive mesh preview with orbit, zoom, standard views, bounds, and face counts;
+external buffers, model scripts, and peer code are never loaded. Undeclared, invalid, and custom media
 never produces a blank viewer: hash-checked UTF-8 bytes get a bounded plain-text view and opaque
 bytes get byte metadata plus a bounded hex preview and safe download. Executable peer content is
 never run, and the credential-bearing page imports no executable peer or CDN modules. Client

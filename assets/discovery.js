@@ -8686,13 +8686,193 @@ function inspectCadBytes(bytes,format){
   }
   result.facts.push(['Format',format.toUpperCase()]); return result;
 }
+
+const CAD_MESH_LIMITS=Object.freeze({vertices:100000,triangles:160000,drawTriangles:14000});
+const _finite3=(point)=>Array.isArray(point)&&point.length===3&&point.every(Number.isFinite);
+function _cadMesh(format){ return {format,vertices:[],triangles:[],groups:[],truncated:false,warnings:[]}; }
+function _cadTriangle(mesh,a,b,c,group=0){
+  if(mesh.triangles.length>=CAD_MESH_LIMITS.triangles){ mesh.truncated=true; return; }
+  if([a,b,c].every((value)=>Number.isSafeInteger(value)&&value>=0&&value<mesh.vertices.length)
+      &&a!==b&&b!==c&&a!==c) mesh.triangles.push({a,b,c,group});
+}
+function parseObjMesh(bytes){
+  const mesh=_cadMesh('obj'),text=new TextDecoder().decode(bytes),groups=new Map(); let group=0;
+  const groupId=(name)=>{ const key=String(name||'default').slice(0,120);
+    if(!groups.has(key)) groups.set(key,groups.size); return groups.get(key); };
+  groups.set('default',0);
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw.trim(); if(!line||line.startsWith('#')) continue;
+    const parts=line.split(/\s+/),kind=parts.shift();
+    if(kind==='v'&&parts.length>=3){ if(mesh.vertices.length>=CAD_MESH_LIMITS.vertices){ mesh.truncated=true; continue; }
+      const point=parts.slice(0,3).map(Number); if(_finite3(point)) mesh.vertices.push(point); }
+    else if(['o','g','usemtl'].includes(kind)) group=groupId(`${kind}:${parts.join(' ')}`);
+    else if(kind==='f'&&parts.length>=3){ const indices=[];
+      for(const token of parts){ const rawIndex=Number.parseInt(token.split('/',1)[0],10);
+        if(!Number.isSafeInteger(rawIndex)||rawIndex===0) continue;
+        const index=rawIndex<0?mesh.vertices.length+rawIndex:rawIndex-1;
+        if(index>=0&&index<mesh.vertices.length) indices.push(index); }
+      for(let index=1;index+1<indices.length;index++) _cadTriangle(mesh,indices[0],indices[index],indices[index+1],group);
+    }
+  }
+  mesh.groups=[...groups.keys()]; return mesh;
+}
+function parseStlMesh(bytes){
+  const mesh=_cadMesh('stl');
+  if(bytes.length>=84){ const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),count=view.getUint32(80,true);
+    if(count>0&&84+count*50===bytes.length){ const shown=Math.min(count,Math.floor(CAD_MESH_LIMITS.vertices/3),CAD_MESH_LIMITS.triangles);
+      for(let face=0;face<shown;face++){ const offset=84+face*50,base=mesh.vertices.length;
+        for(let corner=0;corner<3;corner++){ const at=offset+12+corner*12;
+          mesh.vertices.push([view.getFloat32(at,true),view.getFloat32(at+4,true),view.getFloat32(at+8,true)]); }
+        _cadTriangle(mesh,base,base+1,base+2,0); }
+      mesh.truncated=shown<count; mesh.groups=['solid']; return mesh; }
+  }
+  const text=new TextDecoder().decode(bytes),pending=[];
+  for(const line of text.split(/\r?\n/)){ const match=/^\s*vertex\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)/i.exec(line);
+    if(!match) continue; const point=match.slice(1,4).map(Number); if(!_finite3(point)) continue;
+    pending.push(point); if(pending.length===3){ if(mesh.vertices.length+3>CAD_MESH_LIMITS.vertices){ mesh.truncated=true; break; }
+      const base=mesh.vertices.length; mesh.vertices.push(...pending.splice(0)); _cadTriangle(mesh,base,base+1,base+2,0); }
+  }
+  mesh.groups=['solid']; return mesh;
+}
+function parseAsciiPlyMesh(bytes){
+  const mesh=_cadMesh('ply'),text=new TextDecoder().decode(bytes),end=text.indexOf('end_header');
+  if(end<0) return mesh; const header=text.slice(0,end).split(/\r?\n/),body=text.slice(end+'end_header'.length).replace(/^\s*\r?\n/,'').split(/\r?\n/);
+  if(!header.some((line)=>/^format\s+ascii\b/i.test(line))){ mesh.warnings.push('Only ASCII PLY geometry is previewed in this browser.'); return mesh; }
+  let vertexCount=0,faceCount=0,current=''; const vertexProperties=[];
+  for(const line of header){ const element=/^element\s+(\w+)\s+(\d+)/i.exec(line.trim());
+    if(element){ current=element[1].toLowerCase(); if(current==='vertex') vertexCount=Number(element[2]); else if(current==='face') faceCount=Number(element[2]); continue; }
+    const property=/^property\s+\S+\s+(\w+)/i.exec(line.trim()); if(property&&current==='vertex') vertexProperties.push(property[1].toLowerCase()); }
+  const xyz=['x','y','z'].map((name)=>vertexProperties.indexOf(name)); if(xyz.some((index)=>index<0)) return mesh;
+  const shownVertices=Math.min(vertexCount,CAD_MESH_LIMITS.vertices);
+  for(let index=0;index<shownVertices&&index<body.length;index++){ const values=body[index].trim().split(/\s+/).map(Number),point=xyz.map((at)=>values[at]); if(_finite3(point)) mesh.vertices.push(point); }
+  for(let row=0;row<faceCount&&vertexCount+row<body.length;row++){ const values=body[vertexCount+row].trim().split(/\s+/).map(Number),count=values[0],indices=values.slice(1,1+count);
+    if(!Number.isSafeInteger(count)||count<3) continue; for(let index=1;index+1<indices.length;index++) _cadTriangle(mesh,indices[0],indices[index],indices[index+1],0); }
+  mesh.truncated=shownVertices<vertexCount||mesh.triangles.length>=CAD_MESH_LIMITS.triangles; mesh.groups=['mesh']; return mesh;
+}
+function _dataUriBytes(uri){
+  const match=/^data:([^,]*?),(.*)$/s.exec(String(uri||'')); if(!match) return null;
+  try{ if(/;base64(?:;|$)/i.test(match[1])){ const binary=atob(match[2].replace(/\s/g,'')),out=new Uint8Array(binary.length);
+      for(let index=0;index<binary.length;index++) out[index]=binary.charCodeAt(index); return out; }
+    return new TextEncoder().encode(decodeURIComponent(match[2])); }catch(_){ return null; }
+}
+const _matIdentity=()=>[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+function _matMultiply(a,b){ const out=new Array(16).fill(0); for(let column=0;column<4;column++) for(let row=0;row<4;row++)
+  for(let inner=0;inner<4;inner++) out[column*4+row]+=a[inner*4+row]*b[column*4+inner]; return out; }
+function _nodeMatrix(node){
+  if(Array.isArray(node?.matrix)&&node.matrix.length===16&&node.matrix.every(Number.isFinite)) return [...node.matrix];
+  const t=Array.isArray(node?.translation)&&node.translation.length===3?node.translation:[0,0,0];
+  const s=Array.isArray(node?.scale)&&node.scale.length===3?node.scale:[1,1,1];
+  const q=Array.isArray(node?.rotation)&&node.rotation.length===4?node.rotation:[0,0,0,1];
+  const [x,y,z,w]=q,xx=x*x,yy=y*y,zz=z*z,xy=x*y,xz=x*z,yz=y*z,wx=w*x,wy=w*y,wz=w*z;
+  return [(1-2*(yy+zz))*s[0],2*(xy+wz)*s[0],2*(xz-wy)*s[0],0,
+    2*(xy-wz)*s[1],(1-2*(xx+zz))*s[1],2*(yz+wx)*s[1],0,
+    2*(xz+wy)*s[2],2*(yz-wx)*s[2],(1-2*(xx+yy))*s[2],0,
+    Number(t[0])||0,Number(t[1])||0,Number(t[2])||0,1];
+}
+function _matPoint(matrix,point){ const [x,y,z]=point,w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15]||1;
+  return [(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w,(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w,(matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14])/w]; }
+const GLTF_COMPONENTS=Object.freeze({5120:['getInt8',1],5121:['getUint8',1],5122:['getInt16',2],5123:['getUint16',2],5125:['getUint32',4],5126:['getFloat32',4]});
+const GLTF_WIDTHS=Object.freeze({SCALAR:1,VEC2:2,VEC3:3,VEC4:4,MAT2:4,MAT3:9,MAT4:16});
+function _gltfAccessor(document,buffers,index){
+  const accessor=document?.accessors?.[index],view=document?.bufferViews?.[accessor?.bufferView],info=GLTF_COMPONENTS[accessor?.componentType],width=GLTF_WIDTHS[accessor?.type];
+  const bytes=buffers?.[view?.buffer]; if(!accessor||!view||!info||!width||!(bytes instanceof Uint8Array)) return null;
+  const [reader,size]=info,stride=Number(view.byteStride)||size*width,start=(Number(view.byteOffset)||0)+(Number(accessor.byteOffset)||0),count=Math.min(Number(accessor.count)||0,CAD_MESH_LIMITS.vertices*3);
+  if(!Number.isSafeInteger(count)||count<0||start<0||start+Math.max(0,count-1)*stride+size*width>bytes.byteLength) return null;
+  const data=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),out=[];
+  for(let item=0;item<count;item++){ const row=[]; for(let part=0;part<width;part++) row.push(data[reader](start+item*stride+part*size,true)); out.push(width===1?row[0]:row); }
+  return out;
+}
+function _parseGltfContainer(bytes,format){
+  if(format!=='glb'){ try{ const document=JSON.parse(new TextDecoder().decode(bytes)); return {document,bin:null}; }catch(_){ return null; } }
+  if(bytes.length<20) return null; const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  if(view.getUint32(0,true)!==0x46546c67||view.getUint32(4,true)!==2||view.getUint32(8,true)>bytes.length) return null;
+  let offset=12,document=null,bin=null;
+  while(offset+8<=bytes.length){ const length=view.getUint32(offset,true),type=view.getUint32(offset+4,true),start=offset+8,end=start+length; if(end>bytes.length) break;
+    const chunk=bytes.subarray(start,end); if(type===0x4e4f534a){ try{ document=JSON.parse(new TextDecoder().decode(chunk).replace(/[\u0000\u0020]+$/g,'')); }catch(_){} }
+    else if(type===0x004e4942&&!bin) bin=chunk; offset=end; }
+  return document?{document,bin}:null;
+}
+function parseGltfMesh(bytes,format){
+  const mesh=_cadMesh(format),container=_parseGltfContainer(bytes,format); if(!container) return mesh;
+  const {document,bin}=container,buffers=(document.buffers||[]).map((buffer,index)=>buffer?.uri?_dataUriBytes(buffer.uri):(index===0?bin:null));
+  if(buffers.some((buffer)=>!(buffer instanceof Uint8Array))) mesh.warnings.push('External glTF buffers were not fetched; only self-contained geometry is previewed.');
+  const addPrimitive=(primitive,matrix,meshIndex)=>{ if(Number(primitive?.mode??4)!==4){ mesh.warnings.push('A non-triangle glTF primitive was omitted.'); return; }
+    const positions=_gltfAccessor(document,buffers,primitive?.attributes?.POSITION); if(!positions) return;
+    const remaining=CAD_MESH_LIMITS.vertices-mesh.vertices.length,shown=positions.slice(0,Math.max(0,remaining)),base=mesh.vertices.length;
+    shown.forEach((point)=>{ if(_finite3(point)) mesh.vertices.push(_matPoint(matrix,point)); });
+    const rawIndices=primitive.indices==null?shown.map((_,index)=>index):_gltfAccessor(document,buffers,primitive.indices);
+    const indices=(rawIndices||[]).map(Number); for(let index=0;index+2<indices.length;index+=3){ const a=indices[index],b=indices[index+1],c=indices[index+2];
+      if([a,b,c].every((value)=>Number.isSafeInteger(value)&&value>=0&&value<shown.length)) _cadTriangle(mesh,base+a,base+b,base+c,Number(primitive.material??meshIndex) || 0); }
+    if(shown.length<positions.length) mesh.truncated=true;
+  };
+  const visit=(nodeIndex,parent,path=new Set())=>{ if(path.has(nodeIndex)) return; const node=document.nodes?.[nodeIndex]; if(!node) return;
+    const nextPath=new Set(path); nextPath.add(nodeIndex);
+    const matrix=_matMultiply(parent,_nodeMatrix(node)); if(Number.isSafeInteger(node.mesh)) (document.meshes?.[node.mesh]?.primitives||[]).forEach((primitive)=>addPrimitive(primitive,matrix,node.mesh));
+    for(const child of node.children||[]) if(Number.isSafeInteger(child)) visit(child,matrix,nextPath); };
+  const scene=document.scenes?.[Number(document.scene)||0],roots=Array.isArray(scene?.nodes)?scene.nodes:[];
+  if(roots.length) roots.forEach((node)=>visit(node,_matIdentity()));
+  else (document.meshes||[]).forEach((entry,index)=>(entry.primitives||[]).forEach((primitive)=>addPrimitive(primitive,_matIdentity(),index)));
+  mesh.groups=(document.materials||[]).map((material,index)=>String(material?.name||`material ${index+1}`)); return mesh;
+}
+function cadMeshFromBytes(bytes,format){
+  try{ if(format==='obj') return parseObjMesh(bytes); if(format==='stl') return parseStlMesh(bytes);
+    if(format==='ply') return parseAsciiPlyMesh(bytes); if(format==='gltf'||format==='glb') return parseGltfMesh(bytes,format); }
+  catch(error){ const mesh=_cadMesh(format); mesh.warnings.push(`Geometry preview failed safely: ${String(error?.message||error).slice(0,180)}`); return mesh; }
+  return null;
+}
+function cadMeshBounds(mesh){
+  if(!mesh?.vertices?.length) return null; const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+  for(const point of mesh.vertices) for(let axis=0;axis<3;axis++){ min[axis]=Math.min(min[axis],point[axis]); max[axis]=Math.max(max[axis],point[axis]); }
+  return {min,max,size:max.map((value,index)=>value-min[index]),center:max.map((value,index)=>(value+min[index])/2)};
+}
+const _cadFormatNumber=(value)=>Math.abs(value)>=1000||Math.abs(value)<.01&&value!==0?value.toExponential(2):value.toFixed(2);
+function mountCadMeshPreview(host,mesh,title){
+  const bounds=cadMeshBounds(mesh); if(!bounds||!mesh.triangles.length) return false;
+  const wrap=el('div','fv-3d-view'),controls=el('div','fv-3d-controls'),canvas=el('canvas','fv-3d');
+  canvas.width=1100; canvas.height=680; canvas.setAttribute('role','img'); canvas.setAttribute('aria-label',`${title} interactive 3D geometry preview`);
+  const status=el('div','fv-3d-status'),left=el('span',null,'drag to orbit · wheel to zoom'),right=el('span'); status.append(left,right);
+  let yaw=-.72,pitch=-.52,zoom=1,solid=true,drag=null;
+  const viewButton=(label,apply)=>{ const button=el('button','fv-btn',label); button.type='button'; button.addEventListener('click',()=>{ apply(); draw(); }); controls.appendChild(button); return button; };
+  viewButton('isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;}); viewButton('front',()=>{yaw=0;pitch=0;zoom=1;});
+  const solidButton=viewButton('solid',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
+  const ctx=canvas.getContext('2d',{alpha:false}),radius=Math.max(...bounds.size,1e-6)/2;
+  const selected=mesh.triangles.filter((_,index)=>index%Math.max(1,Math.ceil(mesh.triangles.length/CAD_MESH_LIMITS.drawTriangles))===0).slice(0,CAD_MESH_LIMITS.drawTriangles);
+  const transform=(point)=>{ const x=point[0]-bounds.center[0],y=point[1]-bounds.center[1],z=point[2]-bounds.center[2],cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+    const rx=cy*x-sy*y,ry=sy*x+cy*y; return {x:rx,y:cp*ry-sp*z,z:sp*ry+cp*z}; };
+  const draw=()=>{ const width=canvas.width,height=canvas.height,scale=Math.min(width,height)*.39*zoom/radius; ctx.fillStyle='#090d12'; ctx.fillRect(0,0,width,height);
+    const projected=mesh.vertices.map((point)=>{ const p=transform(point); return {x:width/2+p.x*scale,y:height/2-p.z*scale,depth:p.y}; });
+    const faces=selected.map((triangle)=>{ const a=projected[triangle.a],b=projected[triangle.b],c=projected[triangle.c];
+      const ux=b.x-a.x,uy=b.y-a.y,vx=c.x-a.x,vy=c.y-a.y,cross=ux*vy-uy*vx; return {triangle,a,b,c,cross,depth:(a.depth+b.depth+c.depth)/3}; }).sort((a,b)=>b.depth-a.depth);
+    ctx.lineJoin='round'; for(const face of faces){ const hue=(205+(Number(face.triangle.group)||0)*47)%360,light=solid?Math.max(24,Math.min(66,44+(face.cross>=0?10:-7))):0;
+      ctx.beginPath(); ctx.moveTo(face.a.x,face.a.y); ctx.lineTo(face.b.x,face.b.y); ctx.lineTo(face.c.x,face.c.y); ctx.closePath();
+      if(solid){ ctx.fillStyle=`hsla(${hue} 52% ${light}% / .82)`; ctx.fill(); }
+      ctx.strokeStyle=solid?'rgba(205,225,238,.26)':'rgba(91,202,255,.78)'; ctx.lineWidth=solid?.7:1; ctx.stroke(); }
+    const axes=[[[0,0,0],[radius*.42,0,0],'X','#ef6b73'],[[0,0,0],[0,radius*.42,0],'Y','#65d58a'],[[0,0,0],[0,0,radius*.42],'Z','#5bcaff']];
+    for(const [from,to,label,colour] of axes){ const a=transform(from.map((value,index)=>value+bounds.center[index])),b=transform(to.map((value,index)=>value+bounds.center[index]));
+      ctx.strokeStyle=colour; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(width/2+a.x*scale,height/2-a.z*scale); ctx.lineTo(width/2+b.x*scale,height/2-b.z*scale); ctx.stroke();
+      ctx.fillStyle=colour; ctx.font='600 18px ui-monospace, monospace'; ctx.fillText(label,width/2+b.x*scale+5,height/2-b.z*scale-5); }
+    right.textContent=`${selected.length.toLocaleString()} of ${mesh.triangles.length.toLocaleString()} triangles drawn`;
+  };
+  canvas.addEventListener('pointerdown',(event)=>{ drag={x:event.clientX,y:event.clientY,yaw,pitch}; canvas.setPointerCapture(event.pointerId); });
+  canvas.addEventListener('pointermove',(event)=>{ if(!drag) return; yaw=drag.yaw+(event.clientX-drag.x)*.008; pitch=Math.max(-1.54,Math.min(1.54,drag.pitch+(event.clientY-drag.y)*.008)); draw(); });
+  const end=()=>{drag=null;}; canvas.addEventListener('pointerup',end); canvas.addEventListener('pointercancel',end);
+  canvas.addEventListener('wheel',(event)=>{ event.preventDefault(); zoom=Math.max(.25,Math.min(6,zoom*Math.exp(-event.deltaY*.001))); draw(); },{passive:false});
+  wrap.append(controls,canvas,status); host.appendChild(wrap); draw(); return true;
+}
 async function renderCad3d(host,ctx){
   const bytes=await artifactBytes(ctx,'CAD model'),format=cadFormat(ctx),inspection=inspectCadBytes(bytes,format);
+  const mesh=cadMeshFromBytes(bytes,format),bounds=cadMeshBounds(mesh);
+  if(mesh){ inspection.facts.push(['Renderable vertices',mesh.vertices.length],['Triangle faces',mesh.triangles.length]);
+    if(bounds) inspection.facts.push(['Model bounds',`X ${_cadFormatNumber(bounds.size[0])} · Y ${_cadFormatNumber(bounds.size[1])} · Z ${_cadFormatNumber(bounds.size[2])}`]);
+    if(mesh.truncated) inspection.warning=[inspection.warning,'The interactive preview is bounded; the verified original contains additional geometry.'].filter(Boolean).join(' ');
+    if(mesh.warnings.length) inspection.warning=[inspection.warning,...mesh.warnings].filter(Boolean).join(' '); }
   host.innerHTML=''; const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${format.toUpperCase()} · verified-byte model inspection`));
   for(const [label,value] of inspection.facts){ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); }
   if(inspection.warning) card.appendChild(el('div','fv-warn',inspection.warning));
-  card.appendChild(el('div','fv-note','The model facts below were derived locally from the hash-checked file. Embedded code and external model dependencies were not loaded. Use the verified original in a compatible CAD/BIM tool for authoritative geometry and fabrication review.'));
+  card.appendChild(el('div','fv-note','Model facts and any interactive preview were derived locally from the hash-checked file. Embedded code and external model dependencies were not loaded. Use the verified original in a compatible CAD/BIM tool for authoritative geometry and fabrication review.'));
   host.appendChild(card);
+  if(mesh&&mesh.triangles.length) mountCadMeshPreview(host,mesh,ctx.title);
+  else if(['obj','stl','ply','gltf','glb'].includes(format)) host.appendChild(el('div','fv-warn','No directly renderable triangle geometry was found in the verified model bytes.'));
   if(inspection.types.size){ const typeWrap=el('div','fv-entity-grid');
     [...inspection.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,30).forEach(([type,count])=>{ const item=el('span'); item.appendChild(el('b',null,type)); item.appendChild(el('small',null,count)); typeWrap.appendChild(item); });
     host.appendChild(el('div','fv-note','Entity inventory · most frequent types')); host.appendChild(typeWrap); }
