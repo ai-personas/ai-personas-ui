@@ -10,6 +10,12 @@ verifies those records with Ed25519 in-browser. Live execution and
 workspace snapshot and terminal-event signatures are separately **checked against the kernel key**;
 raw operator `/status` runtime observations remain explicitly labelled as unsigned transport data.
 
+Each reached node also exposes a compact current-master-signed persona/environment index over both
+HTTPS and the peer-bound public-data protocol. The portal races those equivalent transports and
+renders the verified roster before the complete artifact/telemetry inventory finishes. A previously
+verified signed index can seed a returning visit immediately, but it is reverified and reconciled
+against live primary routes and cannot extend a signed lease or retain an omitted identity.
+
 ## Realtime discovery — the page ships **no** data
 
 This repository is a **pure shell**: `index.html`, `assets/`, and `robots.txt`. It
@@ -199,6 +205,10 @@ person silhouette. That person-shaped placeholder is a presentation fallback, no
 persona-authored identity evidence; an optional verified persona-authored raster replaces it only
 after the existing signature and byte checks pass. Temporary body-transport unavailability remains
 bounded retryable state and is never cached as an identity, signature, hash, MIME, or decode refusal.
+After all those checks succeed, the exact content-addressed raster response may be retained in the
+browser's bounded Cache Storage. A later read repeats descriptor/signature, path, MIME, byte-length,
+SHA-256, and decoded-dimension verification before display; cached bytes confer no identity or
+freshness authority.
 An avatar descriptor never creates another
 persona or projection card. The top status/control header is
 independently collapsible and consumes zero layout height while closed.

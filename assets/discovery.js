@@ -61,6 +61,7 @@ import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
   personaIdentityKeyPin,
+  resolvePersonaAvatarBodyUrl,
 } from './persona-avatar.mjs?v=20260722-persona-raster-v3';
 import {
   environmentIdentity,
@@ -518,6 +519,7 @@ const VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS=new WeakSet();
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
+  peerHealth:new Map(), identityIndexes:new Map(),
   providerKeyRefreshAt:new Map(), telemetryKeyRefreshAt:new Map(),
   providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
@@ -2048,46 +2050,61 @@ const PUBLIC_IDENTITY_INDEX_FIELDS=Object.freeze([
 ].sort());
 async function verifiedRowsFromIdentityIndex(index,base,boot){
   const rows=[];
-  if(!_exactObjectFields(index,PUBLIC_IDENTITY_INDEX_FIELDS)
-      ||index.schema!=='personaos-public-identity-index/1'
+  if(!_exactObjectFields(index,PUBLIC_IDENTITY_INDEX_FIELDS))
+    return {ok:false,rows,reason:'identity_index_shape_invalid'};
+  if(index.schema!=='personaos-public-identity-index/1'
       ||index.kernel_id!==boot?.kernel_id||index.visibility!=='public'
-      ||index.signing_key_id!=='kernel-master'
-      ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
+      ||index.signing_key_id!=='kernel-master')
+    return {ok:false,rows,reason:'identity_index_authority_invalid'};
+  if(!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
       ||!SHA256_CONTENT_RE.test(String(index.inventory_hash||''))
-      ||!SHA256_CONTENT_RE.test(String(index.inventory_manifest_hash||''))
-      ||!Number.isSafeInteger(index.document_count)||index.document_count<1
+      ||!SHA256_CONTENT_RE.test(String(index.inventory_manifest_hash||'')))
+    return {ok:false,rows,reason:'identity_index_inventory_invalid'};
+  if(!Number.isSafeInteger(index.document_count)||index.document_count<1
       ||index.document_count>512||!index.documents
       ||typeof index.documents!=='object'||Array.isArray(index.documents)
-      ||Object.keys(index.documents).length!==index.document_count
-      ||!validateProviderInventoryWindow(index.generated_at,index.expires_at).ok
-      ||!await verifiedCanonicalBaseMatch(index.base,base,boot)
-      ||!await verifyCurrentMasterSignedDocument(base,index)) return {ok:false,rows};
-  const registry=S.keyDocs.get(base||'@origin')||{}, seen=new Set();
-  const results=await Promise.all(Object.entries(index.documents).map(async([hash,doc])=>{
+      ||Object.keys(index.documents).length!==index.document_count)
+    return {ok:false,rows,reason:'identity_index_document_set_invalid'};
+  if(!validateProviderInventoryWindow(index.generated_at,index.expires_at).ok)
+    return {ok:false,rows,reason:'identity_index_stale'};
+  if(!await verifiedCanonicalBaseMatch(index.base,base,boot))
+    return {ok:false,rows,reason:'identity_index_base_mismatch'};
+  if(!await verifyCurrentMasterSignedDocument(base,index))
+    return {ok:false,rows,reason:'identity_index_signature_invalid'};
+  const entries=Object.entries(index.documents), recordIds=new Set();
+  for(const [hash,doc] of entries){
     const record=doc?.record||{},policy=doc?.access_policy||{};
     const rid=String(record.record_id||'');
-    if(!SHA256_CONTENT_RE.test(hash)||`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==hash
-        ||!['persona','env'].includes(String(record.kind||''))
-        ||!rid||seen.has(rid)||doc?.host_kernel_id!==boot.kernel_id
+    if(!SHA256_CONTENT_RE.test(hash)||!['persona','env'].includes(String(record.kind||''))
+        ||!rid||recordIds.has(rid)||doc?.host_kernel_id!==boot.kernel_id
         ||doc?.kernel_id!==boot.kernel_id
         ||String(doc?.base||'').replace(/\/$/,'')!==String(index.base||'').replace(/\/$/,''))
-      return null;
-    seen.add(rid);
+      return {ok:false,rows,reason:'identity_document_binding_invalid'};
+    recordIds.add(rid);
+  }
+  const registry=S.keyDocs.get(base||'@origin')||{};
+  const results=await Promise.all(entries.map(async([hash,doc])=>{
+    const record=doc.record,policy=doc.access_policy||{},rid=String(record.record_id||'');
+    if(`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==hash)
+      return {ok:false,reason:'identity_document_hash_invalid'};
     const signed=await verifyRecord(doc,registry.entries||[]);
-    if(!signed.ok) return null;
+    if(!signed.ok) return {ok:false,reason:'identity_document_signature_invalid'};
     let policyOk=false;
     try{ policyOk=await ed.verifyAsync(hexToBytes(policy.signature_hex),
       enc.encode(canon(providerPolicyPayload(policy))),
       hexToBytes(signed.entry.public_key_hex)); }catch(_){ policyOk=false; }
     const access=evaluatePublicRecordAccess(record,policy,doc.links||{});
-    if(!policyOk||!access.ok||!access.canDiscover) return null;
+    if(!policyOk||!access.ok||!access.canDiscover)
+      return {ok:false,reason:'identity_document_access_invalid'};
     const out=await verifiedRecordFromDoc(doc,{},boot,base,'internet',
       `discovery/public/records/${rid}.json`,
       {access,providerBaseVerified:true});
-    return out.ok?out.row:null;
+    return out.ok?{ok:true,row:out.row}
+      :{ok:false,reason:out.reason||'identity_document_refused'};
   }));
-  if(results.some((row)=>!row)||seen.size!==index.document_count) return {ok:false,rows:[]};
-  return {ok:true,rows:results,inventory:{generation:index.inventory_generation,
+  const refused=results.find((result)=>!result.ok);
+  if(refused) return {ok:false,rows:[],reason:refused.reason};
+  return {ok:true,rows:results.map((result)=>result.row),inventory:{generation:index.inventory_generation,
     hash:index.inventory_hash,manifestHash:index.inventory_manifest_hash,
     generatedAt:Date.parse(index.generated_at),expiresAt:Date.parse(index.expires_at)}};
 }
@@ -2647,6 +2664,62 @@ async function _loadGlobalNodes(){
     announcements:announced,total:directory.total,
     pollAfterMs:Number.isFinite(pollAfterMs)?pollAfterMs:0};
 }
+async function admitVerifiedIdentityIndex(identityDoc,base,boot,where,{transport='http'}={}){
+  const identity=await verifiedRowsFromIdentityIndex(identityDoc,base,boot);
+  if(!identity.ok){
+    log('identity',`${boot?.kernel_id||where}: compact signed identity refused · ${identity.reason||'invalid'}`,false);
+    return false;
+  }
+  // Cache only after the complete compact document, every embedded record,
+  // policy and persona proof has verified. Do this before mutable presentation
+  // bookkeeping so a rendering/transport-state fault cannot lose the next
+  // reload's already verified fast path.
+  persistFastSignedIdentitySnapshot(base,boot,identityDoc);
+  const prior=(S.identityIndexes||(S.identityIndexes=new Map())).get(boot.kernel_id);
+  const advances=!prior||identity.inventory?.generation>prior.generation
+    ||(identity.inventory?.generation===prior.generation
+      &&identity.inventory?.hash===prior.hash);
+  // A complete inventory may already be authoritative when this compact slice
+  // arrives on a periodic P2P refresh. It is still worth retaining the exact
+  // signed slice for the next browser start; persistence grants no live-state
+  // authority and hydration re-runs every signature, policy and expiry check.
+  if(!advances) return false;
+  if(S.providerInventories.has(boot.kernel_id)) return false;
+  const incoming=new Set();
+  for(const row of identity.rows){
+    const projected={...row,_inventorySource:boot.kernel_id,
+      _inventoryGeneration:identity.inventory.generation,
+      _inventoryHash:identity.inventory.hash,_identityIndexVerified:true};
+    if(upsert(projected)) incoming.add(recordStoreKey(projected));
+  }
+  for(const id of (prior?.recordKeys||[])){
+    const row=S.recs.get(id);
+    if(!incoming.has(id)&&row?._identityIndexVerified===true) _removeRecordStoreKey(id);
+  }
+  // A freshly fetched compact index is the signed authority for this
+  // generation's complete persona/environment slice. Retire an omitted cached
+  // identity even if the larger artifact inventory later fails to transfer.
+  for(const [id,row] of [...S.recs]){
+    if(!incoming.has(id)&&String(row?._kernel||'')===boot.kernel_id
+        &&['persona','env'].includes(String(row?.kind||''))
+        &&(row?._warmProvisional===true||row?._identityIndexVerified===true))
+      _removeRecordStoreKey(id);
+  }
+  S.identityIndexes.set(boot.kernel_id,{...identity.inventory,recordKeys:incoming});
+  S.cachedIdentityPendingKernels.delete(boot.kernel_id);
+  S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
+  S.boots.set(base||'@origin',boot);
+  noteKernel(boot.kernel_id,transport,base||location.origin,{reachable:true});
+  retireFastSignedIdentityRoute(boot.kernel_id);
+  S.peerHealth.set(where,{ok:true,records:identity.rows.length,
+    kernel:boot.kernel_id,t:Date.now(),identityIndex:true});
+  collectP2PBootstraps(boot,{dial:true});
+  scheduleRealtimeRepaint({records:true});
+  log('identity',`${identity.rows.length} current signed persona/environment record(s) verified first`,true);
+  // Let the roster reach the compositor before full inventory verification.
+  await yieldAfterVerifiedRosterPaint();
+  return true;
+}
 async function discoverFrom(base,plane,knownBoot=null,
   {expectedKernel='',resolveProviderAliases=true,signal=null}={}){
   const where=base||location.origin;
@@ -2690,52 +2763,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   if(boot.identity_index_url){
     const identityDoc=await fetchJson(join(base,boot.identity_index_url),{
       maxBytes:2*1024*1024,signal});
-    const identity=await verifiedRowsFromIdentityIndex(identityDoc,base,boot);
-    const prior=(S.identityIndexes||(S.identityIndexes=new Map())).get(boot.kernel_id);
-    const advances=!prior||identity.inventory?.generation>prior.generation
-      ||(identity.inventory?.generation===prior.generation
-        &&identity.inventory?.hash===prior.hash);
-    if(identity.ok&&advances&&!S.providerInventories.has(boot.kernel_id)){
-      const incoming=new Set();
-      for(const row of identity.rows){
-        const projected={...row,_inventorySource:boot.kernel_id,
-          _inventoryGeneration:identity.inventory.generation,
-          _inventoryHash:identity.inventory.hash,_identityIndexVerified:true};
-        if(upsert(projected)) incoming.add(recordStoreKey(projected));
-      }
-      for(const id of (prior?.recordKeys||[])){
-        const row=S.recs.get(id);
-        if(!incoming.has(id)&&row?._identityIndexVerified===true) _removeRecordStoreKey(id);
-      }
-      // The browser-cache projection deliberately has no identityIndexes entry.
-      // A freshly fetched compact index is nevertheless the signed authority
-      // for this generation's complete persona/environment slice, so retire an
-      // omitted same-kernel cached identity even if the large inventory later
-      // fails to transfer.
-      for(const [id,row] of [...S.recs]){
-        if(!incoming.has(id)&&String(row?._kernel||'')===boot.kernel_id
-            &&['persona','env'].includes(String(row?.kind||''))
-            &&(row?._warmProvisional===true||row?._identityIndexVerified===true))
-          _removeRecordStoreKey(id);
-      }
-      S.identityIndexes.set(boot.kernel_id,{...identity.inventory,recordKeys:incoming});
-      S.cachedIdentityPendingKernels.delete(boot.kernel_id);
-      S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
-      S.boots.set(base||'@origin',boot);
-      noteKernel(boot.kernel_id,'http',base||location.origin,{reachable:true});
-      retireFastSignedIdentityRoute(boot.kernel_id);
-      S.peerHealth.set(where,{ok:true,records:identity.rows.length,
-        kernel:boot.kernel_id,t:Date.now(),identityIndex:true});
-      collectP2PBootstraps(boot,{dial:true});
-      scheduleRealtimeRepaint({records:true});
-      log('identity',`${identity.rows.length} current signed persona/environment record(s) verified first`,true);
-      identityAccepted=true;
-      // Cross two animation frames: the first scheduled callback mutates the
-      // stage and the second proves that mutation had a render opportunity
-      // before CPU-heavy full-inventory signature checks resume.
-      await yieldAfterVerifiedRosterPaint();
-      persistFastSignedIdentitySnapshot(base,boot,identityDoc);
-    }
+    identityAccepted=await admitVerifiedIdentityIndex(identityDoc,base,boot,where);
   }
   const prov=await providerPromise;
   if(!prov||Number(prov.document_count)!==advertisedRecordCount){
@@ -5297,6 +5325,7 @@ const _PERSONA_AVATAR_ATTEMPT_TIMEOUT_MS=15000;
 const _PERSONA_AVATAR_MOUNT_TIMEOUT_MS=5000;
 const _PERSONA_AVATAR_RETRY_BASE_MS=500;
 const _PERSONA_AVATAR_RETRY_MAX_MS=30000;
+const _PERSONA_AVATAR_PERSISTENT_CACHE='personaos-verified-persona-avatars-v1';
 const _personaAvatarAssets=new Map();
 const _personaAvatarJobs=new Map();
 const _personaAvatarJobControllers=new Set();
@@ -5306,6 +5335,28 @@ const _personaAvatarFailures=new Set();
 let _personaAvatarCacheBytes=0;
 let _personaAvatarActiveFetches=0;
 let _personaAvatarPageActive=true;
+async function _persistentPersonaAvatarResponse(sourceUrl){
+  if(!sourceUrl||!globalThis.caches?.open) return null;
+  try{
+    const cache=await caches.open(_PERSONA_AVATAR_PERSISTENT_CACHE);
+    return await cache.match(sourceUrl)||null;
+  }catch(_){ return null; }
+}
+async function _persistPersonaAvatarResponse(sourceUrl,loaded){
+  if(!sourceUrl||!loaded?.bytes||!globalThis.caches?.open) return false;
+  try{
+    const cache=await caches.open(_PERSONA_AVATAR_PERSISTENT_CACHE);
+    await cache.put(sourceUrl,new Response(loaded.bytes,{status:200,headers:{
+      'Content-Type':loaded.descriptor.mime_type,
+      'Content-Length':String(loaded.descriptor.byte_length),
+      'Cache-Control':'public, max-age=31536000, immutable',
+    }}));
+    const keys=await cache.keys();
+    for(const request of keys.slice(0,Math.max(0,keys.length-_PERSONA_AVATAR_CACHE_MAX_ENTRIES)))
+      await cache.delete(request);
+    return true;
+  }catch(_){ return false; }
+}
 function _personaAvatarBodyTransientError(){
   const error=new Error('avatar body transport temporarily unavailable');
   Object.defineProperty(error,'avatarBodyTransient',{value:true});
@@ -5466,6 +5517,9 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
     throw new Error('persona identity key pin changed');
   const pin=assertedPin||rememberedPin;
   const providerBase=_personaAvatarProviderBase(signedCard);
+  const sourceUrl=resolvePersonaAvatarBodyUrl(descriptor.body_path,{
+    providerBase,pageUrl:location.href,
+  });
   const cacheKey=[ref.key,_personaAvatarRevision(descriptor),providerBase,pin].join('\u0000');
   const cached=_personaAvatarAssets.get(cacheKey);
   if(cached){ _personaAvatarAssets.delete(cacheKey); _personaAvatarAssets.set(cacheKey,cached); return cached; }
@@ -5491,34 +5545,41 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
             throw _personaAvatarRouteError(error,controller.signal);
           }
         };
-        const peerAttempt=verifyWith(async(sourceUrl)=>{
-          if(!p2pDataRouteForUrl(sourceUrl)) throw _personaAvatarBodyTransientError();
+        const persistentAttempt=verifyWith(async(requestUrl)=>{
+          if(requestUrl!==sourceUrl) throw _personaAvatarBodyTransientError();
+          const response=await _persistentPersonaAvatarResponse(requestUrl);
+          if(!response) throw _personaAvatarBodyTransientError();
+          return response;
+        }).then((loaded)=>({loaded,persistent:true}));
+        const peerAttempt=verifyWith(async(requestUrl)=>{
+          if(!p2pDataRouteForUrl(requestUrl)) throw _personaAvatarBodyTransientError();
           const bytes=await settleBeforeAbort(fetchP2PArtifactBytes(
-            sourceUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),controller.signal,null);
+            requestUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),controller.signal,null);
           if(bytes?.byteLength!==descriptor.byte_length) throw _personaAvatarBodyTransientError();
           return new Response(bytes,{status:200,headers:{
             'Content-Type':descriptor.mime_type,
             'Content-Length':String(descriptor.byte_length),
           }});
-        });
-        const httpAttempt=verifyWith(async(sourceUrl,init={})=>{
+        }).then((loaded)=>({loaded,persistent:false}));
+        const httpAttempt=verifyWith(async(requestUrl,init={})=>{
           try{
-            const response=await fetch(sourceUrl,secureFetchInit(sourceUrl,{
+            const response=await fetch(requestUrl,secureFetchInit(requestUrl,{
               ...init,signal:controller.signal,
             }));
             if(response?.ok) return response;
           }catch(_){ /* the peer-bound public-data route remains available */ }
           throw _personaAvatarBodyTransientError();
-        });
-        let loaded;
+        }).then((loaded)=>({loaded,persistent:false}));
+        let winner;
         try{
-          loaded=await Promise.any([peerAttempt,httpAttempt]);
+          winner=await Promise.any([persistentAttempt,peerAttempt,httpAttempt]);
         }catch(error){
           const failures=Array.from(error?.errors||[error]);
           const refusal=failures.find((failure)=>failure?.avatarBodyTransient!==true);
           if(refusal) throw refusal;
           throw _personaAvatarBodyTransientError();
         }
+        const {loaded}=winner;
         if(controller.signal.aborted) throw _personaAvatarBodyTransientError();
         const observedKey=loaded.descriptor.identity_public_key_hex;
         const currentPin=S.personaIdentityKeys.get(ref.key)||'';
@@ -5526,6 +5587,7 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         const blob=new Blob([loaded.bytes],{type:loaded.descriptor.mime_type});
         await _decodePersonaAvatarBlob(blob,loaded.descriptor,controller.signal);
         if(controller.signal.aborted) throw _personaAvatarBodyTransientError();
+        if(!winner.persistent) await _persistPersonaAvatarResponse(loaded.sourceUrl,loaded);
         S.personaIdentityKeys.set(ref.key,observedKey);
         return _rememberPersonaAvatarAsset(cacheKey,Object.freeze({
           blob,byteLength:loaded.descriptor.byte_length,
@@ -11761,8 +11823,49 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
   if(!providerIndexMaxBytes) return {boot:null,found:[],inventory:null};
   const providerPath=String(boot.providers_url||'discovery/public/providers.json');
-  const providerIndex=await settleBeforeAbort(P2P.fetchPublicJson(p,providerPath,
-    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null),signal,null);
+  const providerPromise=P2P.fetchPublicJson(p,providerPath,
+    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null);
+  // The peer-bound transport carries the same signed compact identity surface
+  // as HTTP. Admit it first so P2P discovery paints people/workspaces and seeds
+  // the warm browser cache without waiting for every artifact and telemetry
+  // signature in the complete inventory.
+  if(boot.identity_index_url){
+    const identityPath=String(boot.identity_index_url);
+    // A DHT scan can discover a correct provider at the very end of its own
+    // bounded deadline. Do not let that exhausted scan signal cancel the small
+    // identity read or its durable warm cache. The independent job remains
+    // bounded and can finish after full-inventory reconciliation has resumed.
+    const identityWork=(async()=>{
+      const identitySignal=AbortSignal.timeout(6000);
+      const usableIdentity=(promise)=>promise.then((value)=>{
+        if(!value) throw new Error('identity route unavailable');
+        return value;
+      });
+      // Race the peer-bound data stream with the node's direct HTTPS route.
+      // Both carry the identical current-master-signed document and pass the
+      // same verification; neither is a locator or an identity authority.
+      const identityUrl=join(base,identityPath);
+      const directIdentity=(async()=>{
+        const response=await fetch(identityUrl,secureFetchInit(identityUrl,{signal:identitySignal}));
+        if(!response.ok) return null;
+        const bytes=await readBoundedResponseBytes(response,2*1024*1024);
+        return JSON.parse(new TextDecoder().decode(bytes));
+      })().catch(()=>null);
+      const identityDoc=await Promise.any([
+        usableIdentity(P2P.fetchPublicJson(p,identityPath,
+          {timeoutMs:6000,maxBytes:2*1024*1024}).catch(()=>null)),
+        usableIdentity(directIdentity),
+      ]).catch(()=>null);
+      if(identityDoc)
+        await admitVerifiedIdentityIndex(identityDoc,base,boot,base,{transport:'p2p'});
+      else log('identity',`${boot.kernel_id}: compact signed identity route unavailable; full inventory continues`,false);
+    })().catch(()=>{});
+    // A healthy compact route normally wins in hundreds of milliseconds. A
+    // broken route gets only this small head start; it cannot hold the complete
+    // signed inventory behind its full transport timeout.
+    await Promise.race([identityWork,new Promise((resolve)=>setTimeout(resolve,1000))]);
+  }else log('identity',`${boot.kernel_id}: compact signed identity route not advertised; full inventory continues`,false);
+  const providerIndex=await settleBeforeAbort(providerPromise,signal,null);
   if(signal?.aborted||!providerIndex
       ||Number(providerIndex.document_count)!==advertisedRecordCount)
     return {boot:null,found:[],inventory:null};
