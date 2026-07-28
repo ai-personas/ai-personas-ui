@@ -193,10 +193,9 @@ SHA-256, and dimensions before
 rendering the bytes through a temporary blob URL. A verified lifecycle shell is rendered immediately
 as an independently materializing persona; its persona-authored name, characteristics, and avatar
 may become materialized independently, and a verified adopted name does not falsely promote the
-remaining identity fields. Until a persona-authored name arrives, the card uses an explicit stable-ID
-label (for example, `Persona 01J9ZX`) rather than calling the person unnamed. Every card immediately
-renders a deterministic local monogram derived from its verified identity key and name. That instant
-local avatar is a presentation fallback, not
+remaining identity fields. Until a persona-authored name arrives, the card says `Forming identity`
+and keeps the stable ID in secondary verification detail. Every card immediately renders a neutral
+person silhouette. That person-shaped placeholder is a presentation fallback, not
 persona-authored identity evidence; an optional verified persona-authored raster replaces it only
 after the existing signature and byte checks pass. Temporary body-transport unavailability remains
 bounded retryable state and is never cached as an identity, signature, hash, MIME, or decode refusal.
@@ -208,11 +207,13 @@ independently collapsible and consumes zero layout height while closed.
 persona/environment feed must use their exact public schemas, bind the current node id, be fresh,
 and verify under the sole current kernel master. Public communication topology admits only exact,
 independently signed direct or broadcast route metadata. A persona card's public activity stream
-comes only from the exact whole-document-signed `personaos-persona-public-cognition/1` endpoint for
-that current-inventory persona. It renders the complete already-bounded public window of active
-calls, provider-stream events, outputs/messages, learned state, proven facts, and evolution entries;
-persona-authored text is not visually clipped or shortened. Human names, workspace labels, task
-context, state, and friendly local time lead the surface. Exact persona/environment/run/task/call
+comes only from the exact whole-document-signed `personaos-persona-public-cognition/2` endpoint for
+that current-inventory persona. Its current signed work-state revision leads with the persona's own
+task understanding, contribution, present focus, completed work, next intent, open commitments,
+uncertainties, assumptions, and collaboration plan. Model calls and provider diagnostics remain in
+a collapsed technical-activity disclosure; outputs/messages, learned state, proven facts, and
+evolution entries remain available without presenting hidden reasoning. Human names, workspace labels,
+task context, state, and friendly local time lead the surface. Exact persona/environment/run/task/call
 references and ISO instants remain secondary verification detail rather than primary labels.
 Addressed messages retain their verified recipients without inferring content type. A wrong author/subject, extra field,
 invalid nested shape, stale document, or changed byte is rejected. Private thinking frames remain

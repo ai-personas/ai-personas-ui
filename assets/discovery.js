@@ -56,7 +56,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260726-engineering-preview-v1';
+} from './artifact-types.mjs?v=20260728-engineering-preview-v2';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -70,9 +70,10 @@ import {
   friendlyDuration,
   humanActivityPresentation,
   humanizeMachineKey,
+  isTechnicalKey,
   operatorResponseText,
   structuredContentProjection,
-} from './human-content.mjs?v=20260726-human-first-v4';
+} from './human-content.mjs?v=20260728-open-characteristics-v5';
 import {
   expiredProviderKernels,
   reconcileResolverDirectory,
@@ -783,7 +784,7 @@ function _rememberPersonaCognitionEvent(event){
 // signed messages and assembled provider output are durable activity history,
 // not presence signals that should disappear when the 30-second live lease ends.
 function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
-  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public') return false;
+  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public') return false;
   const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
   const modelProjection=canon([...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>[
     call.model_id,call.requested_purpose,call.environment_id,call.started_at,call.ended_at||'',
@@ -797,7 +798,7 @@ function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',pers
 function _personaModelHistory(personaKey,fallback=[]){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
-  if(doc?.schema!=='personaos-persona-public-cognition/1'||doc?.tier!=='public')
+  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public')
     return fallback;
   const models=[...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>({
     t:Date.parse(call.ended_at||call.started_at||'')||0,
@@ -1423,14 +1424,25 @@ function _exactPersonaCharacteristics(value){
   if(!_plainPersonaParticipationObject(value)
       ||value.schema!=='persona-characteristic-card/1'
       ||!_plainPersonaParticipationObject(value.characteristics)) return null;
-  const source=value.characteristics, out={};
-  for(const field of ['identity_statement','public_tone','working_style']){
-    const text=source[field];
-    if(typeof text!=='string'||text!==text.trim()||!text
-        ||enc.encode(text).length>1600||/[\u0000-\u001f\u007f]/u.test(text)) return null;
-    out[field]=text;
-  }
-  return Object.freeze(out);
+  let entries=0;
+  const bounded=(item,depth=0)=>{
+    if(depth>12||++entries>2048) return false;
+    if(item===null||typeof item==='boolean') return true;
+    if(typeof item==='number') return Number.isFinite(item);
+    if(typeof item==='string') return [...item].length<=16384
+      &&enc.encode(item).length<=65536;
+    if(Array.isArray(item)) return item.length<=256
+      &&item.every((nested)=>bounded(nested,depth+1));
+    if(!_plainPersonaParticipationObject(item)||Object.keys(item).length>256) return false;
+    return Object.entries(item).every(([key,nested])=>typeof key==='string'
+      &&[...key].length<=16384&&enc.encode(key).length<=65536
+      &&bounded(nested,depth+1));
+  };
+  const source=value.characteristics;
+  try{
+    if(!bounded(source)||enc.encode(canon(source)).length>65536) return null;
+    return Object.freeze(JSON.parse(JSON.stringify(source)));
+  }catch(_){ return null; }
 }
 function _currentPersonaParticipationExpiry(value,now=Date.now()){
   if(typeof value!=='string') return false;
@@ -1630,7 +1642,7 @@ async function verifyPublicCommunicationRoutes(base,live){
 const PUBLIC_AGGREGATE_TELEMETRY_FIELDS=Object.freeze([
   'activity','activity_hash','communication_routes','communication_routes_hash','counts',
   'generated_at','model_status','node_id','personas','schema','signature_hex','signing_key_id',
-  'sufficiency','topology','topology_hash',
+  'topology','topology_hash',
 ].sort());
 async function verifyPublicTelemetryFrame(base,live){
   if(live?.schema===OPERATOR_LIVE_TELEMETRY_SCHEMA)
@@ -4031,9 +4043,12 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
     if(!collapsed) html+=`<div class="tkids">${_renderLiveTreeNode(child,rel,depth+1,state,workspaceId)}</div>`;
   }
   for(const {file,name} of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
-    const authored=authoredArtifactLabelText(file);
-    html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}">${esc(name)}</a>`
-      +`<span class="l2">${authored?`authored: ${esc(authored)} · `:''}${esc(declaredArtifactMedia(file)||'undeclared media')} · ${fmtBytes(file.size_bytes)}</span></div>`;
+    const authored=authoredArtifactLabelText(file), presentation=_artifactFilePresentation(file.path||name);
+    const media=artifactMediaPresentation(file,file.path||name).mediaType;
+    html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a class="live-tree-file-action" href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}" title="Open ${esc(presentation.exactPath)}">`
+      +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation)}`
+      +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
+      +`<span class="current-artifact-preview">Open file →</span></a></div>`;
   }
   return html;
 }
@@ -4132,8 +4147,7 @@ function trustPanel(r){
 const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate',judge:'judging (PoLL)',
   safety:'safety check',objective:'naming objectives',classifier:'classifying',optimize_tactics:'evolving tactics',
   answer:'answering',
-  pressure:'appraising completion pressure',pressure_appraisal:'appraising completion pressure',
-  peer_pressure_appraisal:'independent pressure review',artifact_review:'reviewing artifact evidence',
+  artifact_review:'reviewing artifact evidence',
   artifact_generation:'building artifacts',artifact_revision:'revising artifacts'};
 // MODEL-PER-ROLE rollup: PersonaOS resolves a DIFFERENT model per role/purpose
 // (EnvironmentModelRegistry), so summarise the distinct models a persona/env used
@@ -4289,8 +4303,7 @@ function renderEnvLaneLive(b){
 const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judge:'judge (PoLL)',
   safety:'safety check',objective:'name objectives',classifier:'classify task',optimize_tactics:'evolve tactics',
   answer:'answer',verifier:'verify',
-  pressure:'appraise completion pressure',pressure_appraisal:'appraise completion pressure',
-  peer_pressure_appraisal:'independently appraise pressure',artifact_review:'review artifact evidence',
+  artifact_review:'review artifact evidence',
   artifact_generation:'build artifacts',artifact_revision:'revise artifacts'};
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
@@ -4508,30 +4521,57 @@ const _PERSONA_NAME=new Map();   // kernel-qualified persona key -> friendly nam
 function _personaTechnicalToken(sid=''){
   return _shortId(sid).replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase();
 }
-const _personaAlias=(sid)=>{const token=_personaTechnicalToken(sid);
-  return token?`Persona ${token}`:'Persona identity pending';};
+const _personaAlias=()=> 'Forming identity';
 function _personaDisplayNameCandidate(value,sid=''){
   const name=typeof value==='string'?value.trim():'', id=_shortId(sid||'');
   if(!name||name===id||name===`persona:${id}`
       ||(name.startsWith('did:personaos:')&&_shortId(name)===id)) return '';
   return name;
 }
-const _PERSONA_ROLE_SUFFIX=/\b(?:architect|author|builder|cad|cam|coordinator|contributor|designer|developer|director|engineer|expert|facilitator|lead|maker|manager|model(?:er|ling)?|planner|producer|researcher|reviewer|specialist|strategist|technologist|writer)\b/iu;
 function _personaNameRolePresentation(value,sid=''){
   const exactName=_personaDisplayNameCandidate(value,sid);
   if(!exactName) return {name:_personaAlias(sid),embeddedRole:'',exactName:''};
-  const comma=exactName.lastIndexOf(','), personName=comma>0?exactName.slice(0,comma).trim():'',
-    role=comma>0?exactName.slice(comma+1).trim():'';
-  // Some early identities placed the persona's role after a comma in the
-  // immutable signed name. Keep those bytes untouched, but present the human
-  // name and role in their proper visual fields. Open-vocabulary suffixes that
-  // do not clearly read as a role remain part of the name.
-  if(personName&&role&&role.length<=120&&_PERSONA_ROLE_SUFFIX.test(role))
-    return {name:personName,embeddedRole:role,exactName};
   return {name:exactName,embeddedRole:'',exactName};
 }
 const _displayPersonaName=(value,sid='')=>
   _personaNameRolePresentation(value,sid).name;
+function _personaCharacteristicValue(value,depth=0){
+  if(depth>3||value===null||value===undefined) return '';
+  if(typeof value==='string') return value.trim().slice(0,900);
+  if(typeof value==='boolean') return value?'Yes':'No';
+  if(typeof value==='number'&&Number.isFinite(value)) return String(value);
+  if(Array.isArray(value)) return value.slice(0,8)
+    .map((item)=>_personaCharacteristicValue(item,depth+1)).filter(Boolean).join(' · ').slice(0,900);
+  if(typeof value==='object') return Object.entries(value).slice(0,8)
+    .map(([key,item])=>{ const text=_personaCharacteristicValue(item,depth+1);
+      return text?`${humanizeMachineKey(key)}: ${text}`:''; })
+    .filter(Boolean).join(' · ').slice(0,900);
+  return '';
+}
+function _personaCharacteristicRows(characteristics,{name='',limit=8}={}){
+  if(!characteristics||typeof characteristics!=='object'||Array.isArray(characteristics)) return [];
+  const exactName=String(name||'').trim(), rows=[];
+  for(const [key,value] of Object.entries(characteristics)){
+    if(isTechnicalKey(key)) continue;
+    const text=_personaCharacteristicValue(value);
+    if(!text||text===exactName) continue;
+    rows.push({label:humanizeMachineKey(key),value:text});
+    if(rows.length>=limit) break;
+  }
+  return rows;
+}
+function _personaCharacteristicHeadline(characteristics,name=''){
+  return _personaCharacteristicRows(characteristics,{name,limit:1})[0]||null;
+}
+function _personaCharacteristicsHTML(characteristics,{name='',limit=8,compact=false}={}){
+  const rows=_personaCharacteristicRows(characteristics,{name,limit});
+  if(!rows.length) return '';
+  if(compact) return rows.map((row,index)=>index===0
+    ?`<p><b>${esc(row.label)}</b> · ${esc(row.value)}</p>`
+    :`<div class="pc-working-style"><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('');
+  return `<div class="persona-about-view">${rows.map((row)=>
+    `<div><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('')}</div>`;
+}
 const _personaMonogram=(value,sid='')=>{ const name=_personaDisplayNameCandidate(value,sid);
   if(name){ const parts=_personaNameRolePresentation(name,sid).name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
   return _personaTechnicalToken(sid).slice(0,2)||'ID'; };
@@ -5516,11 +5556,9 @@ function renderPersonaCard(pid,kernel='',context={}){
   const nameRole=_personaNameRolePresentation(signedName,sid);
   const name=nameRole.name;
   const authoredRole=identityVerified?_coordRole(sid,s,ref.kernel):_ROLE_NOT_DECLARED;
-  // A role embedded in an early signed name is a presentation field, not new
-  // coordination authority. It can explain the human-facing card without
-  // changing routing, membership, or capability semantics.
-  const role=authoredRole!==_ROLE_NOT_DECLARED?authoredRole
-    :(identityVerified&&nameRole.embeddedRole?nameRole.embeddedRole:_ROLE_NOT_DECLARED);
+  const role=authoredRole;
+  const characteristicHeadline=identityVerified
+    ?_personaCharacteristicHeadline(characteristics,name):null;
   const identityProofState=identityObservation?.identityProofState||'refused';
   const state=lifecycle?.lifecycleState||(identityVerified?s.lifecycle_state:'OBSERVED');
   const identityPending=lifecycle?.materializationState==='pending';
@@ -5630,18 +5668,19 @@ function renderPersonaCard(pid,kernel='',context={}){
       +(authoredCapabilities.length>2
         ?`<span class="pc-cap-more">+${authoredCapabilities.length-2} more in profile</span>`:'')
       +`</div></section>`:'';
-  const identityStatement=String(characteristics?.identity_statement||signedDescription).trim();
-  const workingStyle=String(characteristics?.working_style||'').trim();
-  const aboutHTML=identityStatement||workingStyle
+  const characteristicHTML=_personaCharacteristicsHTML(characteristics,{name,limit:4,compact:true});
+  const aboutHTML=characteristicHTML||signedDescription
     ?`<section class="pc-about"><div class="pc-section-head"><span>About me</span><small>${icon('check','ico-sm')} self-described</small></div>`
-      +(identityStatement?`<p>${esc(identityStatement)}</p>`:'')
-      +(workingStyle?`<div class="pc-working-style"><b>How I work</b><span>${esc(workingStyle)}</span></div>`:'')+'</section>':'';
-  const identityLine=role!==_ROLE_NOT_DECLARED?role:'Role not yet self-described';
+      +(characteristicHTML||`<p>${esc(signedDescription)}</p>` )+'</section>':'';
+  const identityLine=role!==_ROLE_NOT_DECLARED?role
+    :(characteristicHeadline?.value||'Self-description still forming');
+  const identityLineLabel=role!==_ROLE_NOT_DECLARED?'Self-described role'
+    :(characteristicHeadline?.label||'Self-description');
   const identityLineTitle=authoredRole!==_ROLE_NOT_DECLARED
     ?'Explicit persona-authored role in the verified profile'
-    :nameRole.embeddedRole
-      ?`Role separated for display from the exact signed identity name: ${nameRole.exactName}`
-      :'No persona-authored role is present in the verified profile';
+    :characteristicHeadline
+      ?`Persona-authored ${characteristicHeadline.label.toLowerCase()} from the verified open-vocabulary characteristic profile`
+      :'No persona-authored characteristic description is present yet';
   // HONEST recency tag on the doing line: when did this persona last actually do
   // something (model event / coordination act / cognition / tool use)? So an "active"
   // card reads "3m ago" instead of an unbounded-green claim. Hidden while running-now.
@@ -5685,7 +5724,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PUBLIC WORK LOG</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
     +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==name?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-role-line" title="${esc(identityLineTitle)}"><small>Self-described role</small><strong>${esc(identityLine)}</strong></span></div>`
+    +`<div class="pc-identity"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==name?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +aboutHTML+capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
@@ -6975,9 +7014,87 @@ function _provisionalPresentationRows(events){
     return choices.get(`${callId}\u0000${messageId}`)?.index===index;
   });
 }
+function _workStateTextList(title,items,{tone=''}={}){
+  if(!Array.isArray(items)||!items.length) return '';
+  return `<section class="work-state-list ${esc(tone)}"><h4>${esc(title)}</h4><ul>`
+    +items.map((item)=>`<li>${esc(item)}</li>`).join('')+'</ul></section>';
+}
+function _workStateCollaboration(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||!Object.keys(value).length) return '';
+  const view=structuredContentProjection(value);
+  const generic=new Set(['Structured response','Technical response received']);
+  const headline=generic.has(view.headline)?'Collaboration plan':view.headline;
+  const paragraphs=(view.paragraphs||[]).filter((item)=>item!==headline).slice(0,3);
+  const facts=(view.facts||[]).slice(0,8), items=(view.items||[]).slice(0,8);
+  if(!headline&&!paragraphs.length&&!facts.length&&!items.length) return '';
+  return `<section class="work-state-collaboration"><h4>Working with others</h4>`
+    +(headline?`<p class="work-state-collaboration-lead">${esc(headline)}</p>`:'')
+    +paragraphs.map((item)=>`<p>${esc(item)}</p>`).join('')
+    +(facts.length?`<dl>${facts.map((fact)=>`<div><dt>${esc(fact.label)}</dt><dd>${esc(fact.value)}</dd></div>`).join('')}</dl>`:'')
+    +(items.length?`<ul>${items.map((item)=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')
+    +'</section>';
+}
+function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
+  const state=t?.current_work_state;
+  if(!state||state.schema!=='personaos-persona-work-state-surface/1'){
+    const running=Array.isArray(t?.active_calls)&&t.active_calls.length>0;
+    return `<section class="work-state-card work-state-empty"><div class="work-state-head">`
+      +`<div><span class="work-state-kicker">Public work update</span><strong>${running?'Starting a work step':'No authored work update yet'}</strong></div>`
+      +(running?'<span class="work-state-status is-working"><span class="livedot2"></span>Working</span>':'')
+      +`</div><p>${running
+        ?'The persona is active but has not yet published its first understanding, commitments, and next step.'
+        :'The persona has not published a work-state revision for this task yet.'}</p></section>`;
+  }
+  const stale=state.stale===true||retainedSnapshot;
+  const pending=state.pending_settlement===true;
+  const commitments=Array.isArray(state.active_commitments)?state.active_commitments:[];
+  const authoredReady=state.continuation==='ready';
+  const effectivelyReady=authoredReady&&state.ready===true&&commitments.length===0;
+  const status=pending
+    ?{label:'Reconciling changes',className:'is-waiting'}
+    :stale
+      ?{label:'Last authored update',className:'is-stale'}
+      :effectivelyReady
+        ?{label:'Ready for review',className:'is-ready'}
+        :authoredReady
+          ?{label:'Review requested · open work remains',className:'is-waiting'}
+        :state.continuation==='quiescent'
+          ?{label:'Paused intentionally',className:'is-waiting'}
+          :{label:'In progress',className:'is-working'};
+  const environment=_environmentNameFor(state.environment_id,kernel);
+  const lifecycle=_taskContextForExactReferences(
+    state.task_id,'',state.environment_id,kernel);
+  const task=String(lifecycle?.task||'').trim();
+  const context=[task,environment].filter(Boolean);
+  const contribution=[
+    ['What I’m contributing',state.current_contribution],
+    ['Working on now',state.current_focus],
+    ['Completed in this pass',state.accomplished],
+    ['Next',state.next_intent],
+  ].filter(([,value])=>String(value||'').trim());
+  const transitions=Array.isArray(state.commitment_transitions)?state.commitment_transitions:[];
+  return `<section class="work-state-card ${stale?'is-stale':''}">`
+    +`<div class="work-state-head"><div><span class="work-state-kicker">${stale?'Last public work update':'Current public work state'}</span>`
+    +`<strong>${esc(status.label)}</strong></div><span class="work-state-status ${status.className}">${esc(status.label)}</span></div>`
+    +(context.length?`<div class="work-state-context">${context.map(esc).join('<span aria-hidden="true">·</span>')}</div>`:'')
+    +`<div class="work-state-understanding"><span>How I see the task</span><p>${esc(state.working_understanding)}</p></div>`
+    +(contribution.length?`<div class="work-state-grid">${contribution.map(([label,value])=>
+      `<div class="work-state-item"><span>${esc(label)}</span><p>${esc(value)}</p></div>`).join('')}</div>`:'')
+    +(commitments.length?`<section class="work-state-commitments"><h4>Open commitments <span>${commitments.length}</span></h4>`
+      +commitments.map((commitment)=>`<article><p>${esc(commitment.statement)}</p>`
+        +(commitment.evidence_expectations?.length?`<small>Evidence I intend to provide: ${commitment.evidence_expectations.map(esc).join(' · ')}</small>`:'')
+        +'</article>').join('')+'</section>':'')
+    +`<div class="work-state-secondary">${_workStateTextList('Uncertainties',state.uncertainties,{tone:'is-uncertain'})}`
+    +`${_workStateTextList('Assumptions',state.assumptions)}${_workStateCollaboration(state.collaboration)}</div>`
+    +(transitions.length?`<details class="work-state-transitions"><summary>Commitment changes in this update</summary><ul>`
+      +transitions.map((transition)=>`<li><strong>${esc(humanizeMachineKey(transition.state))}</strong> — ${esc(transition.rationale)}</li>`).join('')
+      +'</ul></details>':'')
+    +`<div class="work-state-verification">${icon('check')} Persona-authored and signature-verified by its current node${stale?' · retained history':''}</div>`
+    +'</section>';
+}
 function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=false}={}){
   let h='';
-  const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+  const publicCognition=t.schema==='personaos-persona-public-cognition/2';
   const activeCalls=t.active_calls||[];
   const recentCalls=publicCognition?(t.recent_calls||[]):[];
   const callsById=new Map([...recentCalls,...activeCalls]
@@ -6995,8 +7112,10 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
     const workspace=lifecycle?_environmentNameFor(lifecycle.environment,kernel):'';
     return [task?`task · ${task}`:'',workspace?`workspace · ${workspace}`:''].filter(Boolean);
   };
+  if(publicCognition) h+=_renderPersonaWorkState(t,{kernel,retainedSnapshot});
+  let technical='';
   if(activeCalls.length){
-    h+=`<div class="l2" style="margin:2px 0 3px">${retainedSnapshot
+    technical+=`<div class="l2" style="margin:2px 0 3px">${retainedSnapshot
       ?'Calls active when this verified snapshot was captured — retained history, not current execution'
       :'Active model calls — verified current snapshot'}</div>`
       +[...activeCalls].reverse().map((call)=>{
@@ -7018,7 +7137,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
       }).join('');
   }
   if(recentCalls.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">Recent model calls — verified finished snapshots</div>`
+    technical+=`<div class="l2" style="margin:6px 0 3px">Recent model calls — verified finished snapshots</div>`
       +[...recentCalls].reverse().map((call)=>{
         const started=Date.parse(String(call.started_at||''));
         const ended=Date.parse(String(call.ended_at||''));
@@ -7040,7 +7159,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
   const provisional=publicCognition?(t.provisional_outputs||[]):[];
   if(provisional.length){
     const visibleProvisional=_provisionalPresentationRows(provisional);
-    h+=`<div class="privacy-note">${retainedSnapshot?'Retained provider-stream snapshot':'Live provider stream'} — kernel-observed and provisional, not persona-signed cognition or hidden reasoning${retainedSnapshot?', and not current execution':''}.</div>`
+    technical+=`<div class="privacy-note">${retainedSnapshot?'Retained provider-stream snapshot':'Live provider stream'} — kernel-observed and provisional, not persona-signed cognition or hidden reasoning${retainedSnapshot?', and not current execution':''}.</div>`
       +visibleProvisional.map((presented,index)=>{ const event=presented.event;
         const call=callsById.get(event.call_id);
         const provenance=_publicProvisionalProvenance(event,call);
@@ -7081,6 +7200,12 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         return `<div class="think"><span class="amber">${esc(String(event.kind||'status').replace(/_/g,' '))}</span> ${esc(event.status||'')}`
           +(subject?` · ${esc(subject)}`:'')+callMeta+`</div>`;
       }).join('');
+  }
+  if(technical){
+    const activeLabel=activeCalls.length?`${activeCalls.length} active`:'';
+    const recentLabel=recentCalls.length?`${recentCalls.length} recent`:'';
+    h+=`<details class="persona-technical-activity"><summary><span>Technical activity</span><small>${esc([activeLabel,recentLabel].filter(Boolean).join(' · '))}</small>${icon('chevron')}</summary>`
+      +`<div class="persona-technical-body">${technical}</div></details>`;
   }
   const out=t.recent_outputs||[];
   if(out.length){
@@ -7177,6 +7302,7 @@ const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
   'active_calls','evolution_timeline','generated_at','identity_fields',
   'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
   'proven_facts','provisional_outputs','recent_calls','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
+  'current_work_state','work_state_history',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
   'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
@@ -7227,6 +7353,26 @@ const PUBLIC_PERSONA_TACTIC_FIELDS=Object.freeze([
 const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
   'accepted','at','kind','mode','task_id',
 ].sort());
+const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
+  'accomplished','action_ref_count','active_commitment_count','active_commitment_ids',
+  'active_commitments','active_membership_current','assumptions','automatic_action',
+  'automatic_provisioning','automatic_recruitment','collaboration','commitment_transitions',
+  'continuation','current','current_contribution','current_focus','effective_situation_hash',
+  'environment_id','evidence_ref_count','frame_id','frame_revision','next_intent',
+  'pending_settlement','persona_id','projection_tier','ready','request_ref_count','schema',
+  'semantic_interpretation_performed','settlement_binding_verified','signature_hex',
+  'signature_verified','signing_key_id','situation_hash','stale','supersedes_frame_ref',
+  'task_id','uncertainties','work_state_content_hash','work_state_id','working_understanding',
+].sort());
+const PUBLIC_PERSONA_WORK_COMMITMENT_FIELDS=Object.freeze([
+  'commitment_id','evidence_expectations','parent_refs','statement',
+].sort());
+const PUBLIC_PERSONA_WORK_TRANSITION_FIELDS=Object.freeze([
+  'commitment_id','evidence_refs','rationale','state',
+].sort());
+const PUBLIC_PERSONA_WORK_TRANSITIONS=new Set([
+  'satisfied','superseded','principal_waived','blocked_external',
+]);
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
@@ -7255,6 +7401,136 @@ function _safePublicCognitionAtom(value,maximum=PUBLIC_PERSONA_COGNITION_LIMITS.
 function _safePublicCognitionInstant(value,{required=true}={}){
   return _safePublicCognitionAtom(value,64,{required})
     &&(!value||(PUBLIC_PERSONA_COGNITION_INSTANT.test(value)&&Number.isFinite(Date.parse(value))));
+}
+function _validPublicWorkDocument(value,depth=0){
+  if(!value||typeof value!=='object'||Array.isArray(value)||depth>6
+      ||Object.keys(value).length>32) return false;
+  for(const [key,item] of Object.entries(value)){
+    if(!_safePublicCognitionText(key,160,{required:true})||key.trim()!==key) return false;
+    if(item===null||typeof item==='boolean'||Number.isSafeInteger(item)) continue;
+    if(typeof item==='number'){
+      if(!Number.isFinite(item)) return false;
+      continue;
+    }
+    if(typeof item==='string'){
+      if(!_safePublicCognitionText(item,4000)) return false;
+      continue;
+    }
+    if(Array.isArray(item)){
+      if(item.length>32) return false;
+      for(const nested of item){
+        if(nested&&typeof nested==='object'&&!Array.isArray(nested)){
+          if(!_validPublicWorkDocument(nested,depth+1)) return false;
+        }else if(Array.isArray(nested)){
+          if(!_validPublicWorkDocument({items:nested},depth+1)) return false;
+        }else if(typeof nested==='string'){
+          if(!_safePublicCognitionText(nested,4000)) return false;
+        }else if(nested!==null&&typeof nested!=='boolean'
+            &&!(typeof nested==='number'&&Number.isFinite(nested))) return false;
+      }
+      continue;
+    }
+    if(!_validPublicWorkDocument(item,depth+1)) return false;
+  }
+  try{ return enc.encode(canon(value)).length<=16000; }catch(_){ return false; }
+}
+function _validPublicWorkRef(value,maximum=500){
+  return _safePublicCognitionText(value,maximum,{required:true})&&value.trim()===value;
+}
+function _validPublicWorkCommitment(value){
+  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_COMMITMENT_FIELDS)
+    &&_validPublicWorkRef(value.commitment_id)
+    &&_safePublicCognitionText(value.statement,4000,{required:true})
+    &&Array.isArray(value.parent_refs)&&value.parent_refs.length<=32
+    &&value.parent_refs.every((item)=>_validPublicWorkRef(item))
+    &&Array.isArray(value.evidence_expectations)&&value.evidence_expectations.length<=32
+    &&value.evidence_expectations.every((item)=>_safePublicCognitionText(item,2000,{required:true}));
+}
+function _validPublicWorkTransition(value){
+  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_TRANSITION_FIELDS)
+    &&_validPublicWorkRef(value.commitment_id)
+    &&PUBLIC_PERSONA_WORK_TRANSITIONS.has(value.state)
+    &&_safePublicCognitionText(value.rationale,4000,{required:true})
+    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length<=32
+    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item))
+    &&(value.state!=='satisfied'||value.evidence_refs.length>0)
+    &&(value.state!=='principal_waived'
+      ||value.evidence_refs.some((item)=>item.startsWith('principal:')));
+}
+function _validPublicPersonaWorkState(value,identity){
+  if(!value||typeof value!=='object'||Array.isArray(value)) return false;
+  const fields=Object.keys(value).sort();
+  const exactBase=fields.join('\u0000')===PUBLIC_PERSONA_WORK_STATE_FIELDS.join('\u0000');
+  const withSettlement=fields.join('\u0000')
+    ===[...PUBLIC_PERSONA_WORK_STATE_FIELDS,'settlement_binding_id'].sort().join('\u0000');
+  if((!exactBase&&!withSettlement)
+      ||value.schema!=='personaos-persona-work-state-surface/1'
+      ||value.projection_tier!=='public'
+      ||String(value.persona_id||'')!==identity.signedId
+      ||!_safePublicCognitionAtom(value.environment_id,512,{required:true})
+      ||!_safePublicCognitionAtom(value.task_id,512,{required:true})
+      ||!_safePublicCognitionAtom(value.work_state_id,512,{required:true})
+      ||!_validPublicWorkRef(value.frame_id)
+      ||!Number.isSafeInteger(value.frame_revision)||value.frame_revision<1
+      ||!_validPublicWorkRef(value.supersedes_frame_ref||'',500)&&value.supersedes_frame_ref!==''
+      ||!SHA256_CONTENT_RE.test(String(value.situation_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(value.effective_situation_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(value.work_state_content_hash||''))
+      ||!_safePublicCognitionAtom(value.signing_key_id,512,{required:true})
+      ||!/^[0-9a-f]{128}$/i.test(String(value.signature_hex||''))
+      ||!['continue','quiescent','ready'].includes(value.continuation)
+      ||typeof value.current!=='boolean'||typeof value.stale!=='boolean'
+      ||value.current===value.stale
+      ||typeof value.pending_settlement!=='boolean'
+      ||typeof value.settlement_binding_verified!=='boolean'
+      ||typeof value.active_membership_current!=='boolean'
+      ||value.signature_verified!==true
+      ||value.automatic_recruitment!==false||value.automatic_provisioning!==false
+      ||value.automatic_action!==false||value.semantic_interpretation_performed!==false
+      ||typeof value.ready!=='boolean'
+      ||!Number.isSafeInteger(value.active_commitment_count)
+      ||value.active_commitment_count<0||value.active_commitment_count>64
+      ||!Array.isArray(value.active_commitment_ids)
+      ||!Array.isArray(value.active_commitments)
+      ||value.active_commitment_ids.length!==value.active_commitment_count
+      ||value.active_commitments.length!==value.active_commitment_count
+      ||!_safePublicCognitionText(value.working_understanding,8000,{required:true})
+      ||!_safePublicCognitionText(value.current_contribution,4000,{required:true})
+      ||!_safePublicCognitionText(value.current_focus,4000,{required:true})
+      ||!_safePublicCognitionText(value.accomplished,4000)
+      ||!_safePublicCognitionText(value.next_intent,4000,{required:true})
+      ||!Array.isArray(value.assumptions)||value.assumptions.length>32
+      ||!value.assumptions.every((item)=>_safePublicCognitionText(item,2000,{required:true}))
+      ||!Array.isArray(value.uncertainties)||value.uncertainties.length>32
+      ||!value.uncertainties.every((item)=>_safePublicCognitionText(item,2000,{required:true}))
+      ||!_validPublicWorkDocument(value.collaboration)
+      ||!Array.isArray(value.commitment_transitions)||value.commitment_transitions.length>64
+      ||!value.commitment_transitions.every(_validPublicWorkTransition)
+      ||!Number.isSafeInteger(value.evidence_ref_count)||value.evidence_ref_count<0||value.evidence_ref_count>32
+      ||!Number.isSafeInteger(value.action_ref_count)||value.action_ref_count<0||value.action_ref_count>32
+      ||!Number.isSafeInteger(value.request_ref_count)||value.request_ref_count<0||value.request_ref_count>32
+      ||(withSettlement&&!_safePublicCognitionAtom(value.settlement_binding_id,512,{required:true}))) return false;
+  const ids=value.active_commitment_ids;
+  if(new Set(ids).size!==ids.length
+      ||!ids.every((item)=>_validPublicWorkRef(item))) return false;
+  const commitments=value.active_commitments;
+  if(!commitments.every(_validPublicWorkCommitment)
+      ||commitments.some((item,index)=>item.commitment_id!==ids[index])) return false;
+  return value.ready===(value.continuation==='ready'
+    &&value.active_commitment_count===0&&value.uncertainties.length===0);
+}
+function _validPublicPersonaWorkStateHistory(doc,identity){
+  const history=doc.work_state_history;
+  if(!Array.isArray(history)||history.length>12
+      ||history.some((state)=>!_validPublicPersonaWorkState(state,identity))) return false;
+  const ids=history.map((state)=>state.work_state_id);
+  if(new Set(ids).size!==ids.length) return false;
+  if(!history.length) return doc.current_work_state
+    &&typeof doc.current_work_state==='object'&&!Array.isArray(doc.current_work_state)
+    &&Object.keys(doc.current_work_state).length===0;
+  const currentRows=history.filter((state)=>state.current===true);
+  const expected=currentRows.length?currentRows[currentRows.length-1]:history[history.length-1];
+  return canon(doc.current_work_state)===canon(expected);
 }
 async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
   if(!event||typeof event!=='object'||Array.isArray(event)
@@ -7577,7 +7853,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
   const identity=signedPersonaIdentity(row);
   if(!row||!identity||identity.canonicalId!==pid
       ||!_exactObjectFields(doc,PUBLIC_PERSONA_COGNITION_FIELDS)
-      ||doc.schema!=='personaos-persona-public-cognition/1'||doc.tier!=='public'
+      ||doc.schema!=='personaos-persona-public-cognition/2'||doc.tier!=='public'
       ||String(doc.persona_id||'')!==identity.signedId||!_safePublicCognitionInstant(doc.generated_at)
       ||!_freshPublicGeneratedAt(doc.generated_at)
       ||!_safePublicCognitionAtom(doc.persona_id,512,{required:true})
@@ -7588,6 +7864,9 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!Array.isArray(doc.recent_calls)
       ||!Array.isArray(doc.provisional_outputs)
       ||!Array.isArray(doc.recent_outputs)
+      ||!doc.current_work_state||typeof doc.current_work_state!=='object'
+      ||Array.isArray(doc.current_work_state)
+      ||!Array.isArray(doc.work_state_history)
       ||!Array.isArray(doc.lessons)
       ||!Array.isArray(doc.tactics)
       ||!Array.isArray(doc.proven_facts)
@@ -7611,6 +7890,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
     if(!_exactObjectFields(value,['persona_authored','state'])
         ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
   }
+  if(!_validPublicPersonaWorkStateHistory(doc,identity)) return false;
   const callIds=new Set(), callsById=new Map(), flattenedProvisional=[];
   for(const call of [...doc.recent_calls,...doc.active_calls]){
     const recent=call?.status==='finished';
@@ -7684,7 +7964,7 @@ async function refreshThinking(){
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
-    &&t?.schema==='personaos-persona-thinking/1'&&String(t.persona_id||'')===want;
+    &&t?.schema==='personaos-persona-thinking/2'&&String(t.persona_id||'')===want;
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
@@ -8044,12 +8324,12 @@ async function streamPersonaCognition(options={}){
           verifiedDirectFallback:true,
         });
         const accepted=hasOperator
-          ?r?.schema==='personaos-persona-thinking/1'&&r.tier==='operator'
+          ?r?.schema==='personaos-persona-thinking/2'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
           :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
         if(accepted){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
-          if(r?.schema==='personaos-persona-public-cognition/1'){
+          if(r?.schema==='personaos-persona-public-cognition/2'){
             S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
             while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
               S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
@@ -8057,7 +8337,7 @@ async function streamPersonaCognition(options={}){
           break; }
       }
       if(!t) continue;
-      const publicCognition=t.schema==='personaos-persona-public-cognition/1';
+      const publicCognition=t.schema==='personaos-persona-public-cognition/2';
       if(publicCognition){
         cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
           {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
@@ -8200,8 +8480,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const displayName=drawerNameRole.name;
   const explicitRole=identityVerified
     ?r._personaAuthoredRole||_ROLE_NOT_DECLARED:_ROLE_NOT_DECLARED;
-  const role=explicitRole!==_ROLE_NOT_DECLARED?explicitRole
-    :(identityVerified&&drawerNameRole.embeddedRole?drawerNameRole.embeddedRole:_ROLE_NOT_DECLARED);
+  const role=explicitRole;
   const state=lifecycle?.lifecycleState||(identityVerified?ps.lifecycle_state:'observed');
   const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
   // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
@@ -8209,6 +8488,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const personaIdentity=String(pid||r.did||'');
   const drawerCharacteristics=identityVerified&&r._personaCharacteristics
     ?r._personaCharacteristics:null;
+  const drawerHeadline=_personaCharacteristicHeadline(drawerCharacteristics,displayName);
   const availability=String(state||'').toUpperCase()==='ACTIVE'?'Available'
     :_sentenceStart(String(state||'observed').replace(/_/g,' '));
   const identityDetails=(lifecycle?kv('Profile creation',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
@@ -8227,10 +8507,10 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
       ?`<div class="viewerr">${icon('warn','ico-sm')} This public persona profile is still being verified. Name, self-description and portrait stay hidden until that finishes.</div>`:'')
     +kv('Availability',`<span class="${availability==='Available'?'ok':''}">${esc(availability)}</span>`)
     +(role!==_ROLE_NOT_DECLARED?kv('Role',`<span class="cap">${esc(role)}</span>`):'')
+    +(role===_ROLE_NOT_DECLARED&&drawerHeadline
+      ?kv(drawerHeadline.label,`<span class="cap">${esc(drawerHeadline.value)}</span>`):'')
     +(drawerCharacteristics?H(`About ${displayName}`)
-      +`<div class="persona-about-view"><p>${esc(drawerCharacteristics.identity_statement)}</p>`
-      +`<div><b>How I work</b><span>${esc(drawerCharacteristics.working_style)}</span></div>`
-      +`<small>${esc(drawerCharacteristics.public_tone)}</small></div>`:'')
+      +_personaCharacteristicsHTML(drawerCharacteristics,{name:displayName,limit:12}):'')
     +(identityVerified?kv('Archetype',S0(ps.archetype)):'')
     +(identityVerified?kv('Disposition',S0(ps.primary_disposition)):'')
     +(identityVerified&&ps.born_specialist?kv('Origin','<span class="amber">Born as a specialist for this work</span>'):'')
@@ -9499,7 +9779,7 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
         ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed continuation parent</span>')
       +kv('Amended',lifecycle.amendedFrom
         ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed amendment parent</span>');
-    for(const [label,value] of [['Pressure',lifecycle.pressure],['Review',lifecycle.review],['Block',lifecycle.block]]){
+    for(const [label,value] of [['Open operational context',lifecycle.pressure],['Review history',lifecycle.review],['Blocking conditions',lifecycle.block]]){
       if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
       html+=H(label)+structuredContentHTML(value,{label:`Exact ${label.toLowerCase()} JSON`});
     }
@@ -9898,17 +10178,6 @@ async function operatorNodeView(b){
   return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
 }
 
-function _runRuntimeSurfaces(st){
-  const rs=st?.run_state||{}; const durable=st?.durable_run_state||{}; const dh=st?.design_history||{};
-  const candidates=[rs?.runtime,durable?.runtime,dh?.runtime,rs,durable,dh].filter((x)=>x&&typeof x==='object');
-  const take=(...names)=>{ for(const obj of candidates) for(const name of names){
-    if(obj[name]!==undefined&&obj[name]!==null&&obj[name]!=='') return obj[name]; } return null; };
-  const pressure=take('pressure_open','runtime_pressure_open','active_pressure');
-  const review=take('review_eligibility','review_eligible','eligible_for_review','artifact_review_eligibility');
-  const activePressure=take('active_pressure_appraisals','active_pressure_count');
-  return {pressure,review,activePressure};
-}
-
 async function operatorRunView(b,run){
   S.curBase=b;
   const trackKey=_liveRunKey(b,run); S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
@@ -9972,14 +10241,6 @@ async function operatorRunView(b,run){
   else html+=terminal
     ?`<div class="l2">The signature-checked ${finalizedBootstrap?'finalized snapshot':'run-ended event'} cleared active execution; no model call remains active.</div>`
     :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
-  const runtime=terminal?{pressure:null,review:null,activePressure:null}:_runRuntimeSurfaces(st);
-  const inPressure=liveCalls.some((call)=>/pressure/.test(String(call.requested_purpose||'')));
-  const inReview=liveCalls.some((call)=>/review/.test(String(call.requested_purpose||'')));
-  html+=kv('Pressure',runtime.pressure||runtime.activePressure||inPressure
-      ?`<span class="amber">${inPressure?'appraisal in progress':'open / recorded'}</span>`
-      :'<span class="l2">none exposed</span>')
-    +kv('Review eligibility',runtime.review!==null?esc(typeof runtime.review==='object'?JSON.stringify(runtime.review):runtime.review)
-      :(inReview?'<span class="amber">review in progress</span>':'<span class="l2">not exposed</span>'));
   html+=H('Live workspace files')
     +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   // GAP #3: surface the ContinuousRefinementMission trajectory from the served
@@ -10154,9 +10415,9 @@ function missionCardList(){
     const projected=lifecycle||published;
     const run=projected.run||runOf(r)||'';
     const lifecycleSurfaces=lifecycle?[
-      Object.keys(lifecycle.pressure||{}).length?'pressure':'',
-      Object.keys(lifecycle.review||{}).length?'review':'',
-      Object.keys(lifecycle.block||{}).length?'block':'',
+      Object.keys(lifecycle.pressure||{}).length?'open operational context':'',
+      Object.keys(lifecycle.review||{}).length?'review history':'',
+      Object.keys(lifecycle.block||{}).length?'blocking conditions':'',
     ].filter(Boolean):[];
     const lineageMeta=lifecycle?[
       lifecycle.resumedFrom?'resumed from earlier work':'',

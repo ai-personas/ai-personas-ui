@@ -20,6 +20,7 @@ const PATH_MEDIA_TYPES = Object.freeze({
   tif:'image/tiff',
   tiff:'image/tiff',
   dxf:'image/vnd.dxf',
+  scad:'model/openscad',
   obj:'model/obj',
   stl:'model/stl',
   step:'model/step',
@@ -145,6 +146,7 @@ export function selectDeclaredArtifactRenderer(mediaKind) {
   else if(['model/step','application/step','application/x-step','model/ifc',
     'application/x-ifc','model/obj','model/stl','model/ply','model/gltf+json',
     'model/gltf-binary'].includes(mediaType)) id='cad3d';
+  else if(['model/openscad','application/x-openscad'].includes(mediaType)) id='code';
   else if(mediaType==='text/markdown') id='markdown';
   else if(mediaType==='text/csv'||mediaType==='text/tab-separated-values') id='csv';
   else if(mediaType.startsWith('image/')) id='image';
@@ -317,6 +319,7 @@ export function artifactTypeLabel(mediaKind) {
     'image/vnd.dxf':'DXF drawing','image/x-dxf':'DXF drawing','application/dxf':'DXF drawing',
     'application/x-dxf':'DXF drawing','model/step':'STEP CAD model','application/step':'STEP CAD model',
     'application/x-step':'STEP CAD model','model/ifc':'IFC building model','application/x-ifc':'IFC building model',
+    'model/openscad':'OpenSCAD parametric model source','application/x-openscad':'OpenSCAD parametric model source',
     'model/obj':'OBJ 3D model','model/stl':'STL 3D model','model/ply':'PLY 3D model',
     'model/gltf+json':'glTF 3D model','model/gltf-binary':'GLB 3D model',
   };
