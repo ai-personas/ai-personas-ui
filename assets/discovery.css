@@ -987,11 +987,13 @@ code{background:var(--surface-inset);border:1px solid var(--line);border-radius:
 .work-state-commitments h4 span{display:inline-flex;min-width:19px;justify-content:center;margin-left:4px;padding:1px 5px;border-radius:var(--radius-pill);background:var(--amber-weak);color:var(--amber);font-size:10px}
 .work-state-commitments article{padding:8px 10px;border-left:2px solid var(--amber);background:var(--surface-inset)}
 .work-state-commitments article+article{margin-top:4px}.work-state-commitments small{display:block;margin-top:5px;color:var(--mut);line-height:1.4}
+.work-state-capability-gaps article{border-left-color:var(--int)}
 .work-state-secondary{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;margin-top:8px}
 .work-state-list,.work-state-collaboration{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-inset)}
 .work-state-list.is-uncertain{border-color:var(--amber-border);background:var(--amber-weak)}
 .work-state-list ul,.work-state-collaboration ul,.work-state-transitions ul{margin:0;padding-left:18px;color:var(--ink)}
 .work-state-list li,.work-state-collaboration li,.work-state-transitions li{margin:3px 0;line-height:1.4}
+.work-state-list li small{display:block;margin-top:3px;color:var(--mut);line-height:1.4}
 .work-state-collaboration-lead{color:var(--bright)!important;font-weight:var(--w-semi)}
 .work-state-collaboration p+p{margin-top:5px}.work-state-collaboration dl{display:grid;gap:4px;margin:7px 0 0}
 .work-state-collaboration dl>div{display:grid;grid-template-columns:minmax(90px,.4fr) minmax(0,1fr);gap:8px;padding-top:4px;border-top:1px solid var(--line)}

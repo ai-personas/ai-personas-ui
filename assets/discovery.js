@@ -74,7 +74,7 @@ import {
   isTechnicalKey,
   operatorResponseText,
   structuredContentProjection,
-} from './human-content.mjs?v=20260728-open-characteristics-v5';
+} from './human-content.mjs?v=20260728-agency-v3';
 import {
   expiredProviderKernels,
   reconcileResolverDirectory,
@@ -4895,7 +4895,7 @@ const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judg
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','ENV_MEMBER_RE_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
-  'coordination_update','GOAL_PROGRESS_REPORTED','TASK_PROGRESS_REPORTED',
+  'coordination_update','GOAL_PROGRESS_REPORTED',
   'PERSONA_COMMUNICATION_INTENT_RECORDED',
   'PERSONA_COMMUNICATION_ROUTE_OBSERVED',
   'PERSONA_COMMUNICATION_AUTHORED','PERSONA_INVITATION_AUTHORED','PERSONA_INVITATION_RESPONSE_AUTHORED',
@@ -4934,7 +4934,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
   COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',ENV_MEMBER_RE_ADMITTED:'re-admitted member',BLACKBOARD_POST:'posted to blackboard',
-  GOAL_PROGRESS_REPORTED:'reported progress',TASK_PROGRESS_REPORTED:'reported progress',
+  GOAL_PROGRESS_REPORTED:'reported progress',
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
   PERSONA_COMMUNICATION_ROUTE_OBSERVED:'observed communication route',
   PERSONA_COMMUNICATION_AUTHORED:'authored message',PERSONA_INVITATION_AUTHORED:'invited persona',
@@ -7707,9 +7707,27 @@ function _workStateCollaboration(value){
     +(items.length?`<ul>${items.map((item)=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')
     +'</section>';
 }
+function _workStateCapabilityGaps(items){
+  if(!Array.isArray(items)||!items.length) return '';
+  return `<section class="work-state-commitments work-state-capability-gaps"><h4>Capability gaps <span>${items.length}</span></h4>`
+    +items.map((gap)=>`<article><p>${esc(gap.statement)}</p><small>${gap.state==='blocked_external'
+      ?'Waiting on evidence or access outside this workspace'
+      :'The persona considers this actionable and must continue or hand it off'}</small></article>`).join('')
+    +'</section>';
+}
+function _workStateUncertainties(items){
+  if(!Array.isArray(items)||!items.length) return '';
+  const section=(title,rows,tone='')=>rows.length
+    ?`<section class="work-state-list ${esc(tone)}"><h4>${esc(title)}</h4><ul>`
+      +rows.map((item)=>`<li><strong>${esc(item.statement)}</strong>`
+        +`<small>${esc(item.rationale)}</small></li>`).join('')+'</ul></section>'
+    :'';
+  return section('Open questions',items.filter((item)=>item.disposition==='open'),'is-uncertain')
+    +section('Accepted working assumptions',items.filter((item)=>item.disposition==='accepted_assumption'));
+}
 function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const state=t?.current_work_state;
-  if(!state||state.schema!=='personaos-persona-work-state-surface/1'){
+  if(!state||state.schema!=='personaos-persona-work-state-surface/2'){
     const running=Array.isArray(t?.active_calls)&&t.active_calls.length>0;
     return `<section class="work-state-card work-state-empty"><div class="work-state-head">`
       +`<div><span class="work-state-kicker">Public work update</span><strong>${running?'Starting a work step':'No authored work update yet'}</strong></div>`
@@ -7721,8 +7739,14 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const stale=state.stale===true||retainedSnapshot;
   const pending=state.pending_settlement===true;
   const commitments=Array.isArray(state.active_commitments)?state.active_commitments:[];
+  const activeUncertainties=Array.isArray(state.active_uncertainties)?state.active_uncertainties:[];
+  const capabilityGaps=Array.isArray(state.active_capability_gaps)?state.active_capability_gaps:[];
+  const agencyState=state.agency_reconciliation_state&&typeof state.agency_reconciliation_state==='object'
+    ?state.agency_reconciliation_state:{};
   const authoredReady=state.continuation==='ready';
-  const effectivelyReady=authoredReady&&state.ready===true&&commitments.length===0;
+  const effectivelyReady=authoredReady&&state.ready===true&&commitments.length===0
+    &&activeUncertainties.length===0&&capabilityGaps.length===0
+    &&state.agency_reconciliation_valid===true;
   const status=pending
     ?{label:'Reconciling changes',className:'is-waiting'}
     :stale
@@ -7732,7 +7756,11 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
         :authoredReady
           ?{label:'Review requested · open work remains',className:'is-waiting'}
         :state.continuation==='quiescent'
-          ?{label:'Paused intentionally',className:'is-waiting'}
+          ?agencyState.external_blocker_present===true
+            ?{label:'Waiting on external evidence',className:'is-waiting'}
+            :state.agency_reconciliation_valid!==true
+              ?{label:'Open work · no verified continuation',className:'is-waiting'}
+              :{label:'Paused intentionally',className:'is-waiting'}
           :{label:'In progress',className:'is-working'};
   const environment=_environmentNameFor(state.environment_id,kernel);
   const lifecycle=_taskContextForExactReferences(
@@ -7757,7 +7785,8 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
       +commitments.map((commitment)=>`<article><p>${esc(commitment.statement)}</p>`
         +(commitment.evidence_expectations?.length?`<small>Evidence I intend to provide: ${commitment.evidence_expectations.map(esc).join(' · ')}</small>`:'')
         +'</article>').join('')+'</section>':'')
-    +`<div class="work-state-secondary">${_workStateTextList('Uncertainties',state.uncertainties,{tone:'is-uncertain'})}`
+    +_workStateCapabilityGaps(capabilityGaps)
+    +`<div class="work-state-secondary">${_workStateUncertainties(state.uncertainties)}`
     +`${_workStateTextList('Assumptions',state.assumptions)}${_workStateCollaboration(state.collaboration)}</div>`
     +(transitions.length?`<details class="work-state-transitions"><summary>Commitment changes in this update</summary><ul>`
       +transitions.map((transition)=>`<li><strong>${esc(humanizeMachineKey(transition.state))}</strong> — ${esc(transition.rationale)}</li>`).join('')
@@ -8028,10 +8057,14 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
   'accomplished','action_ref_count','active_commitment_count','active_commitment_ids',
-  'active_commitments','active_membership_current','assumptions','automatic_action',
-  'automatic_provisioning','automatic_recruitment','collaboration','commitment_transitions',
+  'active_commitments','active_capability_gap_count','active_capability_gap_ids',
+  'active_capability_gaps','active_membership_current','active_uncertainties',
+  'active_uncertainty_count','active_uncertainty_ids','agency_reconciliation_state',
+  'agency_reconciliation_valid','assumptions','automatic_action',
+  'automatic_provisioning','automatic_recruitment','closed_commitment_ids','collaboration',
+  'commitment_transitions',
   'continuation','current','current_contribution','current_focus','effective_situation_hash',
-  'environment_id','evidence_ref_count','frame_id','frame_revision','next_intent',
+  'environment_id','evidence_ref_count','frame_id','frame_revision','known_commitment_ids','next_intent',
   'pending_settlement','persona_id','projection_tier','ready','request_ref_count','schema',
   'semantic_interpretation_performed','settlement_binding_verified','signature_hex',
   'signature_verified','signing_key_id','situation_hash','stale','supersedes_frame_ref',
@@ -8046,6 +8079,17 @@ const PUBLIC_PERSONA_WORK_TRANSITION_FIELDS=Object.freeze([
 const PUBLIC_PERSONA_WORK_TRANSITIONS=new Set([
   'satisfied','superseded','principal_waived','blocked_external',
 ]);
+const PUBLIC_PERSONA_WORK_UNCERTAINTY_FIELDS=Object.freeze([
+  'disposition','evidence_refs','rationale','statement','uncertainty_id',
+].sort());
+const PUBLIC_PERSONA_WORK_UNCERTAINTY_DISPOSITIONS=new Set(['open','accepted_assumption']);
+const PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS=Object.freeze([
+  'evidence_refs','gap_id','introduced_by_work_state_id','state','statement',
+].sort());
+const PUBLIC_PERSONA_BLOCKED_CAPABILITY_GAP_FIELDS=Object.freeze([
+  ...PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS,'last_transition',
+].sort());
+const PUBLIC_PERSONA_CAPABILITY_GAP_STATES=new Set(['actionable','blocked_external']);
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
@@ -8130,6 +8174,30 @@ function _validPublicWorkTransition(value){
     &&(value.state!=='principal_waived'
       ||value.evidence_refs.some((item)=>item.startsWith('principal:')));
 }
+function _validPublicWorkUncertainty(value){
+  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_UNCERTAINTY_FIELDS)
+    &&_validPublicWorkRef(value.uncertainty_id)
+    &&_safePublicCognitionText(value.statement,2000,{required:true})
+    &&PUBLIC_PERSONA_WORK_UNCERTAINTY_DISPOSITIONS.has(value.disposition)
+    &&_safePublicCognitionText(value.rationale,4000,{required:true})
+    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length<=32
+    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item));
+}
+function _validPublicCapabilityGap(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)) return false;
+  const fields=Object.keys(value).sort().join('\u0000');
+  const base=fields===PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS.join('\u0000');
+  const blocked=fields===PUBLIC_PERSONA_BLOCKED_CAPABILITY_GAP_FIELDS.join('\u0000');
+  return (base||blocked)
+    &&_validPublicWorkRef(value.gap_id)
+    &&_safePublicCognitionText(value.statement,4000,{required:true})
+    &&PUBLIC_PERSONA_CAPABILITY_GAP_STATES.has(value.state)
+    &&_validPublicWorkRef(value.introduced_by_work_state_id)
+    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length>0
+    &&value.evidence_refs.length<=32
+    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item))
+    &&(!blocked||_validPublicWorkDocument(value.last_transition));
+}
 function _validPublicPersonaWorkState(value,identity){
   if(!value||typeof value!=='object'||Array.isArray(value)) return false;
   const fields=Object.keys(value).sort();
@@ -8137,7 +8205,7 @@ function _validPublicPersonaWorkState(value,identity){
   const withSettlement=fields.join('\u0000')
     ===[...PUBLIC_PERSONA_WORK_STATE_FIELDS,'settlement_binding_id'].sort().join('\u0000');
   if((!exactBase&&!withSettlement)
-      ||value.schema!=='personaos-persona-work-state-surface/1'
+      ||value.schema!=='personaos-persona-work-state-surface/2'
       ||value.projection_tier!=='public'
       ||String(value.persona_id||'')!==identity.signedId
       ||!_safePublicCognitionAtom(value.environment_id,512,{required:true})
@@ -8167,6 +8235,20 @@ function _validPublicPersonaWorkState(value,identity){
       ||!Array.isArray(value.active_commitments)
       ||value.active_commitment_ids.length!==value.active_commitment_count
       ||value.active_commitments.length!==value.active_commitment_count
+      ||!Number.isSafeInteger(value.active_uncertainty_count)
+      ||value.active_uncertainty_count<0||value.active_uncertainty_count>32
+      ||!Array.isArray(value.active_uncertainty_ids)
+      ||!Array.isArray(value.active_uncertainties)
+      ||value.active_uncertainty_ids.length!==value.active_uncertainty_count
+      ||value.active_uncertainties.length!==value.active_uncertainty_count
+      ||typeof value.agency_reconciliation_valid!=='boolean'
+      ||!_validPublicWorkDocument(value.agency_reconciliation_state)
+      ||!Number.isSafeInteger(value.active_capability_gap_count)
+      ||value.active_capability_gap_count<0||value.active_capability_gap_count>32
+      ||!Array.isArray(value.active_capability_gap_ids)
+      ||!Array.isArray(value.active_capability_gaps)
+      ||value.active_capability_gap_ids.length!==value.active_capability_gap_count
+      ||value.active_capability_gaps.length!==value.active_capability_gap_count
       ||!_safePublicCognitionText(value.working_understanding,8000,{required:true})
       ||!_safePublicCognitionText(value.current_contribution,4000,{required:true})
       ||!_safePublicCognitionText(value.current_focus,4000,{required:true})
@@ -8175,7 +8257,7 @@ function _validPublicPersonaWorkState(value,identity){
       ||!Array.isArray(value.assumptions)||value.assumptions.length>32
       ||!value.assumptions.every((item)=>_safePublicCognitionText(item,2000,{required:true}))
       ||!Array.isArray(value.uncertainties)||value.uncertainties.length>32
-      ||!value.uncertainties.every((item)=>_safePublicCognitionText(item,2000,{required:true}))
+      ||!value.uncertainties.every(_validPublicWorkUncertainty)
       ||!_validPublicWorkDocument(value.collaboration)
       ||!Array.isArray(value.commitment_transitions)||value.commitment_transitions.length>64
       ||!value.commitment_transitions.every(_validPublicWorkTransition)
@@ -8189,8 +8271,31 @@ function _validPublicPersonaWorkState(value,identity){
   const commitments=value.active_commitments;
   if(!commitments.every(_validPublicWorkCommitment)
       ||commitments.some((item,index)=>item.commitment_id!==ids[index])) return false;
+  if(!Array.isArray(value.closed_commitment_ids)||value.closed_commitment_ids.length>64
+      ||!Array.isArray(value.known_commitment_ids)||value.known_commitment_ids.length>128
+      ||new Set(value.closed_commitment_ids).size!==value.closed_commitment_ids.length
+      ||new Set(value.known_commitment_ids).size!==value.known_commitment_ids.length
+      ||!value.closed_commitment_ids.every((item)=>_validPublicWorkRef(item))
+      ||!value.known_commitment_ids.every((item)=>_validPublicWorkRef(item))) return false;
+  const uncertaintyIds=value.uncertainties.map((item)=>item.uncertainty_id);
+  const openUncertainties=value.uncertainties.filter((item)=>item.disposition==='open');
+  const activeUncertaintyIds=value.active_uncertainty_ids;
+  if(new Set(uncertaintyIds).size!==uncertaintyIds.length
+      ||new Set(activeUncertaintyIds).size!==activeUncertaintyIds.length
+      ||openUncertainties.length!==value.active_uncertainties.length
+      ||!activeUncertaintyIds.every((item)=>_validPublicWorkRef(item))
+      ||!value.active_uncertainties.every(_validPublicWorkUncertainty)
+      ||value.active_uncertainties.some((item)=>item.disposition!=='open')
+      ||openUncertainties.some((item,index)=>canon(item)!==canon(value.active_uncertainties[index]))
+      ||activeUncertaintyIds.some((item,index)=>item!==value.active_uncertainties[index].uncertainty_id)) return false;
+  const gapIds=value.active_capability_gap_ids, gaps=value.active_capability_gaps;
+  if(new Set(gapIds).size!==gapIds.length
+      ||!gapIds.every((item)=>_validPublicWorkRef(item))
+      ||!gaps.every(_validPublicCapabilityGap)
+      ||gaps.some((item,index)=>item.gap_id!==gapIds[index])) return false;
   return value.ready===(value.continuation==='ready'
-    &&value.active_commitment_count===0&&value.uncertainties.length===0);
+    &&value.active_commitment_count===0&&value.active_uncertainty_count===0
+    &&value.active_capability_gap_count===0&&value.agency_reconciliation_valid===true);
 }
 function _validPublicPersonaWorkStateHistory(doc,identity){
   const history=doc.work_state_history;
