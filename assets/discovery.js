@@ -208,6 +208,15 @@ function normalizedHttpsBase(value){
     return url.toString().replace(/\/$/,'');
   }catch(_){ return ''; }
 }
+function normalizedHttpBase(value){
+  const raw=String(value||'').replace(/\/$/,'');
+  try{
+    const url=new URL(raw);
+    if(!['http:','https:'].includes(url.protocol)||url.username||url.password
+        ||url.search||url.hash||url.pathname!=='/') return '';
+    return url.toString().replace(/\/$/,'');
+  }catch(_){ return ''; }
+}
 /* ---------- node authority (A5-01/A5-08: explicit node policy, never network position) ----------
    Public reachability may grant bearer-equivalent read/control authority. Every other mode
    retains the process bearer boundary. The browser learns that distinction only from the
@@ -426,6 +435,20 @@ async function fetchJson(u,init={}){
   // transport timeout twice before the next live refresh.
   return peerRouted?null:fetchP2PJson(u,init);
 }
+const bootstrapFetchJobs=new Map();
+function fetchDiscoveryBootstrap(base,{signal=null,maxBytes=256*1024}={}){
+  const url=join(base,'.well-known/personaos-discovery.json');
+  const key=opBaseKey(base||location.origin);
+  let job=bootstrapFetchJobs.get(key);
+  if(!job){
+    const transportSignal=AbortSignal.timeout(8000);
+    job=fetchJson(url,{signal:transportSignal,maxBytes}).finally(()=>{
+      if(bootstrapFetchJobs.get(key)===job) bootstrapFetchJobs.delete(key);
+    });
+    bootstrapFetchJobs.set(key,job);
+  }
+  return settleBeforeAbort(job,signal,null);
+}
 const responsivePublicJsonJobs=new Map();
 async function fetchResponsivePublicJson(u,init={}){
   if(tokenFor(u)) return fetchJson(u,init);
@@ -498,6 +521,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   providerKeyRefreshAt:new Map(), telemetryKeyRefreshAt:new Map(),
   providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
+  cachedIdentityPendingKernels:new Set(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   providerRouteReconciliations:new Map(),
   verifiedGossipJobs:new Map(),verifiedGossipQueue:[],verifiedGossipActive:0,
@@ -1218,6 +1242,10 @@ async function loadPortalP2PBootstrapHints({dial=false}={}){
   // it can only help the browser reach public peers. It cannot admit a node, persona,
   // telemetry frame or artifact; those still traverse the current-master,
   // signature, inventory and body-hash verification paths below.
+  // Node-served shells already receive signed reachability/bootstrap hints from
+  // their node bootstrap. The repository-level commons exists only on the
+  // hosted portal; do not issue a guaranteed root-file 404 on every local load.
+  if(location.hostname!=='ai-personas.github.io') return [];
   const hints=await fetchJson(PORTAL_P2P_HINTS_URL,{
     signal:AbortSignal.timeout(3000),maxBytes:PORTAL_P2P_HINTS_MAX_BYTES});
   const libp2p=Array.isArray(hints)?hints:hints?.libp2p;
@@ -1263,6 +1291,7 @@ function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
     kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
   return keys;
 }
+const keyRegistryFetchJobs=new Map();
 async function keysFor(base,boot,{refresh=false,signal=null,expectedMaster=''}={}){
   const key=base||'@origin';
   const cached=S.keyDocs.get(key);
@@ -1271,8 +1300,16 @@ async function keysFor(base,boot,{refresh=false,signal=null,expectedMaster=''}={
       &&(!boot?.kernel_id||cached.kernelId===boot.kernel_id)
       &&(!expectedMaster||cachedMaster.toLowerCase()===String(expectedMaster).toLowerCase()))
     return S.keys.get(key);
-  const keysDoc=await fetchJson(join(base,boot?.keys_url||'.well-known/personaos-keys.json'),
-    {signal});
+  const route=join(base,boot?.keys_url||'.well-known/personaos-keys.json');
+  const jobKey=`${opBaseKey(base||location.origin)}\u0000${route}`;
+  let job=keyRegistryFetchJobs.get(jobKey);
+  if(!job){
+    job=fetchJson(route,{signal:AbortSignal.timeout(8000),maxBytes:256*1024})
+      .finally(()=>{ if(keyRegistryFetchJobs.get(jobKey)===job)
+        keyRegistryFetchJobs.delete(jobKey); });
+    keyRegistryFetchJobs.set(jobKey,job);
+  }
+  const keysDoc=await settleBeforeAbort(job,signal,null);
   // A route-reconciliation deadline is not evidence that a previously verified
   // registry became invalid. Do not let its abort erase shared cached authority.
   if(signal?.aborted||keysDoc==null){
@@ -1694,15 +1731,57 @@ const PROVIDER_INVENTORY_FIELDS=Object.freeze([
 ].sort());
 const PROVIDER_MANIFEST_FIELDS=Object.freeze(['document_hash','record_id','record_url']);
 const SHA256_CONTENT_RE=/^sha256:[0-9a-f]{64}$/;
-async function verifyProviderInventory(index,base,boot){
+const REACHABILITY_PROFILE_FIELDS=Object.freeze([
+  'bootstrap_peers','libp2p_peer_id','node_id','public_key_hex','reachability_class',
+  'relay_circuit_multiaddrs','relay_peers','schema','signature_hex','signing_key_id','transports',
+].sort());
+async function verifyCurrentReachabilityProfile(profile,base,boot){
+  const registry=S.keyDocs.get(base||'@origin');
+  const key=currentMasterKey(registry?.entries||[]);
+  if(!_exactObjectFields(profile,REACHABILITY_PROFILE_FIELDS)
+      ||profile.schema!=='reachability-profile/1'||profile.node_id!==boot?.kernel_id
+      ||profile.signing_key_id!=='kernel-master'||profile.public_key_hex!==key
+      ||!['public','nat_private','intranet_only'].includes(profile.reachability_class)
+      ||!/^[0-9a-f]{128}$/i.test(String(profile.signature_hex||''))) return false;
+  for(const field of ['transports','relay_peers','relay_circuit_multiaddrs','bootstrap_peers']){
+    const values=profile[field];
+    if(!Array.isArray(values)||values.length>64
+        ||values.some((value)=>typeof value!=='string'||!value||value.length>2048
+          ||/[\u0000-\u001f\u007f]/.test(value))) return false;
+  }
+  const payload={};
+  for(const field of REACHABILITY_PROFILE_FIELDS)
+    if(!['signature_hex','public_key_hex'].includes(field)) payload[field]=profile[field];
+  try{ return await ed.verifyAsync(hexToBytes(profile.signature_hex),
+    enc.encode(canon(payload)),hexToBytes(key)); }
+  catch(_){ return false; }
+}
+async function verifiedCanonicalBaseMatch(value,base,boot){
   const requestedBase=String(base||'').replace(/\/$/,'');
   const expectedBase=String(requestedBase||location.origin).replace(/\/$/,'');
+  const canonicalBase=String(value||'').replace(/\/$/,'');
+  if(canonicalBase===expectedBase||(!requestedBase&&!canonicalBase)) return true;
+  const reachability=boot?.reachability_profile;
+  return !requestedBase&&isLocalBase(location.origin)
+    &&!!canonicalBase&&normalizedHttpBase(canonicalBase)===canonicalBase
+    &&reachability?.schema==='reachability-profile/1'
+    &&reachability?.node_id===boot?.kernel_id
+    &&reachability?.public_key_hex===currentMasterKey(
+      S.keyDocs.get(base||'@origin')?.entries||[])
+    &&Array.isArray(reachability?.transports)
+    &&reachability.transports.some((route)=>normalizedHttpBase(route)===canonicalBase)
+    &&await verifyCurrentReachabilityProfile(reachability,base,boot);
+}
+async function verifyProviderInventory(index,base,boot){
   const inventoryBase=String(index?.base||'').replace(/\/$/,'');
-  // The node protocol uses an empty base only for a same-origin inventory.
-  // Normalize that local transport alias to the page origin; never allow an
-  // empty value to bind a remotely fetched resolver/global-node inventory.
-  const baseMatches=inventoryBase===expectedBase
-    ||(!requestedBase&&!inventoryBase);
+  // `base` is the current-master-signed canonical public route, while `base`
+  // passed to this function is the transport route that delivered those bytes.
+  // A node-served shell commonly reaches the same kernel through localhost/LAN
+  // even though its atomic inventory correctly names its public HTTPS route.
+  // Treat that as an alias only after the exact inventory hash + current-master
+  // signature checks below. The reached provider route remains `requestedBase`;
+  // this signed canonical value never rewrites transport authority.
+  const baseMatches=await verifiedCanonicalBaseMatch(inventoryBase,base,boot);
   if(!_exactObjectFields(index,PROVIDER_INVENTORY_FIELDS)
       ||index.schema!=='dht-provider-index/3'||index.kernel_id!==boot?.kernel_id
       ||!baseMatches
@@ -1961,6 +2040,360 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
   }
   return {rows,refused,envelopeCount:entries.length,inventory};
 }
+
+const PUBLIC_IDENTITY_INDEX_FIELDS=Object.freeze([
+  'base','document_count','documents','expires_at','generated_at','inventory_generation',
+  'inventory_hash','inventory_manifest_hash','kernel_id','schema','signature_hex',
+  'signing_key_id','visibility',
+].sort());
+async function verifiedRowsFromIdentityIndex(index,base,boot){
+  const rows=[];
+  if(!_exactObjectFields(index,PUBLIC_IDENTITY_INDEX_FIELDS)
+      ||index.schema!=='personaos-public-identity-index/1'
+      ||index.kernel_id!==boot?.kernel_id||index.visibility!=='public'
+      ||index.signing_key_id!=='kernel-master'
+      ||!Number.isSafeInteger(index.inventory_generation)||index.inventory_generation<1
+      ||!SHA256_CONTENT_RE.test(String(index.inventory_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(index.inventory_manifest_hash||''))
+      ||!Number.isSafeInteger(index.document_count)||index.document_count<1
+      ||index.document_count>512||!index.documents
+      ||typeof index.documents!=='object'||Array.isArray(index.documents)
+      ||Object.keys(index.documents).length!==index.document_count
+      ||!validateProviderInventoryWindow(index.generated_at,index.expires_at).ok
+      ||!await verifiedCanonicalBaseMatch(index.base,base,boot)
+      ||!await verifyCurrentMasterSignedDocument(base,index)) return {ok:false,rows};
+  const registry=S.keyDocs.get(base||'@origin')||{}, seen=new Set();
+  const results=await Promise.all(Object.entries(index.documents).map(async([hash,doc])=>{
+    const record=doc?.record||{},policy=doc?.access_policy||{};
+    const rid=String(record.record_id||'');
+    if(!SHA256_CONTENT_RE.test(hash)||`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==hash
+        ||!['persona','env'].includes(String(record.kind||''))
+        ||!rid||seen.has(rid)||doc?.host_kernel_id!==boot.kernel_id
+        ||doc?.kernel_id!==boot.kernel_id
+        ||String(doc?.base||'').replace(/\/$/,'')!==String(index.base||'').replace(/\/$/,''))
+      return null;
+    seen.add(rid);
+    const signed=await verifyRecord(doc,registry.entries||[]);
+    if(!signed.ok) return null;
+    let policyOk=false;
+    try{ policyOk=await ed.verifyAsync(hexToBytes(policy.signature_hex),
+      enc.encode(canon(providerPolicyPayload(policy))),
+      hexToBytes(signed.entry.public_key_hex)); }catch(_){ policyOk=false; }
+    const access=evaluatePublicRecordAccess(record,policy,doc.links||{});
+    if(!policyOk||!access.ok||!access.canDiscover) return null;
+    const out=await verifiedRecordFromDoc(doc,{},boot,base,'internet',
+      `discovery/public/records/${rid}.json`,
+      {access,providerBaseVerified:true});
+    return out.ok?out.row:null;
+  }));
+  if(results.some((row)=>!row)||seen.size!==index.document_count) return {ok:false,rows:[]};
+  return {ok:true,rows:results,inventory:{generation:index.inventory_generation,
+    hash:index.inventory_hash,manifestHash:index.inventory_manifest_hash,
+    generatedAt:Date.parse(index.generated_at),expiresAt:Date.parse(index.expires_at)}};
+}
+
+// Verify the small human-identity slice first on a warm start. This is not a
+// weaker identity path: every selected ProviderRecord, embedded document,
+// record, policy, lifecycle/profile card and expiry passes the normal current-
+// master checks. Inventory freshness is explicitly labelled pending until the
+// complete hash/signature/generation is verified immediately after the browser
+// gets a paint opportunity; these rows are deliberately not recorded as an
+// authoritative complete provider generation before then.
+async function verifiedWarmIdentityRows(providerIndex,base,boot){
+  const hydrated=hydrateProviderIndex(providerIndex);
+  if(providerIndex?.kernel_id!==boot?.kernel_id
+      ||!Number.isSafeInteger(providerIndex?.inventory_generation)
+      ||providerIndex.inventory_generation<1
+      ||!SHA256_CONTENT_RE.test(String(providerIndex?.inventory_hash||''))
+      ||!hydrated.ok||hydrated.refused
+      ||hydrated.envelopes.length!==Number(providerIndex?.document_count))
+    return {ok:false,rows:[]};
+  const byUrl=new Map();
+  for(const envelope of hydrated.envelopes){
+    const kind=String(envelope?.document?.record?.kind||'');
+    if(!['persona','env'].includes(kind)) continue;
+    const url=String(envelope?.record?.record_url||'');
+    if(!/^discovery\/public\/records\/[A-Za-z0-9:_.-]+\.json$/.test(url))
+      return {ok:false,rows:[]};
+    if(!byUrl.has(url)) byUrl.set(url,envelope);
+  }
+  const results=await Promise.all([...byUrl].map(async([recordUrl,envelope])=>{
+    const authority=await verifyHttpProviderWithKeyRefresh(
+      envelope,envelope.document,boot,base,'');
+    if(!authority.ok) return null;
+    const out=await verifiedRecordFromDoc(
+      envelope.document,authority.keys,boot,base,'internet',recordUrl,
+      {access:authority.access,providerBaseVerified:true});
+    return out.ok?out.row:null;
+  }));
+  if(results.some((row)=>!row)) return {ok:false,rows:[]};
+  return {ok:true,rows:results,inventory:{
+    generation:providerIndex.inventory_generation,hash:providerIndex.inventory_hash}};
+}
+
+// Same-origin node shells have a uniquely strong fast-start opportunity: the
+// HTML request proves that this exact route is reachable, while a previously
+// admitted public inventory already contains every signed document needed to
+// paint personas and environments. Keep one bounded public snapshot in origin-
+// scoped browser storage. On reload it is NEVER trusted as browser state: the
+// current bootstrap + current self-certifying key registry are fetched first,
+// then the small persona/environment slice runs through its normal signatures,
+// policies, lifecycle/profile cards and expiry checks. It is visibly labelled
+// as awaiting inventory freshness. The complete inventory hash/master signature
+// follows after first paint, while fresh `no-store` discovery concurrently
+// atomically retires/replaces it as soon as the current generation arrives.
+const FAST_ORIGIN_CACHE_KEY='personaos.fast-origin-inventory.v1';
+const FAST_ORIGIN_CACHE_MAX_BYTES=3*1024*1024;
+const FAST_SIGNED_IDENTITY_CACHE_KEY='personaos.fast-signed-identities.v1';
+const FAST_SIGNED_IDENTITY_CACHE_MAX_BYTES=2*1024*1024;
+const FAST_SIGNED_IDENTITY_CACHE_MAX_SNAPSHOTS=12;
+function yieldAfterVerifiedRosterPaint(){
+  // scheduleRealtimeRepaint mutates the stage in a requestAnimationFrame
+  // callback. A promise resolved by another callback in that same frame resumes
+  // in a microtask *before* the browser paints, so starting the full inventory
+  // verification there can still hide an already verified roster behind a long
+  // crypto task. The second frame proves that the first frame reached a render
+  // opportunity. Hidden tabs have nothing to paint and use a task boundary.
+  if(typeof requestAnimationFrame!=='function'
+      ||(typeof document!=='undefined'&&document.visibilityState==='hidden'))
+    return new Promise((resolve)=>setTimeout(resolve,0));
+  return new Promise((resolve)=>requestAnimationFrame(()=>
+    requestAnimationFrame(()=>resolve())));
+}
+function readFastSignedIdentitySnapshots(){
+  try{
+    const raw=localStorage.getItem(FAST_SIGNED_IDENTITY_CACHE_KEY)||'';
+    if(!raw||raw.length>FAST_SIGNED_IDENTITY_CACHE_MAX_BYTES){
+      if(raw) localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY);
+      return [];
+    }
+    const cache=JSON.parse(raw), snapshots=cache?.snapshots;
+    if(cache?.schema!=='personaos-browser-signed-identity-cache/1'
+        ||!Array.isArray(snapshots)){
+      localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY); return [];
+    }
+    return snapshots.slice(0,FAST_SIGNED_IDENTITY_CACHE_MAX_SNAPSHOTS);
+  }catch(_){
+    try{ localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY); }catch(__){ }
+    return [];
+  }
+}
+function writeFastSignedIdentitySnapshots(snapshots){
+  try{
+    const bounded=(snapshots||[]).slice(0,FAST_SIGNED_IDENTITY_CACHE_MAX_SNAPSHOTS);
+    while(bounded.length){
+      const raw=JSON.stringify({schema:'personaos-browser-signed-identity-cache/1',
+        snapshots:bounded});
+      if(raw.length<=FAST_SIGNED_IDENTITY_CACHE_MAX_BYTES){
+        localStorage.setItem(FAST_SIGNED_IDENTITY_CACHE_KEY,raw); return true;
+      }
+      bounded.pop();
+    }
+    localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY);
+  }catch(_){ }
+  return false;
+}
+function persistFastSignedIdentitySnapshot(base,boot,identityIndex){
+  const kernel=String(boot?.kernel_id||''), registry=S.keyDocs.get(base||'@origin');
+  const route=base?normalizedHttpBase(base):'';
+  if(!kernel||identityIndex?.kernel_id!==kernel||(base&&!route)
+      ||!Array.isArray(registry?.entries)||!currentMasterKey(registry.entries)) return false;
+  const snapshot={schema:'personaos-browser-signed-identity-snapshot/1',
+    kernel_id:kernel,provider_base:route,same_origin:!base,
+    stored_at:new Date().toISOString(),
+    boot:{kernel_id:kernel,reachability_profile:boot.reachability_profile||null},
+    keys:{schema:'personaos-keys/1',kernel_id:kernel,
+      keys:registry.entries.map((entry)=>({...entry}))},
+    identity_index:identityIndex};
+  const prior=readFastSignedIdentitySnapshots().filter((item)=>
+    String(item?.kernel_id||'')!==kernel);
+  return writeFastSignedIdentitySnapshots([snapshot,...prior]);
+}
+function retireFastSignedIdentityRoute(kernel){
+  const info=S.globalKernels?.get(kernel);
+  if(info){
+    info.via?.delete('cache'); info.sourceBases?.delete('cache');
+    info.seenBySource?.delete('cache');
+    info.bases=new Set([...(info.sourceBases?.values?.()||[])]
+      .flatMap((values)=>[...values]));
+    _dropKernelDirectoryEntry(kernel,{retireRecords:false});
+  }
+  for(const [base,health] of (S.peerHealth||new Map()))
+    if(health?.warm===true&&health?.kernel===kernel) S.peerHealth.delete(base);
+}
+function expireFastSignedIdentityRows(kernel,rows,inventory){
+  const wait=Math.max(0,Math.min(2147483000,
+    Number(inventory?.expiresAt||0)-Date.now()+25));
+  setTimeout(()=>{
+    for(const id of rows){
+      const row=S.recs.get(id);
+      if(row?._warmProvisional===true
+          &&row._inventoryGeneration===inventory.generation
+          &&row._inventoryHash===inventory.hash) _removeRecordStoreKey(id);
+    }
+    S.cachedIdentityPendingKernels.delete(kernel);
+    retireFastSignedIdentityRoute(kernel);
+    S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
+    scheduleRealtimeRepaint({records:true});
+  },wait);
+}
+async function hydrateFastSignedIdentitySnapshots(){
+  const snapshots=readFastSignedIdentitySnapshots();
+  if(!snapshots.length) return false;
+  let restored=0;
+  for(const snapshot of snapshots){
+    const kernel=String(snapshot?.kernel_id||''), boot=snapshot?.boot;
+    const base=snapshot?.same_origin===true?'':normalizedHttpBase(snapshot?.provider_base);
+    if(snapshot?.schema!=='personaos-browser-signed-identity-snapshot/1'
+        ||typeof snapshot.same_origin!=='boolean'
+        ||!kernel||boot?.kernel_id!==kernel||(!snapshot.same_origin&&!base)
+        ||snapshot?.keys?.kernel_id!==kernel
+        ||!Array.isArray(snapshot?.keys?.keys)||snapshot.keys.keys.length>64) continue;
+    const admitted=admitKeysDocument(base,boot,snapshot.keys);
+    if(!admitted['kernel-master']) continue;
+    const verified=await verifiedRowsFromIdentityIndex(
+      snapshot.identity_index,base,boot);
+    // A no-store pass that finished while local crypto ran is always newer
+    // presentation authority than this explicitly freshness-pending snapshot.
+    if(!verified.ok||S.providerInventories.has(kernel)
+        ||S.identityIndexes?.has(kernel)) continue;
+    const rowKeys=[];
+    for(const row of verified.rows){
+      const projected={...row,_inventorySource:kernel,
+        _inventoryGeneration:verified.inventory.generation,
+        _inventoryHash:verified.inventory.hash,_warmProvisional:true};
+      if(upsert(projected)) rowKeys.push(recordStoreKey(projected));
+    }
+    if(!rowKeys.length) continue;
+    restored+=rowKeys.length;
+    S.cachedIdentityPendingKernels.add(kernel);
+    noteKernel(kernel,'cache',base||location.origin,{reachable:null,warm:true});
+    S.peerHealth=(S.peerHealth||new Map());
+    S.peerHealth.set(base||location.origin,{ok:true,records:rowKeys.length,
+      kernel,t:Date.now(),warm:true});
+    expireFastSignedIdentityRows(kernel,rowKeys,verified.inventory);
+  }
+  if(!restored) return false;
+  S.fastOriginRefreshPending=true;
+  scheduleRealtimeRepaint({records:true});
+  log('cache',restored+' signed persona/environment identity record(s) restored; checking current sources',true);
+  return true;
+}
+function _clearFastOriginInventory(){
+  try{ localStorage.removeItem(FAST_ORIGIN_CACHE_KEY); }catch(_){ }
+}
+function persistFastOriginInventory(boot,providerIndex){
+  if(!boot?.kernel_id||providerIndex?.kernel_id!==boot.kernel_id) return false;
+  try{
+    const raw=JSON.stringify({schema:'personaos-browser-fast-origin/1',
+      kernel_id:boot.kernel_id,stored_at:new Date().toISOString(),provider_index:providerIndex});
+    if(raw.length>FAST_ORIGIN_CACHE_MAX_BYTES){ _clearFastOriginInventory(); return false; }
+    localStorage.setItem(FAST_ORIGIN_CACHE_KEY,raw); return true;
+  }catch(_){ return false; }
+}
+function readFastOriginInventory(){
+  try{
+    const raw=localStorage.getItem(FAST_ORIGIN_CACHE_KEY)||'';
+    if(!raw||raw.length>FAST_ORIGIN_CACHE_MAX_BYTES){
+      if(raw) _clearFastOriginInventory(); return null; }
+    const cached=JSON.parse(raw);
+    if(cached?.schema!=='personaos-browser-fast-origin/1'
+        ||!cached.kernel_id||!cached.provider_index){
+      _clearFastOriginInventory(); return null; }
+    return cached;
+  }catch(_){ _clearFastOriginInventory(); return null; }
+}
+async function hydrateFastOriginInventory(){
+  const cached=readFastOriginInventory();
+  if(!cached) return false;
+  // A static hosted portal is not a node route. Its cache namespace must never
+  // cause a same-origin node probe or paint a node from unrelated portal state.
+  if(location.hostname==='ai-personas.github.io') return false;
+  try{
+    const boot=await fetchDiscoveryBootstrap('',{
+      signal:AbortSignal.timeout(3000),maxBytes:256*1024});
+    if(!boot||boot.kernel_id!==cached.kernel_id){ _clearFastOriginInventory(); return false; }
+    const currentKeys=await keysFor('',boot,{signal:AbortSignal.timeout(3000)});
+    if(!currentKeys['kernel-master']){
+      _clearFastOriginInventory(); return false; }
+    const priority=await verifiedWarmIdentityRows(cached.provider_index,'',boot);
+    if(!priority.ok||!priority.rows.length){
+      _clearFastOriginInventory(); return false;
+    }
+    // A concurrently completed no-store pass is always the presentation
+    // authority. Never let delayed browser-cache work overwrite any already
+    // admitted complete provider generation.
+    if(S.providerInventories.has(boot.kernel_id)) return false;
+    const provisionalKeys=[];
+    S.fastOriginRefreshPending=true;
+    for(const row of priority.rows){
+      const projected={...row,_inventorySource:boot.kernel_id,
+        _inventoryGeneration:priority.inventory.generation,
+        _inventoryHash:priority.inventory.hash,_warmProvisional:true};
+      if(upsert(projected)) provisionalKeys.push(recordStoreKey(projected));
+    }
+    S.boots.set('@origin',boot);
+    noteKernel(boot.kernel_id,'http',location.origin,{reachable:true});
+    S.peerHealth=(S.peerHealth||new Map());
+    S.peerHealth.set(location.origin,{ok:true,records:priority.rows.length,
+      kernel:boot.kernel_id,t:Date.now(),warm:true});
+    collectP2PBootstraps(boot,{dial:true});
+    connectDiscoveryStream('',boot);
+    scheduleRealtimeRepaint({records:true});
+    loadTelemetry('',{boot}).then(()=>scheduleRealtimeRepaint()).catch(()=>{});
+    log('cache',`${priority.rows.length} signed persona/environment record(s) restored; fresh discovery continues`,true);
+    // Yield before the remaining artifacts/tasks/telemetry are checked so the
+    // six human-facing identity cards can reach the compositor first.
+    const verifyCompleteCachedInventory=async()=>{
+      const verified=await verifiedRowsFromProviderIndex(
+        cached.provider_index,'',boot,'internet','warm same-origin cache');
+      const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
+        &&verified.refused===0
+        &&new Set(verified.rows.map((row)=>row.record_id)).size
+          ===verified.inventory?.recordIds?.size};
+      if(inventory.complete){
+        // Fresh transport won the race while cached verification was running.
+        // Keep that complete generation, irrespective of numeric ordering.
+        if(S.providerInventories.has(boot.kernel_id)){
+          const current=S.providerInventories.get(boot.kernel_id),
+            authoritative=current?.recordKeys instanceof Set
+              ?current.recordKeys:new Set(current?.recordKeys||[]);
+          // The current no-store pass won while cached verification was in
+          // flight. Remove only rows that are still this exact cached
+          // provisional generation and that the winning manifest does not
+          // contain. A fresh upsert clears _warmProvisional, so this cannot
+          // erase a row that has since acquired current authority.
+          for(const id of provisionalKeys){
+            const row=S.recs.get(id);
+            if(!authoritative.has(id)&&row?._warmProvisional===true
+                &&row._inventoryGeneration===priority.inventory.generation
+                &&row._inventoryHash===priority.inventory.hash)
+              _removeRecordStoreKey(id);
+          }
+          S.fastOriginRefreshPending=false;
+          scheduleRealtimeRepaint({records:true}); return;
+        }
+        const applied=applyVerifiedProviderInventory('',boot,verified.rows,inventory);
+        const current=S.providerInventories.get(boot.kernel_id);
+        const superseded=current&&(current.generation>inventory.generation
+          ||(current.generation===inventory.generation&&current.hash===inventory.hash));
+        if(applied||superseded){ S.fastOriginRefreshPending=false;
+          scheduleRealtimeRepaint({records:true}); return; }
+      }
+      for(const id of provisionalKeys){
+        const row=S.recs.get(id);
+        if(row?._warmProvisional===true
+            &&row._inventoryGeneration===priority.inventory.generation
+            &&row._inventoryHash===priority.inventory.hash) _removeRecordStoreKey(id);
+      }
+      S.fastOriginRefreshPending=false;
+      _clearFastOriginInventory(); scheduleRealtimeRepaint({records:true});
+    };
+    yieldAfterVerifiedRosterPaint()
+      .then(()=>verifyCompleteCachedInventory()).catch(()=>{});
+    return true;
+  }catch(_){ return false; }
+}
 async function verifiedRouteHintsFromP2PResult(result,{signal=null}={}){
   const routeHints=[];
   const expectedKey=String(result?.key||''), allRecords=Array.isArray(result?.records)?result.records:[],
@@ -2011,8 +2444,12 @@ function globalDiscoveryEndpoints(){
   // The community directory and any explicit resolvers are untrusted,
   // replaceable first-contact locators. Every announcement, provider inventory,
   // record, policy, and identity is independently verified in this browser.
-  return [...new Set([...p.getAll('resolver'),DEFAULT_GLOBAL_DISCOVERY_ENDPOINT]
-    .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean))];
+  // Explicit resolver routes replace the community locator. node1 is used only
+  // when no other resolver was supplied, and the caller still places this
+  // entire locator plane behind the direct/libp2p fallback decision.
+  const explicit=p.getAll('resolver')
+    .map((u)=>String(u||'').replace(/\/$/,'')).filter(Boolean);
+  return [...new Set(explicit.length?explicit:[DEFAULT_GLOBAL_DISCOVERY_ENDPOINT])];
 }
 async function verifyGlobalEnvelope(env){
   const ann=env?.announcement;
@@ -2053,22 +2490,53 @@ async function verifyGlobalEnvelope(env){
   return {ok:true,ann};
 }
 let _globalLoadPromise=null;
-async function loadGlobalNodes(){
-  if(_globalLoadPromise) return _globalLoadPromise;
+const _globalDirectoryListeners=new Set();
+function notifyIncrementalGlobalDirectory(){
+  for(const listener of _globalDirectoryListeners)
+    Promise.resolve().then(()=>listener()).catch(()=>{});
+}
+async function loadGlobalNodes({onUpdate=null}={}){
+  if(typeof onUpdate==='function') _globalDirectoryListeners.add(onUpdate);
+  if(_globalLoadPromise){
+    try{ return await _globalLoadPromise; }
+    finally{ if(typeof onUpdate==='function') _globalDirectoryListeners.delete(onUpdate); }
+  }
   _globalLoadPromise=_loadGlobalNodes();
   try{ return await _globalLoadPromise; }
-  finally{ _globalLoadPromise=null; }
+  finally{
+    _globalLoadPromise=null;
+    if(typeof onUpdate==='function') _globalDirectoryListeners.delete(onUpdate);
+  }
 }
 async function _loadGlobalNodes(){
   const endpoints=globalDiscoveryEndpoints();
   const previousFingerprint=String(S.resolverFingerprint||'');
   const previousTotal=Number(S.globalTotal)||0;
+  const firstSuccessfulSnapshot=!S.globalLastSuccessAt;
   if(!endpoints.length){
     const directory=reconcileResolverDirectory(S.resolverSnapshots,[],{nowMs:Date.now()});
     applyResolverDirectory(directory);
     return {changed:directory.fingerprint!==previousFingerprint||directory.total!==previousTotal,
       successfulResolvers:0,announcements:[],total:0,pollAfterMs:5000};
   }
+
+  const settledResults=new Map();
+  const finishResolverResult=(result)=>{
+    settledResults.set(result.endpoint,result);
+    // Preserve the still-live prior view for endpoints that have not settled,
+    // while atomically replacing the endpoint that just completed. This lets a
+    // fast explicit resolver expose signed node routes immediately instead of
+    // waiting for an unrelated slow/dead locator's deadline.
+    const partial=endpoints.map((endpoint)=>settledResults.get(endpoint)
+      ||{endpoint,successful:false,complete:false,total:0,announcements:[]});
+    const directory=reconcileResolverDirectory(
+      S.resolverSnapshots,partial,{nowMs:Date.now()});
+    applyResolverDirectory(directory);
+    if(directory.successfulResolvers) S.globalLastSuccessAt=Date.now();
+    renderGlobalKernels(); updateVitalsCounters();
+    notifyIncrementalGlobalDirectory();
+    return result;
+  };
 
   // Relay/bootstrap hints and signed node pages start together. A slow
   // bootstrap response cannot delay a fresh directory snapshot.
@@ -2119,8 +2587,8 @@ async function _loadGlobalNodes(){
       if(!next||next===cursor){ complete=true; break; }
       cursor=next;
     }
-    if(!successful) return {endpoint,successful:false,complete:false,total:0,
-      announcements:[],pages:0,revision:'',pollAfterMs:0};
+    if(!successful) return finishResolverResult({endpoint,successful:false,
+      complete:false,total:0,announcements:[],pages:0,revision:'',pollAfterMs:0});
     const verified=await Promise.all(envelopes.map(verifyGlobalEnvelope));
     const announcements=[]; let refused=0;
     for(const result of verified){
@@ -2129,8 +2597,8 @@ async function _loadGlobalNodes(){
     }
     if(refused) log('global',endpoint+': '+refused
       +' announcement signature/hash failed or lease expired; refused',false);
-    return {endpoint,successful:true,complete,total,announcements,pages,revision,
-      pollAfterMs,refused};
+    return finishResolverResult({endpoint,successful:true,complete,total,
+      announcements,pages,revision,pollAfterMs,refused});
   }));
 
   const [boots,results]=await Promise.all([bootPromise,pagesPromise]);
@@ -2141,7 +2609,6 @@ async function _loadGlobalNodes(){
     if(addrs.length) log('global',endpoint+': '+addrs.length+' bootstrap multiaddr(s)');
   }
 
-  const firstSuccessfulSnapshot=!S.globalLastSuccessAt;
   const directory=reconcileResolverDirectory(S.resolverSnapshots,results,{nowMs:Date.now()});
   applyResolverDirectory(directory);
   if(directory.successfulResolvers) S.globalLastSuccessAt=Date.now();
@@ -2184,8 +2651,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   {expectedKernel='',resolveProviderAliases=true,signal=null}={}){
   const where=base||location.origin;
   log('bootstrap',`${where}/.well-known/personaos-discovery.json`);
-  const boot=knownBoot||await fetchJson(
-    join(base,'.well-known/personaos-discovery.json'),{signal});
+  const boot=knownBoot||await fetchDiscoveryBootstrap(base,{signal});
   S.peerHealth=(S.peerHealth||new Map());
   if(!boot){ log('bootstrap',`no endpoint at ${where}`,false);
     const gb=S.globalAnnouncementByBase?.get(opBaseKey(where))||S.globalAnnouncementByBase?.get(String(where||'').replace(/\/$/,''));
@@ -2214,11 +2680,67 @@ async function discoverFrom(base,plane,knownBoot=null,
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found:[]};
   }
-  const prov=await fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
+  // Transfer the full atomic inventory and compact signed human roster in
+  // parallel. The roster normally carries only persona/environment documents,
+  // so a cold viewer can verify people and workspaces without waiting for every
+  // artifact/task/telemetry byte in the generation.
+  const providerPromise=fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
     {maxBytes:providerIndexMaxBytes,signal});
+  let identityAccepted=false;
+  if(boot.identity_index_url){
+    const identityDoc=await fetchJson(join(base,boot.identity_index_url),{
+      maxBytes:2*1024*1024,signal});
+    const identity=await verifiedRowsFromIdentityIndex(identityDoc,base,boot);
+    const prior=(S.identityIndexes||(S.identityIndexes=new Map())).get(boot.kernel_id);
+    const advances=!prior||identity.inventory?.generation>prior.generation
+      ||(identity.inventory?.generation===prior.generation
+        &&identity.inventory?.hash===prior.hash);
+    if(identity.ok&&advances&&!S.providerInventories.has(boot.kernel_id)){
+      const incoming=new Set();
+      for(const row of identity.rows){
+        const projected={...row,_inventorySource:boot.kernel_id,
+          _inventoryGeneration:identity.inventory.generation,
+          _inventoryHash:identity.inventory.hash,_identityIndexVerified:true};
+        if(upsert(projected)) incoming.add(recordStoreKey(projected));
+      }
+      for(const id of (prior?.recordKeys||[])){
+        const row=S.recs.get(id);
+        if(!incoming.has(id)&&row?._identityIndexVerified===true) _removeRecordStoreKey(id);
+      }
+      // The browser-cache projection deliberately has no identityIndexes entry.
+      // A freshly fetched compact index is nevertheless the signed authority
+      // for this generation's complete persona/environment slice, so retire an
+      // omitted same-kernel cached identity even if the large inventory later
+      // fails to transfer.
+      for(const [id,row] of [...S.recs]){
+        if(!incoming.has(id)&&String(row?._kernel||'')===boot.kernel_id
+            &&['persona','env'].includes(String(row?.kind||''))
+            &&(row?._warmProvisional===true||row?._identityIndexVerified===true))
+          _removeRecordStoreKey(id);
+      }
+      S.identityIndexes.set(boot.kernel_id,{...identity.inventory,recordKeys:incoming});
+      S.cachedIdentityPendingKernels.delete(boot.kernel_id);
+      S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
+      S.boots.set(base||'@origin',boot);
+      noteKernel(boot.kernel_id,'http',base||location.origin,{reachable:true});
+      retireFastSignedIdentityRoute(boot.kernel_id);
+      S.peerHealth.set(where,{ok:true,records:identity.rows.length,
+        kernel:boot.kernel_id,t:Date.now(),identityIndex:true});
+      collectP2PBootstraps(boot,{dial:true});
+      scheduleRealtimeRepaint({records:true});
+      log('identity',`${identity.rows.length} current signed persona/environment record(s) verified first`,true);
+      identityAccepted=true;
+      // Cross two animation frames: the first scheduled callback mutates the
+      // stage and the second proves that mutation had a render opportunity
+      // before CPU-heavy full-inventory signature checks resume.
+      await yieldAfterVerifiedRosterPaint();
+      persistFastSignedIdentitySnapshot(base,boot,identityDoc);
+    }
+  }
+  const prov=await providerPromise;
   if(!prov||Number(prov.document_count)!==advertisedRecordCount){
     log('dht',`${boot.kernel_id||where}: provider document count does not match advertised bootstrap`,false);
-    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    if(!identityAccepted) S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found:[]};
   }
   const providers=Array.isArray(prov?.providers)?prov.providers:[];
@@ -2226,20 +2748,6 @@ async function discoverFrom(base,plane,knownBoot=null,
   const http=await verifiedRowsFromProviderIndex(
     prov,base,boot,plane,'http provider',{signal});
   const found=[...http.rows];
-  if(resolveProviderAliases&&P2P?.resolveProvider&&!signal?.aborted){
-    const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||'')).filter(Boolean))].slice(0,16);
-    const lookups=Promise.all(aliases.map((key)=>
-      P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
-    const resolved=await settleBeforeAbort(lookups,signal,[]);
-    let authorityVerified=0;
-    for(const result of resolved){ const verified=await verifiedRouteHintsFromP2PResult(
-      result,{signal});
-      // Standalone provider lookups remain locator evidence only. Public rows
-      // are rendered from the signed v3 inventory so retirement/omission can
-      // be reconciled atomically instead of leaving a stale P2P contribution.
-      authorityVerified+=verified.routeHints.length; }
-    if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup proof(s) verified · inventory promotion required`,authorityVerified>0);
-  }
   const uniqueFound=new Map(found.map((row)=>[
     `${row._kernel||boot.kernel_id||'@unknown'}\u0000${row.record_id||row.did}`,row]));
   found.length=0; found.push(...uniqueFound.values());
@@ -2247,31 +2755,47 @@ async function discoverFrom(base,plane,knownBoot=null,
   const inventory={...(http.inventory||{}),complete:http.inventory?.ok===true
     &&http.refused===0&&new Set(found.map((row)=>row.record_id)).size===http.inventory.recordIds?.size};
   if(!inventory.complete){
-    S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
+    if(!identityAccepted) S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found,inventory};
   }
-  // Bridge-cache gossip is untrusted lookup material only. It never becomes a
-  // displayed record or supplies base/links/policy. A resolved current-master
-  // ProviderRecord supplies only an HTTPS route; the route's complete signed
-  // inventory is the sole promotion path into S.recs.
-  const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
-  const p2pDoc=p2pReceived?await fetchJson(join(base,p2pReceived),{signal}):null;
-  for(const doc of (p2pDoc?.records||[]).slice(0,NETWORK_LIMITS.cachedRecords)){
-    if(doc?.record?.visibility_tier!=='public') continue;
-    const verified=P2P?.verifyGossipProviderEnvelope
-      ?await P2P.verifyGossipProviderEnvelope(doc).catch(()=>null):null;
-    if(verified) await onVerifiedGossipProvider(verified);
-    else queueProviderHints(doc.record,'bridge-cache gossip');
-  }
-  // HTTP gossip cache is also hint-only. Self-asserted origin/kernel fields never
-  // create a node or record in the UI before current-master provider resolution.
-  const gossip=await fetchJson(join(base,'gossip/cache'),{signal});
-  for(const id in (gossip?.cards||gossip||{})){
-    const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
-    const record=card.record||card;
-    if(record?.visibility_tier==='public') queueProviderHints(record,'HTTP gossip cache');
-  }
-  return {boot,found,inventory};
+  // Provider lookups and gossip caches are secondary routing hints; none can
+  // alter these already verified rows. Run them after returning the complete
+  // inventory so a disconnected relay or stale bridge never blocks first paint.
+  setTimeout(async()=>{
+    const hintSignal=AbortSignal.timeout(10000);
+    try{
+      if(resolveProviderAliases&&P2P?.resolveProvider){
+        const aliases=[...new Set(providers.map((p)=>String(p?.record?.key||''))
+          .filter(Boolean))].slice(0,16);
+        const resolved=await Promise.all(aliases.map((key)=>
+          P2P.resolveProvider(key,{timeoutMs:5000}).catch(()=>null)));
+        let authorityVerified=0;
+        for(const result of resolved){
+          const verified=await verifiedRouteHintsFromP2PResult(result,{signal:hintSignal});
+          authorityVerified+=verified.routeHints.length;
+        }
+        if(aliases.length) log('p2p',`${authorityVerified}/${aliases.length} per-key provider lookup proof(s) verified · inventory promotion required`,authorityVerified>0);
+      }
+      const p2pReceived=boot.p2p_received_url||boot.discovery_p2p_received_url;
+      const [p2pDoc,gossip]=await Promise.all([
+        p2pReceived?fetchJson(join(base,p2pReceived),{signal:hintSignal}):null,
+        fetchJson(join(base,'gossip/cache'),{signal:hintSignal}),
+      ]);
+      for(const doc of (p2pDoc?.records||[]).slice(0,NETWORK_LIMITS.cachedRecords)){
+        if(doc?.record?.visibility_tier!=='public') continue;
+        const verified=P2P?.verifyGossipProviderEnvelope
+          ?await P2P.verifyGossipProviderEnvelope(doc).catch(()=>null):null;
+        if(verified) await onVerifiedGossipProvider(verified);
+        else queueProviderHints(doc.record,'bridge-cache gossip');
+      }
+      for(const id in (gossip?.cards||gossip||{})){
+        const card=(gossip.cards||gossip)[id]; if(!card||typeof card!=='object') continue;
+        const record=card.record||card;
+        if(record?.visibility_tier==='public') queueProviderHints(record,'HTTP gossip cache');
+      }
+    }catch(_){ }
+  },0);
+  return {boot,found,inventory,providerIndex:prov};
 }
 
 // ---------- global kernel tracker (the "across the globe" strip) ----------
@@ -2601,7 +3125,7 @@ async function discoverViaIPFS(opts={}){
 // Silent when nothing's running. From an https page: https://localhost works if the
 // node's cert is trusted; plain-http localhost is browser-policy dependent and
 // may fail before CORS, so the empty state explains the public P2P route.
-const LOCAL_PORTS=[8765,8805,8910];
+const LOCAL_PORTS=[8765,8766,8805,8910];
 async function probeBase(base){
   try{
     const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),2500);
@@ -2628,6 +3152,7 @@ async function discoverLocalNode(opts={}){
   const found=new Set();
   await Promise.all(hosts.flatMap((h)=>LOCAL_PORTS.map(async(port)=>{
     const base=`${h}:${port}`;
+    if(opBaseKey(base)===opBaseKey(location.origin)) return;
     if(await probeBase(base)) found.add(base);
   })));
   const before=[...S.localPeers].sort().join('|'), after=[...found].sort().join('|');
@@ -2774,10 +3299,24 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
   for(const row of rows) upsert({...row,_inventorySource:source,
     _inventoryGeneration:inventory.generation,_inventoryHash:inventory.hash});
   for(const id of (prior?.recordKeys||[])) if(!incoming.has(id)) _removeRecordStoreKey(id);
+  // A compact identity index or warm browser snapshot can be admitted before a
+  // complete provider inventory exists, so there may be no prior inventory
+  // whose recordKeys enumerate those early rows. The full signed manifest is
+  // authoritative: retire every same-kernel early-projection row it omits.
+  // Incoming rows were just upserted and therefore had both provisional flags
+  // cleared; the flag guard also protects any independently current row.
+  for(const [id,row] of [...S.recs]){
+    if(!incoming.has(id)&&String(row?._kernel||'')===source
+        &&(row?._warmProvisional===true||row?._identityIndexVerified===true))
+      _removeRecordStoreKey(id);
+  }
   S.providerInventories.set(source,{generation:inventory.generation,hash:inventory.hash,
     recordKeys:incoming,manifestHash:inventory.manifestHash,
     bindings:new Map(inventory.bindings||[]),base:base||'',
     generatedAt:inventory.generatedAt,expiresAt:inventory.expiresAt});
+  S.cachedIdentityPendingKernels.delete(source);
+  retireFastSignedIdentityRoute(source);
+  S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
   // Inventory admission can complete after the enclosing HTTP discovery pass
   // (notably through a verified libp2p route). Coalesce the record/header repaint
   // from this single authority gate so the summary cannot remain on an earlier
@@ -2799,6 +3338,8 @@ function upsert(r){
     _inventorySource:r._inventorySource||row._inventorySource||'',
     _inventoryGeneration:r._inventoryGeneration||row._inventoryGeneration||0,
     _inventoryHash:r._inventoryHash||row._inventoryHash||'',
+    _warmProvisional:r._warmProvisional===true,
+    _identityIndexVerified:r._identityIndexVerified===true,
     _broadcastOnly:!!r._broadcastOnly,_effective_level:r._effective_level||'discover',
     _readAuthorized:!!r._readAuthorized,_gossipHint:r._gossipHint||null,
     description:r.description||'',
@@ -2884,7 +3425,7 @@ async function resolveKernelBases(seeds,onResolved=()=>{}){
     const key=b||'@origin';
     if(visited.has(key)||visited.size>=visitLimit) return;
     visited.add(key);
-    const job=fetchJson(join(b,'.well-known/personaos-discovery.json'),{
+    const job=fetchDiscoveryBootstrap(b,{
       signal:AbortSignal.timeout(8000)}).then((boot)=>{
       if(!boot){
         if(b){ log('bootstrap',`no endpoint at ${b}`,false);
@@ -2933,10 +3474,17 @@ function updateDiscoverySummary(when=new Date()){
   const discoveryMode=S.locatorDiscoveryMode==='fallback_locator'
     ?'The optional announcement locator is supplying fallback first contact.'
     :'Direct and libp2p peer discovery are primary; the optional announcement locator is standing by.';
-  status.title=`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. ${discoveryMode}`;
-  status.setAttribute('aria-label',`${recordCount} verified records across ${kernelCount} nodes; updated ${refreshed}`);
-  status.innerHTML=`<span class="ok">${recordCount}</span> verified record${recordCount===1?'':'s'} · `
-    +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
+  const warmPending=S.fastOriginRefreshPending===true;
+  status.title=warmPending
+    ?`${recordCount} previously verified signed identity records restored; checking the current complete inventory now. ${discoveryMode}`
+    :`${recordCount} signed discovery records verified with Ed25519 across ${kernelCount} discovered kernels; ${monitored} actively monitored. ${discoveryMode}`;
+  status.setAttribute('aria-label',warmPending
+    ?`${recordCount} previously verified signed records; refreshing current inventory`
+    :`${recordCount} verified records across ${kernelCount} nodes; updated ${refreshed}`);
+  status.innerHTML=warmPending
+    ?`<span class="amber">${recordCount}</span> previously verified identity record${recordCount===1?'':'s'} · checking current inventory…`
+    :`<span class="ok">${recordCount}</span> verified record${recordCount===1?'':'s'} · `
+      +`<span class="ok">${compactCount(kernelCount)}</span> node${kernelCount===1?'':'s'} · updated ${refreshed}`;
 }
 async function discover({refreshGlobal=true,trailing=false}={}){
   // A fixed safety refresh can overlap an event-triggered refresh on a slow
@@ -2966,6 +3514,10 @@ async function discover({refreshGlobal=true,trailing=false}={}){
       if(!res.boot) return;
       const accepted=applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
       if(!accepted) return;
+      if(!b){
+        S.fastOriginRefreshPending=false;
+        if(res.providerIndex) persistFastOriginInventory(res.boot,res.providerIndex);
+      }
       S.boots.set(b||'@origin',res.boot);
       const sources=peerSourceTags(b);
       const directTransport=S.p2pDataRoutes?.has(opBaseKey(b||location.origin))
@@ -2979,7 +3531,7 @@ async function discover({refreshGlobal=true,trailing=false}={}){
       connectDiscoveryStream(b,res.boot);
       collectP2PBootstraps(res.boot,{dial:true});
       scheduleRealtimeRepaint({records:true});
-      await loadTelemetry(b,{signal});        // aggregate static spans + live node telemetry
+      await loadTelemetry(b,{signal,boot:res.boot}); // aggregate static spans + live node telemetry
       scheduleRealtimeRepaint();
     }).catch(()=>{});
     resultJobs.push(job); return key;
@@ -2989,6 +3541,11 @@ async function discover({refreshGlobal=true,trailing=false}={}){
       .filter((base)=>!seenSeeds.has(base||'@origin'));
     for(const base of seeds) seenSeeds.add(base||'@origin');
     if(seeds.length) await resolveKernelBases(seeds,enqueueResolved);
+  };
+  const incrementalGlobalJobs=new Set();
+  const discoverIncrementalGlobal=()=>{
+    const job=discoverAvailable().finally(()=>incrementalGlobalJobs.delete(job));
+    incrementalGlobalJobs.add(job); return job;
   };
   // Direct/P2P locator planes get the first bounded opportunity. The optional
   // HTTP directory is queried only after that window produces no verified
@@ -3005,7 +3562,9 @@ async function discover({refreshGlobal=true,trailing=false}={}){
     const fallback=_currentLocatorFallbackDecision();
     S.locatorDiscoveryMode=fallback.mode;
     if(fallback.queryLocator){
-      await loadGlobalNodes().catch(()=>null);
+      await loadGlobalNodes({onUpdate:discoverIncrementalGlobal}).catch(()=>null);
+      await Promise.resolve();
+      await Promise.allSettled([...incrementalGlobalJobs]);
       await discoverAvailable();
       await Promise.allSettled(resultJobs);
     }
@@ -3450,8 +4009,8 @@ function rebalanceDiscoveryStreams(){
 }
 
 /* ---------- telemetry tape (replay of real signed spans) ---------- */
-async function loadTelemetry(base,{signal=null}={}){
-  const boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'),{signal});
+async function loadTelemetry(base,{signal=null,boot:knownBoot=null}={}){
+  const boot=knownBoot||await fetchDiscoveryBootstrap(base,{signal});
   if(!boot) return;
   const kid=boot.kernel_id||base;
   let added=0;
@@ -3810,7 +4369,7 @@ function _nodeScopedBodyUrl(base,value){
 async function _liveVerificationContext(base,url,bootHint=null,refresh=false){
   const key=base||'@origin';
   let boot=bootHint||S.boots.get(key)||null;
-  if(!boot) boot=await fetchJson(join(base,'.well-known/personaos-discovery.json'));
+  if(!boot) boot=await fetchDiscoveryBootstrap(base);
   if(!boot?.kernel_id) return {ok:false,reason:'missing_kernel_identity'};
   await keysFor(base,boot,{refresh});
   const keyDoc=S.keyDocs.get(key)||{};
@@ -6193,30 +6752,72 @@ function updateVitalsCounters(){
     dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
-function _paintVerifiedPersonaShells(host){
-  if(host.querySelector('.pcard')) return;
+function _paintVerifiedIdentityShells(host){
+  if(host.querySelector('.pcard,.env-card')&&host.dataset.identityShell!=='1') return;
   const query=String(S.q||'').trim().toLowerCase();
-  const candidates=[...S.personaDiscoveryByKey.keys()].filter((personaKey)=>{
+  const personaCandidates=[...S.personaDiscoveryByKey.keys()].filter((personaKey)=>{
     const ref=_personaRef(personaKey);
     if(!kernelIsFocused(ref.kernel)||!providerVerifiedPersonaObservation(personaKey)) return false;
     return !query||`${_signedPersonaNameFor(personaKey)} ${_coordRole(ref.sid,{},ref.kernel)}`.toLowerCase().includes(query);
   });
-  if(!candidates.length) return;
-  const visible=candidates.slice(0,NETWORK_LIMITS.personaInitial);
+  const environmentCandidates=S.order.map((id)=>S.recs.get(id)).filter((record)=>{
+    if(record?.kind!=='env'||!kernelIsFocused(record._kernel)) return false;
+    const sid=_envSid(record), name=_environmentNameFor(sid,record._kernel);
+    const type=(record.capability_summary||[])
+      .filter((value)=>value&&value!=='project_workspace').at(-1)||'workspace';
+    return !query||`${name} ${humanizeMachineKey(type)} ${sid}`.toLowerCase().includes(query);
+  });
+  if(!personaCandidates.length&&!environmentCandidates.length) return;
+  const visible=personaCandidates.slice(0,NETWORK_LIMITS.personaInitial);
+  const visibleEnvironments=environmentCandidates.slice(0,NETWORK_LIMITS.environmentInitial);
   S.visiblePersonaIds.clear();
   visible.forEach((personaKey)=>S.visiblePersonaIds.add(personaKey));
   const cards=visible.map((personaKey)=>{
     const ref=_personaRef(personaKey);
     return renderPersonaCard(personaKey,ref.kernel,{enrichmentPending:true});
   }).join('');
-  const hidden=Math.max(0,candidates.length-visible.length);
-  const html=`<div class="stage-summary"><div><strong>${compactCount(visible.length)} ${visible.length===1?'persona':'personas'} on screen</strong>`
-    +` <span class="scope-copy">· loading signed environments and artifacts</span></div></div>`
-    +`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
-    +`<h2>Verified personas</h2></div><p role="status">Verified personas found; loading live workspace details.</p></header>`
+  const environmentCards=visibleEnvironments.map((record)=>{
+    const sid=_envSid(record), kernel=String(record._kernel||'');
+    const name=_environmentNameFor(sid,kernel);
+    const rawType=(record.capability_summary||[])
+      .filter((value)=>value&&value!=='project_workspace').at(-1)||'workspace';
+    const type=humanizeMachineKey(rawType);
+    const words=name.split(/\s+/).filter(Boolean);
+    const initials=(words.length>1
+      ?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
+    return `<article class="env-card record-signed" data-envsid="${esc(sid)}" data-envkernel="${esc(kernel)}" data-verification="signed-record" style="--envhue:${_envHue(sid)}" aria-label="environment ${esc(name)}">`
+      +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
+      +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
+      +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE · ${esc(type)}</span>`
+      +`<span class="env-name" data-envrec="${esc(sid)}" data-envkernel="${esc(kernel)}" role="button" tabindex="0">${esc(name)}</span>`
+      +`<span class="env-card-id">SIGNED WORKSPACE IDENTITY</span></div>`
+      +`<span class="env-state ok">verified</span></header>`
+      +`<div class="env-card-empty">Loading people, current work, and files…</div>`
+      +`<div class="env-card-footer"><span>Workspace identity verified</span><span>Details loading</span></div></article>`;
+  }).join('');
+  const hidden=Math.max(0,personaCandidates.length-visible.length);
+  const hiddenEnvironments=Math.max(0,environmentCandidates.length-visibleEnvironments.length);
+  const warmPending=S.fastOriginRefreshPending===true;
+  S.envCount=Math.max(S.envCount,environmentCandidates.length);
+  S.renderedEnvironmentKeys=new Set(visibleEnvironments.map((record)=>
+    _environmentKey(record._kernel,_envSid(record))));
+  const counts=[];
+  if(visible.length) counts.push(`${compactCount(visible.length)} ${visible.length===1?'persona':'personas'}`);
+  if(visibleEnvironments.length) counts.push(`${compactCount(visibleEnvironments.length)} ${visibleEnvironments.length===1?'workspace':'workspaces'}`);
+  const personaSection=cards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
+    +`<h2>${warmPending?'Previously verified personas':'Verified personas'}</h2></div><p role="status">${warmPending?'Signature checks passed; freshness is being confirmed now.':'Verified personas found; loading live workspace details.'}</p></header>`
     +`<div class="persona-deck">${cards}</div>`
     +(hidden?`<div class="persona-window-note"><span>${hidden} additional verified ${hidden===1?'persona':'personas'} will appear with the enriched view</span></div>`:'')
-    +`</section>`;
+    +`</section>`:'';
+  const environmentSection=environmentCards?`<section class="environment-section"><header class="stage-section-head compact"><div><span class="section-kicker">ENVIRONMENT INDEX</span>`
+    +`<h2>${warmPending?'Previously verified workspaces':'Verified workspaces'}</h2></div><p role="status">${warmPending?'Signature checks passed; freshness is being confirmed now.':'Workspace identities found; loading people, activity, and files.'}</p></header>`
+    +`<div class="environment-grid">${environmentCards}</div>`
+    +(hiddenEnvironments?`<div class="persona-window-note"><span>${hiddenEnvironments} additional verified ${hiddenEnvironments===1?'workspace':'workspaces'} will appear with the enriched view</span></div>`:'')
+    +`</section>`:'';
+  const html=`<div class="stage-summary"><div><strong>${counts.join(' · ')} on screen</strong>`
+    +` <span class="scope-copy">· ${warmPending?'previously verified identities · checking the current signed inventory':'loading live activity and artifacts'}</span></div></div>`
+    +personaSection+environmentSection;
+  host.dataset.identityShell='1';
   host.dataset.h=html;
   host.innerHTML=html;
   rebindInspectionSource();
@@ -6230,7 +6831,7 @@ async function refreshSystemView(){
   // Provider inventory verification often finishes before slower environment,
   // artifact and telemetry enrichment. Paint those already-admitted persona
   // identities immediately, while naming the still-pending join honestly.
-  _paintVerifiedPersonaShells(host);
+  _paintVerifiedIdentityShells(host);
   if(_sysBusy){ _sysQueued=true; return; }
   // re-entrancy guard (mirrors _cogBusy): the 5s interval fires this unconditionally,
   // and its many serial awaited fetches can overrun the interval on a slow link, so
@@ -6593,8 +7194,9 @@ async function refreshSystemView(){
     query?0:(S.observedEnvironmentCount||0)-envBlocks.length);
   const bodyHTML=personaSection+environmentSection;
   const visiblePersonaCount=S.visiblePersonaIds.size;
+  const cachedFreshnessPending=S.fastOriginRefreshPending===true;
   const summary=bodyHTML?`<div class="stage-summary"><div><strong>${compactCount(visiblePersonaCount)} ${visiblePersonaCount===1?'persona':'personas'} on screen</strong>`
-    +` <span class="scope-copy">· ${compactCount(S.envCount)} environments</span></div>`
+    +` <span class="scope-copy">· ${compactCount(S.envCount)} environments${cachedFreshnessPending?' · previously verified identities · checking current sources':''}</span></div>`
     +(hiddenEnvs?`<button type="button" class="window-more" data-more-environments="1">show ${Math.min(NETWORK_LIMITS.environmentStep,hiddenEnvs)} more environments</button>`:'')
     +`</div>`:'';
   const routingPressure=unresolvedArtifacts.length
@@ -6614,6 +7216,7 @@ async function refreshSystemView(){
     :emptyStateHTML());
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
+  delete host.dataset.identityShell;
   if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
   rebindInspectionSource();
   _hydratePersonaAvatars();
@@ -11198,7 +11801,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
     updateP2PStatus();
     collectP2PBootstraps(resolved.boot,{dial:true});
     noteKernel(kernel,'p2p',base,{reachable:true});
-    await loadTelemetry(base,{signal});
+    await loadTelemetry(base,{signal,boot:resolved.boot});
     if(!signal?.aborted) connectDiscoveryStream(base,resolved.boot);
     return {accepted:true,count:resolved.found.length};
   })();
@@ -11489,19 +12092,24 @@ async function initP2P(){
 
 (async ()=>{
   wire();
+  // A bounded, origin-scoped signed identity snapshot races (and never gates)
+  // every network plane. This also serves returning hosted-portal viewers. If
+  // no compact snapshot exists yet, a node-served shell can fall back to its
+  // older complete-inventory cache after reconfirming the current node keys.
+  hydrateFastSignedIdentitySnapshots().then((restored)=>{
+    if(!restored) hydrateFastOriginInventory().catch(()=>{});
+  }).catch(()=>{ hydrateFastOriginInventory().catch(()=>{}); });
   // Fetch the static transport commons concurrently, but settle its bounded
   // request before libp2p starts so it participates in the initial dial set.
+  // Direct/same-origin discovery does not wait for that optional file.
   const portalP2PHints=loadPortalP2PBootstrapHints();
-  // The IPFS plane (rendezvous CID → signed IPNS node cards) probes CONCURRENTLY
-  // with HTTP discovery — a slow/dead configured peer must not delay it.
-  discoverViaIPFS().catch(()=>{});
+  portalP2PHints.catch(()=>[]).then(()=>initP2P()).catch(()=>{});
+  // The discovery pass below already starts local + optional IPFS planes once;
+  // only their later maintenance ticks are scheduled here.
   setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
-  discoverLocalNode().catch(()=>{});                                  // is a node running on THIS machine?
   setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
-  await portalP2PHints;
-  // Start direct peer discovery as soon as the transport commons is known.
-  // Dead HTTPS locators continue in parallel and cannot hold libp2p startup.
-  initP2P();
+  // Same-origin/direct records are the first operating path. Optional transport
+  // commons, libp2p and the fallback locator continue independently.
   await discover();
   scheduleFastGlobalRefresh(2500);
   prefetchNodeStatuses();
