@@ -1198,7 +1198,7 @@ const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxRendezvousBucketsPerRefresh:3,
   maxRememberedProviders:64,providerRetryMs:30*1000,
   successfulRefreshMs:45*1000,verifiedGossipRetryMs:30*1000,
-  coldRetryBaseMs:3000,coldRetryMaxMs:10000,steadyRefreshMs:60000,
+  initialRefreshMs:0,coldRetryBaseMs:3000,coldRetryMaxMs:10000,steadyRefreshMs:60000,
   jobDeadlineMs:30000});
 function boundedP2PBootstrapSource(value){
   if(typeof value==='string') return [value];
@@ -11644,7 +11644,10 @@ function _scheduleP2PRendezvous(delayMs){
 function _ensureP2PRendezvousSchedule(){
   if(!P2P?.node) return;
   P2P._rendezvousConfigured=true;
-  _scheduleP2PRendezvous(P2P_ROUTE_LIMITS.coldRetryBaseMs);
+  // The temporal CIDs and bounded first-contact peers are already available
+  // when the browser node starts. Begin that first scan in the next task;
+  // retain the multi-second exponential delay only for an actual cold miss.
+  _scheduleP2PRendezvous(P2P_ROUTE_LIMITS.initialRefreshMs);
 }
 function _p2pBootstrapDialState(multiaddr){
   let state=S.p2pDialStates.get(multiaddr);
