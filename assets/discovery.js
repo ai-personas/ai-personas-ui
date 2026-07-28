@@ -12051,6 +12051,8 @@ async function refreshP2PRendezvous(){
   if(!buckets.length) return false;
   const signal=AbortSignal.timeout(P2P_ROUTE_LIMITS.jobDeadlineMs);
   const attemptedThisScan=new Set();
+  const eagerProviderKeys=new Set(),eagerProviderJobs=new Set();
+  let eagerProviderAttempts=0;
   let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0,queriedBuckets=0;
   const inspectProvider=async(provider,maxNewAttempts)=>{
     if(provider?.id?.equals?.(P2P.node.peerId)||signal.aborted) return 0;
@@ -12107,6 +12109,17 @@ async function refreshP2PRendezvous(){
     }
     return routeAttempts;
   };
+  const inspectEagerProvider=(provider)=>{
+    if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob
+        ||eagerProviderAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) return;
+    const providerId=provider?.id?.toString?.()||'', firstAddress=String(provider?.multiaddrs?.[0]||'');
+    const key=`${providerId}\u0000${firstAddress}`;
+    if(!providerId||!firstAddress||eagerProviderKeys.has(key)) return;
+    eagerProviderKeys.add(key); eagerProviderAttempts++;
+    const job=inspectProvider(provider,1).catch(()=>0)
+      .finally(()=>eagerProviderJobs.delete(job));
+    eagerProviderJobs.add(job);
+  };
   try{
     // Give every adjacent temporal bucket a direct first-contact chance in
     // parallel. A sequential current-bucket traversal could consume the whole
@@ -12115,9 +12128,11 @@ async function refreshP2PRendezvous(){
     const directBuckets=await Promise.all(buckets.map(async(bucket)=>({
       bucket,
       direct:await P2P.findRendezvousProviders?.(bucket.cid,{
-        signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution
+        signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution,
+        onProvider:inspectEagerProvider
       }).catch(()=>null)
     })));
+    await Promise.allSettled([...eagerProviderJobs]);
     queriedBuckets=directBuckets.length;
     for(const {direct} of directBuckets){
       if(signal.aborted) break;
@@ -12176,7 +12191,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260723-persona-card-v4-v28');
+    const mod=await import('./p2p-libp2p.js?v=20260728-stream-rendezvous-v29');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
