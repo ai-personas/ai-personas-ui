@@ -5767,7 +5767,15 @@ function _humanizeArtifactSegment(value,{title=false}={}){
   let text=String(value||'').normalize('NFC')
     .replace(/([a-z0-9])([A-Z])/g,'$1 $2')
     .replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
-  text=text.replace(/\brev\s*([A-Za-z0-9]+)\b/gi,'Revision $1');
+  // Expand an actual revision token ("rev C", "rev_C", "revC", "rev2")
+  // without corrupting ordinary words that merely begin with those letters,
+  // such as "review", "reverse", or "revenue".
+  text=text.replace(
+    /\b([Rr][Ee][Vv])([\s_-]*)([A-Za-z0-9]+)\b/g,
+    (match,_prefix,separator,suffix)=>(separator||/^[A-Z0-9]/.test(suffix))
+      ?`Revision ${suffix}`
+      :match,
+  );
   const words=text.split(' ').filter(Boolean).map((word,index)=>{
     const acronym=_ARTIFACT_ACRONYMS.get(word.toLowerCase());
     if(acronym) return acronym;
