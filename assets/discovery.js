@@ -7694,7 +7694,9 @@ function _workStateTextList(title,items,{tone=''}={}){
 }
 function _workStateCollaboration(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||!Object.keys(value).length) return '';
-  const view=structuredContentProjection(value);
+  const authored={...value}; delete authored.agency_reconciliation;
+  if(!Object.keys(authored).length) return '';
+  const view=structuredContentProjection(authored);
   const generic=new Set(['Structured response','Technical response received']);
   const headline=generic.has(view.headline)?'Collaboration plan':view.headline;
   const paragraphs=(view.paragraphs||[]).filter((item)=>item!==headline).slice(0,3);
@@ -7706,6 +7708,43 @@ function _workStateCollaboration(value){
     +(facts.length?`<dl>${facts.map((fact)=>`<div><dt>${esc(fact.label)}</dt><dd>${esc(fact.value)}</dd></div>`).join('')}</dl>`:'')
     +(items.length?`<ul>${items.map((item)=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')
     +'</section>';
+}
+function _workStateExperience(value){
+  const agency=value?.agency_reconciliation;
+  const experience=agency?.experience_reconciliation;
+  if(!experience||experience.schema!=='personaos-experience-reconciliation/2') return '';
+  const practiceCount=Array.isArray(experience.practice_evidence_refs)
+    ?experience.practice_evidence_refs.length:0;
+  const learningCount=Array.isArray(experience.learning_action_refs)
+    ?experience.learning_action_refs.length:0;
+  const growth=experience.growth_observed===true;
+  const reusable=experience.reusable_learning_warranted===true;
+  return `<section class="work-state-experience ${growth?'has-growth':'no-growth'}">`
+    +`<div class="work-state-experience-head"><h4>Experience from this work</h4>`
+    +`<span>${growth?'Practice integrated':'No change claimed'}</span></div>`
+    +`<p>${esc(experience.experience_statement)}</p>`
+    +`<div class="work-state-experience-facts"><span>${practiceCount} verified practice ${practiceCount===1?'reference':'references'}</span>`
+    +`<span>${reusable?`${learningCount} reusable learning ${learningCount===1?'action':'actions'} saved`:'No reusable method saved this turn'}</span></div>`
+    +`<small>${esc(experience.rationale)}</small></section>`;
+}
+function _workStateAgencySummary(value){
+  const agency=value?.agency_reconciliation;
+  if(!agency||typeof agency!=='object') return '';
+  const capability=agency.capability_reconciliation;
+  const population=agency.population_need;
+  const rows=[];
+  if(capability&&typeof capability==='object') rows.push({
+    label:capability.current_capabilities_sufficient===true
+      ?'Tools and methods available':'Tool or method gap open',
+    body:String(capability.next_action||capability.decision_rationale||'').trim(),
+  });
+  if(population?.distinct_contribution_or_independent_review_wanted===true) rows.push({
+    label:`Team expansion in progress · ${Array.isArray(population.population_action_refs)?population.population_action_refs.length:0} verified ${Array.isArray(population.population_action_refs)&&population.population_action_refs.length===1?'action':'actions'}`,
+    body:String(population.rationale||population.next_step||'').trim(),
+  });
+  if(!rows.length) return '';
+  return `<section class="work-state-agency-summary">${rows.map((row)=>
+    `<article><strong>${esc(row.label)}</strong>${row.body?`<p>${esc(row.body)}</p>`:''}</article>`).join('')}</section>`;
 }
 function _workStateCapabilityGaps(items){
   if(!Array.isArray(items)||!items.length) return '';
@@ -7781,6 +7820,8 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
     +`<div class="work-state-understanding"><span>How I see the task</span><p>${esc(state.working_understanding)}</p></div>`
     +(contribution.length?`<div class="work-state-grid">${contribution.map(([label,value])=>
       `<div class="work-state-item"><span>${esc(label)}</span><p>${esc(value)}</p></div>`).join('')}</div>`:'')
+    +_workStateExperience(state.collaboration)
+    +_workStateAgencySummary(state.collaboration)
     +(commitments.length?`<section class="work-state-commitments"><h4>Open commitments <span>${commitments.length}</span></h4>`
       +commitments.map((commitment)=>`<article><p>${esc(commitment.statement)}</p>`
         +(commitment.evidence_expectations?.length?`<small>Evidence I intend to provide: ${commitment.evidence_expectations.map(esc).join(' · ')}</small>`:'')
