@@ -46,8 +46,8 @@ export function isExactPublicCommunicationRoute(raw){
 export function telemetryModelEvents(doc){
   if(!doc||typeof doc!=='object') return [];
   const publicStatus=doc.model_status;
-  if(Array.isArray(publicStatus)) return _objects(publicStatus,80);
-  if(publicStatus&&typeof publicStatus==='object') return _objects(publicStatus.recent_events,80);
+  if(publicStatus&&typeof publicStatus==='object'&&!Array.isArray(publicStatus))
+    return _objects(publicStatus.recent_events,80);
   if(doc.schema===OPERATOR_LIVE_TELEMETRY_SCHEMA) return _objects(doc.kernel?.model_events,80);
   return [];
 }

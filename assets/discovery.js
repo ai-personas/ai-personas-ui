@@ -1885,6 +1885,14 @@ function _safeEntityMap(value,prefix){
   return Object.entries(value).every(([id,rel])=>id&&id.length<=512
     &&String(rel)===`${prefix}/${_telemetryEntitySlug(id)}.json`);
 }
+function _validPublicEntityModelStatus(value,identityField,identity){
+  if(!value||typeof value!=='object'||Array.isArray(value)
+      ||!_exactObjectFields(value,['active_calls','recent_events'])
+      ||!Array.isArray(value.active_calls)||!Array.isArray(value.recent_events)) return false;
+  const belongs=(entry)=>entry&&typeof entry==='object'&&!Array.isArray(entry)
+    &&String(entry[identityField]||'')===identity;
+  return value.active_calls.every(belongs)&&value.recent_events.every(belongs);
+}
 async function verifyPublicEntityDocument(base,rel,doc){
   const registry=S.keyDocs.get(base||'@origin');
   if(!_freshPublicGeneratedAt(doc?.generated_at)||!registry?.kernelId
@@ -1904,10 +1912,9 @@ async function verifyPublicEntityDocument(base,rel,doc){
         ||!doc.summary||typeof doc.summary!=='object'||Array.isArray(doc.summary)
         ||String(doc.summary.persona_id||'')!==pid
         ||String(doc.name||'')!==String(doc.summary.name||'')
-        ||!Array.isArray(doc.model_status)||!Array.isArray(doc.activity)
+        ||!_validPublicEntityModelStatus(doc.model_status,'persona_id',pid)
+        ||!Array.isArray(doc.activity)
         ||!Array.isArray(doc.communication_routes)
-        ||doc.model_status.some((event)=>!event||typeof event!=='object'||Array.isArray(event)
-          ||String(event.persona_id||'')!==pid)
         ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
   }else if(doc?.schema==='personaos-environment-telemetry-public/1'){
     const eid=String(doc.environment_id||'');
@@ -1915,10 +1922,9 @@ async function verifyPublicEntityDocument(base,rel,doc){
         ||path!==`telemetry/environments/${_telemetryEntitySlug(eid)}.json`
         ||doc.tier!=='public_redacted'||!Number.isSafeInteger(doc.member_count)
         ||doc.member_count<0||!Array.isArray(doc.members)||doc.members.length!==doc.member_count
-        ||!Array.isArray(doc.model_status)||!Array.isArray(doc.activity)
+        ||!_validPublicEntityModelStatus(doc.model_status,'environment_id',eid)
+        ||!Array.isArray(doc.activity)
         ||!Array.isArray(doc.communication_routes)
-        ||doc.model_status.some((event)=>!event||typeof event!=='object'||Array.isArray(event)
-          ||String(event.environment_id||'')!==eid)
         ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
   }else return false;
   return verifyCurrentMasterSignedDocument(base,doc);
@@ -5224,9 +5230,9 @@ function _environmentNameFor(value,kernel=''){
     return `Workspace for ${_compactHumanLabel(task)}`; }
   return 'Shared workspace';
 }
-// RUNNING NOW vs merely recent: a persona is "running" iff the node currently
-// reports an active model call for that persona. Coordination/model history can
-// make a card RECENT, but never RUNNING.
+// This detector is deliberately narrower than the signed mechanical run
+// projection below: it answers only whether a model call is active right now.
+// Coordination/model history can make a card RECENT, but never an active call.
 function _runningNow(value,kernel=''){ return _activeModelCallsForPersona(value,kernel).length>0; }
 function _modelFresh(value,models,kernel=''){
   const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
@@ -5249,9 +5255,26 @@ function _latestTaskLifecycle(kernel,{task='',environment=''}={}){
   matches.sort((left,right)=>left.order.localeCompare(right.order));
   return matches.at(-1)?.lifecycle||null;
 }
-function _completedTaskForPersonaWork(model,kernel='',acts=[],personaKey=''){
+const _MECHANICAL_QUIESCENT_TASK_STATES=new Set([
+  'persona_continuation_unbound',
+]);
+const _MECHANICAL_RESOURCE_PAUSED_TASK_STATES=new Set([
+  'budget_exhausted','timed_out','task_run_not_quiescent',
+  'bounded_wait_ended_before_idle','task_run_quiescence_timeout',
+  'run_idle_observer_unavailable',
+]);
+const _MECHANICAL_CANCELLED_TASK_STATES=new Set([
+  'operator_terminated','run_cancelled','task_run_cancelled',
+]);
+function _taskLifecycleForPersonaWork(model,kernel='',acts=[],personaKey='',workState=null){
   if(!kernel) return null;
-  let lifecycle=model?.run?_verifiedPublicTaskForRun(kernel,model.run):null;
+  const activeCall=_activeModelCallsForPersona(personaKey,kernel).at(-1)||null;
+  let lifecycle=activeCall?.run_id
+    ?_verifiedPublicTaskForRun(kernel,activeCall.run_id):null;
+  if(!lifecycle&&(workState?.task_id||workState?.environment_id))
+    lifecycle=_latestTaskLifecycle(kernel,{task:workState?.task_id||'',
+      environment:workState?.environment_id||''});
+  if(!lifecycle&&model?.run) lifecycle=_verifiedPublicTaskForRun(kernel,model.run);
   if(!lifecycle&&model?.task){
     const run=_verifiedPublicTaskRun(kernel,model.task);
     if(run) lifecycle=_verifiedPublicTaskForRun(kernel,run);
@@ -5271,9 +5294,60 @@ function _completedTaskForPersonaWork(model,kernel='',acts=[],personaKey=''){
     if(task||model?.environment)
       lifecycle=_latestTaskLifecycle(kernel,{task,environment:model?.environment||''});
   }
-  const state=String(lifecycle?.state||'').toLowerCase();
-  return lifecycle?.terminalTask===true&&lifecycle.currentExecution===false
-    &&(state==='complete'||state==='completed')?lifecycle:null;
+  return lifecycle;
+}
+function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',workState=null){
+  const activeCalls=_activeModelCallsForPersona(personaKey,kernel);
+  const lifecycle=_taskLifecycleForPersonaWork(
+    model,kernel,acts,personaKey,workState);
+  const exactState=String(lifecycle?.state||'');
+  if(activeCalls.length) return {key:'running',label:'Running',exactState,
+    detail:'A current model call is mechanically active.',source:'active model call'};
+  if(_MECHANICAL_CANCELLED_TASK_STATES.has(exactState))
+    return {key:'cancelled',label:'Cancelled',exactState,
+      detail:'The signed run lifecycle records cancellation.',source:'signed task lifecycle'};
+  if(_MECHANICAL_RESOURCE_PAUSED_TASK_STATES.has(exactState))
+    return {key:'resource-paused',label:'Resource-paused',exactState,
+      detail:'Execution transport or resources are not currently ready.',source:'signed task lifecycle'};
+  if(_MECHANICAL_QUIESCENT_TASK_STATES.has(exactState))
+    return {key:'quiescent',label:'Quiescent',exactState,
+      detail:'No accepted continuation is currently scheduled.',source:'signed task lifecycle'};
+  if(lifecycle?.currentExecution===true||exactState==='event_driven_handoff')
+    return {key:'running',label:'Running',exactState,
+      detail:exactState==='event_driven_handoff'
+        ?'An accepted persona continuation is queued.'
+        :'The signed run lifecycle records active execution.',
+      source:'signed task lifecycle'};
+  return {key:'unavailable',label:'Run state unavailable',exactState,
+    detail:'No current signed mechanical run category is available.',
+    source:lifecycle?'signed task lifecycle':'no current lifecycle'};
+}
+function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
+  if(value===null||typeof value!=='object')
+    return `<span class="work-note-scalar">${esc(value===null?'null':String(value))}</span>`;
+  const maximum=compact?4:32;
+  if(Array.isArray(value)){
+    const rows=value.slice(0,maximum);
+    return `<ul class="work-note-list">${rows.map((item)=>`<li>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</li>`).join('')}`
+      +(value.length>rows.length?`<li class="work-note-more">+${value.length-rows.length} more values</li>`:'')+'</ul>';
+  }
+  const entries=Object.entries(value),rows=entries.slice(0,maximum);
+  if(!rows.length) return '<span class="work-note-empty">Empty note</span>';
+  return `<dl class="work-note-fields">${rows.map(([key,item])=>`<div><dt title="${esc(key)}">${esc(humanizeMachineKey(key))}</dt><dd>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</dd></div>`).join('')}`
+    +(entries.length>rows.length?`<div class="work-note-more"><dt>More</dt><dd>+${entries.length-rows.length} fields</dd></div>`:'')+'</dl>';
+}
+function _personaWorkNoteComparisonHTML(state,mechanical,{compact=false}={}){
+  if(!state||typeof state!=='object') return '';
+  const authoredAt=_friendlyInstant(state.authored_at);
+  const mechanicalState=mechanical||{key:'unavailable',label:'Run state unavailable',
+    exactState:'',detail:'No current signed mechanical run category is available.',
+    source:'no current lifecycle'};
+  return `<div class="persona-claim-comparison"><article class="persona-authored-claim">`
+    +`<span>What this persona says</span><div class="work-note-meta">Persona-authored claim · revision ${esc(state.revision)}${authoredAt?` · ${esc(authoredAt)}`:''} · ${esc(state.causal_ref_count)} causal ${state.causal_ref_count===1?'reference':'references'}</div>`
+    +_personaWorkNoteValueHTML(state.work_note,{compact})+'</article>'
+    +`<article class="mechanical-run-observation is-${esc(mechanicalState.key)}"><span>System-observed mechanical state</span>`
+    +`<strong>${esc(mechanicalState.label)}</strong><p>${esc(mechanicalState.detail)}</p>`
+    +`<small>${esc(mechanicalState.source)}${mechanicalState.exactState?` · exact state ${esc(mechanicalState.exactState)}`:''}</small></article></div>`;
 }
 function _eventEligibleForRecency(event){
   const at=Number(event?._t);
@@ -5302,8 +5376,9 @@ function _coordRole(sid,_summary,kernel=''){
 const _coordRoleClass=(role)=>role===_ROLE_NOT_DECLARED?'role-undesignated':'role-declared';
 function _humanTaskExecutionState(value){
   return ({
-    paused_participant:'Paused',run_participant:'Working',not_participating:'Ready',
-    completed_participant:'Finished',failed_participant:'Needs attention',
+    paused_participant:'Participation paused',run_participant:'Participating',
+    not_participating:'Not participating',completed_participant:'Participation ended',
+    failed_participant:'Participation failed',
   })[String(value||'')]||String(value||'').replace(/_/g,' ');
 }
 function _sentenceStart(value){ const text=String(value||'').trim();
@@ -6080,6 +6155,40 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       +projection.history.slice(0,12).map((row)=>`<span title="${esc(`run ${row.run||''} · revision ${row.revision||''}`)}">Earlier version${_friendlyInstant(row.generatedAt)?` · ${esc(_friendlyInstant(row.generatedAt))}`:''} · ${row.files.length} file${row.files.length===1?'':'s'}</span>`).join('')
       +(projection.history.length>12?`<span>${projection.history.length-12} additional earlier revisions retained</span>`:'')+`</div>`:'')+`</section>`;
 }
+function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
+  const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
+  const doc=retained?.doc;
+  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public') return '';
+  const state=doc.current_work_state?.schema==='personaos-persona-work-state-surface/3'
+    ?doc.current_work_state:null;
+  const outputs=[...(doc.recent_outputs||[])].reverse();
+  const latestOutput=outputs.find((output)=>output?.authority==='persona_signature');
+  if(!state&&!latestOutput) return '';
+  let stateHTML='';
+  if(state){
+    stateHTML=`<div class="pc-authored-state"><div class="pc-authored-state-head"><strong>Persona-authored work note</strong>`
+      +`<span>${icon('check','ico-sm')} persona-authored</span></div>`
+      +_personaWorkNoteComparisonHTML(state,mechanical,{compact:true})
+      +'</div>';
+  }
+  let outputHTML='';
+  if(latestOutput){
+    const exact=_publicPersonaOutputDisplayText(latestOutput);
+    const view=structuredContentProjection(exact);
+    const headline=view.headline||'Latest shared update';
+    const details=[...(view.paragraphs||[]),...(view.items||[])]
+      .map((value)=>String(value||'').trim())
+      .filter((value)=>value&&value!==headline);
+    const summary=details[0]||(!headline||headline==='Latest shared update'
+      ?_compactHumanLabel(exact,240):'');
+    outputHTML=`<div class="pc-authored-output"><span>${esc(_publicOutputLabel(latestOutput))}</span>`
+      +`<strong>${esc(headline||'Latest shared update')}</strong>`
+      +(summary?`<p>${esc(_compactHumanLabel(summary,280))}</p>`:'')
+      +'</div>';
+  }
+  return `<section class="pc-authored-work"><div class="pc-section-head"><span>Current thinking and work</span>`
+    +`<small>${icon('check','ico-sm')} signed snapshot verified</small></div>${stateHTML}${outputHTML}</section>`;
+}
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
   for(const e of [...(acts||[])].reverse()){
@@ -6101,9 +6210,12 @@ function _personaActivityHTML(acts,personaKey){
   // visible, but reserve half of this compact surface for the newest verified
   // exact persona messages/actions when they exist. Trust still comes from the
   // already-verified public-cognition document; this is presentation only.
+  const personaAuthored=({event})=>event?.signed===true
+    &&event?._providerProvisional!==true
+    &&typeof event?._exactText==='string'&&event._exactText.trim();
   const rows=[];
   const add=(row)=>{ if(row&&!rows.includes(row)&&rows.length<4) rows.push(row); };
-  candidates.filter(({event})=>typeof event?._exactText==='string'&&event._exactText.trim())
+  candidates.filter(personaAuthored)
     .slice(0,2).forEach(add);
   candidates.forEach(add);
   // The card shows only the first two rows. Keep exact persona-authored text in
@@ -6111,13 +6223,12 @@ function _personaActivityHTML(acts,personaKey){
   // recency; otherwise a pair of newer mechanical kernel observations can
   // conceal the actual thought that explains what the persona concluded.
   rows.sort((left,right)=>{
-    const leftAuthored=typeof left.event?._exactText==='string'&&left.event._exactText.trim()?1:0;
-    const rightAuthored=typeof right.event?._exactText==='string'&&right.event._exactText.trim()?1:0;
+    const leftAuthored=personaAuthored(left)?1:0;
+    const rightAuthored=personaAuthored(right)?1:0;
     return rightAuthored-leftAuthored||Number(right.event?._t||0)-Number(left.event?._t||0);
   });
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
-  return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Recent work and shared thoughts</span><small><i></i> updates as they happen</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">`
-    +rows.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
+  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
+  const renderRows=(selected)=>selected.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
       const mine=actorKey===personaKey;
@@ -6154,7 +6265,16 @@ function _personaActivityHTML(acts,personaKey){
       return `<li class="pc-activity-row pc-message ${direction} ix-${cls}" data-message-kind="${esc(String(e.kind||''))}">`
         +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(routeLabel)} ${_activityTrustBadgeHTML(e)}</span>`
         +`<b>${esc(presentation.headline)}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
-        +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('')+`</ol></section>`;
+        +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('');
+  const authoredRows=rows.filter(personaAuthored);
+  const diagnosticRows=rows.filter((row)=>!personaAuthored(row));
+  const authoredHTML=authoredRows.length
+    ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona-authored updates</span><small><i></i> newest first</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">${renderRows(authoredRows)}</ol></section>`
+    :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none shared yet</small></div><div class="pc-activity-empty">The persona has not published a signed message or thought yet.</div></section>`;
+  const diagnosticsHTML=diagnosticRows.length
+    ?`<details class="pc-diagnostics"><summary>Technical activity · ${diagnosticRows.length}</summary><ol>${renderRows(diagnosticRows)}</ol></details>`
+    :'';
+  return authoredHTML+diagnosticsHTML;
 }
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
@@ -6208,7 +6328,11 @@ function renderPersonaCard(pid,kernel='',context={}){
   const recent=!transportStale&&(modelFresh||actFresh);
   const running=!!signedCognitionCall||(!d.stale&&_runningNow(personaKey));
   const terminalFailure=running?null:(d.terminalFailure||null);
-  const completedTask=running?null:_completedTaskForPersonaWork(last,ref.kernel,acts,personaKey);
+  const cognitionDoc=S.verifiedPublicCognitionByPersona?.get(personaKey)?.doc;
+  const currentWorkState=cognitionDoc?.current_work_state?.schema
+    ==='personaos-persona-work-state-surface/3'?cognitionDoc.current_work_state:null;
+  const mechanicalRun=_personaMechanicalRunProjection(
+    last,ref.kernel,acts,personaKey,currentWorkState);
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
@@ -6226,10 +6350,22 @@ function renderPersonaCard(pid,kernel='',context={}){
       ||String(terminalFailure.purpose||'model call').replace(/_/g,' ');
     doingHTML=`<span class="pc-failure-mark">${icon('warn','ico-sm')}</span><strong>A work step needs attention</strong>`
       +`<span class="pc-when"${terminalFailure.model?` title="model ${esc(terminalFailure.model)}${terminalFailure.status?` · HTTP ${esc(terminalFailure.status)}`:''}"`:''}>${esc(_sentenceStart(purpose))}</span>`;
-  } else if(completedTask){
-    focusLabel='Latest outcome';
-    doingHTML=`<span class="pc-rest">${icon('check','ico-sm')}</span><strong>Workspace task completed and ready for handoff</strong>`
-      +'<span class="pc-when">Signed completion recorded for the shared workspace</span>';
+  } else if(mechanicalRun.key==='running'){
+    focusLabel='Mechanical run state';
+    doingHTML=`<span class="pc-rest">${icon('play','ico-sm')}</span><strong>Running</strong>`
+      +`<span class="pc-when">${esc(mechanicalRun.detail)}</span>`;
+  } else if(mechanicalRun.key==='quiescent'){
+    focusLabel='Mechanical run state';
+    doingHTML=`<span class="pc-rest">${icon('dot','ico-sm')}</span><strong>Quiescent</strong>`
+      +`<span class="pc-when">${esc(mechanicalRun.detail)}</span>`;
+  } else if(mechanicalRun.key==='resource-paused'){
+    focusLabel='Mechanical run state';
+    doingHTML=`<span class="pc-rest">${icon('warn','ico-sm')}</span><strong>Resource-paused</strong>`
+      +`<span class="pc-when">${esc(mechanicalRun.detail)}</span>`;
+  } else if(mechanicalRun.key==='cancelled'){
+    focusLabel='Mechanical run state';
+    doingHTML=`<span class="pc-failure-mark">${icon('x','ico-sm')}</span><strong>Cancelled</strong>`
+      +`<span class="pc-when">${esc(mechanicalRun.detail)}</span>`;
   } else if(hasModels){
     const purposeLabel=humanActivityPresentation('MODEL_CALL',{purpose:last.purpose}).context
       ||PURPOSE_VERB[last.purpose]||String(last.purpose||'activity').replace(/_/g,' ');
@@ -6239,7 +6375,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   } else if(actFresh){
     doingHTML=`${running?'<span class="pulse">'+icon('dot','ico-sm')+'</span>':'<span class="pc-rest">'+icon('play','ico-sm')+'</span>'}<strong>${esc(_ixHeadline(recentAct))}</strong>`;
   } else {
-    focusLabel='Availability'; doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>Ready for the next assignment</strong>';
+    focusLabel='Mechanical run state';
+    doingHTML='<span class="pc-rest">'+icon('dot','ico-sm')+'</span><strong>No current run state observed</strong>';
   }
   // TOOL chip: the persona's headline self-extension act (provision / acquire / use /
   // block) within the live window. doingHTML is model-purpose-only when hasModels, so a
@@ -6269,14 +6406,17 @@ function renderPersonaCard(pid,kernel='',context={}){
     +(rt.task_execution_state?`<span class="tag runtime-tag" title="live task participation status">${icon('task','ico-sm')} ${esc(_humanTaskExecutionState(rt.task_execution_state))}</span>`:'');
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
-  const dotCls=running?'run':(terminalFailure?'error':(recent?'on':'off'));
+  const dotCls=running?'run':(terminalFailure||mechanicalRun.key==='cancelled'
+    ?'error':(recent?'on':'off'));
   const statusBadge=transportStale
     ? `<span class="pc-idle">${d.presence==='offline'?'OFFLINE':'UPDATE DELAYED'}</span>`
     : running ? '<span class="pc-run">WORKING NOW</span>'
     : terminalFailure ? '<span class="pc-failed">NEEDS ATTENTION</span>'
-    : (rt.task_execution_state==='paused_participant'?'<span class="pc-idle">PAUSED</span>'
-      :rt.task_execution_state==='run_participant'?'<span class="pc-recent">WORKING</span>'
-      :(recent?'<span class="pc-recent">RECENT UPDATE</span>':'<span class="pc-idle">READY</span>'));
+    : mechanicalRun.key==='running'?'<span class="pc-recent">RUNNING</span>'
+      :mechanicalRun.key==='quiescent'?'<span class="pc-idle">QUIESCENT</span>'
+      :mechanicalRun.key==='resource-paused'?'<span class="pc-idle">RESOURCE-PAUSED</span>'
+      :mechanicalRun.key==='cancelled'?'<span class="pc-failed">CANCELLED</span>'
+      :(recent?'<span class="pc-recent">RECENT UPDATE</span>':'<span class="pc-idle">NO RUN STATE</span>');
   const lifecycleState=(state||'ACTIVE').toUpperCase();
   const lifecycleBadge=lifecycleState==='ACTIVE'?'':`<span class="pc-life off">${esc(lifecycleState.toLowerCase())}</span>`;
   const authoredCapabilities=identityVerified&&Array.isArray(
@@ -6349,6 +6489,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     :enrichmentPending
       ?`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">loading workspace details…</span></div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">working independently</span></div></section>`;
+  const authoredWorkHTML=_personaAuthoredWorkHTML(personaKey,ref.kernel,mechanicalRun);
   return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(name)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PUBLIC WORK LOG</span></div>`
     +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
@@ -6356,7 +6497,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<div class="pc-identity"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==name?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span></div>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +aboutHTML+capabilityHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +aboutHTML+capabilityHTML+authoredWorkHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
     +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
     +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
@@ -7162,7 +7303,7 @@ async function refreshSystemView(){
     const artRow=declaredEnvOutputs+liveEnvOutputs;
     const departed=b.fromExport && (b.roster||[]).length>0 && (b.roster||[]).every((m)=>m&&m.active===false);
     const rawStatus=String(b.status||(b.live?'':'discovered')).toLowerCase();
-    const statusTxt=departed?'Archived':({active:'Open',running:'Working',paused:'Paused',idle:'Ready',discovered:'Discovered'})[rawStatus]
+    const statusTxt=departed?'Archived':({active:'Open',running:'Working',paused:'Paused',idle:'Idle',discovered:'Discovered'})[rawStatus]
       ||_sentenceStart(rawStatus||'Available');
     const statusOk=(b.status==='active' && !departed);
     return {artRow,departed,statusTxt,statusOk,
@@ -7687,152 +7828,51 @@ function _provisionalPresentationRows(events){
     return choices.get(`${callId}\u0000${messageId}`)?.index===index;
   });
 }
-function _workStateTextList(title,items,{tone=''}={}){
-  if(!Array.isArray(items)||!items.length) return '';
-  return `<section class="work-state-list ${esc(tone)}"><h4>${esc(title)}</h4><ul>`
-    +items.map((item)=>`<li>${esc(item)}</li>`).join('')+'</ul></section>';
-}
-function _workStateCollaboration(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||!Object.keys(value).length) return '';
-  const authored={...value}; delete authored.agency_reconciliation;
-  if(!Object.keys(authored).length) return '';
-  const view=structuredContentProjection(authored);
-  const generic=new Set(['Structured response','Technical response received']);
-  const headline=generic.has(view.headline)?'Collaboration plan':view.headline;
-  const paragraphs=(view.paragraphs||[]).filter((item)=>item!==headline).slice(0,3);
-  const facts=(view.facts||[]).slice(0,8), items=(view.items||[]).slice(0,8);
-  if(!headline&&!paragraphs.length&&!facts.length&&!items.length) return '';
-  return `<section class="work-state-collaboration"><h4>Working with others</h4>`
-    +(headline?`<p class="work-state-collaboration-lead">${esc(headline)}</p>`:'')
-    +paragraphs.map((item)=>`<p>${esc(item)}</p>`).join('')
-    +(facts.length?`<dl>${facts.map((fact)=>`<div><dt>${esc(fact.label)}</dt><dd>${esc(fact.value)}</dd></div>`).join('')}</dl>`:'')
-    +(items.length?`<ul>${items.map((item)=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')
-    +'</section>';
-}
-function _workStateExperience(value){
-  const agency=value?.agency_reconciliation;
-  const experience=agency?.experience_reconciliation;
-  if(!experience||experience.schema!=='personaos-experience-reconciliation/2') return '';
-  const practiceCount=Array.isArray(experience.practice_evidence_refs)
-    ?experience.practice_evidence_refs.length:0;
-  const learningCount=Array.isArray(experience.learning_action_refs)
-    ?experience.learning_action_refs.length:0;
-  const growth=experience.growth_observed===true;
-  const reusable=experience.reusable_learning_warranted===true;
-  return `<section class="work-state-experience ${growth?'has-growth':'no-growth'}">`
-    +`<div class="work-state-experience-head"><h4>Experience from this work</h4>`
-    +`<span>${growth?'Practice integrated':'No change claimed'}</span></div>`
-    +`<p>${esc(experience.experience_statement)}</p>`
-    +`<div class="work-state-experience-facts"><span>${practiceCount} verified practice ${practiceCount===1?'reference':'references'}</span>`
-    +`<span>${reusable?`${learningCount} reusable learning ${learningCount===1?'action':'actions'} saved`:'No reusable method saved this turn'}</span></div>`
-    +`<small>${esc(experience.rationale)}</small></section>`;
-}
-function _workStateAgencySummary(value){
-  const agency=value?.agency_reconciliation;
-  if(!agency||typeof agency!=='object') return '';
-  const capability=agency.capability_reconciliation;
-  const population=agency.population_need;
-  const rows=[];
-  if(capability&&typeof capability==='object') rows.push({
-    label:capability.current_capabilities_sufficient===true
-      ?'Tools and methods available':'Tool or method gap open',
-    body:String(capability.next_action||capability.decision_rationale||'').trim(),
-  });
-  if(population?.distinct_contribution_or_independent_review_wanted===true) rows.push({
-    label:`Team expansion in progress · ${Array.isArray(population.population_action_refs)?population.population_action_refs.length:0} verified ${Array.isArray(population.population_action_refs)&&population.population_action_refs.length===1?'action':'actions'}`,
-    body:String(population.rationale||population.next_step||'').trim(),
-  });
-  if(!rows.length) return '';
-  return `<section class="work-state-agency-summary">${rows.map((row)=>
-    `<article><strong>${esc(row.label)}</strong>${row.body?`<p>${esc(row.body)}</p>`:''}</article>`).join('')}</section>`;
-}
-function _workStateCapabilityGaps(items){
-  if(!Array.isArray(items)||!items.length) return '';
-  return `<section class="work-state-commitments work-state-capability-gaps"><h4>Capability gaps <span>${items.length}</span></h4>`
-    +items.map((gap)=>`<article><p>${esc(gap.statement)}</p><small>${gap.state==='blocked_external'
-      ?'Waiting on evidence or access outside this workspace'
-      :'The persona considers this actionable and must continue or hand it off'}</small></article>`).join('')
-    +'</section>';
-}
-function _workStateUncertainties(items){
-  if(!Array.isArray(items)||!items.length) return '';
-  const section=(title,rows,tone='')=>rows.length
-    ?`<section class="work-state-list ${esc(tone)}"><h4>${esc(title)}</h4><ul>`
-      +rows.map((item)=>`<li><strong>${esc(item.statement)}</strong>`
-        +`<small>${esc(item.rationale)}</small></li>`).join('')+'</ul></section>'
-    :'';
-  return section('Open questions',items.filter((item)=>item.disposition==='open'),'is-uncertain')
-    +section('Accepted working assumptions',items.filter((item)=>item.disposition==='accepted_assumption'));
-}
 function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const state=t?.current_work_state;
-  if(!state||state.schema!=='personaos-persona-work-state-surface/2'){
-    const running=Array.isArray(t?.active_calls)&&t.active_calls.length>0;
+  const personaKey=_personaKey(kernel,String(t?.persona_id||state?.persona_id||''));
+  const live=S.liveByPersona.get(personaKey)||{};
+  const model=_personaModelHistory(personaKey,live.models||[]).at(-1)||null;
+  const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
+  const mechanical=_personaMechanicalRunProjection(
+    model,kernel,acts,personaKey,state||null);
+  if(!state||state.schema!=='personaos-persona-work-state-surface/3'){
+    const mechanicalClass=mechanical.key==='running'?'is-working'
+      :mechanical.key==='resource-paused'||mechanical.key==='cancelled'?'is-waiting':'is-stale';
     return `<section class="work-state-card work-state-empty"><div class="work-state-head">`
-      +`<div><span class="work-state-kicker">Public work update</span><strong>${running?'Starting a work step':'No authored work update yet'}</strong></div>`
-      +(running?'<span class="work-state-status is-working"><span class="livedot2"></span>Working</span>':'')
-      +`</div><p>${running
-        ?'The persona is active but has not yet published its first understanding, commitments, and next step.'
-        :'The persona has not published a work-state revision for this task yet.'}</p></section>`;
+      +`<div><span class="work-state-kicker">Public work note</span><strong>No persona-authored work note yet</strong></div>`
+      +`<span class="work-state-status ${mechanicalClass}">${esc(mechanical.label)}</span>`
+      +`</div><p>${esc(mechanical.detail)} No signed open-vocabulary note is published for this persona and task.</p></section>`;
   }
   const stale=state.stale===true||retainedSnapshot;
   const pending=state.pending_settlement===true;
-  const commitments=Array.isArray(state.active_commitments)?state.active_commitments:[];
-  const activeUncertainties=Array.isArray(state.active_uncertainties)?state.active_uncertainties:[];
-  const capabilityGaps=Array.isArray(state.active_capability_gaps)?state.active_capability_gaps:[];
-  const agencyState=state.agency_reconciliation_state&&typeof state.agency_reconciliation_state==='object'
-    ?state.agency_reconciliation_state:{};
-  const authoredReady=state.continuation==='ready';
-  const effectivelyReady=authoredReady&&state.ready===true&&commitments.length===0
-    &&activeUncertainties.length===0&&capabilityGaps.length===0
-    &&state.agency_reconciliation_valid===true;
-  const status=pending
-    ?{label:'Reconciling changes',className:'is-waiting'}
+  const claimState=pending
+    ?{label:'Authored revision settling',className:'is-waiting'}
     :stale
-      ?{label:'Last authored update',className:'is-stale'}
-      :effectivelyReady
-        ?{label:'Ready for review',className:'is-ready'}
-        :authoredReady
-          ?{label:'Review requested · open work remains',className:'is-waiting'}
-        :state.continuation==='quiescent'
-          ?agencyState.external_blocker_present===true
-            ?{label:'Waiting on external evidence',className:'is-waiting'}
-            :state.agency_reconciliation_valid!==true
-              ?{label:'Open work · no verified continuation',className:'is-waiting'}
-              :{label:'Paused intentionally',className:'is-waiting'}
-          :{label:'In progress',className:'is-working'};
+      ?{label:'Retained authored note',className:'is-stale'}
+      :{label:'Current authored note',className:'is-working'};
   const environment=_environmentNameFor(state.environment_id,kernel);
   const lifecycle=_taskContextForExactReferences(
     state.task_id,'',state.environment_id,kernel);
   const task=String(lifecycle?.task||'').trim();
   const context=[task,environment].filter(Boolean);
-  const contribution=[
-    ['What I’m contributing',state.current_contribution],
-    ['Working on now',state.current_focus],
-    ['Completed in this pass',state.accomplished],
-    ['Next',state.next_intent],
-  ].filter(([,value])=>String(value||'').trim());
-  const transitions=Array.isArray(state.commitment_transitions)?state.commitment_transitions:[];
+  const provenance=[
+    ['Authored at',state.authored_at],['Work-state ID',state.work_state_id],
+    ['Note ID',state.note_id],
+    ['Content hash',state.work_state_content_hash],['Situation hash',state.situation_hash],
+    ['Signing key',state.signing_key_id],['Persona signature',state.signature_hex],
+  ];
+  if(state.settlement_binding_id)
+    provenance.splice(2,0,['Settlement binding',state.settlement_binding_id]);
   return `<section class="work-state-card ${stale?'is-stale':''}">`
-    +`<div class="work-state-head"><div><span class="work-state-kicker">${stale?'Last public work update':'Current public work state'}</span>`
-    +`<strong>${esc(status.label)}</strong></div><span class="work-state-status ${status.className}">${esc(status.label)}</span></div>`
+    +`<div class="work-state-head"><div><span class="work-state-kicker">${stale?'Last signed persona note':'Signed persona work note'}</span>`
+    +`<strong>Persona-authored work note</strong></div><span class="work-state-status ${claimState.className}">${esc(claimState.label)}</span></div>`
     +(context.length?`<div class="work-state-context">${context.map(esc).join('<span aria-hidden="true">·</span>')}</div>`:'')
-    +`<div class="work-state-understanding"><span>How I see the task</span><p>${esc(state.working_understanding)}</p></div>`
-    +(contribution.length?`<div class="work-state-grid">${contribution.map(([label,value])=>
-      `<div class="work-state-item"><span>${esc(label)}</span><p>${esc(value)}</p></div>`).join('')}</div>`:'')
-    +_workStateExperience(state.collaboration)
-    +_workStateAgencySummary(state.collaboration)
-    +(commitments.length?`<section class="work-state-commitments"><h4>Open commitments <span>${commitments.length}</span></h4>`
-      +commitments.map((commitment)=>`<article><p>${esc(commitment.statement)}</p>`
-        +(commitment.evidence_expectations?.length?`<small>Evidence I intend to provide: ${commitment.evidence_expectations.map(esc).join(' · ')}</small>`:'')
-        +'</article>').join('')+'</section>':'')
-    +_workStateCapabilityGaps(capabilityGaps)
-    +`<div class="work-state-secondary">${_workStateUncertainties(state.uncertainties)}`
-    +`${_workStateTextList('Assumptions',state.assumptions)}${_workStateCollaboration(state.collaboration)}</div>`
-    +(transitions.length?`<details class="work-state-transitions"><summary>Commitment changes in this update</summary><ul>`
-      +transitions.map((transition)=>`<li><strong>${esc(humanizeMachineKey(transition.state))}</strong> — ${esc(transition.rationale)}</li>`).join('')
-      +'</ul></details>':'')
-    +`<div class="work-state-verification">${icon('check')} Persona-authored and signature-verified by its current node${stale?' · retained history':''}</div>`
+    +_personaWorkNoteComparisonHTML(state,mechanical)
+    +`<p class="work-note-neutrality">Each persona’s note is shown independently. The browser does not infer agreement, readiness, or completion from its vocabulary.</p>`
+    +(state.causal_refs.length?`<details class="work-note-lineage"><summary>${state.causal_refs.length} exact causal ${state.causal_refs.length===1?'reference':'references'}</summary><ul>${state.causal_refs.map((ref)=>`<li><code>${esc(ref)}</code></li>`).join('')}</ul></details>`:'')
+    +`<details class="work-note-lineage work-note-provenance"><summary>Signature and note provenance</summary><dl>${provenance.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd><code>${esc(value)}</code></dd></div>`).join('')}</dl></details>`
+    +`<div class="work-state-verification">${icon('check')} Publisher reports the persona signature and signing key verified; this browser verified the enclosing current-master snapshot${stale?' · retained history':''}</div>`
     +'</section>';
 }
 function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=false}={}){
@@ -8097,40 +8137,14 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
   'accepted','at','kind','mode','task_id',
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
-  'accomplished','action_ref_count','active_commitment_count','active_commitment_ids',
-  'active_commitments','active_capability_gap_count','active_capability_gap_ids',
-  'active_capability_gaps','active_membership_current','active_uncertainties',
-  'active_uncertainty_count','active_uncertainty_ids','agency_reconciliation_state',
-  'agency_reconciliation_valid','assumptions','automatic_action',
-  'automatic_provisioning','automatic_recruitment','closed_commitment_ids','collaboration',
-  'commitment_transitions',
-  'continuation','current','current_contribution','current_focus','effective_situation_hash',
-  'environment_id','evidence_ref_count','frame_id','frame_revision','known_commitment_ids','next_intent',
-  'pending_settlement','persona_id','projection_tier','ready','request_ref_count','schema',
-  'semantic_interpretation_performed','settlement_binding_verified','signature_hex',
-  'signature_verified','signing_key_id','situation_hash','stale','supersedes_frame_ref',
-  'task_id','uncertainties','work_state_content_hash','work_state_id','working_understanding',
+  'active_membership_current','authored_at','automatic_action','automatic_provisioning',
+  'automatic_recruitment','causal_ref_count','causal_refs','current',
+  'effective_situation_hash','environment_id','note_id','pending_settlement',
+  'persona_id','projection_tier','revision','schema','semantic_interpretation_performed',
+  'settlement_binding_verified','signature_hex','signature_verified','signing_key_id',
+  'situation_hash','stale','supersedes_work_state_ref','task_id','work_note',
+  'work_state_content_hash','work_state_id',
 ].sort());
-const PUBLIC_PERSONA_WORK_COMMITMENT_FIELDS=Object.freeze([
-  'commitment_id','evidence_expectations','parent_refs','statement',
-].sort());
-const PUBLIC_PERSONA_WORK_TRANSITION_FIELDS=Object.freeze([
-  'commitment_id','evidence_refs','rationale','state',
-].sort());
-const PUBLIC_PERSONA_WORK_TRANSITIONS=new Set([
-  'satisfied','superseded','principal_waived','blocked_external',
-]);
-const PUBLIC_PERSONA_WORK_UNCERTAINTY_FIELDS=Object.freeze([
-  'disposition','evidence_refs','rationale','statement','uncertainty_id',
-].sort());
-const PUBLIC_PERSONA_WORK_UNCERTAINTY_DISPOSITIONS=new Set(['open','accepted_assumption']);
-const PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS=Object.freeze([
-  'evidence_refs','gap_id','introduced_by_work_state_id','state','statement',
-].sort());
-const PUBLIC_PERSONA_BLOCKED_CAPABILITY_GAP_FIELDS=Object.freeze([
-  ...PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS,'last_transition',
-].sort());
-const PUBLIC_PERSONA_CAPABILITY_GAP_STATES=new Set(['actionable','blocked_external']);
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
@@ -8195,50 +8209,6 @@ function _validPublicWorkDocument(value,depth=0){
 function _validPublicWorkRef(value,maximum=500){
   return _safePublicCognitionText(value,maximum,{required:true})&&value.trim()===value;
 }
-function _validPublicWorkCommitment(value){
-  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_COMMITMENT_FIELDS)
-    &&_validPublicWorkRef(value.commitment_id)
-    &&_safePublicCognitionText(value.statement,4000,{required:true})
-    &&Array.isArray(value.parent_refs)&&value.parent_refs.length<=32
-    &&value.parent_refs.every((item)=>_validPublicWorkRef(item))
-    &&Array.isArray(value.evidence_expectations)&&value.evidence_expectations.length<=32
-    &&value.evidence_expectations.every((item)=>_safePublicCognitionText(item,2000,{required:true}));
-}
-function _validPublicWorkTransition(value){
-  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_TRANSITION_FIELDS)
-    &&_validPublicWorkRef(value.commitment_id)
-    &&PUBLIC_PERSONA_WORK_TRANSITIONS.has(value.state)
-    &&_safePublicCognitionText(value.rationale,4000,{required:true})
-    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length<=32
-    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item))
-    &&(value.state!=='satisfied'||value.evidence_refs.length>0)
-    &&(value.state!=='principal_waived'
-      ||value.evidence_refs.some((item)=>item.startsWith('principal:')));
-}
-function _validPublicWorkUncertainty(value){
-  return _exactObjectFields(value,PUBLIC_PERSONA_WORK_UNCERTAINTY_FIELDS)
-    &&_validPublicWorkRef(value.uncertainty_id)
-    &&_safePublicCognitionText(value.statement,2000,{required:true})
-    &&PUBLIC_PERSONA_WORK_UNCERTAINTY_DISPOSITIONS.has(value.disposition)
-    &&_safePublicCognitionText(value.rationale,4000,{required:true})
-    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length<=32
-    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item));
-}
-function _validPublicCapabilityGap(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)) return false;
-  const fields=Object.keys(value).sort().join('\u0000');
-  const base=fields===PUBLIC_PERSONA_CAPABILITY_GAP_FIELDS.join('\u0000');
-  const blocked=fields===PUBLIC_PERSONA_BLOCKED_CAPABILITY_GAP_FIELDS.join('\u0000');
-  return (base||blocked)
-    &&_validPublicWorkRef(value.gap_id)
-    &&_safePublicCognitionText(value.statement,4000,{required:true})
-    &&PUBLIC_PERSONA_CAPABILITY_GAP_STATES.has(value.state)
-    &&_validPublicWorkRef(value.introduced_by_work_state_id)
-    &&Array.isArray(value.evidence_refs)&&value.evidence_refs.length>0
-    &&value.evidence_refs.length<=32
-    &&value.evidence_refs.every((item)=>_validPublicWorkRef(item))
-    &&(!blocked||_validPublicWorkDocument(value.last_transition));
-}
 function _validPublicPersonaWorkState(value,identity){
   if(!value||typeof value!=='object'||Array.isArray(value)) return false;
   const fields=Object.keys(value).sort();
@@ -8246,21 +8216,22 @@ function _validPublicPersonaWorkState(value,identity){
   const withSettlement=fields.join('\u0000')
     ===[...PUBLIC_PERSONA_WORK_STATE_FIELDS,'settlement_binding_id'].sort().join('\u0000');
   if((!exactBase&&!withSettlement)
-      ||value.schema!=='personaos-persona-work-state-surface/2'
+      ||value.schema!=='personaos-persona-work-state-surface/3'
       ||value.projection_tier!=='public'
       ||String(value.persona_id||'')!==identity.signedId
       ||!_safePublicCognitionAtom(value.environment_id,512,{required:true})
       ||!_safePublicCognitionAtom(value.task_id,512,{required:true})
       ||!_safePublicCognitionAtom(value.work_state_id,512,{required:true})
-      ||!_validPublicWorkRef(value.frame_id)
-      ||!Number.isSafeInteger(value.frame_revision)||value.frame_revision<1
-      ||!_validPublicWorkRef(value.supersedes_frame_ref||'',500)&&value.supersedes_frame_ref!==''
+      ||!_safePublicCognitionAtom(value.note_id,512,{required:true})
+      ||!_safePublicCognitionInstant(value.authored_at)
+      ||!Number.isSafeInteger(value.revision)||value.revision<1
+      ||(!_validPublicWorkRef(value.supersedes_work_state_ref||'',500)
+        &&value.supersedes_work_state_ref!=='')
       ||!SHA256_CONTENT_RE.test(String(value.situation_hash||''))
       ||!SHA256_CONTENT_RE.test(String(value.effective_situation_hash||''))
       ||!SHA256_CONTENT_RE.test(String(value.work_state_content_hash||''))
       ||!_safePublicCognitionAtom(value.signing_key_id,512,{required:true})
       ||!/^[0-9a-f]{128}$/i.test(String(value.signature_hex||''))
-      ||!['continue','quiescent','ready'].includes(value.continuation)
       ||typeof value.current!=='boolean'||typeof value.stale!=='boolean'
       ||value.current===value.stale
       ||typeof value.pending_settlement!=='boolean'
@@ -8269,74 +8240,14 @@ function _validPublicPersonaWorkState(value,identity){
       ||value.signature_verified!==true
       ||value.automatic_recruitment!==false||value.automatic_provisioning!==false
       ||value.automatic_action!==false||value.semantic_interpretation_performed!==false
-      ||typeof value.ready!=='boolean'
-      ||!Number.isSafeInteger(value.active_commitment_count)
-      ||value.active_commitment_count<0||value.active_commitment_count>64
-      ||!Array.isArray(value.active_commitment_ids)
-      ||!Array.isArray(value.active_commitments)
-      ||value.active_commitment_ids.length!==value.active_commitment_count
-      ||value.active_commitments.length!==value.active_commitment_count
-      ||!Number.isSafeInteger(value.active_uncertainty_count)
-      ||value.active_uncertainty_count<0||value.active_uncertainty_count>32
-      ||!Array.isArray(value.active_uncertainty_ids)
-      ||!Array.isArray(value.active_uncertainties)
-      ||value.active_uncertainty_ids.length!==value.active_uncertainty_count
-      ||value.active_uncertainties.length!==value.active_uncertainty_count
-      ||typeof value.agency_reconciliation_valid!=='boolean'
-      ||!_validPublicWorkDocument(value.agency_reconciliation_state)
-      ||!Number.isSafeInteger(value.active_capability_gap_count)
-      ||value.active_capability_gap_count<0||value.active_capability_gap_count>32
-      ||!Array.isArray(value.active_capability_gap_ids)
-      ||!Array.isArray(value.active_capability_gaps)
-      ||value.active_capability_gap_ids.length!==value.active_capability_gap_count
-      ||value.active_capability_gaps.length!==value.active_capability_gap_count
-      ||!_safePublicCognitionText(value.working_understanding,8000,{required:true})
-      ||!_safePublicCognitionText(value.current_contribution,4000,{required:true})
-      ||!_safePublicCognitionText(value.current_focus,4000,{required:true})
-      ||!_safePublicCognitionText(value.accomplished,4000)
-      ||!_safePublicCognitionText(value.next_intent,4000,{required:true})
-      ||!Array.isArray(value.assumptions)||value.assumptions.length>32
-      ||!value.assumptions.every((item)=>_safePublicCognitionText(item,2000,{required:true}))
-      ||!Array.isArray(value.uncertainties)||value.uncertainties.length>32
-      ||!value.uncertainties.every(_validPublicWorkUncertainty)
-      ||!_validPublicWorkDocument(value.collaboration)
-      ||!Array.isArray(value.commitment_transitions)||value.commitment_transitions.length>64
-      ||!value.commitment_transitions.every(_validPublicWorkTransition)
-      ||!Number.isSafeInteger(value.evidence_ref_count)||value.evidence_ref_count<0||value.evidence_ref_count>32
-      ||!Number.isSafeInteger(value.action_ref_count)||value.action_ref_count<0||value.action_ref_count>32
-      ||!Number.isSafeInteger(value.request_ref_count)||value.request_ref_count<0||value.request_ref_count>32
+      ||!_validPublicWorkDocument(value.work_note)
+      ||!Array.isArray(value.causal_refs)||value.causal_refs.length>32
+      ||!value.causal_refs.every((item)=>_validPublicWorkRef(item))
+      ||new Set(value.causal_refs).size!==value.causal_refs.length
+      ||!Number.isSafeInteger(value.causal_ref_count)
+      ||value.causal_ref_count!==value.causal_refs.length
       ||(withSettlement&&!_safePublicCognitionAtom(value.settlement_binding_id,512,{required:true}))) return false;
-  const ids=value.active_commitment_ids;
-  if(new Set(ids).size!==ids.length
-      ||!ids.every((item)=>_validPublicWorkRef(item))) return false;
-  const commitments=value.active_commitments;
-  if(!commitments.every(_validPublicWorkCommitment)
-      ||commitments.some((item,index)=>item.commitment_id!==ids[index])) return false;
-  if(!Array.isArray(value.closed_commitment_ids)||value.closed_commitment_ids.length>64
-      ||!Array.isArray(value.known_commitment_ids)||value.known_commitment_ids.length>128
-      ||new Set(value.closed_commitment_ids).size!==value.closed_commitment_ids.length
-      ||new Set(value.known_commitment_ids).size!==value.known_commitment_ids.length
-      ||!value.closed_commitment_ids.every((item)=>_validPublicWorkRef(item))
-      ||!value.known_commitment_ids.every((item)=>_validPublicWorkRef(item))) return false;
-  const uncertaintyIds=value.uncertainties.map((item)=>item.uncertainty_id);
-  const openUncertainties=value.uncertainties.filter((item)=>item.disposition==='open');
-  const activeUncertaintyIds=value.active_uncertainty_ids;
-  if(new Set(uncertaintyIds).size!==uncertaintyIds.length
-      ||new Set(activeUncertaintyIds).size!==activeUncertaintyIds.length
-      ||openUncertainties.length!==value.active_uncertainties.length
-      ||!activeUncertaintyIds.every((item)=>_validPublicWorkRef(item))
-      ||!value.active_uncertainties.every(_validPublicWorkUncertainty)
-      ||value.active_uncertainties.some((item)=>item.disposition!=='open')
-      ||openUncertainties.some((item,index)=>canon(item)!==canon(value.active_uncertainties[index]))
-      ||activeUncertaintyIds.some((item,index)=>item!==value.active_uncertainties[index].uncertainty_id)) return false;
-  const gapIds=value.active_capability_gap_ids, gaps=value.active_capability_gaps;
-  if(new Set(gapIds).size!==gapIds.length
-      ||!gapIds.every((item)=>_validPublicWorkRef(item))
-      ||!gaps.every(_validPublicCapabilityGap)
-      ||gaps.some((item,index)=>item.gap_id!==gapIds[index])) return false;
-  return value.ready===(value.continuation==='ready'
-    &&value.active_commitment_count===0&&value.active_uncertainty_count===0
-    &&value.active_capability_gap_count===0&&value.agency_reconciliation_valid===true);
+  return true;
 }
 function _validPublicPersonaWorkStateHistory(doc,identity){
   const history=doc.work_state_history;
