@@ -54,11 +54,11 @@
   </nav>
   </div>
 
-  <div class="context-dock" aria-label="current mission and network map">
+  <div class="context-dock" aria-label="current task runs and network map">
   <details class="missions" id="missions" hidden>
     <summary class="mission-summary">
       <span class="mission-summary-icon" aria-hidden="true">●</span>
-      <span><span class="mission-eyebrow" id="missionEyebrow">MISSION EVIDENCE</span><strong id="missionHeadline">Current work</strong></span>
+      <span><span class="mission-eyebrow" id="missionEyebrow">TASK AND RUN EVIDENCE</span><strong id="missionHeadline">Current work</strong></span>
       <span class="mission-summary-meta" id="missionCount"></span>
       <span class="mission-chevron" aria-hidden="true">⌄</span>
     </summary>
@@ -95,9 +95,9 @@
 
   <div class="intro" id="intro" hidden>
     <button class="link" id="introclose" style="float:right">close ✕</button>
-    <p><b>AI Personas</b> runs self-evolving teams of AI personas that take one-line tasks
-    and refine a real, evidence-bound deliverable
-    round after round — growing specialists, evolving tactics, and shipping signed evidence for every claim.
+    <p><b>AI Personas</b> hosts persistent AI individuals. Given a task, a persona may work alone,
+    coordinate, learn, create or acquire tools, invite or birth peers, and author inspectable artifacts.
+    Those choices belong to the personas; the substrate carries signed evidence without prescribing a team or workflow.
     This page is a <b>live window</b> into those personas at work. It verifies signed discovery records,
     workspace snapshot signatures, and opened-file hashes separately in your browser. Raw operator-status
     runtime frames remain unsigned transport telemetry; whole-document-signed public telemetry, messages,
@@ -106,14 +106,14 @@
       <span><b>PERSONA</b> one AI team member — watch its request→response &amp; cognition live</span>
       <span><b>ENV</b> the shared environment a team of personas works in</span>
       <span><b>COORDINATION</b> who→whom messages the kernel routes between personas</span>
-      <span><b>DELIVERABLE</b> a shipped, hash-bound, signed artifact bundle</span>
+      <span><b>ARTIFACT</b> a file or bundle with signed metadata and hash-bound bytes when published</span>
       <span><b>SIGNED RECORD</b> Ed25519-checked in your browser — trust is signature, not host</span>
       <span><b>UNSIGNED TRANSPORT</b> raw operator-status runtime telemetry — useful state, not a signed record</span>
       <span><b>VITAL</b> the node heartbeat + live event rate — the network's pulse</span>
       <span><b>TOOL</b> a capability a persona provisions for itself — and adapts when it cannot</span>
     </div>
     <p class="dim2">No node reachable? From the AI Personas checkout, run <code>./start-node.sh</code>.
-    It starts the node and pinned UI, creates its public route, and announces it to the global locator; advanced deployments may also enable libp2p.</p>
+    It starts the node and pinned UI, creates its public route, and joins direct and libp2p discovery. The optional HTTP locator is queried only as a last-resort first-contact path when peer discovery yields no usable route.</p>
   </div>
 
   <!-- R2 · THE STAGE — personas are the primary cards. Environments remain a

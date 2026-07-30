@@ -33,7 +33,6 @@ import {
   compactCount,
   nextProgressiveGroupLevel,
   providerIndexResponseByteLimit,
-  publishedMissionEvidenceProjection,
   publicTaskLifecycleProjection,
   projectTerminalModelFailures,
   progressiveGroupLimit,
@@ -137,7 +136,7 @@ const _ICON_PATHS={
   dna:'M5 3c0 3 6 3 6 6s-6 3-6 6M11 3c0 3-6 3-6 6s6 3 6 6M5.5 5h5M5.5 11h5', // 🧬 evolved tactics
   mode:'M8 2.5l1.5 1.5L8 5.5 6.5 4 8 2.5zM8 10.5L9.5 12 8 13.5 6.5 12 8 10.5zM2.5 8L4 6.5 5.5 8 4 9.5 2.5 8zM10.5 8L12 6.5 13.5 8 12 9.5 10.5 8z', // ◈ cognitive mode
   target:'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', // ◎ follow / watch-one
-  box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ deliverable bundle (package)
+  box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ artifact bundle (package)
   copy:'M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z',                  // ⧉ copy (two overlapping sheets)
   download:'M8 2.5v7M5.5 7L8 9.5 10.5 7M3 11v2h10v-2',       // download to tray
 };
@@ -180,7 +179,7 @@ async function copyFromButton(btn){
 const enc=new TextEncoder();
 const hexToBytes=(h)=>Uint8Array.from((h||'').match(/.{1,2}/g)?.map((b)=>parseInt(b,16))||[]);
 const pad=(n,w=2)=>String(n).padStart(w,'0');
-const KIND_LABEL={persona:'PERSONA',env:'ENV',project:'PROJECT',domain:'DOMAIN',artifact:'ARTIFACT',telemetry:'TELEMETRY',knowledge:'KNOWLEDGE',skill:'SKILL',tool:'TOOL',mission:'MISSION'};
+const KIND_LABEL={persona:'PERSONA',env:'ENV',project:'PROJECT',domain:'DOMAIN',artifact:'ARTIFACT',telemetry:'TELEMETRY',knowledge:'KNOWLEDGE',skill:'SKILL',tool:'TOOL',mission:'WORK EVIDENCE'};
 const SPARK_N=32, BUCKET_MS=650;
 
 // canonical bytes == personaos canonical_bytes (sorted keys, compact, UTF-8)
@@ -3728,7 +3727,7 @@ function isReachableNode(){
 }
 function isWarming(){
   // reachable + heartbeat actually BUSY producing, yet zero streamable signal at the
-  // client. heartbeat.running alone is true for an unfunded/idle node (the thread is
+  // client. heartbeat.running alone is true for an idle node (the thread is
   // just alive), so requiring busy stops the green 'producing' claim on an idle node.
   if(!isReachableNode()) return false;
   const heartbeat=heartbeatForScope();
@@ -3737,8 +3736,8 @@ function isWarming(){
   const noActs=!((S.interactions||[]).length);
   return noPersonas&&noActs;
 }
-// HONEST idle-but-alive: node reachable, heartbeat running, but NOT busy (no funded
-// mission) and nothing has streamed yet. Distinct from warming (busy) — the copy must
+// HONEST idle-but-alive: node reachable, heartbeat running, but NOT busy (no active
+// task run) and nothing has streamed yet. Distinct from warming (busy) — the copy must
 // not claim production.
 function isIdleAlive(){
   if(!isReachableNode()) return false;
@@ -3755,8 +3754,8 @@ function idleAliveHTML(){
   // A minimal inline fallback on the dot keeps it legible until the shared CSS lands.
   return `<div class="state-banner idle">`
     +`<span class="dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>`
-    +`<div><b class="amber">node is online — no funded mission running</b>`
-    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>OPERATOR</b>, ask the node a task and fund a budget to start a run; personas, coordination and deliverables stream here the moment it produces.</span></div>`
+    +`<div><b class="amber">node is online — no active task run observed</b>`
+    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>OPERATOR</b> to submit a task or add budget to an existing run; personas, coordination and artifacts appear when the node publishes them.</span></div>`
     +`</div>`;
 }
 // A calm pulsing-green warming banner: the dot reuses the existing 'live' class for its
@@ -3766,7 +3765,7 @@ function warmingHTML(){
   return `<div class="state-banner warming">`
     +`<span class="dot live" style="background:var(--up);box-shadow:0 0 8px var(--up)"></span>`
     +`<div><b style="color:var(--up)">node is producing the first candidate</b>`
-    +`<span class="l2"> — telemetry will stream here shortly. Personas, coordination and deliverables appear the moment the run emits them.</span></div>`
+    +`<span class="l2"> — telemetry will stream here shortly. Personas, coordination and artifacts appear when the run emits them.</span></div>`
     +`</div>`;
 }
 
@@ -4905,7 +4904,7 @@ const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITT
   'PERSONA_COMMUNICATION_INTENT_RECORDED',
   'PERSONA_COMMUNICATION_ROUTE_OBSERVED',
   'PERSONA_COMMUNICATION_AUTHORED','PERSONA_INVITATION_AUTHORED','PERSONA_INVITATION_RESPONSE_AUTHORED',
-  'PERSONA_BIRTH_NEED_AUTHORED','PERSONA_BIRTH_PROPOSAL_AUTHORED','PERSONA_BIRTH_ADMITTED','PERSONA_BIRTH_REFUSED']);
+  'PERSONA_BIRTH_PROPOSAL_AUTHORED','PERSONA_BIRTH_ADMITTED','PERSONA_BIRTH_REFUSED']);
 const CROSSENV_KINDS=new Set(['ENV_COMPOSED','env_composition_established','cross_env_event_link',
   'cross_env_offer_made','cross_env_offer_accepted','env_composition_cascade_applied']);
 // VERIFY = independent judgement (reinforces trust = signature). Checked before
@@ -4934,7 +4933,7 @@ function _ixClass(kind,event=null){ if(event?._cognition===true
 // unmapped falls back to the lower-cased kind — never fabricated.
 const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repaired candidate',
   VERIFIER_VERDICT:'gave verdict',ANSWER_EVALUATED:'evaluated answer',SAFETY_CHECKED:'safety-checked',
-  TASK_COMPLETED:'completed task',TASK_ACCEPTED:'accepted task',TASK_NOT_ACCEPTED:'rejected answer',
+  TASK_COMPLETED:'task-completion event recorded',TASK_ACCEPTED:'task-acceptance event recorded',TASK_NOT_ACCEPTED:'task rejection recorded',
   TASK_CLASSIFIED:'classified task',MODE_ENTRY:'entered mode',MODE_EXIT:'exited mode',
   ENVELOPE_MINTED:'minted envelope',EXPERIENCE_TASK_RECORDED:'recorded experience',
   PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
@@ -4944,7 +4943,7 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
   PERSONA_COMMUNICATION_ROUTE_OBSERVED:'observed communication route',
   PERSONA_COMMUNICATION_AUTHORED:'authored message',PERSONA_INVITATION_AUTHORED:'invited persona',
-  PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',PERSONA_BIRTH_NEED_AUTHORED:'identified a team need',
+  PERSONA_INVITATION_RESPONSE_AUTHORED:'answered invitation',
   PERSONA_BIRTH_PROPOSAL_AUTHORED:'proposed persona birth',PERSONA_BIRTH_ADMITTED:'admitted persona birth',
   PERSONA_BIRTH_REFUSED:'refused persona birth',
   MODEL_CALL:'model call observed',MODEL_SELECTED:'model selected',MODEL_CALL_SUCCEEDED:'model call succeeded',
@@ -4971,7 +4970,7 @@ const PUBLIC_ACTIVITY_CORE_PROVENANCE=new Set([
 ]);
 const PUBLIC_ACTIVITY_PROVENANCE_LABEL=Object.freeze({
   action:'action',actionId:'action id',invocation:'invocation',purpose:'purpose',model:'model',status:'state',callStatus:'call state',run:'run',task:'task',
-  missionTask:'mission task',call:'call',event:'event',intent:'intent',request:'request',
+  missionTask:'task',call:'call',event:'event',intent:'intent',request:'request',
   message:'message',parentMessage:'parent message',sequence:'seq',latencyMs:'latency ms',
   role:'role',tool:'tool',server:'server',effort:'reasoning',effortSource:'reasoning source',environment:'env',persona:'persona',scopeId:'scope',
   evidence:'evidence',dedupe:'wake key',authority:'authority',authorityHash:'authority hash',
@@ -5032,7 +5031,7 @@ function _humanActivityProvenance(field,value,provenance,kernel=''){
     const task=contextual?.task
       ||(!(provenance?.run&&provenance?.environment)
         ?_taskTextForExactReference(value,provenance?.run,kernel):'');
-    return task?{label:field==='missionTask'?'mission':'task',value:_compactHumanLabel(task),title:task}:null;
+    return task?{label:'task',value:_compactHumanLabel(task),title:task}:null;
   }
   // These values remain available in the exact signed document and in the
   // chip tooltip, but a call/run/hash/intent identifier is verification
@@ -5266,6 +5265,29 @@ const _MECHANICAL_RESOURCE_PAUSED_TASK_STATES=new Set([
 const _MECHANICAL_CANCELLED_TASK_STATES=new Set([
   'operator_terminated','run_cancelled','task_run_cancelled',
 ]);
+function _mechanicalRunProjection(exactState,{activeCall=false,currentExecution=false,
+  source='signed task lifecycle'}={}){
+  const exact=String(exactState||'');
+  if(activeCall) return {key:'running',label:'Running',exactState:exact,
+    detail:'A current model call is mechanically active.',source:'active model call'};
+  if(_MECHANICAL_CANCELLED_TASK_STATES.has(exact))
+    return {key:'cancelled',label:'Cancelled',exactState:exact,
+      detail:'The run lifecycle records cancellation.',source};
+  if(_MECHANICAL_RESOURCE_PAUSED_TASK_STATES.has(exact))
+    return {key:'resource-paused',label:'Resource-paused',exactState:exact,
+      detail:'The run lifecycle records a transport or resource pause.',source};
+  if(_MECHANICAL_QUIESCENT_TASK_STATES.has(exact))
+    return {key:'quiescent',label:'Quiescent',exactState:exact,
+      detail:'No persona continuation is currently bound.',source};
+  if(currentExecution||exact==='event_driven_handoff')
+    return {key:'running',label:'Running',exactState:exact,
+      detail:exact==='event_driven_handoff'
+        ?'A persona continuation is mechanically queued.'
+        :'The run lifecycle records active execution.',source};
+  return {key:'unavailable',label:'Run state unavailable',exactState:exact,
+    detail:'No current mechanical run category is available.',
+    source:exact?source:'no current lifecycle'};
+}
 function _taskLifecycleForPersonaWork(model,kernel='',acts=[],personaKey='',workState=null){
   if(!kernel) return null;
   const activeCall=_activeModelCallsForPersona(personaKey,kernel).at(-1)||null;
@@ -5301,26 +5323,9 @@ function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',w
   const lifecycle=_taskLifecycleForPersonaWork(
     model,kernel,acts,personaKey,workState);
   const exactState=String(lifecycle?.state||'');
-  if(activeCalls.length) return {key:'running',label:'Running',exactState,
-    detail:'A current model call is mechanically active.',source:'active model call'};
-  if(_MECHANICAL_CANCELLED_TASK_STATES.has(exactState))
-    return {key:'cancelled',label:'Cancelled',exactState,
-      detail:'The signed run lifecycle records cancellation.',source:'signed task lifecycle'};
-  if(_MECHANICAL_RESOURCE_PAUSED_TASK_STATES.has(exactState))
-    return {key:'resource-paused',label:'Resource-paused',exactState,
-      detail:'Execution transport or resources are not currently ready.',source:'signed task lifecycle'};
-  if(_MECHANICAL_QUIESCENT_TASK_STATES.has(exactState))
-    return {key:'quiescent',label:'Quiescent',exactState,
-      detail:'No accepted continuation is currently scheduled.',source:'signed task lifecycle'};
-  if(lifecycle?.currentExecution===true||exactState==='event_driven_handoff')
-    return {key:'running',label:'Running',exactState,
-      detail:exactState==='event_driven_handoff'
-        ?'An accepted persona continuation is queued.'
-        :'The signed run lifecycle records active execution.',
-      source:'signed task lifecycle'};
-  return {key:'unavailable',label:'Run state unavailable',exactState,
-    detail:'No current signed mechanical run category is available.',
-    source:lifecycle?'signed task lifecycle':'no current lifecycle'};
+  return _mechanicalRunProjection(exactState,{activeCall:activeCalls.length>0,
+    currentExecution:lifecycle?.currentExecution===true,
+    source:'signed task lifecycle'});
 }
 function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
   if(value===null||typeof value!=='object')
@@ -5789,13 +5794,6 @@ if(typeof MutationObserver==='function'){
     cleanupQueued=true; queueMicrotask(()=>{ cleanupQueued=false; _releaseDisconnectedPersonaAvatarMountUrls(); });
   }).observe(document.documentElement,{childList:true,subtree:true});
 }
-function _artifactStateInfo(r){
-  const m=String(r?.description||'').match(/^(\w+) deliverable bundle \((\d+) files?\)/i);
-  const state=m?m[1].toLowerCase():'', files=m?Number(m[2]):0;
-  const cls=(state==='shipped'||state==='accepted')?'ds-ok'
-    :(state==='deprecated'||state==='rejected')?'ds-no':'ds-amber';
-  return {state,files,cls};
-}
 function _boundedLatestUnique(rows,keyOf,limit){
   const selected=new Map(); let fallback=0;
   for(const row of (rows||[])){
@@ -5897,7 +5895,7 @@ const _ARTIFACT_PRESENTATION_GROUPS=Object.freeze([
 function _artifactPresentationGroup(path){
   const presentation=_artifactFilePresentation(path), extension=presentation.extension.toLowerCase();
   const group=_ARTIFACT_PRESENTATION_GROUPS.find((candidate)=>candidate.extensions.has(extension));
-  return {presentation,group:group||Object.freeze({id:'other',label:'Other files',description:'Additional verified deliverables'})};
+  return {presentation,group:group||Object.freeze({id:'other',label:'Other files',description:'Additional verified artifacts'})};
 }
 function _artifactRevisionRank(path){
   const matches=[...String(path||'').matchAll(/(?:^|[^a-z0-9])rev(?:ision)?[\s_-]*([a-z]|\d+)(?=$|[^a-z0-9])/gi)];
@@ -6058,11 +6056,11 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
 function _artifactActionHTML(r,{scope='output'}={}){
   if(!r) return '';
   const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
-  const info=_artifactStateInfo(r), label=String(r.label||'deliverable');
+  const label=String(r.label||'artifact bundle');
   const authored=authoredArtifactLabelText(r);
-  return `<button type="button" class="owned-output ${info.cls}" data-artid="${esc(aid)}" title="open ${esc(label)}">`
+  return `<button type="button" class="owned-output" data-artid="${esc(aid)}" title="open ${esc(label)}">`
     +`<span class="owned-output-icon">${icon('box','ico-sm')}</span><span class="owned-output-copy"><b>${esc(label)}</b>`
-    +`<small>${info.files?`${info.files} file${info.files===1?'':'s'}`:esc(_sentenceStart(scope))}${authored?` · ${esc(authored)}`:''}</small></span><span class="current-artifact-preview">Open details →</span></button>`;
+    +`<small>${esc(_sentenceStart(scope))}${authored?` · ${esc(authored)}`:''}</small></span><span class="current-artifact-preview">Open details →</span></button>`;
 }
 function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona worktree'}={}){
   const projection=_artifactRevisionProjection(artifacts), rows=projection.rows;
@@ -6575,7 +6573,7 @@ function _environmentCommunicationGraphHTML(b){
   }).join('');
   const nodes=shown.map((personaKey)=>{ const ref=_personaRef(personaKey), state=states.get(personaKey)||{};
     const identityVerified=providerVerifiedPersonaObservation(personaKey)?.identityVerified===true;
-    const stateLabel=state.running?'model call':(state.recent?'recent':'ready');
+    const stateLabel=state.running?'model call':(state.recent?'recent':'idle');
     return `<button type="button" class="env-persona-node ${state.running?'running':state.recent?'recent':'idle'}" style="--node-x:${positions.get(personaKey).x}%;--node-y:${positions.get(personaKey).y}%" data-pcard="${esc(ref.sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" title="open ${esc(_signedPersonaNameFor(personaKey))}">`
       +`<span class="env-node-portrait">${_personaAvatarHTML(personaKey,{identityVerified})}<i aria-hidden="true"></i></span>`
       +`<strong>${esc(_signedPersonaNameFor(personaKey))}</strong><small>${esc(stateLabel)}</small></button>`;
@@ -7562,16 +7560,16 @@ function renderInteractionStream(){
       return '<li class="loading-inline">'
         +'<span class="dot live" style="background:var(--up);box-shadow:0 0 6px var(--up)"></span>'
         +'<span><b style="color:var(--up)">node is producing the first candidate</b> — coordination acts will stream here shortly.</span></li>';
-    // idle-but-alive: reachable + heartbeat running but NOT busy (no funded mission) —
+    // idle-but-alive: reachable + heartbeat running but NOT busy —
     // honest amber, never the green 'producing' claim.
     if(flt==='all' && isIdleAlive())
       return '<li class="loading-inline">'
         +'<span class="dot" style="background:var(--amber);box-shadow:0 0 6px var(--amber)"></span>'
-        +'<span><b class="amber">node is online — no funded mission</b> — ask a task and fund a budget in the console to start a run.</span></li>';
+        +'<span><b class="amber">node is online — no active task run observed</b> — submit a task or add budget to an existing run from the operator console.</span></li>';
     // presence check so the intentional empty-string label (all) survives the lookup
-    const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'shipped-artifact ',tool:'tool ',crossenv:'cross-env '};
+    const lbl={all:'',think:'thinking ',coord:'coordination ',verify:'verification ',artifact:'artifact ',tool:'tool ',crossenv:'cross-env '};
     const q=(flt in lbl)?lbl[flt]:(flt+' ');
-    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity is currently retained — fund or resume a mission to watch personas coordinate.</li>';
+    return '<li class="l2" style="padding:10px">no '+esc(q)+'activity is currently retained — submit or resume a task run to watch personas coordinate.</li>';
   })();
   if(!atTop) el.scrollTop=prevTop+(el.scrollHeight-prevH);
   // headline count must match what the reader sees: the grand total only for the
@@ -7844,13 +7842,8 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
       +`<span class="work-state-status ${mechanicalClass}">${esc(mechanical.label)}</span>`
       +`</div><p>${esc(mechanical.detail)} No signed open-vocabulary note is published for this persona and task.</p></section>`;
   }
-  const stale=state.stale===true||retainedSnapshot;
-  const pending=state.pending_settlement===true;
-  const claimState=pending
-    ?{label:'Authored revision settling',className:'is-waiting'}
-    :stale
-      ?{label:'Retained authored note',className:'is-stale'}
-      :{label:'Current authored note',className:'is-working'};
+  const bindingLabel=state.bound_to_latest_observation
+    ?'Bound to latest observation':'Not bound to latest observation';
   const environment=_environmentNameFor(state.environment_id,kernel);
   const lifecycle=_taskContextForExactReferences(
     state.task_id,'',state.environment_id,kernel);
@@ -7860,19 +7853,19 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
     ['Authored at',state.authored_at],['Work-state ID',state.work_state_id],
     ['Note ID',state.note_id],
     ['Content hash',state.work_state_content_hash],['Situation hash',state.situation_hash],
+    ['Latest observed situation hash',state.latest_observed_situation_hash],
+    ['Bound to latest observation',String(state.bound_to_latest_observation)],
     ['Signing key',state.signing_key_id],['Persona signature',state.signature_hex],
   ];
-  if(state.settlement_binding_id)
-    provenance.splice(2,0,['Settlement binding',state.settlement_binding_id]);
-  return `<section class="work-state-card ${stale?'is-stale':''}">`
-    +`<div class="work-state-head"><div><span class="work-state-kicker">${stale?'Last signed persona note':'Signed persona work note'}</span>`
-    +`<strong>Persona-authored work note</strong></div><span class="work-state-status ${claimState.className}">${esc(claimState.label)}</span></div>`
+  return `<section class="work-state-card">`
+    +`<div class="work-state-head"><div><span class="work-state-kicker">${retainedSnapshot?'Retained signed snapshot':'Signed persona work note'}</span>`
+    +`<strong>Persona-authored work note</strong></div><span class="work-state-status">${esc(bindingLabel)}</span></div>`
     +(context.length?`<div class="work-state-context">${context.map(esc).join('<span aria-hidden="true">·</span>')}</div>`:'')
     +_personaWorkNoteComparisonHTML(state,mechanical)
     +`<p class="work-note-neutrality">Each persona’s note is shown independently. The browser does not infer agreement, readiness, or completion from its vocabulary.</p>`
     +(state.causal_refs.length?`<details class="work-note-lineage"><summary>${state.causal_refs.length} exact causal ${state.causal_refs.length===1?'reference':'references'}</summary><ul>${state.causal_refs.map((ref)=>`<li><code>${esc(ref)}</code></li>`).join('')}</ul></details>`:'')
     +`<details class="work-note-lineage work-note-provenance"><summary>Signature and note provenance</summary><dl>${provenance.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd><code>${esc(value)}</code></dd></div>`).join('')}</dl></details>`
-    +`<div class="work-state-verification">${icon('check')} Publisher reports the persona signature and signing key verified; this browser verified the enclosing current-master snapshot${stale?' · retained history':''}</div>`
+    +`<div class="work-state-verification">${icon('check')} Publisher reports the persona signature and signing key verified; this browser verified the enclosing current-master snapshot${retainedSnapshot?' · retained public snapshot':''}</div>`
     +'</section>';
 }
 function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=false}={}){
@@ -8137,12 +8130,11 @@ const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
   'accepted','at','kind','mode','task_id',
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
-  'active_membership_current','authored_at','automatic_action','automatic_provisioning',
-  'automatic_recruitment','causal_ref_count','causal_refs','current',
-  'effective_situation_hash','environment_id','note_id','pending_settlement',
-  'persona_id','projection_tier','revision','schema','semantic_interpretation_performed',
-  'settlement_binding_verified','signature_hex','signature_verified','signing_key_id',
-  'situation_hash','stale','supersedes_work_state_ref','task_id','work_note',
+  'active_membership_current','authored_at','automatic_action',
+  'bound_to_latest_observation','causal_ref_count','causal_refs','environment_id',
+  'latest_observed_situation_hash','note_id','persona_id','projection_tier','revision',
+  'schema','semantic_interpretation_performed','signature_hex','signature_verified',
+  'signing_key_id','situation_hash','supersedes_work_state_ref','task_id','work_note',
   'work_state_content_hash','work_state_id',
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
@@ -8212,10 +8204,7 @@ function _validPublicWorkRef(value,maximum=500){
 function _validPublicPersonaWorkState(value,identity){
   if(!value||typeof value!=='object'||Array.isArray(value)) return false;
   const fields=Object.keys(value).sort();
-  const exactBase=fields.join('\u0000')===PUBLIC_PERSONA_WORK_STATE_FIELDS.join('\u0000');
-  const withSettlement=fields.join('\u0000')
-    ===[...PUBLIC_PERSONA_WORK_STATE_FIELDS,'settlement_binding_id'].sort().join('\u0000');
-  if((!exactBase&&!withSettlement)
+  if(fields.join('\u0000')!==PUBLIC_PERSONA_WORK_STATE_FIELDS.join('\u0000')
       ||value.schema!=='personaos-persona-work-state-surface/3'
       ||value.projection_tier!=='public'
       ||String(value.persona_id||'')!==identity.signedId
@@ -8228,25 +8217,23 @@ function _validPublicPersonaWorkState(value,identity){
       ||(!_validPublicWorkRef(value.supersedes_work_state_ref||'',500)
         &&value.supersedes_work_state_ref!=='')
       ||!SHA256_CONTENT_RE.test(String(value.situation_hash||''))
-      ||!SHA256_CONTENT_RE.test(String(value.effective_situation_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(value.latest_observed_situation_hash||''))
       ||!SHA256_CONTENT_RE.test(String(value.work_state_content_hash||''))
       ||!_safePublicCognitionAtom(value.signing_key_id,512,{required:true})
       ||!/^[0-9a-f]{128}$/i.test(String(value.signature_hex||''))
-      ||typeof value.current!=='boolean'||typeof value.stale!=='boolean'
-      ||value.current===value.stale
-      ||typeof value.pending_settlement!=='boolean'
-      ||typeof value.settlement_binding_verified!=='boolean'
+      ||typeof value.bound_to_latest_observation!=='boolean'
+      ||value.bound_to_latest_observation
+        !==(value.situation_hash===value.latest_observed_situation_hash)
       ||typeof value.active_membership_current!=='boolean'
       ||value.signature_verified!==true
-      ||value.automatic_recruitment!==false||value.automatic_provisioning!==false
-      ||value.automatic_action!==false||value.semantic_interpretation_performed!==false
+      ||value.automatic_action!==false
+      ||value.semantic_interpretation_performed!==false
       ||!_validPublicWorkDocument(value.work_note)
       ||!Array.isArray(value.causal_refs)||value.causal_refs.length>32
       ||!value.causal_refs.every((item)=>_validPublicWorkRef(item))
       ||new Set(value.causal_refs).size!==value.causal_refs.length
       ||!Number.isSafeInteger(value.causal_ref_count)
-      ||value.causal_ref_count!==value.causal_refs.length
-      ||(withSettlement&&!_safePublicCognitionAtom(value.settlement_binding_id,512,{required:true}))) return false;
+      ||value.causal_ref_count!==value.causal_refs.length) return false;
   return true;
 }
 function _validPublicPersonaWorkStateHistory(doc,identity){
@@ -8258,8 +8245,8 @@ function _validPublicPersonaWorkStateHistory(doc,identity){
   if(!history.length) return doc.current_work_state
     &&typeof doc.current_work_state==='object'&&!Array.isArray(doc.current_work_state)
     &&Object.keys(doc.current_work_state).length===0;
-  const currentRows=history.filter((state)=>state.current===true);
-  const expected=currentRows.length?currentRows[currentRows.length-1]:history[history.length-1];
+  const latestBound=history.filter((state)=>state.bound_to_latest_observation===true);
+  const expected=latestBound.length?latestBound[latestBound.length-1]:history[history.length-1];
   return canon(doc.current_work_state)===canon(expected);
 }
 async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
@@ -9260,11 +9247,11 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     ?r._personaCapabilitiesSummary:[];
   if(authoredCapabilities.length) html+=H('What I can contribute')
     +authoredCapabilitiesHTML(authoredCapabilities);
-  // THE PLAN — use the persona's direct run or its one exact verified env
-  // association. Never borrow the first env on a multi-env kernel.
+  // Keep the exact run binding for artifact navigation. Run lifecycle and
+  // persona-authored notes are rendered by their independently verified live
+  // surfaces; the drawer does not synthesize a mission plan from run status.
   const _personaEnv=envRecordForAuthority(r);
   const _prun=runOf(r)||(_personaEnv.recordId?runForEnv(S.recs.get(_personaEnv.recordId)):null);
-  if(_prun&&base) html+=await planSection(base,_prun);
   // LIVE per-persona activity — what this persona is doing right now + its
   // evolving internal state, streamed in place on every telemetry tick. Prefers
   // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
@@ -9303,7 +9290,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     nav+=`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(_personaEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
   else if(ps.environment_id||prof.environment_id)
     nav+=`<div class="row"><span class="l2">Environment observation withheld from navigation — no verified routing reference</span></div>`;
-  if(bid) nav+=`<div class="row">${recLink(bid,'Deliverable (bundle) →')}</div>`;
+  if(bid) nav+=`<div class="row">${recLink(bid,'Artifact bundle →')}</div>`;
   if(nav) html+=H('Related')+nav;
   if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(contentBase,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
   return {title:`<span class="kind k-persona">PERSONA</span> ${esc(displayName)}`, html};
@@ -9330,11 +9317,6 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const _envLiveModels=(S.liveByEnv.get(_environmentKey(r._kernel,d.environment_id||r.did))||{}).models||[];
   if(_envLiveModels.length) html+=kv('Models in use',_modelSummary(_envLiveModels));
   if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
-  // THE PLAN — the mission charter this environment exists to pursue (objectives,
-  // current round, blocked/measured state). Surfaced right under the env header so
-  // the drawer answers "what is this env trying to DO", not only "what did it make".
-  const _run=runForEnv(r);
-  if(_run&&base) html+=await planSection(base,_run);
   // Deliverables produced in THIS environment. Artifact records participate only
   // when their independently verified authority names this exact environment.
   const manifestRel=L.artifact_manifest||d.artifact_manifest||'';
@@ -9352,9 +9334,9 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
       +`<div class="artifact-index-body">${renderArtifactTree(manifestFiles,manifestRun(manifest))}</div></details>`;
   }
   if(myArts.length&&(myBundles.length||!manifestFiles.length)){
-    html+=H('Deliverables');
+    html+=H('Artifact bundles');
     for(const bnd of myBundles)
-      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'deliverable bundle')} →</a></div>`;
+      html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'artifact bundle')} →</a></div>`;
     if(myFiles.length&&!manifestFiles.length)
       html+=`<details class="artifact-index"><summary><span>Browse ${myFiles.length} signed file record${myFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary><div class="artifact-index-body atree">`+myFiles.map((a)=>
         `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a._storeKey||recordStoreKey(a))}">${esc(a.label||a.record_id||'file')}</a>`
@@ -9396,9 +9378,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
-  // the env's MISSION — objectives + round trajectory, otherwise unreachable from here.
-  const mid=kernelRec(r._kernel,'mission'); if(mid) nav+=`<div class="row">${recLink(mid,'Mission · objectives & round trajectory →')}</div>`;
-  if(L.bundle && !myBundles.length) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
+  if(L.bundle && !myBundles.length) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Artifact bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-env">ENV</span> ${esc(workspaceName)}`, html};
 }
@@ -9461,8 +9441,8 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     const run=(String(url||'').match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||'';
     const files=(S.order||[]).map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='artifact'
         && !((r._links||{}).bundle) && runOf(r)===run);
-    let mh=`<div class="empty-card"><h3>${icon('key')} Deliverable — content is read-gated</h3>`
-      +'<p class="desc2">This node publishes that the deliverable <b>exists</b> (file list, hashes, metadata) '
+    let mh=`<div class="empty-card"><h3>${icon('key')} Artifact bundle — content is read-gated</h3>`
+      +'<p class="desc2">This node publishes bundle metadata (file list, hashes, and labels) '
       +'to anonymous viewers, but serves the actual <b>bytes</b> only at <b>read+</b> tier '
       +'(07_ARTIFACTS §10a). To open the files: click <b>OPERATOR</b> and paste this node\'s '
       +'captured process bearer. If HTTPS blocks an HTTP node, open the node\'s own console '
@@ -9475,7 +9455,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
           +`<span class="tier">${authored?`authored: ${esc(authored)} · `:''}${esc(declaredArtifactMedia(r))}${h?` · ${h}…`:''}</span></div>`;
       }).join('');
     }
-    return {title:'deliverable (manifest)', html:mh};
+    return {title:'artifact bundle manifest', html:mh};
   }
   // personaos-bundle-export/2 is a DIRECT document (07_ARTIFACTS §7): bundle_id,
   // bundle_kind, state, contributors, verifier_evidence[], co_signatures{},
@@ -9485,12 +9465,9 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
   const arts=d.artifacts||[], ev=d.verifier_evidence||[], rv=d.review_verdicts||[];
   const cosigners=d.co_signers||Object.keys(d.co_signatures||{});
   const st=String(d.state||'—');
-  const stClass=(st==='shipped'||st==='accepted')?'ok':(st==='rejected'?'no':'amber');
-  let html=kv('State',`<span class="${stClass}">● ${esc(st)}</span>`)
-    +kv('Kind',`<span class="cap">${esc(d.bundle_kind||'task_deliverable')}</span>`)+kv('Version',S0(d.version))
+  let html=kv('Recorded bundle state',`<code>${esc(st)}</code>`)
+    +kv('Kind',`<span class="cap">${esc(d.bundle_kind||'not declared')}</span>`)+kv('Version',S0(d.version))
     +kv('Outward tier',`<span class="tier-pill t-${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}">${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}</span>`)
-    +(d.accepted_at?kv('Accepted',`<time datetime="${esc(d.accepted_at)}" title="${esc(d.accepted_at)}">${esc(_friendlyInstant(d.accepted_at)||d.accepted_at)}</time>`):'')
-    +(d.shipped_at?kv('Shipped',`<time datetime="${esc(d.shipped_at)}" title="${esc(d.shipped_at)}">${esc(_friendlyInstant(d.shipped_at)||d.shipped_at)}</time>`):'')
     +kv('Contributors',S0((d.contributors||[]).map((id)=>_nameFor(id,kernelForBase(base))).join(', ')))
     +kv('Co-signatures',cosigners.length?`<span class="ok">${esc(cosigners.length)} signer(s)</span>`:'<span class="no">none</span>')
     +verificationIdentityDetails('bundle id',d.bundle_id);
@@ -9529,7 +9506,7 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
     +`<div class="row"><a href="#" data-act="physical" data-url="${esc(L.run)}">Physical asset →</a></div>`;
     if(L.oci) html+=`<div class="row"><a href="#" data-act="dist" data-oci="${esc(L.oci)}" data-dag="${esc(L.dag||'')}" data-reg="${esc(L.registry||'')}">Distribution · OCI + IPLD →</a></div>`; }
-  return {title:'<span class="kind k-artifact">BUNDLE</span> Deliverable bundle', html};
+  return {title:'<span class="kind k-artifact">BUNDLE</span> Artifact bundle', html};
 }
 /* ====================================================================
    DECLARED-MEDIA ARTIFACT RENDERING
@@ -10472,18 +10449,15 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
   let html='';
   if(lifecycle){
     const workspace=lifecycle.environment?_environmentNameFor(lifecycle.environment,r._kernel):'';
+    const mechanical=_mechanicalRunProjection(lifecycle.state,{
+      currentExecution:lifecycle.currentExecution===true,source:'signed task lifecycle'});
     html+=kv('Task',`<span class="off-white">${esc(lifecycle.task)}</span>`)
-      +kv('State',`<span class="ok">${esc(lifecycle.state)}</span>`)
-      +kv('Current execution',lifecycle.currentExecution
-        ?'<span class="ok">yes · signed current work</span>'
-        :'<span class="l2">no · durable history</span>')
+      +kv('Mechanical run state',`<span class="work-state-status">${esc(mechanical.label)}</span> <span class="l2">${esc(mechanical.detail)}</span>`)
+      +kv('Exact lifecycle state',`<code>${esc(lifecycle.state)}</code>`)
+      +kv('Current execution field',`<code>${esc(String(lifecycle.currentExecution))}</code>`)
       +kv('Workspace',workspace
         ?`<span title="${esc(lifecycle.environment)}">${esc(workspace)}</span>`
-        :'<span class="l2">not routed yet</span>')
-      +kv('Acceptance / handoff',lifecycle.terminalReason
-        ?`<span class="amber">${esc(lifecycle.terminalReason)}</span>`
-        :lifecycle.liveTask?'<span class="ok">current live work</span>'
-          :'<span class="l2">verdict unknown · available for handoff or continuation</span>');
+        :'<span class="l2">not routed</span>');
   }
   html+=kv('Kind',esc(r.kind))+kv('Visibility',esc(r.visibility_tier))
     +kv('Signature',`<span class="ok">${icon('check','ico-sm')} Ed25519 verified</span>`)
@@ -10509,11 +10483,7 @@ async function genericView(r){ const a=r._access||{}, grants=a.access_grants||[]
         ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed continuation parent</span>')
       +kv('Amended',lifecycle.amendedFrom
         ?'<span class="ok">yes · signed parent recorded</span>':'<span class="l2">no signed amendment parent</span>');
-    for(const [label,value] of [['Open operational context',lifecycle.pressure],['Review history',lifecycle.review],['Blocking conditions',lifecycle.block]]){
-      if(!value||typeof value!=='object'||!Object.keys(value).length) continue;
-      html+=H(label)+structuredContentHTML(value,{label:`Exact ${label.toLowerCase()} JSON`});
-    }
-    html+=`<div class="fv-note"><span class="ok">${icon('check','ico-sm')} kernel signature and content-hash revision verified</span> · anonymous read-only lifecycle projection; no operator capability is present.</div>`;
+    html+=`<div class="fv-note"><span class="ok">${icon('check','ico-sm')} kernel signature and content-hash revision verified</span> · exact lifecycle mechanics only; no task-result verdict is inferred.</div>`;
   }
   html+=H('Capabilities')+chipsOf(r.capability_summary)+H(`Access · outward ${esc(a.outward_tier||r.visibility_tier)}`)+gh
     +H('Source')+(r._url?`<div class="row"><a href="${esc(safeUrl(r._url))}" target="_blank" rel="noopener">signed record JSON →</a></div>`
@@ -10563,7 +10533,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     +kv('Hosted environments',topologyValid?S0(hosts.length):'<span class="no">invalid / unavailable</span>')
     +(topologyValid&&hosts.length?kv('Primary workspace',`<b>${esc(_environmentNameFor(primary,r._kernel))}</b>`):'')
     +kv('Members',S0(members.length||'—'))
-    +(d.bundle_id?kv('Deliverable','published bundle'):'')
+    +(d.bundle_id?kv('Artifact bundle','published metadata'):'')
     +verificationIdentityDetails('project id',d.project_id||r.did);
   if(topologyValid&&hosts.length) html+=H(`Environments (${hosts.length})`)+hosts.map((environmentId)=>{
     const rid=S.order.find((id)=>{ const candidate=S.recs.get(id);
@@ -10583,7 +10553,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   html+=trustPanel(r);
   let nav=''; const did=kernelRec(r._kernel,'domain');
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
-  if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Deliverable bundle →</a></div>`;
+  if(L.bundle) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Artifact bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
   return {title:`<span class="kind k-project">PROJECT</span> ${esc(d.name||r.label)}`, html};
 }
@@ -10620,142 +10590,22 @@ async function distributionView(base,L){ S.curBase=base;
   return {title:`<span class="kind k-artifact">DISTRIBUTION</span> OCI + IPLD`, html};
 }
 async function physicalView(base,runUrl){ S.curBase=base; const rj=await dfetch(base,runUrl)||{}; const p=rj.physical_board;
-  if(!p) return {title:'<span class="kind k-artifact">PHYSICAL</span>', html:'<div class="l2">No physical asset for this task (digital deliverable).</div>'};
+  if(!p) return {title:'<span class="kind k-artifact">PHYSICAL</span>', html:'<div class="l2">No physical asset is recorded for this task; its artifacts are digital.</div>'};
   const html=kv('MHBB tier',esc(p.mhbb_tier))+kv('Asset kind',esc(p.asset_kind))+kv('State',`<span class="ok">${esc(p.asset_state)}</span>`)
     +kv('As-built ref',esc(p.as_built_ref))+kv('Fabricator',esc(p.fab))+H('External attestation')+`<div class="desc2">${esc(p.attestation)}</div>`;
   return {title:`<span class="kind k-artifact">PHYSICAL BOARD</span>`, html};
 }
-// Evidence badge for the honesty surface: every reported objective value travels with
-// the strength of the evidence that credited it (attested by an independent model /
-// executed in the sandbox / unmeasured = claimed but never evidenced — never scores).
-const EV_TIP={executed_attested:'an executable check ran AND an independent model from a different family confirmed the value',
-  attested:'an independent model confirmed the value is evidenced by the package',
-  executed:'an in-package executable check measured this value in the sandbox',
-  executed_unconfirmed:'a check ran but the independent attestor did not confirm the value — does not score',
-  declared_only:'the author asserted the value with no evidence — does not score',
-  unmeasured:'claimed but never evidenced — does not score, shown honestly'};
-function evBadge(ev){ const s=String((ev&&ev.evidence_strength)||'unmeasured');
-  const extra=ev&&ev.credited_round!=null?` · credited round ${ev.credited_round}`:'';
-  const why=ev&&ev.rationale?` — ${ev.rationale}`:'';
-  return `<span class="evb ev-${esc(s)}" title="${esc((EV_TIP[s]||s)+extra+why)}">${esc(s.replace(/_/g,' ').toUpperCase())}</span>`; }
-function missionDocHTML(ref){
-  const S0=(v)=>esc((v===''||v==null)?'—':v);
-  const targets=ref.objective_targets||[]; const traj=ref.trajectory||[]; const tr=ref.tranches||[];
-  const fin=ref.final_objective||{}; const evd=ref.objective_evidence||{};
-  let html=H('ADR-0071 ContinuousRefinementMission — anytime, budget-scaled, convergence-bounded');
-  html+=kv('Task',S0(ref.task))+kv('Backend',S0(ref.backend))
-    +kv('State',`<span class="ok">${S0(ref.final_state)}</span>`)
-    +kv('Status',`<span class="ok">${S0(ref.final_status)}</span>`)
-    +kv('Converged',ref.converged?'<span class="ok">yes — nothing left to improve</span>':'no (auto-reopen-eligible)')
-    +kv('Best-so-far',S0(ref.best_so_far_ref)+' · score '+(ref.best_so_far_score!=null?Number(ref.best_so_far_score).toFixed(4):'—'));
-  // MissionObjective vector: baseline → current per target, stamped with the EVIDENCE
-  // that credited each value (a number with no admissible evidence reads UNMEASURED).
-  html+=H('Objectives — every value carries its evidence');
-  html+=targets.map((t)=>{ const cur=fin[t.name]; const dir=t.direction==='minimize'?'↓':'↑';
-    const ev=evd[t.name];
-    return `<div class="grant"><span>${esc(t.name)} ${dir} ${evBadge(ev)}</span>`
-      +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
-  const unmeasured=targets.filter((t)=>String((evd[t.name]||{}).evidence_strength||'unmeasured')==='unmeasured');
-  if(unmeasured.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
-  // Budget tranches — "resume with more budget → measurably better best-so-far".
-  if(tr.length){ html+=H('Budget tranches — resume with more budget → higher best-so-far');
-    html+=tr.map((x)=>`<div class="grant"><span>tranche ${esc(x.tranche)} · budget ${esc(x.budget_candidates)} cand · ${esc(x.rounds_this_tranche)} rounds</span>`
-      +`<span class="l2">score <b>${Number(x.score_before).toFixed(3)} → <span class="ok">${Number(x.score_after).toFixed(3)}</span></b> · [${esc(x.status)}]</span></div>`).join(''); }
-  // Best-so-far climb (round trajectory) with marginal value + WHY candidates died.
-  if(traj.length){ html+=H('Refinement trajectory (best-so-far never regresses)');
-    html+='<div class="tape-mini">'+traj.map((r2)=>{ const blk=(r2.blocked_targets||[]).length?` <span class="down">blocked:${esc((r2.blocked_targets||[]).join(','))}</span>`:'';
-      const errs=(r2.candidate_errors||[]).length?` <span class="down" title="${esc((r2.candidate_errors||[]).join(' | ').slice(0,600))}">✗${(r2.candidate_errors||[]).length} died</span>`:'';
-      return `<div class="row2"><span>r${esc(r2.round)}</span><span>score <b>${Number(r2.best_score).toFixed(4)}</b></span>`
-        +`<span class="${r2.marginal_value>=0?'ok':'down'}">Δ${Number(r2.marginal_value).toFixed(4)}</span>`
-        +`<span class="l2">${esc(r2.candidates_explored)} cand${blk}${errs}</span></div>`; }).join('')+'</div>'; }
-  // Budget→emergence (genesis of specialists / sub-envs under ReplicationBound).
-  const em=(ref.emergence||[]).filter((e)=>e.event==='budget_to_emergence_genesis');
-  if(em.length){ html+=H('Budget → emergence (16_POP §4A factor 7)');
-    html+=em.map((e)=>{ const g=e.genesis||{};
-      return `<div class="grant"><span>genesis: <b class="ok">${esc(g.niche)}</b> · sub-env ${esc((e.sub_env||{}).kind)}</span>`
-        +`<span class="l2">pressure ${esc(e.pressure_score)} (admissible ${e.pressure_admissible?`<span class="ok">${icon('check','ico-sm')}</span>`:`<span class="no">${icon('x','ico-sm')}</span>`}) · ReplicationBound ceiling ${esc(g.replication_bound_population_ceiling)}</span></div>`; }).join(''); }
-  const ceiling=ref.physical_realization_ceiling||ref.manufacturability_ceiling;
-  if(ceiling) html+=H('Physical-realization ceiling (honest)')+`<div class="l2">${esc(ceiling)}</div>`;
-  return html;
-}
-// ---------- THE PLAN — the mission charter that drives a persona/env ----------
-// An environment (and the personas inside it) exists to PURSUE a mission: a task
-// charter with objective TARGETS climbed over budget-scaled ROUNDS, some BLOCKED,
-// each value MEASURED or honestly unmeasured. The whole plan is served by the
-// node at /runs/<run> (run_state() -> {run_state, design_history}) — the exact
-// doc operatorRunView + missionDocHTML consume — and runOf() already resolves
-// the run id an env/artifact carries. This surfaces that plan in the drawer the
-// user actually opens (the persona/env), not only the separate MISSION card / op
-// console. Read-gated like the run endpoint itself: only the operator bearer
-// returns the doc; an anonymous viewer gets an honest pointer, never a fake.
-async function planSection(base,run){
-  if(!run) return '';
-  const doc=await dfetch(base,'runs/'+encodeURIComponent(run));
-  // run_state is operator-tier (09_PROTOCOLS §3G.3): no token (or a tunneled node
-  // without one) -> no plan to show. Say WHY + HOW to unlock instead of nothing.
-  if(!doc||(!doc.run_state&&!doc.design_history)){
-    return H('Plan')+`<div class="l2">${icon('key','ico-sm')} this mission's charter, objectives and round-by-round trajectory are <b>read-gated</b> (operator tier). Click <b>OPERATOR</b> and paste this node's captured process bearer. If HTTPS blocks its HTTP route, open the node's console and use the same bearer there to see the plan for <code>${esc(run)}</code>.</div>`;
-  }
-  const rs=doc.run_state||{}, dh=doc.design_history||rs.refinement_mission||{};
-  const S0=(v)=>esc((v===''||v==null)?'—':v);
-  // headline state — reuse the mission-card state chips (running/paused/shipped/converged)
-  const stt=String(rs.status||dh.final_status||'—');
-  const conv=dh.converged===true;
-  const stCls=conv?'ms-converged':(stt==='shipped'||stt==='completed'||rs.accepted)?'ms-shipped'
-    :(stt==='running'||stt==='queued')?'ms-running':(/budget|paused/.test(stt)?'ms-paused':'ms-shipped');
-  const stLbl=conv?'CONVERGED':String(stt||'—').toUpperCase();
-  let html=H('Plan — the mission charter');
-  // CHARTER: the human task this env/persona is pursuing (the reason it exists).
-  const task=String(rs.task||dh.task||'');
-  if(task) html+=`<div class="desc2">${esc(task.slice(0,400))}</div>`;
-  html+=kv('State',`<span class="mstate ${stCls}">● ${esc(stLbl)}</span>`
-      +(conv?'':(dh.converged===false?' <span class="l2">reopen-eligible</span>':'')))
-    +kv('Backend',S0(rs.task_class||dh.backend))
-    +kv('Best-so-far',(dh.best_so_far_score!=null?`<b class="ok">${Number(dh.best_so_far_score).toFixed(4)}</b>`
-        :(rs.best_score!=null?`<b class="ok">${Number(rs.best_score).toFixed(4)}</b>`:'—'))
-      +(dh.best_so_far_ref?` <span class="l2">${esc(String(dh.best_so_far_ref).slice(0,18))}</span>`:''));
-  // CURRENT ROUND — the live front of the plan: where the mission is right now.
-  const traj=dh.trajectory||[];
-  const last=traj.length?traj[traj.length-1]:null;
-  if(last){
-    const blk=(last.blocked_targets||[]);
-    html+=kv('Round',`<b>r${esc(last.round)}</b> <span class="l2">${esc(last.candidates_explored||0)} candidate(s) explored`
-      +(last.marginal_value!=null?` · <span class="${last.marginal_value>=0?'ok':'down'}">Δ${Number(last.marginal_value).toFixed(4)}</span>`:'')+`</span>`);
-    if(blk.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} unresolved this round: ${esc(blk.join(', '))} — best-so-far evidence remains visible while personas continue through available peer, environment and tool paths.</div>`;
-  }
-  // OBJECTIVES / TARGETS — baseline -> current -> ideal, each stamped with the
-  // evidence that credited it (MEASURED vs claimed-but-unmeasured). The plan's spine.
-  const targets=dh.objective_targets||[];
-  const fin=dh.final_objective||{}; const evd=dh.objective_evidence||rs.objective_evidence||{};
-  if(targets.length){
-    html+=H('Objectives — baseline → current → ideal (every value carries its evidence)');
-    html+=targets.map((t)=>{ const cur=fin[t.name]; const dir=t.direction==='minimize'?'↓':'↑';
-      return `<div class="grant"><span>${esc(t.name)} ${dir} ${evBadge(evd[t.name])}</span>`
-        +`<span class="l2">base ${esc(t.baseline)} → <b class="ok">${esc(cur!=null?cur:t.current)}</b> · ideal ${esc(t.ideal)}</span></div>`; }).join('');
-    const unmeasured=targets.filter((t)=>String((evd[t.name]||{}).evidence_strength||'unmeasured')==='unmeasured');
-    if(unmeasured.length) html+=`<div class="viewerr">${icon('warn','ico-sm')} ${unmeasured.length} objective(s) have no admissible evidence — their claimed numbers never scored (fail-closed).</div>`;
-  } else if(rs.objective_evidence||dh.objective_evidence){
-    const ev=rs.objective_evidence||dh.objective_evidence;
-    html+=H('Objective evidence basis')+Object.entries(ev).map(([n,e2])=>{
-      const es=(e2||{}).evidence_strength||'—';
-      const cls=(es==='executed'||es==='executed_attested'||es==='attested')?'ok':(es==='unmeasured'?'no':'amber');
-      return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(String(es).replace(/_/g,' '))}</span></div>`;
-    }).join('');
-  }
-  // open the full ADR-0071 trajectory (the same operator RUN view) for the deep dive.
-  html+=`<div class="row"><a href="#" data-act="op-run" data-base="${esc(base)}" data-run="${esc(run)}">full mission trajectory (round-by-round) →</a></div>`;
-  return html;
-}
-async function missionView(r){
-  // The ADR-0071 refinement trajectory is a DISCOVERED, Ed25519-verified Design-
-  // History-File artifact; resolve its content (the trajectory JSON) the same way
-  // any artifact body is resolved over P2P — no client-side injection.
-  const L=r._links||{}; const url=join(r._base||'', L.content); let ref=null;
-  try{ ref=JSON.parse(await fetchText(url)||'null'); }catch(e){ ref=null; }
-  if(!ref||typeof ref!=='object')
-    return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`,
-      html:`<div class="viewerr">design-history content could not be loaded from ${esc(url)} — the node may be offline or the artifact body gated.</div>`};
-  return {title:`<span class="kind k-mission">MISSION</span> ${esc(r.label)}`, html:missionDocHTML(ref)};
+// Legacy refinement/mission documents are intentionally not interpreted here.
+async function workEvidenceView(r){
+  const run=runOf(r),recordId=String(r.record_id||r.card_id||'');
+  let html=kv('Published label',`<span class="off-white">${esc(r.label||'Work evidence')}</span>`)
+    +kv('Evidence type','Signed discovery record')
+    +verificationReferencesDetails([
+      ['record id',recordId],['run id',run],['kernel id',r._kernel||''],
+    ])
+    +'<div class="fv-note">This signed record is retained as work evidence, not as a task-state verdict. Current execution comes only from mechanical run lifecycle, while work descriptions come from persona-authored notes.</div>';
+  html+=trustPanel(r);
+  return {title:`<span class="kind k-mission">WORK EVIDENCE</span> ${esc(r.label||'Published record')}`,html};
 }
 /* ---------- operator console views ---------- */
 // Render operator results for people first. Exact JSON remains available in a
@@ -10862,12 +10712,12 @@ async function operatorNodeView(b){
   if(runs.length) html+=H(`Runs (${runs.length})`)+runs.slice(-12).reverse().map((r,index)=>{
     const id=typeof r==='string'?r:(r.run||r.run_id||'');
     const task=typeof r==='object'?String(r.task||r.text||'').trim():'';
-    const label=task||_verifiedPublicTaskForRun(st.node_id||'',id)?.task||`Mission ${index+1}`;
+    const label=task||_verifiedPublicTaskForRun(st.node_id||'',id)?.task||`Run ${index+1}`;
     return `<div class="grant"><span><a href="#" data-act="op-run" data-base="${esc(b)}" data-run="${esc(id)}">${esc(label)}</a></span>`
       +`<span class="l2">${esc(typeof r==='object'?(r.status||''):'')}</span></div>`; }).join('');
   const paused=st.paused_missions||[];
-  if(paused.length) html+=H(`Paused missions (${paused.length}) — fund to resume`)+paused.map((p)=>
-    `<div class="grant"><span>${esc(p.task||'Paused mission')}</span><span class="l2">${esc(p.status||p.reason||'paused')}</span></div>`).join('');
+  if(paused.length) html+=H(`Resource-paused runs (${paused.length})`)+paused.map((p)=>
+    `<div class="grant"><span>${esc(p.task||'Paused run')}</span><span class="l2">${esc(p.status||p.reason||'resource-paused')}</span></div>`).join('');
   html+=H('Optional human input')
     +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
   if(!full){
@@ -10880,10 +10730,10 @@ async function operatorNodeView(b){
     +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
     +`<div class="oprow"><label class="field"><span class="field-label">budget</span>`
     +`<input id="op-budget" type="number" min="1" placeholder="optional for ASK · required for FUND"></label>`
-    +`<button class="btn btn-primary" data-act="op-ask" data-base="${esc(b)}" title="start a new mission from the task above (budget optional)">${icon('ask')} ASK</button>`
-    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run — resumes a paused mission (needs a run id target, or it funds the node intake)">${icon('fund')} FUND</button>`
-    +`<label class="field"><span class="field-label">mission reference (advanced)</span>`
-    +`<input id="op-run-target" placeholder="paste a mission reference to stop or fund"></label>`
+    +`<button class="btn btn-primary" data-act="op-ask" data-base="${esc(b)}" title="start a new task run from the text above (budget optional)">${icon('ask')} ASK</button>`
+    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run (use a run id to target existing work)">${icon('fund')} FUND</button>`
+    +`<label class="field"><span class="field-label">run id (advanced)</span>`
+    +`<input id="op-run-target" placeholder="paste a run id to stop or fund"></label>`
     +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">${icon('stop')} STOP</button></div>`
     +`<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>`;
   // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
@@ -10910,110 +10760,84 @@ async function operatorNodeView(b){
 
 async function operatorRunView(b,run){
   S.curBase=b;
-  const trackKey=_liveRunKey(b,run); S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
-  // The status document is the authority result. A bare request to a public node
-  // returns the same full schema as an accepted bearer; a non-public anonymous
-  // request returns only personaos-node-status-public/1 and remains read-gated.
-  const [nodeStatus,_live]=await Promise.all([
+  const trackKey=_liveRunKey(b,run);
+  S.trackedLiveRuns.set(trackKey,{base:b,run,lastSeen:Date.now()});
+  const [nodeStatus,liveFetch]=await Promise.all([
     fetchNodeStatusWithLive(b),fetchLiveArtifacts(b,run),
   ]);
-  const statusAccess=nodeStatusAccess(b,nodeStatus), hasFullStatus=statusAccess.granted;
-  const [stRaw,artsRaw]=await Promise.all([
-    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):Promise.resolve(null),
-    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):Promise.resolve(null),
+  const statusAccess=nodeStatusAccess(b,nodeStatus),hasFullStatus=statusAccess.granted;
+  const [runStatus,artifacts]=await Promise.all([
+    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)):null),
+    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):null,
   ]);
-  const st=stRaw||{}, arts=artsRaw||{};
-  const S0=(v)=>esc((v===''||v==null)?'—':v);
-  const rs=st.run_state||{};
-  const liveState=liveArtifactState(b,run)||_live;
-  const runKernel=String(liveState?.snapshot?.node_id||nodeStatus?.node_id||kernelForBase(b)||'');
+  const raw=runStatus||{},rs=raw.run_state||{},arts=artifacts||{};
+  const liveState=liveArtifactState(b,run)||liveFetch;
+  const runKernel=String(liveState?.snapshot?.node_id||nodeStatus?.node_id
+    ||kernelForBase(b)||'');
   const publicTask=_verifiedPublicTaskForRun(runKernel,run);
   const taskText=String(publicTask?.task||rs.task||'').trim();
   const finalizedBootstrap=liveState?.verification?.immutableFinalizedBootstrap===true;
   const terminal=Boolean(liveState?.ended
     &&(liveState?.verification?.terminalEventVerified||finalizedBootstrap));
-  const stt=terminal?'ended':String(rs.status||'—');
-  const stClass=terminal?'l2':((stt==='shipped'||stt==='completed'||rs.accepted)?'ok':(stt==='running'||stt==='queued'?'amber':'no'));
-  // a paused mission card opens this view directly, so give it inline resume/stop
-  // controls (it is otherwise read-only). The handlers prefer a.dataset.run over the
-  // console-level #op-run-target, and read #opr-budget when present.
-  const canOperate=!terminal&&hasFullStatus;
-  let html=canOperate?('<div class="opform"><div class="oprow">'
-    +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="candidates"></label>'
-    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to THIS run — resumes it if paused">'+icon('fund')+' FUND</button>'
-    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt THIS run">'+icon('stop')+' STOP</button></div>'
-    +'<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>')
-    :(terminal?'<div class="l2">This run has ended; FUND and STOP are no longer applicable.</div>'
-      :'<div class="l2">Read-only live monitor. FUND and STOP appear only when this node returns its full status projection; public node policy can grant that without a bearer.</div>');
-  const accepted=rs.accepted===true
-    ?`<span class="ok">${icon('check','ico-sm')} yes</span>`
-    :rs.accepted===false?'<span class="no">no</span>'
-      :'<span class="l2">unknown · available for handoff or continuation</span>';
-  html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`:'<span class="l2">Task details not published</span>')
-    +kv('Status',`<span class="${stClass}">● ${esc(stt)}</span>`)
-    +kv('Acceptance / handoff',accepted)
-    +kv('Task class',S0(rs.task_class))+kv('Pathway',S0(rs.acceptance_pathway))
-    +verificationReferencesDetails([['run id',run],['node id',runKernel],
-      ['task id',publicTask?.taskId],['environment id',publicTask?.environment],['revision',publicTask?.revision]]);
   const activeCalls=terminal?[]:(nodeStatus?.active_model_calls||[]).filter((call)=>{
     const current=liveState?.snapshot?.active?.calls||[];
     return !current.length||current.some((item)=>item.call_id&&item.call_id===call.call_id);
   });
   const liveCalls=terminal?[]:(liveState?.snapshot?.active?.calls||activeCalls);
+  const liveActive=liveCalls.length>0
+    ||(liveState?.snapshot?.active?.persona_ids||[]).length>0
+    ||(liveState?.snapshot?.active?.environment_ids||[]).length>0;
+  const exactState=String(publicTask?.state||rs.status||'');
+  const mechanical=_mechanicalRunProjection(exactState,{
+    activeCall:liveCalls.length>0,
+    currentExecution:publicTask?.currentExecution===true||(!publicTask&&liveActive),
+    source:publicTask?'signed task lifecycle':'unsigned operator status',
+  });
+  const canOperate=!terminal&&hasFullStatus;
+  let html=canOperate?('<div class="opform"><div class="oprow">'
+    +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="amount"></label>'
+    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to this run">'+icon('fund')+' FUND</button>'
+    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt this run">'+icon('stop')+' STOP</button></div>'
+    +'<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>')
+    :(terminal?'<div class="l2">Signature-checked termination evidence reports no active execution; run controls are no longer shown.</div>'
+      :'<div class="l2">Read-only run monitor. Controls appear only when this node grants its full status projection.</div>');
+  html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`
+      :'<span class="l2">Task text not published</span>')
+    +kv('Mechanical run state',`<span class="work-state-status is-${esc(mechanical.key)}">${esc(mechanical.label)}</span> <span class="l2">${esc(mechanical.detail)}</span>`)
+    +kv('Exact lifecycle state',exactState?`<code>${esc(exactState)}</code>`
+      :'<span class="l2">not published</span>')
+    +kv('Observation source',`<span class="l2">${esc(mechanical.source)}</span>`)
+    +verificationReferencesDetails([
+      ['run id',run],['node id',runKernel],['task id',publicTask?.taskId],
+      ['environment id',publicTask?.environment],['revision',publicTask?.revision],
+    ]);
   html+=H(terminal
     ?`Execution · ${finalizedBootstrap?'finalized-snapshot':'terminal-event'} signature checked`
-    :'Live execution · unsigned status telemetry');
+    :'Current execution observations');
   if(liveCalls.length) html+=liveCalls.map((call)=>{
-    const pid=_shortId(call.persona_id); const purpose=call.requested_purpose||call.purpose||'model call';
-    return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,st.node_id||kernelForBase(b))||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
+    const pid=_shortId(call.persona_id);
+    const purpose=call.requested_purpose||call.purpose||'model call';
+    return `<div class="live-call"><span><span class="livedot2"></span><b>${esc(_nameFor(pid,runKernel)||pid||'persona')}</b> · ${esc(PURPOSE_LABEL[purpose]||purpose)}</span>`
       +`<span><code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</span></div>`;
   }).join('');
   else html+=terminal
     ?`<div class="l2">The signature-checked ${finalizedBootstrap?'finalized snapshot':'run-ended event'} cleared active execution; no model call remains active.</div>`
-    :'<div class="l2">No model call is active at this instant; the run may be coordinating between calls.</div>';
+    :'<div class="l2">No model call is active at this instant.</div>';
   html+=H('Live workspace files')
     +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
-  // GAP #3: surface the ContinuousRefinementMission trajectory from the served
-  // design_history (best-so-far never regresses; budget tranches; marginal value).
-  const dh=st.design_history||rs.refinement_mission||{};
-  if(dh && (dh.final_status||dh.trajectory)){
-    html+=H('Mission trajectory (ADR-0071 — best-so-far)')
-      +kv('Final state',S0(dh.final_state||dh.final_status))
-      +kv('Converged',dh.converged?'<span class="ok">yes</span>':'<span class="dim">no (reopen-eligible)</span>')
-      +kv('Best score',S0(dh.best_so_far_score!=null?Number(dh.best_so_far_score).toFixed(4):rs.best_score));
-    const traj=dh.trajectory||[];
-    if(traj.length) html+='<div class="tape-mini">'+traj.map((rd)=>
-      `<div class="row2"><span>r${esc(rd.round)}</span><span>score <b>${esc(Number(rd.best_score||0).toFixed(4))}</b></span>`
-      +`<span class="${(rd.marginal_value||0)>=0?'ok':'no'}">Δ${esc(Number(rd.marginal_value||0).toFixed(4))}</span>`
-      +`<span class="l2">${esc(rd.candidates_explored||0)} cand</span></div>`).join('')+'</div>';
-  }
-  // GAP #3: per-objective evidence basis + acceptance.
-  const ev=rs.objective_evidence||dh.objective_evidence;
-  if(ev) html+=H('Objective evidence basis (07_ARTIFACTS §7)')+Object.entries(ev).map(([n,e2])=>{
-    const es=(e2||{}).evidence_strength||'—';
-    const cls=es==='executed'?'ok':(es==='unmeasured'?'no':'amber');
-    return `<div class="grant"><span class="l2">${esc(n)}</span><span class="${cls}">${esc(es)}</span></div>`;
-  }).join('');
-  // `/runs/<run>` and `/runs/<run>/artifacts` are operator status documents, not
-  // browser-validated AnswerPackage or ArtifactBundle envelopes. Schema strings,
-  // `signed_by` truthiness, verifier-shaped objects, and lifecycle state strings in
-  // those raw documents have no admission authority. No validated bundle projection
-  // reaches this view yet, so lifecycle must remain unknown here.
-  html+=H('AnswerPackage / ArtifactBundle lifecycle')
-    +kv('Lifecycle','<span class="l2 bundle-lifecycle-unknown">unknown</span>')
-    +'<div class="fv-note">Run status and artifact-index JSON are not browser-validated bundle lifecycle evidence. A lifecycle state requires a separately browser-validated bundle plus verifier evidence bound to its current content hash.</div>';
   const files=arts.package||arts.package_files||arts.files||[];
-  if(files.length) html+=H(`Package artifacts (${files.length})`)+files.slice(0,100).map((f)=>{
-    const path=typeof f==='string'?f:(f.path||f.title||'');
+  if(files.length) html+=H(`Observed package paths (${files.length})`)+files.slice(0,100).map((file)=>{
+    const path=typeof file==='string'?file:(file.path||file.title||'');
     const name=String(path).split('/').pop();
     return `<div class="grant"><span class="l2">${esc(name)}</span><span class="l2">${esc(String(path).includes('/')?path.split('/').slice(0,-1).join('/'):'')}</span></div>`;
   }).join('');
-  return {title:`<span class="kind k-mission">RUN</span> ${esc(taskText||'Live task')}`,html};
+  html+='<div class="fv-note">Run status is presented only as mechanical execution evidence. The browser derives no task-result or quality verdict from operator status vocabulary.</div>';
+  return {title:`<span class="kind k-mission">RUN</span> ${esc(taskText||'Task run')}`,html};
 }
 
 async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',html:'<div class="viewerr">'+icon('warn','ico-sm')+' record not found — it may have been re-resolved or evicted since you clicked. Close this and reopen from the stage.</div>'};
   const L=r._links||{};
-  if(r.kind==='mission' && L.content) return missionView(r);
+  if(r.kind==='mission') return workEvidenceView(r);
   if(r.kind==='persona') return personaView(r);
   if(r.kind==='env') return envView(r);
   if(r.kind==='domain') return domainView(r);
@@ -11103,15 +10927,13 @@ function tick(now){
   requestAnimationFrame(tick);
 }
 
-/* ---------- missions strip (every task the discovered nodes work on) ---------- */
-// Cards come from three honest sources: (1) signed public task/project/mission
-// records as published evidence, with signed terminal/live-task state overlays;
-// (2) live artifact snapshots; (3) the node's /status —
-// running/paused mission state, which the node only exposes to an operator
-// token (anonymous viewers see the public projection without run state).
-const CURRENT_MISSION_CARD_STATES=new Set(['live','running']);
-function missionCardIsCurrent(card){ return card?.currentExecution===true
-  &&CURRENT_MISSION_CARD_STATES.has(card.state); }
+/* ---------- task/run evidence strip ---------- */
+// Internal mission* DOM/function names remain for stable wiring. The visible
+// surface admits only exact mechanical run categories from signed task
+// lifecycle/live-workspace evidence or explicitly labelled operator telemetry.
+function missionCardIsCurrent(card){
+  return card?.mechanical?.key==='running';
+}
 function _missionNodeAvailability(kernel,now=Date.now()){
   const info=S.globalKernels?.get(String(kernel||''));
   if(!info) return 'unobserved';
@@ -11127,147 +10949,109 @@ function missionCardIsObservedCurrent(card){
 function _missionRunLabel(value){ const run=String(value||'');
   return run.length>26?`${run.slice(0,25)}…`:run; }
 function missionCardList(){
-  const cards=[]; const seen=new Set();
-  const records=S.order.map((id)=>S.recs.get(id)).filter(Boolean);
-  const projects=records.filter((r)=>r.kind==='project');
-  const projectFor=(kernel,run='')=>projects.find((p)=>p._kernel===kernel&&run&&runOf(p)===run)
-    ||[...projects].reverse().find((p)=>p._kernel===kernel);
-  const humanTask=(value,kernel,run='')=>_verifiedPublicTaskForRun(kernel,run)?.task
-    ||projectFor(kernel,run)?.label||String(value||'').trim()||'Untitled mission';
-  // Record structure decides admission; capability vocabulary never assigns
-  // task state. A task card requires its independently signed lifecycle object;
-  // project/mission records remain published evidence. Design-history JSON is
-  // evidence owned by the mission, never a second mission card.
-  for(const [id,r] of S.order.map((id)=>[id,S.recs.get(id)])){
-    const published=publishedMissionEvidenceProjection(r); if(!published) continue;
-    const lifecycle=publicTaskLifecycleProjection(r);
-    if(r.kind==='task'&&!lifecycle) continue;
-    const projected=lifecycle||published;
-    const run=projected.run||runOf(r)||'';
-    const lifecycleSurfaces=lifecycle?[
-      Object.keys(lifecycle.pressure||{}).length?'open operational context':'',
-      Object.keys(lifecycle.review||{}).length?'review history':'',
-      Object.keys(lifecycle.block||{}).length?'blocking conditions':'',
-    ].filter(Boolean):[];
-    const lineageMeta=lifecycle?[
-      lifecycle.resumedFrom?'resumed from earlier work':'',
-      lifecycle.continuedFrom?'continues earlier work':'',
-      lifecycle.amendedFrom?'amends earlier work':'',
-      lifecycle.lineageHistory?'task history retained':'root task',
-      lifecycle.environment?`workspace ${_environmentNameFor(lifecycle.environment,r._kernel)}`:'workspace pending',
-    ].filter(Boolean):[];
-    const meta=lifecycle
-      ?[`current execution ${lifecycle.currentExecution?'yes':'no'}`,
-        ...lineageMeta,lifecycleSurfaces.join(' · '),`signed task record · ${lifecycle.terminalReason
-          ?`terminal ${lifecycle.terminalReason}`:lifecycle.liveTask?'current live lifecycle'
-            :'acceptance unknown · handoff or continuation available'}`]
-      :[`signed ${published.kind} record`];
-    const card={key:`record:${r._kernel}:${run||id}`,task:projected.task,state:projected.state,
-      kernel:r._kernel||'',meta,recId:id,run,base:nodeBaseForRecord(r),recordKind:published.kind,
-      terminalTask:!!lifecycle?.terminalTask,liveTask:!!lifecycle?.liveTask,
-      exactLifecycle:!!lifecycle,currentExecution:lifecycle?.currentExecution===true,
-      rootRun:lifecycle?.rootRun||run,
-      continuedFrom:lifecycle?.continuedFrom||'',amendedFrom:lifecycle?.amendedFrom||'',
-      resumedFrom:lifecycle?.resumedFrom||'',
-      lineageHistory:!!lifecycle?.lineageHistory,
-      lineageEntries:lifecycle&&run!==lifecycle.rootRun
-        ?[`${lifecycle.amendedFrom?'amendment':lifecycle.continuedFrom?'continuation':'resumption'} history · ${projected.state}`]
-        :[]};
-    if(lifecycle) cards.unshift(card); else cards.push(card);
+  const lifecycleCards=new Map(),seenRuns=new Set();
+  for(const id of S.order){
+    const record=S.recs.get(id);
+    const lifecycle=publicTaskLifecycleProjection(record);
+    if(!lifecycle) continue;
+    const mechanical=_mechanicalRunProjection(lifecycle.state,{
+      currentExecution:lifecycle.currentExecution===true,
+      source:'signed task lifecycle',
+    });
+    // Unrecognized lifecycle vocabulary remains available in record details,
+    // but it is not converted into a task-state badge.
+    if(mechanical.key==='unavailable') continue;
+    const lineageKey=`${record._kernel}::${lifecycle.rootRun||lifecycle.run}`;
+    const order=_taskLifecycleRecordOrder(record,lifecycle);
+    const refs=[
+      lifecycle.resumedFrom?`resumed from ${_missionRunLabel(lifecycle.resumedFrom)}`:'',
+      lifecycle.continuedFrom?`continued from ${_missionRunLabel(lifecycle.continuedFrom)}`:'',
+      lifecycle.amendedFrom?`amended from ${_missionRunLabel(lifecycle.amendedFrom)}`:'',
+    ].filter(Boolean);
+    const meta=[
+      mechanical.detail,
+      mechanical.exactState?`exact state ${mechanical.exactState}`:'',
+      lifecycle.environment?`workspace ${_environmentNameFor(lifecycle.environment,record._kernel)}`:'',
+      ...refs,
+      `signed task lifecycle · revision ${lifecycle.revision}`,
+    ].filter(Boolean);
+    const card={key:`task:${lineageKey}`,task:lifecycle.task,state:mechanical.key,
+      mechanical,kernel:record._kernel||'',meta,recId:id,run:lifecycle.run,
+      base:nodeBaseForRecord(record),order,
+      nodeAvailability:_missionNodeAvailability(record._kernel)};
+    const prior=lifecycleCards.get(lineageKey);
+    if(!prior||order>prior.order) lifecycleCards.set(lineageKey,card);
+    seenRuns.add(`${record._kernel}\u0000${lifecycle.run}`);
   }
-  // Public artifact-tier nodes can expose a kernel-signed live workspace snapshot even
-  // when /status remains operator-gated. Surface those active runs as read-only
-  // monitors; opening one still verifies every fetched file body against sha256.
+  const cards=[...lifecycleCards.values()]
+    .sort((left,right)=>right.order.localeCompare(left.order));
+
+  // A current signed live-workspace snapshot can expose execution before its
+  // task lifecycle record reaches this browser. Admit only active mechanics.
   for(const state of S.liveArtifacts.values()){
-    const nodeRun=_liveRunKey(state.base,state.run);
-    if(state.ended||Date.now()-(state.receivedAt||0)>20000||seen.has(nodeRun)) continue;
-    seen.add(nodeRun);
-    const nodeId=state.snapshot?.node_id||'';
-    const project=projectFor(nodeId,state.run);
+    if(state.ended||Date.now()-(state.receivedAt||0)>20000) continue;
+    const kernel=String(state.snapshot?.node_id||kernelForBase(state.base)||'');
+    const run=String(state.run||''),runKey=`${kernel}\u0000${run}`;
+    if(!run||seenRuns.has(runKey)) continue;
     const active=state.snapshot?.active||{};
-    const calls=(active.calls||[]).length;
-    const activeNow=calls>0||(active.persona_ids||[]).length>0
+    const activeNow=(active.calls||[]).length>0||(active.persona_ids||[]).length>0
       ||(active.environment_ids||[]).length>0;
-    const card={key:'live:'+nodeRun,
-      task:humanTask(project?.label||state.snapshot?.task,nodeId,state.run),
-      state:activeNow?'running':'published',kernel:nodeId||kernelForBase(state.base),
-      meta:[`${state.files.size} ${activeNow?'live':'verified'} files`,
-        calls?`${calls} model call${calls===1?'':'s'}`:''],base:state.base,run:state.run,
-      nodeAvailability:'online'};
-    if(activeNow) cards.unshift(card); else cards.push(card);
+    if(!activeNow) continue;
+    const lifecycle=_verifiedPublicTaskForRun(kernel,run);
+    const mechanical=_mechanicalRunProjection('',{
+      currentExecution:true,source:'signed live-workspace snapshot',
+    });
+    cards.push({key:`live:${kernel}:${run}`,
+      task:lifecycle?.task||`Task run ${_missionRunLabel(run)}`,
+      state:mechanical.key,mechanical,kernel,
+      meta:[mechanical.detail,`${state.files.size} current file${state.files.size===1?'':'s'}`,
+        'signed live-workspace snapshot'],
+      base:state.base,run,nodeAvailability:'online'});
+    seenRuns.add(runKey);
   }
-  // skip STALE cache entries: if a node goes unreachable, fetchNodeStatus only WRITES
-  // on success, so a vanished node's last 'run-X RUNNING' would otherwise linger here as
-  // a phantom card forever. Drop entries older than ~4 poll windows of the 8s serve-TTL.
+
+  // Full node status is unsigned transport telemetry and is labelled as such.
+  // It may fill a focused/operator view, but never becomes signed task evidence.
   const fresh=Date.now()-32000;
-  for(const [baseKey,hit] of currentRuntimeStatusEntries(Date.now(),32000)){ const base=baseKey==='@origin'?'':baseKey; const v=hit&&hit.v; if(!v) continue;
-    if(!(hit.ts>fresh)) continue;
-    const busy=String((v.heartbeat||{}).busy||'');
-    for(const run of (v.stoppable_runs||[])){ const nodeRun=_liveRunKey(base,run);
-      if(seen.has(nodeRun)||S.liveArtifactEnded.has(nodeRun)) continue; seen.add(nodeRun);
-      const live=liveArtifactState(base,run); const files=live?.files?.size||0;
-      const calls=(live?.snapshot?.active?.calls||[]).length;
-      const kernel=kernelForBase(base);
-      cards.unshift({key:'run:'+nodeRun,task:humanTask(busy,kernel,run),state:'running',kernel,meta:[files?`${files} live files`:'',calls?`${calls} model call${calls===1?'':'s'}`:''],base,run,nodeAvailability:'online'}); }
-    for(const p of (v.paused_missions||[])){
-      const run=String(p.run||p.run_id||p); const nodeRun=_liveRunKey(base,run); if(!run||seen.has(nodeRun)) continue; seen.add(nodeRun);
-      const kernel=kernelForBase(base);
-      cards.push({key:'pause:'+nodeRun,task:humanTask(p.task,kernel,run),state:'paused',kernel,
-        meta:[String(p.status||'')],base,run,nodeAvailability:'online'}); } }
-  const scoped=S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
-  const grouped=new Map();
-  // Signed lifecycle descendants are revisions of one task lineage, not new
-  // missions. A genuinely current descendant leads; otherwise the canonical
-  // root record owns the headline and terminal amendment text remains labelled
-  // history in metadata.
-  const rank=(card)=>missionCardIsCurrent(card)?8
-    :card.exactLifecycle&&card.run===card.rootRun?7
-    :card.terminalTask?6:card.state==='paused'?3
-    :card.recordKind==='task'?2:card.state==='published'?1:0;
-  for(const card of scoped){ const key=card.exactLifecycle&&card.rootRun
-      ?`${card.kernel}::lineage::${card.rootRun}`
-      :card.run?`${card.kernel}::run::${card.run}`
-      :`${card.kernel}::record::${card.recId||card.key}`;
-    const prev=grouped.get(key); if(!prev){ grouped.set(key,{...card,meta:[...(card.meta||[])]}); continue; }
-    const winner=rank(card)>rank(prev)?card:prev;
-    const loser=winner===card?prev:card;
-    const lineageEntries=[...new Set([...(prev.lineageEntries||[]),...(card.lineageEntries||[])])];
-    grouped.set(key,{...prev,...winner,key,
-      lineageEntries,
-      meta:[...new Set([...(winner.meta||[]),...lineageEntries,...(loser.meta||[])])]
-        .filter(Boolean).slice(0,12)}); }
-  const result=[...grouped.values()];
-  for(const card of result){
-    card.nodeAvailability=card.nodeAvailability||_missionNodeAvailability(card.kernel);
-    if(card.nodeAvailability==='online') continue;
-    const nodeState=card.nodeAvailability==='offline'?'node offline':'live node not observed';
-    const evidence=card.exactLifecycle?'cached signed lifecycle':'cached signed history';
-    const availability=`${evidence} · ${nodeState}`;
-    card.meta=[availability,...(card.meta||[]).filter((value)=>value!==availability)]
-      .filter(Boolean).slice(0,12);
+  for(const [baseKey,hit] of currentRuntimeStatusEntries(Date.now(),32000)){
+    const base=baseKey==='@origin'?'':baseKey,v=hit?.v;
+    if(!v||!(hit.ts>fresh)) continue;
+    const kernel=kernelForBase(base);
+    for(const raw of (v.stoppable_runs||[])){
+      const run=String(raw||''),runKey=`${kernel}\u0000${run}`;
+      if(!run||seenRuns.has(runKey)||S.liveArtifactEnded.has(_liveRunKey(base,run))) continue;
+      const lifecycle=_verifiedPublicTaskForRun(kernel,run);
+      const mechanical=_mechanicalRunProjection('',{
+        currentExecution:true,source:'unsigned operator status',
+      });
+      cards.push({key:`status:${kernel}:${run}`,
+        task:lifecycle?.task||`Task run ${_missionRunLabel(run)}`,
+        state:mechanical.key,mechanical,kernel,
+        meta:[mechanical.detail,'unsigned operator status'],
+        base,run,nodeAvailability:'online'});
+      seenRuns.add(runKey);
+    }
+    for(const paused of (v.paused_missions||[])){
+      const run=String(paused?.run||paused?.run_id||paused||'');
+      const runKey=`${kernel}\u0000${run}`;
+      if(!run||seenRuns.has(runKey)) continue;
+      const exactState=String(paused?.status||paused?.reason||'');
+      let mechanical=_mechanicalRunProjection(exactState,{source:'unsigned operator status'});
+      if(mechanical.key==='unavailable') mechanical={key:'resource-paused',
+        label:'Resource-paused',exactState,
+        detail:'Node status places this run in its resource-paused collection.',
+        source:'unsigned operator status'};
+      const lifecycle=_verifiedPublicTaskForRun(kernel,run);
+      cards.push({key:`paused:${kernel}:${run}`,
+        task:String(paused?.task||lifecycle?.task||`Task run ${_missionRunLabel(run)}`),
+        state:mechanical.key,mechanical,kernel,
+        meta:[mechanical.detail,exactState?`exact state ${exactState}`:'',
+          'unsigned operator status'].filter(Boolean),
+        base,run,nodeAvailability:'online'});
+      seenRuns.add(runKey);
+    }
   }
-  const byKernel=new Map();
-  for(const card of result) (byKernel.get(card.kernel)||byKernel.set(card.kernel,[]).get(card.kernel)).push(card);
-  for(const [kernel,kernelCards] of byKernel){
-    // A kernel-wide terminal event can be bound to a mission headline only when
-    // there is exactly one published task candidate on that kernel. With
-    // multiple tasks, keep the failure on its exact persona/environment cards
-    // instead of guessing which signed task it belongs to.
-    const publishedCards=kernelCards.filter((card)=>
-      card.state==='published'&&card.recordKind==='task');
-    if(publishedCards.length!==1) continue;
-    const failure=S.terminalModelFailureByKernel?.get(kernel); if(!failure) continue;
-    const active=[...(S.activeModelCallsByPersona||new Map()).entries()].some(([key,calls])=>
-      splitNetworkKey(key)?.kernelId===kernel&&(calls||[]).length>0);
-    if(active) continue;
-    const card=publishedCards[0], detail=[failure.model||'',failure.status?`HTTP ${failure.status}`:'']
-      .filter(Boolean).join(' · ');
-    card.state='failed'; card.terminalFailure=true;
-    const failureMeta=`unsigned live telemetry · model call failed${detail?` · ${detail}`:''}`;
-    card.meta=[failureMeta,...(card.meta||[]).filter((value)=>value!==failureMeta)]
-      .filter(Boolean).slice(0,4);
-  }
-  return result;
+  return S.kernelFocus?cards.filter((card)=>card.kernel===S.kernelFocus):cards;
 }
 // Full /status is intentionally scoped to authenticated or explicitly focused
 // nodes. Global missions, personas, environments, and live work arrive through
@@ -11300,14 +11084,14 @@ function renderMissions(){
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
   const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
-    priorityOf:(c)=>missionCardIsObservedCurrent(c)?1e6:c.state==='failed'?9e5:c.terminalTask?8.5e5:c.state==='paused'?5e5:c.state==='shipped'?1e5:0,
+    priorityOf:(c)=>missionCardIsObservedCurrent(c)?1:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
-  // A network-wide search can match a persona without matching its mission text.
-  // Keep the compact mission summary useful in that case and render an explicit
+  // A network-wide search can match a persona without matching its task text.
+  // Keep the compact run summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
   const active=window.items.find((c)=>missionCardIsObservedCurrent(c))||window.items[0]||null;
   const matching=window.items.length===cards.length
-    ?`${cards.length} mission${cards.length===1?'':'s'}`
+    ?`${cards.length} task/run record${cards.length===1?'':'s'}`
     :`${window.items.length} matching · ${cards.length} total`;
   if(count) count.textContent=active
     ?`${matching} · ${active.state}`
@@ -11317,19 +11101,19 @@ function renderMissions(){
   const cached=!missionCardIsObservedCurrent(active)
     &&['offline','unobserved'].includes(active?.nodeAvailability);
   if(headline) headline.textContent=missionCardIsObservedCurrent(active)
-    ?active.task:cached?'Cached signed mission evidence':active?'Task lifecycle evidence':'No matching mission';
+    ?active.task:cached?'Cached signed task/run evidence':active?'Mechanical task/run evidence':'No matching task or run';
   if(eyebrow) eyebrow.textContent=missionCardIsObservedCurrent(active)
-    ?(S.kernelFocus?'NOW WORKING ON':'PUBLIC NETWORK NOW WORKING ON')
-    :cached?'CACHED NETWORK EVIDENCE':'MISSION EVIDENCE';
+    ?(S.kernelFocus?'CURRENT MECHANICAL RUN':'CURRENT NETWORK RUNS')
+    :cached?'CACHED TASK/RUN EVIDENCE':'TASK AND RUN EVIDENCE';
   if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
   const html=window.items.length?window.items.map((c)=>{
     return `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
-      +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.state.toUpperCase().replace(/_/g,' '))}</span>`
+      +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.mechanical?.label||humanizeMachineKey(c.state))}</span>`
       +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
       +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`;
   }).join('')
-    :`<div class="mission-no-match">No missions match this network filter.</div>`;
+    :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`;
   if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
 }
 
@@ -11602,7 +11386,7 @@ function wire(){
       else if(act==='op-fund'){ const bf=$('#opr-budget')||$('#op-budget'); const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; opInvalid(bf); done(); return; }
         const body={budget:bd}; if(run) body.run=run;
         opPending(out,'funding…'); opPost(b2,'budget',body).then(show); }
-      else { if(!run && !confirm('No run id entered — stop ALL active missions on this node?')){ done(); return; }
+      else { if(!run && !confirm('No run id entered — stop ALL active runs on this node?')){ done(); return; }
         const body={}; if(run) body.run=run;
         opPending(out,'stopping…'); opPost(b2,'stop',body).then(show); }
       return; }
