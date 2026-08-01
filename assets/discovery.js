@@ -6199,6 +6199,72 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       +projection.history.slice(0,12).map((row)=>`<span title="${esc(`run ${row.run||''} · revision ${row.revision||''}`)}">Earlier version${_friendlyInstant(row.generatedAt)?` · ${esc(_friendlyInstant(row.generatedAt))}`:''} · ${row.files.length} file${row.files.length===1?'':'s'}</span>`).join('')
       +(projection.history.length>12?`<span>${projection.history.length-12} additional earlier revisions retained</span>`:'')+`</div>`:'')+`</section>`;
 }
+function _firstAuthoredMethodText(value,depth=0){
+  if(depth>5||value===null||value===undefined) return '';
+  if(typeof value==='string') return value.trim();
+  if(Array.isArray(value)){
+    for(const item of value){ const text=_firstAuthoredMethodText(item,depth+1); if(text) return text; }
+    return '';
+  }
+  if(typeof value==='object'){
+    for(const item of Object.values(value)){ const text=_firstAuthoredMethodText(item,depth+1); if(text) return text; }
+  }
+  return '';
+}
+function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
+  if(agentic?.schema!=='personaos-persona-agentic-development/2') return '';
+  const retainedKnowledge=agentic.authored_knowledge||[];
+  const methods=agentic.authored_methods||[], bindings=agentic.active_bindings||[];
+  const practice=agentic.recent_action_practice||[], acquired=agentic.acquired_tools||[];
+  const capabilities=agentic.acquired_capabilities||[], invocations=agentic.tool_invocations||[];
+  const localExecutions=agentic.local_executions||[];
+  if(!retainedKnowledge.length&&!methods.length&&!bindings.length&&!practice.length&&!acquired.length
+      &&!capabilities.length&&!invocations.length&&!localExecutions.length) return '';
+  const activeIds=new Set(bindings.flatMap((binding)=>binding.fragment_ids||[]));
+  const knowledgeRows=[...retainedKnowledge].reverse().slice(0,compact?2:12).map((record)=>{
+    const authoredText=record.body_included?_firstAuthoredMethodText(record.body):'';
+    const title=authoredText?_compactHumanLabel(authoredText,compact?180:420)
+      :'Retained persona-authored knowledge';
+    const detail=record.body_included
+      ?'Exact body is also present in this public signed activity snapshot'
+      :`Signed retained record · ${fmtBytes(record.content_bytes)} · body access was not widened`;
+    return `<li><span class="agentic-evidence-mark catalogued">${icon('lesson','ico-sm')}</span>`
+      +`<div><strong>${esc(title)}</strong><small>${esc(detail)}</small>`
+      +(!compact&&record.body_included
+        ?`<details><summary>Exact authored knowledge</summary>${_personaWorkNoteValueHTML(record.body,{compact:false})}</details>`:'')
+      +`</div></li>`;
+  }).join('');
+  const methodRows=[...methods].reverse().slice(0,compact?2:12).map((method)=>{
+    const authoredText=_firstAuthoredMethodText(method.body);
+    const title=authoredText?_compactHumanLabel(authoredText,compact?180:420)
+      :'Authored method body is retained by hash';
+    const active=activeIds.has(method.fragment_id);
+    return `<li><span class="agentic-evidence-mark ${active?'active':'catalogued'}">${icon(active?'check':'lesson','ico-sm')}</span>`
+      +`<div><strong>${esc(title)}</strong><small>${active?'Active in an exact persona-chosen carrier':'Authored and catalogued; not active in a carrier'}</small>`
+      +(!compact&&method.body_included
+        ?`<details><summary>Exact authored method</summary>${_personaWorkNoteValueHTML(method.body,{compact:false})}</details>`:'')
+      +`</div></li>`;
+  }).join('');
+  const practiceRows=[...practice].reverse().slice(0,compact?6:16);
+  const toolRows=[...new Map([
+    ...acquired.map((row)=>[`${row.environment_id}\u0000${row.tool_name}`,
+      {label:row.tool_name,detail:'acquired',count:1}]),
+    ...invocations.map((row)=>[`${row.environment_id}\u0000${row.tool_name}`,
+      {label:row.tool_name,detail:'used',count:row.count}]),
+    ...capabilities.map((row)=>[`${row.environment_id}\u0000${row.capability}`,
+      {label:row.capability,detail:'provisioned',count:1}]),
+  ]).values()].slice(-(compact?6:16));
+  const executionRows=[...localExecutions].reverse().slice(0,compact?6:16);
+  return `<section class="pc-agentic-development${compact?' compact':''}"><div class="pc-section-head"><span>Learning, methods, and tool practice</span>`
+    +`<small>${retainedKnowledge.length} retained · ${methods.length} method${methods.length===1?'':'s'} · ${activeIds.size} active</small></div>`
+    +(knowledgeRows?`<ol class="agentic-methods">${knowledgeRows}</ol>`:'')
+    +(methodRows?`<ol class="agentic-methods">${methodRows}</ol>`
+      :'<p class="agentic-empty">No reusable method has been authored and activated yet.</p>')
+    +(practiceRows.length?`<div class="agentic-practice"><b>Recent practiced actions</b><div>${practiceRows.map((row)=>`<span title="${esc(row.action_name)}">${esc(humanizeMachineKey(row.action_name))}${row.count>1?` · ${esc(row.count)}×`:''}</span>`).join('')}</div></div>`:'')
+    +(toolRows.length?`<div class="agentic-practice"><b>Capabilities and tools</b><div>${toolRows.map((row)=>`<span>${esc(humanizeMachineKey(row.label))} · ${esc(row.detail)}${row.count>1?` ${esc(row.count)}×`:''}</span>`).join('')}</div></div>`:'')
+    +(executionRows.length?`<div class="agentic-practice"><b>Host executables actually used</b><div>${executionRows.map((row)=>`<span title="${esc(row.last_command_hash)}">${esc(row.executable)} · ${esc(row.successful_count)}/${esc(row.invocation_count)} succeeded</span>`).join('')}</div></div>`:'')
+    +`<p class="agentic-neutrality">Authored, activated, acquired, and practiced are separate verified facts—not an automatic expertise score.</p></section>`;
+}
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
@@ -6207,7 +6273,8 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
     ?doc.current_work_state:null;
   const outputs=[...(doc.recent_outputs||[])].reverse();
   const latestOutput=outputs.find((output)=>output?.authority==='persona_signature');
-  if(!state&&!latestOutput) return '';
+  const agenticHTML=_personaAgenticDevelopmentHTML(doc.agentic_development,{compact:true});
+  if(!state&&!latestOutput&&!agenticHTML) return '';
   let stateHTML='';
   if(state){
     stateHTML=`<div class="pc-authored-state"><div class="pc-authored-state-head"><strong>Persona-authored work note</strong>`
@@ -6230,8 +6297,10 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
       +(summary?`<p>${esc(_compactHumanLabel(summary,280))}</p>`:'')
       +'</div>';
   }
-  return `<section class="pc-authored-work"><div class="pc-section-head"><span>Current thinking and work</span>`
-    +`<small>${icon('check','ico-sm')} signed snapshot verified</small></div>${stateHTML}${outputHTML}</section>`;
+  const currentHTML=state||latestOutput
+    ?`<section class="pc-authored-work"><div class="pc-section-head"><span>Current thinking and work</span>`
+      +`<small>${icon('check','ico-sm')} signed snapshot verified</small></div>${stateHTML}${outputHTML}</section>`:'';
+  return currentHTML+agenticHTML;
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -7934,7 +8003,10 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
     const workspace=lifecycle?_environmentNameFor(lifecycle.environment,kernel):'';
     return [task?`task · ${task}`:'',workspace?`workspace · ${workspace}`:''].filter(Boolean);
   };
-  if(publicCognition) h+=_renderPersonaWorkState(t,{kernel,retainedSnapshot});
+  if(publicCognition){
+    h+=_renderPersonaWorkState(t,{kernel,retainedSnapshot});
+    h+=_personaAgenticDevelopmentHTML(t.agentic_development,{compact:false});
+  }
   let technical='';
   if(activeCalls.length){
     technical+=`<div class="l2" style="margin:2px 0 3px">${retainedSnapshot
@@ -8121,7 +8193,7 @@ function renderThinkingRedacted(doc){
   return h;
 }
 const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
-  'active_calls','evolution_timeline','generated_at','identity_fields',
+  'active_calls','agentic_development','evolution_timeline','generated_at','identity_fields',
   'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
   'proven_facts','provisional_outputs','recent_calls','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
   'current_work_state','work_state_history',
@@ -8174,6 +8246,36 @@ const PUBLIC_PERSONA_TACTIC_FIELDS=Object.freeze([
 ].sort());
 const PUBLIC_PERSONA_EVOLUTION_FIELDS=Object.freeze([
   'accepted','at','kind','mode','task_id',
+].sort());
+const PUBLIC_PERSONA_AGENTIC_FIELDS=Object.freeze([
+  'active_bindings','acquired_capabilities','acquired_tools','authored_knowledge','authored_methods',
+  'expertise_awarded_by_substrate','local_executions','recent_action_practice','schema',
+  'semantic_interpretation_performed','tool_invocations',
+].sort());
+const PUBLIC_PERSONA_KNOWLEDGE_FIELDS=Object.freeze([
+  'body','body_included','content_bytes','content_hash','environment_id','evidence_ref_count',
+  'issued_at','persona_signature_verified','record_id','task_id',
+].sort());
+const PUBLIC_PERSONA_METHOD_FIELDS=Object.freeze([
+  'authority_scope','body','body_included','created_at','fragment_hash','fragment_id',
+  'persona_signature_verified','updated_at','version',
+].sort());
+const PUBLIC_PERSONA_BINDING_FIELDS=Object.freeze([
+  'binding_hash','binding_id','carrier_scope_refs','created_at','fragment_ids',
+  'persona_signature_verified','updated_at','version',
+].sort());
+const PUBLIC_PERSONA_PRACTICE_FIELDS=Object.freeze(['action_name','count','last_at'].sort());
+const PUBLIC_PERSONA_CAPABILITY_FIELDS=Object.freeze([
+  'acquired_at','capability','environment_id','recipe_hash',
+].sort());
+const PUBLIC_PERSONA_ACQUIRED_TOOL_FIELDS=Object.freeze([
+  'acquired_at','artifact_id','environment_id','tool_name',
+].sort());
+const PUBLIC_PERSONA_TOOL_INVOCATION_FIELDS=Object.freeze([
+  'artifact_id','count','environment_id','last_at','tool_name',
+].sort());
+const PUBLIC_PERSONA_LOCAL_EXECUTION_FIELDS=Object.freeze([
+  'environment_id','executable','invocation_count','last_at','last_command_hash','successful_count',
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
   'active_membership_current','authored_at','automatic_action',
@@ -8603,6 +8705,125 @@ function _validPublicPersonaEvolution(event){
     &&(event.accepted===null||typeof event.accepted==='boolean')
     &&_safePublicCognitionAtom(event.task_id,512);
 }
+function _validPublicPersonaAgenticDevelopment(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)
+      ||!_exactObjectFields(value,PUBLIC_PERSONA_AGENTIC_FIELDS)
+      ||value.schema!=='personaos-persona-agentic-development/2'
+      ||value.expertise_awarded_by_substrate!==false
+      ||value.semantic_interpretation_performed!==false) return false;
+  for(const field of ['authored_knowledge','authored_methods','active_bindings','recent_action_practice',
+    'acquired_capabilities','acquired_tools','tool_invocations','local_executions'])
+    if(!Array.isArray(value[field])) return false;
+  if(value.authored_knowledge.length>24||value.authored_methods.length>24||value.active_bindings.length>24
+      ||value.recent_action_practice.length>32||value.acquired_capabilities.length>24
+      ||value.acquired_tools.length>24||value.tool_invocations.length>32
+      ||value.local_executions.length>32) return false;
+  const knowledgeIds=new Set();
+  for(const record of value.authored_knowledge){
+    if(!_exactObjectFields(record,PUBLIC_PERSONA_KNOWLEDGE_FIELDS)
+        ||!_safePublicCognitionAtom(record.record_id,512,{required:true})
+        ||knowledgeIds.has(record.record_id)
+        ||!_safePublicCognitionAtom(record.environment_id,512)
+        ||!_safePublicCognitionAtom(record.task_id,512)
+        ||typeof record.body_included!=='boolean'
+        ||!_validPublicWorkDocument(record.body)
+        ||(!record.body_included&&Object.keys(record.body).length)
+        ||!SHA256_CONTENT_RE.test(String(record.content_hash||''))
+        ||!Number.isSafeInteger(record.content_bytes)||record.content_bytes<2||record.content_bytes>262144
+        ||!Number.isSafeInteger(record.evidence_ref_count)||record.evidence_ref_count<0||record.evidence_ref_count>32
+        ||!_safePublicCognitionInstant(record.issued_at)
+        ||record.persona_signature_verified!==true) return false;
+    knowledgeIds.add(record.record_id);
+  }
+  const fragmentIds=new Set();
+  for(const method of value.authored_methods){
+    if(!_exactObjectFields(method,PUBLIC_PERSONA_METHOD_FIELDS)
+        ||!_safePublicCognitionAtom(method.fragment_id,512,{required:true})
+        ||fragmentIds.has(method.fragment_id)
+        ||!Number.isSafeInteger(method.version)||method.version<1
+        ||typeof method.body_included!=='boolean'
+        ||!_validPublicWorkDocument(method.body)
+        ||(!method.body_included&&Object.keys(method.body).length)
+        ||!_safePublicCognitionAtom(method.authority_scope,512)
+        ||!_safePublicCognitionInstant(method.created_at)
+        ||!_safePublicCognitionInstant(method.updated_at)
+        ||!SHA256_CONTENT_RE.test(String(method.fragment_hash||''))
+        ||method.persona_signature_verified!==true) return false;
+    fragmentIds.add(method.fragment_id);
+  }
+  const bindingIds=new Set();
+  for(const binding of value.active_bindings){
+    if(!_exactObjectFields(binding,PUBLIC_PERSONA_BINDING_FIELDS)
+        ||!_safePublicCognitionAtom(binding.binding_id,512,{required:true})
+        ||bindingIds.has(binding.binding_id)
+        ||!Number.isSafeInteger(binding.version)||binding.version<1
+        ||!Array.isArray(binding.fragment_ids)||!binding.fragment_ids.length
+        ||binding.fragment_ids.length>128
+        ||!binding.fragment_ids.every((item)=>_safePublicCognitionAtom(item,512,{required:true})
+          &&fragmentIds.has(item))
+        ||new Set(binding.fragment_ids).size!==binding.fragment_ids.length
+        ||!Array.isArray(binding.carrier_scope_refs)||!binding.carrier_scope_refs.length
+        ||binding.carrier_scope_refs.length>16
+        ||!binding.carrier_scope_refs.every((item)=>_safePublicCognitionAtom(item,512,{required:true}))
+        ||new Set(binding.carrier_scope_refs).size!==binding.carrier_scope_refs.length
+        ||!_safePublicCognitionInstant(binding.created_at)
+        ||!_safePublicCognitionInstant(binding.updated_at)
+        ||!SHA256_CONTENT_RE.test(String(binding.binding_hash||''))
+        ||binding.persona_signature_verified!==true) return false;
+    bindingIds.add(binding.binding_id);
+  }
+  const actionNames=new Set();
+  for(const row of value.recent_action_practice){
+    if(!_exactObjectFields(row,PUBLIC_PERSONA_PRACTICE_FIELDS)
+        ||!_safePublicCognitionAtom(row.action_name,512,{required:true})
+        ||actionNames.has(row.action_name)
+        ||!Number.isSafeInteger(row.count)||row.count<1
+        ||!_safePublicCognitionInstant(row.last_at)) return false;
+    actionNames.add(row.action_name);
+  }
+  for(const row of value.acquired_capabilities)
+    if(!_exactObjectFields(row,PUBLIC_PERSONA_CAPABILITY_FIELDS)
+        ||!_safePublicCognitionAtom(row.environment_id,512,{required:true})
+        ||!_safePublicCognitionText(row.capability,500,{required:true})
+        ||row.capability.trim()!==row.capability
+        ||!SHA256_CONTENT_RE.test(String(row.recipe_hash||''))
+        ||!_safePublicCognitionInstant(row.acquired_at)) return false;
+  for(const row of value.acquired_tools)
+    if(!_exactObjectFields(row,PUBLIC_PERSONA_ACQUIRED_TOOL_FIELDS)
+        ||!_safePublicCognitionAtom(row.environment_id,512,{required:true})
+        ||!_safePublicCognitionText(row.tool_name,500,{required:true})
+        ||row.tool_name.trim()!==row.tool_name
+        ||!_safePublicCognitionAtom(row.artifact_id,512,{required:true})
+        ||!_safePublicCognitionInstant(row.acquired_at)) return false;
+  const invocationKeys=new Set();
+  for(const row of value.tool_invocations){
+    const key=`${row?.environment_id||''}\u0000${row?.tool_name||''}\u0000${row?.artifact_id||''}`;
+    if(!_exactObjectFields(row,PUBLIC_PERSONA_TOOL_INVOCATION_FIELDS)
+        ||!_safePublicCognitionAtom(row.environment_id,512,{required:true})
+        ||!_safePublicCognitionText(row.tool_name,500,{required:true})
+        ||row.tool_name.trim()!==row.tool_name
+        ||!_safePublicCognitionAtom(row.artifact_id,512,{required:true})
+        ||!Number.isSafeInteger(row.count)||row.count<1
+        ||!_safePublicCognitionInstant(row.last_at)||invocationKeys.has(key)) return false;
+    invocationKeys.add(key);
+  }
+  const executionKeys=new Set();
+  for(const row of value.local_executions){
+    const key=`${row?.environment_id||''}\u0000${row?.executable||''}`;
+    if(!_exactObjectFields(row,PUBLIC_PERSONA_LOCAL_EXECUTION_FIELDS)
+        ||!_safePublicCognitionAtom(row.environment_id,512,{required:true})
+        ||!_safePublicCognitionText(row.executable,500,{required:true})
+        ||row.executable.trim()!==row.executable
+        ||!Number.isSafeInteger(row.invocation_count)||row.invocation_count<1
+        ||!Number.isSafeInteger(row.successful_count)||row.successful_count<0
+        ||row.successful_count>row.invocation_count
+        ||!_safePublicCognitionInstant(row.last_at)
+        ||!SHA256_CONTENT_RE.test(String(row.last_command_hash||''))
+        ||executionKeys.has(key)) return false;
+    executionKeys.add(key);
+  }
+  return true;
+}
 function _currentInventoryPersona(kernel,pid){
   const personaKey=_personaKey(kernel,pid), row=S.personaDiscoveryByKey.get(personaKey);
   const inventory=S.providerInventories.get(String(kernel||''));
@@ -8633,7 +8854,8 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!Array.isArray(doc.lessons)
       ||!Array.isArray(doc.tactics)
       ||!Array.isArray(doc.proven_facts)
-      ||!Array.isArray(doc.evolution_timeline)) return false;
+      ||!Array.isArray(doc.evolution_timeline)
+      ||!_validPublicPersonaAgenticDevelopment(doc.agentic_development)) return false;
   if(!await verifyCurrentMasterSignedDocument(base,doc)) return false;
   const lifecycle=personaLifecycleProjection(S.personaDiscoveryByKey,_personaKey(kernel,pid));
   if(!lifecycle||doc.lifecycle_state!==lifecycle.lifecycleState
