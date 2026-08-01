@@ -26,6 +26,11 @@ export function signedPersonaLabel(record) {
 
 export function personaAuthoredRole(record) {
   if (record?.kind !== 'persona') return '';
+  const verifiedCharacteristics=record._personaParticipationVerified===true
+    &&record._personaCharacteristics
+    &&typeof record._personaCharacteristics==='object'
+    &&!Array.isArray(record._personaCharacteristics)
+    ?record._personaCharacteristics:null;
   // These are explicit role fields carried inside the already-verified record.
   // Labels, names, capability summaries, lifecycle flags, and operator fitness
   // are deliberately absent: none of them author a coordination role.
@@ -36,6 +41,7 @@ export function personaAuthoredRole(record) {
     record.declared_role,
     record.membership_role,
     record.membership?.role,
+    verifiedCharacteristics?.role,
   ]) {
     const role = roleText(value);
     if (role) return role;

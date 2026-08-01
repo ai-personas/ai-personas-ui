@@ -90,9 +90,15 @@ const ACTION_HEADLINES = Object.freeze({
   blackboard_post: 'Shared a workspace note',
   request_external_artifact: 'Requested an external artifact',
   inspect_external_artifact_state: 'Checked an external artifact request',
+  request_project_materialization: 'Requested a durable project workspace',
   admit_persona_avatar: 'Adopted a public portrait',
   adopt_persona_display_name: 'Adopted a public name',
   adopt_persona_characteristics: 'Described how I work',
+  author_persona_knowledge: 'Recorded reusable knowledge',
+  inspect_persona_learning_history: 'Reviewed prior learning',
+  apply_brain_evolution: 'Applied a self-authored learning update',
+  propose_brain_context: 'Proposed reusable working context',
+  upsert_brain_context: 'Updated reusable working context',
 });
 
 const PURPOSE_CONTEXT = Object.freeze({

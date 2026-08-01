@@ -1861,9 +1861,43 @@ const PUBLIC_ENVIRONMENT_FEED_FIELDS=Object.freeze([
   'activity','communication_routes','communication_routes_hash','environment_id','generated_at',
   'member_count','members','model_status','node_id','schema','signature_hex','signing_key_id','status','tier',
 ].sort());
+const PUBLIC_PROJECT_TOPOLOGY_FIELDS=Object.freeze([
+  'cross_verified','environment_creation_event_id','environment_ids','hosting_link_event_id',
+  'members','primary_environment_id','project_creation_event_id','project_id','schema','status',
+].sort());
 function _exactObjectFields(value,fields){
   return !!value&&typeof value==='object'&&!Array.isArray(value)
     &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
+}
+async function verifyPublicProjectTopology(topology,signatureHex,record,policy,keyEntry){
+  if(record?.kind!=='project'
+      ||!_exactObjectFields(topology,PUBLIC_PROJECT_TOPOLOGY_FIELDS)
+      ||topology.schema!=='personaos-public-project-topology/1'
+      ||topology.cross_verified!==true) return false;
+  const projectId=String(topology.project_id||'');
+  const environments=topology.environment_ids;
+  const primary=String(topology.primary_environment_id||'');
+  const members=topology.members;
+  const eventIds=[topology.project_creation_event_id,
+    topology.environment_creation_event_id,topology.hosting_link_event_id];
+  if(!projectId||projectId.length>512
+      ||String(policy?.subject_kind||'')!=='project'
+      ||String(policy?.subject_id||'')!==projectId
+      ||!Array.isArray(environments)||!environments.length||environments.length>128
+      ||environments.some((value)=>typeof value!=='string'||!value||value.length>512)
+      ||new Set(environments).size!==environments.length
+      ||!primary||!environments.includes(primary)
+      ||!members||typeof members!=='object'||Array.isArray(members)
+      ||Object.keys(members).length>512
+      ||Object.entries(members).some(([personaId,role])=>!personaId||personaId.length>512
+        ||typeof role!=='string'||!role||role.length>500)
+      ||eventIds.some((value)=>typeof value!=='string'||!value||value.length>512)
+      ||typeof topology.status!=='string'||!topology.status||topology.status.length>100)
+    return false;
+  try{
+    return await ed.verifyAsync(hexToBytes(String(signatureHex||'')),
+      enc.encode(canon(topology)),hexToBytes(String(keyEntry?.public_key_hex||'')));
+  }catch(_error){ return false; }
 }
 function _telemetryEntitySlug(value){
   const source=String(value||'').split(':').pop().trim(); let out='',replaced=false;
@@ -1959,6 +1993,9 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
       :doc.persona_lifecycle_card==null?'pending':'refused';
   const taskLifecycleVerified=r.kind==='task'
     ?await verifyPublicTaskLifecycle(doc.task_lifecycle,doc.record,signature.entry,k):false;
+  const projectTopologyVerified=r.kind==='project'
+    ?await verifyPublicProjectTopology(doc.project_topology,
+      doc.project_topology_signature_hex,doc.record,doc.access_policy,signature.entry):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     // Keep the reached provider route separate from the read-gated content
@@ -1979,6 +2016,8 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     persona_lifecycle_card:lifecycleVerified?doc.persona_lifecycle_card:null,
     _taskLifecycleVerified:taskLifecycleVerified,
     task_lifecycle:taskLifecycleVerified?doc.task_lifecycle:null,
+    _projectTopologyVerified:projectTopologyVerified,
+    _projectTopology:projectTopologyVerified?doc.project_topology:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -5143,7 +5182,13 @@ function _personaCharacteristicValue(value,depth=0){
 function _personaCharacteristicRows(characteristics,{name='',limit=8}={}){
   if(!characteristics||typeof characteristics!=='object'||Array.isArray(characteristics)) return [];
   const exactName=String(name||'').trim(), rows=[];
-  for(const [key,value] of Object.entries(characteristics)){
+  const entries=Object.entries(characteristics);
+  const presentationOrder=['role','description','traits'];
+  const ordered=[
+    ...presentationOrder.flatMap((field)=>entries.filter(([key])=>key.toLowerCase()===field)),
+    ...entries.filter(([key])=>!presentationOrder.includes(key.toLowerCase())),
+  ];
+  for(const [key,value] of ordered){
     if(isTechnicalKey(key)) continue;
     const text=_personaCharacteristicValue(value);
     if(!text||text===exactName) continue;
@@ -5279,11 +5324,12 @@ function _mechanicalRunProjection(exactState,{activeCall=false,currentExecution=
   if(_MECHANICAL_QUIESCENT_TASK_STATES.has(exact))
     return {key:'quiescent',label:'Quiescent',exactState:exact,
       detail:'No persona continuation is currently bound.',source};
-  if(currentExecution||exact==='event_driven_handoff')
+  if(currentExecution)
     return {key:'running',label:'Running',exactState:exact,
-      detail:exact==='event_driven_handoff'
-        ?'A persona continuation is mechanically queued.'
-        :'The run lifecycle records active execution.',source};
+      detail:'The run lifecycle records active execution.',source};
+  if(exact==='event_driven_handoff')
+    return {key:'continuation-bound',label:'Continuation bound',exactState:exact,
+      detail:'A signed persona continuation is mechanically bound.',source};
   return {key:'unavailable',label:'Run state unavailable',exactState:exact,
     detail:'No current mechanical run category is available.',
     source:exact?source:'no current lifecycle'};
@@ -10511,30 +10557,37 @@ async function domainView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc
   return {title:`<span class="kind k-domain">DOMAIN</span> ${esc(d.name||r.label)}`, html};
 }
 async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
-  // Project export (04_PROJECT): project/3 has open multi-environment hosting.
-  // Only export/2's canonical hosts + primary designation are rendered as
-  // topology; the removed singular environment_id/env_id aliases never regain
-  // presentation authority through an old document.
+  // Project/3 has open multi-environment hosting. Prefer its complete immutable
+  // run export when available; a restarted live project instead carries an
+  // independently kernel-signed reciprocal-topology snapshot. The removed
+  // singular environment_id/env_id aliases never regain presentation authority.
   const d=(L.export?await dfetch(base,L.export):null)||{};
-  const rawMembers=d.members||{};
+  const liveTopology=r._projectTopologyVerified===true?r._projectTopology:null;
+  const topologySource=d.schema==='personaos-project-export/2'?d:(liveTopology||{});
+  const rawMembers=topologySource.members||{};
   const members=Array.isArray(rawMembers)
     ?rawMembers.map((m)=>typeof m==='string'?{persona_id:m,role:''}:m).filter((m)=>m&&m.persona_id)
     :Object.entries(rawMembers).map(([personaId,value])=>typeof value==='object'&&value!==null
       ?{...value,persona_id:value.persona_id||personaId}
       :{persona_id:personaId,role:String(value||'')});
-  const hasCanonicalTopology=d.schema==='personaos-project-export/2'&&Array.isArray(d.environments);
+  const hasExportTopology=d.schema==='personaos-project-export/2'&&Array.isArray(d.environments);
+  const hasLiveTopology=liveTopology?.schema==='personaos-public-project-topology/1'
+    &&Array.isArray(liveTopology.environment_ids);
+  const hasCanonicalTopology=hasExportTopology||hasLiveTopology;
   const hostValues=hasCanonicalTopology
-    ?d.environments.map((value)=>String(value||'').trim()).filter(Boolean):[];
+    ?(hasExportTopology?d.environments:liveTopology.environment_ids)
+      .map((value)=>String(value||'').trim()).filter(Boolean):[];
   const hosts=[...new Set(hostValues)];
-  const primary=String(d.primary_environment_id||'').trim();
+  const primary=String(topologySource.primary_environment_id||'').trim();
   const topologyValid=hasCanonicalTopology&&hostValues.length===hosts.length
     &&((hosts.length===0&&!primary)||(hosts.length>0&&hosts.includes(primary)));
   let html=kv('Project',`<b>${S0(d.name||r.label)}</b>`)
     +kv('Hosted environments',topologyValid?S0(hosts.length):'<span class="no">invalid / unavailable</span>')
     +(topologyValid&&hosts.length?kv('Primary workspace',`<b>${esc(_environmentNameFor(primary,r._kernel))}</b>`):'')
     +kv('Members',S0(members.length||'—'))
+    +(topologySource.status?kv('State',`<span class="cap">${esc(topologySource.status)}</span>`):'')
     +(d.bundle_id?kv('Artifact bundle','published metadata'):'')
-    +verificationIdentityDetails('project id',d.project_id||r.did);
+    +verificationIdentityDetails('project id',topologySource.project_id||r.did);
   if(topologyValid&&hosts.length) html+=H(`Environments (${hosts.length})`)+hosts.map((environmentId)=>{
     const rid=S.order.find((id)=>{ const candidate=S.recs.get(id);
       return candidate&&candidate.kind==='env'&&candidate._kernel===r._kernel
@@ -10544,7 +10597,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     return `<div class="grant"><span>${rid?recLink(rid,label):`<code>${esc(label)}</code>`}</span>`
       +`<span class="l2">${environmentId===primary?'PRIMARY':'HOST'}</span></div>`;
   }).join('');
-  else if(d.schema&&d.schema!=='personaos-project-export/2') html+=`<div class="viewerr">${icon('warn','ico-sm')} Legacy singular project-host topology was refused; republish this project with export/2.</div>`;
+  else if(d.schema&&d.schema!=='personaos-project-export/2'&&!liveTopology) html+=`<div class="viewerr">${icon('warn','ico-sm')} Legacy singular project-host topology was refused; republish this project with export/2.</div>`;
   if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
     const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
     const memberName=_nameFor(m.persona_id,r._kernel);
@@ -10699,6 +10752,27 @@ async function operatorNodeView(b){
       :`${S0(st.task_model_call_budget)} per task · queued ${S0(st.pending_budget??0)}`)
     +kv('Artifact tier',S0(st.artifact_tier))
     +kv('Public discovery',st.public_discovery?`<span class="ok">on</span> (${esc((st.public_discovery_kinds||[]).join(', '))})`:'off');
+  const activePersonaCount=Number.isSafeInteger(st.active_persona_count)
+    ?st.active_persona_count:(Array.isArray(st.personas)?st.personas.length:null);
+  html+=kv('Active people',activePersonaCount==null?'not reported':String(activePersonaCount));
+  const replicationBounds=Array.isArray(st.replication_bounds)
+    ?st.replication_bounds.filter((bound)=>bound&&typeof bound==='object'):[];
+  html+=H('Population authority');
+  if(replicationBounds.length){
+    html+=replicationBounds.map((bound)=>{
+      const kind=String(bound.replication_kind||'').split(/[.:/]/).filter(Boolean).at(-1)||'actor creation';
+      const limits=[
+        bound.population_ceiling==null?'population unbounded':`population ceiling ${bound.population_ceiling}`,
+        bound.rate_ceiling_per_window==null?'rate unbounded':`${bound.rate_ceiling_per_window} per ${friendlyDuration(Number(bound.rate_window_seconds||0)*1000)||'configured window'}`,
+        bound.depth_ceiling==null?'depth unbounded':`depth ceiling ${bound.depth_ceiling}`,
+      ];
+      const verified=bound.signature_verified===true;
+      return `<div class="grant"><span><b>${esc(humanizeMachineKey(kind))}</b><small class="l2">${esc(limits.join(' · '))}</small></span>`
+        +`<span class="${verified?'ok':'no'}">${verified?icon('check','ico-sm')+' signed bound verified':'bound signature unavailable'}</span></div>`;
+    }).join('');
+  }else{
+    html+='<div class="fv-note">No signed replication bound is configured. Actions that declare actor materialization fail closed; the node cannot admit a new persona through that action surface.</div>';
+  }
   const personas=st.personas||[];
   if(personas.length) html+=H(`Personas (${personas.length})`)+personas.map((p)=>{
     const call=(st.active_model_calls||[]).find((c)=>_shortId(c.persona_id)===_shortId(p.persona_id));
@@ -10716,8 +10790,13 @@ async function operatorNodeView(b){
     return `<div class="grant"><span><a href="#" data-act="op-run" data-base="${esc(b)}" data-run="${esc(id)}">${esc(label)}</a></span>`
       +`<span class="l2">${esc(typeof r==='object'?(r.status||''):'')}</span></div>`; }).join('');
   const paused=st.paused_missions||[];
-  if(paused.length) html+=H(`Resource-paused runs (${paused.length})`)+paused.map((p)=>
-    `<div class="grant"><span>${esc(p.task||'Paused run')}</span><span class="l2">${esc(p.status||p.reason||'resource-paused')}</span></div>`).join('');
+  if(paused.length) html+=H(`Runs awaiting a causal continuation (${paused.length})`)+paused.map((p)=>{
+    const mechanical=_mechanicalRunProjection(String(p?.status||p?.reason||''),{
+      source:'node resume inventory',
+    });
+    return `<div class="grant"><span>${esc(p.task||'Retained task run')}</span>`
+      +`<span><b class="work-state-status is-${esc(mechanical.key)}">${esc(mechanical.label)}</b> <small class="l2">${esc(mechanical.detail)}</small></span></div>`;
+  }).join('');
   html+=H('Optional human input')
     +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
   if(!full){

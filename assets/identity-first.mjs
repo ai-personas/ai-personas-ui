@@ -442,4 +442,4 @@ function afterPaint(){
 
 const painted=await identityFirst().catch(()=>false);
 if(painted) await afterPaint();
-await import('./discovery.js?v=20260801-discovery-parse-fix-v1');
+await import('./discovery.js?v=20260801-live-project-v4');
