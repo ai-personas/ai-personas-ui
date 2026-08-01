@@ -10767,7 +10767,7 @@ async function operatorRunView(b,run){
   ]);
   const statusAccess=nodeStatusAccess(b,nodeStatus),hasFullStatus=statusAccess.granted;
   const [runStatus,artifacts]=await Promise.all([
-    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)):null),
+    hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):null,
     hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):null,
   ]);
   const raw=runStatus||{},rs=raw.run_state||{},arts=artifacts||{};
