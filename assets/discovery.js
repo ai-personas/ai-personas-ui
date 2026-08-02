@@ -81,7 +81,7 @@ import {
 import {
   locatorFallbackDecision,
   shouldPrefetchNodeStatus,
-} from './discovery-strategy.mjs?v=20260726-p2p-first-contact-v3';
+} from './discovery-strategy.mjs?v=20260802-p2p-first-contact-v4';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
