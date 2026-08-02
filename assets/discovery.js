@@ -6229,7 +6229,7 @@ function _firstAuthoredMethodText(value,depth=0){
   return '';
 }
 function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
-  if(agentic?.schema!=='personaos-persona-agentic-development/2') return '';
+  if(!['personaos-persona-agentic-development/2','personaos-persona-agentic-development/3'].includes(agentic?.schema)) return '';
   const retainedKnowledge=agentic.authored_knowledge||[];
   const methods=agentic.authored_methods||[], bindings=agentic.active_bindings||[];
   const practice=agentic.recent_action_practice||[], acquired=agentic.acquired_tools||[];
@@ -6242,9 +6242,12 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
     const authoredText=record.body_included?_firstAuthoredMethodText(record.body):'';
     const title=authoredText?_compactHumanLabel(authoredText,compact?180:420)
       :'Retained persona-authored knowledge';
+    const cognitionDetail=record.future_cognition_inventory_eligible
+      ?'Available to the persona in a mechanically bounded future-cognition inventory'
+      :'Retained as signed history';
     const detail=record.body_included
-      ?'Exact body is also present in this public signed activity snapshot'
-      :`Signed retained record · ${fmtBytes(record.content_bytes)} · body access was not widened`;
+      ?`${cognitionDetail} · exact body is present in this public signed activity snapshot`
+      :`${cognitionDetail} · ${fmtBytes(record.content_bytes)} · body access was not widened`;
     return `<li><span class="agentic-evidence-mark catalogued">${icon('lesson','ico-sm')}</span>`
       +`<div><strong>${esc(title)}</strong><small>${esc(detail)}</small>`
       +(!compact&&record.body_included
@@ -6282,7 +6285,7 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
     +(practiceRows.length?`<div class="agentic-practice"><b>Recent practiced actions</b><div>${practiceRows.map((row)=>{const at=Date.parse(String(row.last_at||''));return `<span title="${esc(row.action_name)}">${esc(humanizeMachineKey(row.action_name))}${row.count>1?` · ${esc(row.count)}×`:''}${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
     +(toolRows.length?`<div class="agentic-practice"><b>Capabilities and tools</b><div>${toolRows.map((row)=>{const at=Date.parse(String(row.lastAt||''));return `<span>${esc(humanizeMachineKey(row.label))} · ${esc(row.detail)}${row.count>1?` ${esc(row.count)}×`:''}${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
     +(executionRows.length?`<div class="agentic-practice"><b>Host executables actually used</b><div>${executionRows.map((row)=>{const at=Date.parse(String(row.last_at||''));return `<span title="${esc(row.last_command_hash)}">${esc(row.executable)} · ${esc(row.successful_count)}/${esc(row.invocation_count)} succeeded${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
-    +`<p class="agentic-neutrality">Authored, activated, acquired, and practiced are separate verified facts—not an automatic expertise score.</p></section>`;
+    +`<p class="agentic-neutrality">Retained knowledge can return through the persona's bounded future-cognition inventory. Authored tactics, active bindings, acquired tools, and practice remain separate verified facts—not an automatic expertise score.</p></section>`;
 }
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
@@ -8275,9 +8278,13 @@ const PUBLIC_PERSONA_AGENTIC_FIELDS=Object.freeze([
   'expertise_awarded_by_substrate','local_executions','recent_action_practice','schema',
   'semantic_interpretation_performed','tool_invocations',
 ].sort());
-const PUBLIC_PERSONA_KNOWLEDGE_FIELDS=Object.freeze([
+const PUBLIC_PERSONA_KNOWLEDGE_FIELDS_V2=Object.freeze([
   'body','body_included','content_bytes','content_hash','environment_id','evidence_ref_count',
   'issued_at','persona_signature_verified','record_id','task_id',
+].sort());
+const PUBLIC_PERSONA_KNOWLEDGE_FIELDS=Object.freeze([
+  'body','body_included','content_bytes','content_hash','environment_id','evidence_ref_count',
+  'future_cognition_inventory_eligible','issued_at','persona_signature_verified','record_id','task_id',
 ].sort());
 const PUBLIC_PERSONA_METHOD_FIELDS=Object.freeze([
   'authority_scope','body','body_included','created_at','fragment_hash','fragment_id',
@@ -8758,9 +8765,10 @@ function _validPublicPersonaEvolution(event){
     &&_safePublicCognitionAtom(event.task_id,512);
 }
 function _validPublicPersonaAgenticDevelopment(value){
+  const developmentV3=value?.schema==='personaos-persona-agentic-development/3';
   if(!value||typeof value!=='object'||Array.isArray(value)
       ||!_exactObjectFields(value,PUBLIC_PERSONA_AGENTIC_FIELDS)
-      ||value.schema!=='personaos-persona-agentic-development/2'
+      ||(!developmentV3&&value.schema!=='personaos-persona-agentic-development/2')
       ||value.expertise_awarded_by_substrate!==false
       ||value.semantic_interpretation_performed!==false) return false;
   for(const field of ['authored_knowledge','authored_methods','active_bindings','recent_action_practice',
@@ -8772,12 +8780,13 @@ function _validPublicPersonaAgenticDevelopment(value){
       ||value.local_executions.length>32) return false;
   const knowledgeIds=new Set();
   for(const record of value.authored_knowledge){
-    if(!_exactObjectFields(record,PUBLIC_PERSONA_KNOWLEDGE_FIELDS)
+    if(!_exactObjectFields(record,developmentV3?PUBLIC_PERSONA_KNOWLEDGE_FIELDS:PUBLIC_PERSONA_KNOWLEDGE_FIELDS_V2)
         ||!_safePublicCognitionAtom(record.record_id,512,{required:true})
         ||knowledgeIds.has(record.record_id)
         ||!_safePublicCognitionAtom(record.environment_id,512)
         ||!_safePublicCognitionAtom(record.task_id,512)
         ||typeof record.body_included!=='boolean'
+        ||(developmentV3&&record.future_cognition_inventory_eligible!==true)
         ||!_validPublicWorkDocument(record.body)
         ||(!record.body_included&&Object.keys(record.body).length)
         ||!SHA256_CONTENT_RE.test(String(record.content_hash||''))
