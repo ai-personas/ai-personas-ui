@@ -5448,7 +5448,7 @@ function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
   return `<dl class="work-note-fields">${rows.map(([key,item])=>`<div><dt title="${esc(key)}">${esc(humanizeMachineKey(key))}</dt><dd>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</dd></div>`).join('')}`
     +(entries.length>rows.length?`<div class="work-note-more"><dt>More</dt><dd>+${entries.length-rows.length} fields</dd></div>`:'')+'</dl>';
 }
-function _personaCausalDispositionHTML(disposition,{compact=false}={}){
+function _personaCausalDispositionHTML(disposition,{compact=false,mechanical=null}={}){
   if(!disposition||typeof disposition!=='object') return '';
   if(disposition.kind==='no_successor')
     return `<div class="work-note-next"><span>Persona-chosen next step</span>`
@@ -5456,9 +5456,14 @@ function _personaCausalDispositionHTML(disposition,{compact=false}={}){
       +`<small>This scheduling choice is not evidence that the task is complete.</small></div>`;
   if(disposition.kind!=='immediate_wake') return '';
   const label=_sentenceStart(humanizeMachineKey(disposition.wake_kind||'continue'));
+  const selectedPaths=Array.isArray(disposition.model_input_paths)
+    ?disposition.model_input_paths.filter((value)=>typeof value==='string'&&value):[];
+  const resourcePaused=mechanical?.key==='resource-paused';
   return `<div class="work-note-next"><span>Persona-chosen next step</span>`
     +`<strong>${esc(label)}</strong>`
-    +_personaWorkNoteValueHTML(disposition.payload||{},{compact})+'</div>';
+    +_personaWorkNoteValueHTML(disposition.payload||{},{compact})
+    +(selectedPaths.length?`<small>${selectedPaths.length} exact workspace ${selectedPaths.length===1?'file':'files'} selected for observation on the next authorized turn.</small>`:'')
+    +(resourcePaused?'<small>Waiting for signed run resources; this request is preserved, but no model call is currently authorized by it.</small>':'')+'</div>';
 }
 function _personaWorkNoteComparisonHTML(state,mechanical,{compact=false}={}){
   if(!state||typeof state!=='object') return '';
@@ -5469,7 +5474,7 @@ function _personaWorkNoteComparisonHTML(state,mechanical,{compact=false}={}){
   return `<div class="persona-claim-comparison"><article class="persona-authored-claim">`
     +`<span>What this persona says</span><div class="work-note-meta">Persona-authored claim · revision ${esc(state.revision)}${authoredAt?` · ${esc(authoredAt)}`:''} · ${esc(state.causal_ref_count)} causal ${state.causal_ref_count===1?'reference':'references'}</div>`
     +_personaWorkNoteValueHTML(state.work_note,{compact})
-    +_personaCausalDispositionHTML(state.causal_disposition,{compact})+'</article>'
+    +_personaCausalDispositionHTML(state.causal_disposition,{compact,mechanical:mechanicalState})+'</article>'
     +`<article class="mechanical-run-observation is-${esc(mechanicalState.key)}"><span>System-observed mechanical state</span>`
     +`<strong>${esc(mechanicalState.label)}</strong><p>${esc(mechanicalState.detail)}</p>`
     +`<small>${esc(mechanicalState.source)}${mechanicalState.exactState?` · exact state ${esc(mechanicalState.exactState)}`:''}</small></article></div>`;
