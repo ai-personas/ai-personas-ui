@@ -465,24 +465,41 @@ async function fetchResponsivePublicJson(u,init={}){
     // caller headers or consult token state again after it starts.
     const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
     const request=(async()=>{
-      // The peer-bound protocol is primary. For rapidly changing, separately
-      // signed documents (such as public cognition), callers may explicitly
-      // allow the same verified provider's direct HTTPS route only after the
-      // P2P read fails. This never consults the global locator service.
-      if(p2pDataRouteForUrl(u)&&P2P?.fetchPublicJson){
-        const peerDocument=await fetchP2PJson(u,transportInit);
-        if(peerDocument!==null&&peerDocument!==undefined) return peerDocument;
-        if(!verifiedDirectFallback) return null;
+      const directDocument=async()=>{
+        try{
+          const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
+            redirect:'error',referrerPolicy:'no-referrer'});
+          if(r.ok){
+            const bytes=await readBoundedResponseBytes(r,maxBytes);
+            return JSON.parse(new TextDecoder().decode(bytes));
+          }
+        }catch(_){}
+        return null;
+      };
+      const firstUsable=(reads)=>new Promise((resolve)=>{
+        let pending=reads.length, finished=false;
+        const settle=(value)=>{
+          if(finished) return;
+          if(value!==null&&value!==undefined){ finished=true; resolve(value); return; }
+          pending--;
+          if(pending<=0){ finished=true; resolve(null); }
+        };
+        for(const read of reads) Promise.resolve(read).then(settle,()=>settle(null));
+      });
+      const peerRouted=!!p2pDataRouteForUrl(u)&&!!P2P?.fetchPublicJson;
+      if(peerRouted){
+        const peerRead=fetchP2PJson(u,transportInit);
+        if(!verifiedDirectFallback) return peerRead;
+        // Dynamic signed documents must not disappear behind a slow peer read.
+        // Race the peer transport with the same current-master-verified
+        // provider's anonymous HTTPS route. The returned document still has to
+        // pass its independent signature/identity verification; this hedge does
+        // not consult a locator or change discovery authority.
+        return firstUsable([peerRead,directDocument()]);
       }
       if(peerOnly&&!verifiedDirectFallback) return null;
-      try{
-        const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
-          redirect:'error',referrerPolicy:'no-referrer'});
-        if(r.ok){
-          const bytes=await readBoundedResponseBytes(r,maxBytes);
-          return JSON.parse(new TextDecoder().decode(bytes));
-        }
-      }catch(_){}
+      const direct=await directDocument();
+      if(direct!==null&&direct!==undefined) return direct;
       if(transportSignal.aborted) return null;
       return fetchP2PJson(u,transportInit);
     })();
