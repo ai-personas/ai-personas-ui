@@ -95,7 +95,7 @@ import {
   telemetryActivity,
   telemetryModelEvents,
   telemetrySpans,
-} from './public-telemetry.mjs?v=20260717-direct-routes-v1';
+} from './public-telemetry.mjs?v=20260802-work-state-v4';
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1871,7 +1871,7 @@ const PUBLIC_ENTITY_INDEX_FIELDS=Object.freeze([
   'environments','generated_at','node_id','personas','schema','signature_hex','signing_key_id',
 ].sort());
 const PUBLIC_PERSONA_FEED_FIELDS=Object.freeze([
-  'activity','communication_routes','communication_routes_hash','generated_at','model_status',
+  'activity','communication_routes','communication_routes_hash','current_work_state','generated_at','model_status',
   'name','node_id','persona_id','schema','signature_hex','signing_key_id','summary','tier',
 ].sort());
 const PUBLIC_ENVIRONMENT_FEED_FIELDS=Object.freeze([
@@ -1954,14 +1954,21 @@ async function verifyPublicEntityDocument(base,rel,doc){
         ||path!=='telemetry/live/entities.json'
         ||!_safeEntityMap(doc.personas,'telemetry/personas')
         ||!_safeEntityMap(doc.environments,'telemetry/environments')) return false;
-  }else if(doc?.schema==='personaos-persona-telemetry-public/1'){
+  }else if(doc?.schema==='personaos-persona-telemetry-public/2'){
     const pid=String(doc.persona_id||'');
+    const row=_currentInventoryPersona(registry.kernelId,_shortId(pid));
+    const identity=signedPersonaIdentity(row);
+    const workState=doc.current_work_state;
+    const workStateAbsent=workState&&typeof workState==='object'
+      &&!Array.isArray(workState)&&Object.keys(workState).length===0;
     if(!_exactObjectFields(doc,PUBLIC_PERSONA_FEED_FIELDS)||!pid||pid.length>512
         ||path!==`telemetry/personas/${_telemetryEntitySlug(pid)}.json`
         ||doc.tier!=='public_redacted'
         ||!doc.summary||typeof doc.summary!=='object'||Array.isArray(doc.summary)
         ||String(doc.summary.persona_id||'')!==pid
         ||String(doc.name||'')!==String(doc.summary.name||'')
+        ||(!workStateAbsent&&(!identity
+          ||!_validPublicPersonaWorkState(workState,identity)))
         ||!_validPublicEntityModelStatus(doc.model_status,'persona_id',pid)
         ||!Array.isArray(doc.activity)
         ||!Array.isArray(doc.communication_routes)
@@ -2776,6 +2783,23 @@ async function admitVerifiedIdentityIndex(identityDoc,base,boot,where,{transport
     kernel:boot.kernel_id,t:Date.now(),identityIndex:true});
   collectP2PBootstraps(boot,{dial:true});
   scheduleRealtimeRepaint({records:true});
+  const personaKeys=identity.rows.filter((row)=>row?.kind==='persona')
+    .map((row)=>_personaKey(boot.kernel_id,_shortId(row.did||row.record_id)))
+    .filter((key)=>!!providerVerifiedPersonaObservation(key));
+  const personaFeeds=identity.rows.filter((row)=>row?.kind==='persona'
+      &&typeof row?._links?.telemetry==='string')
+    .map(async(row)=>_ingestVerifiedPersonaEntityFeed(
+      base,await fetchEntityFeed(base,row._links.telemetry)));
+  if(personaFeeds.length){
+    Promise.all(personaFeeds).then((keys)=>{
+      const hydrated=keys.filter(Boolean);
+      if(hydrated.length) scheduleRealtimeRepaint();
+      if(personaKeys.length) scheduleSseCognitionRefresh({base:base||'',personaKeys});
+    }).catch(()=>{
+      if(personaKeys.length) scheduleSseCognitionRefresh({base:base||'',personaKeys});
+    });
+  }else if(personaKeys.length)
+    scheduleSseCognitionRefresh({base:base||'',personaKeys});
   log('identity',`${identity.rows.length} current signed persona/environment record(s) verified first`,true);
   // Let the roster reach the compositor before full inventory verification.
   await yieldAfterVerifiedRosterPaint();
@@ -3332,6 +3356,17 @@ function _expireProviderInventories(now=Date.now()){
   let changed=false;
   for(const kernel of expiredProviderKernels(S.providerInventories,now))
     changed=retireProviderInventory(kernel)||changed;
+  for(const [kernel,inventory] of (S.identityIndexes||new Map())){
+    if(_providerInventoryIsCurrent(inventory,now)) continue;
+    for(const id of (inventory?.recordKeys||[])){
+      const row=S.recs.get(id);
+      if(row?._identityIndexVerified===true&&row._inventorySource===kernel
+          &&row._inventoryGeneration===inventory.generation
+          &&row._inventoryHash===inventory.hash)
+        changed=_removeRecordStoreKey(id)||changed;
+    }
+    S.identityIndexes.delete(kernel);
+  }
   if(changed){
     classifyMap();
     scheduleRealtimeRepaint({records:true});
@@ -5293,8 +5328,17 @@ function _environmentNameFor(value,kernel=''){
 }
 // This detector is deliberately narrower than the signed mechanical run
 // projection below: it answers only whether a model call is active right now.
-// Coordination/model history can make a card RECENT, but never an active call.
-function _runningNow(value,kernel=''){ return _activeModelCallsForPersona(value,kernel).length>0; }
+// Prefer exact active-call rows. A freshly verified per-persona entity document
+// is also authoritative for its own `running_llm` bit; that small signed lane
+// arrives before the much larger aggregate snapshot. Its short presence lease
+// prevents an old entity document from keeping a card active.
+function _runningNow(value,kernel=''){
+  const ref=_personaRef(value,kernel);
+  if(_activeModelCallsForPersona(ref.key).length) return true;
+  const live=S.liveByPersona.get(ref.key), receivedAt=Number(live?.receivedAt)||0;
+  return live?.stale!==true&&live?.summary?.running_llm===true
+    &&receivedAt>0&&(Date.now()-receivedAt)<30000;
+}
 function _modelFresh(value,models,kernel=''){
   const ref=_personaRef(value,kernel), seen=S.lastModelSeenAt?.get(ref.key)||0;
   return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
@@ -5404,6 +5448,18 @@ function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
   return `<dl class="work-note-fields">${rows.map(([key,item])=>`<div><dt title="${esc(key)}">${esc(humanizeMachineKey(key))}</dt><dd>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</dd></div>`).join('')}`
     +(entries.length>rows.length?`<div class="work-note-more"><dt>More</dt><dd>+${entries.length-rows.length} fields</dd></div>`:'')+'</dl>';
 }
+function _personaCausalDispositionHTML(disposition,{compact=false}={}){
+  if(!disposition||typeof disposition!=='object') return '';
+  if(disposition.kind==='no_successor')
+    return `<div class="work-note-next"><span>Persona-chosen next step</span>`
+      +`<strong>No immediate successor requested</strong>`
+      +`<small>This scheduling choice is not evidence that the task is complete.</small></div>`;
+  if(disposition.kind!=='immediate_wake') return '';
+  const label=_sentenceStart(humanizeMachineKey(disposition.wake_kind||'continue'));
+  return `<div class="work-note-next"><span>Persona-chosen next step</span>`
+    +`<strong>${esc(label)}</strong>`
+    +_personaWorkNoteValueHTML(disposition.payload||{},{compact})+'</div>';
+}
 function _personaWorkNoteComparisonHTML(state,mechanical,{compact=false}={}){
   if(!state||typeof state!=='object') return '';
   const authoredAt=_friendlyInstant(state.authored_at);
@@ -5412,7 +5468,8 @@ function _personaWorkNoteComparisonHTML(state,mechanical,{compact=false}={}){
     source:'no current lifecycle'};
   return `<div class="persona-claim-comparison"><article class="persona-authored-claim">`
     +`<span>What this persona says</span><div class="work-note-meta">Persona-authored claim · revision ${esc(state.revision)}${authoredAt?` · ${esc(authoredAt)}`:''} · ${esc(state.causal_ref_count)} causal ${state.causal_ref_count===1?'reference':'references'}</div>`
-    +_personaWorkNoteValueHTML(state.work_note,{compact})+'</article>'
+    +_personaWorkNoteValueHTML(state.work_note,{compact})
+    +_personaCausalDispositionHTML(state.causal_disposition,{compact})+'</article>'
     +`<article class="mechanical-run-observation is-${esc(mechanicalState.key)}"><span>System-observed mechanical state</span>`
     +`<strong>${esc(mechanicalState.label)}</strong><p>${esc(mechanicalState.detail)}</p>`
     +`<small>${esc(mechanicalState.source)}${mechanicalState.exactState?` · exact state ${esc(mechanicalState.exactState)}`:''}</small></article></div>`;
@@ -6290,12 +6347,18 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
-  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public') return '';
-  const state=doc.current_work_state?.schema==='personaos-persona-work-state-surface/3'
-    ?doc.current_work_state:null;
-  const outputs=[...(doc.recent_outputs||[])].reverse();
+  const publicCognition=doc?.schema==='personaos-persona-public-cognition/2'
+    &&doc?.tier==='public';
+  const fastState=S.liveByPersona.get(personaKey)?.currentWorkState;
+  const state=publicCognition
+    &&doc.current_work_state?.schema==='personaos-persona-work-state-surface/4'
+    ?doc.current_work_state
+    :fastState?.schema==='personaos-persona-work-state-surface/4'?fastState:null;
+  if(!publicCognition&&!state) return '';
+  const outputs=publicCognition?[...(doc.recent_outputs||[])].reverse():[];
   const latestOutput=outputs.find((output)=>output?.authority==='persona_signature');
-  const agenticHTML=_personaAgenticDevelopmentHTML(doc.agentic_development,{compact:true});
+  const agenticHTML=publicCognition
+    ?_personaAgenticDevelopmentHTML(doc.agentic_development,{compact:true}):'';
   if(!state&&!latestOutput&&!agenticHTML) return '';
   let stateHTML='';
   if(state){
@@ -6465,7 +6528,9 @@ function renderPersonaCard(pid,kernel='',context={}){
   const terminalFailure=running?null:(d.terminalFailure||null);
   const cognitionDoc=S.verifiedPublicCognitionByPersona?.get(personaKey)?.doc;
   const currentWorkState=cognitionDoc?.current_work_state?.schema
-    ==='personaos-persona-work-state-surface/3'?cognitionDoc.current_work_state:null;
+    ==='personaos-persona-work-state-surface/4'?cognitionDoc.current_work_state
+    :d.currentWorkState?.schema==='personaos-persona-work-state-surface/4'
+      ?d.currentWorkState:null;
   const mechanicalRun=_personaMechanicalRunProjection(
     last,ref.kernel,acts,personaKey,currentWorkState);
   // flash on genuine growth of total activity (model reqs + monotonic act tally)
@@ -7202,8 +7267,14 @@ async function refreshSystemView(){
   const liveGroups=await Promise.all(bases.map(async(key)=>{ const base=key==='@origin'?'':key;
     const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) return [];
     const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
-    const rows=Object.entries(ent.environments||{}).slice(0,NETWORK_LIMITS.environmentInitial*4);
-    return (await Promise.all(rows.map(async([eid,rel])=>{
+    const personaRows=Object.entries(ent.personas||{}).slice(0,NETWORK_LIMITS.personaInitial*4);
+    const environmentRows=Object.entries(ent.environments||{}).slice(0,NETWORK_LIMITS.environmentInitial*4);
+    const [personaFeeds,environmentFeeds]=await Promise.all([
+      Promise.all(personaRows.map(async([,rel])=>{
+        const feed=await fetchEntityFeed(base,rel);
+        return _ingestVerifiedPersonaEntityFeed(base,feed);
+      })),
+      Promise.all(environmentRows.map(async([eid,rel])=>{
       const feed=await fetchEntityFeed(base,rel); if(!feed) return null;
       const members=(feed.members||[]).map((member)=>{
         const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
@@ -7213,8 +7284,16 @@ async function refreshSystemView(){
       return {base,kernel,envId:eid,sid,name:feed.name||eid,type:feed.env_type||'',
         status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,
         recId:null,live:true,verified:false};
-    }))).filter(Boolean);
+      })),
+    ]);
+    const personaKeys=personaFeeds.filter(Boolean);
+    if(personaKeys.length) scheduleSseCognitionRefresh({base,personaKeys});
+    return environmentFeeds.filter(Boolean);
   }));
+  // The compact verified cards are already on screen. Repaint them with the
+  // just-arrived signed entity state before exports, manifests and artifact
+  // history perform their separate, potentially larger joins below.
+  _paintVerifiedIdentityShells(host);
   for(const rows of liveGroups) for(const b of rows){ const k=envKey(b.kernel,b.sid), prev=bySid.get(k);
     b.members.forEach((m)=>assigned.add(m));
     if(prev){ if(b.members.length>prev.members.length) prev.members=b.members;
@@ -7756,6 +7835,46 @@ async function fetchEntityFeed(base,rel){
   }
   m.set(key,{v,ts:Date.now()}); return v;
 }
+
+// Project the small, independently current-master-signed persona entity feed
+// into the same presentation index used by aggregate telemetry. This is a
+// fast enrichment lane, not a new authority: fetchEntityFeed has already
+// verified the document's exact schema, route, subject and signature, and the
+// persona must already exist in the verified compact/full discovery inventory.
+// The projection reads protocol state only; it never classifies task text,
+// roles, domains, tools, or authored work-note vocabulary.
+function _ingestVerifiedPersonaEntityFeed(base,doc){
+  if(!isPersonaTelemetryDocument(doc)) return '';
+  const baseKey=base||'@origin';
+  const kernel=String(doc.node_id||doc.kernel_id||kernelForBase(base)||'');
+  const expected=String((S.boots?.get(baseKey)||{}).kernel_id||kernelForBase(base)||'');
+  if(!kernel||(expected&&kernel!==expected)) return '';
+  const pid=_shortId(doc.persona_id), personaKey=_personaKey(kernel,pid);
+  if(!pid||!providerVerifiedPersonaObservation(personaKey)) return '';
+  const receivedAt=Date.now();
+  const observedAt=Date.parse(String(doc.generated_at||''))||receivedAt;
+  const current=S.liveByPersona.get(personaKey)||{};
+  // A later aggregate/entity observation must not be replaced by an older
+  // signed snapshot that happened to finish transport afterwards.
+  if(Number(current.observedAt)>observedAt) return personaKey;
+  const events=telemetryModelEvents(doc);
+  const failures=projectTerminalModelFailures(events);
+  const running=doc.summary?.running_llm===true||_activeCalls(doc).length>0;
+  const failure=running?null:(failures.byPersona.get(doc.persona_id)
+    ||failures.byPersona.get(pid)||failures.latest||current.terminalFailure||null);
+  const currentWorkState=doc.current_work_state?.schema
+    ==='personaos-persona-work-state-surface/4'?doc.current_work_state:null;
+  S.liveByPersona.set(personaKey,{...current,summary:{...(current.summary||{}),...(doc.summary||{})},
+    currentWorkState,terminalFailure:failure,sid:pid,generated_at:doc.generated_at,
+    base:baseKey==='@origin'?'':baseKey,kernel,observedAt,receivedAt,stale:false,
+    _entityFeedVerified:true});
+  if(running){ S.lastModelSeenAt=S.lastModelSeenAt||new Map();
+    S.lastModelSeenAt.set(personaKey,receivedAt); }
+  try{ NETWORK.upsertPresence({...doc.summary,kernel_id:kernel,kind:'persona',persona_id:pid,
+    observed_at_ms:observedAt,state:running?'running_llm'
+      :(doc.summary?.task_execution_state||doc.summary?.lifecycle_state||'idle')}); }catch(_){ }
+  return personaKey;
+}
 // fetchEntityFeed stores a public entity document only after its exact shape,
 // current-master signature, route and subject binding verify. Reuse that admitted
 // document in inspectors so a slow peer refresh cannot replace public telemetry
@@ -7840,6 +7959,8 @@ function renderPersonaFeedDoc(doc,personaKey=''){
       +kv('Task',esc(_humanTaskExecutionState(s.task_execution_state||'not_participating')))
       +kv('Model-assisted step',esc(s.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(s.llm_execution_state||'not reported').replace(/_/g,' '))));
   }
+  if(doc.current_work_state?.schema==='personaos-persona-work-state-surface/4')
+    h+=_renderPersonaWorkState(doc,{kernel:String(doc.node_id||doc.kernel_id||'')});
   const ref=_personaRef(personaKey||doc.persona_id||'');
   const running=_activeModelCallsForPersona(ref.key).length>0;
   const projected=projectTerminalModelFailures(telemetryModelEvents(doc));
@@ -7971,7 +8092,7 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
   const mechanical=_personaMechanicalRunProjection(
     model,kernel,acts,personaKey,state||null);
-  if(!state||state.schema!=='personaos-persona-work-state-surface/3'){
+  if(!state||state.schema!=='personaos-persona-work-state-surface/4'){
     const mechanicalClass=mechanical.key==='running'?'is-working'
       :mechanical.key==='resource-paused'||mechanical.key==='cancelled'?'is-waiting':'is-stale';
     return `<section class="work-state-card work-state-empty"><div class="work-state-head">`
@@ -8309,7 +8430,7 @@ const PUBLIC_PERSONA_LOCAL_EXECUTION_FIELDS=Object.freeze([
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
   'active_membership_current','authored_at','automatic_action',
-  'bound_to_latest_observation','causal_ref_count','causal_refs','environment_id',
+  'bound_to_latest_observation','causal_disposition','causal_ref_count','causal_refs','environment_id',
   'latest_observed_situation_hash','note_id','persona_id','projection_tier','revision',
   'schema','semantic_interpretation_performed','signature_hex','signature_verified',
   'signing_key_id','situation_hash','supersedes_work_state_ref','task_id','work_note',
@@ -8379,11 +8500,30 @@ function _validPublicWorkDocument(value,depth=0){
 function _validPublicWorkRef(value,maximum=500){
   return _safePublicCognitionText(value,maximum,{required:true})&&value.trim()===value;
 }
+function _validPublicCausalDisposition(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)
+      ||value.schema!=='personaos-persona-causal-disposition/1') return false;
+  if(value.kind==='no_successor')
+    return _exactObjectFields(value,['kind','schema']);
+  if(value.kind!=='immediate_wake') return false;
+  const keys=Object.keys(value), allowed=new Set([
+    'schema','kind','wake_kind','payload','model_input_paths',
+  ]);
+  if(keys.some((key)=>!allowed.has(key))
+      ||!Object.hasOwn(value,'wake_kind')||!Object.hasOwn(value,'payload')
+      ||!_validPublicWorkRef(value.wake_kind,512)
+      ||!_validPublicWorkDocument(value.payload)) return false;
+  if(!Object.hasOwn(value,'model_input_paths')) return true;
+  const paths=value.model_input_paths;
+  return Array.isArray(paths)&&paths.length>0&&paths.length<=8
+    &&paths.every((path)=>_validPublicWorkRef(path,500))
+    &&new Set(paths).size===paths.length;
+}
 function _validPublicPersonaWorkState(value,identity){
   if(!value||typeof value!=='object'||Array.isArray(value)) return false;
   const fields=Object.keys(value).sort();
   if(fields.join('\u0000')!==PUBLIC_PERSONA_WORK_STATE_FIELDS.join('\u0000')
-      ||value.schema!=='personaos-persona-work-state-surface/3'
+      ||value.schema!=='personaos-persona-work-state-surface/4'
       ||value.projection_tier!=='public'
       ||String(value.persona_id||'')!==identity.signedId
       ||!_safePublicCognitionAtom(value.environment_id,512,{required:true})
@@ -8407,6 +8547,7 @@ function _validPublicPersonaWorkState(value,identity){
       ||value.automatic_action!==false
       ||value.semantic_interpretation_performed!==false
       ||!_validPublicWorkDocument(value.work_note)
+      ||!_validPublicCausalDisposition(value.causal_disposition)
       ||!Array.isArray(value.causal_refs)||value.causal_refs.length>32
       ||!value.causal_refs.every((item)=>_validPublicWorkRef(item))
       ||new Set(value.causal_refs).size!==value.causal_refs.length
@@ -8887,10 +9028,22 @@ function _validPublicPersonaAgenticDevelopment(value){
 }
 function _currentInventoryPersona(kernel,pid){
   const personaKey=_personaKey(kernel,pid), row=S.personaDiscoveryByKey.get(personaKey);
-  const inventory=S.providerInventories.get(String(kernel||''));
-  return row&&_providerInventoryIsCurrent(inventory)
+  const provider=S.providerInventories.get(String(kernel||''));
+  const identity=S.identityIndexes?.get(String(kernel||''));
+  const providerCurrent=row&&_providerInventoryIsCurrent(provider)
     &&row._inventorySource===kernel
-    &&row._inventoryGeneration===inventory.generation&&row._inventoryHash===inventory.hash
+    &&row._inventoryGeneration===provider.generation&&row._inventoryHash===provider.hash;
+  // The compact identity index is not provisional routing gossip. It is a
+  // current-master-signed, expiry-bounded inventory of complete persona/env
+  // documents whose hashes, record signatures, policies, lifecycle cards and
+  // persona identity proofs were all checked before admission. It can therefore
+  // authorize this persona's independently signed cognition while the larger
+  // artifact/task inventory is still transferring.
+  const identityCurrent=row&&row._identityIndexVerified===true
+    &&_providerInventoryIsCurrent(identity)
+    &&row._inventorySource===kernel
+    &&row._inventoryGeneration===identity.generation&&row._inventoryHash===identity.hash;
+  return (providerCurrent||identityCurrent)
     &&verifiedPersonaRenderable(S.personaDiscoveryByKey,personaKey)?row:null;
 }
 async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
@@ -9346,8 +9499,14 @@ async function streamPersonaCognition(options={}){
       .filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
     let added=0, cognitionHydrated=false;
-    for(const candidate of list){ const {key:personaKey,sid,kernel,endpointId}=candidate;
-      if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) continue;
+    // Persona cognition documents are independent signed subjects. Fetch and
+    // verify the bounded visible window concurrently; serial reads made the
+    // fourth persona wait behind the bytes and cryptography of the first three.
+    // Each persona still tries only its own current-master-verified routes in
+    // order, and no result is admitted until its normal subject proof passes.
+    const cognitionReads=await Promise.all(list.map(async(candidate)=>{
+      const {key:personaKey,kernel,endpointId}=candidate;
+      if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) return null;
       // Never probe another kernel for a colliding short id. A sticky route is
       // retained only while it still resolves to this persona's owning kernel.
       const routes=[S.cogBaseFor.get(personaKey),candidate.base,
@@ -9382,7 +9541,12 @@ async function streamPersonaCognition(options={}){
           }
           break; }
       }
-      if(!t) continue;
+      return t?{candidate,t,usedBase}:null;
+    }));
+    for(const read of cognitionReads){
+      if(!read) continue;
+      const {candidate,t,usedBase}=read;
+      const {key:personaKey,sid,kernel,endpointId}=candidate;
       const publicCognition=t.schema==='personaos-persona-public-cognition/2';
       if(publicCognition){
         cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,

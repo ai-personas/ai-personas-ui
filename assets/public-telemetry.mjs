@@ -2,7 +2,7 @@
  * These helpers deliberately select known structural fields instead of making
  * the public UI depend on private kernel snapshots. */
 
-export const PUBLIC_PERSONA_TELEMETRY_SCHEMA='personaos-persona-telemetry-public/1';
+export const PUBLIC_PERSONA_TELEMETRY_SCHEMA='personaos-persona-telemetry-public/2';
 export const PUBLIC_ENVIRONMENT_TELEMETRY_SCHEMAS=Object.freeze(new Set([
   'personaos-environment-telemetry-public/1',
 ]));
@@ -112,6 +112,9 @@ export function entityTelemetryProjection(doc,{publicFrameVerified=false,
     kind:persona?'persona':'environment',public:publicDoc,
     id:String(persona?doc.persona_id:doc.environment_id||''),
     summary:usable&&persona&&doc.summary&&typeof doc.summary==='object'?doc.summary:{},
+    currentWorkState:usable&&persona&&doc.current_work_state
+      &&typeof doc.current_work_state==='object'&&!Array.isArray(doc.current_work_state)
+      ?doc.current_work_state:{},
     status:usable&&!persona?String(doc.status||''):'',
     members:usable&&!persona?(_objects(doc.members,512).length
       ?_objects(doc.members,512):Array.isArray(doc.members)?doc.members.slice(0,512):[]):[],
