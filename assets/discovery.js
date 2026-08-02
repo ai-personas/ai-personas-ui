@@ -6239,8 +6239,10 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
     const title=authoredText?_compactHumanLabel(authoredText,compact?180:420)
       :'Authored method body is retained by hash';
     const active=activeIds.has(method.fragment_id);
+    const authoredAt=Date.parse(String(method.updated_at||method.created_at||''));
+    const authoredWhen=Number.isFinite(authoredAt)?` · authored ${_friendlyInstant(method.updated_at||method.created_at)}`:'';
     return `<li><span class="agentic-evidence-mark ${active?'active':'catalogued'}">${icon(active?'check':'lesson','ico-sm')}</span>`
-      +`<div><strong>${esc(title)}</strong><small>${active?'Active in an exact persona-chosen carrier':'Authored and catalogued; not active in a carrier'}</small>`
+      +`<div><strong>${esc(title)}</strong><small>${active?'Active in an exact persona-chosen carrier':'Authored and catalogued; not active in a carrier'}${esc(authoredWhen)}</small>`
       +(!compact&&method.body_included
         ?`<details><summary>Exact authored method</summary>${_personaWorkNoteValueHTML(method.body,{compact:false})}</details>`:'')
       +`</div></li>`;
@@ -6248,21 +6250,21 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
   const practiceRows=[...practice].reverse().slice(0,compact?6:16);
   const toolRows=[...new Map([
     ...acquired.map((row)=>[`${row.environment_id}\u0000${row.tool_name}`,
-      {label:row.tool_name,detail:'acquired',count:1}]),
+      {label:row.tool_name,detail:'acquired',count:1,lastAt:row.acquired_at}]),
     ...invocations.map((row)=>[`${row.environment_id}\u0000${row.tool_name}`,
-      {label:row.tool_name,detail:'used',count:row.count}]),
+      {label:row.tool_name,detail:'used',count:row.count,lastAt:row.last_at}]),
     ...capabilities.map((row)=>[`${row.environment_id}\u0000${row.capability}`,
-      {label:row.capability,detail:'provisioned',count:1}]),
+      {label:row.capability,detail:'provisioned',count:1,lastAt:row.provisioned_at||row.acquired_at}]),
   ]).values()].slice(-(compact?6:16));
   const executionRows=[...localExecutions].reverse().slice(0,compact?6:16);
-  return `<section class="pc-agentic-development${compact?' compact':''}"><div class="pc-section-head"><span>Learning, methods, and tool practice</span>`
+  return `<section class="pc-agentic-development${compact?' compact':''}"><div class="pc-section-head"><span>Learning and practice over time</span>`
     +`<small>${retainedKnowledge.length} retained · ${methods.length} method${methods.length===1?'':'s'} · ${activeIds.size} active</small></div>`
     +(knowledgeRows?`<ol class="agentic-methods">${knowledgeRows}</ol>`:'')
     +(methodRows?`<ol class="agentic-methods">${methodRows}</ol>`
       :'<p class="agentic-empty">No reusable method has been authored and activated yet.</p>')
-    +(practiceRows.length?`<div class="agentic-practice"><b>Recent practiced actions</b><div>${practiceRows.map((row)=>`<span title="${esc(row.action_name)}">${esc(humanizeMachineKey(row.action_name))}${row.count>1?` · ${esc(row.count)}×`:''}</span>`).join('')}</div></div>`:'')
-    +(toolRows.length?`<div class="agentic-practice"><b>Capabilities and tools</b><div>${toolRows.map((row)=>`<span>${esc(humanizeMachineKey(row.label))} · ${esc(row.detail)}${row.count>1?` ${esc(row.count)}×`:''}</span>`).join('')}</div></div>`:'')
-    +(executionRows.length?`<div class="agentic-practice"><b>Host executables actually used</b><div>${executionRows.map((row)=>`<span title="${esc(row.last_command_hash)}">${esc(row.executable)} · ${esc(row.successful_count)}/${esc(row.invocation_count)} succeeded</span>`).join('')}</div></div>`:'')
+    +(practiceRows.length?`<div class="agentic-practice"><b>Recent practiced actions</b><div>${practiceRows.map((row)=>{const at=Date.parse(String(row.last_at||''));return `<span title="${esc(row.action_name)}">${esc(humanizeMachineKey(row.action_name))}${row.count>1?` · ${esc(row.count)}×`:''}${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
+    +(toolRows.length?`<div class="agentic-practice"><b>Capabilities and tools</b><div>${toolRows.map((row)=>{const at=Date.parse(String(row.lastAt||''));return `<span>${esc(humanizeMachineKey(row.label))} · ${esc(row.detail)}${row.count>1?` ${esc(row.count)}×`:''}${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
+    +(executionRows.length?`<div class="agentic-practice"><b>Host executables actually used</b><div>${executionRows.map((row)=>{const at=Date.parse(String(row.last_at||''));return `<span title="${esc(row.last_command_hash)}">${esc(row.executable)} · ${esc(row.successful_count)}/${esc(row.invocation_count)} succeeded${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
     +`<p class="agentic-neutrality">Authored, activated, acquired, and practiced are separate verified facts—not an automatic expertise score.</p></section>`;
 }
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){

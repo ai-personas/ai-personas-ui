@@ -70,7 +70,7 @@ const ACTION_HEADLINES = Object.freeze({
   managed_process_signal: 'Signalled a workspace process',
   managed_process_stop: 'Stopped a workspace process',
   inspect_workspace_file: 'Inspected a workspace file',
-  inspect_execution_capabilities: 'Checked available engineering tools',
+  inspect_execution_capabilities: 'Checked available tools',
   discover_mcp_capabilities: 'Looked for a needed tool',
   acquire_mcp_candidate: 'Acquired a new tool',
   author_provisioning_recipe: 'Prepared a reusable tool setup',
