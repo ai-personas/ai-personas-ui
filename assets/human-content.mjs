@@ -74,6 +74,10 @@ const ACTION_HEADLINES = Object.freeze({
   discover_mcp_capabilities: 'Looked for a needed tool',
   acquire_mcp_candidate: 'Acquired a new tool',
   author_provisioning_recipe: 'Prepared a reusable tool setup',
+  inspect_global_capability_catalog: 'Reviewed capabilities shared by peers',
+  acquire_global_capability: 'Acquired a capability shared by a peer',
+  inspect_acquired_capabilities: 'Reviewed previously acquired capabilities',
+  publish_capability_body: 'Shared an authored capability with peers',
   discover_coordination_definitions: 'Reviewed available collaboration patterns',
   discover_coordination_actions: 'Checked available collaboration actions',
   author_coordination_definition: 'Created a reusable collaboration pattern',
@@ -97,6 +101,7 @@ const ACTION_HEADLINES = Object.freeze({
   author_persona_knowledge: 'Recorded reusable knowledge',
   inspect_persona_learning_history: 'Reviewed prior learning',
   apply_brain_evolution: 'Applied a self-authored learning update',
+  bind_brain_fragments: 'Made an authored method available to later thinking',
   propose_brain_context: 'Proposed reusable working context',
   upsert_brain_context: 'Updated reusable working context',
 });
