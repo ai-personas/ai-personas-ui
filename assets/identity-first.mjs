@@ -442,4 +442,4 @@ function afterPaint(){
 
 const painted=await identityFirst().catch(()=>false);
 if(painted) await afterPaint();
-await import('./discovery.js?v=20260802-fast-first-contact-v5');
+await import('./discovery.js?v=20260802-p2p-startup-gate-v6');

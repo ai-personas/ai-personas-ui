@@ -3725,14 +3725,22 @@ function _healthyDirectPeerCount(now=Date.now()){
   return count;
 }
 function _currentLocatorFallbackDecision(now=Date.now()){
+  const rendezvousConfigured=P2P?._rendezvousConfigured===true;
   return locatorFallbackDecision({
     locatorEnabled:globalDiscoveryEndpoints().length>0,
     nowMs:now,
     startedAtMs:_globalRefreshStartedAt,
     verifiedP2PRouteCount:S.p2pDataRoutes?.size||0,
     healthyDirectPeerCount:_healthyDirectPeerCount(now),
-    peerProbeExpected:P2P?._rendezvousConfigured===true&&!!P2P?.node,
-    peerProbeComplete:P2P?._rendezvousFirstAttemptCompleted===true,
+    // The hosted transport commons and libp2p module initialize concurrently
+    // with direct discovery.  Their not-yet-settled state is an expected peer
+    // probe, not evidence that no peer probe exists.  Otherwise a fast first
+    // discovery pass can contact the last-resort HTTP locator before libp2p has
+    // even had an opportunity to dial its bootstrap set.
+    peerProbeExpected:_p2pStartupExpected||rendezvousConfigured,
+    peerProbeComplete:rendezvousConfigured
+      ?P2P?._rendezvousFirstAttemptCompleted===true
+      :_p2pStartupSettled,
   });
 }
 function scheduleFastGlobalRefresh(delayMs){
@@ -11982,6 +11990,12 @@ function wire(){
 // WebRTC + circuit-relay + gossipsub, with Kademlia provider rendezvous only after
 // an explicit/node-advertised bootstrap or relay connects it to a shared routing table.
 let P2P=null;
+// Every browser attempts the peer transport.  Keep the fallback decision aware
+// of that attempt before the asynchronously imported transport can populate
+// `P2P`; the bounded strategy deadline still prevents a failed import or dead
+// bootstrap from holding an empty roster indefinitely.
+let _p2pStartupExpected=true;
+let _p2pStartupSettled=false;
 function updateP2PStatus(){ const el=$('#p2p'); if(!el) return; const n=P2P&&P2P.node;
   const peers=n&&n.getConnections?new Set(n.getConnections()
     .map((connection)=>connection.remotePeer?.toString?.()).filter(Boolean)).size:0;
@@ -12603,7 +12617,8 @@ async function initP2P(){
   // request before libp2p starts so it participates in the initial dial set.
   // Direct/same-origin discovery does not wait for that optional file.
   const portalP2PHints=loadPortalP2PBootstrapHints();
-  portalP2PHints.catch(()=>[]).then(()=>initP2P()).catch(()=>{});
+  portalP2PHints.catch(()=>[]).then(()=>initP2P()).catch(()=>{})
+    .finally(()=>{ _p2pStartupSettled=true; });
   // The discovery pass below already starts local + optional IPFS planes once;
   // only their later maintenance ticks are scheduled here.
   setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
