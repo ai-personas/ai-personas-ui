@@ -4991,7 +4991,7 @@ const PURPOSE_VERB={candidate:'produce candidate',repair:'repair candidate',judg
 // event-kind → coordination / cross-env / artifact / lifecycle classification + glyph
 const COORD_KINDS=new Set(['COORDINATION_SHAPE_EVENT','COORDINATION_SHAPE_ADMITTED','ATTENTION_ALLOCATED',
   'MEMBER_JOINED','ENV_MEMBER_ADMITTED','ENV_MEMBER_RE_ADMITTED','BLACKBOARD_POST','blackboard_post','coordination_signal',
-  'coordination_update','GOAL_PROGRESS_REPORTED',
+  'coordination_update',
   'PERSONA_COMMUNICATION_INTENT_RECORDED',
   'PERSONA_COMMUNICATION_ROUTE_OBSERVED',
   'PERSONA_COMMUNICATION_AUTHORED','PERSONA_INVITATION_AUTHORED','PERSONA_INVITATION_RESPONSE_AUTHORED',
@@ -5030,7 +5030,6 @@ const IX_VERB={CANDIDATE_PRODUCED:'produced candidate',CANDIDATE_REPAIRED:'repai
   PROVEN_FACT_RECORDED:'recorded proven fact',COORDINATION_SHAPE_EVENT:'coordinated',
   COORDINATION_SHAPE_ADMITTED:'coordination admitted',ATTENTION_ALLOCATED:'allocated attention',
   MEMBER_JOINED:'joined environment',ENV_MEMBER_ADMITTED:'admitted member',ENV_MEMBER_RE_ADMITTED:'re-admitted member',BLACKBOARD_POST:'posted to blackboard',
-  GOAL_PROGRESS_REPORTED:'reported progress',
   PERSONA_COMMUNICATION_INTENT_RECORDED:'recorded message intent',
   PERSONA_COMMUNICATION_ROUTE_OBSERVED:'observed communication route',
   PERSONA_COMMUNICATION_AUTHORED:'authored message',PERSONA_INVITATION_AUTHORED:'invited persona',
