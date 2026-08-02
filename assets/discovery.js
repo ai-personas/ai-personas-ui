@@ -8236,9 +8236,13 @@ const PUBLIC_PERSONA_AUTHORED_OUTPUT_FIELDS=Object.freeze([
   'schema','sha256','text','utf8_bytes',
 ].sort());
 const PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS=Object.freeze([
-  'action_arguments','action_descriptor_hash','action_id','action_invocation_id','action_name',
-  'authored_text','authored_text_hash','environment_id','model_call_id','persona_id','schema',
-  'signed_by','signing_key_id','task_id',
+  'action_arguments','action_descriptor_hash','action_dispatch_descriptor_hash','action_id',
+  'action_invocation_id','action_name','authored_text','authored_text_hash','environment_id',
+  'model_call_id','persona_id','replication_effect_descriptors','schema','signed_by',
+  'signing_key_id','task_id',
+].sort());
+const PUBLIC_REPLICATION_EFFECT_DESCRIPTOR_FIELDS=Object.freeze([
+  'effect_kind','schema',
 ].sort());
 const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=Object.freeze([
   'authored_at','environment_id','intent','intent_id','mission_task_id','persona_id',
@@ -8529,9 +8533,22 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
   const authority=output.persona_authority;
   const publicKey=String(row?._personaIdentityPublicKeyHex||'').toLowerCase();
   const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
+  const replicationEffects=authority?.replication_effect_descriptors;
+  const effectKinds=new Set();
+  if(!Array.isArray(replicationEffects)||replicationEffects.length>64) return false;
+  for(const descriptor of replicationEffects){
+    const effectKind=descriptor?.effect_kind;
+    if(!_exactObjectFields(descriptor,PUBLIC_REPLICATION_EFFECT_DESCRIPTOR_FIELDS)
+        ||descriptor.schema!=='personaos-replication-effect-descriptor/1'
+        ||typeof effectKind!=='string'||!effectKind||effectKind!==effectKind.trim()
+        ||enc.encode(effectKind).length>240
+        ||Array.from(effectKind).some((character)=>character.codePointAt(0)<32)
+        ||effectKinds.has(effectKind)) return false;
+    effectKinds.add(effectKind);
+  }
   if(!authority||typeof authority!=='object'||Array.isArray(authority)
       ||!_exactObjectFields(authority,PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS)
-      ||authority.schema!=='personaos-authenticated-persona-action/2'
+      ||authority.schema!=='personaos-authenticated-persona-action/3'
       ||authority.persona_id!==identity.signedId
       ||authority.environment_id!==output.environment_id
       ||signingKeyId!==`persona:${identity.signedId}`
@@ -8543,6 +8560,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
       ||!_safePublicCognitionAtom(authority.model_call_id,512)
       ||!_safePublicCognitionAtom(authority.action_name,512,{required:true})
       ||!SHA256_CONTENT_RE.test(String(authority.action_descriptor_hash||''))
+      ||!SHA256_CONTENT_RE.test(String(authority.action_dispatch_descriptor_hash||''))
       ||!SHA256_CONTENT_RE.test(String(authority.authored_text_hash||''))
       ||!SHA256_CONTENT_RE.test(String(output.persona_authority_hash||''))
       ||!authority.action_arguments||typeof authority.action_arguments!=='object'
@@ -8550,6 +8568,21 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
       ||authority.authored_text!==output.text
       ||`sha256:${await sha256Hex(enc.encode(output.text))}`!==authority.authored_text_hash
       ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
+    return false;
+  const actionIdentity={
+    schema:'personaos-authenticated-persona-action-identity/2',
+    persona_id:authority.persona_id,
+    environment_id:authority.environment_id,
+    task_id:authority.task_id,
+    model_call_id:authority.model_call_id,
+    action_invocation_id:authority.action_invocation_id,
+    action_name:authority.action_name,
+    action_descriptor_hash:authority.action_descriptor_hash,
+    action_dispatch_descriptor_hash:authority.action_dispatch_descriptor_hash,
+    replication_effect_descriptors:replicationEffects,
+    action_arguments:authority.action_arguments,
+  };
+  if(authority.action_id!==`persona-action:${await sha256Hex(enc.encode(canon(actionIdentity)))}`)
     return false;
   let action;
   try{
