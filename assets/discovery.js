@@ -10642,24 +10642,29 @@ const _cadFormatNumber=(value)=>Math.abs(value)>=1000||Math.abs(value)<.01&&valu
 function mountCadMeshPreview(host,mesh,title){
   const bounds=cadMeshBounds(mesh); if(!bounds||!mesh.triangles.length) return false;
   const wrap=el('div','fv-3d-view'),controls=el('div','fv-3d-controls'),canvas=el('canvas','fv-3d');
-  canvas.width=1100; canvas.height=680; canvas.setAttribute('role','img'); canvas.setAttribute('aria-label',`${title} interactive 3D geometry preview`);
+  canvas.width=1200; canvas.height=720; canvas.setAttribute('role','img'); canvas.setAttribute('aria-label',`${title} interactive 3D geometry preview`);
   canvas.tabIndex=0;
-  const status=el('div','fv-3d-status'),left=el('span',null,'drag or arrow keys to orbit · wheel or +/− to zoom · neutral inspection material'),right=el('span'); status.append(left,right);
+  const status=el('div','fv-3d-status'),left=el('span',null,'drag or arrow keys to orbit · wheel or +/− to zoom'),right=el('span'); status.append(left,right);
   let yaw=-.72,pitch=-.52,zoom=1,solid=true,edges=true,drag=null;
   const viewButton=(label,apply)=>{ const button=el('button','fv-btn',label); button.type='button'; button.addEventListener('click',()=>{ apply(); draw(); }); controls.appendChild(button); return button; };
-  viewButton('Isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('Top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;}); viewButton('Front',()=>{yaw=0;pitch=0;zoom=1;});
-  const solidButton=viewButton('Solid',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
+  viewButton('Isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('Top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;});
+  viewButton('Front',()=>{yaw=0;pitch=0;zoom=1;}); viewButton('Right',()=>{yaw=-Math.PI/2;pitch=0;zoom=1;});
+  viewButton('Fit',()=>{zoom=1;});
+  const solidButton=viewButton('Surface',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
   const edgeButton=viewButton('Edges',()=>{edges=!edges; edgeButton.setAttribute('aria-pressed',String(edges));}); edgeButton.setAttribute('aria-pressed','true');
   const ctx=canvas.getContext('2d',{alpha:false}),radius=Math.max(...bounds.size,1e-6)/2;
   const selected=mesh.triangles.filter((_,index)=>index%Math.max(1,Math.ceil(mesh.triangles.length/CAD_MESH_LIMITS.drawTriangles))===0).slice(0,CAD_MESH_LIMITS.drawTriangles);
   const transform=(point)=>{ const x=point[0]-bounds.center[0],y=point[1]-bounds.center[1],z=point[2]-bounds.center[2],cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
     const rx=cy*x-sy*y,ry=sy*x+cy*y; return {x:rx,y:cp*ry-sp*z,z:sp*ry+cp*z}; };
   const normalize=(point)=>{ const length=Math.hypot(...point)||1; return point.map((value)=>value/length); };
-  const keyLight=normalize([-.42,-.68,.60]),fillLight=normalize([.74,-.24,.31]);
-  const materialPalette=[[202,199,190],[190,192,185],[200,190,180],[184,184,179]];
+  const keyLight=normalize([-.38,-.72,.58]),fillLight=normalize([.76,-.28,.22]);
+  // A CAD preview is evidence, not a decorative render. Keep the canvas and
+  // materials achromatic so ambient application colours cannot read as a
+  // material, reflection, or shadow that is absent from the source geometry.
+  const materialPalette=[[207,208,204],[194,196,192],[214,211,205],[185,188,185]];
   const draw=()=>{ const width=canvas.width,height=canvas.height,scale=Math.min(width,height)*.39*zoom/radius;
-    ctx.fillStyle='#121311'; ctx.fillRect(0,0,width,height);
-    ctx.strokeStyle='rgba(214,210,198,.055)'; ctx.lineWidth=1; const grid=80;
+    ctx.fillStyle='#eef0ed'; ctx.fillRect(0,0,width,height);
+    ctx.strokeStyle='rgba(62,67,64,.09)'; ctx.lineWidth=1; const grid=80;
     for(let x=(width/2)%grid;x<width;x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke(); }
     for(let y=(height/2)%grid;y<height;y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke(); }
     const transformed=mesh.vertices.map(transform);
@@ -10670,16 +10675,26 @@ function mountCadMeshPreview(host,mesh,title){
       const a=projected[triangle.a],b=projected[triangle.b],c=projected[triangle.c];
       const key=Math.abs(normal[0]*keyLight[0]+normal[1]*keyLight[1]+normal[2]*keyLight[2]);
       const fill=Math.abs(normal[0]*fillLight[0]+normal[1]*fillLight[1]+normal[2]*fillLight[2]);
-      return {triangle,a,b,c,light:Math.min(1,.30+key*.56+fill*.18),depth:(a.depth+b.depth+c.depth)/3}; }).sort((a,b)=>a.depth-b.depth);
+      return {triangle,a,b,c,light:Math.min(1,.42+key*.43+fill*.15),depth:(a.depth+b.depth+c.depth)/3};
+    // The camera looks from negative view-Y toward positive view-Y. Paint the
+    // far faces first; reversing this order makes rear faces bleed over the
+    // visible surface and looks like a coloured/offset shadow on dense STL.
+    }).sort((a,b)=>b.depth-a.depth);
     ctx.lineJoin='round'; for(const face of faces){ const base=materialPalette[Math.abs(Number(face.triangle.group)||0)%materialPalette.length];
       ctx.beginPath(); ctx.moveTo(face.a.x,face.a.y); ctx.lineTo(face.b.x,face.b.y); ctx.lineTo(face.c.x,face.c.y); ctx.closePath();
       if(solid){ const shade=face.light; ctx.fillStyle=`rgb(${Math.round(base[0]*shade)} ${Math.round(base[1]*shade)} ${Math.round(base[2]*shade)})`; ctx.fill(); }
-      if(edges||!solid){ ctx.strokeStyle=solid?'rgba(24,25,23,.34)':'rgba(225,220,207,.82)'; ctx.lineWidth=solid?.72:1; ctx.stroke(); } }
-    const axes=[[[0,0,0],[radius*.42,0,0],'X','#ef6b73'],[[0,0,0],[0,radius*.42,0],'Y','#65d58a'],[[0,0,0],[0,0,radius*.42],'Z','#e7b85b']];
-    for(const [from,to,label,colour] of axes){ const a=transform(from.map((value,index)=>value+bounds.center[index])),b=transform(to.map((value,index)=>value+bounds.center[index]));
-      ctx.strokeStyle=colour; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(width/2+a.x*scale,height/2-a.z*scale); ctx.lineTo(width/2+b.x*scale,height/2-b.z*scale); ctx.stroke();
-      ctx.fillStyle=colour; ctx.font='600 18px ui-monospace, monospace'; ctx.fillText(label,width/2+b.x*scale+5,height/2-b.z*scale-5); }
-    right.textContent=`${selected.length.toLocaleString()} of ${mesh.triangles.length.toLocaleString()} triangles · orthographic`;
+      if(edges||!solid){ ctx.strokeStyle=solid?'rgba(45,49,47,.42)':'rgba(47,52,49,.9)'; ctx.lineWidth=solid?.72:1.05; ctx.stroke(); } }
+    // A fixed-size orientation triad stays out of the model and does not imply
+    // that the source contains axes or coloured material.
+    const origin={x:58,y:height-52},axisLength=34;
+    const axes=[[[1,0,0],'X','#c8464d'],[[0,1,0],'Y','#3f8b58'],[[0,0,1],'Z','#a77518']];
+    for(const [vector,label,colour] of axes){ const direction=transform(vector.map((value,index)=>value+bounds.center[index]));
+      const center=transform(bounds.center),dx=direction.x-center.x,dz=direction.z-center.z,length=Math.hypot(dx,dz)||1;
+      const end={x:origin.x+(dx/length)*axisLength,y:origin.y-(dz/length)*axisLength};
+      ctx.strokeStyle=colour; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(origin.x,origin.y); ctx.lineTo(end.x,end.y); ctx.stroke();
+      ctx.fillStyle=colour; ctx.font='700 16px ui-monospace, monospace'; ctx.fillText(label,end.x+4,end.y-3); }
+    const dimensions=bounds.size.map(_cadFormatNumber).join(' × ');
+    right.textContent=`${selected.length.toLocaleString()} of ${mesh.triangles.length.toLocaleString()} triangles · ${dimensions} · orthographic`;
   };
   canvas.addEventListener('pointerdown',(event)=>{ drag={x:event.clientX,y:event.clientY,yaw,pitch}; canvas.setPointerCapture(event.pointerId); });
   canvas.addEventListener('pointermove',(event)=>{ if(!drag) return; yaw=drag.yaw+(event.clientX-drag.x)*.008; pitch=Math.max(-1.54,Math.min(1.54,drag.pitch+(event.clientY-drag.y)*.008)); draw(); });
@@ -10906,6 +10921,32 @@ function openScadCompanionFiles(ctx){
   }
   return [...unique.values()].slice(0,8);
 }
+async function renderOpenScadCompanion(host,ctx,file){
+  host.innerHTML=''; host.appendChild(loadingNode('verifying published geometry…'));
+  const advertised=String(file.sha256||file.contentHash||'').replace(/^sha256:/i,'').toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(advertised)){
+    host.innerHTML=''; host.appendChild(el('div','fv-warn','Inline geometry stayed closed because the companion file has no valid advertised SHA-256.'));
+    return;
+  }
+  const bodyPath=String(file.body_url||file.bodyPath||'');
+  const verified=bodyPath?await fetchVerifiedLiveBody(join(ctx.base,bodyPath),advertised):null;
+  if(!verified?.ok){
+    host.innerHTML=''; host.appendChild(el('div','fv-warn',`Inline geometry stayed closed because its bytes could not be verified${verified?.error?`: ${verified.error}`:'.'}`));
+    return;
+  }
+  const title=String(file.path||'published geometry');
+  const declared=String(file.mediaKind||declaredArtifactMedia(file)||'');
+  const detected=sniffArtifactMediaType(verified.bytes);
+  const selected=pickRenderer(declared,title,verified.type,detected);
+  if(selected.id!=='cad3d'){
+    host.innerHTML=''; host.appendChild(el('div','fv-warn','The verified companion is not a directly renderable 3D mesh.'));
+    return;
+  }
+  await renderCad3d(host,{base:ctx.base,title,kind:selected.mediaType||declared,
+    declaredMedia:declared,responseMedia:verified.type,detectedMedia:detected,
+    verifiedBytes:verified.bytes,realSize:verified.size,contentHash:`sha256:${advertised}`,
+    integrityVerified:true,liveFile:file.transport==='live'?file:null});
+}
 async function renderOpenScad(host,ctx){
   const source=String(ctx.text||''),overview=openScadSourceOverview(source),companions=openScadCompanionFiles(ctx);
   host.innerHTML='';
@@ -10919,8 +10960,20 @@ async function renderOpenScad(host,ctx){
   host.appendChild(card);
   if(companions.length){
     const section=el('section','fv-scad-companions'); section.appendChild(el('div','fv-cardhd','Published geometry from the same source name'));
+    const inlineHost=el('div','fv-scad-inline');
     for(const file of companions){
-      const button=el('button','fv-scad-companion'); button.type='button';
+      const row=el('div','fv-scad-companion'),copy=el('span','fv-scad-companion-copy');
+      const presentation=_artifactFilePresentation(file.path);
+      copy.appendChild(el('strong',null,presentation.filename));
+      copy.appendChild(el('small',null,`${artifactTypeLabel(file.mediaKind||declaredArtifactMedia(file)||file.path)} · ${fmtBytes(file.size_bytes??file.size)}`));
+      const actions=el('span','fv-scad-companion-actions');
+      const preview=el('button','fv-btn','Preview here'); preview.type='button';
+      preview.addEventListener('click',async()=>{
+        for(const candidate of actions.closest('.fv-scad-companions').querySelectorAll('.fv-scad-companion-actions button')) candidate.disabled=true;
+        try{ await renderOpenScadCompanion(inlineHost,ctx,file); }
+        finally{ for(const candidate of actions.closest('.fv-scad-companions').querySelectorAll('.fv-scad-companion-actions button')) candidate.disabled=false; }
+      });
+      const button=el('button','fv-btn','Open file'); button.type='button';
       if(file.transport==='live'){
         button.dataset.act='live-file'; button.dataset.run=String(file.run||ctx.liveFile?.run||'');
         button.dataset.workspace=String(file.workspace_id||ctx.liveFile?.workspace_id||'');
@@ -10932,11 +10985,9 @@ async function renderOpenScad(host,ctx){
         button.dataset.size=String(file.size_bytes??file.size??'');
         button.dataset.semantics=JSON.stringify(Array.isArray(file.authoredLabels)?file.authoredLabels:[]);
       }
-      const presentation=_artifactFilePresentation(file.path);
-      button.appendChild(el('strong',null,presentation.filename));
-      button.appendChild(el('small',null,`${artifactTypeLabel(file.mediaKind||declaredArtifactMedia(file)||file.path)} · ${fmtBytes(file.size_bytes??file.size)} · open interactive model`));
-      section.appendChild(button);
+      actions.append(preview,button); row.append(copy,actions); section.appendChild(row);
     }
+    section.appendChild(inlineHost);
     host.appendChild(section);
   }
   const declarations=[

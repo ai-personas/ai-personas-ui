@@ -290,8 +290,11 @@ hash-checked byte signatures to confirm containers. Names and domain words never
 artifact's meaning or evidence status. The built-in generic Web-media families cover Markdown, tabular
 text, JSON, plain text, images, audio/video controls, PDF, bounded DXF inspection, and CAD/BIM
 inspection. Hash-verified OBJ, STL, ASCII PLY, and self-contained glTF/GLB geometry also receives a
-lazy local interactive mesh preview with orbit, zoom, standard views, bounds, and face counts;
-external buffers, model scripts, and peer code are never loaded. Undeclared, invalid, and custom media
+lazy local interactive mesh preview with orbit, zoom, standard orthographic views, bounds, face counts,
+achromatic inspection surfaces, and no invented cast shadow. OpenSCAD source receives a bounded source
+index and may lazily open a separately hash-verified, same-stem published mesh inline; neither the source
+nor referenced libraries are executed in the browser. External buffers, model scripts, and peer code are
+never loaded. Undeclared, invalid, and custom media
 never produces a blank viewer: hash-checked UTF-8 bytes get a bounded plain-text view and opaque
 bytes get byte metadata plus a bounded hex preview and safe download. Executable peer content is
 never run, and the credential-bearing page imports no executable peer or CDN modules. Client
