@@ -2038,10 +2038,6 @@ const PUBLIC_PROJECT_TOPOLOGY_FIELDS=Object.freeze([
   'cross_verified','environment_creation_event_id','environment_ids','hosting_link_event_id',
   'members','primary_environment_id','project_creation_event_id','project_id','schema','status',
 ].sort());
-function _exactObjectFields(value,fields){
-  return !!value&&typeof value==='object'&&!Array.isArray(value)
-    &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
-}
 async function verifyPublicProjectTopology(topology,signatureHex,record,policy,keyEntry){
   if(record?.kind!=='project'
       ||!_exactObjectFields(topology,PUBLIC_PROJECT_TOPOLOGY_FIELDS)
