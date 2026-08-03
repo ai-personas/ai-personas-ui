@@ -9,11 +9,11 @@
   <!-- always revalidate the shell so a deploy is picked up without a manual hard-refresh -->
   <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <title>AI Personas · Living Network</title>
-  <link rel="stylesheet" href="assets/discovery.css?v=20260803-public-input-policy-v3">
+  <link rel="stylesheet" href="assets/discovery.css?v=20260803-public-input-policy-v4">
   <!-- The small identity-first entry re-authorizes a still-current signed
        identity snapshot with fresh self-certifying keys before it lazily
        starts the full live-network application. -->
-  <link rel="modulepreload" href="assets/identity-first.mjs?v=20260803-public-input-policy-v3" fetchpriority="high">
+  <link rel="modulepreload" href="assets/identity-first.mjs?v=20260803-public-input-policy-v4" fetchpriority="high">
 </head>
 <body>
   <!-- R0 · VITALS BAR — identity + live system vital sign + humane counters.
@@ -37,7 +37,7 @@
     <span class="vgroup vgroup-tools">
       <input id="q" type="search" placeholder="filter network…" aria-label="filter personas, environments and events">
       <button id="helpbtn" class="btn" title="what am I looking at?" aria-label="what am I looking at? — show the glossary" aria-expanded="false" aria-controls="intro">HELP</button>
-      <button id="opbtn" class="btn" title="node control console: public nodes need no token; gated nodes accept an operator bearer">OPERATOR</button>
+      <button id="opbtn" class="btn" title="inspect public node state; owner controls require that node's operator bearer">OPERATOR</button>
     </span>
     <button id="headerToolsToggle" class="header-tools-toggle" type="button" aria-controls="appHeader"
       aria-expanded="false" title="show search and network controls">controls</button>
@@ -157,6 +157,6 @@
     </div>
   </div>
 
-  <script type="module" src="assets/identity-first.mjs?v=20260803-public-input-policy-v3"></script>
+  <script type="module" src="assets/identity-first.mjs?v=20260803-public-input-policy-v4"></script>
 </body>
 </html>

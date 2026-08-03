@@ -218,9 +218,10 @@ function normalizedHttpBase(value){
   }catch(_){ return ''; }
 }
 /* ---------- node authority (A5-01/A5-08: explicit node policy, never network position) ----------
-   Public reachability may grant bearer-equivalent read/control authority. Every other mode
-   retains the process bearer boundary. The browser learns that distinction only from the
-   exact /status response: discovery cards and loopback position never grant authority. */
+   Public reachability may publish a complete read projection, but it never grants owner
+   control. Mutating owner actions require the process bearer. The browser learns the read
+   projection from the exact /status response and control authority from the credential used
+   for that same response; discovery cards and loopback position grant neither. */
 function opTokens(){
   // Clear credentials written by older portal builds instead of silently retaining
   // durable authority that model-authored same-origin content could have observed.
@@ -234,7 +235,7 @@ function opSaveTokens(m){
 }
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
 // Loopback detection is only a discovery/convenience hint. Network position never
-// grants authority; the node's returned status projection decides whether a bearer is needed.
+// grants authority; only an accepted process bearer grants owner control.
 const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostname;
   return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'; }catch(e){ return false; } };
 function tokenFor(u){
@@ -3965,10 +3966,10 @@ function emptyStateHTML(){
     <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
     also meet over mDNS; a public node joins the shared DHT.`}<br>
     3 · The global directory refreshes every few seconds and inspects changed nodes immediately.<br>
-    4 · Your own node? Click <b>OPERATOR</b> and enter its URL. A public node grants control
-    without a token; gated modes use the token from the exact path printed at boot (default
+    4 · Your own node? Click <b>OPERATOR</b> and enter its URL. Public node state is readable
+    without a token; every owner mutation uses the token from the exact path printed at boot (default
     <code>runs/node/.personaos-secrets/operator.token</code>). Drive it from here: ASK / FUND / STOP,
-    runs, personas, and live telemetry.</div>
+    while public visitors can inspect runs, personas, artifacts, and live telemetry.</div>
   </div>`;
 }
 
@@ -4435,15 +4436,17 @@ function fullNodeStatusProjection(status){
 function nodeStatusAccess(base,status){
   const key=base||'@origin', cached=currentStatusCacheHit(key);
   const exactCachedMode=cached?.v===status?cached.credentialed:!!tokenFor(join(base,'status'));
-  const granted=fullNodeStatusProjection(status);
-  return {granted,bare:granted&&!exactCachedMode,bearer:granted&&exactCachedMode};
+  const read=fullNodeStatusProjection(status);
+  const bearer=read&&exactCachedMode;
+  return {granted:read,read,publicRead:read&&!exactCachedMode,bare:read&&!exactCachedMode,
+    bearer,control:bearer};
 }
-function freshBarePublicStatusBases(now=Date.now()){
+function freshPublicReadStatusBases(now=Date.now()){
   const bases=[];
   for(const [key,hit] of statusCache){
     if(!currentStatusCacheHit(key,hit)||now-Number(hit?.ts||0)>15000) continue;
     const base=key==='@origin'?'':key;
-    if(nodeStatusAccess(base,hit?.v).bare) bases.push(base);
+    if(nodeStatusAccess(base,hit?.v).publicRead) bases.push(base);
   }
   return bases;
 }
@@ -4511,7 +4514,7 @@ function overlayNodeLiveStatus(status,live){
     if(Object.prototype.hasOwnProperty.call(live,key)) merged[key]=live[key];
   }
   // Preserve the full response schema: live data may update observations but
-  // must never manufacture read/control authority.
+  // must never manufacture read or owner-control authority.
   merged.schema=status.schema;
   return merged;
 }
@@ -7316,11 +7319,11 @@ function updateVitalsCounters(){
   // unverified live interactions are NOT signed and must never inflate this.
   const signed=S.order.filter((id)=>kernelIsFocused(S.recs.get(id)?._kernel)).length;
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  const publicControl=freshBarePublicStatusBases(now).length>0;
-  setV('#st-auth',hasOp?'bearer':publicControl?'public':'discover');
-  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp||publicControl);
+  const publicRead=freshPublicReadStatusBases(now).length>0;
+  setV('#st-auth',hasOp?'owner bearer':publicRead?'public read':'discover');
+  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp||publicRead);
     authEl.title=hasOp?'operator bearer saved — gated node controls unlocked'
-      :publicControl?'public node — complete tokenless projection available'
+      :publicRead?'public node — complete tokenless read projection available; owner control remains bearer-gated'
         :'no full node status observed yet — discovery remains public and tokenless'; }
   setV('#st-personas',compactCount(personasN)); setV('#st-active',compactCount(active)); setV('#st-envs',compactCount(S.envCount));
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
@@ -11321,26 +11324,27 @@ async function operatorView(){
   // position as authority. The opened node's full /status response is decisive.
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
-  // Status prefetch may prove a remote route bearerless. Include only fresh bare
-  // full-status results here; a discovery card by itself never enters this list.
-  const publicBases=freshBarePublicStatusBases();
+  // Status prefetch may prove that a remote route publishes a full public read
+  // projection. A discovery card by itself never enters this list.
+  const publicBases=freshPublicReadStatusBases();
   const bases=[...new Set([...Object.keys(m),...localBases,...publicBases])];
-  let html=H('Node control authority')
-    +`<div class="desc2">A node in public reachability can return its full status and grant bearer-equivalent ASK / FUND / STOP access without a token. `
-    +`Other access modes mint a process bearer at boot (default <code>runs/node/.personaos-secrets/operator.token</code>). `
-    +`The UI trusts only the projection actually returned by <code>/status</code>; discovery and loopback position never grant authority.</div>`;
+  let html=H('Public inspection and owner control')
+    +`<div class="desc2">A public node can expose its complete read projection without a token. `
+    +`ASK / FUND / STOP and every other owner mutation still require that node's process bearer `
+    +`(default <code>runs/node/.personaos-secrets/operator.token</code>). Discovery, public reachability, `
+    +`and loopback position never grant control authority.</div>`;
   html+=H('Add a node')+`<div class="opform">`
     +`<label class="field"><span class="field-label">node base URL</span>`
     +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
-    +`<label class="field"><span class="field-label">operator token · gated nodes</span>`
-    +`<input id="op-token" type="password" placeholder="paste a bearer when node policy requires it"></label>`
+    +`<label class="field"><span class="field-label">operator token · required for owner controls</span>`
+    +`<input id="op-token" type="password" placeholder="paste this node's process bearer for owner controls"></label>`
     +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
   html+=H(`Operator nodes (${bases.length})`);
   for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]), pub=publicBases.includes(b);
     html+=`<div class="grant"><span>${esc(b)}${loc?' <span class="l2">· local route</span>':''}</span>`
-    +`<span>${pub?'<span class="ok">public policy · no bearer</span> · ':''}<a href="#" data-act="op-node" data-base="${esc(b)}">console →</a>`
+    +`<span>${pub?'<span class="ok">public read</span> · ':''}<a href="#" data-act="op-node" data-base="${esc(b)}">inspect →</a>`
     +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ${icon('x','ico-sm')}</a>`:'')+`</span></div>`; }
-  if(!bases.length) html+=`<div class="l2">no saved gated-node credentials and no local node route discovered. Public nodes remain accessible from their verified live cards; gated nodes can be added here with a bearer.</div>`;
+  if(!bases.length) html+=`<div class="l2">no saved owner credentials and no local node route discovered. Public nodes remain readable from their verified live cards; add a node here to inspect it or provide its bearer for owner controls.</div>`;
   return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
 }
 
@@ -11360,8 +11364,8 @@ async function operatorNodeView(b){
         :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
     return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
   }
-  if(access.bare) html+=`<div class="desc2"><span class="ok">full read/control projection granted by public node policy</span> — no bearer required.</div>`;
-  else if(access.bearer) html+=`<div class="desc2"><span class="ok">full read/control projection granted</span> — the node accepted this browser's bearer.</div>`;
+  if(access.publicRead) html+=`<div class="desc2"><span class="ok">complete public read projection available</span> — owner controls remain disabled until this browser presents the node's bearer.</div>`;
+  else if(access.bearer) html+=`<div class="desc2"><span class="ok">complete read projection and owner controls available</span> — the node accepted this browser's bearer.</div>`;
   else if(limited) html+=`<div class="desc2"><span class="no">limited public projection</span> — full authority was not granted; a saved bearer may be missing or rejected, or this node's policy requires one.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(limited?'—':'<span class="no">in-memory only</span>'))
@@ -11419,10 +11423,10 @@ async function operatorNodeView(b){
     +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
   if(!full){
     html+=H('Node controls')
-      +`<div class="l2">This response did not grant full status authority. Run reads and ASK / FUND / STOP remain gated; remove a rejected saved credential or present a valid bearer when node policy requires one.</div>`;
+      +`<div class="l2">This response did not grant the complete read projection. Remove a rejected saved credential or present a valid bearer if this node is not public.</div>`;
     return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
   }
-  html+=H('Ask the node — owner intake')
+  if(access.control) html+=H('Ask the node — owner intake')
     +`<div class="opform"><label class="field"><span class="field-label">task</span>`
     +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
     +`<div class="oprow"><label class="field"><span class="field-label">budget</span>`
@@ -11433,6 +11437,8 @@ async function operatorNodeView(b){
     +`<input id="op-run-target" placeholder="paste a run id to stop or fund"></label>`
     +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">${icon('stop')} STOP</button></div>`
     +`<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>`;
+  else html+=H('Owner controls')
+    +`<div class="l2">Read-only public inspection is active. ASK / FUND / STOP and tool invocation are not offered without this node's accepted process bearer.</div>`;
   // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
   // persona-authored, FSM-promoted env tools (invocable below, kernel-mediated).
   const mcp=await fetchJson(join(b,'mcp/tools'));
@@ -11445,11 +11451,12 @@ async function operatorNodeView(b){
       `<div class="grant"><span>${esc(t.name)} <span class="l2">${esc(t.description||'')}</span></span>`
       +`<span class="l2">${esc(eid.slice(0,22))} · by ${esc((t.author_persona_id||'').slice(-8))}</span></div>`).join('')).join('');
     else html+=`<div class="l2">no persona-authored tools promoted yet — a persona authors one via the ToolArtifact FSM; promotion mounts it here.</div>`;
-    html+=`<div class="opform"><div class="oprow">`
+    if(access.control) html+=`<div class="opform"><div class="oprow">`
       +`<label class="field"><span class="field-label">environment id (optional)</span><input id="op-mcp-env" placeholder="env id"></label>`
       +`<label class="field"><span class="field-label">tool</span><input id="op-mcp-tool" placeholder="e.g. sandbox_exec"></label>`
       +`<label class="field"><span class="field-label">args JSON</span><input id="op-mcp-args" placeholder='{"code":"print(42)"}'></label>`
       +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">${icon('tool')} CALL</button></div></div>`;
+    else html+=`<div class="l2">Tool inventory is public; invoking a tool is an owner mutation and requires the node bearer.</div>`;
   }
   html+=verificationReferencesDetails([['node id',st.node_id||''],['node URL',b]]);
   return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
@@ -11462,7 +11469,7 @@ async function operatorRunView(b,run){
   const [nodeStatus,liveFetch]=await Promise.all([
     fetchNodeStatusWithLive(b),fetchLiveArtifacts(b,run),
   ]);
-  const statusAccess=nodeStatusAccess(b,nodeStatus),hasFullStatus=statusAccess.granted;
+  const statusAccess=nodeStatusAccess(b,nodeStatus),hasFullStatus=statusAccess.read;
   const [runStatus,artifacts]=await Promise.all([
     hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run))):null,
     hasFullStatus?fetchJson(join(b,'runs/'+encodeURIComponent(run)+'/artifacts')):null,
@@ -11490,14 +11497,14 @@ async function operatorRunView(b,run){
     currentExecution:publicTask?.currentExecution===true||(!publicTask&&liveActive),
     source:publicTask?'signed task lifecycle':'unsigned operator status',
   });
-  const canOperate=!terminal&&hasFullStatus;
+  const canOperate=!terminal&&statusAccess.control;
   let html=canOperate?('<div class="opform"><div class="oprow">'
     +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="amount"></label>'
     +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to this run">'+icon('fund')+' FUND</button>'
     +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt this run">'+icon('stop')+' STOP</button></div>'
     +'<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>')
     :(terminal?'<div class="l2">Signature-checked termination evidence reports no active execution; run controls are no longer shown.</div>'
-      :'<div class="l2">Read-only run monitor. Controls appear only when this node grants its full status projection.</div>');
+      :'<div class="l2">Read-only run monitor. Owner controls appear only after this browser presents an accepted process bearer.</div>');
   html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`
       :'<span class="l2">Task text not published</span>')
     +kv('Mechanical run state',`<span class="work-state-status is-${esc(mechanical.key)}">${esc(mechanical.label)}</span> <span class="l2">${esc(mechanical.detail)}</span>`)
@@ -12122,16 +12129,16 @@ function wire(){
       const msg=$('#op-save-msg');
       if(!nb){ if(msg) msg.textContent='enter the node base URL first'; return; }
       if(tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); return; }
-      if(msg) msg.textContent='checking whether this node grants public tokenless control…';
+      if(msg) msg.textContent='checking whether this node publishes a public read projection…';
       a.disabled=true; a.setAttribute('aria-busy','true');
       fetchNodeStatus(nb).then((status)=>{
         if(!status){ if(msg) msg.textContent='could not reach a public node at this URL'; }
-        else if(nodeStatusAccess(nb,status).bare){
+        else if(nodeStatusAccess(nb,status).publicRead){
           S.portalPeers.add(nb);
           const kernel=String(status?.node_id||status?.kernel_id||'');
           if(kernel) noteKernel(kernel,'manual',nb,{reachable:true});
           S.views[S.views.length-1]=()=>operatorNodeView(nb); renderTop(); discover();
-        }else if(msg) msg.textContent='this node did not grant a full public projection; enter its operator token';
+        }else if(msg) msg.textContent='this node did not publish a complete public read projection; enter its operator token';
       }).catch(()=>{ if(msg) msg.textContent='could not reach a public node at this URL'; })
         .finally(()=>{ a.disabled=false; a.removeAttribute('aria-busy'); });
       return; }

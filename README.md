@@ -360,19 +360,19 @@ under a guessed workspace.
 
 ## Operator console — drive your own node from the portal
 
-Anonymous visitors see each node's **public discovery projection only**: the public status
-card, the operator-opted public aggregate, and the linked surface docs of records the
-operator explicitly promoted public. Run state, personas, telemetry and the raw run tree are
-**read-gated** (09_PROTOCOLS §3G.3 — `discover < read`).
+On a node configured as public, anonymous visitors can read the node's complete public projection:
+personas, environments, tasks, run state, work notes, artifacts and their published bytes,
+telemetry, and open-input records. Public read access does not imply input or control authority.
+Open-input questions remain display-only in this browser, and all owner mutations stay gated.
 
 Authority is a **bearer token, never network position** (not even loopback). Each node mints
 a process bearer at boot and prints its exact temporary file path (the default is
 `runs/node/.personaos-secrets/operator.token`). Capture it before the first model call: the node
 then unlinks that same-UID-readable file while retaining the bearer in memory; a restart without
-the file rotates it. Click **OPERATOR**, save `node base URL + token`, and the portal unlocks for
-that node:
+the file rotates it. Click **OPERATOR** to inspect a public node without credentials, or save
+`node base URL + token` to unlock owner controls for that node:
 
-- **full node status** — personas, runs, paused missions, budget, lineage durability;
+- **owner control state** — budget and intervention controls layered over the public read view;
 - **⚡ ASK** — submit a task as the owner (`POST /task`); **💰 FUND** — grant budget to resume
   a paused mission (`POST /budget`); **⏹ STOP** — halt a running mission as a signed operator
   intervention (`POST /stop`);
