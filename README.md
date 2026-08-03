@@ -43,7 +43,7 @@ and refinement mission is discovered at runtime from live nodes. First contact i
 Resolver responses are signed announcements and locators only; the default and custom resolvers
 receive no authority over the records or identities they point to. Use
 `?no_global_discovery=1` for an explicit resolver-free session. Direct/local/IPFS and libp2p
-discovery receive a 4.5-second cold-start window. The locator is queried only if that window yields
+discovery receive a 400-millisecond cold-start opportunity. The locator is queried only if that window yields
 neither a verified P2P data route nor a healthy direct node read. Once a locator-introduced node is
 reached and independently verified, that direct/P2P route becomes primary and locator polling stops;
 the browser rechecks route health every 15 seconds and falls back again only after those routes are

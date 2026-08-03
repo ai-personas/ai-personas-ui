@@ -81,7 +81,7 @@ import {
 import {
   locatorFallbackDecision,
   shouldPrefetchNodeStatus,
-} from './discovery-strategy.mjs?v=20260802-p2p-first-contact-v4';
+} from './discovery-strategy.mjs?v=20260803-fast-fallback-v5';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -3905,7 +3905,7 @@ function _currentLocatorFallbackDecision(now=Date.now()){
 }
 function scheduleFastGlobalRefresh(delayMs){
   clearTimeout(_globalRefreshTimer);
-  _globalRefreshTimer=setTimeout(refreshGlobalDirectoryFast,Math.max(1000,delayMs));
+  _globalRefreshTimer=setTimeout(refreshGlobalDirectoryFast,Math.max(50,delayMs));
 }
 async function refreshGlobalDirectoryFast(){
   if(_globalRefreshBusy){ scheduleFastGlobalRefresh(1000); return; }
@@ -12880,8 +12880,12 @@ async function initP2P(){
   setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
   // Same-origin/direct records are the first operating path. Optional transport
   // commons, libp2p and the fallback locator continue independently.
+  // Arm the locator decision concurrently so an empty hosted shell is not held
+  // behind unrelated local/IPFS timeouts. The decision itself still refuses the
+  // locator while any verified direct/P2P route exists and gives the in-flight
+  // peer startup its bounded first-contact opportunity.
+  scheduleFastGlobalRefresh(75);
   await discover();
-  scheduleFastGlobalRefresh(2500);
   prefetchNodeStatuses();
   renderMissions();
   refreshVisibleOpenInputs().catch(()=>{});
