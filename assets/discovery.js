@@ -55,7 +55,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260728-engineering-preview-v2';
+} from './artifact-types.mjs?v=20260803-engineering-preview-v3';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -1929,16 +1929,23 @@ async function verifiedCanonicalBaseMatch(value,base,boot){
   const expectedBase=String(requestedBase||location.origin).replace(/\/$/,'');
   const canonicalBase=String(value||'').replace(/\/$/,'');
   if(canonicalBase===expectedBase||(!requestedBase&&!canonicalBase)) return true;
+  // A local probe is an alternate delivery route, not the canonical outward
+  // route written into a signed inventory.  Bind that alias to the same
+  // current-master key and its signed reachability profile before accepting
+  // it.  This grants no browser write authority and never rewrites the signed
+  // canonical base; it only permits hash/signature verification to continue
+  // over the loopback route that actually delivered the bytes.
+  const localAlias=requestedBase?isLocalBase(requestedBase):isLocalBase(location.origin);
   const reachability=boot?.reachability_profile;
-  return !requestedBase&&isLocalBase(location.origin)
-    &&!!canonicalBase&&normalizedHttpBase(canonicalBase)===canonicalBase
-    &&reachability?.schema==='reachability-profile/1'
-    &&reachability?.node_id===boot?.kernel_id
-    &&reachability?.public_key_hex===currentMasterKey(
-      S.keyDocs.get(base||'@origin')?.entries||[])
-    &&Array.isArray(reachability?.transports)
-    &&reachability.transports.some((route)=>normalizedHttpBase(route)===canonicalBase)
-    &&await verifyCurrentReachabilityProfile(reachability,base,boot);
+  if(!localAlias||reachability?.schema!=='reachability-profile/1'
+    ||reachability?.node_id!==boot?.kernel_id
+    ||reachability?.public_key_hex!==currentMasterKey(
+      S.keyDocs.get(base||'@origin')?.entries||[])) return false;
+  if(!await verifyCurrentReachabilityProfile(reachability,base,boot)) return false;
+  if(!canonicalBase) return reachability.reachability_class!=='public';
+  return normalizedHttpBase(canonicalBase)===canonicalBase
+    &&Array.isArray(reachability.transports)
+    &&reachability.transports.some((route)=>normalizedHttpBase(route)===canonicalBase);
 }
 async function verifyProviderInventory(index,base,boot){
   const inventoryBase=String(index?.base||'').replace(/\/$/,'');
@@ -6126,12 +6133,9 @@ function _humanizeArtifactSegment(value,{title=false}={}){
   // Expand an actual revision token ("rev C", "rev_C", "revC", "rev2")
   // without corrupting ordinary words that merely begin with those letters,
   // such as "review", "reverse", or "revenue".
-  text=text.replace(
-    /\b([Rr][Ee][Vv])([\s_-]*)([A-Za-z0-9]+)\b/g,
-    (match,_prefix,separator,suffix)=>(separator||/^[A-Z0-9]/.test(suffix))
-      ?`Revision ${suffix}`
-      :match,
-  );
+  text=text
+    .replace(/\b[Rr][Ee][Vv]\s+([A-Za-z0-9]+)\b/g,(_match,suffix)=>`Revision ${suffix}`)
+    .replace(/\b(?:rev|Rev)([A-Z0-9][A-Za-z0-9]*)\b/g,(_match,suffix)=>`Revision ${suffix}`);
   const words=text.split(' ').filter(Boolean).map((word,index)=>{
     const acronym=_ARTIFACT_ACRONYMS.get(word.toLowerCase());
     if(acronym) return acronym;
@@ -6168,7 +6172,7 @@ function _artifactFormatTileHTML(presentation){
   return `<span class="artifact-format-tile${format.length>5?' long-format':''}" aria-label="${esc(format)} file format"><small>Format</small><strong>${esc(format)}</strong></span>`;
 }
 const _ARTIFACT_PRESENTATION_GROUPS=Object.freeze([
-  Object.freeze({id:'cad',label:'CAD & 3D models',description:'Models, exchange geometry, and fabrication drawings',extensions:new Set(['3dm','3mf','blend','dae','dwg','dxf','fbx','glb','gltf','ifc','iges','igs','obj','ply','skp','step','stl','stp'])}),
+  Object.freeze({id:'cad',label:'CAD & 3D models',description:'Models, exchange geometry, and fabrication drawings',extensions:new Set(['3dm','3mf','blend','dae','dwg','dxf','fbx','glb','gltf','ifc','iges','igs','obj','ply','scad','skp','step','stl','stp'])}),
   Object.freeze({id:'drawing',label:'Drawings & images',description:'Sheets, diagrams, renders, and visual references',extensions:new Set(['apng','bmp','gif','heic','jpeg','jpg','png','svg','svgz','tif','tiff','webp'])}),
   Object.freeze({id:'document',label:'Documents',description:'Narratives, specifications, reports, and read-me files',extensions:new Set(['doc','docx','html','htm','md','odt','pdf','rtf','txt'])}),
   Object.freeze({id:'data',label:'Data & schedules',description:'Schedules, manifests, structured data, and tables',extensions:new Set(['csv','json','ods','parquet','tsv','xls','xlsx','xml','yaml','yml'])}),
@@ -6316,7 +6320,12 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const rawPath=String(L.content||r.content||r.package_path||'');
   const path=rawPath&&run&&!/^(?:https?:|\/|k\/run-)/.test(rawPath)?_bodyPath(rawPath,run):rawPath;
   const size=r.size_bytes??r.size??r.bytes??'';
-  const semantics=artifactSemanticsAttr(r), resolvedBase=String(base||r._base||'');
+  // Prefer the currently verified provider transport over the document's
+  // canonical content base. The signed content path/hash stay unchanged, so a
+  // local or alternate verified route can avoid a slow canonical tunnel while
+  // the byte verifier still rejects any different body.
+  const semantics=artifactSemanticsAttr(r),
+    resolvedBase=String(base||r._providerBase||r._base||'');
   const aid=r._storeKey||r.record_id||r.card_id||r.id||'';
   const inProgress=r.in_progress===true;
   const canPreview=verifiedMetadata===true&&!!path&&/^sha256:[0-9a-f]{64}$/i.test(hash);
@@ -10634,33 +10643,56 @@ function mountCadMeshPreview(host,mesh,title){
   const bounds=cadMeshBounds(mesh); if(!bounds||!mesh.triangles.length) return false;
   const wrap=el('div','fv-3d-view'),controls=el('div','fv-3d-controls'),canvas=el('canvas','fv-3d');
   canvas.width=1100; canvas.height=680; canvas.setAttribute('role','img'); canvas.setAttribute('aria-label',`${title} interactive 3D geometry preview`);
-  const status=el('div','fv-3d-status'),left=el('span',null,'drag to orbit · wheel to zoom'),right=el('span'); status.append(left,right);
-  let yaw=-.72,pitch=-.52,zoom=1,solid=true,drag=null;
+  canvas.tabIndex=0;
+  const status=el('div','fv-3d-status'),left=el('span',null,'drag or arrow keys to orbit · wheel or +/− to zoom · neutral inspection material'),right=el('span'); status.append(left,right);
+  let yaw=-.72,pitch=-.52,zoom=1,solid=true,edges=true,drag=null;
   const viewButton=(label,apply)=>{ const button=el('button','fv-btn',label); button.type='button'; button.addEventListener('click',()=>{ apply(); draw(); }); controls.appendChild(button); return button; };
-  viewButton('isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;}); viewButton('front',()=>{yaw=0;pitch=0;zoom=1;});
-  const solidButton=viewButton('solid',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
+  viewButton('Isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('Top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;}); viewButton('Front',()=>{yaw=0;pitch=0;zoom=1;});
+  const solidButton=viewButton('Solid',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
+  const edgeButton=viewButton('Edges',()=>{edges=!edges; edgeButton.setAttribute('aria-pressed',String(edges));}); edgeButton.setAttribute('aria-pressed','true');
   const ctx=canvas.getContext('2d',{alpha:false}),radius=Math.max(...bounds.size,1e-6)/2;
   const selected=mesh.triangles.filter((_,index)=>index%Math.max(1,Math.ceil(mesh.triangles.length/CAD_MESH_LIMITS.drawTriangles))===0).slice(0,CAD_MESH_LIMITS.drawTriangles);
   const transform=(point)=>{ const x=point[0]-bounds.center[0],y=point[1]-bounds.center[1],z=point[2]-bounds.center[2],cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
     const rx=cy*x-sy*y,ry=sy*x+cy*y; return {x:rx,y:cp*ry-sp*z,z:sp*ry+cp*z}; };
-  const draw=()=>{ const width=canvas.width,height=canvas.height,scale=Math.min(width,height)*.39*zoom/radius; ctx.fillStyle='#090d12'; ctx.fillRect(0,0,width,height);
-    const projected=mesh.vertices.map((point)=>{ const p=transform(point); return {x:width/2+p.x*scale,y:height/2-p.z*scale,depth:p.y}; });
-    const faces=selected.map((triangle)=>{ const a=projected[triangle.a],b=projected[triangle.b],c=projected[triangle.c];
-      const ux=b.x-a.x,uy=b.y-a.y,vx=c.x-a.x,vy=c.y-a.y,cross=ux*vy-uy*vx; return {triangle,a,b,c,cross,depth:(a.depth+b.depth+c.depth)/3}; }).sort((a,b)=>b.depth-a.depth);
-    ctx.lineJoin='round'; for(const face of faces){ const hue=(205+(Number(face.triangle.group)||0)*47)%360,light=solid?Math.max(24,Math.min(66,44+(face.cross>=0?10:-7))):0;
+  const normalize=(point)=>{ const length=Math.hypot(...point)||1; return point.map((value)=>value/length); };
+  const keyLight=normalize([-.42,-.68,.60]),fillLight=normalize([.74,-.24,.31]);
+  const materialPalette=[[202,199,190],[190,192,185],[200,190,180],[184,184,179]];
+  const draw=()=>{ const width=canvas.width,height=canvas.height,scale=Math.min(width,height)*.39*zoom/radius;
+    ctx.fillStyle='#121311'; ctx.fillRect(0,0,width,height);
+    ctx.strokeStyle='rgba(214,210,198,.055)'; ctx.lineWidth=1; const grid=80;
+    for(let x=(width/2)%grid;x<width;x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke(); }
+    for(let y=(height/2)%grid;y<height;y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke(); }
+    const transformed=mesh.vertices.map(transform);
+    const projected=transformed.map((point)=>({x:width/2+point.x*scale,y:height/2-point.z*scale,depth:point.y}));
+    const faces=selected.map((triangle)=>{ const a3=transformed[triangle.a],b3=transformed[triangle.b],c3=transformed[triangle.c];
+      const ux=b3.x-a3.x,uy=b3.y-a3.y,uz=b3.z-a3.z,vx=c3.x-a3.x,vy=c3.y-a3.y,vz=c3.z-a3.z;
+      const normal=normalize([uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx]);
+      const a=projected[triangle.a],b=projected[triangle.b],c=projected[triangle.c];
+      const key=Math.abs(normal[0]*keyLight[0]+normal[1]*keyLight[1]+normal[2]*keyLight[2]);
+      const fill=Math.abs(normal[0]*fillLight[0]+normal[1]*fillLight[1]+normal[2]*fillLight[2]);
+      return {triangle,a,b,c,light:Math.min(1,.30+key*.56+fill*.18),depth:(a.depth+b.depth+c.depth)/3}; }).sort((a,b)=>a.depth-b.depth);
+    ctx.lineJoin='round'; for(const face of faces){ const base=materialPalette[Math.abs(Number(face.triangle.group)||0)%materialPalette.length];
       ctx.beginPath(); ctx.moveTo(face.a.x,face.a.y); ctx.lineTo(face.b.x,face.b.y); ctx.lineTo(face.c.x,face.c.y); ctx.closePath();
-      if(solid){ ctx.fillStyle=`hsla(${hue} 52% ${light}% / .82)`; ctx.fill(); }
-      ctx.strokeStyle=solid?'rgba(205,225,238,.26)':'rgba(91,202,255,.78)'; ctx.lineWidth=solid?.7:1; ctx.stroke(); }
-    const axes=[[[0,0,0],[radius*.42,0,0],'X','#ef6b73'],[[0,0,0],[0,radius*.42,0],'Y','#65d58a'],[[0,0,0],[0,0,radius*.42],'Z','#5bcaff']];
+      if(solid){ const shade=face.light; ctx.fillStyle=`rgb(${Math.round(base[0]*shade)} ${Math.round(base[1]*shade)} ${Math.round(base[2]*shade)})`; ctx.fill(); }
+      if(edges||!solid){ ctx.strokeStyle=solid?'rgba(24,25,23,.34)':'rgba(225,220,207,.82)'; ctx.lineWidth=solid?.72:1; ctx.stroke(); } }
+    const axes=[[[0,0,0],[radius*.42,0,0],'X','#ef6b73'],[[0,0,0],[0,radius*.42,0],'Y','#65d58a'],[[0,0,0],[0,0,radius*.42],'Z','#e7b85b']];
     for(const [from,to,label,colour] of axes){ const a=transform(from.map((value,index)=>value+bounds.center[index])),b=transform(to.map((value,index)=>value+bounds.center[index]));
       ctx.strokeStyle=colour; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(width/2+a.x*scale,height/2-a.z*scale); ctx.lineTo(width/2+b.x*scale,height/2-b.z*scale); ctx.stroke();
       ctx.fillStyle=colour; ctx.font='600 18px ui-monospace, monospace'; ctx.fillText(label,width/2+b.x*scale+5,height/2-b.z*scale-5); }
-    right.textContent=`${selected.length.toLocaleString()} of ${mesh.triangles.length.toLocaleString()} triangles drawn`;
+    right.textContent=`${selected.length.toLocaleString()} of ${mesh.triangles.length.toLocaleString()} triangles · orthographic`;
   };
   canvas.addEventListener('pointerdown',(event)=>{ drag={x:event.clientX,y:event.clientY,yaw,pitch}; canvas.setPointerCapture(event.pointerId); });
   canvas.addEventListener('pointermove',(event)=>{ if(!drag) return; yaw=drag.yaw+(event.clientX-drag.x)*.008; pitch=Math.max(-1.54,Math.min(1.54,drag.pitch+(event.clientY-drag.y)*.008)); draw(); });
   const end=()=>{drag=null;}; canvas.addEventListener('pointerup',end); canvas.addEventListener('pointercancel',end);
   canvas.addEventListener('wheel',(event)=>{ event.preventDefault(); zoom=Math.max(.25,Math.min(6,zoom*Math.exp(-event.deltaY*.001))); draw(); },{passive:false});
+  canvas.addEventListener('keydown',(event)=>{ let handled=true;
+    if(event.key==='ArrowLeft') yaw-=.10; else if(event.key==='ArrowRight') yaw+=.10;
+    else if(event.key==='ArrowUp') pitch=Math.max(-1.54,pitch-.10); else if(event.key==='ArrowDown') pitch=Math.min(1.54,pitch+.10);
+    else if(event.key==='+'||event.key==='=') zoom=Math.min(6,zoom*1.12);
+    else if(event.key==='-'||event.key==='_') zoom=Math.max(.25,zoom/1.12);
+    else if(event.key==='0'){ yaw=-.72; pitch=-.52; zoom=1; } else handled=false;
+    if(handled){ event.preventDefault(); draw(); }
+  });
   wrap.append(controls,canvas,status); host.appendChild(wrap); draw(); return true;
 }
 async function renderCad3d(host,ctx){
@@ -10827,6 +10859,106 @@ async function renderCode(host,ctx){
   code.textContent=body;
   pre.appendChild(code); host.appendChild(pre);
 }
+function openScadSourceOverview(source){
+  const lines=String(source||'').split(/\r?\n/),modules=[],functions=[],dependencies=[],parameters=[];
+  for(const rawLine of lines.slice(0,20000)){
+    const line=rawLine.replace(/\/\/.*$/,'').trim(); if(!line) continue;
+    const module=/^module\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)/.exec(line);
+    const fn=/^function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)/.exec(line);
+    const dependency=/^(?:include|use)\s*<([^>]+)>/.exec(line);
+    const parameter=/^([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([^;]{1,240});/.exec(line);
+    if(module&&modules.length<40) modules.push({name:module[1],signature:module[2].trim()});
+    else if(fn&&functions.length<40) functions.push({name:fn[1],signature:fn[2].trim()});
+    else if(dependency&&dependencies.length<40) dependencies.push(dependency[1].slice(0,300));
+    else if(parameter&&parameters.length<48) parameters.push({name:parameter[1],value:parameter[2].trim()});
+  }
+  return {lineCount:lines.length,modules,functions,dependencies,parameters,
+    bounded:lines.length>20000};
+}
+function openScadCompanionFiles(ctx){
+  const live=ctx.liveFile,run=String(live?.run||''),path=String(live?.path||ctx.title||'');
+  if(!path) return [];
+  const slash=path.lastIndexOf('/'),folder=slash>=0?path.slice(0,slash+1):'',leaf=slash>=0?path.slice(slash+1):path;
+  const dot=leaf.lastIndexOf('.'),stem=(dot>0?leaf.slice(0,dot):leaf).normalize('NFC');
+  const accepted=new Set(['stl','obj','ply','gltf','glb']);
+  const matches=(candidatePath)=>{
+    const candidate=String(candidatePath||''),candidateSlash=candidate.lastIndexOf('/');
+    const candidateFolder=candidateSlash>=0?candidate.slice(0,candidateSlash+1):'';
+    const candidateLeaf=candidateSlash>=0?candidate.slice(candidateSlash+1):candidate;
+    const candidateDot=candidateLeaf.lastIndexOf('.');
+    if(candidateDot<=0||candidateFolder!==folder) return false;
+    return candidateLeaf.slice(0,candidateDot).normalize('NFC')===stem
+      &&accepted.has(candidateLeaf.slice(candidateDot+1).toLowerCase());
+  };
+  const companions=[];
+  if(run){
+    const state=liveArtifactState(ctx.base,run),files=state?.files;
+    if(files instanceof Map) for(const file of files.values()) if(matches(file?.path)) companions.push({
+      ...file,transport:'live',run,base:String(ctx.base||''),workspace_id:String(file.workspace_id||live?.workspace_id||''),
+    });
+  }
+  for(const file of Array.isArray(ctx.companionFiles)?ctx.companionFiles:[])
+    if(matches(file?.path)) companions.push({...file,transport:'file'});
+  const unique=new Map();
+  for(const file of companions){
+    const key=`${file.transport||''}\u0000${String(file.path||'')}\u0000${String(file.sha256||file.contentHash||'')}`;
+    if(!unique.has(key)) unique.set(key,file);
+  }
+  return [...unique.values()].slice(0,8);
+}
+async function renderOpenScad(host,ctx){
+  const source=String(ctx.text||''),overview=openScadSourceOverview(source),companions=openScadCompanionFiles(ctx);
+  host.innerHTML='';
+  const card=el('div','fv-card fv-scad-card');
+  card.appendChild(el('div','fv-cardhd','OpenSCAD · verified parametric source'));
+  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); };
+  add('Source lines',`${overview.lineCount.toLocaleString()}${overview.bounded?' · first 20,000 indexed':''}`);
+  add('Declared modules',overview.modules.length); add('Declared functions',overview.functions.length);
+  add('External source references',overview.dependencies.length||'none declared');
+  card.appendChild(el('div','fv-note','The browser presents the hash-checked source without executing it. A separately published mesh remains the inspectable geometry result; the source stays the editable parametric authority.'));
+  host.appendChild(card);
+  if(companions.length){
+    const section=el('section','fv-scad-companions'); section.appendChild(el('div','fv-cardhd','Published geometry from the same source name'));
+    for(const file of companions){
+      const button=el('button','fv-scad-companion'); button.type='button';
+      if(file.transport==='live'){
+        button.dataset.act='live-file'; button.dataset.run=String(file.run||ctx.liveFile?.run||'');
+        button.dataset.workspace=String(file.workspace_id||ctx.liveFile?.workspace_id||'');
+        button.dataset.path=String(file.path||'');
+      }else{
+        button.dataset.act='file'; button.dataset.path=String(file.bodyPath||'');
+        button.dataset.title=String(file.path||''); button.dataset.kind=String(file.mediaKind||'');
+        button.dataset.hash=String(file.contentHash||file.sha256||'');
+        button.dataset.size=String(file.size_bytes??file.size??'');
+        button.dataset.semantics=JSON.stringify(Array.isArray(file.authoredLabels)?file.authoredLabels:[]);
+      }
+      const presentation=_artifactFilePresentation(file.path);
+      button.appendChild(el('strong',null,presentation.filename));
+      button.appendChild(el('small',null,`${artifactTypeLabel(file.mediaKind||declaredArtifactMedia(file)||file.path)} · ${fmtBytes(file.size_bytes??file.size)} · open interactive model`));
+      section.appendChild(button);
+    }
+    host.appendChild(section);
+  }
+  const declarations=[
+    ...overview.parameters.map((item)=>({kind:'parameter',...item})),
+    ...overview.modules.map((item)=>({kind:'module',value:item.signature,...item})),
+    ...overview.functions.map((item)=>({kind:'function',value:item.signature,...item})),
+  ];
+  if(declarations.length||overview.dependencies.length){
+    const details=document.createElement('details'); details.className='fv-source fv-scad-index'; details.open=true;
+    const summary=document.createElement('summary'); summary.textContent='Source structure'; details.appendChild(summary);
+    const grid=el('div','fv-scad-grid');
+    for(const item of declarations.slice(0,64)){
+      const row=el('span'); row.appendChild(el('small',null,item.kind)); row.appendChild(el('b',null,item.name));
+      if(item.value) row.appendChild(el('code',null,item.value)); grid.appendChild(row);
+    }
+    for(const dependency of overview.dependencies){ const row=el('span'); row.appendChild(el('small',null,'source reference'));
+      row.appendChild(el('b',null,dependency)); grid.appendChild(row); }
+    details.appendChild(grid); host.appendChild(details);
+  }
+  const pre=el('pre','filview fv-code fv-scad-source'),code=document.createElement('code');
+  code.textContent=source; pre.appendChild(code); host.appendChild(pre);
+}
 async function renderPdf(host,ctx){
   const bytes=await artifactBytes(ctx,'PDF');
   if(new TextDecoder('latin1').decode(bytes.subarray(0,5))!=='%PDF-') throw new Error('invalid PDF header');
@@ -10845,7 +10977,7 @@ async function renderPlain(host,ctx){
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
-  dxf:renderDxf,cad3d:renderCad3d,code:renderCode,pdf:renderPdf,archive:renderArchive,
+  dxf:renderDxf,cad3d:renderCad3d,openscad:renderOpenScad,code:renderCode,pdf:renderPdf,archive:renderArchive,
   plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
@@ -10947,7 +11079,8 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
   const ctx={ base, path, url,sourceUrl, title, kind:pick.mediaType||kind,
     declaredMedia:kind||'',responseMedia:verified?.type||'',detectedMedia,
     verifiedBytes:verified?.ok?verified.bytes:null,text, realSize, size:opts.size,
-    contentHash:advertisedHash||null,integrityVerified:!!verified?.ok };
+    contentHash:advertisedHash||null,integrityVerified:!!verified?.ok,
+    liveFile:opts.liveFile||null,companionFiles:Array.isArray(opts.companionFiles)?opts.companionFiles:[] };
   // a texty body that came back null (read-gated bytes / offline node / 404) would render
   // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
   const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary && !forcedPlain && text===null);
@@ -11466,13 +11599,13 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
   if(r.kind==='domain') return domainView(r);
   if(r.kind==='project') return projectView(r);
   if(r.kind==='telemetry') return telemetryView(r);
-  if(r.kind==='artifact' && L.bundle) return bundleView(r._base||'',L.bundle,L);
+  if(r.kind==='artifact' && L.bundle) return bundleView(r._providerBase||r._base||'',L.bundle,L);
   if(r.kind==='artifact'){
     // File artifact: prefer the explicit content link; otherwise derive the served path from the
     // package-relative title (artifacts/package/<title>) so an art-chip whose record carries no
     // content link still opens. _bodyPath adds the k/<run>/ prefix to hit the served bytes.
     const cpath=L.content||((r.title||r.label)?('artifacts/package/'+(r.title||r.label)):'');
-    const _b=r._base||'';
+    const _b=r._providerBase||r._base||'';
     if(cpath) return fileView(_b, /k\/run-/.test(_b)?cpath:_bodyPath(cpath,runOf(r)), r.label, declaredArtifactMedia(r),{
       authoredLabels:authoredArtifactLabels(r),
       contentHash:L.content_hash||r.content_hash||null,
@@ -11938,9 +12071,21 @@ function wire(){
       $('#detailwrap').classList.add('open'); renderTop(); return; }
     const currentFile=e.target.closest('[data-current-artifact-path]'); if(currentFile){ e.preventDefault(); e.stopPropagation();
       const size=currentFile.dataset.currentArtifactSize;
+      const companionScope=currentFile.closest('.artifact-file-groups,.owned-outputs')||currentFile.parentElement;
+      const companionFiles=[...(companionScope?.querySelectorAll('[data-current-artifact-path]')||[])]
+        .filter((candidate)=>candidate!==currentFile)
+        .map((candidate)=>({
+          path:candidate.dataset.currentArtifactTitle||'',
+          bodyPath:candidate.dataset.currentArtifactPath||'',
+          mediaKind:candidate.dataset.currentArtifactKind||'',
+          contentHash:candidate.dataset.currentArtifactHash||'',
+          size:candidate.dataset.currentArtifactSize!==''&&Number.isFinite(Number(candidate.dataset.currentArtifactSize))
+            ?Number(candidate.dataset.currentArtifactSize):null,
+          authoredLabels:artifactSemanticsFromAttr(candidate.dataset.currentArtifactSemantics),
+        }));
       const options={contentHash:currentFile.dataset.currentArtifactHash||null,
         size:size!==''&&Number.isFinite(Number(size))?Number(size):null,
-        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics)};
+        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics),companionFiles};
       S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(currentFile);
       S.views=[()=>fileView(currentFile.dataset.currentArtifactBase||'',currentFile.dataset.currentArtifactPath,
         currentFile.dataset.currentArtifactTitle,currentFile.dataset.currentArtifactKind,options)];

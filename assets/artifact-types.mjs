@@ -146,7 +146,7 @@ export function selectDeclaredArtifactRenderer(mediaKind) {
   else if(['model/step','application/step','application/x-step','model/ifc',
     'application/x-ifc','model/obj','model/stl','model/ply','model/gltf+json',
     'model/gltf-binary'].includes(mediaType)) id='cad3d';
-  else if(['model/openscad','application/x-openscad'].includes(mediaType)) id='code';
+  else if(['model/openscad','application/x-openscad'].includes(mediaType)) id='openscad';
   else if(mediaType==='text/markdown') id='markdown';
   else if(mediaType==='text/csv'||mediaType==='text/tab-separated-values') id='csv';
   else if(mediaType.startsWith('image/')) id='image';
