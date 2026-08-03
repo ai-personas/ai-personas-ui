@@ -16,6 +16,15 @@ renders the verified roster before the complete artifact/telemetry inventory fin
 verified signed index can seed a returning visit immediately, but it is reverified and reconciled
 against live primary routes and cannot extend a signed lease or retain an omitted identity.
 
+Each bootstrap may also advertise a small current-master-signed open-input directory. The portal
+fetches it immediately after current keys, in parallel with identity and before the full provider
+inventory, then shows the requesting persona, question, reason, response/acceptance contract,
+candidate provenance, and exact request status. The browser surface is display-only and renders no
+visitor or owner response editor, even when the session holds an operator bearer. Persona candidates
+arrive through authenticated persona actions and signatures, including independently discovered
+federated PersonaCard authority. Owner precedence is labelled as consideration order, never as
+correctness, acceptance, or task completion.
+
 ## Realtime discovery — the page ships **no** data
 
 This repository is a **pure shell**: `index.html`, `assets/`, and `robots.txt`. It

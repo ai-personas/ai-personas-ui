@@ -536,6 +536,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
   map:{}, mapByKernel:{}, telLoaded:new Set(), eventKeys:new Set(), keys:new Map(), keyDocs:new Map(), boots:new Map(),
   peerHealth:new Map(), identityIndexes:new Map(),
+  openInputDirectories:new Map(), openInputFetchAfter:new Map(),
   providerKeyRefreshAt:new Map(), telemetryKeyRefreshAt:new Map(),
   providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
@@ -1335,6 +1336,159 @@ async function keysFor(base,boot,{refresh=false,signal=null,expectedMaster=''}={
     return S.keys.get(key)||{};
   }
   return admitKeysDocument(base,boot,keysDoc,{expectedMaster});
+}
+
+const OPEN_INPUT_DIRECTORY_FIELDS=Object.freeze([
+  'anonymous_submission_allowed','generated_at','kernel_id','open_request_count',
+  'owner_bearer_required','owner_contribution_url','persona_contribution_url',
+  'request_count','requests','revision','schema','semantic_interpretation_performed',
+].sort());
+const OPEN_INPUT_ENTRY_FIELDS=Object.freeze([
+  'author_display_name','contributions','human_precedence_applied',
+  'preferred_contribution_id','preferred_source_kind','request',
+  'request_authority_hash','request_event_id','request_signature_verified',
+  'resolution','semantic_acceptance_performed','status',
+].sort());
+const OPEN_INPUT_REQUEST_FIELDS=Object.freeze([
+  'acceptance_criteria','author_persona_id','context_refs','created_at',
+  'environment_id','mission_task_id','question','request_id','response_schema',
+  'schema','signature_hex','signing_key_id','task_id','title','visibility','why_needed',
+].sort());
+const OPEN_INPUT_CONTRIBUTION_FIELDS=Object.freeze([
+  'contribution_id','contributor_id','contributor_name','created_at','environment_id',
+  'evidence_refs','request_id','schema','signature_hex','signing_key_id','source_kind',
+  'task_id','value',
+].sort());
+const OPEN_INPUT_RESOLUTION_FIELDS=Object.freeze([
+  'author_persona_id','created_at','disposition','environment_id','evidence_refs',
+  'rationale','request_id','resolution_id','schema','selected_contribution_id',
+  'signature_hex','signing_key_id','task_id',
+].sort());
+const _exactObjectFields=(value,fields)=>!!value&&typeof value==='object'&&!Array.isArray(value)
+  &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
+const _boundedExactRefs=(value)=>Array.isArray(value)&&value.length<=32
+  &&new Set(value).size===value.length&&value.every((item)=>typeof item==='string'
+    &&item===item.trim()&&item.length>0&&item.length<=1024);
+function _openInputClaimEnvelope(claim){
+  const record={}; for(const key of Object.keys(claim||{})) if(key!=='signature_hex') record[key]=claim[key];
+  return {record,signing_key_id:String(claim?.signing_key_id||''),signature_hex:String(claim?.signature_hex||'')};
+}
+async function _verifiedOpenInputClaim(claim,keyEntries,{remoteMayBeKernelAttested=false}={}){
+  const schema=String(claim?.schema||''); let fields=null;
+  if(schema==='personaos-open-input-request/1') fields=OPEN_INPUT_REQUEST_FIELDS;
+  else if(schema==='personaos-open-input-contribution/1') fields=OPEN_INPUT_CONTRIBUTION_FIELDS;
+  else if(schema==='personaos-open-input-resolution/1') fields=OPEN_INPUT_RESOLUTION_FIELDS;
+  if(!fields||!_exactObjectFields(claim,fields)||!/^[0-9a-f]{128}$/.test(String(claim.signature_hex||''))
+      ||typeof claim.environment_id!=='string'||!claim.environment_id
+      ||typeof claim.task_id!=='string'||!claim.task_id
+      ||typeof claim.created_at!=='string'||!Number.isFinite(Date.parse(claim.created_at))) return false;
+  if(schema==='personaos-open-input-request/1'){
+    if(claim.visibility!=='public'||typeof claim.request_id!=='string'||!claim.request_id
+        ||typeof claim.author_persona_id!=='string'||!claim.author_persona_id
+        ||claim.signing_key_id!==`persona:${claim.author_persona_id}`
+        ||typeof claim.title!=='string'||!claim.title||typeof claim.question!=='string'||!claim.question
+        ||typeof claim.why_needed!=='string'||!claim.why_needed
+        ||!claim.response_schema||typeof claim.response_schema!=='object'||Array.isArray(claim.response_schema)
+        ||!_boundedExactRefs(claim.context_refs)) return false;
+  }else if(schema==='personaos-open-input-contribution/1'){
+    if(!['persona','owner_human'].includes(claim.source_kind)
+        ||typeof claim.contribution_id!=='string'||!claim.contribution_id
+        ||typeof claim.request_id!=='string'||!claim.request_id
+        ||typeof claim.contributor_id!=='string'||!claim.contributor_id
+        ||typeof claim.contributor_name!=='string'||!_boundedExactRefs(claim.evidence_refs)) return false;
+    if(claim.source_kind==='persona'&&claim.signing_key_id!==`persona:${claim.contributor_id}`) return false;
+    if(claim.source_kind==='owner_human'&&claim.signing_key_id!=='kernel-master') return false;
+  }else if(!['resolved','withdrawn'].includes(claim.disposition)
+      ||typeof claim.resolution_id!=='string'||!claim.resolution_id
+      ||typeof claim.request_id!=='string'||!claim.request_id
+      ||typeof claim.author_persona_id!=='string'||!claim.author_persona_id
+      ||claim.signing_key_id!==`persona:${claim.author_persona_id}`
+      ||typeof claim.rationale!=='string'||!claim.rationale
+      ||typeof claim.selected_contribution_id!=='string'||!_boundedExactRefs(claim.evidence_refs)) return false;
+  const verified=await verifyRecord(_openInputClaimEnvelope(claim),keyEntries||[]);
+  if(verified.ok) return true;
+  return remoteMayBeKernelAttested&&schema==='personaos-open-input-contribution/1'
+    &&claim.source_kind==='persona';
+}
+async function admitVerifiedOpenInputDirectory(document,base,boot){
+  if(!_exactObjectFields(document,['record','signature_hex','signing_key_id'])
+      ||document.signing_key_id!=='kernel-master'
+      ||!/^[0-9a-f]{128}$/.test(String(document.signature_hex||''))) return false;
+  const record=document.record, registry=S.keyDocs.get(base||'@origin');
+  if(!_exactObjectFields(record,OPEN_INPUT_DIRECTORY_FIELDS)
+      ||record.schema!=='personaos-open-input-directory/1'||record.kernel_id!==boot?.kernel_id
+      ||record.anonymous_submission_allowed!==false||record.owner_bearer_required!==true
+      ||record.owner_contribution_url!=='inputs/owner-contribution'
+      ||record.persona_contribution_url!=='inputs/persona-contribution'
+      ||record.semantic_interpretation_performed!==false
+      ||!/^sha256:[0-9a-f]{64}$/.test(String(record.revision||''))
+      ||!Array.isArray(record.requests)||record.requests.length>512
+      ||record.request_count!==record.requests.length
+      ||record.open_request_count!==record.requests.filter((item)=>item?.status==='open').length) return false;
+  const directoryVerification=await verifyRecord(document,registry?.entries||[]);
+  if(!directoryVerification.ok||directoryVerification.entry?.key_id!=='kernel-master'
+      ||directoryVerification.entry?.status!=='current'||directoryVerification.entry?.role!=='master') return false;
+  const requestIds=new Set();
+  for(const item of record.requests){
+    if(!_exactObjectFields(item,OPEN_INPUT_ENTRY_FIELDS)||!_exactObjectFields(item.request,OPEN_INPUT_REQUEST_FIELDS)
+        ||item.request_signature_verified!==true||item.semantic_acceptance_performed!==false
+        ||!['open','resolved','withdrawn'].includes(item.status)
+        ||!Array.isArray(item.contributions)||item.contributions.length>512
+        ||!/^sha256:[0-9a-f]{64}$/.test(String(item.request_authority_hash||''))
+        ||requestIds.has(item.request.request_id)
+        ||!await _verifiedOpenInputClaim(item.request,registry?.entries||[])) return false;
+    requestIds.add(item.request.request_id);
+    const contributionIds=new Set(); let ownerCount=0;
+    for(const contribution of item.contributions){
+      if(!_exactObjectFields(contribution,OPEN_INPUT_CONTRIBUTION_FIELDS)
+          ||contribution.request_id!==item.request.request_id
+          ||contribution.environment_id!==item.request.environment_id
+          ||contribution.task_id!==item.request.task_id
+          ||contributionIds.has(contribution.contribution_id)
+          ||!await _verifiedOpenInputClaim(contribution,registry?.entries||[],{remoteMayBeKernelAttested:true})) return false;
+      contributionIds.add(contribution.contribution_id);
+      if(contribution.source_kind==='owner_human') ownerCount++;
+    }
+    if(item.resolution!==null){
+      if(!_exactObjectFields(item.resolution,OPEN_INPUT_RESOLUTION_FIELDS)
+          ||item.resolution.request_id!==item.request.request_id
+          ||item.resolution.environment_id!==item.request.environment_id
+          ||item.resolution.task_id!==item.request.task_id
+          ||item.status!==item.resolution.disposition
+          ||(item.resolution.selected_contribution_id
+            &&!contributionIds.has(item.resolution.selected_contribution_id))
+          ||!await _verifiedOpenInputClaim(item.resolution,registry?.entries||[])) return false;
+    }else if(item.status!=='open') return false;
+    const preferred=String(item.preferred_contribution_id||'');
+    if(preferred&&!contributionIds.has(preferred)) return false;
+    if(item.human_precedence_applied!==(ownerCount>0)
+        ||(ownerCount>0&&item.preferred_source_kind!=='owner_human')) return false;
+  }
+  const key=base||'@origin', prior=S.openInputDirectories.get(key);
+  S.openInputDirectories.set(key,{base:base||'',kernelId:record.kernel_id,record,
+    receivedAt:Date.now(),revision:record.revision});
+  if(!prior||prior.revision!==record.revision) renderOpenInputs();
+  return true;
+}
+const openInputDirectoryJobs=new Map();
+async function refreshOpenInputDirectory(base,boot,{signal=null,force=false}={}){
+  const key=base||'@origin', route=String(boot?.open_inputs_url||'');
+  if(!route){ S.openInputDirectories.delete(key); renderOpenInputs(); return false; }
+  const now=Date.now(), next=S.openInputFetchAfter.get(key)||0;
+  if(!force&&now<next) return true;
+  S.openInputFetchAfter.set(key,now+1000);
+  const url=join(base,route), jobKey=`${opBaseKey(base||location.origin)}\u0000${url}`;
+  let job=openInputDirectoryJobs.get(jobKey);
+  if(!job){
+    job=fetchResponsivePublicJson(url,{signal:AbortSignal.timeout(5000),maxBytes:2*1024*1024,
+      verifiedDirectFallback:true}).finally(()=>{
+        if(openInputDirectoryJobs.get(jobKey)===job) openInputDirectoryJobs.delete(jobKey);
+      });
+    openInputDirectoryJobs.set(jobKey,job);
+  }
+  const document=await settleBeforeAbort(job,signal,null);
+  if(!document) return false;
+  return admitVerifiedOpenInputDirectory(document,base,boot);
 }
 
 function providerPolicyPayload(policy){ const out={};
@@ -2826,6 +2980,10 @@ async function discoverFrom(base,plane,knownBoot=null,
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot:null,found:[]};
   }
+  // This independently signed, bounded directory is intentionally fetched
+  // before the full provider inventory. Open questions can therefore paint as
+  // soon as current node keys are verified, without waiting for artifacts.
+  refreshOpenInputDirectory(base,boot,{signal}).catch(()=>{});
   // The bootstrap count is the number of signed discovery documents, not the
   // number of provider lookup aliases. A compact v3 inventory may legitimately
   // publish several independently signed ProviderRecords (DID, record id,
@@ -11615,6 +11773,92 @@ function prefetchNodeStatuses(){
     }
   }
 }
+function _openInputPersonaName(kernel,personaId,fallback=''){
+  const exact=String(personaId||'');
+  for(const row of S.recs.values()){
+    if(String(row?._kernel||'')!==String(kernel||'')||String(row?.kind||'')!=='persona') continue;
+    const did=String(row?.did||''), recordId=String(row?.record_id||'');
+    if(String(row?.persona_id||'')===exact||did===exact||did.endsWith(`/persona/${exact}`)
+        ||did===`did:personaos:${exact}`||recordId===exact) return String(row?.label||row?.name||fallback||exact);
+  }
+  return String(fallback||exact||'Persona');
+}
+function _openInputCandidateText(value){
+  try{ return String(structuredInlineText(value)||canon(value)).slice(0,1600); }
+  catch(_){ return String(value??'').slice(0,1600); }
+}
+function _openInputCandidateRows(item,kernel){
+  const all=Array.isArray(item?.contributions)?item.contributions:[];
+  const preferred=String(item?.preferred_contribution_id||'');
+  const visible=all.slice(-4);
+  const preferredRow=all.find((row)=>row?.contribution_id===preferred);
+  if(preferredRow&&!visible.includes(preferredRow)) visible.unshift(preferredRow);
+  if(!visible.length) return `<p class="input-request-readonly">No response candidates yet. Active personas can inspect this signed request and contribute independently.</p>`;
+  return `<div class="input-request-candidates"><strong>${all.length} candidate response${all.length===1?'':'s'} · preserved separately</strong>`
+    +visible.map((candidate)=>{ const isPreferred=candidate.contribution_id===preferred;
+      const source=candidate.source_kind==='owner_human'?'Authenticated owner':_openInputPersonaName(kernel,candidate.contributor_id,candidate.contributor_name);
+      const at=Date.parse(String(candidate.created_at||''));
+      return `<article class="input-candidate${isPreferred?' is-preferred':''}"><span><b>${esc(source)}</b>`
+        +`<i>${Number.isFinite(at)?esc(_ago(at)):''}${isPreferred?' · <em class="input-precedence">consider first</em>':''}</i></span>`
+        +`<p>${esc(_openInputCandidateText(candidate.value))}</p></article>`; }).join('')
+    +`<p class="input-request-readonly">Owner-human precedence controls which candidate is considered first. It does not prove correctness, satisfy the request's acceptance criteria, or complete the task.</p></div>`;
+}
+function renderOpenInputs(){
+  const host=$('#openInputs'), cardsHost=$('#openInputCards'), count=$('#openInputCount'), headline=$('#openInputHeadline');
+  if(!host||!cardsHost) return;
+  const now=Date.now(), rows=[];
+  for(const directory of S.openInputDirectories.values()){
+    if(now-Number(directory.receivedAt||0)>45000) continue;
+    if(S.kernelFocus&&directory.kernelId!==S.kernelFocus) continue;
+    for(const item of (directory.record?.requests||[])) rows.push({directory,item});
+  }
+  rows.sort((a,b)=>{
+    const openDelta=Number(b.item.status==='open')-Number(a.item.status==='open');
+    if(openDelta) return openDelta;
+    return String(b.item.request?.created_at||'').localeCompare(String(a.item.request?.created_at||''));
+  });
+  const query=String(S.q||'').trim().toLowerCase();
+  const filtered=query?rows.filter(({directory,item})=>{
+    const request=item.request||{};
+    return `${request.title||''} ${request.question||''} ${request.why_needed||''} ${request.author_persona_id||''} ${request.environment_id||''} ${request.task_id||''} ${directory.kernelId||''}`.toLowerCase().includes(query);
+  }):rows;
+  host.hidden=!rows.length;
+  if(!rows.length){ cardsHost.replaceChildren(); cardsHost.dataset.h=''; return; }
+  const openCount=rows.filter(({item})=>item.status==='open').length;
+  if(count) count.textContent=`${openCount} open · ${rows.length} total`;
+  if(headline) headline.textContent=openCount
+    ?`${openCount} request${openCount===1?'':'s'} waiting for evidence`
+    :'No open requests; signed history retained';
+  if(!host.dataset.initialized){ host.open=openCount>0; host.dataset.initialized='1'; }
+  const html=filtered.slice(0,48).map(({directory,item})=>{
+    const request=item.request||{}, kernel=directory.kernelId;
+    const author=_openInputPersonaName(kernel,request.author_persona_id,item.author_display_name);
+    const at=Date.parse(String(request.created_at||''));
+    const criteria=(()=>{ try{return canon(request.acceptance_criteria);}catch(_){return '';} })();
+    const responseSchema=(()=>{ try{return canon(request.response_schema);}catch(_){return '';} })();
+    return `<article class="input-request-card${item.status==='open'?'':' is-closed'}">`
+      +`<header><div><span class="input-request-kicker">${esc(author)} is asking</span><h3>${esc(request.title)}</h3></div><span class="input-request-state">${esc(item.status)}</span></header>`
+      +`<p class="input-request-question">${esc(request.question)}</p>`
+      +`<p class="input-request-why"><b>Why it matters now</b><br>${esc(request.why_needed)}</p>`
+      +`<div class="input-request-meta"><span>${esc(author)}</span><span>${Number.isFinite(at)?esc(_ago(at)):'signed time unavailable'}</span><span>${esc(String(item.contributions?.length||0))} candidates</span><span>kernel signature verified</span></div>`
+      +_openInputCandidateRows(item,kernel)
+      +`<details class="verification-identity"><summary>Requested response and acceptance contract</summary><div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(`Response schema\n${responseSchema}\n\nAcceptance criteria\n${criteria}`)}</pre></div></details>`
+      +`<p class="input-request-readonly">This browser surface is display-only. Signed personas may inspect and contribute through their authenticated action surface; no visitor or owner response field is rendered here.</p></article>`;
+  }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`;
+  if(cardsHost.dataset.h!==html){ cardsHost.dataset.h=html; cardsHost.innerHTML=html; }
+}
+async function refreshVisibleOpenInputs(){
+  const candidates=[];
+  for(const [key,boot] of S.boots){
+    const base=key==='@origin'?'':key;
+    if(!boot?.open_inputs_url) continue;
+    candidates.push({base,boot,priority:Number(boot.kernel_id===S.kernelFocus)});
+  }
+  candidates.sort((a,b)=>b.priority-a.priority);
+  await Promise.allSettled(candidates.slice(0,NETWORK_LIMITS.monitoredBases)
+    .map(({base,boot})=>refreshOpenInputDirectory(base,boot)));
+  renderOpenInputs();
+}
 function renderMissions(){
   const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'),
     eyebrow=$('#missionEyebrow'); if(!box||!wrap) return;
@@ -11732,11 +11976,11 @@ function wire(){
   $('#globalKernels')?.addEventListener('click',(e)=>{ const b=e.target.closest('[data-kernel]'); if(!b) return;
     S.kernelFocus=b.dataset.kernel||null; S.follow=null;
     S.environmentWindow=NETWORK_LIMITS.environmentInitial; S.personaWindows.clear();
-    renderGlobalKernels(); renderMissions(); refreshSystemView(); discover().catch(()=>{});
+    renderGlobalKernels(); renderMissions(); renderOpenInputs(); refreshSystemView(); discover().catch(()=>{});
   });
   $('#networkAll')?.addEventListener('click',()=>{ S.kernelFocus=null; S.follow=null;
     S.environmentWindow=NETWORK_LIMITS.environmentInitial; S.personaWindows.clear();
-    renderGlobalKernels(); renderMissions(); refreshSystemView(); });
+    renderGlobalKernels(); renderMissions(); renderOpenInputs(); refreshSystemView(); });
   // stage click: a persona card or env name → open its Ed25519 drawer; deliverable chip → bundle/mission drawer
   $('#sysEnvs').addEventListener('click',(e)=>{
     const morePersonas=e.target.closest('[data-more-personas]'); if(morePersonas){
@@ -11815,7 +12059,7 @@ function wire(){
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase().slice(0,256); _applyFilter();
     clearTimeout(searchTimer); searchTimer=setTimeout(()=>{ S.environmentWindow=NETWORK_LIMITS.environmentInitial;
       const loadedMatch=_loadedRecordMatchesSearch(S.q);
-      renderGlobalKernels(); refreshSystemView(); renderInteractionStream();
+      renderGlobalKernels(); refreshSystemView(); renderInteractionStream(); renderOpenInputs();
       // A resolver-backed global search must reach beyond the sampled first page.
       // Do not re-fetch and re-verify a large provider inventory when the signed
       // record is already cached locally: the bounded stage selector can surface
@@ -12629,6 +12873,7 @@ async function initP2P(){
   scheduleFastGlobalRefresh(2500);
   prefetchNodeStatuses();
   renderMissions();
+  refreshVisibleOpenInputs().catch(()=>{});
   streamPersonaCognition();
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{
@@ -12642,5 +12887,8 @@ async function initP2P(){
   // Exact live workspace snapshots: SSE is primary; this 3s poll is the bounded
   // fallback for proxies/browsers that buffer or block EventSource.
   setInterval(()=>{ try{ pollLiveArtifacts(); }catch(e){} },3000);
+  // Small current-master-signed directories are cheap to refresh and keep
+  // newly authored requests visible without waiting for the 15s inventory pass.
+  setInterval(()=>{ refreshVisibleOpenInputs().catch(()=>{}); },1500);
   requestAnimationFrame(tick);
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
