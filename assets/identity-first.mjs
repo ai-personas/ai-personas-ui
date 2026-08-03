@@ -29,7 +29,7 @@ const PERSONA_CARD_ALLOWED_FIELDS=new Set([
 const PERSONA_LIFECYCLE_FIELDS=Object.freeze([
   'authority','did','identity_fields','identity_materialization_state',
   'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
-  'identity_signing_key_id','issued_at','lifecycle_chain_head_hash',
+  'identity_signing_key_id','issued_at','lifecycle_transition_hash',
   'lifecycle_chain_verified','lifecycle_state','persona_id','schema','signature_hex',
   'signing_key_id',
 ].sort());
@@ -184,7 +184,7 @@ function signedPersonaIdentity(record,kernelId){
 
 async function verifiedLifecycle(lifecycle,record,identity,identityKey,registry){
   if(!exactFields(lifecycle,PERSONA_LIFECYCLE_FIELDS)
-      ||lifecycle.schema!=='personaos-persona-lifecycle-card/1'
+      ||lifecycle.schema!=='personaos-persona-lifecycle-card/2'
       ||lifecycle.persona_id!==identity.signedId||lifecycle.did!==identity.did
       ||lifecycle.signing_key_id!=='kernel-master'
       ||lifecycle.lifecycle_state!=='ACTIVE'
@@ -194,7 +194,7 @@ async function verifiedLifecycle(lifecycle,record,identity,identityKey,registry)
       ||lifecycle.identity_signature_verified!==true
       ||lifecycle.lifecycle_chain_verified!==true
       ||!SHA256.test(String(lifecycle.identity_signature_hash||''))
-      ||!SHA256.test(String(lifecycle.lifecycle_chain_head_hash||''))
+      ||!SHA256.test(String(lifecycle.lifecycle_transition_hash||''))
       ||!Number.isFinite(Date.parse(String(lifecycle.issued_at||'')))
       ||!['pending','materialized'].includes(lifecycle.identity_materialization_state))
     return null;

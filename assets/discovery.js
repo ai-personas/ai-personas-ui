@@ -1563,7 +1563,7 @@ async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedK
 async function verifyPersonaLifecycleCard(card,record,documentKey){
   if(record?.kind!=='persona'||documentKey?.key_id!=='kernel-master') return false;
   if(!card||typeof card!=='object'||Array.isArray(card)
-      ||card.schema!=='personaos-persona-lifecycle-card/1'
+      ||card.schema!=='personaos-persona-lifecycle-card/2'
       ||card.signing_key_id!=='kernel-master'
       ||!/^[0-9a-f]{128}$/i.test(String(card.signature_hex||''))) return false;
   const payload={};
@@ -3446,7 +3446,7 @@ function _personaLifecycleRegresses(current,candidate){
   if(before.identity_materialization_state==='materialized'
       &&after.identity_materialization_state!=='materialized') return true;
   if(Number.isFinite(beforeAt)&&afterAt===beforeAt
-      &&String(before.lifecycle_chain_head_hash||'')!==String(after.lifecycle_chain_head_hash||'')) return true;
+      &&String(before.lifecycle_transition_hash||'')!==String(after.lifecycle_transition_hash||'')) return true;
   return false;
 }
 function _removeRecordStoreKey(id){
@@ -12693,7 +12693,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260728-stream-rendezvous-v29');
+    const mod=await import('./p2p-libp2p.js?v=20260803-persona-envelope-v30');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

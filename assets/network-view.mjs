@@ -493,11 +493,11 @@ function normalizedPersonaLifecycleCard(record) {
   const card=record?.persona_lifecycle_card;
   const exactFields=['authority','did','identity_fields','identity_materialization_state',
     'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
-    'identity_signing_key_id','issued_at','lifecycle_chain_head_hash',
+    'identity_signing_key_id','issued_at','lifecycle_transition_hash',
     'lifecycle_chain_verified','lifecycle_state','persona_id','schema','signature_hex',
     'signing_key_id'];
   if(!card||typeof card!=='object'||Array.isArray(card)
-      ||card.schema!=='personaos-persona-lifecycle-card/1'
+      ||card.schema!=='personaos-persona-lifecycle-card/2'
       ||card.signing_key_id!=='kernel-master'
       ||Object.keys(card).sort().join('\u0000')!==exactFields.sort().join('\u0000')
       ||!/^[0-9a-f]{128}$/i.test(String(card.signature_hex||''))) return null;
@@ -509,7 +509,7 @@ function normalizedPersonaLifecycleCard(record) {
   if(card.authority!=='kernel_observed_verified_persona_lifecycle'
       ||card.identity_signature_verified!==true||card.lifecycle_chain_verified!==true
       ||!/^sha256:[0-9a-f]{64}$/i.test(String(card.identity_signature_hash||''))
-      ||!/^sha256:[0-9a-f]{64}$/i.test(String(card.lifecycle_chain_head_hash||''))) return null;
+      ||!/^sha256:[0-9a-f]{64}$/i.test(String(card.lifecycle_transition_hash||''))) return null;
   const issuedAt=String(card.issued_at||'');
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(issuedAt)
       ||!Number.isFinite(Date.parse(issuedAt))) return null;
