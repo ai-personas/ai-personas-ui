@@ -108,14 +108,15 @@ the record id, document hash, generation, and manifest hash in that kernel's cur
 inventory before it can refresh displayed state. A standalone lookup result cannot outlive or
 bypass an inventory omission.
 
-Public visibility grants strangers **discover**, not read. A matching, unexpired public `r`/`rw`/
-`admin` grant whose optional scope matches the signed policy subject is required before an anonymous
-publisher may send record links, content hashes, locators, interfaces, or read-gated descriptions.
-Discover-only HTTP, gossip, and provider-protocol payloads are kernel-signed minimal projections;
-the full signed record remains on the authenticated read path. The UI independently enforces the
-same rule as defense in depth and labels the row discover-only. General record signatures may verify
-against current, previous, or archived registry entries; live frames and ProviderRecords remain
-current-kernel-master-only.
+Public visibility and public read authority remain distinct in the protocol. A node running in
+public-access mode signs an unexpired public `r` grant for every published persona, environment,
+task, artifact, workspace, message, telemetry, knowledge, tool, and open-input record, making those
+records and published artifact bytes anonymously readable. A node that publishes only visibility
+without that grant remains discover-only: HTTP, gossip, and provider-protocol payloads expose a
+kernel-signed minimal projection and withhold read-gated links and descriptions. The UI verifies the
+signed policy for each record and labels either state. General record signatures may verify against
+current, previous, or archived registry entries; live frames and ProviderRecords remain
+current-kernel-master-only. Public read authority never grants browser input or control authority.
 
 **The portal is generic + federated.** A reached node may list its own `federated_kernels` and
 peers; public nodes normally publish through libp2p, and any kernel may additionally be announced
@@ -275,16 +276,18 @@ These snapshots describe provisional workspace files, not an `ArtifactBundle` li
 Lifecycle remains unknown until a separately validated bundle and its hash-bound verifier evidence
 are available.
 
-Live files are clickable. The browser fetches their body URL with bearer authentication in the
-request header, never in the URL, and computes SHA-256 before passing bytes to any renderer.
+Live files are clickable. On a public node the browser fetches their authorized public-read body
+URL without a bearer and computes SHA-256 before passing bytes to any renderer. The portal does not
+ask for, retain, or transmit the process owner bearer.
 Downloads use the same check, then create a short-lived `application/octet-stream` attachment;
 there is no authenticated "open raw" navigation surface.
 Non-live manifest files that advertise a SHA-256 use the same fail-closed byte check before any
 repository renderer receives them; un-hashed content is labelled as such rather than “verified.”
 Declared Markdown, text, JSON, and tabular media retain one prior signature-checked revision and
-show a bounded line diff when an open file changes. Rich presentation is selected only from the
-media type declared in the admitted signed record or live snapshot; filenames and domain words in
-the bytes never control dispatch. The built-in generic Web-media families cover Markdown, tabular
+show a bounded line diff when an open file changes. Rich presentation uses the declared or response
+media type when available, then a filename suffix only as a low-trust presentation hint and bounded
+hash-checked byte signatures to confirm containers. Names and domain words never establish an
+artifact's meaning or evidence status. The built-in generic Web-media families cover Markdown, tabular
 text, JSON, plain text, images, audio/video controls, PDF, bounded DXF inspection, and CAD/BIM
 inspection. Hash-verified OBJ, STL, ASCII PLY, and self-contained glTF/GLB geometry also receives a
 lazy local interactive mesh preview with orbit, zoom, standard views, bounds, and face counts;
