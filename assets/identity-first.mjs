@@ -442,4 +442,4 @@ function afterPaint(){
 
 const painted=await identityFirst().catch(()=>false);
 if(painted) await afterPaint();
-await import('./discovery.js?v=20260803-ui-boot-v6');
+await import('./discovery.js?v=20260803-browser-readonly-v7');

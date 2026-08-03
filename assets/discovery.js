@@ -71,7 +71,6 @@ import {
   humanActivityPresentation,
   humanizeMachineKey,
   isTechnicalKey,
-  operatorResponseText,
   structuredContentProjection,
 } from './human-content.mjs?v=20260728-agency-v3';
 import {
@@ -218,20 +217,17 @@ function normalizedHttpBase(value){
   }catch(_){ return ''; }
 }
 /* ---------- node authority (A5-01/A5-08: explicit node policy, never network position) ----------
-   Public reachability may publish a complete read projection, but it never grants owner
-   control. Mutating owner actions require the process bearer. The browser learns the read
-   projection from the exact /status response and control authority from the credential used
-   for that same response; discovery cards and loopback position grant neither. */
+   The current browser surface is deliberately read-only. Public reachability may publish a
+   complete read projection, but the portal neither retains a process bearer nor originates
+   owner mutations. Controlled non-browser clients and authenticated persona transports are
+   separate authority surfaces. */
 function opTokens(){
-  // Clear credentials written by older portal builds instead of silently retaining
-  // durable authority that model-authored same-origin content could have observed.
+  // Fail closed across upgrades: browser-held owner credentials from an older build
+  // must not silently re-enable task, input, budget, stop, or tool mutations.
   try{ localStorage.removeItem('personaos_operator'); }catch(e){}
   try{ localStorage.removeItem('personaos_peers'); }catch(e){}
-  try{ return JSON.parse(sessionStorage.getItem('personaos_operator')||'{}'); }catch(e){ return {}; }
-}
-function opSaveTokens(m){
-  try{ localStorage.removeItem('personaos_operator'); }catch(e){}
-  sessionStorage.setItem('personaos_operator',JSON.stringify(m)); updateOpBadge();
+  try{ sessionStorage.removeItem('personaos_operator'); }catch(e){}
+  return {};
 }
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
 // Loopback detection is only a discovery/convenience hint. Network position never
@@ -336,10 +332,8 @@ async function secureDownloadFromButton(btn){
   }
 }
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
-  const n=Object.keys(opTokens()).length; b.classList.toggle('on',n>0);
-  // stroked key glyph (inherits the button's currentColor; goes green via #opbtn.on)
-  // instead of the colour emoji that defeated the token palette.
-  b.innerHTML=icon('key')+`<span class="opbtn-label">OPERATOR${n>0?` · ${n}`:''}</span>`; }
+  opTokens(); b.classList.remove('on');
+  b.innerHTML='<span class="opbtn-label">PUBLIC DATA</span>'; }
 const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
 function p2pDataRouteForUrl(value){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
@@ -3389,8 +3383,8 @@ async function discoverViaIPFS(opts={}){
 // A node's PUBLIC url (a tunnel) and its localhost url are the same kernel, but
 // localhost is never globally advertised (every visitor's localhost is their own
 // box). So probe a few well-known ports here; self-register any that answer. That
-// node then appears in the OPERATOR console as a LOCAL route. The bearer token is
-// still required for operator authority; network position is not a credential.
+// node then appears in the PUBLIC DATA drawer as a local read route. The browser
+// never treats network position as a credential or retains owner authority.
 // Silent when nothing's running. From an https page: https://localhost works if the
 // node's cert is trusted; plain-http localhost is browser-policy dependent and
 // may fail before CORS, so the empty state explains the public P2P route.
@@ -3962,10 +3956,9 @@ function emptyStateHTML(){
     <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
     also meet over mDNS; a public node joins the shared DHT.`}<br>
     3 · The global directory refreshes every few seconds and inspects changed nodes immediately.<br>
-    4 · Your own node? Click <b>OPERATOR</b> and enter its URL. Public node state is readable
-    without a token; every owner mutation uses the token from the exact path printed at boot (default
-    <code>runs/node/.personaos-secrets/operator.token</code>). Drive it from here: ASK / FUND / STOP,
-    while public visitors can inspect runs, personas, artifacts, and live telemetry.</div>
+    4 · Click <b>PUBLIC DATA</b> to inspect any complete verified route discovered by the network.
+    This browser is display-only: task, response, budget, stop, and tool mutations are unavailable
+    until the deployment runtime has a separately verified secure boundary.</div>
   </div>`;
 }
 
@@ -4010,7 +4003,7 @@ function idleAliveHTML(){
   return `<div class="state-banner idle">`
     +`<span class="dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>`
     +`<div><b class="amber">node is online — no active task run observed</b>`
-    +`<span class="l2"> — the heartbeat is alive but idle. Open <b>OPERATOR</b> to submit a task or add budget to an existing run; personas, coordination and artifacts appear when the node publishes them.</span></div>`
+    +`<span class="l2"> — the heartbeat is alive but idle. This public browser remains read-only; personas, coordination and artifacts appear when the node publishes them.</span></div>`
     +`</div>`;
 }
 // A calm pulsing-green warming banner: the dot reuses the existing 'live' class for its
@@ -7314,13 +7307,12 @@ function updateVitalsCounters(){
   // "verified" counts ONLY Ed25519-verified records (S.recs all pass verifyRecord);
   // unverified live interactions are NOT signed and must never inflate this.
   const signed=S.order.filter((id)=>kernelIsFocused(S.recs.get(id)?._kernel)).length;
-  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   const publicRead=freshPublicReadStatusBases(now).length>0;
-  setV('#st-auth',hasOp?'owner bearer':publicRead?'public read':'discover');
-  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',hasOp||publicRead);
-    authEl.title=hasOp?'operator bearer saved — gated node controls unlocked'
-      :publicRead?'public node — complete tokenless read projection available; owner control remains bearer-gated'
-        :'no full node status observed yet — discovery remains public and tokenless'; }
+  setV('#st-auth',publicRead?'public read':'discover');
+  const authEl=$('#st-auth'); if(authEl){ authEl.classList.toggle('auth-read',publicRead);
+    authEl.title=publicRead
+      ?'public node — complete tokenless read projection available; browser mutations are disabled'
+      :'no complete public node status observed yet — discovery remains public and tokenless'; }
   setV('#st-personas',compactCount(personasN)); setV('#st-active',compactCount(active)); setV('#st-envs',compactCount(S.envCount));
   $('#st-active')?.classList.toggle('hot',active>0);   // hero treatment lights up only while work streams
   setV('#st-acts',compactCount(acts)); setV('#st-signed',compactCount(signed));
@@ -10098,18 +10090,15 @@ function renderArtifactTree(arts,pkgRun){
 async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base,url);
   const pkgRun=(String(url).match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||(L&&L.run&&(String(L.run).match(/k\/(run-[0-9A-Za-z]+)/)||[])[1])||'';
   if(!d){
-    // An anonymous viewer holds only 'discover': the node publishes that the deliverable
-    // EXISTS (files, hashes, metadata) but gates the BYTES to read+ tier (07_ARTIFACTS §10a).
-    // Render the PUBLIC manifest from the discovered file-card records + how to read the bytes.
+    // A public node publishes artifact bytes anonymously. If a bundle fetch still
+    // fails, retain its verified manifest without implying that a bearer would fix it.
     const run=(String(url||'').match(/k\/(run-[0-9A-Za-z]+)/)||[])[1]||'';
     const files=(S.order||[]).map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='artifact'
         && !((r._links||{}).bundle) && runOf(r)===run);
-    let mh=`<div class="empty-card"><h3>${icon('key')} Artifact bundle — content is read-gated</h3>`
-      +'<p class="desc2">This node publishes bundle metadata (file list, hashes, and labels) '
-      +'to anonymous viewers, but serves the actual <b>bytes</b> only at <b>read+</b> tier '
-      +'(07_ARTIFACTS §10a). To open the files: click <b>OPERATOR</b> and paste this node\'s '
-      +'captured process bearer. If HTTPS blocks an HTTP node, open the node\'s own console '
-      +'and paste the same bearer there.</p></div>';
+    let mh=`<div class="empty-card"><h3>${icon('key')} Artifact bundle — bytes unavailable on this route</h3>`
+      +'<p class="desc2">The signed file manifest remains visible, but this route did not return '
+      +'the published bundle bytes. The browser does not request a process bearer or downgrade '
+      +'to a mutation-capable surface; try another verified route when one is discovered.</p></div>';
     if(files.length){
       mh+=H(`Files (${files.length}) — published manifest`)+files.slice(0,80).map((r)=>{
         const L2=r._links||{}; const h=String(L2.content_hash||'').replace('sha256:','').slice(0,10);
@@ -11229,7 +11218,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
 }
 async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
   if(!rj0) return {title:`<span class="kind k-persona">BODY · J7</span> codex run`,
-    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
+    html:`<div class="viewerr">Run document could not be loaded from this public route. The node may be offline or another verified route may be needed; this browser does not request owner credentials.</div>`};
   const rj=rj0; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
     +kv('Accepted',b.accepted?`<span class="ok">${icon('check','ico-sm')} verified</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
@@ -11241,7 +11230,7 @@ async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(bas
 }
 async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
   if(!rj0) return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`,
-    html:`<div class="viewerr">run document could not be loaded — the node may be offline or the body is read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
+    html:`<div class="viewerr">Verification document could not be loaded from this public route. The node may be offline or another verified route may be needed; this browser does not request owner credentials.</div>`};
   const rj=rj0; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
   let html=kv('Bundle verified',bv.passed?`<span class="ok">${icon('check','ico-sm')} passed</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
     +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
@@ -11252,7 +11241,7 @@ async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(b
 async function distributionView(base,L){ S.curBase=base;
   const oci0=await dfetch(base,L.oci), dag0=await dfetch(base,L.dag), reg0=await dfetch(base,L.registry);
   if(!oci0&&!dag0&&!reg0) return {title:`<span class="kind k-artifact">DISTRIBUTION</span> OCI + IPLD`,
-    html:`<div class="viewerr">distribution documents could not be loaded — the node may be offline or the bodies are read-gated; paste the captured process bearer. If HTTPS blocks an HTTP node, open its console and use the same bearer there.</div>`};
+    html:`<div class="viewerr">Distribution documents could not be loaded from this public route. The node may be offline or another verified route may be needed; this browser does not request owner credentials.</div>`};
   const oci=oci0||{}, dag=dag0||{}, reg=reg0||{};
   let html=kv('OCI artifactType',esc(oci.artifactType||'—'))+kv('OCI layers',esc((oci.layers||[]).length))
     +kv('IPLD root CID',esc(((dag.root_cid||'')+'').slice(0,32)||'—'))+kv('Addressing','SHA-256 · CIDv1 · content-addressed');
@@ -11277,71 +11266,27 @@ async function workEvidenceView(r){
   html+=trustPanel(r);
   return {title:`<span class="kind k-mission">WORK EVIDENCE</span> ${esc(r.label||'Published record')}`,html};
 }
-/* ---------- operator console views ---------- */
-// Render operator results for people first. Exact JSON remains available in a
-// collapsed audit disclosure instead of dominating the action result.
-function showOpResult(out,r,suffix){
-  let hint='';
-  if(r.status===401||r.status===403) hint='Authorization failed — this node rejected the token. Re-check it in the operator console.\n';
-  else if(r.status===0) hint='The node could not be reached.\n';
-  const human=hint+operatorResponseText(r.body,r.status)+(suffix||'');
-  const projection=structuredContentProjection(r.body);
-  out.innerHTML=`<div class="op-result-summary">${esc(human)}</div>`
-    +(projection.parsed?`<details class="verification-identity structured-raw"><summary>Technical response</summary>`
-      +`<div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(projection.raw)}</pre></div></details>`:'');
-  // colour the result pane off the status the call already computed: 2xx = ok (green
-  // edge), everything else (auth/guard/unreachable) = err (danger edge). Additive
-  // classes the design system styles; cleared each render so a retry re-derives them.
-  const ok=r.status>=200&&r.status<300;
-  out.classList.remove('is-ok','is-err'); out.classList.add(ok?'is-ok':'is-err');
-}
-// neutral 'in-progress' state for the result pane (clears any prior ok/err edge so a
-// new submission doesn't keep the previous verdict colour while it awaits the network).
-function opPending(out,msg){ if(!out) return; out.textContent=msg||'submitting…';
-  out.classList.remove('is-ok','is-err'); }
-// flag an operator field as invalid (red ring) for a failed inline guard; the flag
-// clears itself the next time the user edits the field. No data/contract change —
-// aria-invalid is presentational + a11y only.
-function opInvalid(el){ if(!el) return; el.setAttribute('aria-invalid','true');
-  const clear=()=>{ el.removeAttribute('aria-invalid'); el.removeEventListener('input',clear); };
-  el.addEventListener('input',clear); el.focus&&el.focus(); }
-async function opPost(base,path,body){ const u=join(base,path);
-  try{ const r=await fetch(u,secureFetchInit(u,{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
-    const d=await r.json().catch(()=>({})); return {status:r.status,body:d}; }
-  catch(e){ let msg=String(e&&e.message||e);
-    if(location.protocol==='https:'&&/^http:\/\//i.test(u))
-      msg+=` — this page is HTTPS and browsers block calls to an HTTP node. Open the node's own console directly at ${opBaseKey(base)}/, then paste and use the captured process bearer there.`;
-    return {status:0,body:{error:msg}}; } }
+/* ---------- complete public-read views ---------- */
 
 async function operatorView(){
-  const m=opTokens();
-  // Surface loopback nodes automatically for convenience, but never treat network
-  // position as authority. The opened node's full /status response is decisive.
+  opTokens();
+  // Surface verified and directly reached public nodes for inspection. Network
+  // position never grants authority and this browser does not retain a bearer.
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
   // Status prefetch may prove that a remote route publishes a full public read
   // projection. A discovery card by itself never enters this list.
   const publicBases=freshPublicReadStatusBases();
-  const bases=[...new Set([...Object.keys(m),...localBases,...publicBases])];
-  let html=H('Public inspection and owner control')
-    +`<div class="desc2">A public node can expose its complete read projection without a token. `
-    +`ASK / FUND / STOP and every other owner mutation still require that node's process bearer `
-    +`(default <code>runs/node/.personaos-secrets/operator.token</code>). Discovery, public reachability, `
-    +`and loopback position never grant control authority.</div>`;
-  html+=H('Add a node')+`<div class="opform">`
-    +`<label class="field"><span class="field-label">node base URL</span>`
-    +`<input id="op-base" type="url" placeholder="e.g. http://localhost:8765" value="${esc(opBaseKey(peerList()[0]||''))}"></label>`
-    +`<label class="field"><span class="field-label">operator token · required for owner controls</span>`
-    +`<input id="op-token" type="password" placeholder="paste this node's process bearer for owner controls"></label>`
-    +`<button class="btn btn-primary" data-act="op-save">SAVE</button></div><div id="op-save-msg" class="l2" role="status" aria-live="polite"></div>`;
-  html+=H(`Operator nodes (${bases.length})`);
-  for(const b of bases){ const loc=isLocalBase(b), tokd=!!(m[b]), pub=publicBases.includes(b);
+  const bases=[...new Set([...localBases,...publicBases])];
+  let html=H('Public node inspection')
+    +`<div class="desc2">Every published persona, environment, task, artifact, workspace, message, telemetry, knowledge, tool, and open-input record is readable here. Human browser submissions and owner mutations are disabled until the deployment runtime has a separately verified secure boundary. Signed personas continue through their authenticated action transport.</div>`;
+  html+=H(`Public nodes (${bases.length})`);
+  for(const b of bases){ const loc=isLocalBase(b), pub=publicBases.includes(b);
     html+=`<div class="grant"><span>${esc(b)}${loc?' <span class="l2">· local route</span>':''}</span>`
     +`<span>${pub?'<span class="ok">public read</span> · ':''}<a href="#" data-act="op-node" data-base="${esc(b)}">inspect →</a>`
-    +(tokd?` · <a href="#" data-act="op-del" data-base="${esc(b)}">forget ${icon('x','ico-sm')}</a>`:'')+`</span></div>`; }
-  if(!bases.length) html+=`<div class="l2">no saved owner credentials and no local node route discovered. Public nodes remain readable from their verified live cards; add a node here to inspect it or provide its bearer for owner controls.</div>`;
-  return {title:`<span class="kind k-env">OPERATOR</span> console`,html};
+    +`</span></div>`; }
+  if(!bases.length) html+=`<div class="l2">No complete public node route is verified yet. Live cards will appear here as global discovery resolves them.</div>`;
+  return {title:`<span class="kind k-env">PUBLIC DATA</span> nodes`,html};
 }
 
 async function operatorNodeView(b){
@@ -11358,11 +11303,10 @@ async function operatorNodeView(b){
       +(mixed
         ?` — this page is served over <b>HTTPS</b> and browsers block it from calling an <b>HTTP</b> node. Open the node's own console directly; that node's policy will say whether a bearer is needed: <a href="${esc(key)}/" target="_blank" rel="noopener">${esc(key)}/</a>`
         :` — check the node is running and reachable at <code>${esc(key)}</code>.`)+`</div>`;
-    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(key)}`,html};
+    return {title:`<span class="kind k-env">PUBLIC DATA</span> ${esc(key)}`,html};
   }
-  if(access.publicRead) html+=`<div class="desc2"><span class="ok">complete public read projection available</span> — owner controls remain disabled until this browser presents the node's bearer.</div>`;
-  else if(access.bearer) html+=`<div class="desc2"><span class="ok">complete read projection and owner controls available</span> — the node accepted this browser's bearer.</div>`;
-  else if(limited) html+=`<div class="desc2"><span class="no">limited public projection</span> — full authority was not granted; a saved bearer may be missing or rejected, or this node's policy requires one.</div>`;
+  if(access.publicRead) html+=`<div class="desc2"><span class="ok">complete public read projection available</span> — this browser remains display-only.</div>`;
+  else if(limited) html+=`<div class="desc2"><span class="no">limited public projection</span> — this node did not publish the complete public read surface.</div>`;
   html+=kv('Node',S0(st.node_id))+kv('Backend',S0(st.backend)+' · '+S0(st.active_model))
     +kv('Lineage',st.lineage_durable?`<span class="ok">${icon('check','ico-sm')} durable</span>`:(limited?'—':'<span class="no">in-memory only</span>'))
     +kv('Model-call budget',st.task_model_call_budget==null
@@ -11415,26 +11359,15 @@ async function operatorNodeView(b){
     return `<div class="grant"><span>${esc(p.task||'Retained task run')}</span>`
       +`<span><b class="work-state-status is-${esc(mechanical.key)}">${esc(mechanical.label)}</b> <small class="l2">${esc(mechanical.detail)}</small></span></div>`;
   }).join('');
-  html+=H('Optional human input')
-    +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. A human may add information later, but silence never creates a wait state or stops persona, peer, environment, or tool-driven progress.</div>`;
+  html+=H('Human input policy')
+    +`<div class="l2">Persona questions and peer answers stay visible in the signed live activity stream. Human browser submission is temporarily disabled; signed personas may answer through their authenticated action surface, and silence never creates a wait state.</div>`;
   if(!full){
-    html+=H('Node controls')
-      +`<div class="l2">This response did not grant the complete read projection. Remove a rejected saved credential or present a valid bearer if this node is not public.</div>`;
-    return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
+    html+=H('Public read status')
+      +`<div class="l2">This response did not provide the complete public read projection. The browser does not request or retain owner credentials.</div>`;
+    return {title:`<span class="kind k-env">PUBLIC DATA</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
   }
-  if(access.control) html+=H('Ask the node — owner intake')
-    +`<div class="opform"><label class="field"><span class="field-label">task</span>`
-    +`<textarea id="op-task" rows="3" placeholder="any task in any field — the domain emerges at runtime"></textarea></label>`
-    +`<div class="oprow"><label class="field"><span class="field-label">budget</span>`
-    +`<input id="op-budget" type="number" min="1" placeholder="optional for ASK · required for FUND"></label>`
-    +`<button class="btn btn-primary" data-act="op-ask" data-base="${esc(b)}" title="start a new task run from the text above (budget optional)">${icon('ask')} ASK</button>`
-    +`<button class="btn" data-act="op-fund" data-base="${esc(b)}" title="add budget to a run (use a run id to target existing work)">${icon('fund')} FUND</button>`
-    +`<label class="field"><span class="field-label">run id (advanced)</span>`
-    +`<input id="op-run-target" placeholder="paste a run id to stop or fund"></label>`
-    +`<button class="btn btn-stop" data-act="op-stop" data-base="${esc(b)}" title="halt the targeted run, or ALL active runs if no run id is entered">${icon('stop')} STOP</button></div>`
-    +`<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>`;
-  else html+=H('Owner controls')
-    +`<div class="l2">Read-only public inspection is active. ASK / FUND / STOP and tool invocation are not offered without this node's accepted process bearer.</div>`;
+  html+=H('Browser access')
+    +`<div class="l2">Read-only public inspection is active. This UI offers no task, response, budget, stop, or tool-invocation mutation, even if older browser storage contains a process bearer.</div>`;
   // 09_PROTOCOLS §2/A.1: the kernel's MCP tool surface — substrate built-ins +
   // persona-authored, FSM-promoted env tools (invocable below, kernel-mediated).
   const mcp=await fetchJson(join(b,'mcp/tools'));
@@ -11447,15 +11380,10 @@ async function operatorNodeView(b){
       `<div class="grant"><span>${esc(t.name)} <span class="l2">${esc(t.description||'')}</span></span>`
       +`<span class="l2">${esc(eid.slice(0,22))} · by ${esc((t.author_persona_id||'').slice(-8))}</span></div>`).join('')).join('');
     else html+=`<div class="l2">no persona-authored tools promoted yet — a persona authors one via the ToolArtifact FSM; promotion mounts it here.</div>`;
-    if(access.control) html+=`<div class="opform"><div class="oprow">`
-      +`<label class="field"><span class="field-label">environment id (optional)</span><input id="op-mcp-env" placeholder="env id"></label>`
-      +`<label class="field"><span class="field-label">tool</span><input id="op-mcp-tool" placeholder="e.g. sandbox_exec"></label>`
-      +`<label class="field"><span class="field-label">args JSON</span><input id="op-mcp-args" placeholder='{"code":"print(42)"}'></label>`
-      +`<button class="btn" data-act="op-mcpcall" data-base="${esc(b)}">${icon('tool')} CALL</button></div></div>`;
-    else html+=`<div class="l2">Tool inventory is public; invoking a tool is an owner mutation and requires the node bearer.</div>`;
+    html+=`<div class="l2">Tool inventory is public; browser invocation is disabled under the current deployment policy.</div>`;
   }
   html+=verificationReferencesDetails([['node id',st.node_id||''],['node URL',b]]);
-  return {title:`<span class="kind k-env">OPERATOR</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
+  return {title:`<span class="kind k-env">PUBLIC DATA</span> ${esc(_kernelDisplayContext(st.node_id||'').label)}`,html};
 }
 
 async function operatorRunView(b,run){
@@ -11493,14 +11421,9 @@ async function operatorRunView(b,run){
     currentExecution:publicTask?.currentExecution===true||(!publicTask&&liveActive),
     source:publicTask?'signed task lifecycle':'unsigned operator status',
   });
-  const canOperate=!terminal&&statusAccess.control;
-  let html=canOperate?('<div class="opform"><div class="oprow">'
-    +'<label class="field"><span class="field-label">add budget</span><input id="opr-budget" type="number" min="1" placeholder="amount"></label>'
-    +'<button class="btn" data-act="op-fund" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="add budget to this run">'+icon('fund')+' FUND</button>'
-    +'<button class="btn btn-stop" data-act="op-stop" data-base="'+esc(b)+'" data-run="'+esc(run)+'" title="halt this run">'+icon('stop')+' STOP</button></div>'
-    +'<div id="op-out" class="opout" role="status" aria-live="polite"></div></div>')
-    :(terminal?'<div class="l2">Signature-checked termination evidence reports no active execution; run controls are no longer shown.</div>'
-      :'<div class="l2">Read-only run monitor. Owner controls appear only after this browser presents an accepted process bearer.</div>');
+  let html=terminal
+    ?'<div class="l2">Signature-checked termination evidence reports no active execution.</div>'
+    :'<div class="l2">Read-only run monitor. Human browser mutation controls are disabled under the current deployment policy.</div>';
   html+=kv('Task',taskText?`<span class="off-white">${esc(taskText)}</span>`
       :'<span class="l2">Task text not published</span>')
     +kv('Mechanical run state',`<span class="work-state-status is-${esc(mechanical.key)}">${esc(mechanical.label)}</span> <span class="l2">${esc(mechanical.detail)}</span>`)
@@ -12074,7 +11997,7 @@ function wire(){
       // The discovery pass remains bounded and is ignored while another is active.
       if(S.q&&!loadedMatch&&!S.kernelFocus&&globalDiscoveryEndpoints().length) discover().catch(()=>{});
     },120); });
-  // OPERATOR is a TOGGLE: a second click closes the console it opened. We tag the
+  // PUBLIC DATA is a toggle: a second click closes the read drawer it opened. We tag the
   // drawer with S._topIsOp; opening any other drawer (openDetail) or closing the
   // drawer clears the flag, so the toggle reflects true open-ness.
   $('#opbtn').addEventListener('click',()=>{
@@ -12094,8 +12017,7 @@ function wire(){
     $('#introclose')?.addEventListener('click',()=>{ intro.hidden=true;
       hb.setAttribute('aria-expanded','false'); });
   }
-  // missions strip → open the mission record, or the operator run console when
-  // the card came from a token-gated /status (running/paused mission).
+  // Missions strip → open the signed mission record or its public run monitor.
   const mc=$('#missionCards');
   if(mc) mc.addEventListener('click',(e)=>{ const c=e.target.closest('.mcard'); if(!c) return;
     if(c.dataset.mrec){ openDetail(c.dataset.mrec,c); return; }
@@ -12121,64 +12043,8 @@ function wire(){
       if(wasCollapsed){ S.bundleDirs.delete(key); S.bundleDirsOpen.add(key); }
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
-    if(act==='op-save'){ let raw=$('#op-base').value.trim(); if(raw && !/^https?:\/\//i.test(raw)) raw=(location.protocol==='https:'?'https://':'http://')+raw; const nb=opBaseKey(raw), tv=$('#op-token').value.trim();
-      const msg=$('#op-save-msg');
-      if(!nb){ if(msg) msg.textContent='enter the node base URL first'; return; }
-      if(tv){ const m2=opTokens(); m2[nb]=tv; opSaveTokens(m2); S.views[S.views.length-1]=()=>operatorView(); renderTop(); discover(); return; }
-      if(msg) msg.textContent='checking whether this node publishes a public read projection…';
-      a.disabled=true; a.setAttribute('aria-busy','true');
-      fetchNodeStatus(nb).then((status)=>{
-        if(!status){ if(msg) msg.textContent='could not reach a public node at this URL'; }
-        else if(nodeStatusAccess(nb,status).publicRead){
-          S.portalPeers.add(nb);
-          const kernel=String(status?.node_id||status?.kernel_id||'');
-          if(kernel) noteKernel(kernel,'manual',nb,{reachable:true});
-          S.views[S.views.length-1]=()=>operatorNodeView(nb); renderTop(); discover();
-        }else if(msg) msg.textContent='this node did not publish a complete public read projection; enter its operator token';
-      }).catch(()=>{ if(msg) msg.textContent='could not reach a public node at this URL'; })
-        .finally(()=>{ a.disabled=false; a.removeAttribute('aria-busy'); });
-      return; }
-    if(act==='op-del'){ const m2=opTokens(); delete m2[a.dataset.base]; opSaveTokens(m2);
-      S.views[S.views.length-1]=()=>operatorView(); renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
-    if(act==='op-mcpcall'){ const b2=a.dataset.base, out=$('#op-out');
-      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
-      const tf=$('#op-mcp-tool'); const tool=(tf?.value||'').trim();
-      if(!tool){ if(out) out.textContent='enter a tool name first'; opInvalid(tf); return; }
-      const af=$('#op-mcp-args'); let args={}; try{ args=JSON.parse((af?.value||'').trim()||'{}'); }
-      catch(e){ if(out) out.textContent='args must be valid JSON'; opInvalid(af); return; }
-      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-      opPending(out,'calling (kernel-mediated, sandboxed)…');
-      opPost(b2,'mcp/call',{environment_id:($('#op-mcp-env')?.value||'').trim(),tool,args})
-        .then((r)=>{ done(); if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); } });
-      return; }
-    if(act==='op-ask'||act==='op-fund'||act==='op-stop'){ const b2=a.dataset.base, out=$('#op-out');
-      // a run-scoped control (operatorRunView's inline FUND/STOP) carries the run on the
-      // button; prefer it over the console-level #op-run-target field.
-      const run=(a.dataset.run||$('#op-run-target')?.value||'').trim();
-      // when the button is run-scoped, re-render the SAME run (so a phone stays on the
-      // run it just funded/halted and re-fetches THAT run's status), not the parent node.
-      const isRunScoped=!!a.dataset.run;
-      const done=()=>{ a.dataset.busy=''; a.disabled=false; a.removeAttribute('aria-busy'); };
-      // ASK/FUND/STOP mutate node state — leave the result visible briefly, then
-      // re-render the console so the new run / updated paused list shows.
-      const show=(r)=>{ done();
-        if(out){ showOpResult(out,r); out.scrollIntoView({block:'nearest'}); }
-        if(r.status>=200&&r.status<300){ const bi=$('#opr-budget')||$('#op-budget'); if(bi) bi.value='';   // clear the budget so the 3s re-render window can't double-fund
-          S.views[S.views.length-1]= isRunScoped ? (()=>operatorRunView(b2,run)) : (()=>operatorNodeView(b2));
-          const sc=$('#detailbody').scrollTop; setTimeout(()=>renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }),3000); } };
-      if(a.dataset.busy) return; a.dataset.busy='1'; a.disabled=true; a.setAttribute('aria-busy','true');
-      if(act==='op-ask'){ const tf=$('#op-task'); const text=(tf?.value||'').trim(); if(!text){ if(out) out.textContent='enter a task first'; opInvalid(tf); done(); return; }
-        const body={text}; const bd=+($('#op-budget')?.value||0); if(bd>0) body.budget=bd;
-        opPending(out,'submitting…'); opPost(b2,'task',body).then(show); }
-      else if(act==='op-fund'){ const bf=$('#opr-budget')||$('#op-budget'); const bd=+(($('#opr-budget')?.value)||($('#op-budget')?.value)||0); if(!(bd>0)){ if(out) out.textContent='enter a budget > 0'; opInvalid(bf); done(); return; }
-        const body={budget:bd}; if(run) body.run=run;
-        opPending(out,'funding…'); opPost(b2,'budget',body).then(show); }
-      else { if(!run && !confirm('No run id entered — stop ALL active runs on this node?')){ done(); return; }
-        const body={}; if(run) body.run=run;
-        opPending(out,'stopping…'); opPost(b2,'stop',body).then(show); }
-      return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='live-file') pushView(()=>liveFileView(base,a.dataset.run,a.dataset.workspace,a.dataset.path));
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,

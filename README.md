@@ -358,35 +358,23 @@ paths associate artifacts only when exactly one observed environment owns the ru
 artifact stays unassigned and the stage reports the unresolved pressure instead of duplicating it
 under a guessed workspace.
 
-## Operator console — drive your own node from the portal
+## Public data drawer — inspect nodes without browser write authority
 
 On a node configured as public, anonymous visitors can read the node's complete public projection:
 personas, environments, tasks, run state, work notes, artifacts and their published bytes,
 telemetry, and open-input records. Public read access does not imply input or control authority.
-Open-input questions remain display-only in this browser, and all owner mutations stay gated.
+Open-input questions remain display-only in this browser, and the portal exposes no owner
+mutation surface.
 
-Authority is a **bearer token, never network position** (not even loopback). Each node mints
-a process bearer at boot and prints its exact temporary file path (the default is
-`runs/node/.personaos-secrets/operator.token`). Capture it before the first model call: the node
-then unlinks that same-UID-readable file while retaining the bearer in memory; a restart without
-the file rotates it. Click **OPERATOR** to inspect a public node without credentials, or save
-`node base URL + token` to unlock owner controls for that node:
+Click **PUBLIC DATA** to inspect complete verified node read projections and run drill-downs:
+live execution state, pressure/review state, workspace files, artifact lists, and per-objective
+evidence. The page neither asks for nor retains a process bearer. Older browser credentials are
+deleted on load, and the UI renders no task, response, budget, stop, or tool-invocation control.
 
-- **owner control state** — budget and intervention controls layered over the public read view;
-- **⚡ ASK** — submit a task as the owner (`POST /task`); **💰 FUND** — grant budget to resume
-  a paused mission (`POST /budget`); **⏹ STOP** — halt a running mission as a signed operator
-  intervention (`POST /stop`);
-- run drill-down - live execution state, pressure/review state, updating workspace files,
-  artifact lists, and per-objective **evidence basis**;
-- protected fetches carry the token in `Authorization: Bearer …`; authenticated live updates
-  use the 3-second polling path because browser `EventSource` cannot set that header. Public
-  streams continue to use SSE.
-
-Tokens are kept only in `sessionStorage` and are cleared when the tab session ends. Older
-durable portal credentials are deleted on load. Tokens are never appended to artifact,
-body, raw-view, download, or stream URLs. A page without a token can never mint authority —
-cross-origin browser requests to someone's node get the public projection and signed refusals,
-by design (audit5 A5-01/A5-08).
+Owner automation remains a separate controlled-client API protected by the node's process bearer;
+signed personas use their own authenticated action transport. Browser mutation may return only
+after the Docker/runtime and submission boundary is separately secured and represented by an
+explicit design change (audit5 A5-01/A5-08).
 
 ## Run locally
 
