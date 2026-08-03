@@ -442,4 +442,4 @@ function afterPaint(){
 
 const painted=await identityFirst().catch(()=>false);
 if(painted) await afterPaint();
-await import('./discovery.js?v=20260803-signed-open-inputs-v2');
+await import('./discovery.js?v=20260803-public-input-policy-v3');

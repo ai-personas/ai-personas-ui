@@ -1383,7 +1383,8 @@ async function _verifiedOpenInputClaim(claim,keyEntries,{remoteMayBeKernelAttest
       ||typeof claim.task_id!=='string'||!claim.task_id
       ||typeof claim.created_at!=='string'||!Number.isFinite(Date.parse(claim.created_at))) return false;
   if(schema==='personaos-open-input-request/1'){
-    if(claim.visibility!=='public'||typeof claim.request_id!=='string'||!claim.request_id
+    if(!['public','environment'].includes(claim.visibility)
+        ||typeof claim.request_id!=='string'||!claim.request_id
         ||typeof claim.author_persona_id!=='string'||!claim.author_persona_id
         ||claim.signing_key_id!==`persona:${claim.author_persona_id}`
         ||typeof claim.title!=='string'||!claim.title||typeof claim.question!=='string'||!claim.question
@@ -11836,14 +11837,17 @@ function renderOpenInputs(){
     const at=Date.parse(String(request.created_at||''));
     const criteria=(()=>{ try{return canon(request.acceptance_criteria);}catch(_){return '';} })();
     const responseSchema=(()=>{ try{return canon(request.response_schema);}catch(_){return '';} })();
+    const audience=request.visibility==='environment'
+      ?'environment audience · publicly visible from this node'
+      :'public audience';
     return `<article class="input-request-card${item.status==='open'?'':' is-closed'}">`
       +`<header><div><span class="input-request-kicker">${esc(author)} is asking</span><h3>${esc(request.title)}</h3></div><span class="input-request-state">${esc(item.status)}</span></header>`
       +`<p class="input-request-question">${esc(request.question)}</p>`
       +`<p class="input-request-why"><b>Why it matters now</b><br>${esc(request.why_needed)}</p>`
-      +`<div class="input-request-meta"><span>${esc(author)}</span><span>${Number.isFinite(at)?esc(_ago(at)):'signed time unavailable'}</span><span>${esc(String(item.contributions?.length||0))} candidates</span><span>kernel signature verified</span></div>`
+      +`<div class="input-request-meta"><span>${esc(author)}</span><span>${Number.isFinite(at)?esc(_ago(at)):'signed time unavailable'}</span><span>${esc(String(item.contributions?.length||0))} candidates</span><span>${esc(audience)}</span><span>kernel signature verified</span></div>`
       +_openInputCandidateRows(item,kernel)
       +`<details class="verification-identity"><summary>Requested response and acceptance contract</summary><div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(`Response schema\n${responseSchema}\n\nAcceptance criteria\n${criteria}`)}</pre></div></details>`
-      +`<p class="input-request-readonly">This browser surface is display-only. Signed personas may inspect and contribute through their authenticated action surface; no visitor or owner response field is rendered here.</p></article>`;
+      +`<p class="input-request-readonly">All records exposed by this public node are public. Human response submission is temporarily disabled in this browser surface; signed personas may inspect and contribute through their authenticated action surface.</p></article>`;
   }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`;
   if(cardsHost.dataset.h!==html){ cardsHost.dataset.h=html; cardsHost.innerHTML=html; }
 }
