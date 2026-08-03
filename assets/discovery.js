@@ -55,7 +55,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260803-engineering-preview-v3';
+} from './artifact-types.mjs?v=20260803-engineering-preview-v4';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -259,7 +259,7 @@ async function readBoundedResponseBytes(response,maxBytes){
     const bytes=await response.arrayBuffer();
     if(!responseByteLengthWithinLimit(bytes.byteLength,maxBytes))
       throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
-    return bytes;
+    return new Uint8Array(bytes);
   }
   const reader=response.body.getReader(), chunks=[]; let total=0;
   try{
@@ -272,7 +272,7 @@ async function readBoundedResponseBytes(response,maxBytes){
   }finally{ try{ reader.releaseLock(); }catch(e){} }
   const out=new Uint8Array(total); let offset=0;
   for(const chunk of chunks){ out.set(chunk,offset); offset+=chunk.byteLength; }
-  return out.buffer;
+  return out;
 }
 function _downloadName(name){
   const leaf=String(name||'artifact.bin').split(/[\\/]/).pop()
@@ -556,6 +556,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   // Kernel-signed live snapshots/events remain separate from signed discovery
   // records. File bytes are also checked against each signed advertised sha256.
   liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
+  verifiedArtifactBodies:new Map(), verifiedArtifactBodyJobs:new Map(), verifiedArtifactBodyBytes:0,
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
   liveArtifactPublicProbes:new Map(),
   terminalCallTombstones:new Map(),
@@ -4563,24 +4564,60 @@ async function fetchBlob(u){
   return {blob:b,size:b.size,type};
 }
 async function fetchVerifiedLiveBody(url,expectedHash){
-  try{
-    let bytes,type='application/octet-stream';
-    try{
-      const r=await fetch(url,secureFetchInit(url));
+  const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
+  if(!/^[a-f0-9]{64}$/.test(expected))
+    return {ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
+  let absoluteUrl; try{ absoluteUrl=new URL(url,location.href).href; }
+  catch(_){ return {ok:false,checkOutcome:'failed',error:'invalid artifact URL'}; }
+  const cacheKey=`${expected}\u0000${absoluteUrl}`;
+  const cached=S.verifiedArtifactBodies.get(cacheKey);
+  if(cached){
+    // Refresh insertion order so the byte-bound cache behaves as an LRU. The
+    // hash was checked before insertion; a reused entry never skips the
+    // advertised-hash binding because the digest is part of the cache key.
+    S.verifiedArtifactBodies.delete(cacheKey); S.verifiedArtifactBodies.set(cacheKey,cached);
+    return {...cached,blob:new Blob([cached.bytes],{type:cached.type})};
+  }
+  const pending=S.verifiedArtifactBodyJobs.get(cacheKey); if(pending) return pending;
+  let job;
+  const request=(async()=>{ try{
+    const controller=new AbortController();
+    const httpAttempt=(async()=>{
+      const r=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
       if(!r.ok) throw new Error(`body HTTP ${r.status}`);
-      bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
-      type=r.headers.get('content-type')||type;
-    }catch(httpError){
-      bytes=await fetchP2PArtifactBytes(url,`sha256:${expectedHash}`,
+      const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+      return {bytes,type:r.headers.get('content-type')||'application/octet-stream'};
+    })();
+    const attempts=[httpAttempt];
+    if(p2pDataRouteForUrl(absoluteUrl)&&P2P?.fetchPublicBlob) attempts.push((async()=>{
+      const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,
         LIVE_ARTIFACT_LIMITS.maxFileBytes);
-      if(!bytes) throw httpError;
+      if(!bytes) throw new Error('verified peer body unavailable');
+      return {bytes,type:'application/octet-stream'};
+    })());
+    let loaded;
+    try{ loaded=attempts.length===1?await httpAttempt:await Promise.any(attempts); }
+    finally{ controller.abort(); }
+    const {bytes,type}=loaded,actual=await sha256Hex(bytes);
+    if(actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
+    const verified={ok:true,actual,bytes,type,size:bytes.byteLength};
+    S.verifiedArtifactBodies.set(cacheKey,verified);
+    S.verifiedArtifactBodyBytes+=bytes.byteLength;
+    const maxCacheBytes=LIVE_ARTIFACT_LIMITS.maxFileBytes*2;
+    while(S.verifiedArtifactBodies.size>16||S.verifiedArtifactBodyBytes>maxCacheBytes){
+      const oldestKey=S.verifiedArtifactBodies.keys().next().value;
+      if(oldestKey===undefined) break;
+      const oldest=S.verifiedArtifactBodies.get(oldestKey);
+      S.verifiedArtifactBodies.delete(oldestKey);
+      S.verifiedArtifactBodyBytes=Math.max(0,S.verifiedArtifactBodyBytes-Number(oldest?.size||0));
     }
-    const actual=await sha256Hex(bytes);
-    const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
-    if(!expected||actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
-    return {ok:true,actual,bytes,blob:new Blob([bytes],{type}),type,size:bytes.byteLength};
+    return {...verified,blob:new Blob([bytes],{type})};
   }catch(e){ const error=String(e&&e.message||e);
     return {ok:false,checkOutcome:/\bexceeds\b/i.test(error)?'failed':'unavailable',error}; }
+  })();
+  job=request.finally(()=>{ if(S.verifiedArtifactBodyJobs.get(cacheKey)===job)
+    S.verifiedArtifactBodyJobs.delete(cacheKey); });
+  S.verifiedArtifactBodyJobs.set(cacheKey,job); return job;
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -10267,6 +10304,10 @@ async function renderCsv(host,ctx){
 }
 async function artifactBytes(ctx,label='artifact'){
   if(ctx.verifiedBytes instanceof Uint8Array){ ctx.realSize=ctx.verifiedBytes.byteLength; return ctx.verifiedBytes; }
+  if(ctx.verifiedBytes instanceof ArrayBuffer){
+    ctx.verifiedBytes=new Uint8Array(ctx.verifiedBytes); ctx.realSize=ctx.verifiedBytes.byteLength;
+    return ctx.verifiedBytes;
+  }
   const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${label} body unavailable`);
   ctx.realSize=fb.size; return new Uint8Array(await fb.blob.arrayBuffer());
 }
@@ -10645,9 +10686,9 @@ function mountCadMeshPreview(host,mesh,title){
   canvas.width=1200; canvas.height=720; canvas.setAttribute('role','img'); canvas.setAttribute('aria-label',`${title} interactive 3D geometry preview`);
   canvas.tabIndex=0;
   const status=el('div','fv-3d-status'),left=el('span',null,'drag or arrow keys to orbit · wheel or +/− to zoom'),right=el('span'); status.append(left,right);
-  let yaw=-.72,pitch=-.52,zoom=1,solid=true,edges=true,drag=null;
+  let yaw=-.72,pitch=.52,zoom=1,solid=true,edges=true,drag=null;
   const viewButton=(label,apply)=>{ const button=el('button','fv-btn',label); button.type='button'; button.addEventListener('click',()=>{ apply(); draw(); }); controls.appendChild(button); return button; };
-  viewButton('Isometric',()=>{yaw=-.72;pitch=-.52;zoom=1;}); viewButton('Top',()=>{yaw=0;pitch=-Math.PI/2+.001;zoom=1;});
+  viewButton('Isometric',()=>{yaw=-.72;pitch=.52;zoom=1;}); viewButton('Top',()=>{yaw=0;pitch=Math.PI/2-.001;zoom=1;});
   viewButton('Front',()=>{yaw=0;pitch=0;zoom=1;}); viewButton('Right',()=>{yaw=-Math.PI/2;pitch=0;zoom=1;});
   viewButton('Fit',()=>{zoom=1;});
   const solidButton=viewButton('Surface',()=>{solid=!solid; solidButton.setAttribute('aria-pressed',String(solid));}); solidButton.setAttribute('aria-pressed','true');
@@ -10705,7 +10746,7 @@ function mountCadMeshPreview(host,mesh,title){
     else if(event.key==='ArrowUp') pitch=Math.max(-1.54,pitch-.10); else if(event.key==='ArrowDown') pitch=Math.min(1.54,pitch+.10);
     else if(event.key==='+'||event.key==='=') zoom=Math.min(6,zoom*1.12);
     else if(event.key==='-'||event.key==='_') zoom=Math.max(.25,zoom/1.12);
-    else if(event.key==='0'){ yaw=-.72; pitch=-.52; zoom=1; } else handled=false;
+    else if(event.key==='0'){ yaw=-.72; pitch=.52; zoom=1; } else handled=false;
     if(handled){ event.preventDefault(); draw(); }
   });
   wrap.append(controls,canvas,status); host.appendChild(wrap); draw(); return true;
@@ -10971,6 +11012,8 @@ async function renderOpenScad(host,ctx){
       preview.addEventListener('click',async()=>{
         for(const candidate of actions.closest('.fv-scad-companions').querySelectorAll('.fv-scad-companion-actions button')) candidate.disabled=true;
         try{ await renderOpenScadCompanion(inlineHost,ctx,file); }
+        catch(error){ inlineHost.innerHTML='';
+          inlineHost.appendChild(el('div','fv-warn',`The companion preview could not open: ${String(error?.message||error).slice(0,180)}`)); }
         finally{ for(const candidate of actions.closest('.fv-scad-companions').querySelectorAll('.fv-scad-companion-actions button')) candidate.disabled=false; }
       });
       const button=el('button','fv-btn','Open file'); button.type='button';

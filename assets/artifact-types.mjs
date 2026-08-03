@@ -12,6 +12,12 @@
 const MEDIA_TYPE_LIMIT = 256;
 const MEDIA_TYPE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/;
 const GENERIC_MEDIA_TYPES = new Set(['application/octet-stream','binary/octet-stream']);
+// `text/plain` describes a transport-safe byte family, not a format. It is a
+// common fallback for source formats whose server does not carry a registered
+// media type. A verified, format-specific suffix may therefore refine it for
+// presentation in the same way that a suffix refines an octet-stream response.
+// Specific declared media types still outrank every path hint.
+const AMBIGUOUS_MEDIA_TYPES = new Set([...GENERIC_MEDIA_TYPES,'text/plain']);
 const PATH_MEDIA_TYPES = Object.freeze({
   svg:'image/svg+xml',
   avif:'image/avif',
@@ -185,9 +191,9 @@ export function selectArtifactRenderer(mediaKind,{path='',responseMedia='',conte
   }
   if(STRONG_CONTENT_MEDIA_TYPES.has(content.mediaType))
     return Object.freeze({...content,source:'bytes'});
-  if(declared.mediaType&&!GENERIC_MEDIA_TYPES.has(declared.mediaType))
+  if(declared.mediaType&&!AMBIGUOUS_MEDIA_TYPES.has(declared.mediaType))
     return Object.freeze({...declared,source:'declared'});
-  if(response.mediaType&&!GENERIC_MEDIA_TYPES.has(response.mediaType))
+  if(response.mediaType&&!AMBIGUOUS_MEDIA_TYPES.has(response.mediaType))
     return Object.freeze({...response,source:'response'});
   if(fallback.mediaType) return Object.freeze({...fallback,source:'path'});
   if(content.mediaType&&!GENERIC_MEDIA_TYPES.has(content.mediaType))
