@@ -966,6 +966,69 @@ function authoredArtifactLabelText(value){ return authoredArtifactLabels(value).
 function artifactSemanticsAttr(value){ return JSON.stringify(authoredArtifactLabels(value)); }
 function artifactSemanticsFromAttr(value){ try{ const parsed=JSON.parse(String(value||'[]'));
     return Array.isArray(parsed)?parsed:[]; }catch(_){ return []; } }
+const _ARTIFACT_DECLARATION_DISPLAY_SCHEMA='ai-personas-ui-artifact-declaration-display/1';
+function _artifactDeclarationDisplayProjection(value){
+  const a=value&&typeof value==='object'?value:{}, L=a._links||{};
+  const direct=a.artifact_declaration&&typeof a.artifact_declaration==='object'
+    ?a.artifact_declaration:(L.artifact_declaration&&typeof L.artifact_declaration==='object'?L.artifact_declaration:{});
+  const provenance=a.provenance&&typeof a.provenance==='object'?a.provenance:{};
+  const publicationDeclaration=provenance.schema==='personaos-live-artifact-declaration-publication-provenance/1'
+    &&provenance.authority==='verified_artifact_declaration_and_environment_publication'?provenance:{};
+  const projected=value?.schema===_ARTIFACT_DECLARATION_DISPLAY_SCHEMA?value:null;
+  const text=(candidate,limit=1024)=>String(candidate??'').trim().slice(0,limit);
+  const title=text(projected?.title||a.persona_authored_title||L.persona_authored_title
+    ||direct.title||publicationDeclaration.title);
+  const metadataSource=projected?.metadata&&typeof projected.metadata==='object'
+    ?projected.metadata:(a.persona_authored_metadata&&typeof a.persona_authored_metadata==='object'
+      ?a.persona_authored_metadata:(direct.metadata&&typeof direct.metadata==='object'
+        ?direct.metadata:(publicationDeclaration.metadata&&typeof publicationDeclaration.metadata==='object'
+          ?publicationDeclaration.metadata:{})));
+  let metadata={}, metadataOmitted=projected?.metadata_omitted===true;
+  try{
+    const encoded=JSON.stringify(metadataSource);
+    if(encoded.length<=8192) metadata=JSON.parse(encoded);
+    else metadataOmitted=true;
+  }catch(_){ metadataOmitted=true; }
+  const declaration={
+    schema:_ARTIFACT_DECLARATION_DISPLAY_SCHEMA,
+    title,
+    declaring_persona_id:text(projected?.declaring_persona_id||direct.declaring_persona_id
+      ||publicationDeclaration.declaring_persona_id,512),
+    declared_task_id:text(projected?.declared_task_id||direct.declared_task_id
+      ||publicationDeclaration.declared_task_id,512),
+    declaration_event_id:text(projected?.declaration_event_id||direct.declaration_event_id
+      ||publicationDeclaration.declaration_event_id,512),
+    declaration_event_hash:text(projected?.declaration_event_hash||direct.declaration_event_hash
+      ||publicationDeclaration.declaration_event_hash,256),
+    source_action_id:text(projected?.source_action_id||direct.action_id
+      ||direct.source_persona_action?.action_id,512),
+    metadata,
+    metadata_omitted:metadataOmitted,
+  };
+  declaration.present=Boolean(declaration.title||declaration.declaring_persona_id
+    ||declaration.declaration_event_id||Object.keys(metadata).length||metadataOmitted);
+  return Object.freeze(declaration);
+}
+function artifactDeclarationAttr(value){ return JSON.stringify(_artifactDeclarationDisplayProjection(value)); }
+function artifactDeclarationFromAttr(value){ try{
+  const parsed=JSON.parse(String(value||'{}'));
+  return _artifactDeclarationDisplayProjection(parsed);
+}catch(_){ return _artifactDeclarationDisplayProjection({}); } }
+function _artifactDeclarationPersonaLabel(declaration,kernel=''){
+  const id=String(declaration?.declaring_persona_id||'');
+  return id?(_nameFor(id,kernel)||_shortId(id)||id):'';
+}
+function _artifactDeclarationMetadataHTML(declaration){
+  const metadata=declaration?.metadata&&typeof declaration.metadata==='object'?declaration.metadata:{};
+  const entries=Object.entries(metadata).slice(0,24);
+  if(!entries.length&&!declaration?.metadata_omitted) return '';
+  const rows=entries.map(([key,value])=>{ let rendered='';
+    try{ rendered=typeof value==='string'?value:JSON.stringify(value); }catch(_){ rendered=String(value); }
+    return kv(key,`<span class="artifact-authored-value">${esc(rendered)}</span>`);
+  }).join('');
+  return H('Persona-authored file details')+rows
+    +(declaration?.metadata_omitted?`<div class="fv-note">Additional authored metadata is retained in the signed record but is too large for this compact view.</div>`:'');
+}
 function manifestRun(m){ for(const a of manifestArtifacts(m)){ if(a&&a.run) return String(a.run); } return ''; }
 function indexLiveTelemetry(base,live,meta={}){
   if(!live||typeof live!=='object') return;
@@ -4930,10 +4993,12 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
   }
   for(const {file,name} of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const authored=authoredArtifactLabelText(file), presentation=_artifactFilePresentation(file.path||name);
+    const declaration=_artifactDeclarationDisplayProjection(file);
     const media=artifactMediaPresentation(file,file.path||name).mediaType;
+    const declarer=_artifactDeclarationPersonaLabel(declaration,String(state?.snapshot?.node_id||''));
     html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a class="live-tree-file-action" href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}" title="Open ${esc(presentation.exactPath)}">`
-      +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation)}`
-      +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
+      +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation,declaration)}`
+      +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
       +`<span class="current-artifact-preview">Open file →</span></a></div>`;
   }
   return html;
@@ -6200,10 +6265,13 @@ function _artifactFilePresentation(path){
     folderLabel:`${folders.length>visibleFolders.length?'… / ':''}${visibleFolders.join(' / ')}`,
   });
 }
-function _artifactFileIdentityHTML(presentation){
+function _artifactFileIdentityHTML(presentation,declaration={}){
   const item=presentation||_artifactFilePresentation('artifact');
-  return `<span class="artifact-file-title" title="${esc(item.exactPath)}"><b>${esc(item.title)}</b>`
+  const authoredTitle=String(declaration?.title||'').trim();
+  const primaryTitle=authoredTitle||item.title;
+  return `<span class="artifact-file-title" title="${esc(item.exactPath)}"><b>${esc(primaryTitle)}</b>`
     +(item.extensionLabel?`<span class="artifact-extension-badge" aria-label="file format ${esc(item.extensionLabel)}">${esc(item.extensionLabel)}</span>`:'')+'</span>'
+    +(authoredTitle?`<span class="artifact-file-location artifact-exact-filename"><small>File</small><span>${esc(item.filename)}</span></span>`:'')
     +(item.folderLabel?`<span class="artifact-file-location"><small>Folder</small><span>${esc(item.folderLabel)}</span></span>`:'');
 }
 function _artifactFormatTileHTML(presentation){
@@ -6320,7 +6388,8 @@ function _signedArtifactWorkspaceBinding(r){
   const mimeType=selectArtifactRenderer(L.mime_type).mediaType;
   if(!mimeType) return null;
   return {record:r,kernel:String(r._kernel||''),run:route[1],environmentId:authority.environmentId,
-    path:route[2],contentHash:linkHash,mimeType,authoredLabels:authoredArtifactLabels(r)};
+    path:route[2],contentHash:linkHash,mimeType,authoredLabels:authoredArtifactLabels(r),
+    declaration:_artifactDeclarationDisplayProjection(r)};
 }
 function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId='',workspaceId=''}={}){
   const liveHash=_exactSha256Digest(file?.sha256), livePath=String(file?.path||'');
@@ -6344,7 +6413,8 @@ function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId=''
   }
   if(!match) return null;
   return Object.freeze({mimeType:match.mimeType,
-    authoredLabels:Object.freeze([...match.authoredLabels]),recordId:String(match.record.record_id||'')});
+    authoredLabels:Object.freeze([...match.authoredLabels]),declaration:match.declaration,
+    recordId:String(match.record.record_id||'')});
 }
 function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMetadata=false}={}){
   if(!r) return '';
@@ -6353,6 +6423,7 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   // remains inert otherwise, and also requires an exact advertised SHA-256.
   // fileView performs the separate byte fetch + hash check only after selection.
   const L=r._links||{}, label=_artifactDisplayPath(r), filePresentation=_artifactFilePresentation(label);
+  const declaration=_artifactDeclarationDisplayProjection(r);
   const mediaSelection=artifactMediaPresentation(r,label);
   const media=mediaSelection.mediaType||'undeclared media';
   const typeLabel=artifactTypeLabel(mediaSelection.mediaType);
@@ -6372,17 +6443,18 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
   const canInspect=verifiedMetadata===true&&!!aid;
   if(!canPreview&&!canInspect){
     return `<div class="current-artifact-file artifact-preview-unavailable" aria-label="${esc(label)} — file not ready to open">`
-      +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
+      +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation,declaration)}`
       +`<small>${esc(typeLabel)} · The filename is available, but verified file bytes have not arrived yet.</small></span>`
       +`<span class="current-artifact-preview">${inProgress?'Still being created':'Not ready to open'}</span></div>`;
   }
   const action=canPreview
-    ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}"`
+    ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}" data-current-artifact-declaration="${esc(artifactDeclarationAttr(declaration))}"`
     :`data-artid="${esc(aid)}"`;
   const authored=authoredArtifactLabelText(r);
+  const declarer=_artifactDeclarationPersonaLabel(declaration,String(r._kernel||''));
   return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
-    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
-    +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
+    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation,declaration)}`
+    +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">${inProgress?'Still being created · ':''}${canPreview?'Open file':'View details'} →</span></button>`;
 }
 function _artifactActionHTML(r,{scope='output'}={}){
@@ -6448,15 +6520,17 @@ function _liveWorkspaceCurrentFileCount(rows){
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact'), filePresentation=_artifactFilePresentation(label);
   const metadata=_liveFileSignedArtifactMetadata(file,row);
+  const declaration=metadata?.declaration?.present?metadata.declaration:_artifactDeclarationDisplayProjection(file);
   const presentation=metadata
     ?selectArtifactRenderer(metadata.mimeType,{path:label})
     :artifactMediaPresentation(file,label);
   const media=presentation.mediaType;
   const authored=metadata?metadata.authoredLabels.join(' · '):authoredArtifactLabelText(file);
+  const declarer=_artifactDeclarationPersonaLabel(declaration,String(row?.kernel||''));
   const proof=[media||'type not declared',metadata?'signed file-card metadata':'signed workspace metadata',scope].join(' · ');
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="${esc(`Open ${label}. ${proof}`)}">`
-    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation)}`
-    +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${authored?` · ${esc(authored)}`:''}</small></span>`
+    +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation,declaration)}`
+    +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
@@ -10123,13 +10197,16 @@ function renderArtifactNode(node,prefix,depth,pkgRun){
   for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){
     const a=f.art, published=a.body_published!==false;
     const filePresentation=_artifactFilePresentation(f.path);
+    const declaration=_artifactDeclarationDisplayProjection(a);
     const authored=authoredArtifactLabels(a), semanticAttr=artifactSemanticsAttr(a);
     const media=declaredArtifactMedia(a);
+    const primaryTitle=declaration.title||filePresentation.title;
+    const declarer=_artifactDeclarationPersonaLabel(declaration,String(a._kernel||''));
     const body=published
-      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(media)}" data-semantics="${esc(semanticAttr)}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(filePresentation.title)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span></a>`
-      : `<span class="tgated" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(filePresentation.title)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span> <span class="no">· origin_gated</span></span>`;
+      ? `<a href="#" data-act="file" data-path="${esc(_bodyPath('artifacts/package/'+f.path,pkgRun))}" data-title="${esc(f.path)}" data-kind="${esc(media)}" data-semantics="${esc(semanticAttr)}" data-declaration="${esc(artifactDeclarationAttr(declaration))}" data-hash="${esc(a.content_hash||'')}" data-size="${esc(a.size_bytes??a.size??a.bytes??'')}" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(primaryTitle)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span></a>`
+      : `<span class="tgated" title="${esc(f.path)}"><span class="artifact-tree-file"><span>${esc(primaryTitle)}</span>${filePresentation.extensionLabel?`<em>${esc(filePresentation.extensionLabel)}</em>`:''}</span> <span class="no">· origin_gated</span></span>`;
     const sz=(a.size_bytes??a.size??a.bytes);
-    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${authored.length?`authored: ${esc(authored.join(' · '))} · `:''}${esc(media||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
+    h+=`<div class="tnode tfile" style="padding-left:${depth*14}px">${body}<span class="l2">${declaration.title?`${esc(filePresentation.filename)} · `:''}${declarer?`declared by ${esc(declarer)} · `:''}${authored.length?`authored: ${esc(authored.join(' · '))} · `:''}${esc(media||'—')}${sz!=null&&sz!==''?' · '+fmtBytes(+sz):''}</span></div>`; }
   return h;
 }
 function renderArtifactTree(arts,pkgRun){
@@ -11031,6 +11108,7 @@ async function renderOpenScad(host,ctx){
         button.dataset.hash=String(file.contentHash||file.sha256||'');
         button.dataset.size=String(file.size_bytes??file.size??'');
         button.dataset.semantics=JSON.stringify(Array.isArray(file.authoredLabels)?file.authoredLabels:[]);
+        button.dataset.declaration=artifactDeclarationAttr(file.declaration||{});
       }
       actions.append(preview,button); row.append(copy,actions); section.appendChild(row);
     }
@@ -11110,6 +11188,7 @@ async function liveFileView(base,run,workspaceId,path){
   return fileView(base,file.body_url,path,metadata?metadata.mimeType:declaredArtifactMedia(file),{
     raw,size:file.size_bytes,contentHash:file.sha256,
     authoredLabels:metadata?metadata.authoredLabels:authoredArtifactLabels(file),
+    artifactDeclaration:metadata?.declaration||_artifactDeclarationDisplayProjection(file),
     liveFile:{...file,run,revision:state.revision,generatedAt:state.generatedAt,bodyKey,source:state.source,
       terminalAtStart:Boolean(state.ended),endedAt:String(state.endedAt||'')},
   });
@@ -11119,6 +11198,9 @@ async function liveFileView(base,run,workspaceId,path){
 // asynchronously into #fv-body, with a graceful <pre> fallback on any failure.
 async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const filePresentation=_artifactFilePresentation(title);
+  const declaration=_artifactDeclarationDisplayProjection(opts.artifactDeclaration||{});
+  const humanTitle=declaration.title||filePresentation.title;
+  const declarer=_artifactDeclarationPersonaLabel(declaration,kernelForBase(base));
   const authoredLabels=artifactSemanticLabels({
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
@@ -11187,9 +11269,9 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
   const liveAttr=opts.liveFile?' data-live="1"':'';
   const rawTog=forcedPlain
-    ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">formatted view ←</a>`
+    ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-declaration="${esc(artifactDeclarationAttr(declaration))}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">formatted view ←</a>`
     : (!isBinary&&rendId!=='plain'
-        ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">plain text view</a>`
+        ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-declaration="${esc(artifactDeclarationAttr(declaration))}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">plain text view</a>`
         : `<span class="l2">${isBinary?'format preview':'plain text view'}</span>`);
   const mediaSource={
     declared:'signed artifact metadata',
@@ -11209,9 +11291,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
         :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
         +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''));
-  let html=kv('Name',`<span class="fv-human-file-name"><strong>${esc(filePresentation.title)}</strong>${filePresentation.extensionLabel?`<span class="artifact-extension-badge">${esc(filePresentation.extensionLabel)}</span>`:''}</span>`)
+  let html=kv(declaration.title?'Persona title':'Name',`<span class="fv-human-file-name"><strong>${esc(humanTitle)}</strong>${filePresentation.extensionLabel?`<span class="artifact-extension-badge">${esc(filePresentation.extensionLabel)}</span>`:''}</span>`)
     +kv('Filename',`<code>${esc(filePresentation.filename)}</code>`)
     +(filePresentation.folderLabel?kv('Folder',esc(filePresentation.folderLabel)):'')
+    +(declarer?kv('Declared by',`<strong>${esc(declarer)}</strong>`):'')
     +kv('Type',`<strong>${esc(artifactTypeLabel(pick.mediaType||kind))}</strong>`)
     +(!pick.mediaType?`<div class="fv-note">This file type is not yet recognised, so it opens in a safe general-purpose inspector.</div>`:'')
     +(authoredLabels.length?kv('Purpose',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
@@ -11221,6 +11304,13 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     +(hashAdvertised?`<div class="fv-integrity ${verified?.ok?'ok':'no'}">${verified?.ok
       ?`${icon('check','ico-sm')} Verified file — downloaded bytes match the workspace record.`
       :`${icon('x','ico-sm')} This file could not be verified and will not be previewed.`}</div>`:'')
+    +_artifactDeclarationMetadataHTML(declaration)
+    +verificationReferencesDetails([
+      ['artifact declaration event',declaration.declaration_event_id],
+      ['artifact declaration hash',declaration.declaration_event_hash],
+      ['declared task',declaration.declared_task_id],
+      ['source persona action',declaration.source_action_id],
+    ])
     +`<details class="fv-technical"><summary>Verification & file details</summary><div>${verificationRows}</div></details>`
     +liveDiff
     +`<div id="fv-body" class="fv-body"></div>`;
@@ -11254,7 +11344,7 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     await runRenderer(host);
     if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
   };
-  return {title:`<span class="kind k-artifact">FILE</span> <span class="fv-drawer-file-name">${esc(filePresentation.title)}${filePresentation.extensionLabel?` <em>${esc(filePresentation.extensionLabel)}</em>`:''}</span>`, html, mount};
+  return {title:`<span class="kind k-artifact">FILE</span> <span class="fv-drawer-file-name">${esc(humanTitle)}${filePresentation.extensionLabel?` <em>${esc(filePresentation.extensionLabel)}</em>`:''}</span>`, html, mount};
 }
 async function telemetryView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // 01_KERNEL §8/§11: live telemetry nests OTel/lineage under `kernel`
@@ -11720,6 +11810,7 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
     const _b=r._providerBase||r._base||'';
     if(cpath) return fileView(_b, /k\/run-/.test(_b)?cpath:_bodyPath(cpath,runOf(r)), r.label, declaredArtifactMedia(r),{
       authoredLabels:authoredArtifactLabels(r),
+      artifactDeclaration:_artifactDeclarationDisplayProjection(r),
       contentHash:L.content_hash||r.content_hash||null,
     });
   }
@@ -12194,10 +12285,12 @@ function wire(){
           size:candidate.dataset.currentArtifactSize!==''&&Number.isFinite(Number(candidate.dataset.currentArtifactSize))
             ?Number(candidate.dataset.currentArtifactSize):null,
           authoredLabels:artifactSemanticsFromAttr(candidate.dataset.currentArtifactSemantics),
+          declaration:artifactDeclarationFromAttr(candidate.dataset.currentArtifactDeclaration),
         }));
       const options={contentHash:currentFile.dataset.currentArtifactHash||null,
         size:size!==''&&Number.isFinite(Number(size))?Number(size):null,
-        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics),companionFiles};
+        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics),
+        artifactDeclaration:artifactDeclarationFromAttr(currentFile.dataset.currentArtifactDeclaration),companionFiles};
       S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(currentFile);
       S.views=[()=>fileView(currentFile.dataset.currentArtifactBase||'',currentFile.dataset.currentArtifactPath,
         currentFile.dataset.currentArtifactTitle,currentFile.dataset.currentArtifactKind,options)];
@@ -12305,14 +12398,15 @@ function wire(){
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
     else if(act==='live-file') pushView(()=>liveFileView(base,a.dataset.run,a.dataset.workspace,a.dataset.path));
     else if(act==='file'){ const o={contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,
-        authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics)};
+        authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics),
+        artifactDeclaration:artifactDeclarationFromAttr(a.dataset.declaration)};
       pushView(()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,o)); }
     else if(act==='fv-raw'){ // swap the CURRENT file view to forced plain text (re-render in place)
       if(a.dataset.live==='1'&&S.openLiveFile){ S.liveRawModes=S.liveRawModes||new Map(); S.liveRawModes.set(S.openLiveFile.bodyKey,true); renderTop(); }
-      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true,contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics)}); renderTop(); } }
+      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{raw:true,contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics),artifactDeclaration:artifactDeclarationFromAttr(a.dataset.declaration)}); renderTop(); } }
     else if(act==='fv-rich'){ // swap back to the rich media renderer
       if(a.dataset.live==='1'&&S.openLiveFile){ S.liveRawModes=S.liveRawModes||new Map(); S.liveRawModes.set(S.openLiveFile.bodyKey,false); renderTop(); }
-      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics)}); renderTop(); } }
+      else { S.views[S.views.length-1]=()=>fileView(base,a.dataset.path,a.dataset.title,a.dataset.kind,{contentHash:a.dataset.hash||null,size:a.dataset.size?+a.dataset.size:null,authoredLabels:artifactSemanticsFromAttr(a.dataset.semantics),artifactDeclaration:artifactDeclarationFromAttr(a.dataset.declaration)}); renderTop(); } }
     else if(act==='bundle'){ const br=a.dataset.rec?S.recs.get(a.dataset.rec):null; pushView(()=>bundleView(base,a.dataset.url,br?br._links:undefined)); }
     else if(act==='body') pushView(()=>bodyView(base,a.dataset.url));
     else if(act==='verify') pushView(()=>verifyView(base,a.dataset.url));
