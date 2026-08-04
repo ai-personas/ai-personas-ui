@@ -11776,13 +11776,13 @@ async function operatorRunView(b,run){
   else html+=terminal
     ?`<div class="l2">The signature-checked ${finalizedBootstrap?'finalized snapshot':'run-ended event'} cleared active execution; no model call remains active.</div>`
     :'<div class="l2">No model call is active at this instant.</div>';
-  html+=H('Live workspace files')
-    +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   if(publishedRunArtifacts.length){
-    html+=H('Published task artifacts')
+    html+=H('Complete published output')
       +_ownedOutputsHTML(publishedRunArtifacts,{label:'Complete signed package',scope:'task output'})
-      +'<div class="fv-note">These are the complete hash-bound files published for this exact run. Their presence is execution evidence, not a claim that the engineering is complete or production-ready.</div>';
+      +'<div class="fv-note">This package is the complete current hash-bound output for the run, including formats that may not appear in the smaller live-change capture below. Its presence is execution evidence, not a claim that the engineering is complete or production-ready.</div>';
   }
+  html+=H('Recent live workspace changes')
+    +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Recent live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
   const files=arts.package||arts.package_files||arts.files||[];
   if(files.length) html+=H(`Observed package paths (${files.length})`)+files.slice(0,100).map((file)=>{
     const path=typeof file==='string'?file:(file.path||file.title||'');
