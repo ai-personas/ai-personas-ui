@@ -6565,8 +6565,9 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       const exact=[row.workspaceId?`workspace ${row.workspaceId}`:'',row.run?`run ${row.run}`:'',row.revision?`revision ${row.revision}`:''].filter(Boolean).join(' · ');
       const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Live run started; no files captured yet';
       return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>${esc(workspaceStatus)}</b>${updated?` · ${esc(updated)}`:''}</span><span>${row.files.length} file${row.files.length===1?'':'s'}</span></div>`
-        +(row.files.length?_artifactGroupedListHTML(row.files,{pathOf:(file)=>String(file?.path||''),
-          render:(file)=>_liveCurrentFileActionHTML(file,row,scope),ariaLabel:`${label} — current files`})
+        +(row.files.length?_artifactExactFormatCountsHTML(row.files,(file)=>String(file?.path||''))
+          +_artifactGroupedListHTML(row.files,{pathOf:(file)=>String(file?.path||''),
+            render:(file)=>_liveCurrentFileActionHTML(file,row,scope),ariaLabel:`${label} — current files`})
           :'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>')+'</div>';
     }).join('')
     +`<div class="artifact-preview-note">${fileCount?'Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.':'This is the signed live-run capture, not a claim that the durable workspace is empty.'}</div>`
@@ -7805,6 +7806,7 @@ async function refreshSystemView(){
       ?'Earlier captured worktrees':'Live shared worktree',scope:'environment worktree'});
     const manifestOutputs=!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
       ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
+        +_artifactExactFormatCountsHTML(currentManifestFiles,(file)=>String(file?.title||''))
         +_artifactGroupedListHTML(currentManifestFiles,{pathOf:(file)=>String(file?.title||''),
           render:(file)=>_artifactPreviewActionHTML(file,{scope:'environment worktree',base:b.base,run:manifestRunId,verifiedMetadata:false}),
           ariaLabel:'Shared outputs — current manifest filenames'})
