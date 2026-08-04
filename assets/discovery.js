@@ -6279,6 +6279,20 @@ function _artifactFormatTileHTML(presentation){
   const format=(item.extensionLabel||'FILE').replace(/^\./,'');
   return `<span class="artifact-format-tile${format.length>5?' long-format':''}" aria-label="${esc(format)} file format"><small>Format</small><strong>${esc(format)}</strong></span>`;
 }
+function _artifactExactFormatCountsHTML(rows,pathOf=_artifactDisplayPath){
+  const counts=new Map();
+  for(const row of Array.isArray(rows)?rows:[]){
+    const presentation=_artifactFilePresentation(pathOf(row));
+    const format=presentation.extensionLabel||'NO EXTENSION';
+    counts.set(format,(counts.get(format)||0)+1);
+  }
+  const ordered=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  if(!ordered.length) return '';
+  return `<div class="artifact-exact-format-counts" aria-label="Exact file formats in this package">`
+    +`<span class="artifact-exact-format-label">Formats</span>`
+    +ordered.map(([format,count])=>`<span class="artifact-exact-format-count"><b>${esc(format)}</b><strong>${count}</strong></span>`).join('')
+    +`</div>`;
+}
 const _ARTIFACT_PRESENTATION_GROUPS=Object.freeze([
   Object.freeze({id:'cad',label:'CAD & 3D models',description:'Models, exchange geometry, and fabrication drawings',extensions:new Set(['3dm','3mf','blend','dae','dwg','dxf','fbx','glb','gltf','ifc','iges','igs','obj','ply','scad','skp','step','stl','stp'])}),
   Object.freeze({id:'drawing',label:'Drawings & images',description:'Sheets, diagrams, renders, and visual references',extensions:new Set(['apng','bmp','gif','heic','jpeg','jpg','png','svg','svgz','tif','tiff','webp'])}),
@@ -6475,6 +6489,7 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
     const history=projection.history;
     return `<section class="owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span>`
       +`<small>${current.length} file${current.length===1?'':'s'} ready to open${inProgress?` · ${inProgress} still being created`:''}</small></div>`
+      +_artifactExactFormatCountsHTML(current,_artifactDisplayPath)
       +_artifactGroupedListHTML(current,{pathOf:_artifactDisplayPath,
         render:(r)=>_artifactPreviewActionHTML(r,{scope,verifiedMetadata:true}),ariaLabel:`${label} — current files`})
       +`<div class="artifact-preview-note">Select a file to fetch it on demand, verify its SHA-256, and open the preview.</div>`

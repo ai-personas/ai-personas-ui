@@ -1296,6 +1296,10 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .current-workspace .current-artifact-list,.current-workspace .artifact-file-groups{padding:7px}
 .current-workspace .artifact-format-overview{margin:7px 7px 0}
 .artifact-format-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px}
+.artifact-exact-format-counts{display:flex;align-items:center;gap:6px;max-width:100%;margin:0 0 8px;padding:7px 8px;overflow-x:auto;border:1px solid var(--line2);border-radius:9px;background:rgba(3,10,17,.66);scrollbar-width:thin}
+.artifact-exact-format-label{flex:0 0 auto;color:var(--mut);font:800 8px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase}
+.artifact-exact-format-count{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:29px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--int) 42%,var(--line2));border-radius:7px;background:color-mix(in srgb,var(--int) 10%,rgba(3,9,16,.9));white-space:nowrap}
+.artifact-exact-format-count b{color:#ffd28e;font:900 11px/1 var(--mono);letter-spacing:.035em}.artifact-exact-format-count strong{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 4px;border-radius:5px;background:rgba(255,255,255,.1);color:var(--bright);font:900 10px/1 var(--mono)}
 .artifact-format-summary{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;min-width:0;padding:8px 9px;border:1px solid var(--line2);border-radius:10px;background:rgba(3,10,17,.55)}
 .artifact-format-summary small{min-width:0;color:var(--off-white);font:800 10px/1.25 var(--sans)}
 .artifact-format-summary strong{grid-row:1/3;grid-column:2;align-self:center;color:var(--bright);font:900 19px/1 var(--mono)}
