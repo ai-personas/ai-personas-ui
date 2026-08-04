@@ -10106,20 +10106,33 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
     &&(()=>{ const authority=environmentAuthorityOfRecord(x);
       return authority.status==='resolved'&&authority.environmentId===_sid; })());
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
-  const myFiles=myArts.filter((a)=>{ const L=a._links||{}; return L.content||L.content_stub||L.content_hash; });
-  if(manifestFiles.length){
-    html+=H('Workspace files');
-    html+=`<details class="artifact-index"><summary><span>Browse ${manifestFiles.length} workspace file${manifestFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
-      +`<div class="artifact-index-body">${renderArtifactTree(manifestFiles,manifestRun(manifest))}</div></details>`;
+  const signedProjection=_artifactRevisionProjection(myArts);
+  const signedFiles=signedProjection.current?.rows||[];
+  const signedPaths=new Set(signedFiles.map((file)=>_artifactDisplayPath(file)));
+  const signedRun=[...new Set(signedFiles.map((file)=>runOf(file)).filter(Boolean))].sort().at(-1)||'';
+  const manifestRouteRun=(String(manifestRel).match(/(?:^|\/)k\/(run-[0-9A-Za-z]+)(?:\/|$)/)||[])[1]||'';
+  const manifestRunId=manifestRun(manifest)||manifestRouteRun;
+  // The signed file cards and fetched manifest are independent evidence lanes.
+  // A partial or stale manifest must never erase a complete signed generation.
+  // A manifest may supplement filenames only when it is not mechanically older
+  // than the latest signed run; its unverified metadata never overrides cards.
+  const manifestCanSupplement=!signedRun||!manifestRunId||manifestRunId>=signedRun;
+  const manifestOnlyFiles=manifestCanSupplement
+    ?manifestFiles.filter((file)=>!signedPaths.has(_artifactDisplayPath(file)))
+    :[];
+  if(signedFiles.length||manifestOnlyFiles.length) html+=H('Workspace files');
+  if(signedFiles.length){
+    html+=_ownedOutputsHTML(myArts,{label:'Latest signed workspace files',scope:'shared workspace'});
   }
-  if(myArts.length&&(myBundles.length||!manifestFiles.length)){
-    html+=H('Artifact bundles');
+  if(manifestOnlyFiles.length){
+    html+=`<details class="artifact-index"><summary><span>Browse ${manifestOnlyFiles.length} additional manifest filename${manifestOnlyFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
+      +`<div class="artifact-index-body">${renderArtifactTree(manifestOnlyFiles,manifestRunId)}</div>`
+      +`<div class="artifact-preview-note">These additional filenames come from the environment's published manifest. Openable signed file records remain visible above and replace matching manifest-only entries as they arrive.</div></details>`;
+  }
+  if(myBundles.length){
+    html+=H('Published packages');
     for(const bnd of myBundles)
       html+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(bnd._links.bundle)}" data-rec="${esc(bnd.record_id||bnd.card_id||'')}">${icon('box','ico-sm')} ${esc(bnd.label||'artifact bundle')} →</a></div>`;
-    if(myFiles.length&&!manifestFiles.length)
-      html+=`<details class="artifact-index"><summary><span>Browse ${myFiles.length} signed file record${myFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary><div class="artifact-index-body atree">`+myFiles.map((a)=>
-        `<div class="tnode tfile"><a href="#" data-act="rec" data-id="${esc(a._storeKey||recordStoreKey(a))}">${esc(a.label||a.record_id||'file')}</a>`
-        +`<span class="l2">${authoredArtifactLabelText(a)?`authored: ${esc(authoredArtifactLabelText(a))} · `:''}${esc(declaredArtifactMedia(a))}</span></div>`).join('')+`</div></details>`;
   }
   const roster=members.length?members:( (ns.personas||[]).map((p)=>({persona_id:p.persona_id,role:p.role,active:p.lifecycle_state==='ACTIVE'})) );
   if(roster.length){
