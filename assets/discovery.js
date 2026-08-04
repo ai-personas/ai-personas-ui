@@ -11634,6 +11634,15 @@ async function operatorRunView(b,run){
   const runKernel=String(liveState?.snapshot?.node_id||nodeStatus?.node_id
     ||kernelForBase(b)||'');
   const publicTask=_verifiedPublicTaskForRun(runKernel,run);
+  // A public run can have a small live-worktree delta while its finalized
+  // package contains the complete environment output.  The already-admitted
+  // artifact rows are provider-envelope, record-signature, policy-signature,
+  // exact-run, and exact-kernel bound, so surface those records in the run
+  // drawer without depending on an operator-status grant or an unsigned
+  // package-path response.  No filename, extension, media type, or task text
+  // participates in admission or selection here.
+  const publishedRunArtifacts=(S.order||[]).map((id)=>S.recs.get(id)).filter((record)=>
+    record?.kind==='artifact'&&record._kernel===runKernel&&runOf(record)===run);
   const taskText=String(publicTask?.task||rs.task||'').trim();
   const finalizedBootstrap=liveState?.verification?.immutableFinalizedBootstrap===true;
   const terminal=Boolean(liveState?.ended
@@ -11679,6 +11688,11 @@ async function operatorRunView(b,run){
     :'<div class="l2">No model call is active at this instant.</div>';
   html+=H('Live workspace files')
     +`<div data-live-run-key="${esc(_liveRunDomKey(b,run))}" role="region" aria-label="Live workspace updates" aria-live="polite">${liveArtifactsHTML(b,run)}</div>`;
+  if(publishedRunArtifacts.length){
+    html+=H('Published task artifacts')
+      +_ownedOutputsHTML(publishedRunArtifacts,{label:'Complete signed package',scope:'task output'})
+      +'<div class="fv-note">These are the complete hash-bound files published for this exact run. Their presence is execution evidence, not a claim that the engineering is complete or production-ready.</div>';
+  }
   const files=arts.package||arts.package_files||arts.files||[];
   if(files.length) html+=H(`Observed package paths (${files.length})`)+files.slice(0,100).map((file)=>{
     const path=typeof file==='string'?file:(file.path||file.title||'');
