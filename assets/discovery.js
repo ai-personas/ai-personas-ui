@@ -5652,10 +5652,12 @@ function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
 }
 function _personaCausalDispositionHTML(disposition,{compact=false,mechanical=null}={}){
   if(!disposition||typeof disposition!=='object') return '';
+  const rationale=String(disposition.rationale||'').trim();
   if(disposition.kind==='no_successor')
     return `<div class="work-note-next"><span>Persona-chosen next step</span>`
       +`<strong>No immediate successor requested</strong>`
-      +`<small>This scheduling choice is not evidence that the task is complete.</small></div>`;
+      +`<small>This scheduling choice is not evidence that the task is complete.</small>`
+      +(rationale?`<small><b>Persona's reason:</b> ${esc(rationale)}</small>`:'')+'</div>';
   if(disposition.kind!=='immediate_wake') return '';
   const label=_sentenceStart(humanizeMachineKey(disposition.wake_kind||'continue'));
   const selectedPaths=Array.isArray(disposition.model_input_paths)
@@ -5664,6 +5666,7 @@ function _personaCausalDispositionHTML(disposition,{compact=false,mechanical=nul
   return `<div class="work-note-next"><span>Persona-chosen next step</span>`
     +`<strong>${esc(label)}</strong>`
     +_personaWorkNoteValueHTML(disposition.payload||{},{compact})
+    +(rationale?`<small><b>Persona's reason:</b> ${esc(rationale)}</small>`:'')
     +(selectedPaths.length?`<small>${selectedPaths.length} exact workspace ${selectedPaths.length===1?'file':'files'} selected for observation on the next authorized turn.</small>`:'')
     +(resourcePaused?'<small>Waiting for signed run resources; this request is preserved, but no model call is currently authorized by it.</small>':'')+'</div>';
 }
@@ -6560,9 +6563,9 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
     &&doc?.tier==='public';
   const fastState=S.liveByPersona.get(personaKey)?.currentWorkState;
   const state=publicCognition
-    &&doc.current_work_state?.schema==='personaos-persona-work-state-surface/4'
+    &&doc.current_work_state?.schema==='personaos-persona-work-state-surface/5'
     ?doc.current_work_state
-    :fastState?.schema==='personaos-persona-work-state-surface/4'?fastState:null;
+    :fastState?.schema==='personaos-persona-work-state-surface/5'?fastState:null;
   if(!publicCognition&&!state) return '';
   const outputs=publicCognition?[...(doc.recent_outputs||[])].reverse():[];
   const latestOutput=outputs.find((output)=>output?.authority==='persona_signature');
@@ -6737,8 +6740,8 @@ function renderPersonaCard(pid,kernel='',context={}){
   const terminalFailure=running?null:(d.terminalFailure||null);
   const cognitionDoc=S.verifiedPublicCognitionByPersona?.get(personaKey)?.doc;
   const currentWorkState=cognitionDoc?.current_work_state?.schema
-    ==='personaos-persona-work-state-surface/4'?cognitionDoc.current_work_state
-    :d.currentWorkState?.schema==='personaos-persona-work-state-surface/4'
+    ==='personaos-persona-work-state-surface/5'?cognitionDoc.current_work_state
+    :d.currentWorkState?.schema==='personaos-persona-work-state-surface/5'
       ?d.currentWorkState:null;
   const mechanicalRun=_personaMechanicalRunProjection(
     last,ref.kernel,acts,personaKey,currentWorkState);
@@ -8071,7 +8074,7 @@ function _ingestVerifiedPersonaEntityFeed(base,doc){
   const failure=running?null:(failures.byPersona.get(doc.persona_id)
     ||failures.byPersona.get(pid)||failures.latest||current.terminalFailure||null);
   const currentWorkState=doc.current_work_state?.schema
-    ==='personaos-persona-work-state-surface/4'?doc.current_work_state:null;
+    ==='personaos-persona-work-state-surface/5'?doc.current_work_state:null;
   S.liveByPersona.set(personaKey,{...current,summary:{...(current.summary||{}),...(doc.summary||{})},
     currentWorkState,terminalFailure:failure,sid:pid,generated_at:doc.generated_at,
     base:baseKey==='@origin'?'':baseKey,kernel,observedAt,receivedAt,stale:false,
@@ -8167,7 +8170,7 @@ function renderPersonaFeedDoc(doc,personaKey=''){
       +kv('Task',esc(_humanTaskExecutionState(s.task_execution_state||'not_participating')))
       +kv('Model-assisted step',esc(s.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(s.llm_execution_state||'not reported').replace(/_/g,' '))));
   }
-  if(doc.current_work_state?.schema==='personaos-persona-work-state-surface/4')
+  if(doc.current_work_state?.schema==='personaos-persona-work-state-surface/5')
     h+=_renderPersonaWorkState(doc,{kernel:String(doc.node_id||doc.kernel_id||'')});
   const ref=_personaRef(personaKey||doc.persona_id||'');
   const running=_activeModelCallsForPersona(ref.key).length>0;
@@ -8300,7 +8303,7 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const acts=(S.ixByPersona&&S.ixByPersona.get(personaKey))||[];
   const mechanical=_personaMechanicalRunProjection(
     model,kernel,acts,personaKey,state||null);
-  if(!state||state.schema!=='personaos-persona-work-state-surface/4'){
+  if(!state||state.schema!=='personaos-persona-work-state-surface/5'){
     const mechanicalClass=mechanical.key==='running'?'is-working'
       :mechanical.key==='resource-paused'||mechanical.key==='cancelled'?'is-waiting':'is-stale';
     return `<section class="work-state-card work-state-empty"><div class="work-state-head">`
@@ -8710,12 +8713,13 @@ function _validPublicWorkRef(value,maximum=500){
 }
 function _validPublicCausalDisposition(value){
   if(!value||typeof value!=='object'||Array.isArray(value)
-      ||value.schema!=='personaos-persona-causal-disposition/1') return false;
+      ||value.schema!=='personaos-persona-causal-disposition/2'
+      ||!_validPublicWorkRef(value.rationale,4000)) return false;
   if(value.kind==='no_successor')
-    return _exactObjectFields(value,['kind','schema']);
+    return _exactObjectFields(value,['kind','rationale','schema']);
   if(value.kind!=='immediate_wake') return false;
   const keys=Object.keys(value), allowed=new Set([
-    'schema','kind','wake_kind','payload','model_input_paths',
+    'schema','kind','wake_kind','payload','model_input_paths','rationale',
   ]);
   if(keys.some((key)=>!allowed.has(key))
       ||!Object.hasOwn(value,'wake_kind')||!Object.hasOwn(value,'payload')
@@ -8731,7 +8735,7 @@ function _validPublicPersonaWorkState(value,identity){
   if(!value||typeof value!=='object'||Array.isArray(value)) return false;
   const fields=Object.keys(value).sort();
   if(fields.join('\u0000')!==PUBLIC_PERSONA_WORK_STATE_FIELDS.join('\u0000')
-      ||value.schema!=='personaos-persona-work-state-surface/4'
+      ||value.schema!=='personaos-persona-work-state-surface/5'
       ||value.projection_tier!=='public'
       ||String(value.persona_id||'')!==identity.signedId
       ||!_safePublicCognitionAtom(value.environment_id,512,{required:true})
