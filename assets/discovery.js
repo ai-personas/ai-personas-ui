@@ -55,7 +55,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260803-engineering-preview-v4';
+} from './artifact-types.mjs?v=20260804-technical-artifacts-v5';
 import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
@@ -6214,7 +6214,7 @@ const _ARTIFACT_PRESENTATION_GROUPS=Object.freeze([
   Object.freeze({id:'document',label:'Documents',description:'Narratives, specifications, reports, and read-me files',extensions:new Set(['doc','docx','html','htm','md','odt','pdf','rtf','txt'])}),
   Object.freeze({id:'data',label:'Data & schedules',description:'Schedules, manifests, structured data, and tables',extensions:new Set(['csv','json','ods','parquet','tsv','xls','xlsx','xml','yaml','yml'])}),
   Object.freeze({id:'package',label:'Packages & exports',description:'Archives and bundled delivery files',extensions:new Set(['7z','bz2','gz','rar','tar','tar.bz2','tar.gz','tar.xz','tar.zst','tgz','xz','zip','zst'])}),
-  Object.freeze({id:'code',label:'Code & technical files',description:'Source, configuration, scripts, and other technical formats',extensions:new Set(['c','cc','cpp','css','go','h','hpp','ini','java','js','jsx','kt','m','mjs','py','rs','sh','sql','toml','ts','tsx'])}),
+  Object.freeze({id:'code',label:'Code & technical files',description:'Source, configuration, simulations, and fabrication data',extensions:new Set(['asc','brd','c','cc','cir','cpp','css','drl','gbr','gbrjob','ger','go','h','hpp','ibs','ini','java','js','jsx','kicad_dru','kicad_mod','kicad_pcb','kicad_prl','kicad_pro','kicad_sch','kicad_sym','kt','m','mjs','pho','py','rs','s1p','s2p','s3p','s4p','sch','sh','sp','spice','sql','sv','toml','ts','tsx','v','vhd','vhdl','xln'])}),
 ]);
 function _artifactPresentationGroup(path){
   const presentation=_artifactFilePresentation(path), extension=presentation.extension.toLowerCase();
