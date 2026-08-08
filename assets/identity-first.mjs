@@ -1,6 +1,8 @@
 import * as ed from './noble-ed25519.js';
 import {evaluatePublicRecordAccess, validateProviderInventoryWindow}
   from './discovery-authority.mjs?v=20260715-provider-window-v1';
+import {readOfflineHistorySnapshots,verifyOfflineHistorySnapshots}
+  from './offline-history.mjs?v=20260808-offline-history-v2';
 
 // This entry never discovers a route or consults a locator. It can only retry
 // direct provider bases that the full application previously admitted and
@@ -217,7 +219,7 @@ async function verifiedLifecycle(lifecycle,record,identity,identityKey,registry)
   return {materialization:lifecycle.identity_materialization_state,fields:projected};
 }
 
-async function verifiedPersonaCard(envelope,record,identity,identityKey){
+async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=Date.now()}={}){
   const card=envelope?.card;
   if(!exactFields(envelope,PERSONA_ENVELOPE_FIELDS)
       ||envelope.schema!=='persona-card/4'||envelope.persona_id!==identity.signedId
@@ -238,7 +240,8 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey){
       ||!card.rate_limit||typeof card.rate_limit!=='object'||Array.isArray(card.rate_limit)
       ||!card.identity_authority||typeof card.identity_authority!=='object'
       ||Array.isArray(card.identity_authority)||!Object.keys(card.identity_authority).length
-      ||Date.parse(String(card.expires_at||''))<=Date.now()
+      ||!Number.isFinite(Date.parse(String(card.expires_at||'')))
+      ||Date.parse(String(card.expires_at||''))<=nowMs
       ||canon(card.avatar||{})!==canon(record.avatar||{})
       ||!await signed(card,envelope.signature_hex,identityKey)) return null;
   for(const field of ['accepts_inbound_from','charter_hash','voice_hash','soul_hash',
@@ -251,7 +254,7 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey){
   return card;
 }
 
-async function verifiedPersona(doc,record,registry,kernelId){
+async function verifiedPersona(doc,record,registry,kernelId,{nowMs=Date.now()}={}){
   const identity=signedPersonaIdentity(record,kernelId);
   if(!identity) return null;
   const lifecycle=doc.persona_lifecycle_card;
@@ -264,7 +267,7 @@ async function verifiedPersona(doc,record,registry,kernelId){
     lifecycle,record,identity,identityKey,registry);
   if(!lifecycleProjection) return null;
   const card=lifecycleProjection.materialization==='materialized'
-    ?await verifiedPersonaCard(doc.persona_card,record,identity,identityKey):null;
+    ?await verifiedPersonaCard(doc.persona_card,record,identity,identityKey,{nowMs}):null;
   if(lifecycleProjection.materialization==='materialized'&&!card) return null;
   const authoredName=!!card&&lifecycleProjection.fields.name.personaAuthored===true;
   const name=authoredName?safeText(card.name,80):'New persona';
@@ -272,11 +275,13 @@ async function verifiedPersona(doc,record,registry,kernelId){
     kind:'persona',id:identity.canonicalId,name,
     description:card?safeText(card.description,240):'',
     pending:lifecycleProjection.materialization==='pending',
+    avatarAvailable:Boolean(card?.avatar),
     lifecycle:'ACTIVE',
   };
 }
 
-async function verifiedIdentityRows(index,base,boot,registry){
+async function verifiedIdentityRows(index,base,boot,registry,
+  {nowMs=Date.now(),maxFutureSkewMs=30000}={}){
   const fields=['base','document_count','documents','expires_at','generated_at',
     'inventory_generation','inventory_hash','inventory_manifest_hash','kernel_id','schema',
     'signature_hex','signing_key_id','visibility'].sort();
@@ -292,7 +297,9 @@ async function verifiedIdentityRows(index,base,boot,registry){
       ||index.document_count>512||!index.documents
       ||typeof index.documents!=='object'||Array.isArray(index.documents)
       ||Object.keys(index.documents).length!==index.document_count
-      ||!validateProviderInventoryWindow(index.generated_at,index.expires_at).ok
+      ||!validateProviderInventoryWindow(index.generated_at,index.expires_at,
+        {nowMs,maxFutureSkewMs}).ok
+      ||Date.parse(index.generated_at)>nowMs+maxFutureSkewMs
       ||normalizedBase(index.base)!==normalizedBase(base)
       ||!await signed(withoutSignature(index),index.signature_hex,registry.master)) return [];
   const entries=Object.entries(index.documents),recordIds=new Set();
@@ -318,10 +325,10 @@ async function verifiedIdentityRows(index,base,boot,registry){
     if(await sha256(canon(doc))!==documentHash
         ||!await signed(record,doc.signature_hex,registry.master)
         ||!await signed(policyPayload(policy),policy.signature_hex,registry.master)) return null;
-    const access=evaluatePublicRecordAccess(record,policy,doc.links||{});
+    const access=evaluatePublicRecordAccess(record,policy,doc.links||{},{nowMs});
     if(!access.ok||!access.canDiscover) return null;
     if(record.kind==='persona'){
-      const persona=await verifiedPersona(doc,record,registry,boot.kernel_id);
+      const persona=await verifiedPersona(doc,record,registry,boot.kernel_id,{nowMs});
       return persona||null;
     }
     const prefix=`did:personaos:${boot.kernel_id}/env/`;
@@ -354,40 +361,124 @@ async function verifyCachedIdentityWithFreshAuthority(snapshot,signal){
   return rows.length?[{kernelId,base,rows}]:[];
 }
 
+async function verifyCachedHistoricalIdentity(snapshot){
+  const kernelId=safeText(snapshot?.kernel_id,128);
+  const base=normalizedBase(snapshot?.provider_base,{sameOrigin:snapshot?.same_origin===true});
+  const boot=snapshot?.boot,registry=currentRegistry(snapshot?.keys,kernelId);
+  const observedAt=Date.parse(String(snapshot?.stored_at||''));
+  if(!kernelId||!base||boot?.kernel_id!==kernelId||!registry
+      ||!Number.isFinite(observedAt)||observedAt>Date.now()+30000) return [];
+  const rows=await verifiedIdentityRows(
+    snapshot.identity_index,base,boot,registry,{nowMs:observedAt,maxFutureSkewMs:0});
+  if(!rows.length) return [];
+  const storedAt=new Date(observedAt).toISOString();
+  const index=snapshot.identity_index;
+  return [{
+    schema:'personaos-browser-verified-public-history/2',
+    kernel_id:kernelId,
+    stored_at:storedAt,
+    lease:{generation:index.inventory_generation,inventory_hash:index.inventory_hash,
+      generated_at:index.generated_at,expires_at:index.expires_at},
+    counts:{persona:rows.filter((row)=>row.kind==='persona').length,
+      env:rows.filter((row)=>row.kind==='env').length,artifact:0},
+    personas:rows.filter((row)=>row.kind==='persona').map((row)=>({
+      id:row.id,name:row.name,description:row.description,lifecycle:row.lifecycle,
+      profile_state:row.pending?'pending':'materialized',avatar_available:row.avatarAvailable===true,
+    })),
+    environments:rows.filter((row)=>row.kind==='env').map((row)=>({
+      id:row.id,name:row.name,description:'',capabilities:[],
+    })),
+    artifacts:[],
+  }];
+}
+
 function compact(value,maximum=112){
   const text=String(value||'').replace(/\s+/g,' ').trim();
   return text.length<=maximum?text:`${text.slice(0,Math.max(1,maximum-1)).trimEnd()}…`;
 }
 
-function personaCard(row,kernelId,index){
+function personaCard(row,kernelId,index,{offline=false,storedAt=''}={}){
   const hue=(Array.from(row.id).reduce((sum,char)=>sum+char.codePointAt(0),0)+index*29)%360;
-  return `<article class="pcard identity-signed identity-first-card" style="--avatar-hue:${hue}" aria-label="${esc(row.name)} verified persona identity">`
+  const when=storedAt?new Date(storedAt).toLocaleString():'an earlier visit';
+  return `<article class="pcard identity-signed identity-first-card${offline?' offline-history-card':''}" style="--avatar-hue:${hue}" aria-label="${esc(row.name)} ${offline?'offline history':'verified persona identity'}">`
     +'<div class="pc-card-shine" aria-hidden="true"></div>'
-    +`<div class="pc-card-edition"><span>✓ VERIFIED PROFILE</span><span>IDENTITY FIRST</span></div>`
+    +`<div class="pc-card-edition"><span>${offline?'OFFLINE HISTORY':'✓ VERIFIED PROFILE'}</span><span>${offline?'NOT LIVE':'IDENTITY FIRST'}</span></div>`
     +'<header class="pc-profile">'
-    +`<span class="pc-avatar" data-avatar-state="identity-first" aria-label="portrait loads with the full persona view"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>portrait loading</small></span></span>`
+    +`<span class="pc-avatar" data-avatar-state="identity-first" aria-label="${offline?'portrait body is not retained in offline history':'portrait loads with the full persona view'}"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${offline?(row.avatar_available?'portrait offline':'portrait unavailable'):'portrait loading'}</small></span></span>`
     +'<i class="pc-dot off" aria-hidden="true"></i>'
-    +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">✓ signed identity verified</span>`
+    +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">${offline?'historical signatures rechecked':'✓ signed identity verified'}</span>`
     +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(row.description||'Self-description still forming')}</strong></span></div>`
-    +`<div class="pc-badges"><span class="pc-idle">${esc(row.lifecycle)}</span></div></header>`
-    +`<section class="pc-current"><span class="pc-current-label">Loading current work</span><div class="pc-doing"><span class="pc-rest">●</span><strong>Verified persona found; joining live work now</strong></div></section>`
-    +`<div class="pc-stats"><span class="tag" title="current signed node identity">${esc(kernelId)}</span></div></article>`;
+    +`<div class="pc-badges"><span class="pc-idle">${offline?'OFFLINE':esc(row.lifecycle)}</span></div></header>`
+    +`<section class="pc-current"><span class="pc-current-label">${offline?'Cached signed observation':'Loading current work'}</span><div class="pc-doing"><span class="pc-rest">●</span><strong>${offline?`Signed identity lease was valid at ${esc(when)}; current activity is unknown.`:'Verified persona found; joining live work now'}</strong></div></section>`
+    +`<div class="pc-stats"><span class="tag" title="${offline?'historical node identity':'current signed node identity'}">${esc(kernelId)}</span></div></article>`;
 }
 
-function environmentCard(row,kernelId){
+function environmentCard(row,kernelId,{offline=false,storedAt=''}={}){
   const words=row.name.split(/\s+/).filter(Boolean);
   const initials=(words.length>1?words[0][0]+words.at(-1)[0]:words[0]?.slice(0,2)||'EN').toUpperCase();
-  return `<article class="env-card record-signed identity-first-card" aria-label="verified workspace ${esc(row.name)}">`
+  const when=storedAt?new Date(storedAt).toLocaleString():'an earlier visit';
+  return `<article class="env-card record-signed identity-first-card${offline?' offline-history-card':''}" aria-label="${offline?'offline history for':'verified workspace'} ${esc(row.name)}">`
     +'<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">'
     +`<div class="env-card-avatar"><span class="env-card-glyph">□</span><strong>${esc(initials)}</strong></div>`
-    +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE</span><span class="env-name">${esc(compact(row.name))}</span>`
-    +`<span class="env-card-id">${esc(kernelId)}</span></div><span class="env-state ok">verified</span></header>`
-    +'<div class="env-card-empty">Loading people, current work, and files…</div></article>';
+    +`<div class="env-identity"><span class="env-kicker">${offline?'OFFLINE WORKSPACE HISTORY':'SHARED WORKSPACE'}</span><span class="env-name">${esc(compact(row.name))}</span>`
+    +`<span class="env-card-id">${esc(kernelId)}</span></div><span class="env-state ${offline?'':'ok'}">${offline?'offline':'verified'}</span></header>`
+    +`<div class="env-card-empty">${offline?`Signed workspace evidence was valid at ${esc(when)}. Current people, work, and files are unknown.`:'Loading people, current work, and files…'}</div></article>`;
+}
+
+function offlineArtifactHTML(row){
+  const path=String(row.path||'artifact'),leaf=path.replace(/\\/g,'/').split('/').filter(Boolean).at(-1)||path;
+  const dot=leaf.lastIndexOf('.'),extension=dot>0&&dot<leaf.length-1?`.${leaf.slice(dot+1).toUpperCase()}`:'';
+  const title=dot>0?leaf.slice(0,dot).replace(/[_-]+/g,' '):leaf;
+  const media=row.media?.[0]||'format not declared',hash=String(row.content_hash||'');
+  return `<div class="current-artifact-file artifact-preview-unavailable offline-history-artifact" aria-label="${esc(path)} — offline metadata only">`
+    +`<span class="artifact-format-tile"><small>Format</small><strong>${esc(extension.replace(/^\./,'')||'FILE')}</strong></span>`
+    +`<span class="current-artifact-copy"><span class="artifact-file-title" title="${esc(path)}"><b>${esc(compact(title,100))}</b>${extension?`<span class="artifact-extension-badge">${esc(extension)}</span>`:''}</span>`
+    +`<small>${esc(media)}${row.size_bytes!=null?` · ${esc(row.size_bytes)} bytes`:''}${row.environment_id?` · workspace ${esc(row.environment_id)}`:''}${hash?` · ${esc(hash.slice(0,18))}…`:''}</small></span><span class="current-artifact-preview">Metadata only · offline</span></div>`;
+}
+
+function paintOfflineHistory(snapshots){
+  const host=document.querySelector('#sysEnvs');
+  if(!host||!Array.isArray(snapshots)||!snapshots.length) return false;
+  // Live/full application cards always outrank the historical first paint.
+  if(host.querySelector('.pcard:not(.identity-first-card),.env-card:not(.identity-first-card)'))
+    return false;
+  const byKernel=new Map();
+  for(const snapshot of snapshots){
+    const prior=byKernel.get(snapshot.kernel_id);
+    if(!prior||Date.parse(snapshot.stored_at)>Date.parse(prior.stored_at)) byKernel.set(snapshot.kernel_id,snapshot);
+  }
+  const groups=[...byKernel.values()];
+  const snapshotLabel=groups.every((group)=>
+    Date.parse(String(group?.lease?.expires_at||''))<=Date.now())
+    ?'Expired signed snapshot cached by this browser'
+    :'Signed snapshot cached by this browser · offline';
+  const personas=groups.flatMap((group)=>group.personas.map((row)=>({...row,kernelId:group.kernel_id,storedAt:group.stored_at})));
+  const environments=groups.flatMap((group)=>group.environments.map((row)=>({...row,kernelId:group.kernel_id,storedAt:group.stored_at})));
+  const artifacts=groups.flatMap((group)=>group.artifacts.map((row)=>({...row,kernelId:group.kernel_id,storedAt:group.stored_at})));
+  if(!personas.length&&!environments.length&&!artifacts.length) return false;
+  const totalCounts=groups.reduce((out,group)=>({persona:out.persona+group.counts.persona,
+    env:out.env+group.counts.env,artifact:out.artifact+group.counts.artifact}),{persona:0,env:0,artifact:0});
+  host.dataset.offlineHistory='1';
+  host.innerHTML=`<section class="offline-history-banner" role="status"><strong>${esc(snapshotLabel)}</strong><span>The browser rechecked cached signatures, hashes, policies, and their historical lease window. The cached timestamp is not evidence of current liveness. Live direct and peer discovery is continuing.</span></section>`
+    +`<div class="stage-summary"><div><strong>${totalCounts.persona} ${totalCounts.persona===1?'persona':'personas'} · ${totalCounts.env} ${totalCounts.env===1?'workspace':'workspaces'} · ${totalCounts.artifact} artifact${totalCounts.artifact===1?'':'s'}</strong> <span class="scope-copy">· offline metadata history · not live</span></div></div>`
+    +(personas.length?`<section class="persona-section offline-history-section"><header class="stage-section-head"><div><span class="section-kicker">OFFLINE PERSONA HISTORY</span><h2>Personas in cached signed evidence</h2></div><p>No current activity or availability is implied.</p></header><div class="persona-deck">${personas.slice(0,24).map((row,index)=>personaCard(row,row.kernelId,index,{offline:true,storedAt:row.storedAt})).join('')}</div></section>`:'')
+    +(environments.length?`<section class="environment-section offline-history-section"><header class="stage-section-head compact"><div><span class="section-kicker">OFFLINE WORKSPACE HISTORY</span><h2>Workspaces in cached signed evidence</h2></div><p>Live membership and work state are unknown.</p></header><div class="environment-grid">${environments.slice(0,24).map((row)=>environmentCard(row,row.kernelId,{offline:true,storedAt:row.storedAt})).join('')}</div></section>`:'')
+    +(artifacts.length?`<section class="offline-history-files"><header class="stage-section-head compact"><div><span class="section-kicker">OFFLINE ARTIFACT INDEX</span><h2>File metadata in cached signed evidence</h2></div><p>Bodies stay closed until a current verified provider route returns.</p></header><div class="current-artifact-list">${artifacts.slice(0,80).map(offlineArtifactHTML).join('')}</div>${artifacts.length>80?`<p class="persona-window-note">${artifacts.length-80} additional historical artifact records retained in the bounded cache.</p>`:''}</section>`:'');
+  const status=document.querySelector('#status');
+  if(status) status.textContent=`${groups.length} offline node histor${groups.length===1?'y':'ies'} shown · live discovery continuing…`;
+  const scope=document.querySelector('#networkScope');
+  if(scope) scope.textContent=`offline history from ${groups.length} previously verified ${groups.length===1?'node':'nodes'} · discovering live peers`;
+  globalThis.__personaOSOfflineHistory=groups;
+  return true;
 }
 
 function paintIdentityFirst(groups){
   const host=document.querySelector('#sysEnvs');
   if(!host) return false;
+  // The full application may already have admitted and painted current records
+  // while this independent fast fetch was in flight. Never replace that richer
+  // current view with the compact identity shell.
+  if(host.querySelector('.pcard:not(.identity-first-card),.env-card:not(.identity-first-card)')) return false;
   const personas=groups.flatMap((group)=>group.rows
     .filter((row)=>row.kind==='persona').map((row)=>({...row,kernelId:group.kernelId})));
   const environments=groups.flatMap((group)=>group.rows
@@ -440,6 +531,41 @@ function afterPaint(){
   });
 }
 
-const painted=await identityFirst().catch(()=>false);
-if(painted) await afterPaint();
-await import('./discovery.js?v=20260804-format-counts-v9');
+async function cachedHistoricalIdentitySnapshots(){
+  const groups=[];
+  const results=await Promise.allSettled(cachedSnapshots().map(
+    (snapshot)=>verifyCachedHistoricalIdentity(snapshot)));
+  for(const result of results) if(result.status==='fulfilled') groups.push(...result.value);
+  return groups;
+}
+
+function publishOfflineHistory(values){
+  const byKernel=new Map();
+  for(const value of (Array.isArray(values)?values:[])){
+    if(value?.schema!=='personaos-browser-verified-public-history/2') continue;
+    const prior=byKernel.get(value.kernel_id);
+    if(!prior||Date.parse(value.stored_at)>=Date.parse(prior.stored_at))
+      byKernel.set(value.kernel_id,value);
+  }
+  const projections=[...byKernel.values()];
+  globalThis.__personaOSOfflineHistory=projections;
+  globalThis.dispatchEvent?.(new CustomEvent('personaos:offline-history',
+    {detail:projections}));
+  return projections;
+}
+
+// Current identity verification, the full live application, and historical
+// cryptography start together. Cached bytes can therefore never delay direct or
+// peer discovery. History stays an inert DOM projection with no reusable route.
+const applicationJob=import('./discovery.js?v=20260808-async-artifacts-v2');
+const currentIdentityJob=identityFirst().catch(()=>false);
+const historicalJob=(async()=>{
+  const [providerHistory,identityHistory]=await Promise.all([
+    verifyOfflineHistorySnapshots(readOfflineHistorySnapshots()).catch(()=>[]),
+    cachedHistoricalIdentitySnapshots().catch(()=>[]),
+  ]);
+  const projections=publishOfflineHistory([...providerHistory,...identityHistory]);
+  if(paintOfflineHistory(projections)) await afterPaint();
+  return projections.length>0;
+})();
+await Promise.allSettled([currentIdentityJob,applicationJob,historicalJob]);

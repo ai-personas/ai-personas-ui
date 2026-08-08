@@ -82,6 +82,12 @@ import {
   shouldPrefetchNodeStatus,
 } from './discovery-strategy.mjs?v=20260803-fast-fallback-v5';
 import {
+  createOfflineHistorySnapshot,
+  readOfflineHistorySnapshots,
+  verifyOfflineHistorySnapshots,
+  writeOfflineHistorySnapshot,
+} from './offline-history.mjs?v=20260808-offline-history-v2';
+import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
   isEnvironmentTelemetryDocument,
@@ -138,6 +144,7 @@ const _ICON_PATHS={
   box:'M8 2l5.5 3v6L8 14l-5.5-3V5L8 2zM2.5 5L8 8l5.5-3M8 8v6', // ▣ artifact bundle (package)
   copy:'M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z',                  // ⧉ copy (two overlapping sheets)
   download:'M8 2.5v7M5.5 7L8 9.5 10.5 7M3 11v2h10v-2',       // download to tray
+  history:'M8 3a5 5 0 1 1-4.2 2.3M3 2.8v3.5h3.5M8 5.2V8l2 1.4', // historical observation
 };
 function icon(name,extra){
   const d=_ICON_PATHS[name]; if(!d) return '';
@@ -526,6 +533,8 @@ const NETWORK=new NetworkStore({limits:{maxEntities:NETWORK_LIMITS.cachedRecords
 const TELEMETRY_GATE=new TelemetryAdmissionGate({maxSources:128,maxAgeMs:30000,futureSkewMs:30000});
 const VERIFIED_COMMUNICATION_ROUTES=new WeakMap();
 const VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS=new WeakSet();
+const INITIAL_OFFLINE_HISTORY=Array.isArray(globalThis.__personaOSOfflineHistory)
+  ?globalThis.__personaOSOfflineHistory:[];
 
 const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rIdx:0, lastEmit:0,
   paused:false, sort:'events', dir:-1, plane:'all', kind:'all', q:'', epsWin:[], evCount:0, live:false,
@@ -535,6 +544,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   providerKeyRefreshAt:new Map(), telemetryKeyRefreshAt:new Map(),
   providerHintJobs:new Map(), providerHintQueue:[],
   providerInventories:new Map(),
+  offlineHistory:INITIAL_OFFLINE_HISTORY,
   cachedIdentityPendingKernels:new Set(),
   providerHintActive:0, providerHintWindow:[], pendingProviderHints:new Map(),
   providerRouteReconciliations:new Map(),
@@ -2511,6 +2521,19 @@ function persistFastSignedIdentitySnapshot(base,boot,identityIndex){
     String(item?.kernel_id||'')!==kernel);
   return writeFastSignedIdentitySnapshots([snapshot,...prior]);
 }
+function persistOfflinePublicHistory(base,boot,providerIndex){
+  // Retain exact signed evidence only after the complete current generation has
+  // passed the normal authority path. Reads still re-run every signature, hash,
+  // policy and historical lease check before projecting route-free metadata.
+  const registry=S.keyDocs.get(base||'@origin');
+  if(!Array.isArray(registry?.entries)||!providerIndex) return false;
+  const snapshot=createOfflineHistorySnapshot({
+    kernelId:boot?.kernel_id,storedAt:Date.now(),providerIndex,
+    keys:{schema:'personaos-keys/1',kernel_id:boot?.kernel_id,
+      keys:registry.entries.map((entry)=>({...entry}))},
+  });
+  return !!snapshot&&writeOfflineHistorySnapshot(snapshot);
+}
 function retireFastSignedIdentityRoute(kernel){
   const info=S.globalKernels?.get(kernel);
   if(info){
@@ -2675,7 +2698,8 @@ async function hydrateFastOriginInventory(){
           S.fastOriginRefreshPending=false;
           scheduleRealtimeRepaint({records:true}); return;
         }
-        const applied=applyVerifiedProviderInventory('',boot,verified.rows,inventory);
+        const applied=applyVerifiedProviderInventory(
+          '',boot,verified.rows,inventory,cached.provider_index);
         const current=S.providerInventories.get(boot.kernel_id);
         const superseded=current&&(current.generation>inventory.generation
           ||(current.generation===inventory.generation&&current.hash===inventory.hash));
@@ -3612,7 +3636,7 @@ function pruneExpiredDiscoveryState(now=Date.now()){
   }
   return changed;
 }
-function applyVerifiedProviderInventory(base,boot,rows,inventory){
+function applyVerifiedProviderInventory(base,boot,rows,inventory,providerIndex=null){
   if(!inventory?.complete||!inventory.ok||!boot?.kernel_id
     ||!_providerInventoryIsCurrent(inventory)) return false;
   const source=String(boot.kernel_id), prior=S.providerInventories.get(source);
@@ -3659,6 +3683,7 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory){
     recordKeys:incoming,manifestHash:inventory.manifestHash,
     bindings:new Map(inventory.bindings||[]),base:base||'',
     generatedAt:inventory.generatedAt,expiresAt:inventory.expiresAt});
+  persistOfflinePublicHistory(base,boot,providerIndex);
   S.cachedIdentityPendingKernels.delete(source);
   retireFastSignedIdentityRoute(source);
   S.fastOriginRefreshPending=S.cachedIdentityPendingKernels.size>0;
@@ -3857,7 +3882,8 @@ async function discover({refreshGlobal=true,trailing=false}={}){
     const signal=AbortSignal.timeout(P2P_ROUTE_LIMITS.jobDeadlineMs);
     const job=discoverFrom(b,'internet',knownBoot,{signal}).then(async(res)=>{
       if(!res.boot) return;
-      const accepted=applyVerifiedProviderInventory(b,res.boot,res.found,res.inventory);
+      const accepted=applyVerifiedProviderInventory(
+        b,res.boot,res.found,res.inventory,res.providerIndex);
       if(!accepted) return;
       if(!b){
         S.fastOriginRefreshPending=false;
@@ -4033,6 +4059,118 @@ function emptyStateHTML(){
   </div>`;
 }
 
+function offlineHistoryHTML(){
+  // History is never merged into S.recs, route maps, counters, mission state,
+  // or liveness. A reachable bootstrap is not yet current inventory authority,
+  // so the historical lane may remain visible while direct/P2P verification races.
+  const currentKernels=new Set([...S.providerInventories.entries()]
+    .filter(([,inventory])=>_providerInventoryIsCurrent(inventory))
+    .map(([kernel])=>String(kernel)));
+  const currentIds=new Set();
+  for(const row of S.recs.values()) for(const value of [
+    row?.record_id,row?.card_id,row?.did,row?.id,_shortId(row?.did||row?.record_id||''),
+  ]) if(value) currentIds.add(String(value));
+  const byKernel=new Map();
+  for(const snapshot of (S.offlineHistory||[])){
+    const kernel=String(snapshot?.kernel_id||'');
+    if(!kernel||currentKernels.has(kernel)||(S.kernelFocus&&S.kernelFocus!==kernel)) continue;
+    const prior=byKernel.get(kernel);
+    if(!prior||Date.parse(snapshot.stored_at)>Date.parse(prior.stored_at))
+      byKernel.set(kernel,snapshot);
+  }
+  const snapshots=[...byKernel.values()];
+  if(!snapshots.length) return '';
+  const snapshotLabel=snapshots.every((snapshot)=>
+    Date.parse(String(snapshot?.lease?.expires_at||''))<=Date.now())
+    ?'Expired signed snapshot cached by this browser'
+    :'Signed snapshot cached by this browser · offline';
+  const query=String(S.q||'').trim().toLowerCase();
+  const matches=(...values)=>!query||values.flat().join(' ').toLowerCase().includes(query);
+  const personas=snapshots.flatMap((snapshot)=>(snapshot.personas||[])
+    .filter((row)=>!currentIds.has(String(row.id||''))
+      &&matches(row.name,row.description,row.id,snapshot.kernel_id))
+    .map((row)=>({...row,kernel:snapshot.kernel_id,storedAt:snapshot.stored_at})));
+  const environments=snapshots.flatMap((snapshot)=>(snapshot.environments||[])
+    .filter((row)=>!currentIds.has(String(row.id||''))
+      &&matches(row.name,row.description,row.capabilities,row.id,snapshot.kernel_id))
+    .map((row)=>({...row,kernel:snapshot.kernel_id,storedAt:snapshot.stored_at})));
+  const artifacts=snapshots.flatMap((snapshot)=>(snapshot.artifacts||[])
+    .filter((row)=>!currentIds.has(String(row.id||''))
+      &&matches(row.path,row.description,row.media,row.purpose,row.content_hash,
+        row.environment_id,snapshot.kernel_id))
+    .map((row)=>({...row,kernel:snapshot.kernel_id,storedAt:snapshot.stored_at})));
+  const retained={persona:personas.length,env:environments.length,artifact:artifacts.length};
+  if(!retained.persona&&!retained.env&&!retained.artifact) return '';
+  const personaCards=personas.slice(0,NETWORK_LIMITS.personaInitial).map((row,index)=>{
+    const hue=(Array.from(row.id||'persona').reduce((sum,char)=>sum+char.codePointAt(0),0)+index*29)%360;
+    const when=_friendlyInstant(row.storedAt)||'an earlier visit';
+    return `<article class="pcard identity-signed offline-history-card" style="--avatar-hue:${hue}" aria-label="offline history for ${esc(row.name)}">`
+      +'<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>OFFLINE HISTORY</span><span>NOT LIVE</span></div>'
+      +`<header class="pc-profile"><span class="pc-avatar" aria-label="portrait body is not retained in offline metadata"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${row.avatar_available?'portrait offline':'portrait unavailable'}</small></span></span>`
+      +'<i class="pc-dot off" aria-hidden="true"></i>'
+      +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">historical signatures rechecked</span>`
+      +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(row.description||'Self-description still forming')}</strong></span></div>`
+      +'<div class="pc-badges"><span class="pc-idle">OFFLINE</span></div></header>'
+      +`<section class="pc-current"><span class="pc-current-label">Cached signed observation</span><div class="pc-doing"><span class="pc-rest">●</span><strong>Signed identity lease was valid at ${esc(when)}; current activity is unknown.</strong></div></section>`
+      +`<div class="pc-stats"><span class="tag" title="historical node identity">${esc(row.kernel)}</span></div></article>`;
+  }).join('');
+  const environmentCards=environments.slice(0,NETWORK_LIMITS.environmentInitial).map((row)=>{
+    const words=String(row.name||'workspace').split(/\s+/).filter(Boolean);
+    const initials=(words.length>1?words[0][0]+words.at(-1)[0]:words[0]?.slice(0,2)||'EN').toUpperCase();
+    const when=_friendlyInstant(row.storedAt)||'an earlier visit';
+    return `<article class="env-card record-signed offline-history-card" aria-label="offline history for workspace ${esc(row.name)}">`
+      +'<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">'
+      +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
+      +`<div class="env-identity"><span class="env-kicker">OFFLINE WORKSPACE HISTORY</span><span class="env-name">${esc(row.name)}</span><span class="env-card-id">${esc(row.kernel)}</span></div>`
+      +'<span class="env-state">offline</span></header>'
+      +`<div class="env-card-empty">Signed workspace evidence was valid at ${esc(when)}. Current membership and work state are unknown.</div></article>`;
+  }).join('');
+  const artifactRows=artifacts.slice(0,80).map((row)=>{
+    const presentation=_artifactFilePresentation(row.path),media=String(row.media?.[0]||'');
+    return `<div class="current-artifact-file artifact-preview-unavailable offline-history-artifact" aria-label="${esc(row.path)} — offline metadata only">`
+      +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation)}`
+      +`<small>${esc(artifactTypeLabel(media))}${row.size_bytes!=null?` · ${esc(fmtBytes(row.size_bytes))}`:''}${row.environment_id?` · workspace ${esc(row.environment_id)}`:''}${row.content_hash?` · ${esc(row.content_hash.slice(0,18))}…`:''} · signed snapshot ${esc(_friendlyInstant(row.storedAt)||'earlier')}</small></span>`
+      +'<span class="current-artifact-preview">Metadata only · offline</span></div>';
+  }).join('');
+  const matchCount=personas.length+environments.length+artifacts.length;
+  return `<section class="offline-history-banner" role="status"><strong>${icon('history','ico-sm')} ${esc(snapshotLabel)}</strong>`
+    +'<span>The browser rechecked the cached signatures, inventory, document hashes, policies, and historical lease window. The cached timestamp is not current liveness evidence; direct and peer discovery continues in the background.</span></section>'
+    +`<div class="stage-summary"><div><strong>${query?`${matchCount} matching historical records`:`${retained.persona} personas · ${retained.env} workspaces · ${retained.artifact} artifacts`}</strong> <span class="scope-copy">· offline metadata history · not live</span></div></div>`
+    +(personaCards?`<section class="persona-section offline-history-section"><header class="stage-section-head"><div><span class="section-kicker">OFFLINE PERSONA HISTORY</span><h2>Personas in cached signed evidence</h2></div><p>No current thinking, work, or availability is implied.</p></header><div class="persona-deck">${personaCards}</div></section>`:'')
+    +(environmentCards?`<section class="environment-section offline-history-section"><header class="stage-section-head compact"><div><span class="section-kicker">OFFLINE WORKSPACE HISTORY</span><h2>Workspaces in cached signed evidence</h2></div><p>Live membership and work state are unknown.</p></header><div class="environment-grid">${environmentCards}</div></section>`:'')
+    +(artifactRows?`<section class="offline-history-files"><header class="stage-section-head compact"><div><span class="section-kicker">OFFLINE ARTIFACT INDEX</span><h2>File metadata in cached signed evidence</h2></div><p>File bodies stay closed until a current verified provider route returns.</p></header>${_artifactExactFormatCountsHTML(artifacts,(row)=>row.path)}<div class="current-artifact-list">${artifactRows}</div>${artifacts.length>80?`<p class="persona-window-note">${artifacts.length-80} additional matching historical artifact records remain in the bounded cache.</p>`:''}</section>`:'')
+    +(!matchCount&&query?'<div class="mission-no-match">No offline history matches this network filter.</div>':'');
+}
+
+function _verifiedOfflineHistoryProjection(value){
+  return value?.schema==='personaos-browser-verified-public-history/2'
+    &&/^kernel:[0-9a-f]{16}$/i.test(String(value.kernel_id||''))
+    &&Number.isFinite(Date.parse(String(value.stored_at||'')))
+    &&Array.isArray(value.personas)&&Array.isArray(value.environments)
+    &&Array.isArray(value.artifacts);
+}
+function mergeOfflineHistoryProjections(values){
+  const byKernel=new Map((S.offlineHistory||[])
+    .filter(_verifiedOfflineHistoryProjection).map((item)=>[item.kernel_id,item]));
+  for(const value of (Array.isArray(values)?values:[])){
+    if(!_verifiedOfflineHistoryProjection(value)) continue;
+    const prior=byKernel.get(value.kernel_id);
+    if(!prior||Date.parse(value.stored_at)>=Date.parse(prior.stored_at))
+      byKernel.set(value.kernel_id,value);
+  }
+  S.offlineHistory=[...byKernel.values()].sort((left,right)=>
+    Date.parse(right.stored_at)-Date.parse(left.stored_at)).slice(0,4);
+  globalThis.__personaOSOfflineHistory=S.offlineHistory;
+  return S.offlineHistory;
+}
+async function hydrateOfflineHistory(){
+  const verified=await verifyOfflineHistorySnapshots(readOfflineHistorySnapshots());
+  if(!verified.length) return false;
+  mergeOfflineHistoryProjections(verified);
+  refreshSystemView();
+  return true;
+}
+
 // ---------- WARMING state: a reachable node is alive but the first candidate /
 // telemetry hasn't reached this client yet ----------
 // HONEST gate: at least one node bootstrapped OK (S.boots / a reachable peer),
@@ -4180,7 +4318,8 @@ async function _refreshPeerInventory(base){
   const resolved=await _discoverFromP2P({base,kernel:route.kernel,peerId:route.peerId,
     providerRecord:route.providerRecord}).catch(()=>null);
   if(!resolved?.boot) return false;
-  const accepted=applyVerifiedProviderInventory(base,resolved.boot,resolved.found,resolved.inventory);
+  const accepted=applyVerifiedProviderInventory(
+    base,resolved.boot,resolved.found,resolved.inventory,resolved.providerIndex);
   if(accepted){ classifyMap(); updateVitalsCounters(); renderMissions(); }
   return accepted;
 }
@@ -4277,7 +4416,8 @@ function connectDiscoveryStream(base,boot){
       const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
         &&verified.refused===0
         &&new Set(verified.rows.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
-      const accepted=applyVerifiedProviderInventory(base,boot,verified.rows,inventory);
+      const accepted=applyVerifiedProviderInventory(
+        base,boot,verified.rows,inventory,providerIndex);
       const added=accepted?verified.rows.length:0;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
       if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); scheduleSseCognitionRefresh(); }
@@ -4607,26 +4747,34 @@ function currentRuntimeStatusEntries(now=Date.now(),maxAge=15000){
 function personaIdFromDid(did){
   const m=/\/persona\/([^/]+)$/.exec(did||''); if(m) return m[1];
   return (did||'').replace('did:personaos:',''); }
-async function fetchText(u){
-  try{ const r=await fetch(u,secureFetchInit(u)); if(r.ok)
+async function fetchText(u,{signal=null}={}){
+  if(signal?.aborted) return null;
+  try{ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok)
     return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes));
   }catch(e){}
-  const bytes=await fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  if(signal?.aborted) return null;
+  const bytes=await settleBeforeAbort(
+    fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes),signal,null);
   return bytes?new TextDecoder().decode(bytes):null;
 }
 // Binary-safe bounded fetch for any artifact body — returns {blob,size,type} or null.
-async function fetchBlob(u){
-  try{ const r=await fetch(u,secureFetchInit(u)); if(r.ok){
+async function fetchBlob(u,{signal=null}={}){
+  if(signal?.aborted) return null;
+  try{ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
     const type=r.headers.get('content-type')||'application/octet-stream';
     const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }
   }catch(e){}
-  const bytes=await fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes);
+  if(signal?.aborted) return null;
+  const bytes=await settleBeforeAbort(
+    fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes),signal,null);
   if(!bytes) return null;
   const type='application/octet-stream', b=new Blob([bytes],{type});
   return {blob:b,size:b.size,type};
 }
-async function fetchVerifiedLiveBody(url,expectedHash){
+async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
+  const cancelled={ok:false,checkOutcome:'cancelled',error:'artifact view cancelled'};
+  if(signal?.aborted) return cancelled;
   const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
   if(!/^[a-f0-9]{64}$/.test(expected))
     return {ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
@@ -4641,7 +4789,8 @@ async function fetchVerifiedLiveBody(url,expectedHash){
     S.verifiedArtifactBodies.delete(cacheKey); S.verifiedArtifactBodies.set(cacheKey,cached);
     return {...cached,blob:new Blob([cached.bytes],{type:cached.type})};
   }
-  const pending=S.verifiedArtifactBodyJobs.get(cacheKey); if(pending) return pending;
+  const pending=S.verifiedArtifactBodyJobs.get(cacheKey);
+  if(pending) return settleBeforeAbort(pending,signal,cancelled);
   let job;
   const request=(async()=>{ try{
     const controller=new AbortController();
@@ -4680,7 +4829,8 @@ async function fetchVerifiedLiveBody(url,expectedHash){
   })();
   job=request.finally(()=>{ if(S.verifiedArtifactBodyJobs.get(cacheKey)===job)
     S.verifiedArtifactBodyJobs.delete(cacheKey); });
-  S.verifiedArtifactBodyJobs.set(cacheKey,job); return job;
+  S.verifiedArtifactBodyJobs.set(cacheKey,job);
+  return settleBeforeAbort(job,signal,cancelled);
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -5047,7 +5197,7 @@ function liveArtifactsHTML(base,run){
     +`<div class="live-revision"><span>${changed}</span><span title="${esc(revision)}">current signed revision</span></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
     +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
-    +trees+`<div class="live-integrity-note"><b>Workspace snapshot only · ArtifactBundle lifecycle is unknown.</b> Snapshot metadata is Ed25519 signature-checked against the node kernel key. Opened file bytes are separately SHA-256 checked against the exact signed hash before rendering.</div></div>`;
+    +trees+`<div class="live-integrity-note"><b>Workspace snapshot only · no artifact meaning or review state is inferred.</b> Snapshot metadata is Ed25519 signature-checked against the node kernel key. Opened file bytes are separately SHA-256 checked against the exact signed hash before rendering.</div></div>`;
 }
 
 // ---------- Trust / Access panel (09_PROTOCOLS §3F/§3G — the design's first-class
@@ -7932,7 +8082,8 @@ async function refreshSystemView(){
       +`<span class="routing-pressure-items">${unresolvedArtifacts.slice(0,4).map(({record,authority})=>{ const count=(authority.candidates||[]).length;
         return `<span><b>${esc(record.label||record.record_id||'artifact')}</b> · ${count?`${esc(count)} candidate${count===1?'':'s'}`:esc(authority.reason||'environment reference absent')}</span>`; }).join('')}`
       +`${unresolvedArtifacts.length>4?`<span>+${unresolvedArtifacts.length-4} more</span>`:''}</span></div>`:'';
-  let html=summary+routingPressure+bodyHTML;
+  const historyHTML=offlineHistoryHTML();
+  let html=summary+routingPressure+bodyHTML+historyHTML;
   // empty stage: warming (reachable node, heartbeat running, nothing streamed yet)
   // ranks ABOVE the generic "no environments" line and the no-node empty card, so a
   // viewer who just started a run sees honest "first candidate is coming", not a blank.
@@ -10266,56 +10417,46 @@ async function bundleView(base,url,L){ S.curBase=base; const d=await dfetch(base
     }
     return {title:'artifact bundle manifest', html:mh};
   }
-  // personaos-bundle-export/2 is a DIRECT document (07_ARTIFACTS §7): bundle_id,
-  // bundle_kind, state, contributors, verifier_evidence[], co_signatures{},
-  // accepted_at/shipped_at, artifacts[] with role_in_bundle. Verifier evidence
-  // is MANDATORY for verified/accepted — surface it as the proof, not a one-liner.
+  // Render the exact optional evidence carried by this artifact grouping. The
+  // browser does not interpret lifecycle vocabulary, verdict words, receipt
+  // absence, or co-signature counts as acceptance, completion, or quality.
   const S0=(v)=>esc((v===''||v==null)?'—':v);
   const arts=d.artifacts||[], ev=d.verifier_evidence||[], rv=d.review_verdicts||[];
   const cosigners=d.co_signers||Object.keys(d.co_signatures||{});
-  const st=String(d.state||'—');
-  let html=kv('Recorded bundle state',`<code>${esc(st)}</code>`)
-    +kv('Kind',`<span class="cap">${esc(d.bundle_kind||'not declared')}</span>`)+kv('Version',S0(d.version))
+  let html=kv('Authored grouping kind',`<span class="cap">${esc(d.bundle_kind||'not declared')}</span>`)
+    +kv('Version',S0(d.version))
     +kv('Outward tier',`<span class="tier-pill t-${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}">${esc(d.outward_artifact_tier||d.visibility_tier||'federation')}</span>`)
     +kv('Contributors',S0((d.contributors||[]).map((id)=>_nameFor(id,kernelForBase(base))).join(', ')))
-    +kv('Co-signatures',cosigners.length?`<span class="ok">${esc(cosigners.length)} signer(s)</span>`:'<span class="no">none</span>')
+    +(cosigners.length?kv('Co-signature references',esc(cosigners.length)):'')
     +verificationIdentityDetails('bundle id',d.bundle_id);
-  // Verifier evidence — the hash-bound, signed proof each artifact check ran.
   if(ev.length){
-    html+=H(`Verifier evidence (${ev.length}) — executed checks, hash-bound`);
+    html+=H(`Authored verifier and tool receipts (${ev.length})`);
     html+=ev.slice(0,12).map((e)=>{
-      const ok=(e.exit_status_kind==='success')||(e.parsed_verdict==='pass');
-      const nr=e.parsed_verdict==='not_run';
-      const cls=nr?'amber':(ok?'ok':'no');
-      const mark=nr?(_verdict('notrun')+' not_run'):(ok?(_verdict('pass')+' pass'):(_verdict('fail')+' fail'));
-      // surface what the export already ships: the failure_kind on non-pass rows and
-      // a kernel-signed mark when the evidence carries the kernel's signature.
-      const fk=(!ok&&!nr&&e.failure_kind)?` <span class="no" title="failure kind">(${esc(e.failure_kind)})</span>`:'';
-      const ks=e.signed_by_kernel?` <span class="ok" title="kernel-signed evidence">${icon('check','ico-sm')} kernel</span>`:'';
-      return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'check')}${ks}</span>`
-        +`<span class="${cls}">${mark}${fk}</span></div>`;
+      const exact=[e.exit_status_kind,e.parsed_verdict,e.failure_kind]
+        .filter((value)=>value!==undefined&&value!==null&&String(value)!=='')
+        .map((value)=>`<code>${esc(value)}</code>`).join(' · ');
+      const signer=e.signed_by_kernel===true?' · authored field: signed_by_kernel=true':'';
+      return `<div class="grant"><span class="l2">${esc(e.command_or_api_fingerprint||e.stage_id||'receipt')}</span>`
+        +`<span class="tier">${exact||'exact outcome not authored'}${esc(signer)}</span></div>`;
     }).join('');
-  } else {
-    html+=H('Verifier evidence')+`<div class="l2">— none recorded (below verified) —</div>`;
   }
   if(rv.length){
-    html+=H(`Review verdicts (${rv.length})`);
-    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_id||v.reviewer_persona_id||v.reviewer||'reviewer')}${v.signed_by?` <span class="ok" title="Ed25519 signed">${icon('check','ico-sm')} signed</span>`:''}</span>`
-      +`<span class="${String(v.verdict||'').includes('accept')?'ok':'no'}">${esc(v.verdict||'—')}</span></div>`
+    html+=H(`Authored review receipts (${rv.length})`);
+    html+=rv.slice(0,8).map((v)=>`<div class="grant"><span class="l2">${esc(v.reviewer_id||v.reviewer_persona_id||v.reviewer||'reviewer')}${v.signed_by?` · signature reference ${esc(v.signed_by)}`:''}</span>`
+      +`<span class="tier"><code>${esc(v.verdict||'outcome not authored')}</code></span></div>`
       +(v.rationale?`<div class="desc2">${esc(String(v.rationale).slice(0,240))}</div>`:'')).join('');
   }
-  // Co-signer identities — the export ships them, but the UI previously showed only a bare count.
   if(cosigners.length){
-    html+=H(`Co-signers (${cosigners.length})`);
-    html+=cosigners.map((c)=>`<div class="grant"><span class="l2">${esc(c)}</span><span class="ok" title="Ed25519 signed">${icon('check','ico-sm')} signed</span></div>`).join('');
+    html+=H(`Co-signature references (${cosigners.length})`);
+    html+=cosigners.map((c)=>`<div class="grant"><span class="l2">${esc(c)}</span><span class="tier">authored reference</span></div>`).join('');
   }
   html+=H(`Artifacts (${arts.length}) — click to view`)+renderArtifactTree(arts,pkgRun);
   if(L && L.run){ html+=H('Provenance')
-    +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Body · model cascade →</a></div>`
-    +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Verification · cascade + safety floor →</a></div>`
-    +`<div class="row"><a href="#" data-act="physical" data-url="${esc(L.run)}">Physical asset →</a></div>`;
+    +`<div class="row"><a href="#" data-act="body" data-url="${esc(L.run)}">Authored body evidence →</a></div>`
+    +`<div class="row"><a href="#" data-act="verify" data-url="${esc(L.run)}">Authored verification receipts →</a></div>`
+    +`<div class="row"><a href="#" data-act="physical" data-url="${esc(L.run)}">Physical-asset evidence →</a></div>`;
     if(L.oci) html+=`<div class="row"><a href="#" data-act="dist" data-oci="${esc(L.oci)}" data-dag="${esc(L.dag||'')}" data-reg="${esc(L.registry||'')}">Distribution · OCI + IPLD →</a></div>`; }
-  return {title:'<span class="kind k-artifact">BUNDLE</span> Artifact bundle', html};
+  return {title:'<span class="kind k-artifact">ARTIFACTS</span> Authored artifact grouping', html};
 }
 /* ====================================================================
    DECLARED-MEDIA ARTIFACT RENDERING
@@ -10340,8 +10481,13 @@ function pickRenderer(kind,path='',responseMedia='',contentMedia=''){
 }
 
 // Track blob: URLs allocated for the current view so they're revoked on change.
-function mkBlobURL(blob){ const u=URL.createObjectURL(blob);
-  onViewCleanup(()=>URL.revokeObjectURL(u)); return u; }
+function mkBlobURL(blob,ctx=null){
+  ctx?.assertCurrent?.();
+  const u=URL.createObjectURL(blob);
+  (ctx?.onCleanup||onViewCleanup)(()=>URL.revokeObjectURL(u));
+  if(ctx?.signal?.aborted){ URL.revokeObjectURL(u); ctx.assertCurrent?.(); }
+  return u;
+}
 
 // Nodes may serve bodies as application/octet-stream. After integrity checking,
 // restore only the exact declared Web media family selected above; arbitrary
@@ -10414,17 +10560,23 @@ async function renderCsv(host,ctx){
   const scroll=el('div','fv-tablewrap'); scroll.appendChild(tbl); host.appendChild(scroll);
 }
 async function artifactBytes(ctx,label='artifact'){
+  ctx.assertCurrent?.();
   if(ctx.verifiedBytes instanceof Uint8Array){ ctx.realSize=ctx.verifiedBytes.byteLength; return ctx.verifiedBytes; }
   if(ctx.verifiedBytes instanceof ArrayBuffer){
     ctx.verifiedBytes=new Uint8Array(ctx.verifiedBytes); ctx.realSize=ctx.verifiedBytes.byteLength;
     return ctx.verifiedBytes;
   }
-  const fb=await fetchBlob(ctx.url); if(!fb) throw new Error(`${label} body unavailable`);
-  ctx.realSize=fb.size; return new Uint8Array(await fb.blob.arrayBuffer());
+  ctx.reportProgress?.(`fetching ${label} bytes`);
+  const fb=await fetchBlob(ctx.url,{signal:ctx.signal});
+  ctx.assertCurrent?.();
+  if(!fb) throw new Error(`${label} body unavailable`);
+  ctx.realSize=fb.size;
+  const bytes=new Uint8Array(await fb.blob.arrayBuffer());
+  ctx.assertCurrent?.(); return bytes;
 }
 async function renderImage(host,ctx){
   const bytes=await artifactBytes(ctx,'image');
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}),ctx);
   host.innerHTML='';
   const img=document.createElement('img'); img.className='fv-img'; img.alt=ctx.title;
   img.addEventListener('error',()=>{ host.innerHTML='';
@@ -10436,7 +10588,7 @@ async function renderImage(host,ctx){
 }
 async function renderMedia(host,ctx,type){
   const bytes=await artifactBytes(ctx,type);
-  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}));
+  const url=mkBlobURL(new Blob([bytes],{type:safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia)}),ctx);
   host.innerHTML=''; const media=document.createElement(type); media.className=`fv-${type}`;
   media.controls=true; media.preload='metadata'; media.src=url; media.setAttribute('playsinline','');
   media.setAttribute('controlslist','nodownload noplaybackrate'); media.setAttribute('disablepictureinpicture','');
@@ -10551,53 +10703,6 @@ function dxfGeometry(parsed){
 }
 function dxfLayerColour(layer){ let hash=0; for(const char of String(layer)) hash=(hash*31+char.charCodeAt(0))>>>0;
   return `hsl(${(hash%240)+160} 72% 66%)`; }
-async function renderDxf(host,ctx){
-  const text=String(ctx.text||''); const parsed=parseDxfEntities(text), drawing=dxfGeometry(parsed);
-  host.innerHTML='';
-  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd','DXF drawing · verified-byte preview'));
-  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); };
-  add('Entities read',parsed.entities.length+(parsed.truncated?' · first 5,000':''));
-  add('Geometry shown',drawing.geometry.length+(drawing.truncated?' · bounded preview':'')); add('Layers',drawing.layers.length||'none'); add('Drawing units',parsed.units);
-  card.appendChild(el('div','fv-note','The browser drew supported DXF primitives from the hash-checked file. This preview is for inspection; the verified download remains the source for CAD editing and fabrication checks.'));
-  host.appendChild(card);
-  if(!drawing.points.length){ host.appendChild(plainPre(text.slice(0,64*1024),'No supported LINE, LWPOLYLINE, CIRCLE, ARC, TEXT, or MTEXT geometry was found; showing bounded DXF source.')); return; }
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  for(const point of drawing.points){ minX=Math.min(minX,point.x); maxX=Math.max(maxX,point.x);
-    minY=Math.min(minY,point.y); maxY=Math.max(maxY,point.y); }
-  if(maxX===minX){ minX-=1; maxX+=1; } if(maxY===minY){ minY-=1; maxY+=1; }
-  const width=1000,padding=32,aspect=(maxY-minY)/(maxX-minX),height=Math.max(360,Math.min(760,Math.round((width-padding*2)*aspect+padding*2)));
-  const scale=Math.min((width-padding*2)/(maxX-minX),(height-padding*2)/(maxY-minY));
-  const px=(x)=>padding+(x-minX)*scale, py=(y)=>height-padding-(y-minY)*scale;
-  const svg=svgEl('svg',{class:'fv-dxf',viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':`${ctx.title} DXF geometry preview`});
-  svg.appendChild(svgEl('rect',{x:0,y:0,width,height,class:'fv-dxf-bg'}));
-  for(const item of drawing.geometry){ const stroke=dxfLayerColour(item.layer);
-    if(item.type==='line') svg.appendChild(svgEl('line',{x1:px(item.x1),y1:py(item.y1),x2:px(item.x2),y2:py(item.y2),stroke,class:'fv-dxf-line'}));
-    else if(item.type==='polyline'){
-      const path=item.vertices.map((point,index)=>`${index?'L':'M'}${px(point.x)} ${py(point.y)}`).join(' ')+(item.closed?' Z':'');
-      svg.appendChild(svgEl('path',{d:path,stroke,fill:'none',class:'fv-dxf-line'}));
-    }else if(item.type==='circle') svg.appendChild(svgEl('circle',{cx:px(item.x),cy:py(item.y),r:item.r*scale,stroke,fill:'none',class:'fv-dxf-line'}));
-    else if(item.type==='arc'){
-      const start=(Number.isFinite(item.start)?item.start:0)*Math.PI/180,end=(Number.isFinite(item.end)?item.end:360)*Math.PI/180;
-      const a={x:px(item.x+item.r*Math.cos(start)),y:py(item.y+item.r*Math.sin(start))};
-      const b={x:px(item.x+item.r*Math.cos(end)),y:py(item.y+item.r*Math.sin(end))};
-      let delta=(Number.isFinite(item.end)?item.end:360)-(Number.isFinite(item.start)?item.start:0); while(delta<0) delta+=360;
-      svg.appendChild(svgEl('path',{d:`M${a.x} ${a.y} A${item.r*scale} ${item.r*scale} 0 ${delta>180?1:0} 0 ${b.x} ${b.y}`,stroke,fill:'none',class:'fv-dxf-line'}));
-    }else if(item.type==='text'){
-      const label=svgEl('text',{x:px(item.x),y:py(item.y),fill:stroke,'font-size':Math.max(7,Math.min(24,item.height*scale)),'data-layer':item.layer});
-      label.textContent=item.value; svg.appendChild(label);
-    }
-  }
-  host.appendChild(svg);
-  const legend=el('div','fv-dxf-legend'); drawing.layers.slice(0,16).forEach((layer)=>{ const item=el('span');
-    const swatch=el('i'); swatch.style.background=dxfLayerColour(layer); item.appendChild(swatch); item.appendChild(document.createTextNode(layer)); legend.appendChild(item); });
-  if(drawing.layers.length>16) legend.appendChild(el('span',null,`+${drawing.layers.length-16} more layers`)); host.appendChild(legend);
-  const details=document.createElement('details'); details.className='fv-source';
-  const summary=document.createElement('summary'); summary.textContent='DXF entity summary and bounded source'; details.appendChild(summary);
-  const counts=el('div','fv-entity-grid'); [...drawing.typeCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20).forEach(([type,count])=>{
-    const row=el('span'); row.appendChild(el('b',null,type)); row.appendChild(el('small',null,count)); counts.appendChild(row); });
-  details.appendChild(counts); details.appendChild(plainPre(text.slice(0,64*1024),text.length>64*1024?'first 64 KB':'')); host.appendChild(details);
-}
-
 function cadFormat(ctx){
   const media=String(ctx.detectedMedia||ctx.kind||'').toLowerCase();
   if(media.includes('ifc')) return 'ifc'; if(media.includes('step')) return 'step';
@@ -10862,27 +10967,6 @@ function mountCadMeshPreview(host,mesh,title){
   });
   wrap.append(controls,canvas,status); host.appendChild(wrap); draw(); return true;
 }
-async function renderCad3d(host,ctx){
-  const bytes=await artifactBytes(ctx,'CAD model'),format=cadFormat(ctx),inspection=inspectCadBytes(bytes,format);
-  const mesh=cadMeshFromBytes(bytes,format),bounds=cadMeshBounds(mesh);
-  if(mesh){ inspection.facts.push(['Renderable vertices',mesh.vertices.length],['Triangle faces',mesh.triangles.length]);
-    if(bounds) inspection.facts.push(['Model bounds',`X ${_cadFormatNumber(bounds.size[0])} · Y ${_cadFormatNumber(bounds.size[1])} · Z ${_cadFormatNumber(bounds.size[2])}`]);
-    if(mesh.truncated) inspection.warning=[inspection.warning,'The interactive preview is bounded; the verified original contains additional geometry.'].filter(Boolean).join(' ');
-    if(mesh.warnings.length) inspection.warning=[inspection.warning,...mesh.warnings].filter(Boolean).join(' '); }
-  host.innerHTML=''; const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',`${format.toUpperCase()} · verified-byte model inspection`));
-  for(const [label,value] of inspection.facts){ const row=el('div','row'); row.appendChild(el('span','l2',label)); row.appendChild(el('span','v2',value)); card.appendChild(row); }
-  if(inspection.warning) card.appendChild(el('div','fv-warn',inspection.warning));
-  card.appendChild(el('div','fv-note','Model facts and any interactive preview were derived locally from the hash-checked file. Embedded code and external model dependencies were not loaded. Use the verified original in a compatible CAD/BIM tool for authoritative geometry and fabrication review.'));
-  host.appendChild(card);
-  if(mesh&&mesh.triangles.length) mountCadMeshPreview(host,mesh,ctx.title);
-  else if(['obj','stl','ply','gltf','glb'].includes(format)) host.appendChild(el('div','fv-warn','No directly renderable triangle geometry was found in the verified model bytes.'));
-  if(inspection.types.size){ const typeWrap=el('div','fv-entity-grid');
-    [...inspection.types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,30).forEach(([type,count])=>{ const item=el('span'); item.appendChild(el('b',null,type)); item.appendChild(el('small',null,count)); typeWrap.appendChild(item); });
-    host.appendChild(el('div','fv-note','Entity inventory · most frequent types')); host.appendChild(typeWrap); }
-  if(inspection.preview){ const details=document.createElement('details'); details.className='fv-source';
-    const summary=document.createElement('summary'); summary.textContent='Bounded model source/header'; details.appendChild(summary);
-    details.appendChild(plainPre(inspection.preview,inspection.preview.length>=20000?'first 20 KB':'')); host.appendChild(details); }
-}
 function zipDirectoryEntries(bytes,limit=200){
   if(bytes.length<22) return [];
   const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
@@ -10940,56 +11024,55 @@ function tarDirectoryEntries(bytes,limit=200){
   }
   return entries;
 }
-async function gunzipBounded(bytes,limit=MAX_ARCHIVE_INSPECTION_BYTES){
+async function gunzipBounded(bytes,limit=MAX_ARCHIVE_INSPECTION_BYTES,{signal=null}={}){
   if(typeof DecompressionStream!=='function') return null;
   const reader=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const abort=()=>{ reader.cancel().catch(()=>{}); };
+  signal?.addEventListener('abort',abort,{once:true});
   const chunks=[]; let total=0;
   try{
-    while(true){ const {done,value}=await reader.read(); if(done) break;
+    while(true){
+      if(signal?.aborted) throw new DOMException('Artifact view cancelled','AbortError');
+      const {done,value}=await reader.read(); if(done) break;
       const chunk=value instanceof Uint8Array?value:new Uint8Array(value||0);
       total+=chunk.byteLength;
       if(total>limit){ await reader.cancel(); throw new Error('expanded archive exceeds the safe preview limit'); }
       chunks.push(chunk);
     }
-  }finally{ try{ reader.releaseLock(); }catch(_){} }
+  }finally{ signal?.removeEventListener('abort',abort); try{ reader.releaseLock(); }catch(_){} }
   const output=new Uint8Array(total); let offset=0;
   for(const chunk of chunks){ output.set(chunk,offset); offset+=chunk.byteLength; }
   return output;
 }
-async function renderArchive(host,ctx){
-  const bytes=await artifactBytes(ctx,'archive'); host.innerHTML='';
-  const media=String(ctx.detectedMedia||ctx.kind||'').toLowerCase();
-  const label=artifactTypeLabel(media);
-  const card=el('div','fv-card'); card.appendChild(el('div','fv-cardhd',label));
-  const zipContainer=media==='application/zip';
-  const gzipContainer=['application/gzip','application/x-gzip'].includes(media);
-  const tarContainer=media==='application/x-tar';
-  let entries=[],containerLabel='archive';
-  if(zipContainer){ entries=zipDirectoryEntries(bytes); containerLabel='ZIP'; }
-  else if(tarContainer){ entries=tarDirectoryEntries(bytes); containerLabel='Tar'; }
-  else if(gzipContainer){
-    containerLabel='Gzip';
-    try{ const expanded=await gunzipBounded(bytes);
-      if(expanded){ const tarEntries=tarDirectoryEntries(expanded);
-        if(tarEntries.length){ entries=tarEntries; containerLabel='Gzip-compressed tar'; } }
-    }catch(error){ card.appendChild(el('div','fv-warn',String(error?.message||'Archive expansion was refused.'))); }
-  }
-  card.appendChild(el('p','fv-note',entries.length
-    ?`${containerLabel} contents are listed after bounded local inspection. Embedded files were not opened or run.`
-    :'This packaged format is kept intact. Download the verified original to open it in a compatible application.'));
-  host.appendChild(card);
-  if(!entries.length){
-    if(zipContainer||tarContainer||gzipContainer)
-      host.appendChild(el('div','fv-note',`No readable ${containerLabel} directory was found in the bounded preview. The original file is still available above.`));
-    return;
-  }
-  const list=el('div','fv-archive-list');
-  entries.forEach((entry)=>{ const row=el('div','fv-archive-entry');
-    row.appendChild(el('span',null,entry.name)); row.appendChild(el('small',null,entry.directory?'folder':fmtBytes(entry.size)));
-    list.appendChild(row); });
-  host.appendChild(el('div','fv-note',`${entries.length} contained item${entries.length===1?'':'s'}${entries.length===200?' · first 200 shown':''}`));
-  host.appendChild(list);
+let TECHNICAL_RENDERERS_JOB=null;
+function technicalRendererRuntime(){
+  return {artifactBytes,artifactTypeLabel,cadFormat,cadMeshBounds,cadMeshFromBytes,
+    dxfGeometry,dxfLayerColour,el,fmtBytes,gunzipBounded,inspectCadBytes,
+    maxArchiveInspectionBytes:MAX_ARCHIVE_INSPECTION_BYTES,mountCadMeshPreview,
+    parseDxfEntities,plainPre,svgEl,tarDirectoryEntries,zipDirectoryEntries,
+    cadFormatNumber:_cadFormatNumber};
 }
+async function loadTechnicalRenderers(ctx){
+  ctx?.reportProgress?.('loading technical format renderer…');
+  if(!TECHNICAL_RENDERERS_JOB){
+    const request=import('./artifact-technical-renderers.mjs?v=20260808-async-artifacts-v1')
+      .then((module)=>module.createTechnicalRenderers(technicalRendererRuntime()));
+    TECHNICAL_RENDERERS_JOB=request.catch((error)=>{
+      if(TECHNICAL_RENDERERS_JOB) TECHNICAL_RENDERERS_JOB=null; throw error;
+    });
+  }
+  const renderers=await TECHNICAL_RENDERERS_JOB;
+  ctx?.assertCurrent?.(); return renderers;
+}
+function lazyTechnicalRenderer(name){
+  return async(host,ctx)=>{
+    ctx?.assertCurrent?.(); const renderers=await loadTechnicalRenderers(ctx);
+    ctx?.assertCurrent?.(); return renderers[name](host,ctx);
+  };
+}
+const renderDxf=lazyTechnicalRenderer('renderDxf');
+const renderCad3d=lazyTechnicalRenderer('renderCad3d');
+const renderArchive=lazyTechnicalRenderer('renderArchive');
 async function renderGeneric(host,ctx){
   const bytes=await artifactBytes(ctx); host.innerHTML='';
   const integrity=ctx.integrityVerified?'hash-checked':'unhashed';
@@ -11168,7 +11251,7 @@ async function renderOpenScad(host,ctx){
 async function renderPdf(host,ctx){
   const bytes=await artifactBytes(ctx,'PDF');
   if(new TextDecoder('latin1').decode(bytes.subarray(0,5))!=='%PDF-') throw new Error('invalid PDF header');
-  const url=mkBlobURL(new Blob([bytes],{type:'application/pdf'}));
+  const url=mkBlobURL(new Blob([bytes],{type:'application/pdf'}),ctx);
   host.innerHTML='';
   const obj=document.createElement('iframe'); obj.className='fv-pdf'; obj.src=url; obj.title=ctx.title;
   obj.setAttribute('sandbox',''); obj.referrerPolicy='no-referrer';
@@ -11177,7 +11260,8 @@ async function renderPdf(host,ctx){
 async function renderPlain(host,ctx){
   let body=ctx.text;
   if(body==null){ // forced-plain view of a binary kind → best-effort text decode
-    host.appendChild(loadingNode('loading…')); body=await fetchText(ctx.url); host.innerHTML='';
+    host.appendChild(loadingNode('loading…')); body=await fetchText(ctx.url,{signal:ctx.signal});
+    ctx.assertCurrent?.(); host.innerHTML='';
     if(body==null){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; } }
   const trunc=body.length>20000;
   host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
@@ -11200,7 +11284,7 @@ function _lineDiffHTML(prior,current){
   return `<details class="live-diff" open><summary>Hash-checked prior/current text diff${diff.truncated?' · bounded preview':''}</summary><div class="diff-head"><span>prior</span><span>current</span><span></span><span>content</span></div>${html||'<div class="l2">No textual changes.</div>'}</details>`;
 }
 
-async function liveFileView(base,run,workspaceId,path){
+function liveFileView(base,run,workspaceId,path){
   S.curBase=base;
   const state=liveArtifactState(base,run); const file=state?.files?.get(`${workspaceId}\u0000${path}`);
   if(!file){
@@ -11224,9 +11308,10 @@ async function liveFileView(base,run,workspaceId,path){
   });
 }
 
-// fileView builds the header synchronously, then mounts the chosen renderer
-// asynchronously into #fv-body, with a graceful <pre> fallback on any failure.
-async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
+// File identity, format declaration and provenance paint synchronously. Body
+// transport, SHA-256, byte sniffing and rendering belong to the view lifecycle
+// and hydrate the already-mounted metadata slots in the background.
+function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const filePresentation=_artifactFilePresentation(title);
   const declaration=_artifactDeclarationDisplayProjection(opts.artifactDeclaration||{});
   const humanTitle=declaration.title||filePresentation.title;
@@ -11235,13 +11320,10 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
     capability_summary:Array.isArray(opts.authoredLabels)?opts.authoredLabels:[],
   });
   const authoredAttr=JSON.stringify(authoredLabels);
-  let pick=pickRenderer(kind,title);
+  const initialPick=pickRenderer(kind,title);
   const sourceUrl=join(base,path);
   const forcedPlain=opts.raw===true;
-  let isBinary=BINARY_RENDERERS.has(pick.id);
-  let rendId=forcedPlain?'plain':pick.id;
-  // text bodies fetched here; binaries deferred to their renderer (blob/buffer).
-  let text=null, realSize=null, verified=null, url=sourceUrl, liveDiff='', detectedMedia='';
+  const initialBinary=BINARY_RENDERERS.has(initialPick.id);
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
   const expectedHash=advertisedHash.replace(/^sha256:/i,'').toLowerCase();
   const hashAdvertised=!!advertisedHash, validExpectedHash=/^[a-f0-9]{64}$/.test(expectedHash);
@@ -11252,88 +11334,36 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       artifacts.set(artifactUrl,`sha256:${expectedHash}`);
     }
   }
-  if(hashAdvertised){
-    verified=validExpectedHash
-      ?await fetchVerifiedLiveBody(sourceUrl,expectedHash)
-      :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
-    if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
-      if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile)){
-        verified={ok:false,checkOutcome:'failed',error:'stale live body response discarded'};
-      }
-    }
-    if(verified.ok){
-      realSize=verified.size;
-      detectedMedia=sniffArtifactMediaType(verified.bytes);
-      pick=pickRenderer(kind,title,verified.type,detectedMedia);
-      isBinary=BINARY_RENDERERS.has(pick.id);
-      rendId=forcedPlain?'plain':pick.id;
-      if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
-      const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
-      if(opts.liveFile&&text!=null){
-        let nextCache=cache;
-        if(!cache||cache.hash!==opts.liveFile.sha256){
-          nextCache={hash:opts.liveFile.sha256,text,
-            previousHash:cache?.hash||'',previousText:cache?.text??null};
-          S.liveArtifactBodyCache.set(opts.liveFile.bodyKey,nextCache);
-          while(S.liveArtifactBodyCache.size>24) S.liveArtifactBodyCache.delete(S.liveArtifactBodyCache.keys().next().value);
-        }
-        if(nextCache?.previousText!=null&&nextCache.previousHash!==nextCache.hash){
-          liveDiff=_lineDiffHTML(nextCache.previousText,nextCache.text);
-        }
-      }
-    }
-  } else if(!isBinary){
-    // a forced-plain view of a binary would show garbage, so only fetch text for texty kinds
-    text=await fetchText(url); realSize=text?text.length:null;
-  }
-  const ctx={ base, path, url,sourceUrl, title, kind:pick.mediaType||kind,
-    declaredMedia:kind||'',responseMedia:verified?.type||'',detectedMedia,
-    verifiedBytes:verified?.ok?verified.bytes:null,text, realSize, size:opts.size,
-    contentHash:advertisedHash||null,integrityVerified:!!verified?.ok,
-    liveFile:opts.liveFile||null,companionFiles:Array.isArray(opts.companionFiles)?opts.companionFiles:[] };
-  // a texty body that came back null (read-gated bytes / offline node / 404) would render
-  // as a SILENT blank pane (the renderers consume the body and "succeed"); flag it.
-  const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary && !forcedPlain && text===null);
-  const sizeLabel=realSize!=null?fmtBytes(realSize):(opts.size!=null?fmtBytes(opts.size):'—');
-  const byteCheckLabel=verified?.ok?'BYTES CHECKED':
-    (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
   const liveAttr=opts.liveFile?' data-live="1"':'';
-  const rawTog=forcedPlain
+  const rawToggle=(isBinary,rendererId)=>forcedPlain
     ? `<a href="#" data-act="fv-rich"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-declaration="${esc(artifactDeclarationAttr(declaration))}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">formatted view ←</a>`
-    : (!isBinary&&rendId!=='plain'
+    : (!isBinary&&rendererId!=='plain'
         ? `<a href="#" data-act="fv-raw"${liveAttr} data-path="${esc(path)}" data-title="${esc(title)}" data-kind="${esc(kind||'')}" data-semantics="${esc(authoredAttr)}" data-declaration="${esc(artifactDeclarationAttr(declaration))}" data-hash="${esc(opts.contentHash||'')}" data-size="${esc(opts.size??'')}">plain text view</a>`
         : `<span class="l2">${isBinary?'format preview':'plain text view'}</span>`);
-  const mediaSource={
+  const mediaSourceLabel=(pick)=>({
     declared:'signed artifact metadata',
     response:'hash-checked body response',
     bytes:'hash-checked content signature',
     path:'signed path suffix fallback',
     none:'no type metadata',
-  }[pick.source]||'type metadata';
-  const technicalMedia=pick.mediaType||kind||'undeclared';
-  const verificationRows=kv('Exact path',`<code class="exact-path">${esc(filePresentation.exactPath)}</code>`)
-    +kv('Media details',`${esc(technicalMedia)} <span class="fv-rid">· ${esc(rendId)} renderer · ${esc(mediaSource)}</span>`)
-    +(detectedMedia?kv('Observed byte format',`<code>${esc(detectedMedia)}</code>`):'')
-    +(opts.liveFile?kv('Workspace revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`)
-      +kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(opts.liveFile.sha256)}</code>`
-        :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-      +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">SNAPSHOT SIGNATURE CHECKED · ${byteCheckLabel}</span><span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span></div>`
-      :(hashAdvertised?kv('SHA-256',verified?.ok?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
-        :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span>`)
-        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">ADVERTISED HASH · ${byteCheckLabel}</span></div>`:''));
+  }[pick.source]||'type metadata');
+  const initialRendererId=forcedPlain?'plain':initialPick.id;
+  const initialVerification=kv('Exact path',`<code class="exact-path">${esc(filePresentation.exactPath)}</code>`)
+    +kv('Media details',`${esc(initialPick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(initialRendererId)} renderer · ${esc(mediaSourceLabel(initialPick))}</span>`)
+    +(opts.liveFile?kv('Workspace revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`):'')
+    +(hashAdvertised?kv('SHA-256',`<span class="amber">checking downloaded bytes…</span> <code class="exact-hash">${esc(advertisedHash)}</code>`):'');
+  const sizeLabel=opts.size!=null?fmtBytes(opts.size):'—';
   let html=kv(declaration.title?'Persona title':'Name',`<span class="fv-human-file-name"><strong>${esc(humanTitle)}</strong>${filePresentation.extensionLabel?`<span class="artifact-extension-badge">${esc(filePresentation.extensionLabel)}</span>`:''}</span>`)
     +kv('Filename',`<code>${esc(filePresentation.filename)}</code>`)
     +(filePresentation.folderLabel?kv('Folder',esc(filePresentation.folderLabel)):'')
     +(declarer?kv('Declared by',`<strong>${esc(declarer)}</strong>`):'')
-    +kv('Type',`<strong>${esc(artifactTypeLabel(pick.mediaType||kind))}</strong>`)
-    +(!pick.mediaType?`<div class="fv-note">This file type is not yet recognised, so it opens in a safe general-purpose inspector.</div>`:'')
+    +kv('Type',`<strong data-fv-type>${esc(artifactTypeLabel(initialPick.mediaType||kind))}</strong>`)
+    +`<div class="fv-note" data-fv-unknown${initialPick.mediaType?' hidden':''}>This file type is not yet recognised, so it opens in a safe general-purpose inspector.</div>`
     +(authoredLabels.length?kv('Purpose',authoredLabels.map((label)=>`<span class="cap">${esc(label)}</span>`).join(' ')):'')
     +`<div class="row"><span class="l2">Size</span><span class="v2 fv-size">${esc(sizeLabel)}</span></div>`
-    +`<div class="row"><span class="l2">Open as</span><span class="v2">${rawTog} · `
+    +`<div class="row"><span class="l2">Open as</span><span class="v2" data-fv-open-as>${rawToggle(initialBinary,initialRendererId)} · `
     +`${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}</span></div>`
-    +(hashAdvertised?`<div class="fv-integrity ${verified?.ok?'ok':'no'}">${verified?.ok
-      ?`${icon('check','ico-sm')} Verified file — downloaded bytes match the workspace record.`
-      :`${icon('x','ico-sm')} This file could not be verified and will not be previewed.`}</div>`:'')
+    +(hashAdvertised?`<div class="fv-integrity amber" data-fv-integrity>${icon('history','ico-sm')} Advertised SHA-256 recorded · fetching and checking bytes in the background.</div>`:'')
     +_artifactDeclarationMetadataHTML(declaration)
     +verificationReferencesDetails([
       ['artifact declaration event',declaration.declaration_event_id],
@@ -11341,38 +11371,119 @@ async function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{
       ['declared task',declaration.declared_task_id],
       ['source persona action',declaration.source_action_id],
     ])
-    +`<details class="fv-technical"><summary>Verification & file details</summary><div>${verificationRows}</div></details>`
-    +liveDiff
-    +`<div id="fv-body" class="fv-body"></div>`;
-  const runRenderer=async(host)=>{
-    const rendererId=forcedPlain?'plain':pick.id;
-    const r=RENDERERS[rendererId]||renderPlain;
-    const rendererConsumesBytes=BINARY_RENDERERS.has(rendererId);
-    try{ await r(host,ctx);   // size discovered during a binary fetch reflected by caller
-    }catch(e){
-      // Graceful fallback: local renderer/parse error → plain <pre>, never broken.
-      host.innerHTML='';
-      host.appendChild(el('div','fv-note','The format preview is unavailable ('+String(e&&e.message||'error')+').'));
-      let body=ctx.text;
-      if(body==null){ body=rendererConsumesBytes?null:await fetchText(url); }
-      if(body==null&&rendererConsumesBytes&&ctx.verifiedBytes&&rendererId!=='generic'){
-        await renderGeneric(host,{...ctx,kind:ctx.detectedMedia||ctx.kind}); return;
+    +`<details class="fv-technical"><summary>Verification & file details</summary><div data-fv-verification>${initialVerification}</div></details>`
+    +`<div data-fv-diff></div>`
+    +`<div id="fv-body" class="fv-body"><div class="fv-loading" role="status">preparing verified preview…</div></div>`;
+  const mount=async(root,lifecycle)=>{
+    lifecycle.assertCurrent();
+    const host=root.querySelector('#fv-body'); if(!host) return;
+    const report=(message)=>{ lifecycle.reportProgress(message); };
+    let pick=initialPick,isBinary=initialBinary,rendererId=initialRendererId;
+    let text=null,realSize=null,verified=null,detectedMedia='',liveDiff='';
+    if(hashAdvertised){
+      report(validExpectedHash?'fetching artifact bytes…':'checking advertised SHA-256…');
+      verified=validExpectedHash
+        ?await fetchVerifiedLiveBody(sourceUrl,expectedHash,{signal:lifecycle.signal})
+        :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
+      lifecycle.assertCurrent();
+      if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
+        if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile))
+          verified={ok:false,checkOutcome:'failed',error:'stale live body response discarded'};
       }
-      if(body==null && rendererConsumesBytes){ host.appendChild(el('div','fv-note','The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.')); return; }
+      if(verified.ok){
+        report('checking advertised SHA-256…');
+        realSize=verified.size; detectedMedia=sniffArtifactMediaType(verified.bytes);
+        pick=pickRenderer(kind,title,verified.type,detectedMedia);
+        isBinary=BINARY_RENDERERS.has(pick.id); rendererId=forcedPlain?'plain':pick.id;
+        if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
+        const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
+        if(opts.liveFile&&text!=null){
+          let nextCache=cache;
+          if(!cache||cache.hash!==opts.liveFile.sha256){
+            nextCache={hash:opts.liveFile.sha256,text,
+              previousHash:cache?.hash||'',previousText:cache?.text??null};
+            lifecycle.assertCurrent();
+            S.liveArtifactBodyCache.set(opts.liveFile.bodyKey,nextCache);
+            while(S.liveArtifactBodyCache.size>24)
+              S.liveArtifactBodyCache.delete(S.liveArtifactBodyCache.keys().next().value);
+          }
+          if(nextCache?.previousText!=null&&nextCache.previousHash!==nextCache.hash)
+            liveDiff=_lineDiffHTML(nextCache.previousText,nextCache.text);
+        }
+      }
+    }else if(!isBinary){
+      report('fetching text bytes…');
+      text=await fetchText(sourceUrl,{signal:lifecycle.signal});
+      lifecycle.assertCurrent(); realSize=text==null?null:new TextEncoder().encode(text).byteLength;
+    }
+    const ctx={base,path,url:sourceUrl,sourceUrl,title,kind:pick.mediaType||kind,
+      declaredMedia:kind||'',responseMedia:verified?.type||'',detectedMedia,
+      verifiedBytes:verified?.ok?verified.bytes:null,text,realSize,size:opts.size,
+      contentHash:advertisedHash||null,integrityVerified:!!verified?.ok,
+      liveFile:opts.liveFile||null,
+      companionFiles:Array.isArray(opts.companionFiles)?opts.companionFiles:[],
+      lifecycle,signal:lifecycle.signal,assertCurrent:lifecycle.assertCurrent,
+      onCleanup:lifecycle.onCleanup,reportProgress:report};
+    const bodyUnavailable=hashAdvertised?!verified?.ok:(!isBinary&&!forcedPlain&&text===null);
+    const byteCheckLabel=verified?.ok?'BYTES CHECKED':
+      (verified?.checkOutcome==='unavailable'?'BYTES NOT CHECKED':'BYTES CHECK FAILED/REFUSED');
+    const verificationRows=kv('Exact path',`<code class="exact-path">${esc(filePresentation.exactPath)}</code>`)
+      +kv('Media details',`${esc(pick.mediaType||kind||'undeclared')} <span class="fv-rid">· ${esc(rendererId)} renderer · ${esc(mediaSourceLabel(pick))}</span>`)
+      +(detectedMedia?kv('Observed byte format',`<code>${esc(detectedMedia)}</code>`):'')
+      +(opts.liveFile?kv('Workspace revision',`<code class="exact-hash">${esc(opts.liveFile.revision)}</code>`):'')
+      +(hashAdvertised?kv('SHA-256',verified?.ok
+        ?`<span class="ok">${icon('check','ico-sm')} bytes checked</span> <code class="exact-hash">${esc(advertisedHash)}</code>`
+        :`<span class="no">${icon('x','ico-sm')} ${esc(verified?.error||'body unavailable')}</span> <code class="exact-hash">${esc(advertisedHash)}</code>`)
+        +`<div class="live-view-meta"><span class="transport-badge${verified?.ok?' verified':' failed'}">${opts.liveFile?'SNAPSHOT SIGNATURE CHECKED · ':'ADVERTISED HASH · '}${byteCheckLabel}</span>${opts.liveFile?`<span>${esc(opts.liveFile.mtime||opts.liveFile.generatedAt||'')}</span>`:''}</div>`:'');
+    lifecycle.assertCurrent();
+    const typeNode=root.querySelector('[data-fv-type]');
+    if(typeNode) typeNode.textContent=artifactTypeLabel(pick.mediaType||kind);
+    const unknownNode=root.querySelector('[data-fv-unknown]');
+    if(unknownNode) unknownNode.hidden=!!pick.mediaType;
+    const openNode=root.querySelector('[data-fv-open-as]');
+    if(openNode) openNode.innerHTML=`${rawToggle(isBinary,rendererId)} · ${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}`;
+    const verificationNode=root.querySelector('[data-fv-verification]');
+    if(verificationNode) verificationNode.innerHTML=verificationRows;
+    const diffNode=root.querySelector('[data-fv-diff]'); if(diffNode) diffNode.innerHTML=liveDiff;
+    const integrityNode=root.querySelector('[data-fv-integrity]');
+    if(integrityNode){
+      integrityNode.className=`fv-integrity ${verified?.ok?'ok':'no'}`;
+      integrityNode.innerHTML=verified?.ok
+        ?`${icon('check','ico-sm')} Verified file — downloaded bytes match the advertised SHA-256.`
+        :`${icon('x','ico-sm')} This file could not be verified and will not be previewed.`;
+    }
+    if(realSize!=null){ const sizeNode=root.querySelector('.fv-size');
+      if(sizeNode) sizeNode.textContent=fmtBytes(realSize); }
+    if(bodyUnavailable){
+      host.innerHTML=''; host.appendChild(el('div','fv-note',opts.liveFile
+        ?`The current file cannot be shown: ${verified?.error||'it is unavailable'}. The preview stays closed unless the downloaded bytes exactly match the workspace record.`
+        :'The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.'));
+      return;
+    }
+    const renderer=RENDERERS[rendererId]||renderPlain;
+    const rendererConsumesBytes=BINARY_RENDERERS.has(rendererId);
+    try{
+      report('loading format renderer…'); lifecycle.assertCurrent();
+      host.innerHTML=''; await renderer(host,ctx); lifecycle.assertCurrent();
+    }catch(error){
+      if(error?.name==='AbortError'||lifecycle.signal.aborted) throw error;
+      lifecycle.assertCurrent(); host.innerHTML='';
+      host.appendChild(el('div','fv-note','The format preview is unavailable ('+String(error&&error.message||'error')+').'));
+      let body=ctx.text;
+      if(body==null&&!rendererConsumesBytes)
+        body=await fetchText(sourceUrl,{signal:lifecycle.signal});
+      lifecycle.assertCurrent();
+      if(body==null&&rendererConsumesBytes&&ctx.verifiedBytes&&rendererId!=='generic'){
+        await renderGeneric(host,{...ctx,kind:ctx.detectedMedia||ctx.kind});
+        lifecycle.assertCurrent(); return;
+      }
+      if(body==null&&rendererConsumesBytes){
+        host.appendChild(el('div','fv-note','The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.')); return;
+      }
       host.appendChild(plainPre(String(body??'').slice(0,20000)));
     }
-  };
-  const mount=async(root)=>{
-    const host=root.querySelector('#fv-body'); if(!host) return;
-    if(bodyUnavailable){ host.innerHTML=''; host.appendChild(el('div','fv-note',opts.liveFile
-      ?`The current file cannot be shown: ${verified?.error||'it is unavailable'}. The preview stays closed unless the downloaded bytes exactly match the workspace record.`
-      :'The file could not be loaded. It may require access, its node may be offline, or the file may no longer exist.')); return; }
-    if(verified?.ok){
-      const mime=safeRenderMime(ctx.kind,ctx.title,ctx.responseMedia,ctx.detectedMedia);
-      url=mkBlobURL(new Blob([verified.bytes],{type:mime})); ctx.url=url;
-    }
-    await runRenderer(host);
-    if(ctx.realSize!=null){ const sz=root.querySelector('.fv-size'); if(sz) sz.textContent=fmtBytes(ctx.realSize); }
+    if(ctx.realSize!=null){ const sizeNode=root.querySelector('.fv-size');
+      if(sizeNode) sizeNode.textContent=fmtBytes(ctx.realSize); }
   };
   return {title:`<span class="kind k-artifact">FILE</span> <span class="fv-drawer-file-name">${esc(humanTitle)}${filePresentation.extensionLabel?` <em>${esc(filePresentation.extensionLabel)}</em>`:''}</span>`, html, mount};
 }
@@ -11568,26 +11679,30 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   return {title:`<span class="kind k-project">PROJECT</span> ${esc(d.name||r.label)}`, html};
 }
 async function bodyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
-  if(!rj0) return {title:`<span class="kind k-persona">BODY · J7</span> codex run`,
+  if(!rj0) return {title:`<span class="kind k-persona">BODY EVIDENCE</span> authored run record`,
     html:`<div class="viewerr">Run document could not be loaded from this public route. The node may be offline or another verified route may be needed; this browser does not request owner credentials.</div>`};
   const rj=rj0; const b=rj.body||{}, ex=rj.real_execution||{};
   let html=kv('Task class',esc(b.task_class||'—'))+kv('Pathway',esc(b.pathway||'—'))
-    +kv('Accepted',b.accepted?`<span class="ok">${icon('check','ico-sm')} verified</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
-    +kv('Verified by model',`<span class="ok">${esc(b.verified_by_model||'—')}</span>`)+kv('Program',esc((b.program_chars||0)+' chars'));
-  const at=b.attempts||[]; if(at.length) html+=H('Codex model cascade')+at.map((a)=>`<div class="grant"><span class="${a.accepted?'ok':'no'}">${a.accepted?icon('check','ico-sm'):icon('x','ico-sm')} ${esc(a.model_id)}</span><span class="l2">${esc(a.status)} · ${esc(a.program_chars)} ch</span></div>`).join('');
-  html+=H('Real sandbox execution')+kv('Result',ex.ok?'<span class="ok">ok</span>':'<span class="no">failed</span>')+kv('Return code',esc(ex.returncode))+kv('stdout',`<code>${esc(ex.stdout||'')}</code>`);
-  html+=H(`Safety floor sources (${(b.safety_sources||[]).length} of 8)`)+chipsOf(b.safety_sources);
-  return {title:`<span class="kind k-persona">BODY · J7</span> codex run`, html};
+    +kv('Authored accepted field',`<code>${esc(String(b.accepted??'not authored'))}</code>`)
+    +kv('Authored model field',`<code>${esc(b.verified_by_model||'not authored')}</code>`)
+    +kv('Program',esc((b.program_chars||0)+' chars'));
+  const at=b.attempts||[]; if(at.length) html+=H('Authored model-attempt receipts')+at.map((a)=>`<div class="grant"><span>${esc(a.model_id||'model')}</span><span class="l2"><code>${esc(a.status||'')}</code> · accepted=<code>${esc(String(a.accepted??''))}</code> · ${esc(a.program_chars)} ch</span></div>`).join('');
+  html+=H('Sandbox execution receipt')+kv('Authored ok field',`<code>${esc(String(ex.ok??'not authored'))}</code>`)+kv('Return code',esc(ex.returncode))+kv('stdout',`<code>${esc(ex.stdout||'')}</code>`);
+  if((b.safety_sources||[]).length) html+=H(`Authored source references (${b.safety_sources.length})`)+chipsOf(b.safety_sources);
+  return {title:`<span class="kind k-persona">BODY EVIDENCE</span> authored run record`, html};
 }
 async function verifyView(base,runUrl){ S.curBase=base; const rj0=await dfetch(base,runUrl);
-  if(!rj0) return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`,
+  if(!rj0) return {title:`<span class="kind k-env">EVIDENCE</span> authored verification receipts`,
     html:`<div class="viewerr">Verification document could not be loaded from this public route. The node may be offline or another verified route may be needed; this browser does not request owner credentials.</div>`};
   const rj=rj0; const bv=rj.bundle_verification||{}, rt=rj.ready_to_order||{};
-  let html=kv('Bundle verified',bv.passed?`<span class="ok">${icon('check','ico-sm')} passed</span>`:`<span class="no">${icon('x','ico-sm')}</span>`)
-    +kv('Final state',`<span class="ok">${esc(rt.state||'—')}</span>`)+kv('Locked',esc(rt.locked))+kv('Co-signers',esc((rt.co_signers||[]).join(', ')||'—'));
-  html+=H('Verifier cascade')+(bv.invocations||[]).map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="${v[1]?'ok':'no'}">${v[1]?icon('check','ico-sm'):icon('x','ico-sm')}</span></div>`).join('');
-  const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Env-rule evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">• ${esc(e.rule_name||e.rule_id||'rule')} — ${e.passed===false?`<span class="no">${icon('x','ico-sm')}</span>`:`<span class="ok">${icon('check','ico-sm')} signed</span>`}</div>`).join('');
-  return {title:`<span class="kind k-env">VERIFICATION</span> cascade + floor`, html};
+  let html=kv('Authored passed field',`<code>${esc(String(bv.passed??'not authored'))}</code>`)
+    +kv('Authored state field',`<code>${esc(rt.state||'not authored')}</code>`)
+    +kv('Authored locked field',`<code>${esc(String(rt.locked??'not authored'))}</code>`)
+    +kv('Co-signature references',esc((rt.co_signers||[]).join(', ')||'—'));
+  const invocations=bv.invocations||[];
+  if(invocations.length) html+=H('Authored verifier receipts')+invocations.map((v)=>`<div class="grant"><span>${esc(v[0])}</span><span class="tier"><code>${esc(String(v[1]??''))}</code></span></div>`).join('');
+  const ev=rj.environment_rule_evidence||[]; if(ev.length) html+=H(`Authored environment evidence (${ev.length})`)+ev.map((e)=>`<div class="desc2">${esc(e.rule_name||e.rule_id||'evidence')} · passed=<code>${esc(String(e.passed??''))}</code>${e.signature_hex?' · signature field present':''}</div>`).join('');
+  return {title:`<span class="kind k-env">EVIDENCE</span> authored verification receipts`, html};
 }
 async function distributionView(base,L){ S.curBase=base;
   const oci0=await dfetch(base,L.oci), dag0=await dfetch(base,L.dag), reg0=await dfetch(base,L.registry);
@@ -11846,12 +11961,37 @@ async function viewFor(id){ const r=S.recs.get(id); if(!r) return {title:'—',h
   }
   return genericView(r);
 }
-// Any renderer that allocates per-view resources (blob: URLs, a three.js scene,
-// timers) registers a teardown here; renderTop() runs every pending teardown before
-// it paints the next view so nothing leaks across navigation.
-function runViewCleanups(){ const cbs=S.viewCleanups||[]; S.viewCleanups=[];
-  for(const fn of cbs){ try{ fn(); }catch(e){} } }
-function onViewCleanup(fn){ (S.viewCleanups=S.viewCleanups||[]).push(fn); }
+// Each detail render owns its cancellation signal and teardown callbacks. A
+// stale async renderer can never register resources into the next view.
+function createViewLifecycle(generation){
+  const controller=new AbortController(),cleanups=new Set(); let cancelled=false;
+  const lifecycle={generation,signal:controller.signal,
+    isCurrent:()=>!cancelled&&!controller.signal.aborted
+      &&S.activeViewLifecycle===lifecycle&&S._renderGen===generation
+      &&$('#detailwrap')?.classList.contains('open'),
+    assertCurrent:()=>{ if(!lifecycle.isCurrent())
+      throw new DOMException('Artifact view cancelled','AbortError'); },
+    onCleanup:(fn)=>{ if(typeof fn!=='function') return;
+      if(cancelled||controller.signal.aborted){ try{ fn(); }catch(_){}; return; }
+      cleanups.add(fn); },
+    reportProgress:(message)=>{ if(!lifecycle.isCurrent()) return;
+      const node=$('#detailbody')?.querySelector('#fv-body .fv-loading');
+      if(node) node.textContent=String(message||'loading preview…'); },
+    cancel:()=>{ if(cancelled) return; cancelled=true; controller.abort();
+      for(const fn of cleanups){ try{ fn(); }catch(_){} } cleanups.clear(); },
+  };
+  return lifecycle;
+}
+function runViewCleanups(){
+  const lifecycle=S.activeViewLifecycle; S.activeViewLifecycle=null;
+  lifecycle?.cancel?.();
+  const legacy=S.viewCleanups||[]; S.viewCleanups=[];
+  for(const fn of legacy){ try{ fn(); }catch(_){} }
+}
+function onViewCleanup(fn){
+  if(S.activeViewLifecycle) S.activeViewLifecycle.onCleanup(fn);
+  else { try{ fn(); }catch(_){} }
+}
 async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
   S.openLiveFile=null;
@@ -11860,9 +12000,10 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   // pushView call renderTop without serialization. A stale in-flight render must not
   // write LAST and show a view the user already navigated away from — latest wins.
   const gen=(S._renderGen=(S._renderGen||0)+1);
+  const lifecycle=createViewLifecycle(gen); S.activeViewLifecycle=lifecycle;
   $('#detailbody').innerHTML='<div class="fv-loading">resolving…</div>';
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
-  if(gen!==S._renderGen) return;
+  if(!lifecycle.isCurrent()) return;
   $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
   $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
   // A11y: move focus into the dialog ONLY after its accessible name (the title) is
@@ -11870,8 +12011,16 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   // Re-anchors focus on Back/nav when the clicked control was hidden/removed, so focus
   // never escapes the trap to <body>. (Replaces the eager pre-title-populate focus().)
   const dw=$('#detailwrap'); if(dw&&dw.classList.contains('open')&&!dw.contains(document.activeElement)) $('.drawer')?.focus();
-  // optional async post-mount step (media renderers paint into a container here)
-  if(typeof v.mount==='function'){ try{ await v.mount($('#detailbody')); }catch(e){} if(gen!==S._renderGen) return; }
+  // Mount work starts only after the metadata/header has reached a paint
+  // opportunity. It owns this lifecycle and is intentionally not awaited by
+  // navigation; cancellation makes stale completion harmless.
+  if(typeof v.mount==='function') requestAnimationFrame(()=>{
+    if(!lifecycle.isCurrent()) return;
+    Promise.resolve(v.mount($('#detailbody'),lifecycle)).catch((error)=>{
+      if(error?.name!=='AbortError'&&lifecycle.isCurrent())
+        lifecycle.reportProgress('preview unavailable');
+    });
+  });
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
 function markInspectionSource(source){
@@ -12453,6 +12602,7 @@ function wire(){
     // only ran at the top of renderTop(), so closing here leaked WebGL/object-URLs.
     // Clear the drawer-live keys too, or the 5s loop keeps fetching feed/thinking
     // against the now-hidden drawer forever.
+    S._renderGen=(S._renderGen||0)+1;
     runViewCleanups();
     S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
@@ -12772,7 +12922,7 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     &&new Set(found.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
   if(!inventory.complete) return {boot:null,found:[],inventory};
   _registerP2PDataRoute(hint,found);
-  return {boot,found,inventory};
+  return {boot,found,inventory,providerIndex};
 }
 function _reconcileP2PRouteHint(hint,{signal=null}={}){
   const {base,kernel}=hint;
@@ -12791,7 +12941,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
     }
     if(signal?.aborted||!resolved.boot) return {accepted:false,count:0};
     const accepted=applyVerifiedProviderInventory(
-      base,resolved.boot,resolved.found,resolved.inventory);
+      base,resolved.boot,resolved.found,resolved.inventory,resolved.providerIndex);
     if(!accepted) return {accepted:false,count:0};
     S.boots.set(base||'@origin',resolved.boot);
     _rememberP2PRouteHint(base);
@@ -13104,6 +13254,13 @@ async function initP2P(){
 
 (async ()=>{
   wire();
+  // Historical verification is side-effect-free and races every live plane.
+  // It never enters record stores, routing, liveness, missions, or counters.
+  mergeOfflineHistoryProjections(globalThis.__personaOSOfflineHistory);
+  globalThis.addEventListener?.('personaos:offline-history',(event)=>{
+    if(mergeOfflineHistoryProjections(event?.detail).length) refreshSystemView();
+  });
+  hydrateOfflineHistory().catch(()=>{});
   // A bounded, origin-scoped signed identity snapshot races (and never gates)
   // every network plane. This also serves returning hosted-portal viewers. If
   // no compact snapshot exists yet, a node-served shell can fall back to its
