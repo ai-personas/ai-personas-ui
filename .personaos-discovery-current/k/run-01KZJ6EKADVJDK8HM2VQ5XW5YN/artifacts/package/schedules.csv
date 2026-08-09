@@ -1,0 +1,32 @@
+id,kind,location,size,design_action,capacity_or_limit,utilization,notes
+FJ-G-01,floor_joist_ground_typ,"""Ground floor joists, north/south bays @400 mm c/c""","[47, 300]",3.438,16.92,0.203,
+FJ-1-01,floor_joist_level1_typ,"""Level 1 joists, north/south bays @400 mm c/c""","[47, 300]",3.438,16.92,0.203,
+FB-01,primary_floor_beam_grid_y5,"""Engineered timber/glulam beam along grid Y=5 between posts P-01/P-03""","[140, 540]",37.125,163.296,0.227,
+FB-02,stair_trimmer,"""Double trimmer around stair opening""","[89, 315]",4.95,35.324,0.14,
+RR-01,roof_rafter_typ,"""Rafters @400 mm c/c, eave to ridge, 30 degree slope""","[47, 300]",2.996,16.92,0.177,
+RB-01,ridge_beam,"""Structural ridge beam, two 6 m simple spans""","[140, 495]",24.3,137.214,0.177,
+H-SOUTH-LIV,opening_header,"""South living opening header""","[140, 315]",6.143,55.566,0.111,
+H-SOUTH-KIT,opening_header,"""South kitchen window header""","[115, 300]",3.276,41.4,0.079,
+H-EAST-BED1,opening_header,"""Bedroom 1 egress window header""","[89, 240]",1.658,20.506,0.081,
+H-BED-TYP,opening_header,"""Typical upper bedroom egress window header""","[89, 240]",1.658,20.506,0.081,
+P-01,post,"{""x"": 3, ""y"": 5}","[140, 140]",92,123.48,0.745,Stud/post axial compression member tied to footing schedule
+P-02,post,"{""x"": 6, ""y"": 5}","[190, 190]",128,227.43,0.563,Stud/post axial compression member tied to footing schedule
+P-03,post,"{""x"": 9, ""y"": 5}","[140, 140]",92,123.48,0.745,Stud/post axial compression member tied to footing schedule
+P-04,post,"{""x"": 0, ""y"": 0}","[140, 140]",78,123.48,0.632,Stud/post axial compression member tied to footing schedule
+P-05,post,"{""x"": 12, ""y"": 0}","[140, 140]",78,123.48,0.632,Stud/post axial compression member tied to footing schedule
+P-06,post,"{""x"": 0, ""y"": 10}","[140, 140]",78,123.48,0.632,Stud/post axial compression member tied to footing schedule
+P-07,post,"{""x"": 12, ""y"": 10}","[140, 140]",78,123.48,0.632,Stud/post axial compression member tied to footing schedule
+FT-01,pad_footing,"{""x"": 3, ""y"": 5}","[1.0, 1.0, 0.3]",92,150,0.613,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-02,pad_footing,"{""x"": 6, ""y"": 5}","[1.2, 1.2, 0.35]",128,150,0.593,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-03,pad_footing,"{""x"": 9, ""y"": 5}","[1.0, 1.0, 0.3]",92,150,0.613,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-04,pad_footing,"{""x"": 0, ""y"": 0}","[0.9, 0.9, 0.3]",78,150,0.642,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-05,pad_footing,"{""x"": 12, ""y"": 0}","[0.9, 0.9, 0.3]",78,150,0.642,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-06,pad_footing,"{""x"": 0, ""y"": 10}","[0.9, 0.9, 0.3]",78,150,0.642,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+FT-07,pad_footing,"{""x"": 12, ""y"": 10}","[0.9, 0.9, 0.3]",78,150,0.642,Reinforced concrete isolated pad founded on verified 150 kPa allowable bearing stratum
+SW-N,shear_wall,"{""x1"": 0, ""y1"": 10, ""x2"": 12, ""y2"": 10}","[null, null]",21.6,30.4,0.711,"11 mm structural sheathing both sides, nailed edges; hold-downs at ends"
+SW-S,shear_wall,"{""x1"": 0, ""y1"": 0, ""x2"": 12, ""y2"": 0}","[null, null]",21.6,30.4,0.711,"11 mm structural sheathing both sides, nailed edges; hold-downs at ends"
+SW-E,shear_wall,"{""x1"": 12, ""y1"": 0, ""x2"": 12, ""y2"": 10}","[null, null]",21.6,22.8,0.947,"11 mm structural sheathing both sides, nailed edges; hold-downs at ends"
+SW-W,shear_wall,"{""x1"": 0, ""y1"": 0, ""x2"": 0, ""y2"": 10}","[null, null]",21.6,22.8,0.947,"11 mm structural sheathing both sides, nailed edges; hold-downs at ends"
+SW-INT,shear_wall,"{""x1"": 6, ""y1"": 0, ""x2"": 6, ""y2"": 10}","[null, null]",21.6,22.8,0.947,"11 mm structural sheathing both sides, nailed edges; hold-downs at ends"
+STRIP-EXT,strip_footing,"""whole building""","[0.6, 0.3]",56.67,150,0.378,Continuous external wall strip footing
+STRIP-INT,strip_footing,"""whole building""","[0.5, 0.3]",56.0,150,0.373,Internal bearing line strip footing

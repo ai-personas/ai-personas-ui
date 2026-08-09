@@ -1,0 +1,59 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJ67Y38K7MKA74YR1QSKV7C",
+    "schema": "access-policy/1",
+    "signature_hex": "2025e956017af95fe473d4585e81ef2a25d4926fdcd9a3d945f34e5d76a10940d173b75c6bec85ec7b3ac24b3ae716056aa3d45b308d6e784f073f84cdb8700f",
+    "subject_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "subject_kind": "telemetry"
+  },
+  "discovery_kind": "telemetry",
+  "kind": "telemetry",
+  "links": {
+    "snapshot": "telemetry/environments/01KZJ2PHSKWZHHHWYX1J88ED27.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZJ67Y38K7MKA74YR1QSKV7C",
+    "capability_summary": [
+      "lifecycle_transitions",
+      "otel_spans"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "environment activity telemetry",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "discovery/v11/records/rec:01KZJ67Y38EQJJ1NC7FBSFPQEA.json",
+        "kind": "HTTP",
+        "snapshot": "telemetry/environments/01KZJ2PHSKWZHHHWYX1J88ED27.json"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "record_id": "rec:01KZJ67Y38EQJJ1NC7FBSFPQEA",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "a68cf467cf1f238f1f956a520b33e1ba32c56605e67e5ea55bae39936ba0311fb1f5a76a43fcde8bdbf21c8970176dca814ed0b55a14417bc9f388dcfc1ddc02",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

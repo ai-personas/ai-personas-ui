@@ -1,0 +1,333 @@
+{
+  "schema": "independent-engine-comparison/1",
+  "engine_results_ref": "independent_engine_results.json",
+  "comparison_basis": "OpenSees elastic response versus independently reimplemented simple-span elastic benchmark; project calculations were not executed by this script",
+  "records": [
+    {
+      "member": "FJ-G-S",
+      "engine_M_kNm": 3.4375,
+      "benchmark_M_kNm": 3.4375,
+      "engine_deflection_mm": 7.6635,
+      "benchmark_deflection_mm": 7.695528,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.032028,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FJ-G-N",
+      "engine_M_kNm": 3.4375,
+      "benchmark_M_kNm": 3.4375,
+      "engine_deflection_mm": 7.6635,
+      "benchmark_deflection_mm": 7.695528,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.032028,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FJ-1-S",
+      "engine_M_kNm": 3.4375,
+      "benchmark_M_kNm": 3.4375,
+      "engine_deflection_mm": 7.6635,
+      "benchmark_deflection_mm": 7.695528,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.032028,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FJ-1-N",
+      "engine_M_kNm": 3.4375,
+      "benchmark_M_kNm": 3.4375,
+      "engine_deflection_mm": 7.6635,
+      "benchmark_deflection_mm": 7.695528,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.032028,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FB-Y5-W",
+      "engine_M_kNm": 37.125,
+      "benchmark_M_kNm": 37.125,
+      "engine_deflection_mm": 6.860657,
+      "benchmark_deflection_mm": 6.88933,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.028672,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FB-Y5-E",
+      "engine_M_kNm": 37.125,
+      "benchmark_M_kNm": 37.125,
+      "engine_deflection_mm": 6.860657,
+      "benchmark_deflection_mm": 6.88933,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.028672,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FB-STAIR-N",
+      "engine_M_kNm": 4.95,
+      "benchmark_M_kNm": 4.95,
+      "engine_deflection_mm": 1.812309,
+      "benchmark_deflection_mm": 1.819883,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.007574,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "FB-STAIR-S",
+      "engine_M_kNm": 4.95,
+      "benchmark_M_kNm": 4.95,
+      "engine_deflection_mm": 1.812309,
+      "benchmark_deflection_mm": 1.819883,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.007574,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "RR-N",
+      "engine_M_kNm": 2.996361,
+      "benchmark_M_kNm": 2.996361,
+      "engine_deflection_mm": 8.895907,
+      "benchmark_deflection_mm": 8.933085,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.037178,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "RR-S",
+      "engine_M_kNm": 2.996361,
+      "benchmark_M_kNm": 2.996361,
+      "engine_deflection_mm": 8.895907,
+      "benchmark_deflection_mm": 8.933085,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.037178,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "RB-W",
+      "engine_M_kNm": 24.3,
+      "benchmark_M_kNm": 24.3,
+      "engine_deflection_mm": 5.830036,
+      "benchmark_deflection_mm": 5.854401,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.024365,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "RB-E",
+      "engine_M_kNm": 24.3,
+      "benchmark_M_kNm": 24.3,
+      "engine_deflection_mm": 5.830036,
+      "benchmark_deflection_mm": 5.854401,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.024365,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-SOUTH-LIV",
+      "engine_M_kNm": 6.1425,
+      "benchmark_M_kNm": 6.1425,
+      "engine_deflection_mm": 1.429664,
+      "benchmark_deflection_mm": 1.435639,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.005975,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-KIT",
+      "engine_M_kNm": 1.18125,
+      "benchmark_M_kNm": 1.18125,
+      "engine_deflection_mm": 0.068734,
+      "benchmark_deflection_mm": 0.069021,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000287,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-BED1",
+      "engine_M_kNm": 1.18125,
+      "benchmark_M_kNm": 1.18125,
+      "engine_deflection_mm": 0.068734,
+      "benchmark_deflection_mm": 0.069021,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000287,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-BED2",
+      "engine_M_kNm": 1.18125,
+      "benchmark_M_kNm": 1.18125,
+      "engine_deflection_mm": 0.068734,
+      "benchmark_deflection_mm": 0.069021,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000287,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-BED3",
+      "engine_M_kNm": 1.18125,
+      "benchmark_M_kNm": 1.18125,
+      "engine_deflection_mm": 0.068734,
+      "benchmark_deflection_mm": 0.069021,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000287,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-BED4",
+      "engine_M_kNm": 1.18125,
+      "benchmark_M_kNm": 1.18125,
+      "engine_deflection_mm": 0.068734,
+      "benchmark_deflection_mm": 0.069021,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000287,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-NORTH-STUDY",
+      "engine_M_kNm": 0.576,
+      "benchmark_M_kNm": 0.576,
+      "engine_deflection_mm": 0.07629,
+      "benchmark_deflection_mm": 0.076609,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000319,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "H-DOOR-FRONT",
+      "engine_M_kNm": 0.684,
+      "benchmark_M_kNm": 0.684,
+      "engine_deflection_mm": 0.090594,
+      "benchmark_deflection_mm": 0.090973,
+      "moment_abs_diff_kNm": 0.0,
+      "deflection_abs_diff_mm": 0.000379,
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-01",
+      "engine_axial_force_kN": 72.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.612245,
+      "engine_axial_displacement_mm": 0.935065,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-02",
+      "engine_axial_force_kN": 96.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.816327,
+      "engine_axial_displacement_mm": 1.246753,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-03",
+      "engine_axial_force_kN": 72.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.612245,
+      "engine_axial_displacement_mm": 0.935065,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-04",
+      "engine_axial_force_kN": 55.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.467687,
+      "engine_axial_displacement_mm": 0.714286,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-05",
+      "engine_axial_force_kN": 55.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.467687,
+      "engine_axial_displacement_mm": 0.714286,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-06",
+      "engine_axial_force_kN": 55.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.467687,
+      "engine_axial_displacement_mm": 0.714286,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-07",
+      "engine_axial_force_kN": 55.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.467687,
+      "engine_axial_displacement_mm": 0.714286,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-08",
+      "engine_axial_force_kN": 70.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.595238,
+      "engine_axial_displacement_mm": 0.909091,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "P-09",
+      "engine_axial_force_kN": 70.0,
+      "project_capacity_recomputed_kN": 117.6,
+      "project_utilization_recomputed": 0.595238,
+      "engine_axial_displacement_mm": 0.909091,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "SW-S",
+      "engine_axial_force_kN": 210.0,
+      "project_capacity_recomputed_kN": 989.52,
+      "project_utilization_recomputed": 0.212224,
+      "engine_axial_displacement_mm": 10.047847,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "SW-N",
+      "engine_axial_force_kN": 210.0,
+      "project_capacity_recomputed_kN": 989.52,
+      "project_utilization_recomputed": 0.212224,
+      "engine_axial_displacement_mm": 10.047847,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "SW-W",
+      "engine_axial_force_kN": 190.0,
+      "project_capacity_recomputed_kN": 829.92,
+      "project_utilization_recomputed": 0.228938,
+      "engine_axial_displacement_mm": 9.090909,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "SW-E",
+      "engine_axial_force_kN": 190.0,
+      "project_capacity_recomputed_kN": 829.92,
+      "project_utilization_recomputed": 0.228938,
+      "engine_axial_displacement_mm": 9.090909,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    },
+    {
+      "member": "IW-Y5",
+      "engine_axial_force_kN": 260.0,
+      "project_capacity_recomputed_kN": 989.52,
+      "project_utilization_recomputed": 0.262754,
+      "engine_axial_displacement_mm": 12.440191,
+      "discrepancy": "none; engine equilibrium force equals declared axial load; capacity/utilization independently recomputed from declared section/material",
+      "status": "MATCH_WITHIN_NUMERICAL_TOLERANCE"
+    }
+  ]
+}

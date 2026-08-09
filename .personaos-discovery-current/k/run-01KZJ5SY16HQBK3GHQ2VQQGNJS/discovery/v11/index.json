@@ -1,0 +1,122 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact": "rec:01KZJ5VFB224FEP2XD1YTCHFFC",
+    "telemetry": "rec:01KZJ5VFB3M4Q2YR5B05VNE1EF"
+  },
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "records": [
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-107487428acb3344869ec0a2765fc4e7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB224FEP2XD1YTCHFFC",
+      "kind": "artifact",
+      "label": "__pycache__/calculations.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZJ5VFB224FEP2XD1YTCHFFC.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-190cafc19fe6497b216f1f61d9972f69",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB23YZJEBGJABXR7S3R",
+      "kind": "artifact",
+      "label": "specifications.md",
+      "path": "discovery/v11/records/rec:01KZJ5VFB23YZJEBGJABXR7S3R.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-9bdca9dc2da2c825043ef9f9d154003e",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB297QJ6N7S0R02CTET",
+      "kind": "artifact",
+      "label": "plans.svg",
+      "path": "discovery/v11/records/rec:01KZJ5VFB297QJ6N7S0R02CTET.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-a37542d09737801bd95f533f1d92d810",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2CAMFYFFTZ7KHP3NM",
+      "kind": "artifact",
+      "label": "README.md",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2CAMFYFFTZ7KHP3NM.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-fdd55f395a80e1ebc1227f1e8aff6efb",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2J2YQYQX2JAD1MBQK",
+      "kind": "artifact",
+      "label": "run_checks.py",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2J2YQYQX2JAD1MBQK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-ebb399a80a80d0c67fbb55095f0020d8",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2NJYG0YWVBQ0HV579",
+      "kind": "artifact",
+      "label": "schedules.csv",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2NJYG0YWVBQ0HV579.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d252d37549dbe00399506aa2c9504eda",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2R3PVMF4VN9DX3CQ4",
+      "kind": "artifact",
+      "label": "geometry.json",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2R3PVMF4VN9DX3CQ4.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-10ddd00e4926c1dd29bdf24d6431e8ff",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2SDKQJH1NEB5M9594",
+      "kind": "artifact",
+      "label": "validation_report.json",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2SDKQJH1NEB5M9594.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-5c51a9c9fee5014d3c2786fb973d8b88",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ5VFB2VN3TTHP84D2ZCC0J",
+      "kind": "artifact",
+      "label": "calculations.py",
+      "path": "discovery/v11/records/rec:01KZJ5VFB2VN3TTHP84D2ZCC0J.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "discovery_kind": "telemetry",
+      "id": "rec:01KZJ5VFB3M4Q2YR5B05VNE1EF",
+      "kind": "telemetry",
+      "label": "telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "path": "discovery/v11/records/rec:01KZJ5VFB3M4Q2YR5B05VNE1EF.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

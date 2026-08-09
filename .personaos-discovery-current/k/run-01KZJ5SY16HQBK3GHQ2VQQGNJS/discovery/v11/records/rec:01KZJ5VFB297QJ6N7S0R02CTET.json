@@ -1,0 +1,67 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJ5VFB2VTB3V1EJ773KQ5JE",
+    "schema": "access-policy/1",
+    "signature_hex": "8cb02d20b671ca111be8f7097e4e8a15c9e22885935268d0724b4bc278edabf9d9481a51264bec2d8fbf9b18659d3aaea9d45ae050923c2dc7cdbd1bd576da07",
+    "subject_id": "event-bundle-2d83714c9e2494574adcae7a76c0d83d",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "body_available": true,
+    "body_hash_verified": true,
+    "bundle_id": "event-bundle-2d83714c9e2494574adcae7a76c0d83d",
+    "content": "artifacts/package/plans.svg",
+    "content_hash": "sha256:0cec093dcb05cb93c2c7549a2fb5ae1381be75963077242131943e8e520ad7e4",
+    "subject_id": "event-artifact-9bdca9dc2da2c825043ef9f9d154003e"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZJ5VFB2VTB3V1EJ773KQ5JE",
+    "capability_summary": [
+      "application/octet-stream"
+    ],
+    "content_hash": "sha256:0cec093dcb05cb93c2c7549a2fb5ae1381be75963077242131943e8e520ad7e4",
+    "content_locator_ref": "",
+    "description": "artifact in event-bundle-2d83714c9e2494574adcae7a76c0d83d",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-9bdca9dc2da2c825043ef9f9d154003e",
+    "expires_at": "",
+    "in_progress": true,
+    "interfaces": [
+      {
+        "artifact_manifest": "artifacts/manifest.json",
+        "content": "artifacts/package/plans.svg",
+        "endpoint": "discovery/v11/records/rec:01KZJ5VFB297QJ6N7S0R02CTET.json",
+        "kind": "HTTP",
+        "metadata": "artifacts/metadata/event-artifact-9bdca9dc2da2c825043ef9f9d154003e.json",
+        "run": "run.json"
+      }
+    ],
+    "kind": "artifact",
+    "label": "plans.svg",
+    "record_id": "rec:01KZJ5VFB297QJ6N7S0R02CTET",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "a5883bf05fe9c14e0e7c2140c19e0f9efcebaf45af7ecc7d8c84f6cb1ed9c5090f78247011a394f12aa832ed7140a74cd4fd477ba6538ed2a9ecf1dccf19f009",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

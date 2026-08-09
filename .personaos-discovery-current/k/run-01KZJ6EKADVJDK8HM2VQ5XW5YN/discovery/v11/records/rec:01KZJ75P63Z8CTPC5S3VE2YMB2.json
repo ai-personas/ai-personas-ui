@@ -1,0 +1,67 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJ75P62F6R1V8TRFSZV1643",
+    "schema": "access-policy/1",
+    "signature_hex": "8271ac7105e94056e6a6be4868558cd395c702979477ebeac0130a264fe47a60bc94403b002b06749619afd44652e741aad58b506641bd065155e246336d220a",
+    "subject_id": "event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "body_available": true,
+    "body_hash_verified": true,
+    "bundle_id": "event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+    "content": "artifacts/package/geometry.json",
+    "content_hash": "sha256:3ef389ad6af12d3dcff573412a22aa1b701c6166dac3d63ae94ce87aea9567f9",
+    "subject_id": "event-artifact-67ba9f8feb179f38f5555ddcfbc1ca2c"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZJ75P62F6R1V8TRFSZV1643",
+    "capability_summary": [
+      "application/octet-stream"
+    ],
+    "content_hash": "sha256:3ef389ad6af12d3dcff573412a22aa1b701c6166dac3d63ae94ce87aea9567f9",
+    "content_locator_ref": "",
+    "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-67ba9f8feb179f38f5555ddcfbc1ca2c",
+    "expires_at": "",
+    "in_progress": true,
+    "interfaces": [
+      {
+        "artifact_manifest": "artifacts/manifest.json",
+        "content": "artifacts/package/geometry.json",
+        "endpoint": "discovery/v11/records/rec:01KZJ75P63Z8CTPC5S3VE2YMB2.json",
+        "kind": "HTTP",
+        "metadata": "artifacts/metadata/event-artifact-67ba9f8feb179f38f5555ddcfbc1ca2c.json",
+        "run": "run.json"
+      }
+    ],
+    "kind": "artifact",
+    "label": "geometry.json",
+    "record_id": "rec:01KZJ75P63Z8CTPC5S3VE2YMB2",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "d4e2e74782dfa05e81de2b44527c27f45fe253e6026832d6c51883edfcc5a2ef84a7a6adeaf3ed261067c5dc1d35a2a285f59095bf8777f45d6c0c7727471e09",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

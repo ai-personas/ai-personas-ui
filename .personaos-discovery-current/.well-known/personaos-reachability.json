@@ -1,0 +1,15 @@
+{
+  "bootstrap_peers": [],
+  "libp2p_peer_id": "",
+  "node_id": "kernel:f84cb1e8a669ff9e",
+  "public_key_hex": "f84cb1e8a669ff9e2afc491f13c60441f4cdad54a03c6d455bd64526ed025df3",
+  "reachability_class": "intranet_only",
+  "relay_circuit_multiaddrs": [],
+  "relay_peers": [],
+  "schema": "reachability-profile/1",
+  "signature_hex": "f0895c477e94cd03723c7c9719b9a3d62655e048dab5fb9c1d094e2464e61adb65977f83e0cc171b5a3251acaaf5955723e03b4e44f7099702d505fb25cf3d0c",
+  "signing_key_id": "kernel-master",
+  "transports": [
+    "http://127.0.0.1:8820"
+  ]
+}

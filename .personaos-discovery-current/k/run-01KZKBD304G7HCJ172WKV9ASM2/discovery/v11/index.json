@@ -1,0 +1,822 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact": "rec:01KZKBNNJ919SXDM4FMJM8EFJT",
+    "telemetry": "rec:01KZKBNNJGNAXD66CQBE9W6THA"
+  },
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "records": [
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-b23b94d0cd2e931bf90cd9bc0d8b5e81",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJ919SXDM4FMJM8EFJT",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJ919SXDM4FMJM8EFJT.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-126067cf11ea1080544ec0f001bf5c02",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJ95QVTKMVKTVDQPF2D",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/LICENSE.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJ95QVTKMVKTVDQPF2D.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-cc390753ee33af657a7ff2ff53bdc355",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJ9N8ACPA040RC2QXRJ",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/opensees/__init__.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJ9N8ACPA040RC2QXRJ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-85a43182c8b5e7ddcbf4d9e20391d6d7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJ9PDF2Q0KWR22CK77N",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/opensees/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJ9PDF2Q0KWR22CK77N.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-61d520254a8a4c166e408fd06318c7bb",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJA4WTPY67R2X19XQJT",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/preprocessing/__pycache__/DiscretizeMember.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJA4WTPY67R2X19XQJT.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-1fda81917a38751c1db8f8760f992eff",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJA8KQP51BGS22SQNBW",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy-3.7.0.6.dist-info/WHEEL",
+      "path": "discovery/v11/records/rec:01KZKBNNJA8KQP51BGS22SQNBW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c48624360cec2753ec0d1d8a6fcad3f3",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJA9T46WY6AV5BYYAPK",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/LICENSE.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJA9T46WY6AV5BYYAPK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-fdb449376b2428445edb3f61c478094b",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJAECXYW6FPW6S2P3VP",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/preprocessing/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJAECXYW6FPW6S2P3VP.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2f0475b6e7d9df97224a134f40bfc2bd",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJAH3E1QBCR4DRV0A11",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy-3.7.0.6.dist-info/METADATA",
+      "path": "discovery/v11/records/rec:01KZKBNNJAH3E1QBCR4DRV0A11.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-45e91d9a43d335cafba26f2cea12b85c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJAHVB4DQYQGEWRB8C0",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/postprocessing/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJAHVB4DQYQGEWRB8C0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c42be87040a2bf441bb5adc45d2e31ab",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJAK98H8RJBGNNVDHS1",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy-3.7.0.6.dist-info/top_level.txt",
+      "path": "discovery/v11/records/rec:01KZKBNNJAK98H8RJBGNNVDHS1.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2986b45cc2f9d4ccec28a000b78416bd",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJARZT6KEF3VBGWPET0",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy/preprocessing/DiscretizeMember.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJARZT6KEF3VBGWPET0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-3e450a45620e0819ad5ad0d6826ecb7c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJATENBEV7YXX6JNBG7",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy-3.7.0.6.dist-info/INSTALLER",
+      "path": "discovery/v11/records/rec:01KZKBNNJATENBEV7YXX6JNBG7.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-51293bf3384a3453f1a2c01683689a76",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJATR1D4JR1YHZAS5D2",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/__init__.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJATR1D4JR1YHZAS5D2.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f8cab748faaa08f9e956f571c691e2e6",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJATZ9QDHGRWVPN8RCA",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespy-3.7.0.6.dist-info/RECORD",
+      "path": "discovery/v11/records/rec:01KZKBNNJATZ9QDHGRWVPN8RCA.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-ff20695328f911c9129f490fb1eb45d4",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJAXV1R3W1RW8Q5343D",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJAXV1R3W1RW8Q5343D.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f15f9d9d3c874b470826cd3cb7879842",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJB00VYN9ZH2EAK7G0W",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux-3.8.0.0.dist-info/WHEEL",
+      "path": "discovery/v11/records/rec:01KZKBNNJB00VYN9ZH2EAK7G0W.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-a67ca75b79a4fb27658514f0788ef31f",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJB128VWDWJMW0GSH5C",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/libgfortran.so.5",
+      "path": "discovery/v11/records/rec:01KZKBNNJB128VWDWJMW0GSH5C.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d38c69e583b12a8074de100cf28bbea2",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJB43625XK0KZVG32TW",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/libquadmath.so.0",
+      "path": "discovery/v11/records/rec:01KZKBNNJB43625XK0KZVG32TW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2b4dfb1718b69660b4384229b50d8bc4",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJB4ZR08735YJS8J4Q2",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux-3.8.0.0.dist-info/INSTALLER",
+      "path": "discovery/v11/records/rec:01KZKBNNJB4ZR08735YJS8J4Q2.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-b4df46cb858d0b284e10fcd9ca7a02da",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJB9PM0BW56ZNDTMXWK",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/liblapack.so.3",
+      "path": "discovery/v11/records/rec:01KZKBNNJB9PM0BW56ZNDTMXWK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-0f48b8e37cb3745c516691819453057c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBAQF1KCT79Y5AKQSH",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJBAQF1KCT79Y5AKQSH.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-51c2d4eb491f04e3b9252d860154128c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBF6G3DJ703TYCG64Z",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux-3.8.0.0.dist-info/top_level.txt",
+      "path": "discovery/v11/records/rec:01KZKBNNJBF6G3DJ703TYCG64Z.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-4ba23895771e3873d8b38956bf4bbd2b",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBGT19XZAA09NF3FEW",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/libblas.so.3",
+      "path": "discovery/v11/records/rec:01KZKBNNJBGT19XZAA09NF3FEW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-95cece3ec6924edd1fe2404245d258d5",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBNDWJ4D36F1Y75JN0",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux-3.8.0.0.dist-info/RECORD",
+      "path": "discovery/v11/records/rec:01KZKBNNJBNDWJ4D36F1Y75JN0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d2cf779f05a9038fac5ae761dfd25208",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBTVX85CPY09JD8CN5",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux-3.8.0.0.dist-info/METADATA",
+      "path": "discovery/v11/records/rec:01KZKBNNJBTVX85CPY09JD8CN5.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d6bdc3a0dfee1590ed16ef96ef86476a",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBWMK0C102ZECD5HSZ",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/lib/libgomp.so.1",
+      "path": "discovery/v11/records/rec:01KZKBNNJBWMK0C102ZECD5HSZ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c17bde299b1c20c39d07e1fcb53eb5da",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJBX7VV6W87BXX5VVJQ",
+      "kind": "artifact",
+      "label": ".vendor_openseespy/openseespylinux/opensees.so",
+      "path": "discovery/v11/records/rec:01KZKBNNJBX7VV6W87BXX5VVJQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-00cdf79749cb771da1cda3d6355ff4bd",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC09APS8D6E304R9VZ",
+      "kind": "artifact",
+      "label": "independent_engine_results.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJC09APS8D6E304R9VZ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-1e6baa6343209441a5d0ab05cdfef9be",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC39GV146KQXQ25NSR",
+      "kind": "artifact",
+      "label": "README.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJC39GV146KQXQ25NSR.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-94c67362dec2dbc211ab6820580185ad",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC67AK578YJHF2CB1P",
+      "kind": "artifact",
+      "label": "cad_verification.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJC67AK578YJHF2CB1P.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-7b57a15dc700406b21b5948844e47a5a",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC8E8FQMCFD04W19B3",
+      "kind": "artifact",
+      "label": "external-artifacts/requests/3f41f2c5f482d22bc4a028f25a69fa806919510632fd58b9035a8e781443dfc9/ee35d2d61d5fb455ca987b591a4c024e516346066f604c42d9c7726d9559d692",
+      "path": "discovery/v11/records/rec:01KZKBNNJC8E8FQMCFD04W19B3.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-49db4fe211d4ddf49637ef070735f428",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC8TM06QHWBT7JRE5M",
+      "kind": "artifact",
+      "label": "geometry.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJC8TM06QHWBT7JRE5M.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-8f5e7c5ca55eb98b536869821b803499",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJC98DEXRQXH02WBGC8",
+      "kind": "artifact",
+      "label": "__pycache__/calculations.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJC98DEXRQXH02WBGC8.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-71aa5e7fde906953fb7abb33dc97fcfa",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCA47HV8E95EMN43KM",
+      "kind": "artifact",
+      "label": "independent_engine_comparison.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJCA47HV8E95EMN43KM.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-3b1f9fb14b7f44fe76ed90e01ad026cc",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCFQCMJRGRHZG1ZPT3",
+      "kind": "artifact",
+      "label": "calculations.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJCFQCMJRGRHZG1ZPT3.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-eb9fa5ea6754470f4a781a695bd2a776",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCVGPYRNS8SBV7WBRA",
+      "kind": "artifact",
+      "label": "__pycache__/run_checks.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJCVGPYRNS8SBV7WBRA.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c24d22f724ee11d5af307e4aee4ea263",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCXHFJ6GJHGNTJKGJK",
+      "kind": "artifact",
+      "label": "cad_tool_provenance.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJCXHFJ6GJHGNTJKGJK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-dc7a0f6af4a8d98dfb81b36ef2160bc7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCXYKK5NTD71NRDVWD",
+      "kind": "artifact",
+      "label": "independent_dxf_verification.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJCXYKK5NTD71NRDVWD.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-13e50a88c9d461abb8540b7bb2657403",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJCYWA13XRW5ZJX2JJG",
+      "kind": "artifact",
+      "label": "house_plan.dxf",
+      "path": "discovery/v11/records/rec:01KZKBNNJCYWA13XRW5ZJX2JJG.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c7b111bfc8e64647558a70dc0d5a3ab6",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJD3RT638G4ARC67ED8",
+      "kind": "artifact",
+      "label": "specifications.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJD3RT638G4ARC67ED8.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-dc6cd82aa8444c04137ba33d56ab4ad7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJD4ZE5HJESTKY6J6KE",
+      "kind": "artifact",
+      "label": "independent_opensees_comparison.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJD4ZE5HJESTKY6J6KE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-eaeb3eff82b2a3d83bfd6d4471408080",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJD58D7ZCQN4P1ZY15K",
+      "kind": "artifact",
+      "label": "run_independent_opensees.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJD58D7ZCQN4P1ZY15K.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f71d2305cb94db7ca2acc1c69b785bd6",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJD7XJN6YY18AF9NJ6Z",
+      "kind": "artifact",
+      "label": "independent_verification_receipt.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJD7XJN6YY18AF9NJ6Z.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-282f56b1fd2dc77442dc5d2ec20bc5b0",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJD8NTXMNXY3A6GWTER",
+      "kind": "artifact",
+      "label": "independent_opensees_analysis.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJD8NTXMNXY3A6GWTER.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-6eca4dd0178bb3e062948647cb93db9f",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDA8PTM121NCD9WYQE",
+      "kind": "artifact",
+      "label": "run_checks.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJDA8PTM121NCD9WYQE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-4825dd7cb4c1858af04d23a972128cc7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDFZQ5PWVTDW5GT3B0",
+      "kind": "artifact",
+      "label": "independent_verification_report.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJDFZQ5PWVTDW5GT3B0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-fc5795daf4457c71280c8b3fd628862a",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDGB25GT8WMA4CNTSG",
+      "kind": "artifact",
+      "label": "package_manifest.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJDGB25GT8WMA4CNTSG.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-11e19a62196c50c45fdb52a0eaa70d7e",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDGDG078YMT4P36X8A",
+      "kind": "artifact",
+      "label": "retry.err",
+      "path": "discovery/v11/records/rec:01KZKBNNJDGDG078YMT4P36X8A.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-78c451ddb602fdda68c96b2876a328f7",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDKG36AFKZJ4CZP7SC",
+      "kind": "artifact",
+      "label": "make_cad.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJDKG36AFKZJ4CZP7SC.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-63a6c6719a2d15700cf0bf5d845ed920",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDMFFGP9SE2PB3NCXC",
+      "kind": "artifact",
+      "label": "schedules.csv",
+      "path": "discovery/v11/records/rec:01KZKBNNJDMFFGP9SE2PB3NCXC.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-395771b8b2ad528f1caebecda648dc97",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJDXJYDX3J8BY69ARRK",
+      "kind": "artifact",
+      "label": "plans.svg",
+      "path": "discovery/v11/records/rec:01KZKBNNJDXJYDX3J8BY69ARRK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c51cd0a22ff58598b5ff3fcfad0bc095",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE0R76EY7H8J1ZA2CP",
+      "kind": "artifact",
+      "label": "third_party/openseespy-3.8.0.0.dist-info/INSTALLER",
+      "path": "discovery/v11/records/rec:01KZKBNNJE0R76EY7H8J1ZA2CP.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-7211943225eb63904edbfc2be365cdcb",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE1VPJX4153ZPFE8SE",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJE1VPJX4153ZPFE8SE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-000b759bb6ff777d9bc6838b4b853c6a",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE21QCYYTMQBCRSZJ0",
+      "kind": "artifact",
+      "label": "third_party/openseespy/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJE21QCYYTMQBCRSZJ0.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-3d117a2865e75dd780d5ede8895a111f",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE3TXSZ6Z23HKXEGFX",
+      "kind": "artifact",
+      "label": "third_party/openseespy-3.8.0.0.dist-info/top_level.txt",
+      "path": "discovery/v11/records/rec:01KZKBNNJE3TXSZ6Z23HKXEGFX.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-1dc98ebb2963964b2d742be2d34b7586",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE4RCCFHQX1Y6QPD5Q",
+      "kind": "artifact",
+      "label": "third_party/openseespy/LICENSE.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJE4RCCFHQX1Y6QPD5Q.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-3252e552912b46703a83cc14d7052ffc",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE6FCQ1XGZQ07Z3VN4",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/__init__.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJE6FCQ1XGZQ07Z3VN4.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-13d0eb790b5f688d306c37b37e382f8d",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE6MKQ6KQX98PK5TT1",
+      "kind": "artifact",
+      "label": "third_party/openseespy-3.8.0.0.dist-info/WHEEL",
+      "path": "discovery/v11/records/rec:01KZKBNNJE6MKQ6KQX98PK5TT1.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-8e55354f8b29b394c17769b7bdb21cf5",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE8P849APXSBDFT9YB",
+      "kind": "artifact",
+      "label": "third_party/openseespy/opensees/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJE8P849APXSBDFT9YB.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-763b9323192a26a34b2832a84b9f4491",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJE8XHCT6SBPPHEM5GQ",
+      "kind": "artifact",
+      "label": "third_party/openseespy/opensees/__init__.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJE8XHCT6SBPPHEM5GQ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-e8ec65db2eb9a09fb9d0dcb11f079fb2",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJEAFSHZBJ2ZEWS4P3P",
+      "kind": "artifact",
+      "label": "third_party/openseespy-3.8.0.0.dist-info/RECORD",
+      "path": "discovery/v11/records/rec:01KZKBNNJEAFSHZBJ2ZEWS4P3P.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-cc0d6f3c20f76b84982b8ba98e0805cf",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJEEP1G3Y8XQK725K58",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/__pycache__/__init__.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZKBNNJEEP1G3Y8XQK725K58.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2abe2fc7aba10fa88c7ed425fb91b221",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJET9K6N26CSJ2A9NS7",
+      "kind": "artifact",
+      "label": "third_party/openseespy-3.8.0.0.dist-info/METADATA",
+      "path": "discovery/v11/records/rec:01KZKBNNJET9K6N26CSJ2A9NS7.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f144ff0d09b0dfcfcfa8d83dd5861b58",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJEVPWHAED5W10A9JXE",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/LICENSE.md",
+      "path": "discovery/v11/records/rec:01KZKBNNJEVPWHAED5W10A9JXE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c14a22314bb9720c59c39c857e9fc626",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJF0BFYXMWYHEJPG3CK",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/liblapack.so.3",
+      "path": "discovery/v11/records/rec:01KZKBNNJF0BFYXMWYHEJPG3CK.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f1e0b6c846e6b308168ab7e8a3b329a0",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJF466P487GFTJF03XN",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux-3.8.0.0.dist-info/INSTALLER",
+      "path": "discovery/v11/records/rec:01KZKBNNJF466P487GFTJF03XN.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-96d908161154fa5ad85a8a026ae7a0be",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJF6KBQB10S9C05TV46",
+      "kind": "artifact",
+      "label": "third_party_engine_provenance.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJF6KBQB10S9C05TV46.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-df116cdcf5656726fcffc089545f2080",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJF7JF6S5ZWKXQRJSF9",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/libgfortran.so.5",
+      "path": "discovery/v11/records/rec:01KZKBNNJF7JF6S5ZWKXQRJSF9.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-4a3261251124b594eded5812a5ab75e5",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJF9SW7J9RM3XYAPBK8",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux-3.8.0.0.dist-info/WHEEL",
+      "path": "discovery/v11/records/rec:01KZKBNNJF9SW7J9RM3XYAPBK8.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-0914e9a18e2a464ff02095718f9f0f74",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFEAW16S2020G1XF9Z",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/libblas.so.3",
+      "path": "discovery/v11/records/rec:01KZKBNNJFEAW16S2020G1XF9Z.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-81aae4085edac1960cd3d163f9f55339",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFEQV9FNGP965F4Q5M",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux-3.8.0.0.dist-info/METADATA",
+      "path": "discovery/v11/records/rec:01KZKBNNJFEQV9FNGP965F4Q5M.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-da7149ad8ddd6e0ff6641a30d486bf79",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFHV6SCAYG7HXB3DRV",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/opensees.so",
+      "path": "discovery/v11/records/rec:01KZKBNNJFHV6SCAYG7HXB3DRV.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-8ea53ba56982888c9c4ae756a8379b1e",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFJY69QEFG75NNW3JA",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux-3.8.0.0.dist-info/RECORD",
+      "path": "discovery/v11/records/rec:01KZKBNNJFJY69QEFG75NNW3JA.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-7597bd5b86c40252f60e81feeddc843c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFM3BF07FERD96X9TR",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/libgomp.so.1",
+      "path": "discovery/v11/records/rec:01KZKBNNJFM3BF07FERD96X9TR.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-6815aa2ba90d36f7d1721a5b00de4277",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFNHWM7K2NV9KTFSTZ",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux/lib/libquadmath.so.0",
+      "path": "discovery/v11/records/rec:01KZKBNNJFNHWM7K2NV9KTFSTZ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-9a087ccd48bd4f74926d6011979b1d74",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJFWN4M1RPCP54PW546",
+      "kind": "artifact",
+      "label": "third_party/openseespylinux-3.8.0.0.dist-info/top_level.txt",
+      "path": "discovery/v11/records/rec:01KZKBNNJFWN4M1RPCP54PW546.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c45d3149e23bcb65225924bceb46448a",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJGF7EFKQGERWR1201P",
+      "kind": "artifact",
+      "label": "verify_cad.py",
+      "path": "discovery/v11/records/rec:01KZKBNNJGF7EFKQGERWR1201P.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-27f2c153eebfbcff0b42813779606bcb",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZKBNNJGK80GKJ9QRSN5N051",
+      "kind": "artifact",
+      "label": "validation_report.json",
+      "path": "discovery/v11/records/rec:01KZKBNNJGK80GKJ9QRSN5N051.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "discovery_kind": "telemetry",
+      "id": "rec:01KZKBNNJGNAXD66CQBE9W6THA",
+      "kind": "telemetry",
+      "label": "telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "path": "discovery/v11/records/rec:01KZKBNNJGNAXD66CQBE9W6THA.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

@@ -1,0 +1,917 @@
+{
+  "activity": [
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:33.213000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:34.597000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:34.600000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:38.253000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:58.597000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:01.580000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:04.628000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:10.397000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:10.592000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:34.825000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:37.995000+00:00",
+      "kind": "PERSONA_ACTION_FAILED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:39.882000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:39.885000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:42.169000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:42.173000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:45.595000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:46.039000+00:00",
+      "kind": "PERSONA_ACTION_FAILED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:49.013000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:52.583000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:57.471000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:00.559000+00:00",
+      "kind": "PERSONA_ACTION_FAILED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:04.007000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:06.939000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:09.887000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:10.086000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:18.336000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:21.885000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:32.272000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:35.311000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:37.432000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:37.739000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:40.917000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:41.224000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:43.609000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:43.930000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:48.312000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:48.626000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:53.107000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "actor_kind": "persona",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:53.115000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "PERSONA_COMMUNICATION_AUTHORED",
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "scope": "environment",
+      "scope_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "status": "public_direct"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:53.124000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    }
+  ],
+  "communication_routes": [
+    {
+      "at": "2026-08-09T13:05:44.196000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA2584TZVWAXNZE9NHZZB4",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "signature_hex": "8aba47fa0906fdaff671d65d5895cf49705c44fa92ec743fc6c7a83a0f1ed9284fa5afc47c40260006169645da63058c2619bf82b332abe4c41e97bfed7be30a",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:07:04.016000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA4K6GBMVJ8V7K0PZ1ZEFH",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "278785a9a7221b47f37e000be02cf8e89852cefeb27a3aeb0b3909273450c09fe3690eea3b030a1668d8c6824bdca53dddc769e08e9b73fa41b8b5228f98be0c",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:07:36.784000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA5K6GR0CFG78VYNQ2VDZV",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "f46e61b0630610775dbda62b83ba3b1505144b339d3c273142c86dd508467af38b60a4f2844e30b6e3e9ee758cedb51809e880985f073e6fd82fb420f5abe701",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:08:16.681000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA6T596P72V8E0RZ8ZB02X",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "5fab5b92e8ad0673f5feb42b37f2e9d9f05f450bc290e621de4e9740fa6fd5bf56f3ec107382857174c7a76995610d3082fca169a5e6dfa388a0c005ac529204",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:31:53.115000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKBJ1CVHYYEHZPEX1TSEZWP",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "f346387d32c8c65dcfb0262e42b7d925ea76e601c56079730a211ede6c1f70b8e6a0b2b3caf2bd642ba03fd81289053587b01e01650222fdb6adef9acf297507",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "communication_routes_hash": "sha256:17d0b898c273862f22c9a3254b2e68b74cd91c7798d05df5dfdeaf67b219b8c5",
+  "current_work_state": {
+    "active_membership_current": true,
+    "authored_at": "2026-08-09T13:32:05.969000+00:00",
+    "automatic_action": false,
+    "bound_to_latest_observation": false,
+    "causal_disposition": {
+      "kind": "no_successor",
+      "rationale": "The independently acquired engine has been executed on 34 primary flexural and axial members, all 34 analyses converged, and exact comparison/provenance/report artifacts were materially delivered. No self-successor is needed; the independently woken peer verifier must now record the separately required signed executed-check receipt.",
+      "schema": "personaos-persona-causal-disposition/2"
+    },
+    "causal_ref_count": 4,
+    "causal_refs": [
+      "event:01KZKBDXPSX65XPGYDYJ5WVY7H",
+      "event:01KZKBGHEPJRS5E6QVBTFW83FX",
+      "event:01KZKBHJ6DA6RDYGN6C88VE36A",
+      "event:01KZKBJ1CVHYYEHZPEX1TSEZWP"
+    ],
+    "disposition_frontier_settlement": {},
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "latest_observed_situation_hash": "sha256:d75ae966149667ce69f73cfd087138d61eca8f4dafd6247da20ae9c2d0f4b80f",
+    "note_id": "work-note:3c2d1ed93aa63ea30ffef5077029af02296b0227c0094b62f58efd63b936e284",
+    "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "projection_tier": "public",
+    "revision": 1,
+    "schema": "personaos-persona-work-state-surface/5",
+    "semantic_interpretation_performed": false,
+    "signature_hex": "1f7d305db48a71efa48a4d3c8648fdd55874b7fb2b1e68198326aa76f911f872cb617f1b836d2430032ad1dcc4e5dadc580a8482c8a4da121536afaa687ee60d",
+    "signature_verified": true,
+    "signing_key_id": "persona:408G7KWZQE5Y4R7P69G3GCC3BN",
+    "situation_hash": "sha256:18f5031d51096b700804a18adfd0ffdd4fd75038b21ff3458c5d082010c077ce",
+    "supersedes_work_state_ref": "",
+    "task_id": "task:01KZKBD304BMDP96S4N8Y2Z9YQ",
+    "terminal_frontier_bound": false,
+    "work_note": {
+      "acceptance_condition_status": "engine clause materially satisfied; independent verifier receipt still outstanding",
+      "artifact_sha256": {
+        "comparison": "sha256:4b374330f5f8cbe0f20bdaeecb685340436f8e87f3629ec0625027746e41148b",
+        "provenance": "sha256:210f89de4afbd874652b6eee9895acc8242a6bdf9b939bdc32075a9fa0abd8f1",
+        "report": "sha256:fe01ab7001e831bc13c48b698919c513ade15b78760df96cdbee763897cdb88f",
+        "results": "sha256:1118e1dedfbd3ce3aaec744eb998200bb36f9bf14ef7ae013170a2de9e253262"
+      },
+      "artifacts": {
+        "comparison": "independent_engine_comparison.json",
+        "provenance": "third_party_engine_provenance.json",
+        "report": "independent_verification_report.json",
+        "results": "independent_engine_results.json"
+      },
+      "coverage": {
+        "comparison_records": 34,
+        "comparison_status": "MATCH_WITHIN_NUMERICAL_TOLERANCE",
+        "discrepancies": [],
+        "members_analyzed": 34,
+        "members_converged": 34
+      },
+      "engine": "OpenSeesPy 3.7.0.6 with openseespylinux 3.8.0.0, acquired from PyPI after task receipt",
+      "schema": "professional-structural-analysis-progress/1",
+      "status": "independent_engine_analysis_delivered_waiting_for_peer_receipt"
+    },
+    "work_state_content_hash": "sha256:d03a9fa9a12c8084f4aba2141fddf7f28c69e77b8ea32a0a06f7446ddb5cc918",
+    "work_state_id": "work-state:f1a2cad96d092d83772277f9de17d73ad91d3c7b26118b9d29db6a44936a7e53"
+  },
+  "generated_at": "2026-08-09T13:38:08.140000+00:00",
+  "model_status": {
+    "active_calls": [],
+    "recent_events": [
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 207303,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 142438,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 78383,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 31441,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 63264,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 24864,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 19344,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 80736,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 32824,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 72727,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 26910,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 22816,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 28312,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 24440,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 23319,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 73575,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 22739,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 13211,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 165591,
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "status": 200
+      }
+    ]
+  },
+  "name": "",
+  "node_id": "kernel:f84cb1e8a669ff9e",
+  "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+  "schema": "personaos-persona-telemetry-public/2",
+  "signature_hex": "d123a98d8a8482be15da2b74379e08e010ccbe507b0befad606a9fa61de348b4a2a783654916b11f95d7a9d9fe49416307a4761dfccf827b10fe3229b9dcf704",
+  "signing_key_id": "kernel-master",
+  "summary": {
+    "active_environment_ids": [
+      "env:01KZJ2PHSKWZHHHWYX1J88ED27"
+    ],
+    "away_environment_ids": [],
+    "environment_membership_state": "active_member",
+    "identity_fields": {
+      "avatar": {
+        "persona_authored": false,
+        "state": "pending"
+      },
+      "characteristics": {
+        "persona_authored": false,
+        "state": "pending"
+      },
+      "name": {
+        "persona_authored": false,
+        "state": "pending"
+      }
+    },
+    "identity_materialization_state": "pending",
+    "identity_name_pending": true,
+    "identity_name_state": "pending",
+    "lifecycle_state": "ACTIVE",
+    "llm_execution_state": "not_currently_calling",
+    "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "running_llm": false,
+    "task_execution_state": "paused_participant"
+  },
+  "tier": "public_redacted"
+}

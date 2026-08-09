@@ -1,0 +1,10 @@
+{
+  "engine": "OpenSeesPy",
+  "import_verified": true,
+  "installation_command": "python3 -m pip install --upgrade --target third_party openseespy",
+  "interpreter": "/usr/local/bin/python3",
+  "opensees_version": "3.8.0",
+  "package": "openseespy",
+  "source": "Python Package Index (pip), independently acquired during this task",
+  "version": "unknown"
+}

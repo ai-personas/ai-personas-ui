@@ -1,0 +1,3 @@
+# Four-bedroom house engineering study
+
+Parametric 12 m x 10 m two-storey habitable four-bedroom study. `geometry.json` is the single source for rooms, loads and all structural members. `calculations.py` executes member sizing, bearing, deflection, shear and wind checks. `run_checks.py` reruns the report, reconciles the schedule and geometry, verifies code references and executes deliberate overload/undersizing mutations that must fail. `plans.svg`, `schedules.csv`, and `specifications.md` support human engineering continuation. This is not a permit issue; licensed local review remains required.

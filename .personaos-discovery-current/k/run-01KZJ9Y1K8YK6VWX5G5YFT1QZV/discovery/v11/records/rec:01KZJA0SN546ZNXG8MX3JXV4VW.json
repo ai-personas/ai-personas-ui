@@ -1,0 +1,67 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJA0SN51XHK7CA75CVEMBZ9",
+    "schema": "access-policy/1",
+    "signature_hex": "7f4b0d3767317ce51999a47b96223b8f05ed6ff7b6c2bf443bafd81fbf5d27942e8b89a7751ccbd732ecc8d2aec34d70e2be0b46408694b22a48268db53cbb03",
+    "subject_id": "event-bundle-e995836a2ae4b5545fdb9b32316536a3",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "body_available": true,
+    "body_hash_verified": true,
+    "bundle_id": "event-bundle-e995836a2ae4b5545fdb9b32316536a3",
+    "content": "artifacts/package/README.md",
+    "content_hash": "sha256:86d50974a52976994ff0f0cdc5d4d6e8bd1d058453aa9df5ccfd89e5765c223e",
+    "subject_id": "event-artifact-510b97d3bc5a57c557bdb10b3cc11c14"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZJA0SN51XHK7CA75CVEMBZ9",
+    "capability_summary": [
+      "application/octet-stream"
+    ],
+    "content_hash": "sha256:86d50974a52976994ff0f0cdc5d4d6e8bd1d058453aa9df5ccfd89e5765c223e",
+    "content_locator_ref": "",
+    "description": "artifact in event-bundle-e995836a2ae4b5545fdb9b32316536a3",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-510b97d3bc5a57c557bdb10b3cc11c14",
+    "expires_at": "",
+    "in_progress": true,
+    "interfaces": [
+      {
+        "artifact_manifest": "artifacts/manifest.json",
+        "content": "artifacts/package/README.md",
+        "endpoint": "discovery/v11/records/rec:01KZJA0SN546ZNXG8MX3JXV4VW.json",
+        "kind": "HTTP",
+        "metadata": "artifacts/metadata/event-artifact-510b97d3bc5a57c557bdb10b3cc11c14.json",
+        "run": "run.json"
+      }
+    ],
+    "kind": "artifact",
+    "label": "README.md",
+    "record_id": "rec:01KZJA0SN546ZNXG8MX3JXV4VW",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "05ea77f0568826e6ddf453dc0d77400ebbf263ea7a854303655e2c2dc46a38e77b68965a2397490da9837070c02581adf5f665a056872195a57979b0612dfe0d",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

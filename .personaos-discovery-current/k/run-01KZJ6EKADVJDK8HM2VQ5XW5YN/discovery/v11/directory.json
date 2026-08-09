@@ -1,0 +1,331 @@
+{
+  "access_model": [
+    "discover",
+    "r",
+    "rw",
+    "admin"
+  ],
+  "counts_by_kind": {
+    "artifact": 10,
+    "telemetry": 1
+  },
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernels": [
+    {
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "keys": ".well-known/personaos-keys.json"
+    }
+  ],
+  "planes": {
+    "internet": {
+      "transports": [
+        ".well-known",
+        "gossip",
+        "kademlia_dht"
+      ]
+    },
+    "intranet": {
+      "transports": [
+        "mdns"
+      ]
+    }
+  },
+  "record_count": 11,
+  "records": [
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2cb702a2fd8ad215e955d19ca8f1e1dd",
+      "id": "rec:01KZJ75P620J5JR5Z0J5JA494M",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "__pycache__/calculations.cpython-312.pyc",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P620J5JR5Z0J5JA494M.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-4edf7a0ce9aa38e432251d19ac251cfa",
+      "id": "rec:01KZJ75P620K8Y9ZJZNSRHZRT2",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "__pycache__/run_checks.cpython-312.pyc",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P620K8Y9ZJZNSRHZRT2.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-2094455764a12803daab636007ecb5b2",
+      "id": "rec:01KZJ75P62YTKYCKX4H4N6MT9W",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "README.md",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P62YTKYCKX4H4N6MT9W.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-a2be0b60eb21e38aa3219ba64c784429",
+      "id": "rec:01KZJ75P636Y7YJGC584B07GCM",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "calculations.py",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P636Y7YJGC584B07GCM.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "lifecycle_transitions",
+        "otel_spans"
+      ],
+      "description": "environment activity telemetry",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "id": "rec:01KZJ75P63AYBB180R0C05XKMB",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "telemetry",
+      "label": "telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63AYBB180R0C05XKMB.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-434c9f22abae2dde30b3a3b4d20c8395",
+      "id": "rec:01KZJ75P63C1H6QS51HQ1RFCXZ",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "specifications.md",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63C1H6QS51HQ1RFCXZ.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-c032cdf177a9f276af907566704aaf8b",
+      "id": "rec:01KZJ75P63G561V9PYYF5PNMXF",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "plans.svg",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63G561V9PYYF5PNMXF.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/json"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-bc3432b4d7a2a8af07bfd1c42148f7ee",
+      "id": "rec:01KZJ75P63RXFY01QFT5MDFGCM",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "validation_report.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63RXFY01QFT5MDFGCM.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "text/x-python"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-5f56b149938d5ec52e69d53125d7fa1a",
+      "id": "rec:01KZJ75P63SQFGRW7GHQMVW8JE",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "run_checks.py",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63SQFGRW7GHQMVW8JE.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-ef89aa77e4f6b574e28af40cfb2ff7a7",
+      "id": "rec:01KZJ75P63VRG7EWWZ6PP934DT",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "schedules.csv",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63VRG7EWWZ6PP934DT.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    },
+    {
+      "access": {
+        "federated_peer_can_read": false,
+        "min_to_discover": "discover",
+        "min_to_read": "r",
+        "public_stranger_can_discover": true
+      },
+      "capability_summary": [
+        "application/octet-stream"
+      ],
+      "description": "artifact in event-bundle-31d9d388f187d724abb9c6a1474fefe0",
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-67ba9f8feb179f38f5555ddcfbc1ca2c",
+      "id": "rec:01KZJ75P63Z8CTPC5S3VE2YMB2",
+      "kernel_id": "kernel:f84cb1e8a669ff9e",
+      "kind": "artifact",
+      "label": "geometry.json",
+      "planes": [
+        "internet",
+        "intranet"
+      ],
+      "resolve": {
+        "record": "discovery/v11/records/rec:01KZJ75P63Z8CTPC5S3VE2YMB2.json"
+      },
+      "signing_key_id": "kernel-master",
+      "visibility_tier": "public"
+    }
+  ],
+  "schema": "discovery-directory/1",
+  "visibility_tiers": [
+    "persona_only",
+    "project_only",
+    "tenant",
+    "federation",
+    "public"
+  ]
+}

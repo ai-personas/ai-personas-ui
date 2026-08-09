@@ -1,0 +1,61 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJ5VFB2VTB3V1EJ773KQ5JE",
+    "schema": "access-policy/1",
+    "signature_hex": "8cb02d20b671ca111be8f7097e4e8a15c9e22885935268d0724b4bc278edabf9d9481a51264bec2d8fbf9b18659d3aaea9d45ae050923c2dc7cdbd1bd576da07",
+    "subject_id": "event-bundle-2d83714c9e2494574adcae7a76c0d83d",
+    "subject_kind": "artifact"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "artifact_bundle",
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "artifact",
+  "links": {
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "owning_env_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "subject_id": "event-bundle-2d83714c9e2494574adcae7a76c0d83d"
+  },
+  "projection": "public_read",
+  "record": {
+    "access_policy_ref": "acl:01KZJ5VFB2VTB3V1EJ773KQ5JE",
+    "capability_summary": [],
+    "content_hash": "sha256:2d83714c9e2494574adcae7a76c0d83d32f70cbd24a5ad19b1d503eb286f6cd3",
+    "content_locator_ref": "",
+    "description": "workspace artifact bundle (9 files)",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-bundle-2d83714c9e2494574adcae7a76c0d83d",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "discovery/public/records/artcard:01KZJ5VFB209KA4TXRDBRBME1J.json",
+        "kind": "HTTP"
+      }
+    ],
+    "kind": "artifact",
+    "label": "artifacts:run-01KZJ5SY16HQBK3GHQ2VQQGNJS",
+    "record_id": "artcard:01KZJ5VFB209KA4TXRDBRBME1J",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "ed4cd13d93674a40dcaadd541015569eb64e90186f0861b576fdd6bc95b251aea6e80852ac89d614dd7730d5a6d69448374940fd92b4a5704cc094a08eaa9206",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

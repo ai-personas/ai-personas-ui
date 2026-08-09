@@ -1,0 +1,24 @@
+{
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "keys": [
+    {
+      "key_id": "kernel-master",
+      "public_key_hex": "f84cb1e8a669ff9e2afc491f13c60441f4cdad54a03c6d455bd64526ed025df3",
+      "role": "master",
+      "rotated_at": "",
+      "status": "current"
+    },
+    {
+      "key_id": "persona:408G7KWZQE5Y4R7P69G3GCC3BN",
+      "public_key_hex": "4fa8d33363edcf4cf0c7de19597162ed0ff6ec23afeb0d682ca564a64adaa7d9",
+      "role": "persona_identity",
+      "rotated_at": "",
+      "status": "current"
+    }
+  ],
+  "rotation_schedule": {
+    "master_period_days": 90,
+    "operational_period_days": 30
+  },
+  "schema": "personaos-keys/1"
+}

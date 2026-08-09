@@ -1,0 +1,71 @@
+{
+  "schema": "house-engineering-package-manifest/1",
+  "author_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1718,
+      "sha256": "sha256:5cd0f3deb6cbb3588cce4ba1f1c2ac6bd32cb8b3893d0d27be49f3caf43f2694"
+    },
+    {
+      "path": "geometry.json",
+      "bytes": 22649,
+      "sha256": "sha256:7fa9a9be9b49f23872d19cc002036f266daa6cd4b109df744ba7f0a3609ee307"
+    },
+    {
+      "path": "calculations.py",
+      "bytes": 4991,
+      "sha256": "sha256:2e51e1436e6d57e79b4e61d5dc4284e8c9d88bfa2785332eff859f7209379386"
+    },
+    {
+      "path": "run_checks.py",
+      "bytes": 5701,
+      "sha256": "sha256:5cc6edae05bc99c0647082712636a0a1709637d1f264e4a3b293867185553cfc"
+    },
+    {
+      "path": "schedules.csv",
+      "bytes": 6130,
+      "sha256": "sha256:5b286f3e82d8b243733fb529033dfcd5b218fcd59c2177026dbb853d5ef33196"
+    },
+    {
+      "path": "plans.svg",
+      "bytes": 5725,
+      "sha256": "sha256:01fc06316cb557e57df96d28097595a592faa7a883c77781062a87b2feaaa51c"
+    },
+    {
+      "path": "specifications.md",
+      "bytes": 1378,
+      "sha256": "sha256:406c507c27d43ee2c7f3d6c3d554cdc42c214cac0a1620461bafd1ea5738bdf2"
+    },
+    {
+      "path": "validation_report.json",
+      "bytes": 27528,
+      "sha256": "sha256:b161facf1209326f76babb8c290ddc3a0e8b1b85d3e02c46632f7fdd93502a95"
+    },
+    {
+      "path": "house_plan.dxf",
+      "bytes": 21222,
+      "sha256": "sha256:399951d705b848ee1c2948101c5cce84d7bdee83b72af5fa3c8ae7fa494d44cd"
+    },
+    {
+      "path": "make_cad.py",
+      "bytes": 1252,
+      "sha256": "sha256:a60f392e53a793ae08741720afcd23444cc85271f07c23022cf9a8cfd8eb65c6"
+    },
+    {
+      "path": "verify_cad.py",
+      "bytes": 955,
+      "sha256": "sha256:94ec62d79cecf6467d6175c7ae3e67e3192f4f9410efddf0b0679f0ba9c18fd4"
+    },
+    {
+      "path": "cad_verification.json",
+      "bytes": 556,
+      "sha256": "sha256:dd8ba0bf06de6701217accc8859ac389700c3a22d09e6797e9f134fc4afa45bd"
+    },
+    {
+      "path": "cad_tool_provenance.json",
+      "bytes": 960,
+      "sha256": "sha256:10ff5525e64bf1475d51b83f243a9c2a31a54a29f7734b72e28c29b8e3cda825"
+    }
+  ]
+}

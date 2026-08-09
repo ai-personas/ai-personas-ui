@@ -1,0 +1,216 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZKBA7TRJCNN80NP6ZHH564T",
+    "schema": "access-policy/1",
+    "signature_hex": "8c05b2d95f04a8c33d35c6fd6b3c712f53ebb5d8cf552c2b0faa88c181fc677672a76c9c4ff6ac018835962296d80e8db5beb65aaefc4a0ef16eeabd24e2e809",
+    "subject_id": "run-01KZKB8QY590DFSBG6FR3AYY72",
+    "subject_kind": "task"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "task_run",
+  "disposition_frontier": {
+    "access": "public_read_only",
+    "automatic_model_call": false,
+    "automatic_wake": false,
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "evidence_hash": "sha256:5888d290dfd9df67484dda4f1b7fd3537782f7cf21b0aca44d3a81bda4578137",
+    "kernel_id": "kernel:f84cb1e8a669ff9e",
+    "personas": [
+      {
+        "authored_at": "2026-08-09T13:27:08.799000+00:00",
+        "disposition_frontier": {
+          "automatic_wake": false,
+          "binding_kind": "kernel_signed_isolated_disposition_settlement",
+          "disposition_kind": "no_successor",
+          "frontier_situation_hash": "sha256:aa91a25fe3bd9f478ba04264a582c0cedce793283ada6cd4f2c28f0091f30782",
+          "latest_observed_situation_hash": "sha256:aa91a25fe3bd9f478ba04264a582c0cedce793283ada6cd4f2c28f0091f30782",
+          "observed_workspace_state_signature": "sha256:3250a1b0f926ab1b82882c7075239e5f60b28844ffaa5abc3b5a9a5da2961738",
+          "persona_reauthorship_required": false,
+          "schema": "personaos-persona-disposition-frontier/1",
+          "semantic_interpretation_performed": false,
+          "source_workspace_state_signature": "sha256:3250a1b0f926ab1b82882c7075239e5f60b28844ffaa5abc3b5a9a5da2961738",
+          "status": "bound",
+          "terminal_disposition": true,
+          "terminal_frontier_bound": true,
+          "work_state_situation_hash": "sha256:855194708cd43636a44405646fa8b16b3f6808dcf5c0cebdefc8775cf2e717d6"
+        },
+        "disposition_frontier_settlement": {
+          "authenticated_action_count": 1,
+          "authored_situation_hash": "sha256:855194708cd43636a44405646fa8b16b3f6808dcf5c0cebdefc8775cf2e717d6",
+          "automatic_action_selected": false,
+          "bound_to_latest_observation": true,
+          "disposition_action_identity": {
+            "action_descriptor_hash": "sha256:66d3254d7423d913947e698e512b179d78f2a4e286dd4a3cb04e8ac2ae3f8242",
+            "action_dispatch_descriptor_hash": "sha256:c1d5277cf9e6d537f5ae6d6c53fe39a7f13437951e9b8b4254dc724dc7a472de",
+            "action_event_id": "actionref:651d70b7a6f8d77d94c333df7cb88733a704613ed4a147c7248696972df0f17c",
+            "action_hash": "sha256:5b13911fd75fbabcf0ee945c965df7985e091101332d90be3e6e72ab9582d5fe",
+            "action_id": "persona-action:651d70b7a6f8d77d94c333df7cb88733a704613ed4a147c7248696972df0f17c",
+            "action_invocation_id": "sha256:d08294a02e5468f0de8fd136a91b0446fb5c056c18ff472d10804c1e06ef0eb3",
+            "action_name": "record_persona_work_state",
+            "replication_effect_descriptors": [],
+            "schema": "personaos-authenticated-action-identity/2"
+          },
+          "disposition_kind": "no_successor",
+          "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+          "independent_effect_count": 0,
+          "lineage_event_id": "event:01KZKB9J712CGNS6K9S18K57K7",
+          "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "schema": "personaos-persona-disposition-frontier-settlement/1",
+          "semantic_interpretation_performed": false,
+          "settled_situation_hash": "sha256:aa91a25fe3bd9f478ba04264a582c0cedce793283ada6cd4f2c28f0091f30782",
+          "settled_situation_lineage_event_id": "event:01KZKB9J61GWZECA4T2AW0X9M9",
+          "settled_workspace_state_signature": "sha256:3250a1b0f926ab1b82882c7075239e5f60b28844ffaa5abc3b5a9a5da2961738",
+          "settlement_hash": "sha256:70f6c05bb13cce12300bcb45bd07fa7e3cf18a6e0c53b7183ef42541fbaa1b70",
+          "source_wake_event_id": "wake:01KZKB8SYB4S7HYQ19FCV56NF8",
+          "task_id": "task:01KZKA0B8YT1XXGF6WHNGTY164",
+          "work_state_content_hash": "sha256:b15ed02a6b90b631de3dd4b67396fa7d37a3c1b5c67cee59dc25b254ba0fe374",
+          "work_state_id": "work-state:294f875fe9abbccbcbab6613a43ecbf5358e1b409d96c0dc62c3c7fe7382e3e2"
+        },
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "revision": 8,
+        "signature_verified": true,
+        "signing_key_id": "persona:408G7KWZQE5Y4R7P69G3GCC3BN",
+        "work_state_content_hash": "sha256:b15ed02a6b90b631de3dd4b67396fa7d37a3c1b5c67cee59dc25b254ba0fe374",
+        "work_state_id": "work-state:294f875fe9abbccbcbab6613a43ecbf5358e1b409d96c0dc62c3c7fe7382e3e2"
+      },
+      {
+        "authored_at": "2026-08-09T13:27:26.816000+00:00",
+        "disposition_frontier": {
+          "automatic_wake": false,
+          "binding_kind": "unbound",
+          "disposition_kind": "no_successor",
+          "frontier_situation_hash": "",
+          "latest_observed_situation_hash": "sha256:b921dba551a70c964a1c422f916429c5ec80331fc9c69987506b7ee0bea7a6e3",
+          "observed_workspace_state_signature": "sha256:3250a1b0f926ab1b82882c7075239e5f60b28844ffaa5abc3b5a9a5da2961738",
+          "persona_reauthorship_required": true,
+          "schema": "personaos-persona-disposition-frontier/1",
+          "semantic_interpretation_performed": false,
+          "source_workspace_state_signature": "",
+          "status": "superseded_or_unbound",
+          "terminal_disposition": true,
+          "terminal_frontier_bound": false,
+          "work_state_situation_hash": "sha256:07f0f5c49f405523c01c7ec20f0a558cacb058aa6e4b7cd4ef3c0a6413746f7f"
+        },
+        "disposition_frontier_settlement": {},
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "revision": 5,
+        "signature_verified": true,
+        "signing_key_id": "persona:persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "work_state_content_hash": "sha256:3ba0f16438fbc5a06ac4de5e5fc31176b27e637061d78e3f12695dce8c210f33",
+        "work_state_id": "work-state:153b7190da9574bb31b3d37167daa701a8cb0a13ee34c03c70b7454446328d2d"
+      }
+    ],
+    "revision": "sha256:21ae692dae4590efb119e0bc93323351c03b2d3741bed82643dc0777a3908c18",
+    "row_label_basis": "authorship_and_append_time",
+    "run_id": "run-01KZKB8QY590DFSBG6FR3AYY72",
+    "schema": "personaos-public-disposition-frontier/1",
+    "semantic_interpretation_performed": false,
+    "signature_hex": "da359127f57db94f1d94857a9ee0fab2080bc18e0ca611fedd39f8a3339b2d6dc90a8001e8c3c0c75e0314e11838cf9cf512258babc00fbe87ceaab3b474b800",
+    "signing_key_id": "kernel-master",
+    "state_signature": "sha256:3250a1b0f926ab1b82882c7075239e5f60b28844ffaa5abc3b5a9a5da2961738",
+    "task_id": "task:01KZKA0B8YT1XXGF6WHNGTY164",
+    "terminal_disposition_frontier": {
+      "automatic_wake": false,
+      "persona_reauthorship_required_count": 1,
+      "persona_reauthorship_required_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "schema": "personaos-terminal-disposition-frontier/1",
+      "selection_basis": "latest_verified_revision_and_exact_observed_frontier",
+      "semantic_interpretation_performed": false,
+      "terminal_disposition_count": 2,
+      "terminal_disposition_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "terminal_frontier_bound_count": 1,
+      "terminal_frontier_bound_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN"
+      ]
+    }
+  },
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "task",
+  "links": {},
+  "record": {
+    "access_policy_ref": "acl:01KZKBA7TRJCNN80NP6ZHH564T",
+    "capability_summary": [
+      "public_task_lifecycle",
+      "task_amended_from:",
+      "task_continued_from:",
+      "task_current_execution:false",
+      "task_environment:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "task_id:task:01KZKA0B8YT1XXGF6WHNGTY164",
+      "task_resumed_from:run-01KZKA0B8Y1TMG8YJ703A47622",
+      "task_revision:sha256:b5962088344cbd97f67a8fc6dd0ef29e0187272fc6e1c761977be999a65b30db",
+      "task_root_run:run-01KZJ2PHMP0H3ET11RG49Y7EBD",
+      "task_run:run-01KZKB8QY590DFSBG6FR3AYY72",
+      "task_state:persona_continuation_unbound"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "quiescent task; no continuation is currently scheduled",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/task/run-01KZKB8QY590DFSBG6FR3AYY72",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "discovery/v11/records/rec:01KZKBA7TSQ98MDM5JDQ844GS6.json",
+        "kind": "HTTP",
+        "run": "run.json"
+      }
+    ],
+    "kind": "task",
+    "label": "Professional practice requires independence: the package cannot be accepted on the authors sole wor...",
+    "record_id": "rec:01KZKBA7TSQ98MDM5JDQ844GS6",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "80774831c26f991b37234a600bd6b741ce9e8ec9e5c86ec11a47347594563c15f47723289e8adbc80c2a02b6a600c5bdbf25ac661ed047ad5644a51ab1e0af0e",
+  "signing_key_id": "kernel-master",
+  "task_lifecycle": {
+    "access": "public_read_only",
+    "amended_from_run": "",
+    "block": {},
+    "continued_from_run": "",
+    "current_execution": false,
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "kernel_id": "kernel:f84cb1e8a669ff9e",
+    "links": {
+      "discovery": "/.well-known/personaos-discovery.json",
+      "live_artifacts": "/runs/run-01KZKB8QY590DFSBG6FR3AYY72/live-artifacts",
+      "telemetry": "/telemetry/live/latest.json"
+    },
+    "pressure": {},
+    "resumed_from_run": "run-01KZKA0B8Y1TMG8YJ703A47622",
+    "review": {},
+    "revision": "sha256:b5962088344cbd97f67a8fc6dd0ef29e0187272fc6e1c761977be999a65b30db",
+    "root_run_id": "run-01KZJ2PHMP0H3ET11RG49Y7EBD",
+    "run_id": "run-01KZKB8QY590DFSBG6FR3AYY72",
+    "schema": "personaos-public-task-lifecycle/2",
+    "signature_hex": "e9a28261f9eaeb75026c508146abc4980de84132b6c01ede39884e2164e42165b7b73f02ab6b339356dbdffdd884041694730d72c1d3d0db693c0abac7fb0307",
+    "signing_key_id": "kernel-master",
+    "state": "persona_continuation_unbound",
+    "task_id": "task:01KZKA0B8YT1XXGF6WHNGTY164",
+    "terminal_reason": ""
+  },
+  "visibility_tier": "public"
+}

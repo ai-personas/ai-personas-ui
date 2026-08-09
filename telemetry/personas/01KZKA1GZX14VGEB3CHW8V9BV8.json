@@ -1,0 +1,896 @@
+{
+  "activity": [
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:25:53.180000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:25:58.077000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:25:59.161000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        },
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:26:50.535000+00:00",
+      "kind": "TASK_RESOURCE_RESUMED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:27:06.751000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:27:06.757000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:27:17.525000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:27:17.560000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+          "kind": "persona"
+        },
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:14.004000+00:00",
+      "kind": "TASK_RESOURCE_RECEIVED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:37.541000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:52.048000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:53.597000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:53.600000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:55.041000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:55.044000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:56.539000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:29:56.542000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:21.111000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:23.977000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:25.420000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:25.423000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:29.582000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:32.612000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:34.138000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:34.141000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:41.537000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:44.289000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:47.556000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:47.782000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:51.757000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:51.987000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:54.138000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:30:54.444000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "actor_kind": "persona",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:31:53.115000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "PERSONA_COMMUNICATION_AUTHORED",
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "scope": "environment",
+      "scope_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "status": "public_direct"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.082000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.238000+00:00",
+      "kind": "PERSONA_ACTION_FAILED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.273000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.280000+00:00",
+      "kind": "PERSONA_ACTION_COMPLETED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.300000+00:00",
+      "kind": "PERSONA_ACTION_AUTHORED",
+      "status": "observed"
+    },
+    {
+      "actor_id": "",
+      "affected": [
+        {
+          "id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+          "kind": "persona"
+        }
+      ],
+      "at": "2026-08-09T13:33:22.317000+00:00",
+      "kind": "PERSONA_ACTION_FAILED",
+      "status": "observed"
+    }
+  ],
+  "communication_routes": [
+    {
+      "at": "2026-08-09T13:05:44.196000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA2584TZVWAXNZE9NHZZB4",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "signature_hex": "8aba47fa0906fdaff671d65d5895cf49705c44fa92ec743fc6c7a83a0f1ed9284fa5afc47c40260006169645da63058c2619bf82b332abe4c41e97bfed7be30a",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:07:04.016000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA4K6GBMVJ8V7K0PZ1ZEFH",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "278785a9a7221b47f37e000be02cf8e89852cefeb27a3aeb0b3909273450c09fe3690eea3b030a1668d8c6824bdca53dddc769e08e9b73fa41b8b5228f98be0c",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:07:36.784000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA5K6GR0CFG78VYNQ2VDZV",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "f46e61b0630610775dbda62b83ba3b1505144b339d3c273142c86dd508467af38b60a4f2844e30b6e3e9ee758cedb51809e880985f073e6fd82fb420f5abe701",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:08:16.681000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKA6T596P72V8E0RZ8ZB02X",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "5fab5b92e8ad0673f5feb42b37f2e9d9f05f450bc290e621de4e9740fa6fd5bf56f3ec107382857174c7a76995610d3082fca169a5e6dfa388a0c005ac529204",
+      "signing_key_id": "kernel-master"
+    },
+    {
+      "at": "2026-08-09T13:31:53.115000+00:00",
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "event_id": "event:01KZKBJ1CVHYYEHZPEX1TSEZWP",
+      "lineage_signature_verified": true,
+      "persona_signature_verified": true,
+      "recipient_persona_ids": [
+        "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      ],
+      "route_kind": "direct",
+      "schema": "personaos-public-persona-communication-route/1",
+      "sender_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "signature_hex": "f346387d32c8c65dcfb0262e42b7d925ea76e601c56079730a211ede6c1f70b8e6a0b2b3caf2bd642ba03fd81289053587b01e01650222fdb6adef9acf297507",
+      "signing_key_id": "kernel-master"
+    }
+  ],
+  "communication_routes_hash": "sha256:17d0b898c273862f22c9a3254b2e68b74cd91c7798d05df5dfdeaf67b219b8c5",
+  "current_work_state": {
+    "active_membership_current": true,
+    "authored_at": "2026-08-09T13:33:22.333000+00:00",
+    "automatic_action": false,
+    "bound_to_latest_observation": false,
+    "causal_disposition": {
+      "kind": "no_successor",
+      "rationale": "Independent executed checks passed and the signed verifier observation was recorded; no further successor is required.",
+      "schema": "personaos-persona-causal-disposition/2"
+    },
+    "causal_ref_count": 0,
+    "causal_refs": [],
+    "disposition_frontier_settlement": {},
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "latest_observed_situation_hash": "sha256:cad598e618ba4f2cad3754a7a25dbd58ed7b615c88ddb8071e8e7655250fdc32",
+    "note_id": "work-note:0cb4a600d701dd3e28819bb2f0d9468ba8fdee2f2fb0ccfb62b0e68d5ffd1314",
+    "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+    "projection_tier": "public",
+    "revision": 2,
+    "schema": "personaos-persona-work-state-surface/5",
+    "semantic_interpretation_performed": false,
+    "signature_hex": "49a90f9047654869b5e5b68b598a286a7715ba0fd20f66e147cb88b5028840c0aa56b497849761dbbe7daab589b5857abd080e5beedf5b6314e76cd8b3842905",
+    "signature_verified": true,
+    "signing_key_id": "persona:persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+    "situation_hash": "sha256:608e398e715dad0afc5c316d27fc31aebe9ca7bb763fbe60ca049e56966c86f3",
+    "supersedes_work_state_ref": "work-state:af7519e2067cc1d043b877833264e941ce360af848431962dac0748f5af37118",
+    "task_id": "task:01KZKBD304BMDP96S4N8Y2Z9YQ",
+    "terminal_frontier_bound": false,
+    "work_note": {
+      "coverage": {
+        "comparison_records": 34,
+        "comparison_status": "MATCH_WITHIN_NUMERICAL_TOLERANCE",
+        "discrepancies": [],
+        "members_analyzed": 34,
+        "members_converged": 34
+      },
+      "engine": "OpenSeesPy 3.7.0.6 with openseespylinux 3.8.0.0",
+      "schema": "professional-structural-analysis-progress/1",
+      "status": "independent_engine_analysis_verified_by_peer",
+      "verification_scope": "executed-check-evidence",
+      "verifier_receipt": "independent_verification_receipt.json"
+    },
+    "work_state_content_hash": "sha256:b353f1775a233da8f8d959416c5858005a6223084290f82b5d938cbdb432ddf5",
+    "work_state_id": "work-state:1303bff06535e9c91909d8bb4ab03ca79c468995390890b24c31fdc2bf800c6a"
+  },
+  "generated_at": "2026-08-09T13:38:08.140000+00:00",
+  "model_status": {
+    "active_calls": [],
+    "recent_events": [
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 18355,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 15982,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 7412,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 8103,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 7642,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 7795,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 56852,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 41098,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 29027,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 36905,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 18051,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 20102,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 900249,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 21724,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 32896,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 103489,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 40609,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_SELECTED",
+        "latency_ms": 0,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+      },
+      {
+        "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+        "kind": "MODEL_CALL_SUCCEEDED",
+        "latency_ms": 7995,
+        "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+        "status": 200
+      }
+    ]
+  },
+  "name": "",
+  "node_id": "kernel:f84cb1e8a669ff9e",
+  "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+  "schema": "personaos-persona-telemetry-public/2",
+  "signature_hex": "7130943146c91857fda4fa0f4b7eb7d0ab0182b9713d11c88e74a336a44060bab0dcbe102f7b5d191e3452dd0d72a00e9388bc0870598cf16a84c1a1206c6b09",
+  "signing_key_id": "kernel-master",
+  "summary": {
+    "active_environment_ids": [
+      "env:01KZJ2PHSKWZHHHWYX1J88ED27"
+    ],
+    "away_environment_ids": [],
+    "environment_membership_state": "active_member",
+    "identity_fields": {
+      "avatar": {
+        "persona_authored": false,
+        "state": "pending"
+      },
+      "characteristics": {
+        "persona_authored": false,
+        "state": "pending"
+      },
+      "name": {
+        "persona_authored": false,
+        "state": "pending"
+      }
+    },
+    "identity_materialization_state": "pending",
+    "identity_name_pending": true,
+    "identity_name_state": "pending",
+    "lifecycle_state": "ACTIVE",
+    "llm_execution_state": "not_currently_calling",
+    "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+    "running_llm": false,
+    "task_execution_state": "paused_participant"
+  },
+  "tier": "public_redacted"
+}

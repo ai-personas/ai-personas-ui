@@ -1,0 +1,101 @@
+{
+  "checks": [
+    {
+      "member": "F-01 pad",
+      "soil_pressure_kPa": 90.62,
+      "allowable_kPa": 150,
+      "pass": true
+    },
+    {
+      "member": "FJ-01 floor joist",
+      "section_mm": [
+        50,
+        275
+      ],
+      "MEd_kNm": 5.2,
+      "MRd_kNm": 15.12,
+      "VEd_kN": 5.2,
+      "VRd_kN": 22.92,
+      "deflection_mm": 9.09,
+      "limit_mm": 11.11,
+      "pass": true
+    },
+    {
+      "member": "RF-01 roof rafter",
+      "section_mm": [
+        75,
+        250
+      ],
+      "MEd_kNm": 5.47,
+      "MRd_kNm": 18.75,
+      "VEd_kN": 4.38,
+      "VRd_kN": 31.25,
+      "deflection_mm": 13.26,
+      "limit_mm": 13.89,
+      "pass": true
+    },
+    {
+      "member": "B-01 primary beam",
+      "section_mm": [
+        150,
+        450
+      ],
+      "MEd_kNm": 35.1,
+      "MRd_kNm": 121.5,
+      "VEd_kN": 23.4,
+      "VRd_kN": 112.5,
+      "deflection_mm": 10.51,
+      "limit_mm": 16.67,
+      "pass": true
+    },
+    {
+      "member": "H-LIVING header",
+      "section_mm": [
+        140,
+        315
+      ],
+      "MEd_kNm": 14.68,
+      "MRd_kNm": 55.57,
+      "VEd_kN": 19.57,
+      "VRd_kN": 73.5,
+      "deflection_mm": 3.43,
+      "limit_mm": 8.33,
+      "pass": true
+    },
+    {
+      "member": "H-KITCHEN header",
+      "section_mm": [
+        115,
+        240
+      ],
+      "MEd_kNm": 7.52,
+      "MRd_kNm": 26.5,
+      "VEd_kN": 12.53,
+      "VRd_kN": 46.0,
+      "deflection_mm": 3.09,
+      "limit_mm": 6.67,
+      "pass": true
+    },
+    {
+      "member": "H-BED header",
+      "section_mm": [
+        90,
+        195
+      ],
+      "MEd_kNm": 2.57,
+      "MRd_kNm": 13.69,
+      "VEd_kN": 5.71,
+      "VRd_kN": 29.25,
+      "deflection_mm": 1.42,
+      "limit_mm": 5.0,
+      "pass": true
+    },
+    {
+      "member": "SW-01 shear walls",
+      "wind_base_shear_kN": 30.24,
+      "capacity_kN": 48,
+      "pass": true
+    }
+  ],
+  "all_pass": true
+}

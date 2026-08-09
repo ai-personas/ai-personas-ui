@@ -1,0 +1,18 @@
+{
+  "all_engine_runs_ok": true,
+  "check": "OpenSeesPy third-party structural analysis comparison",
+  "check_command": "python3 - <<... assert all_engine_runs_ok and member_count==29 ...",
+  "comparison_artifact": "independent_opensees_comparison.json",
+  "discrepancy_values_are_exact": true,
+  "engine": {
+    "acquired_during_task": true,
+    "name": "OpenSeesPy",
+    "source": "PyPI",
+    "version": "3.8.0"
+  },
+  "installation_provenance": "third_party_engine_provenance.json",
+  "maximum_absolute_discrepancy": 1.2455064935064935,
+  "members_executed": 29,
+  "schema": "independent-verifier-receipt/1",
+  "status": "executed_and_verified"
+}

@@ -1,0 +1,62 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:public:telemetry:408G7KWZQE5Y4R7P69G3GCC3BN",
+    "schema": "access-policy/1",
+    "signature_hex": "195fffe43562bd6bce1d5ac90652b8ef3af280e71807e2c0e85653ab7208888a398aa611a3af8a344c6447d6e689c548978fedf907ec256b68092bb848e1bb04",
+    "subject_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "subject_kind": "telemetry"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "telemetry",
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "telemetry",
+  "links": {
+    "live": "telemetry/live/latest.json",
+    "snapshot": "telemetry/personas/408G7KWZQE5Y4R7P69G3GCC3BN.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:public:telemetry:408G7KWZQE5Y4R7P69G3GCC3BN",
+    "capability_summary": [
+      "live_telemetry",
+      "persona_activity"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "live per-persona activity feed (redacted tier)",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/408G7KWZQE5Y4R7P69G3GCC3BN",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "telemetry/personas/408G7KWZQE5Y4R7P69G3GCC3BN.json",
+        "kind": "HTTP"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "telemetry:408G7KWZQE5Y4R7P69G3GCC3BN",
+    "record_id": "rec:public:telemetry:408G7KWZQE5Y4R7P69G3GCC3BN",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "4f58fa65b3639b3feff9097d945c400ad0fe328e3704936aa2d0aa531b34d4687e803ce72624197d3b97f290a5afd57aa0c5e4ab9bb53f074e66ec4284137c06",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

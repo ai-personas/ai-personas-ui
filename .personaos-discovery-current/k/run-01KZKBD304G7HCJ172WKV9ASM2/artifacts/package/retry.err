@@ -1,0 +1,10 @@
+WARNING sectionTag is not integer
+Traceback (most recent call last):
+  File "/workspace/.ai-personas-emerge/runs/_env_workspaces/env_01KZJ2PHSKWZHHHWYX1J88ED27/personas/408G7KWZQE5Y4R7P69G3GCC3BN/independent_opensees_analysis.py", line 29, in <module>
+    if m.get('span_m') and m.get('line_load_kN_per_m') is not None: out.append(beam(m))
+                                                                               ^^^^^^^
+  File "/workspace/.ai-personas-emerge/runs/_env_workspaces/env_01KZJ2PHSKWZHHHWYX1J88ED27/personas/408G7KWZQE5Y4R7P69G3GCC3BN/independent_opensees_analysis.py", line 12, in beam
+    for i in range(1,n+1): ops.element('elasticBeamColumn',i,i,i+1,A,E,I)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+opensees.OpenSeesError: See stderr output
+Process 0 Terminating

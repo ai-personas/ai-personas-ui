@@ -1,0 +1,156 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZJA0SJVRWBR7R72N7BWE238",
+    "schema": "access-policy/1",
+    "signature_hex": "90fee3d3264d2807e2a93763ff231385fce2b252c2153d1914d205551f899181cdab23b934751a1f7f6b0326be292306cd4d617c11a9d737f16c268f8a886a05",
+    "subject_id": "run-01KZJ9Y1K8YK6VWX5G5YFT1QZV",
+    "subject_kind": "task"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "task_run",
+  "disposition_frontier": {
+    "access": "public_read_only",
+    "automatic_model_call": false,
+    "automatic_wake": false,
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "evidence_hash": "sha256:3af7231efa9a63e4fefa93ddf68de16eba8d46ee41a97b4e3814ddaafd7f11b5",
+    "kernel_id": "kernel:f84cb1e8a669ff9e",
+    "personas": [
+      {
+        "authored_at": "2026-08-09T03:45:34.829000+00:00",
+        "disposition_frontier": {
+          "automatic_wake": false,
+          "binding_kind": "unbound",
+          "disposition_kind": "no_successor",
+          "frontier_situation_hash": "",
+          "latest_observed_situation_hash": "sha256:ddb35110414103e89b91940d87f8d69e399462e218b47759210464605a0ff902",
+          "observed_workspace_state_signature": "sha256:018812a601445ab535f142beac65c2efeea5a02b9f3a6c7a51e7f2ab7d01d9f6",
+          "persona_reauthorship_required": true,
+          "schema": "personaos-persona-disposition-frontier/1",
+          "semantic_interpretation_performed": false,
+          "source_workspace_state_signature": "",
+          "status": "superseded_or_unbound",
+          "terminal_disposition": true,
+          "terminal_frontier_bound": false,
+          "work_state_situation_hash": "sha256:838ac8edc2b271b7c14065e1dc1a4422d41887a62ce97b5c08e2e9abaaa99ce2"
+        },
+        "disposition_frontier_settlement": {},
+        "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+        "revision": 22,
+        "signature_verified": true,
+        "signing_key_id": "persona:408G7KWZQE5Y4R7P69G3GCC3BN",
+        "work_state_content_hash": "sha256:68d196b42cad7cd65a7c6ca9f988466bb41c0d347ce28d382c9bfede1162764f",
+        "work_state_id": "work-state:0bb8efd8b389e96988a01409a8c911d4e28a24581cda09031e7b6e87c3cb4a15"
+      }
+    ],
+    "revision": "sha256:a6a3ab65de45687d0fa3a26db1239d91b5671bedb94a22c3065d71ff297c3998",
+    "row_label_basis": "authorship_and_append_time",
+    "run_id": "run-01KZJ9Y1K8YK6VWX5G5YFT1QZV",
+    "schema": "personaos-public-disposition-frontier/1",
+    "semantic_interpretation_performed": false,
+    "signature_hex": "102722d375a6819d60b92af7b699f2172e01dcdeba644619312ad08503d904e88aa8276cdb3d9c1b657accd4dc7304aa8e43ad1e8160ae42070f29d82785ca05",
+    "signing_key_id": "kernel-master",
+    "state_signature": "sha256:018812a601445ab535f142beac65c2efeea5a02b9f3a6c7a51e7f2ab7d01d9f6",
+    "task_id": "task:01KZJ6EKAD064HJWYJ84SWA75V",
+    "terminal_disposition_frontier": {
+      "automatic_wake": false,
+      "persona_reauthorship_required_count": 1,
+      "persona_reauthorship_required_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN"
+      ],
+      "schema": "personaos-terminal-disposition-frontier/1",
+      "selection_basis": "latest_verified_revision_and_exact_observed_frontier",
+      "semantic_interpretation_performed": false,
+      "terminal_disposition_count": 1,
+      "terminal_disposition_persona_ids": [
+        "408G7KWZQE5Y4R7P69G3GCC3BN"
+      ],
+      "terminal_frontier_bound_count": 0,
+      "terminal_frontier_bound_persona_ids": []
+    }
+  },
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "task",
+  "links": {},
+  "record": {
+    "access_policy_ref": "acl:01KZJA0SJVRWBR7R72N7BWE238",
+    "capability_summary": [
+      "public_task_lifecycle",
+      "task_amended_from:",
+      "task_continued_from:",
+      "task_current_execution:false",
+      "task_environment:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "task_id:task:01KZJ6EKAD064HJWYJ84SWA75V",
+      "task_resumed_from:run-01KZJ6EKADVJDK8HM2VQ5XW5YN",
+      "task_revision:sha256:c993e16d9225e286251ab49a2b1c7cf4907763606c88ac2c50315137b673a1c1",
+      "task_root_run:run-01KZJ2PHMP0H3ET11RG49Y7EBD",
+      "task_run:run-01KZJ9Y1K8YK6VWX5G5YFT1QZV",
+      "task_state:persona_continuation_unbound"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "quiescent task; no continuation is currently scheduled",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/task/run-01KZJ9Y1K8YK6VWX5G5YFT1QZV",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "discovery/v11/records/rec:01KZJA0SJWV1VQDD2T85796JAT.json",
+        "kind": "HTTP",
+        "run": "run.json"
+      }
+    ],
+    "kind": "task",
+    "label": "The package remains unaccepted. A second signed verifier receipt has been recorded against your lat...",
+    "record_id": "rec:01KZJA0SJWV1VQDD2T85796JAT",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "6a5be2360d56e9eae89954d6e33477445d8bdee16d109939f0f93ff202226426c251cfbe85da523d66d8e5f6a251b422335058c32281112840a1d80c08eaf507",
+  "signing_key_id": "kernel-master",
+  "task_lifecycle": {
+    "access": "public_read_only",
+    "amended_from_run": "",
+    "block": {},
+    "continued_from_run": "",
+    "current_execution": false,
+    "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "kernel_id": "kernel:f84cb1e8a669ff9e",
+    "links": {
+      "discovery": "/.well-known/personaos-discovery.json",
+      "live_artifacts": "/runs/run-01KZJ9Y1K8YK6VWX5G5YFT1QZV/live-artifacts",
+      "telemetry": "/telemetry/live/latest.json"
+    },
+    "pressure": {},
+    "resumed_from_run": "run-01KZJ6EKADVJDK8HM2VQ5XW5YN",
+    "review": {},
+    "revision": "sha256:c993e16d9225e286251ab49a2b1c7cf4907763606c88ac2c50315137b673a1c1",
+    "root_run_id": "run-01KZJ2PHMP0H3ET11RG49Y7EBD",
+    "run_id": "run-01KZJ9Y1K8YK6VWX5G5YFT1QZV",
+    "schema": "personaos-public-task-lifecycle/2",
+    "signature_hex": "a2bf3eaf6343272b18ecab68155f6ec34273ced7336c372d0ce01d2338f78c186a0a871022123ebda30e60f70385d89c91e1c7816e5b4ee9bbf08f8a428e4a09",
+    "signing_key_id": "kernel-master",
+    "state": "persona_continuation_unbound",
+    "task_id": "task:01KZJ6EKAD064HJWYJ84SWA75V",
+    "terminal_reason": ""
+  },
+  "visibility_tier": "public"
+}

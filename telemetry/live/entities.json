@@ -1,0 +1,14 @@
+{
+  "schema": "personaos-telemetry-entities-public/1",
+  "generated_at": "2026-08-09T15:43:46.668000+00:00",
+  "node_id": "kernel:f84cb1e8a669ff9e",
+  "personas": {
+    "408G7KWZQE5Y4R7P69G3GCC3BN": "telemetry/personas/408G7KWZQE5Y4R7P69G3GCC3BN.json",
+    "persona:01KZKA1GZX14VGEB3CHW8V9BV8": "telemetry/personas/01KZKA1GZX14VGEB3CHW8V9BV8.json"
+  },
+  "environments": {
+    "env:01KZJ2PHSKWZHHHWYX1J88ED27": "telemetry/environments/01KZJ2PHSKWZHHHWYX1J88ED27.json"
+  },
+  "signing_key_id": "kernel-master",
+  "signature_hex": "1bf4916aff4b5e63958913533eecbfffb529396d9815829e4c50f3cda1a8e62c4f198c92edc4980b98c2d29aab047cd332142a3cf2b3291f55b8189e31989401"
+}

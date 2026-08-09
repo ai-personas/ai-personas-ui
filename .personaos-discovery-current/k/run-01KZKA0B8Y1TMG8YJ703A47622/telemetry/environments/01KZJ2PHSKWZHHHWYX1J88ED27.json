@@ -1,0 +1,278 @@
+{
+  "env_type": "",
+  "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+  "generated_at": "2026-08-09T13:26:31.899000+00:00",
+  "member_count": 2,
+  "members": [
+    "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+  ],
+  "model_events": [
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 15982,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 72727,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 7412,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 8103,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 7642,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 7795,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 26910,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 22816,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 56852,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 28312,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 24440,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 41098,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 23319,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 29027,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 36905,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 18051,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 20102,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 73575,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 900249,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_SELECTED",
+      "latency_ms": 0,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN"
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 21724,
+      "persona_id": "persona:01KZKA1GZX14VGEB3CHW8V9BV8",
+      "status": 200
+    },
+    {
+      "environment_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "kind": "MODEL_CALL_SUCCEEDED",
+      "latency_ms": 22739,
+      "persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+      "status": 200
+    }
+  ],
+  "name": "Design a four-bedroom house to a professional engineering standard, with the artifacts needed for a human engineering team to evaluate and continue the work.",
+  "schema": "personaos-env-telemetry/1",
+  "spans": [],
+  "status": "active",
+  "tier": "redacted"
+}

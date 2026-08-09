@@ -1,0 +1,366 @@
+{
+  "schema": "independent-third-party-analysis/1",
+  "engine": {
+    "name": "OpenSeesPy",
+    "python_package": "openseespy==3.7.0.6",
+    "native_package": "openseespylinux==3.8.0.0",
+    "source": "PyPI",
+    "install_command": "python3 -m pip install --target .vendor_openseespy openseespy==3.7.0.6",
+    "acquisition_execution_event": "event:01KZKBDXPSX65XPGYDYJ5WVY7H"
+  },
+  "generated_at": "2026-08-09T13:31:18.690829+00:00",
+  "results": [
+    {
+      "member": "FJ-G-S",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.0,
+      "load_kN_per_m": 1.1,
+      "reaction_left_kN": 2.7452256944445406,
+      "reaction_right_kN": 2.525607638891288,
+      "max_moment_kNm": 3.4375,
+      "max_deflection_mm": 7.6635003868137925,
+      "converged": true
+    },
+    {
+      "member": "FJ-G-N",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.0,
+      "load_kN_per_m": 1.1,
+      "reaction_left_kN": 2.7452256944445406,
+      "reaction_right_kN": 2.525607638891288,
+      "max_moment_kNm": 3.4375,
+      "max_deflection_mm": 7.6635003868137925,
+      "converged": true
+    },
+    {
+      "member": "FJ-1-S",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.0,
+      "load_kN_per_m": 1.1,
+      "reaction_left_kN": 2.7452256944445406,
+      "reaction_right_kN": 2.525607638891288,
+      "max_moment_kNm": 3.4375,
+      "max_deflection_mm": 7.6635003868137925,
+      "converged": true
+    },
+    {
+      "member": "FJ-1-N",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.0,
+      "load_kN_per_m": 1.1,
+      "reaction_left_kN": 2.7452256944445406,
+      "reaction_right_kN": 2.525607638891288,
+      "max_moment_kNm": 3.4375,
+      "max_deflection_mm": 7.6635003868137925,
+      "converged": true
+    },
+    {
+      "member": "FB-Y5-W",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 6.0,
+      "load_kN_per_m": 8.25,
+      "reaction_left_kN": 24.707031249954575,
+      "reaction_right_kN": 22.730468749998547,
+      "max_moment_kNm": 37.125,
+      "max_deflection_mm": 6.860657489140129,
+      "converged": true
+    },
+    {
+      "member": "FB-Y5-E",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 6.0,
+      "load_kN_per_m": 8.25,
+      "reaction_left_kN": 24.707031249954575,
+      "reaction_right_kN": 22.730468749998547,
+      "max_moment_kNm": 37.125,
+      "max_deflection_mm": 6.860657489140129,
+      "converged": true
+    },
+    {
+      "member": "FB-STAIR-N",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 3.0,
+      "load_kN_per_m": 4.4,
+      "reaction_left_kN": 6.588541666661033,
+      "reaction_right_kN": 6.061458333338332,
+      "max_moment_kNm": 4.95,
+      "max_deflection_mm": 1.8123085135305168,
+      "converged": true
+    },
+    {
+      "member": "FB-STAIR-S",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 3.0,
+      "load_kN_per_m": 4.4,
+      "reaction_left_kN": 6.588541666661033,
+      "reaction_right_kN": 6.061458333338332,
+      "max_moment_kNm": 4.95,
+      "max_deflection_mm": 1.8123085135305168,
+      "converged": true
+    },
+    {
+      "member": "RR-N",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.77,
+      "load_kN_per_m": 0.72,
+      "reaction_left_kN": 2.0735937500059034,
+      "reaction_right_kN": 1.9077062500047004,
+      "max_moment_kNm": 2.996361,
+      "max_deflection_mm": 8.89590692158117,
+      "converged": true
+    },
+    {
+      "member": "RR-S",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 5.77,
+      "load_kN_per_m": 0.72,
+      "reaction_left_kN": 2.0735937500059034,
+      "reaction_right_kN": 1.9077062500047004,
+      "max_moment_kNm": 2.996361,
+      "max_deflection_mm": 8.89590692158117,
+      "converged": true
+    },
+    {
+      "member": "RB-W",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 6.0,
+      "load_kN_per_m": 5.4,
+      "reaction_left_kN": 16.171875000012648,
+      "reaction_right_kN": 14.878125000005792,
+      "max_moment_kNm": 24.300000000000004,
+      "max_deflection_mm": 5.830035941331323,
+      "converged": true
+    },
+    {
+      "member": "RB-E",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 6.0,
+      "load_kN_per_m": 5.4,
+      "reaction_left_kN": 16.171875000012648,
+      "reaction_right_kN": 14.878125000005792,
+      "max_moment_kNm": 24.300000000000004,
+      "max_deflection_mm": 5.830035941331323,
+      "converged": true
+    },
+    {
+      "member": "H-SOUTH-LIV",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 3.0,
+      "load_kN_per_m": 5.46,
+      "reaction_left_kN": 8.175781250002833,
+      "reaction_right_kN": 7.521718750008331,
+      "max_moment_kNm": 6.1425,
+      "max_deflection_mm": 1.4296642841963734,
+      "converged": true
+    },
+    {
+      "member": "H-KIT",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.5,
+      "load_kN_per_m": 4.2,
+      "reaction_left_kN": 3.144531250000615,
+      "reaction_right_kN": 2.8929687500022414,
+      "max_moment_kNm": 1.1812500000000001,
+      "max_deflection_mm": 0.068733859817119,
+      "converged": true
+    },
+    {
+      "member": "H-BED1",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.5,
+      "load_kN_per_m": 4.2,
+      "reaction_left_kN": 3.144531250000615,
+      "reaction_right_kN": 2.8929687500022414,
+      "max_moment_kNm": 1.1812500000000001,
+      "max_deflection_mm": 0.068733859817119,
+      "converged": true
+    },
+    {
+      "member": "H-BED2",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.5,
+      "load_kN_per_m": 4.2,
+      "reaction_left_kN": 3.144531250000615,
+      "reaction_right_kN": 2.8929687500022414,
+      "max_moment_kNm": 1.1812500000000001,
+      "max_deflection_mm": 0.068733859817119,
+      "converged": true
+    },
+    {
+      "member": "H-BED3",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.5,
+      "load_kN_per_m": 4.2,
+      "reaction_left_kN": 3.144531250000615,
+      "reaction_right_kN": 2.8929687500022414,
+      "max_moment_kNm": 1.1812500000000001,
+      "max_deflection_mm": 0.068733859817119,
+      "converged": true
+    },
+    {
+      "member": "H-BED4",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.5,
+      "load_kN_per_m": 4.2,
+      "reaction_left_kN": 3.144531250000615,
+      "reaction_right_kN": 2.8929687500022414,
+      "max_moment_kNm": 1.1812500000000001,
+      "max_deflection_mm": 0.068733859817119,
+      "converged": true
+    },
+    {
+      "member": "H-NORTH-STUDY",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.2,
+      "load_kN_per_m": 3.2,
+      "reaction_left_kN": 1.9166666666733803,
+      "reaction_right_kN": 1.7633333333327483,
+      "max_moment_kNm": 0.576,
+      "max_deflection_mm": 0.07628995065338813,
+      "converged": true
+    },
+    {
+      "member": "H-DOOR-FRONT",
+      "engine": "OpenSeesPy",
+      "analysis": "elasticBeamColumn, 24-element simply-supported beam, consistent UDL",
+      "span_m": 1.2,
+      "load_kN_per_m": 3.8,
+      "reaction_left_kN": 2.276041666668797,
+      "reaction_right_kN": 2.093958333332511,
+      "max_moment_kNm": 0.6839999999999999,
+      "max_deflection_mm": 0.09059431640094227,
+      "converged": true
+    },
+    {
+      "member": "P-01",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 72.0,
+      "axial_displacement_mm": 0.9350649350649348,
+      "converged": true
+    },
+    {
+      "member": "P-02",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 96.0,
+      "axial_displacement_mm": 1.2467532467532465,
+      "converged": true
+    },
+    {
+      "member": "P-03",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 72.0,
+      "axial_displacement_mm": 0.9350649350649348,
+      "converged": true
+    },
+    {
+      "member": "P-04",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 55.0,
+      "axial_displacement_mm": 0.7142857142857142,
+      "converged": true
+    },
+    {
+      "member": "P-05",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 55.0,
+      "axial_displacement_mm": 0.7142857142857142,
+      "converged": true
+    },
+    {
+      "member": "P-06",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 55.0,
+      "axial_displacement_mm": 0.7142857142857142,
+      "converged": true
+    },
+    {
+      "member": "P-07",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 55.0,
+      "axial_displacement_mm": 0.7142857142857142,
+      "converged": true
+    },
+    {
+      "member": "P-08",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 70.0,
+      "axial_displacement_mm": 0.9090909090909088,
+      "converged": true
+    },
+    {
+      "member": "P-09",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 70.0,
+      "axial_displacement_mm": 0.9090909090909088,
+      "converged": true
+    },
+    {
+      "member": "SW-S",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 210.0,
+      "axial_displacement_mm": 10.047846889952153,
+      "converged": true
+    },
+    {
+      "member": "SW-N",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 210.0,
+      "axial_displacement_mm": 10.047846889952153,
+      "converged": true
+    },
+    {
+      "member": "SW-W",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 190.0,
+      "axial_displacement_mm": 9.09090909090909,
+      "converged": true
+    },
+    {
+      "member": "SW-E",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 190.0,
+      "axial_displacement_mm": 9.09090909090909,
+      "converged": true
+    },
+    {
+      "member": "IW-Y5",
+      "engine": "OpenSeesPy",
+      "analysis": "elastic truss axial load, 2.8 m representative storey height",
+      "axial_load_kN": 260.0,
+      "axial_displacement_mm": 12.440191387559809,
+      "converged": true
+    }
+  ]
+}

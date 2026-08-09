@@ -1,0 +1,62 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:public:telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "schema": "access-policy/1",
+    "signature_hex": "d99306b1efa4d77df25553b2986410e0805845c570988c87e0ed301bd79fb97fcd0bc85e99d095db313f22d84610398d74373f1c7ec9bb853d7d17b8f356730c",
+    "subject_id": "env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "subject_kind": "telemetry"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "telemetry",
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "telemetry",
+  "links": {
+    "live": "telemetry/live/latest.json",
+    "snapshot": "telemetry/environments/01KZJ2PHSKWZHHHWYX1J88ED27.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:public:telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "capability_summary": [
+      "env_activity",
+      "live_telemetry"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "live per-environment activity feed (redacted tier)",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "telemetry/environments/01KZJ2PHSKWZHHHWYX1J88ED27.json",
+        "kind": "HTTP"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "telemetry:Design a four-bedroom house to a professional engineering standard, with the artifacts needed for a human e...",
+    "record_id": "rec:public:telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "f70c0549da6b51d271d34fcaf839ca68622c2e70ff9a0b89e17a1981a64896f7299ee69a8f7ef2ff21b573124f32f96f655f4c621e6348d131779e0d0e139300",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="1040" viewBox="0 0 760 1040">
+<style>text{font:12px sans-serif}.small{font:9px sans-serif}.room{fill:#eef;stroke:#333}.member{stroke:#b00;stroke-width:3}.wall{stroke:#111;stroke-width:4;fill:none}.grid{stroke:#ccc;stroke-width:1}</style>
+<text x="40" y="28">Level 0 plan - 12 m x 10 m</text>
+<rect class="wall" x="40" y="40" width="540" height="450"/>
+<line class="grid" x1="40" y1="40" x2="40" y2="490"/>
+<line class="grid" x1="175" y1="40" x2="175" y2="490"/>
+<line class="grid" x1="310" y1="40" x2="310" y2="490"/>
+<line class="grid" x1="445" y1="40" x2="445" y2="490"/>
+<line class="grid" x1="580" y1="40" x2="580" y2="490"/>
+<line class="grid" x1="40" y1="40" x2="580" y2="40"/>
+<line class="grid" x1="40" y1="265" x2="580" y2="265"/>
+<line class="grid" x1="40" y1="490" x2="580" y2="490"/>
+<rect class="room" x="40" y="40" width="270" height="225"/>
+<text x="45" y="58">Living/Dining (30.0 m²)</text>
+<rect class="room" x="310" y="40" width="135" height="225"/>
+<text x="315" y="58">Kitchen (15.0 m²)</text>
+<rect class="room" x="445" y="40" width="135" height="225"/>
+<text x="450" y="58">Bedroom 1 (15.0 m²)</text>
+<rect class="room" x="40" y="265" width="135" height="112.5"/>
+<text x="45" y="283">Bath/Laundry (7.5 m²)</text>
+<rect class="room" x="175" y="265" width="135" height="225"/>
+<text x="180" y="283">Hall/Stair (15.0 m²)</text>
+<rect class="room" x="310" y="265" width="135" height="225"/>
+<text x="315" y="283">Study/Guest (15.0 m²)</text>
+<rect class="room" x="445" y="265" width="135" height="225"/>
+<text x="450" y="283">Plant/Store (15.0 m²)</text>
+<text x="40" y="548">Level 1 plan - 12 m x 10 m</text>
+<rect class="wall" x="40" y="560" width="540" height="450"/>
+<line class="grid" x1="40" y1="560" x2="40" y2="1010"/>
+<line class="grid" x1="175" y1="560" x2="175" y2="1010"/>
+<line class="grid" x1="310" y1="560" x2="310" y2="1010"/>
+<line class="grid" x1="445" y1="560" x2="445" y2="1010"/>
+<line class="grid" x1="580" y1="560" x2="580" y2="1010"/>
+<line class="grid" x1="40" y1="560" x2="580" y2="560"/>
+<line class="grid" x1="40" y1="785" x2="580" y2="785"/>
+<line class="grid" x1="40" y1="1010" x2="580" y2="1010"/>
+<rect class="room" x="40" y="560" width="180" height="225"/>
+<text x="45" y="578">Bedroom 2 (20.0 m²)</text>
+<rect class="room" x="220" y="560" width="180" height="225"/>
+<text x="225" y="578">Bedroom 3 (20.0 m²)</text>
+<rect class="room" x="400" y="560" width="180" height="225"/>
+<text x="405" y="578">Bedroom 4 (20.0 m²)</text>
+<rect class="room" x="40" y="785" width="135" height="112.5"/>
+<text x="45" y="803">Bath 2 (7.5 m²)</text>
+<rect class="room" x="175" y="785" width="135" height="225"/>
+<text x="180" y="803">Landing (15.0 m²)</text>
+<rect class="room" x="310" y="785" width="135" height="112.5"/>
+<text x="315" y="803">Linen/Closets (7.5 m²)</text>
+<rect class="room" x="445" y="785" width="135" height="225"/>
+<text x="450" y="803">Roof access/store (15.0 m²)</text>
+<text x="610" y="30">Structural member key</text>
+<text class="small" x="610" y="50">FJ-G-01 floor_joist_ground_typ</text>
+<text class="small" x="610" y="63">FJ-1-01 floor_joist_level1_typ</text>
+<text class="small" x="610" y="76">FB-01 primary_floor_beam_grid_y5</text>
+<text class="small" x="610" y="89">FB-02 stair_trimmer</text>
+<text class="small" x="610" y="102">RR-01 roof_rafter_typ</text>
+<text class="small" x="610" y="115">RB-01 ridge_beam</text>
+<text class="small" x="610" y="128">H-SOUTH-LIV opening_header</text>
+<text class="small" x="610" y="141">H-SOUTH-KIT opening_header</text>
+<text class="small" x="610" y="154">H-EAST-BED1 opening_header</text>
+<text class="small" x="610" y="167">H-BED-TYP opening_header</text>
+<text class="small" x="610" y="180">P-01 post</text>
+<text class="small" x="610" y="193">P-02 post</text>
+<text class="small" x="610" y="206">P-03 post</text>
+<text class="small" x="610" y="219">P-04 post</text>
+<text class="small" x="610" y="232">P-05 post</text>
+<text class="small" x="610" y="245">P-06 post</text>
+<text class="small" x="610" y="258">P-07 post</text>
+<text class="small" x="610" y="271">FT-01 pad_footing</text>
+<text class="small" x="610" y="284">FT-02 pad_footing</text>
+<text class="small" x="610" y="297">FT-03 pad_footing</text>
+<text class="small" x="610" y="310">FT-04 pad_footing</text>
+<text class="small" x="610" y="323">FT-05 pad_footing</text>
+<text class="small" x="610" y="336">FT-06 pad_footing</text>
+<text class="small" x="610" y="349">FT-07 pad_footing</text>
+<text class="small" x="610" y="362">SW-N shear_wall</text>
+<text class="small" x="610" y="375">SW-S shear_wall</text>
+<text class="small" x="610" y="388">SW-E shear_wall</text>
+<text class="small" x="610" y="401">SW-W shear_wall</text>
+<text class="small" x="610" y="414">SW-INT shear_wall</text>
+<text class="small" x="610" y="427">STRIP-EXT strip_footing</text>
+<text class="small" x="610" y="440">STRIP-INT strip_footing</text>
+<circle class="member" cx="175" cy="265" r="5"/><text class="small" x="181" y="261">P-01</text>
+<circle class="member" cx="310" cy="265" r="5"/><text class="small" x="316" y="261">P-02</text>
+<circle class="member" cx="445" cy="265" r="5"/><text class="small" x="451" y="261">P-03</text>
+<circle class="member" cx="40" cy="40" r="5"/><text class="small" x="46" y="36">P-04</text>
+<circle class="member" cx="580" cy="40" r="5"/><text class="small" x="586" y="36">P-05</text>
+<circle class="member" cx="40" cy="490" r="5"/><text class="small" x="46" y="486">P-06</text>
+<circle class="member" cx="580" cy="490" r="5"/><text class="small" x="586" y="486">P-07</text>
+<circle class="member" cx="175" cy="265" r="5"/><text class="small" x="181" y="261">FT-01</text>
+<circle class="member" cx="310" cy="265" r="5"/><text class="small" x="316" y="261">FT-02</text>
+<circle class="member" cx="445" cy="265" r="5"/><text class="small" x="451" y="261">FT-03</text>
+<circle class="member" cx="40" cy="40" r="5"/><text class="small" x="46" y="36">FT-04</text>
+<circle class="member" cx="580" cy="40" r="5"/><text class="small" x="586" y="36">FT-05</text>
+<circle class="member" cx="40" cy="490" r="5"/><text class="small" x="46" y="486">FT-06</text>
+<circle class="member" cx="580" cy="490" r="5"/><text class="small" x="586" y="486">FT-07</text>
+<line class="member" x1="40" y1="490" x2="580" y2="490"/><text class="small" x="42" y="502">SW-N</text>
+<line class="member" x1="40" y1="40" x2="580" y2="40"/><text class="small" x="42" y="52">SW-S</text>
+<line class="member" x1="580" y1="40" x2="580" y2="490"/><text class="small" x="582" y="52">SW-E</text>
+<line class="member" x1="40" y1="40" x2="40" y2="490"/><text class="small" x="42" y="52">SW-W</text>
+<line class="member" x1="310" y1="40" x2="310" y2="490"/><text class="small" x="312" y="52">SW-INT</text>
+</svg>

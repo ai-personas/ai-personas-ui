@@ -1,0 +1,191 @@
+{
+  "schema": "four-bedroom-house/2",
+  "units": "SI",
+  "project": "Four-bedroom house engineering study",
+  "footprint": {
+    "length": 12.0,
+    "width": 10.0
+  },
+  "storeys": 2,
+  "floor_to_floor": 2.8,
+  "roof_pitch_deg": 30,
+  "rooms": [
+    {
+      "name": "Living/Dining",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "d": 4.5,
+      "level": 0
+    },
+    {
+      "name": "Kitchen",
+      "x": 6,
+      "y": 0,
+      "w": 6,
+      "d": 4.5,
+      "level": 0
+    },
+    {
+      "name": "Bedroom 1",
+      "x": 0,
+      "y": 4.5,
+      "w": 3.5,
+      "d": 5.5,
+      "level": 0
+    },
+    {
+      "name": "Bedroom 2",
+      "x": 3.5,
+      "y": 4.5,
+      "w": 3.5,
+      "d": 5.5,
+      "level": 0
+    },
+    {
+      "name": "Bedroom 3",
+      "x": 7,
+      "y": 4.5,
+      "w": 2.5,
+      "d": 5.5,
+      "level": 1
+    },
+    {
+      "name": "Bedroom 4",
+      "x": 9.5,
+      "y": 4.5,
+      "w": 2.5,
+      "d": 5.5,
+      "level": 1
+    },
+    {
+      "name": "Hall/Stair",
+      "x": 6,
+      "y": 4.5,
+      "w": 1,
+      "d": 5.5,
+      "level": 0
+    }
+  ],
+  "openings": [
+    {
+      "id": "H-LIVING",
+      "kind": "header",
+      "span_m": 3.0,
+      "tributary_load_kpa": 13.05
+    },
+    {
+      "id": "H-KITCHEN",
+      "kind": "header",
+      "span_m": 2.4,
+      "tributary_load_kpa": 10.44
+    },
+    {
+      "id": "H-BED",
+      "kind": "header",
+      "span_m": 1.8,
+      "tributary_load_kpa": 6.345
+    }
+  ],
+  "structural_members": [
+    {
+      "id": "F-01",
+      "kind": "pad",
+      "section_mm": [
+        1200,
+        1200,
+        300
+      ]
+    },
+    {
+      "id": "FJ-01",
+      "kind": "floor_joist",
+      "span_m": 4.0,
+      "line_load_kpa": 2.6,
+      "section_mm": [
+        50,
+        275
+      ]
+    },
+    {
+      "id": "RF-01",
+      "kind": "roof_rafter",
+      "span_m": 5.0,
+      "line_load_kpa": 1.75,
+      "section_mm": [
+        75,
+        250
+      ]
+    },
+    {
+      "id": "B-01",
+      "kind": "primary_beam",
+      "span_m": 6.0,
+      "line_load_kpa": 7.8,
+      "section_mm": [
+        150,
+        450
+      ]
+    },
+    {
+      "id": "H-LIVING",
+      "kind": "header",
+      "span_m": 3.0,
+      "line_load_kpa": 13.05,
+      "section_mm": [
+        140,
+        315
+      ]
+    },
+    {
+      "id": "H-KITCHEN",
+      "kind": "header",
+      "span_m": 2.4,
+      "line_load_kpa": 10.44,
+      "section_mm": [
+        115,
+        240
+      ]
+    },
+    {
+      "id": "H-BED",
+      "kind": "header",
+      "span_m": 1.8,
+      "line_load_kpa": 6.345,
+      "section_mm": [
+        90,
+        195
+      ]
+    },
+    {
+      "id": "SW-01",
+      "kind": "shear_wall",
+      "wall_length_m": 16.0,
+      "section_mm": [
+        11,
+        2
+      ]
+    }
+  ],
+  "loads": {
+    "roof_dead_kpa": 0.75,
+    "roof_snow_kpa": 1.0,
+    "floor_dead_kpa": 0.6,
+    "floor_live_kpa": 2.0,
+    "wind_kpa": 0.9,
+    "soil_bearing_kpa": 150
+  },
+  "materials": {
+    "timber_grade": "C24",
+    "E_mpa": 11000,
+    "f_bending_mpa": 24,
+    "f_shear_mpa": 2.5
+  },
+  "code_references": [
+    "EN 1990 basis of design",
+    "EN 1991 actions on structures",
+    "EN 1995-1-1 timber design",
+    "EN 1997-1 geotechnical design",
+    "IBC/IRC jurisdictional provisions"
+  ]
+}

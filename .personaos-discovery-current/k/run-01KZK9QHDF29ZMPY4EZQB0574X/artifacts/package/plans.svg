@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200"><style>.wall{stroke:#111;stroke-width:3;fill:none}.grid{stroke:#bbb;stroke-width:1}.room{font:14px sans-serif}.tiny{font:10px monospace}.title{font:24px sans-serif;font-weight:bold}</style><text x="20" y="30" class="title">Four-bedroom house coordinated architectural/framing/foundation plans</text><g transform="translate(40,60)"><rect class="wall" x="0" y="0" width="600" height="500"/><line class="wall" x1="0" y1="250" x2="600" y2="250"/><line class="grid" x1="150" y1="0" x2="150" y2="500"/><line class="grid" x1="300" y1="0" x2="300" y2="500"/><line class="grid" x1="450" y1="0" x2="450" y2="500"/><text x="0" y="-10">Ground floor plan grids 0-12m / 0-10m</text><text x="60" y="80" class="room">Living/Dining</text>
+<text x="360" y="80" class="room">Kitchen</text>
+<text x="510" y="80" class="room">Bedroom 1</text>
+<text x="60" y="255" class="room">Bath/Laundry</text>
+<text x="210" y="255" class="room">Hall/Stair</text>
+<text x="360" y="255" class="room">Study/Guest</text>
+<text x="510" y="255" class="room">Plant/Store</text>
+<text x="60" y="510" class="room">Bedroom 2</text>
+<text x="260" y="510" class="room">Bedroom 3</text>
+<text x="460" y="510" class="room">Bedroom 4</text>
+<text x="60" y="685" class="room">Family Bath</text>
+<text x="210" y="685" class="room">Upper Hall/Stair</text>
+<text x="360" y="685" class="room">Ensuite/WIC</text>
+<text x="510" y="685" class="room">Linen/Service</text></g><g transform="translate(700,60)"><rect class="wall" x="0" y="0" width="600" height="500"/><line class="wall" x1="0" y1="250" x2="600" y2="250"/><line class="grid" x1="200" y1="0" x2="200" y2="500"/><line class="grid" x1="400" y1="0" x2="400" y2="500"/><text x="0" y="-10">Upper floor plan</text></g><g transform="translate(700,620)"><rect class="wall" x="0" y="0" width="600" height="180"/><line class="wall" x1="0" y1="0" x2="300" y2="-120"/><line class="wall" x1="600" y1="0" x2="300" y2="-120"/><text x="0" y="220">South elevation: gable roof, egress windows to bedrooms, braced wall panels BW-S/BW-N/BW-E/BW-W.</text></g><g transform="translate(20,620)"><text x="0" y="0" class="title">Structural member schedule labels (all entries reconcile to schedules.csv and calculations)</text><text x="20" y="20" class="tiny">FJ-G-S floor_joist_group</text>
+<text x="20" y="32" class="tiny">FJ-G-N floor_joist_group</text>
+<text x="20" y="44" class="tiny">FJ-1-S floor_joist_group</text>
+<text x="20" y="56" class="tiny">FJ-1-N floor_joist_group</text>
+<text x="20" y="68" class="tiny">FB-Y5-W beam</text>
+<text x="20" y="80" class="tiny">FB-Y5-E beam</text>
+<text x="20" y="92" class="tiny">FB-STAIR-N beam</text>
+<text x="20" y="104" class="tiny">FB-STAIR-S beam</text>
+<text x="20" y="116" class="tiny">RR-N roof_rafter_group</text>
+<text x="20" y="128" class="tiny">RR-S roof_rafter_group</text>
+<text x="20" y="140" class="tiny">RB-W ridge_beam</text>
+<text x="20" y="152" class="tiny">RB-E ridge_beam</text>
+<text x="20" y="164" class="tiny">H-SOUTH-LIV opening_header</text>
+<text x="20" y="176" class="tiny">H-KIT opening_header</text>
+<text x="20" y="188" class="tiny">H-BED1 opening_header</text>
+<text x="20" y="200" class="tiny">H-BED2 opening_header</text>
+<text x="20" y="212" class="tiny">H-BED3 opening_header</text>
+<text x="20" y="224" class="tiny">H-BED4 opening_header</text>
+<text x="20" y="236" class="tiny">H-NORTH-STUDY opening_header</text>
+<text x="20" y="248" class="tiny">H-DOOR-FRONT opening_header</text>
+<text x="20" y="260" class="tiny">P-01 post</text>
+<text x="20" y="272" class="tiny">P-02 post</text>
+<text x="20" y="284" class="tiny">P-03 post</text>
+<text x="20" y="296" class="tiny">P-04 post</text>
+<text x="20" y="308" class="tiny">P-05 post</text>
+<text x="20" y="320" class="tiny">P-06 post</text>
+<text x="20" y="332" class="tiny">P-07 post</text>
+<text x="20" y="344" class="tiny">P-08 post</text>
+<text x="20" y="356" class="tiny">P-09 post</text>
+<text x="20" y="368" class="tiny">SW-S stud_wall_group</text>
+<text x="20" y="380" class="tiny">SW-N stud_wall_group</text>
+<text x="20" y="392" class="tiny">SW-W stud_wall_group</text>
+<text x="20" y="404" class="tiny">SW-E stud_wall_group</text>
+<text x="20" y="416" class="tiny">IW-Y5 stud_wall_group</text>
+<text x="20" y="428" class="tiny">PF-01 pad_footing</text>
+<text x="20" y="440" class="tiny">PF-02 pad_footing</text>
+<text x="20" y="452" class="tiny">PF-03 pad_footing</text>
+<text x="20" y="464" class="tiny">PF-04 pad_footing</text>
+<text x="20" y="476" class="tiny">PF-05 pad_footing</text>
+<text x="20" y="488" class="tiny">PF-06 pad_footing</text>
+<text x="20" y="500" class="tiny">PF-07 pad_footing</text>
+<text x="20" y="512" class="tiny">PF-08 pad_footing</text>
+<text x="20" y="524" class="tiny">PF-09 pad_footing</text>
+<text x="20" y="536" class="tiny">SF-S strip_footing</text>
+<text x="20" y="548" class="tiny">SF-N strip_footing</text>
+<text x="20" y="560" class="tiny">SF-W strip_footing</text>
+<text x="20" y="572" class="tiny">SF-E strip_footing</text>
+<text x="20" y="584" class="tiny">BW-S shear_wall</text>
+<text x="20" y="596" class="tiny">BW-N shear_wall</text>
+<text x="20" y="608" class="tiny">BW-W shear_wall</text>
+<text x="20" y="620" class="tiny">BW-E shear_wall</text>
+<text x="20" y="632" class="tiny">BW-CORE shear_wall</text>
+<text x="20" y="644" class="tiny">HD-SW hold_down</text>
+<text x="20" y="656" class="tiny">HD-SE hold_down</text>
+<text x="20" y="668" class="tiny">HD-NW hold_down</text>
+<text x="20" y="680" class="tiny">HD-NE hold_down</text>
+<text x="20" y="692" class="tiny">HD-CORE hold_down</text>
+<text x="20" y="704" class="tiny">RD-01 roof_diaphragm</text></g></svg>

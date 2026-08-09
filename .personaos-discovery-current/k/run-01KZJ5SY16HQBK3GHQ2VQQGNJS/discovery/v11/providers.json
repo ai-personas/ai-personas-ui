@@ -1,0 +1,68 @@
+{
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "keys_url": ".well-known/personaos-keys.json",
+  "provider_count": 10,
+  "providers": [
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-107487428acb3344869ec0a2765fc4e7",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-107487428acb3344869ec0a2765fc4e7",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB224FEP2XD1YTCHFFC.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-190cafc19fe6497b216f1f61d9972f69",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-190cafc19fe6497b216f1f61d9972f69",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB23YZJEBGJABXR7S3R.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-9bdca9dc2da2c825043ef9f9d154003e",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-9bdca9dc2da2c825043ef9f9d154003e",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB297QJ6N7S0R02CTET.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-a37542d09737801bd95f533f1d92d810",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-a37542d09737801bd95f533f1d92d810",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2CAMFYFFTZ7KHP3NM.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-fdd55f395a80e1ebc1227f1e8aff6efb",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-fdd55f395a80e1ebc1227f1e8aff6efb",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2J2YQYQX2JAD1MBQK.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-ebb399a80a80d0c67fbb55095f0020d8",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-ebb399a80a80d0c67fbb55095f0020d8",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2NJYG0YWVBQ0HV579.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d252d37549dbe00399506aa2c9504eda",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d252d37549dbe00399506aa2c9504eda",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2R3PVMF4VN9DX3CQ4.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-10ddd00e4926c1dd29bdf24d6431e8ff",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-10ddd00e4926c1dd29bdf24d6431e8ff",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2SDKQJH1NEB5M9594.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-5c51a9c9fee5014d3c2786fb973d8b88",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-5c51a9c9fee5014d3c2786fb973d8b88",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB2VN3TTHP84D2ZCC0J.json"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+      "key": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "record_url": "discovery/v11/records/rec:01KZJ5VFB3M4Q2YR5B05VNE1EF.json"
+    }
+  ],
+  "schema": "dht-provider-index/1"
+}

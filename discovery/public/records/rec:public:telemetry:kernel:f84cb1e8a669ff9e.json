@@ -1,0 +1,67 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:public:telemetry:kernel:f84cb1e8a669ff9e",
+    "schema": "access-policy/1",
+    "signature_hex": "eee4a83bed858020b324fe17e479fe607aad3f2d38ad51d7ae9dd3a7496d7e0e87d37b12c4a87d85d5c63d63e455269b84957717c791f344fbbad868f6bb5a0e",
+    "subject_id": "kernel:f84cb1e8a669ff9e",
+    "subject_kind": "telemetry"
+  },
+  "base": "http://127.0.0.1:8820",
+  "discovery_kind": "telemetry",
+  "host_kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "kind": "telemetry",
+  "links": {
+    "entities": "telemetry/live/entities.json",
+    "snapshot": "telemetry/live/latest.json"
+  },
+  "record": {
+    "access_policy_ref": "acl:public:telemetry:kernel:f84cb1e8a669ff9e",
+    "capability_summary": [
+      "heartbeat",
+      "live_telemetry",
+      "presence"
+    ],
+    "content_hash": "",
+    "content_locator_ref": "",
+    "description": "live node telemetry (all personas + envs)",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/kernel:f84cb1e8a669ff9e",
+    "expires_at": "",
+    "interfaces": [
+      {
+        "endpoint": "telemetry/live/latest.json",
+        "kind": "HTTP"
+      },
+      {
+        "endpoint": "telemetry/live/entities.json",
+        "kind": "HTTP"
+      }
+    ],
+    "kind": "telemetry",
+    "label": "live telemetry:kernel:f84cb1e8a669ff9e",
+    "record_id": "rec:public:telemetry:kernel:f84cb1e8a669ff9e",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "9a9dda679a46462fa26f4bd51d5208831a2a72117425dfc685b4fe799b9aabbdfb2370f5e5227bac13e3429be67c174047f19ae0787e6f2a8508de45886bf605",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

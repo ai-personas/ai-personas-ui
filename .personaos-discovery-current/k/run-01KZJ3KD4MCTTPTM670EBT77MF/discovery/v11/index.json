@@ -1,0 +1,122 @@
+{
+  "access_model": "discover < read (r) < write (rw) < admin; outward visibility tiers",
+  "handles": {
+    "artifact": "rec:01KZJ3PHBP67MNB1W8JR6NAHJJ",
+    "telemetry": "rec:01KZJ3PHBQF9E8PBFDGS0H7P5R"
+  },
+  "kernel_id": "kernel:f84cb1e8a669ff9e",
+  "records": [
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-7cb988c31a5bff33fdcc76149ccbc1bb",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBP67MNB1W8JR6NAHJJ",
+      "kind": "artifact",
+      "label": "README.md",
+      "path": "discovery/v11/records/rec:01KZJ3PHBP67MNB1W8JR6NAHJJ.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-6145545ebd07c276a0492d2488672fbc",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPA4E2D2ZPF4NCFXAE",
+      "kind": "artifact",
+      "label": "calculations.py",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPA4E2D2ZPF4NCFXAE.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-34b5812f89bf04ac7213ed3b58dce5cc",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPGKKMBMPDJKMX3JDC",
+      "kind": "artifact",
+      "label": "run_checks.py",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPGKKMBMPDJKMX3JDC.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-00bf3e4ffc74969568facf414fe5b2a5",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPGX3Y16Z3K37S8C7S",
+      "kind": "artifact",
+      "label": "schedules.csv",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPGX3Y16Z3K37S8C7S.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-4de3f279107f29ac9ccbd5e7206c0c27",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPNEYMBZP1KFHRZK5B",
+      "kind": "artifact",
+      "label": "__pycache__/calculations.cpython-312.pyc",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPNEYMBZP1KFHRZK5B.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d94eb25ebfd03da742ac859588c7de5b",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPS6EEMTPACKT82A2R",
+      "kind": "artifact",
+      "label": "geometry.json",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPS6EEMTPACKT82A2R.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-d78e7d47dcbc191b6897538ffcfe027c",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBPYEC1QWBT4EQSYD6Y",
+      "kind": "artifact",
+      "label": "plans.svg",
+      "path": "discovery/v11/records/rec:01KZJ3PHBPYEC1QWBT4EQSYD6Y.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-f22c066011e72cdb0747406fdc7fca81",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBQD6QGXK904AQC2S13",
+      "kind": "artifact",
+      "label": "specifications.md",
+      "path": "discovery/v11/records/rec:01KZJ3PHBQD6QGXK904AQC2S13.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/telemetry/env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "discovery_kind": "telemetry",
+      "id": "rec:01KZJ3PHBQF9E8PBFDGS0H7P5R",
+      "kind": "telemetry",
+      "label": "telemetry:env:01KZJ2PHSKWZHHHWYX1J88ED27",
+      "path": "discovery/v11/records/rec:01KZJ3PHBQF9E8PBFDGS0H7P5R.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    },
+    {
+      "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-8157c6fd1f0a3d0a28cdbf3741f81164",
+      "discovery_kind": "artifact",
+      "id": "rec:01KZJ3PHBQME0FJNT058TCC5MW",
+      "kind": "artifact",
+      "label": "validation_report.json",
+      "path": "discovery/v11/records/rec:01KZJ3PHBQME0FJNT058TCC5MW.json",
+      "schema": "discoverable-record/1",
+      "visibility_tier": "public"
+    }
+  ],
+  "schema": "personaos-v11-discovery-index/1",
+  "task": "",
+  "transport": {
+    "internet": [
+      "well-known",
+      "gossip",
+      "kademlia_dht"
+    ],
+    "intranet": [
+      "mdns"
+    ]
+  }
+}

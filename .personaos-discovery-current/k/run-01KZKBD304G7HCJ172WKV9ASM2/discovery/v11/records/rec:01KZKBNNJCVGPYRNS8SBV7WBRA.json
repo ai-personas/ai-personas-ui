@@ -1,0 +1,67 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZKBNNJ9NXGYQA48GPVRT0FP",
+    "schema": "access-policy/1",
+    "signature_hex": "3e6a483906a7241fb2bd6d76062002245ae0e2772f65ecda1bc9d54f122bf831b7dfbec3a2c0d1b7d8af31df7f0a194a7d66a6b46d6304f08818268a088fab01",
+    "subject_id": "event-bundle-79c012ebe0c2f9cbd585005bd5be04bd",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "body_available": true,
+    "body_hash_verified": true,
+    "bundle_id": "event-bundle-79c012ebe0c2f9cbd585005bd5be04bd",
+    "content": "artifacts/package/__pycache__/run_checks.cpython-312.pyc",
+    "content_hash": "sha256:b6a495441045d5c879507ae9e827fcbb5e4fac0af230aedd96449cad69825299",
+    "subject_id": "event-artifact-eb9fa5ea6754470f4a781a695bd2a776"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZKBNNJ9NXGYQA48GPVRT0FP",
+    "capability_summary": [
+      "application/octet-stream"
+    ],
+    "content_hash": "sha256:b6a495441045d5c879507ae9e827fcbb5e4fac0af230aedd96449cad69825299",
+    "content_locator_ref": "",
+    "description": "artifact in event-bundle-79c012ebe0c2f9cbd585005bd5be04bd",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-eb9fa5ea6754470f4a781a695bd2a776",
+    "expires_at": "",
+    "in_progress": true,
+    "interfaces": [
+      {
+        "artifact_manifest": "artifacts/manifest.json",
+        "content": "artifacts/package/__pycache__/run_checks.cpython-312.pyc",
+        "endpoint": "discovery/v11/records/rec:01KZKBNNJCVGPYRNS8SBV7WBRA.json",
+        "kind": "HTTP",
+        "metadata": "artifacts/metadata/event-artifact-eb9fa5ea6754470f4a781a695bd2a776.json",
+        "run": "run.json"
+      }
+    ],
+    "kind": "artifact",
+    "label": "__pycache__/run_checks.cpython-312.pyc",
+    "record_id": "rec:01KZKBNNJCVGPYRNS8SBV7WBRA",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "ec001c0ed2979c91bc56e31a455ff0b4b2f120dbd62ed4803d31794de9c0f4a421a6dc00022d01fe0227cd7d58bdb2afbf77fcf066cf09b4d1e83d2c6ceb2f0f",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}

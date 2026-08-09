@@ -1,0 +1,68 @@
+{
+  "access_policy": {
+    "access_grants": [
+      {
+        "access_level": "r",
+        "attestation_id": "",
+        "expires_at": "",
+        "grantee_id": "*",
+        "grantee_kind": "public",
+        "reason": "",
+        "schema": "access-grant/1",
+        "scope_id": "",
+        "scope_kind": ""
+      }
+    ],
+    "cross_tenant_agreement_ref": null,
+    "outward_tier": "public",
+    "owner_persona_id": "408G7KWZQE5Y4R7P69G3GCC3BN",
+    "policy_id": "acl:01KZKBA7Y1APF8H2G1SGM41GAD",
+    "schema": "access-policy/1",
+    "signature_hex": "d5301cf778628b28f399038800be1233862c44c5e993cd8f8c1b4954cbc5e38901e3b630de6cbf2f1bedda205fb7e3e6dd705568ab34cc25dca46dc2465a1902",
+    "subject_id": "event-bundle-84079853f312444757cd3bd553495bb2",
+    "subject_kind": "artifact"
+  },
+  "discovery_kind": "artifact",
+  "kind": "artifact",
+  "links": {
+    "body_available": true,
+    "body_hash_verified": true,
+    "bundle_id": "event-bundle-84079853f312444757cd3bd553495bb2",
+    "content": "artifacts/package/house_plan.dxf",
+    "content_hash": "sha256:399951d705b848ee1c2948101c5cce84d7bdee83b72af5fa3c8ae7fa494d44cd",
+    "subject_id": "event-artifact-009b58c4064d42e78fa568d011a23a12"
+  },
+  "record": {
+    "access_policy_ref": "acl:01KZKBA7Y1APF8H2G1SGM41GAD",
+    "capability_summary": [
+      "application/dxf",
+      "cad_exchange_dxf"
+    ],
+    "content_hash": "sha256:399951d705b848ee1c2948101c5cce84d7bdee83b72af5fa3c8ae7fa494d44cd",
+    "content_locator_ref": "",
+    "description": "cad_exchange_dxf artifact in event-bundle-84079853f312444757cd3bd553495bb2",
+    "did": "did:personaos:kernel:f84cb1e8a669ff9e/artifact/event-artifact-009b58c4064d42e78fa568d011a23a12",
+    "expires_at": "",
+    "in_progress": true,
+    "interfaces": [
+      {
+        "artifact_manifest": "artifacts/manifest.json",
+        "content": "artifacts/package/house_plan.dxf",
+        "endpoint": "discovery/v11/records/rec:01KZKBA7Y2D6KABBQ54B7G7RF1.json",
+        "kind": "HTTP",
+        "metadata": "artifacts/metadata/event-artifact-009b58c4064d42e78fa568d011a23a12.json",
+        "run": "run.json"
+      }
+    ],
+    "kind": "artifact",
+    "label": "house_plan.dxf",
+    "record_id": "rec:01KZKBA7Y2D6KABBQ54B7G7RF1",
+    "schema": "discoverable-record/1",
+    "signing_key_id": "kernel-master",
+    "visibility_tier": "public"
+  },
+  "schema": "discoverable-record/1",
+  "signature_hex": "5b69ebb120defaefcd994aebef303605b470470ff3d6498a6088589a45b4544e25fa211d35640e7c66e414b28c3ab5c9846f3a860c855ce567b82e8d46863504",
+  "signing_key_id": "kernel-master",
+  "visibility_tier": "public"
+}
