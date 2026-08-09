@@ -6,8 +6,3 @@ __pycache__/
 # peers; never bake data. These are run surfaces served by a live node, not the repo.
 /k/
 /.well-known/
-third_party/
-.vendor_openseespy/
-__pycache__/
-*.so
-*.so.*

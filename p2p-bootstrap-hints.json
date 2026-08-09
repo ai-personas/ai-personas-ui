@@ -1,7 +1,5 @@
 {
-  "https": [
-    "https://ai-personas.github.io/ai-personas-ui"
-  ],
+  "https": [],
   "libp2p": [
     "/dns/am6.bootstrap.libp2p.io/tcp/443/wss/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
     "/dns/ny5.bootstrap.libp2p.io/tcp/443/wss/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",

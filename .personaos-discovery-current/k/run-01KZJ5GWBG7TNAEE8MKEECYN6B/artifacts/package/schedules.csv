@@ -1,9 +1,0 @@
-ID,member,size,material
-F-01,pad,1200x1200x300,C25/B500
-FJ-01,floor joist,50x275@400,C24
-RF-01,roof rafter,75x250@600,C24
-B-01,primary beam,150x450,C24
-H-LIVING,header,140x315,C24
-H-KITCHEN,header,115x240,C24
-H-BED,header,90x195,C24
-SW-01,shear wall,16 m design length,structural sheathing
