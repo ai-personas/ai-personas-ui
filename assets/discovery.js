@@ -58,6 +58,10 @@ import {
   sniffArtifactMediaType,
 } from './artifact-types.mjs?v=20260804-technical-artifacts-v5';
 import {
+  renderMarkdownDocument,
+  renderPlainTextWithLinks,
+} from './artifact-markdown.mjs?v=20260812-markdown-linkify-v1';
+import {
   fetchVerifiedPersonaAvatar,
   normalizePersonaAvatar,
   personaIdentityKeyPin,
@@ -10523,27 +10527,14 @@ function plainPre(text,note){ const wrap=document.createElement('div');
 
 /* ---------- individual renderers (each fills `host`, may throw → fallback) ---------- */
 async function renderMarkdown(host,ctx){
-  const md=el('div','fv-md');
+  // Render the same hash-checked bytes as a formatted document: headings, lists,
+  // emphasis, code, and clickable http/https/mailto links (both bare URLs and
+  // [label](url)). The renderer builds DOM via createElement/textContent under a
+  // strict scheme allowlist — raw HTML in the body (e.g. <script>, <img onerror>)
+  // is inert text, never executed. The "plain text view" toggle keeps the exact
+  // escaped source available for byte inspection.
   const text=String(ctx.text||'').slice(0,LIVE_ARTIFACT_LIMITS.maxFileBytes);
-  let code=null, list=null;
-  const safeLine=(line)=>line
-    .replace(/!\[[^\]]*\]\([^)]*\)/g,'[embedded/remote image omitted]')
-    .replace(/<\/?(?:img|video|audio|source|picture|iframe|object|embed)\b[^>]*>/gi,'[remote resource omitted]');
-  for(const rawLine of text.split(/\r?\n/)){
-    if(/^```/.test(rawLine)){ if(code){ md.appendChild(code); code=null; } else code=el('pre','filview fv-code'); list=null; continue; }
-    if(code){ code.textContent+=(code.textContent?'\n':'')+rawLine; continue; }
-    const line=safeLine(rawLine);
-    const heading=/^(#{1,4})\s+(.*)$/.exec(line);
-    if(heading){ list=null; md.appendChild(el('h'+heading[1].length,null,heading[2])); continue; }
-    const item=/^\s*[-*+]\s+(.*)$/.exec(line);
-    if(item){ if(!list){ list=el('ul'); md.appendChild(list); } list.appendChild(el('li',null,item[1])); continue; }
-    list=null;
-    if(/^>\s?/.test(line)){ md.appendChild(el('blockquote',null,line.replace(/^>\s?/,''))); continue; }
-    if(!line.trim()){ md.appendChild(document.createElement('br')); continue; }
-    md.appendChild(el('p',null,line));
-  }
-  if(code) md.appendChild(code);
-  host.appendChild(md);
+  host.appendChild(renderMarkdownDocument(text,document));
 }
 function parseCsvBounded(text,delimiter=','){
   const rows=[]; let row=[],field='',quoted=false;
@@ -11278,8 +11269,14 @@ async function renderPlain(host,ctx){
     host.appendChild(loadingNode('loading…')); body=await fetchText(ctx.url,{signal:ctx.signal});
     ctx.assertCurrent?.(); host.innerHTML='';
     if(body==null){ host.appendChild(el('div','l2','binary body — use the download link above.')); return; } }
-  const trunc=body.length>20000;
-  host.appendChild(plainPre(body.slice(0,20000),trunc?'first 20 KB':''));
+  const trunc=body.length>20000, shown=body.slice(0,20000);
+  // The explicit "plain text view" toggle (forcedPlain) is the raw-source
+  // affordance for markdown/code: keep it byte-exact and non-interactive. The
+  // natural text/plain view instead linkifies bare http/https URLs so a plain
+  // job listing's apply links are clickable, showing every other char verbatim.
+  if(ctx.forcedPlain){ host.appendChild(plainPre(shown,trunc?'first 20 KB':'')); return; }
+  if(trunc) host.appendChild(el('div','fv-note','first 20 KB'));
+  host.appendChild(renderPlainTextWithLinks(shown,document));
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
   dxf:renderDxf,cad3d:renderCad3d,openscad:renderOpenScad,code:renderCode,pdf:renderPdf,archive:renderArchive,
@@ -11431,7 +11428,7 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
       text=await fetchText(sourceUrl,{signal:lifecycle.signal});
       lifecycle.assertCurrent(); realSize=text==null?null:new TextEncoder().encode(text).byteLength;
     }
-    const ctx={base,path,url:sourceUrl,sourceUrl,title,kind:pick.mediaType||kind,
+    const ctx={base,path,url:sourceUrl,sourceUrl,title,kind:pick.mediaType||kind,forcedPlain,
       declaredMedia:kind||'',responseMedia:verified?.type||'',detectedMedia,
       verifiedBytes:verified?.ok?verified.bytes:null,text,realSize,size:opts.size,
       contentHash:advertisedHash||null,integrityVerified:!!verified?.ok,
