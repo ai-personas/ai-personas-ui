@@ -5,6 +5,7 @@ import {
   decideLiveArtifactUpdate,
   endLiveArtifactState,
   finalizeLiveArtifactState,
+  installEd25519HashFallback,
   LIVE_ARTIFACT_LIMITS,
   liveBodyCommitIsCurrent,
   liveArtifactFileKey,
@@ -101,6 +102,12 @@ import {
   telemetryModelEvents,
   telemetrySpans,
 } from './public-telemetry.mjs?v=20260802-work-state-v4';
+
+// A node-served shell on a plain-HTTP LAN address is not a browser secure
+// context, so SubtleCrypto is withheld and every Ed25519 check would throw
+// before it could compare a single byte. Install the in-page SHA-512 digest so
+// the exact same signatures are verified there as over loopback/HTTPS.
+installEd25519HashFallback(ed.etc);
 
 const $=(s)=>document.querySelector(s);
 const esc=(s)=>String(s??'').replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -2003,23 +2010,31 @@ async function verifiedCanonicalBaseMatch(value,base,boot){
   const expectedBase=String(requestedBase||location.origin).replace(/\/$/,'');
   const canonicalBase=String(value||'').replace(/\/$/,'');
   if(canonicalBase===expectedBase||(!requestedBase&&!canonicalBase)) return true;
-  // A local probe is an alternate delivery route, not the canonical outward
-  // route written into a signed inventory.  Bind that alias to the same
-  // current-master key and its signed reachability profile before accepting
-  // it.  This grants no browser write authority and never rewrites the signed
-  // canonical base; it only permits hash/signature verification to continue
-  // over the loopback route that actually delivered the bytes.
-  const localAlias=requestedBase?isLocalBase(requestedBase):isLocalBase(location.origin);
+  // A loopback probe — or a route this node itself published in its current-
+  // master signed reachability profile — is an alternate delivery route, not
+  // the canonical outward route written into a signed inventory.  Bind that
+  // alias to the same current-master key and that signed profile before
+  // accepting it.  This grants no browser write authority and never rewrites
+  // the signed canonical base; it only permits hash/signature verification to
+  // continue over the route that actually delivered the bytes.  A node-served
+  // shell is commonly reached on its LAN/intranet address while its inventory
+  // correctly names its public route; that address is attested by the same
+  // kernel key as the inventory, so it is exactly as bound as loopback.
   const reachability=boot?.reachability_profile;
-  if(!localAlias||reachability?.schema!=='reachability-profile/1'
+  if(reachability?.schema!=='reachability-profile/1'
     ||reachability?.node_id!==boot?.kernel_id
     ||reachability?.public_key_hex!==currentMasterKey(
       S.keyDocs.get(base||'@origin')?.entries||[])) return false;
   if(!await verifyCurrentReachabilityProfile(reachability,base,boot)) return false;
+  const transports=Array.isArray(reachability.transports)?reachability.transports:[];
+  const deliveredBase=normalizedHttpBase(expectedBase);
+  const localAlias=requestedBase?isLocalBase(requestedBase):isLocalBase(location.origin);
+  const attestedRoute=localAlias||(!!deliveredBase
+    &&transports.some((route)=>normalizedHttpBase(route)===deliveredBase));
+  if(!attestedRoute) return false;
   if(!canonicalBase) return reachability.reachability_class!=='public';
   return normalizedHttpBase(canonicalBase)===canonicalBase
-    &&Array.isArray(reachability.transports)
-    &&reachability.transports.some((route)=>normalizedHttpBase(route)===canonicalBase);
+    &&transports.some((route)=>normalizedHttpBase(route)===canonicalBase);
 }
 async function verifyProviderInventory(index,base,boot){
   const inventoryBase=String(index?.base||'').replace(/\/$/,'');

@@ -8,6 +8,12 @@ import {
 } from './discovery-authority.mjs?v=20260715-provider-window-v1';
 import {resolveEnvironmentAuthority}
   from './routing-authority.mjs?v=20260729-exact-environment-v3';
+import {installEd25519HashFallback, sha256Hex}
+  from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
+
+// Insecure-context (plain-HTTP LAN) origins withhold SubtleCrypto; keep the
+// same historical signature/hash checks running there.
+installEd25519HashFallback(ed.etc);
 
 /*
  * Historical public evidence is deliberately separate from discovery state.
@@ -107,9 +113,7 @@ function policyPayload(policy){
 
 async function sha256(value){
   const bytes=value instanceof Uint8Array?value:enc.encode(String(value));
-  const digest=await crypto.subtle.digest('SHA-256',bytes);
-  return 'sha256:'+Array.from(new Uint8Array(digest),
-    (byte)=>byte.toString(16).padStart(2,'0')).join('');
+  return 'sha256:'+await sha256Hex(bytes);
 }
 
 async function signed(payload,signature,publicKey){

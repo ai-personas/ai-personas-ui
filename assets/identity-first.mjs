@@ -1,4 +1,6 @@
 import * as ed from './noble-ed25519.js';
+import {installEd25519HashFallback, sha256Hex}
+  from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
 import {evaluatePublicRecordAccess, validateProviderInventoryWindow}
   from './discovery-authority.mjs?v=20260715-provider-window-v1';
 import {readOfflineHistorySnapshots,verifyOfflineHistorySnapshots}
@@ -60,10 +62,13 @@ function exactFields(value,fields){
     &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
 }
 
+// A plain-HTTP LAN origin is not a secure context and withholds SubtleCrypto.
+// Both digests fall back to the same in-page implementations so this entry
+// verifies exactly what it verifies over loopback or HTTPS.
+installEd25519HashFallback(ed.etc);
+
 async function sha256(value){
-  const digest=await crypto.subtle.digest('SHA-256',enc.encode(value));
-  return 'sha256:'+Array.from(new Uint8Array(digest),
-    (byte)=>byte.toString(16).padStart(2,'0')).join('');
+  return 'sha256:'+await sha256Hex(enc.encode(value));
 }
 
 async function signed(payload,signature,publicKey){

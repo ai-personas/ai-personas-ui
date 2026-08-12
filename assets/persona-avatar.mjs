@@ -1,4 +1,10 @@
 import * as ed from './noble-ed25519.js';
+import {installEd25519HashFallback, sha256Hex}
+  from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
+
+// Insecure-context (plain-HTTP LAN) origins withhold SubtleCrypto; keep avatar
+// body hashing and identity signature checks running there.
+installEd25519HashFallback(ed.etc);
 
 const AVATAR_SCHEMA = 'persona-avatar/2';
 const AVATAR_KIND = 'raster';
@@ -275,11 +281,7 @@ export function inspectPersonaAvatarBytes(value) {
 
 export async function personaAvatarSha256(value) {
   const bytes = asBytes(value);
-  const digest = await globalThis.crypto.subtle.digest(
-    'SHA-256',
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-  );
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
 
 export async function verifyPersonaAvatarBytes(value, descriptorValue) {
