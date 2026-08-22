@@ -28,8 +28,11 @@ const PERSONA_CARD_REQUIRED_FIELDS=Object.freeze([
 ]);
 const PERSONA_CARD_ALLOWED_FIELDS=new Set([
   ...PERSONA_CARD_REQUIRED_FIELDS,'avatar','capabilities_summary','characteristic_identity',
-  'display_name_alias','participation_status',
+  'display_name_alias','participation_status','self_publication',
 ]);
+// persona-card/5 adds the optional persona-authored `self_publication` object.
+// Accept /4 and /5; the member is opaque here and never rendered by this entry.
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
 const PERSONA_LIFECYCLE_FIELDS=Object.freeze([
   'authority','did','identity_fields','identity_materialization_state',
   'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
@@ -227,14 +230,14 @@ async function verifiedLifecycle(lifecycle,record,identity,identityKey,registry)
 async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=Date.now()}={}){
   const card=envelope?.card;
   if(!exactFields(envelope,PERSONA_ENVELOPE_FIELDS)
-      ||envelope.schema!=='persona-card/4'||envelope.persona_id!==identity.signedId
+      ||!PERSONA_CARD_ACCEPTED_SCHEMAS.has(envelope.schema)||envelope.persona_id!==identity.signedId
       ||envelope.path!==`.well-known/personas/${identity.signedId}.json`
       ||envelope.signing_key_id!==`persona:${identity.signedId}`
       ||!Number.isSafeInteger(envelope.ttl_seconds)||envelope.ttl_seconds<1
       ||envelope.ttl_seconds>86400||!card||typeof card!=='object'||Array.isArray(card)
       ||PERSONA_CARD_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(card,field))
       ||Object.keys(card).some((field)=>!PERSONA_CARD_ALLOWED_FIELDS.has(field))
-      ||card.schema!=='persona-card/4'||card.persona_id!==identity.signedId
+      ||card.schema!==envelope.schema||card.persona_id!==identity.signedId
       ||card.signing_key_id!==`persona:${identity.signedId}`
       ||record.identity_signing_key_id!==`persona:${identity.signedId}`
       ||String(record.identity_public_key_hex||'').toLowerCase()!==identityKey
@@ -251,7 +254,7 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=D
       ||!await signed(card,envelope.signature_hex,identityKey)) return null;
   for(const field of ['accepts_inbound_from','charter_hash','voice_hash','soul_hash',
     'kernel_provider','kernel_a2a_url']) if(typeof card[field]!=='string') return null;
-  for(const field of ['display_name_alias','characteristic_identity'])
+  for(const field of ['display_name_alias','characteristic_identity','self_publication'])
     if(Object.hasOwn(card,field)&&(!card[field]||typeof card[field]!=='object'
       ||Array.isArray(card[field])||!Object.keys(card[field]).length)) return null;
   if(Object.hasOwn(card,'participation_status')

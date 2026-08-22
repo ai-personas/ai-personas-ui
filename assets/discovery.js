@@ -1667,8 +1667,12 @@ const PERSONA_PARTICIPATION_REQUIRED_FIELDS=Object.freeze([
 const PERSONA_PARTICIPATION_ALLOWED_FIELDS=new Set([
   ...PERSONA_PARTICIPATION_REQUIRED_FIELDS,
   'avatar','capabilities_summary','characteristic_identity','display_name_alias',
-  'participation_status',
+  'participation_status','self_publication',
 ]);
+// persona-card/5 adds the optional persona-authored `self_publication` object
+// (body/revision/identity_signature_hex …). It rides inside the signed card and
+// is treated as opaque; presentation escapes any text before it reaches the DOM.
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
 const PERSONA_CAPABILITY_REQUIRED_FIELDS=Object.freeze([
   'description','name','skill_hash','skill_id',
 ]);
@@ -1764,7 +1768,7 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
   if(!_plainPersonaParticipationObject(card)
       ||PERSONA_PARTICIPATION_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(card,field))
       ||Object.keys(card).some((field)=>!PERSONA_PARTICIPATION_ALLOWED_FIELDS.has(field))
-      ||envelope.schema!=='persona-card/4'||card.schema!=='persona-card/4'
+      ||!PERSONA_CARD_ACCEPTED_SCHEMAS.has(envelope.schema)||card.schema!==envelope.schema
       ||envelope.persona_id!==personaId||card.persona_id!==personaId
       ||envelope.path!==`.well-known/personas/${personaId}.json`
       ||envelope.signing_key_id!==keyId||card.signing_key_id!==keyId
@@ -1785,7 +1789,7 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
   if(capabilitiesSummary===null) return null;
   for(const field of ['charter_hash','voice_hash','soul_hash','kernel_provider','kernel_a2a_url',
     'accepts_inbound_from']) if(typeof card[field]!=='string') return null;
-  for(const field of ['display_name_alias','characteristic_identity'])
+  for(const field of ['display_name_alias','characteristic_identity','self_publication'])
     if(Object.hasOwn(card,field)&&(!_plainPersonaParticipationObject(card[field])
       ||Object.keys(card[field]).length===0)) return null;
   if(Object.keys(card.identity_authority).length===0) return null;

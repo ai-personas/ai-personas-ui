@@ -58,8 +58,11 @@ const PERSONA_CARD_REQUIRED_FIELDS=Object.freeze([
 ]);
 const PERSONA_CARD_ALLOWED_FIELDS=new Set([
   ...PERSONA_CARD_REQUIRED_FIELDS,'avatar','capabilities_summary','characteristic_identity',
-  'display_name_alias','participation_status',
+  'display_name_alias','participation_status','self_publication',
 ]);
+// persona-card/5 adds the optional persona-authored `self_publication` object;
+// accept /4 and /5 with envelope/card schema equality. Opaque here.
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
 const PERSONA_LIFECYCLE_FIELDS=Object.freeze([
   'authority','did','identity_fields','identity_materialization_state',
   'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
@@ -250,14 +253,14 @@ async function verifiedPersonaProjection(doc,record,documentKey,registry,kernelI
       ||!registry.entries.some((entry)=>entry.key_id===keyId
         &&entry.status==='current'&&entry.public_key_hex===identityKey)
       ||!exactFields(envelope,PERSONA_ENVELOPE_FIELDS)
-      ||envelope.schema!=='persona-card/4'||envelope.persona_id!==identity.signedId
+      ||!PERSONA_CARD_ACCEPTED_SCHEMAS.has(envelope.schema)||envelope.persona_id!==identity.signedId
       ||envelope.path!==`.well-known/personas/${identity.signedId}.json`
       ||envelope.signing_key_id!==keyId||!Number.isSafeInteger(envelope.ttl_seconds)
       ||envelope.ttl_seconds<1||envelope.ttl_seconds>86400
       ||!card||typeof card!=='object'||Array.isArray(card)
       ||PERSONA_CARD_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(card,field))
       ||Object.keys(card).some((field)=>!PERSONA_CARD_ALLOWED_FIELDS.has(field))
-      ||card.schema!=='persona-card/4'||card.persona_id!==identity.signedId
+      ||card.schema!==envelope.schema||card.persona_id!==identity.signedId
       ||card.signing_key_id!==keyId||card.visibility!=='public'
       ||card.federation_visibility!=='public'||card.name!==record.label
       ||!safeText(card.name,80)||typeof card.description!=='string'
