@@ -7060,24 +7060,18 @@ function renderPersonaCard(pid,kernel='',context={}){
   // strips payload, so only the verb is available (no capability name / error).
   const toolAct=[...acts].reverse().find((a)=>a?._observedState!==true
     &&TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
-  const mp=s.mode_proficiencies||{}; const topMode=Object.entries(mp).sort((a,b)=>b[1]-a[1])[0];
-  // PER-04: the public card shows reputation_score (role-relative [0,1]), NEVER raw
-  // operator fitness. Evolution internals (tactics/lessons/modes) are operator-tier
-  // — shown only when an operator token is held (and in the 🧠 thinking drawer).
+  // The substrate refuses reputation_score / experience_tasks / mode_proficiencies /
+  // tactic_count / lesson_count on the public summary — those chips could never
+  // render and are deleted. brain_fragment_count is public (also in /thinking).
   const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
   // pc-stats footer: assemble the spans first so a model-only persona (s={}, no summary)
   // doesn't render an EMPTY pc-stats div whose border-top draws a stray separator bar.
   // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
   // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
-  const statHTML=(Number(s.experience_tasks)>0?`<span class="tag" title="tasks worked">${icon('task','ico-sm')} ${esc(s.experience_tasks)}</span>`:'')
-    +(namePending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'persona-authored name pending')}">${icon('warn','ico-sm')} name pending</span>`:'')
+  const statHTML=(namePending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'persona-authored name pending')}">${icon('warn','ico-sm')} name pending</span>`:'')
     +(characteristicsPending?`<span class="tag" title="persona-authored characteristics pending">${icon('warn','ico-sm')} traits pending</span>`:'')
-    +(s.reputation_score!=null?`<span class="tag" title="reputation — role-relative [0,1]">${icon('rep','ico-sm')} ${esc(Number(s.reputation_score).toFixed(2))}</span>`:'')
-    +(hasOp&&s.brain_fragment_count!=null?`<span class="tag" title="brain fragments (operator)">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
+    +(s.brain_fragment_count!=null?`<span class="tag" title="brain fragments">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
     +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
-    +(hasOp&&s.tactic_count!=null?`<span class="tag" title="evolved tactics (operator)">${icon('dna','ico-sm')} ${esc(s.tactic_count)}</span>`:'')
-    +(hasOp&&s.lesson_count!=null?`<span class="tag" title="lessons learned (operator)">${icon('lesson','ico-sm')} ${esc(s.lesson_count)}</span>`:'')
-    +(hasOp&&topMode?`<span class="tag" title="strongest cognitive mode (operator)">${icon('mode','ico-sm')} ${esc(topMode[0])} ${esc(Number(topMode[1]).toFixed(2))}</span>`:'')
     +(rt.task_execution_state?`<span class="tag runtime-tag" title="live task participation status">${icon('task','ico-sm')} ${esc(_humanTaskExecutionState(rt.task_execution_state))}</span>`:'');
   // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
   // RECENT is public activity; IDLE means available but no recent activity.
