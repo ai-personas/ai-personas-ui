@@ -2067,3 +2067,135 @@ body{overflow-x:hidden;overflow-y:auto}
 .offline-history-card:hover{border-color:var(--line2)!important;box-shadow:none!important;transform:none!important}.offline-history-card .pc-dot{background:var(--mut)!important;box-shadow:none!important;animation:none!important}.offline-history-card .pc-card-edition,.offline-history-card .env-kicker{color:var(--amber)}
 .offline-history-files{display:grid;gap:8px;margin-top:14px;padding-top:13px;border-top:1px dashed var(--line2)}.offline-history-artifact{cursor:default!important;border-style:dashed!important}.offline-history-artifact:hover{border-color:var(--line2)!important;background:var(--surface-inset)!important;transform:none!important}.offline-history-artifact .current-artifact-preview{color:var(--mut)}
 @media(max-width:719px){.offline-history-banner{grid-template-columns:1fr}}
+
+/* ===================== COLLECTIBLE CARD GALLERY (landing redesign) =====================
+   New classes only (pk-*); the existing pcard/env-card chrome (frame, foil,
+   shine, edition strip, drawers, follow) is reused, not rewritten. */
+
+/* ---- deterministic identicon (SVG generated locally from the id hash) ---- */
+.pk-identicon{display:block;width:64px;height:64px;border-radius:12px;
+  filter:drop-shadow(0 8px 16px rgba(0,0,0,.4))}
+.pk-identicon .pk-id-bg{fill:color-mix(in srgb,hsl(var(--pk-idhue,210) 60% 46%) 20%,#081220)}
+.pk-identicon .pk-id-fg{fill:hsl(var(--pk-idhue,210) 66% 62%)}
+.pk-identicon.mini{width:20px;height:20px;border-radius:6px;filter:none}
+.pk-identicon.env{width:96px;height:96px;border-radius:16px}
+.pk-identicon-holder{display:block;width:64px;height:64px;margin-inline:auto}
+.pc-avatar .pk-identicon{width:min(72%,84px);height:auto;aspect-ratio:1}
+.env-persona-node .pc-avatar .pk-identicon{width:78%}
+
+/* ---- collectible name bar ---- */
+.pk-namebar{position:relative;z-index:5;display:flex;align-items:center;gap:8px;
+  margin:10px 12px 0;padding:7px 10px;min-width:0;
+  border:1px solid color-mix(in srgb,hsl(var(--avatar-hue,210) 76% 62%) 34%,var(--line2));
+  border-radius:12px;
+  background:linear-gradient(90deg,color-mix(in srgb,hsl(var(--avatar-hue,210) 70% 52%) 16%,rgba(6,13,22,.92)),rgba(6,13,22,.78))}
+.pk-namebar .pc-name{flex:1 1 auto;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--bright);font-size:17px;line-height:1.15;letter-spacing:-.02em}
+.pk-namebar .pc-badges{flex:0 0 auto;grid-column:auto;justify-content:flex-end}
+.pk-namebar .pc-follow{flex:0 0 auto;grid-column:auto;grid-row:auto;align-self:center}
+.env-card .pk-namebar{border-color:color-mix(in srgb,var(--envhue,var(--intr)) 40%,var(--line2));
+  background:linear-gradient(90deg,color-mix(in srgb,var(--envhue,var(--intr)) 14%,rgba(6,13,22,.92)),rgba(6,13,22,.78))}
+.pk-namebar .env-name{cursor:pointer}
+.pk-namebar .env-name:hover,.pk-namebar .env-name:focus-visible{color:var(--bright);text-decoration:underline;text-underline-offset:3px}
+
+/* ---- art window ---- */
+.pk-art{position:relative;z-index:4;display:grid;place-items:center;margin:9px 12px 0;
+  min-height:148px;border-radius:14px;overflow:hidden;
+  border:1px solid color-mix(in srgb,hsl(var(--avatar-hue,210) 74% 60%) 26%,var(--line));
+  background:
+    radial-gradient(120% 90% at 50% 12%,color-mix(in srgb,hsl(var(--avatar-hue,210) 78% 58%) 20%,transparent),transparent 58%),
+    linear-gradient(165deg,color-mix(in srgb,hsl(var(--avatar-hue,210) 62% 40%) 14%,#081120),#050d17)}
+.pk-art::after{content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(150deg,rgba(255,255,255,.07),transparent 32%,transparent 70%,rgba(0,0,0,.25))}
+.pk-art .pc-avatar{grid-row:auto;width:120px;height:120px;border-radius:18px}
+.pk-art .pc-dot{position:absolute;right:10px;bottom:10px;width:13px;height:13px;
+  border:3px solid #101d2c;border-radius:50%}
+.env-card .pk-art{border-color:color-mix(in srgb,var(--envhue,var(--intr)) 32%,var(--line));
+  background:
+    radial-gradient(120% 90% at 50% 12%,color-mix(in srgb,var(--envhue,var(--intr)) 18%,transparent),transparent 58%),
+    linear-gradient(165deg,color-mix(in srgb,var(--envhue,var(--intr)) 10%,#081120),#050d17)}
+.env-card .pk-art{min-height:120px}
+.env-card>.env-kicker{display:block;margin:7px 14px 0;color:var(--mut);
+  font:700 7px/1.3 var(--mono);letter-spacing:.11em;text-transform:uppercase}
+
+/* ---- species line + verified tick ---- */
+.pcard.pk>.pc-name-proof{display:flex;justify-content:center;margin:8px 12px 0}
+.pk-species{margin:6px 16px 0;color:var(--dim);font:italic var(--w-reg) 11px/1.45 var(--sans);
+  text-align:center;text-wrap:pretty;overflow-wrap:anywhere}
+
+/* ---- DOING NOW face line + pulse ---- */
+.pk-doing-face .pc-doing{display:flex;align-items:center;gap:7px;min-width:0}
+.pk-doing-face .pc-doing strong{min-width:0;overflow:hidden;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical}
+.pk-pulse{display:inline-block;width:8px;height:8px;margin-left:4px;vertical-align:-1px;
+  border-radius:50%;background:var(--up);box-shadow:0 0 8px var(--up);
+  animation:beatdot 1.3s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.pk-pulse{animation:none}}
+
+/* ---- type badges ---- */
+.pk-typerow{display:flex;flex-wrap:wrap;gap:6px;margin:9px 14px 0}
+.pk-type{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:22px;
+  padding:2px 9px;border-radius:var(--radius-pill);
+  border:1px solid color-mix(in srgb,hsl(var(--avatar-hue,210) 74% 62%) 32%,var(--line2));
+  background:rgba(9,18,30,.85);color:var(--dim);font:var(--w-semi) 9px/1.2 var(--mono)}
+.pk-type span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-type.model{color:var(--purple);border-color:color-mix(in srgb,var(--purple) 40%,var(--line2))}
+.pk-type.envs{color:var(--int)}
+
+/* ---- stat row (small labeled numbers) ---- */
+.pk-statrow{display:flex;gap:6px;margin:9px 14px 0}
+.pk-stat{flex:1 1 0;display:grid;justify-items:center;gap:2px;padding:6px 4px 5px;
+  border:1px solid var(--line2);border-radius:10px;background:rgba(5,12,20,.6)}
+.pk-stat b{color:var(--off-white);font:700 13px/1 var(--mono);letter-spacing:-.02em}
+.pk-stat small{color:var(--mut);font:700 7px/1 var(--mono);letter-spacing:.14em}
+
+/* ---- HAVING row (environment cards) ---- */
+.pk-having{margin:10px 14px 0;padding:9px 10px;border:1px solid var(--line2);
+  border-radius:12px;background:rgba(4,10,18,.5)}
+.pk-having-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px 12px;margin-top:6px}
+.pk-have{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--dim);font-size:10px}
+.pk-have b{color:var(--off-white);font:700 12px/1 var(--mono)}
+.pk-have small{color:var(--mut);font:var(--w-semi) 9px/1.2 var(--sans)}
+.pk-minis{display:inline-flex}
+.pk-mini{display:inline-block;width:20px;height:20px;border-radius:6px;overflow:hidden;
+  border:1px solid #101d2c;margin-left:-6px;background:#081220}
+.pk-mini:first-child{margin-left:0}
+.pk-have.tools{flex-wrap:wrap;gap:4px}
+.pk-tool{display:inline-flex;align-items:center;max-width:150px;padding:2px 7px;
+  border:1px solid color-mix(in srgb,var(--amber) 34%,var(--line2));border-radius:var(--radius-pill);
+  background:var(--amber-weak);color:var(--amber);font:var(--w-semi) 8px/1.4 var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.pk-tool.more{cursor:default;color:var(--mut);border-style:dashed;background:transparent}
+.pk-accept{display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--radius-pill);
+  border:1px solid color-mix(in srgb,var(--intr) 42%,var(--line2));background:rgba(37,214,176,.08);
+  color:var(--intr);font:700 8px/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+
+/* ---- full dossier disclosure ---- */
+.pk-dossier{position:relative;z-index:5;margin:11px 12px 12px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(4,10,17,.42)}
+.pk-dossier>summary{list-style:none;display:flex;align-items:center;gap:7px;padding:8px 12px;
+  color:var(--mut);font:700 8px/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.pk-dossier>summary::-webkit-details-marker{display:none}
+.pk-dossier>summary::before{content:'▸';color:var(--accent);transition:transform .18s var(--ease-out,ease-out)}
+.pk-dossier[open]>summary::before{transform:rotate(90deg)}
+.pk-dossier>summary:hover{color:var(--dim)}
+.pk-dossier[open]{background:rgba(4,10,17,.6)}
+.pk-dossier[open]>summary{border-bottom:1px solid var(--line)}
+.pk-dossier>.pc-role-line{display:grid;margin:10px 14px 0}
+.pk-dossier .pc-current,.pk-dossier .pc-environments,.pk-dossier .pc-capabilities{margin-top:10px}
+.pk-dossier>*:last-child{margin-bottom:12px}
+.pcard.pk{cursor:pointer}
+.pcard.pk .pc-stats{margin:0 14px 13px}
+
+/* small screens: art shrinks before the grid goes single-column */
+@media(max-width:719px){
+  .pk-art{min-height:118px}.pk-art .pc-avatar{width:96px;height:96px}
+  .pk-identicon.env{width:76px;height:76px}
+  .pk-namebar .pc-name{font-size:15px}
+}
+/* env cards define --envhue (a full color), not --avatar-hue (a hue number);
+   restyle the shared edition strip with the env color so its hue-based
+   declarations don't silently drop on environment cards. */
+.env-card .pc-card-edition{border-bottom:1px solid color-mix(in srgb,var(--envhue,var(--intr)) 24%,var(--line));
+  background:linear-gradient(90deg,color-mix(in srgb,var(--envhue,var(--intr)) 12%,rgba(5,12,20,.92)),rgba(5,12,20,.72));
+  color:color-mix(in srgb,var(--envhue,var(--intr)) 55%,var(--off-white))}

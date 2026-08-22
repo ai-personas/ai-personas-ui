@@ -4273,6 +4273,11 @@ let _sseCognitionFullPending=false;
 const _sseCognitionPendingPersonaKeys=new Set(), _sseCognitionPendingBases=new Set();
 function scheduleSseCognitionRefresh(scope=null){
   if(scope?.preservePending!==true){
+    // The collectible-card lazy cognition cache follows the scoped
+    // cognition_invalidate signal so stat rows / model badges refresh with the
+    // deck repaint; unscoped telemetry ticks are left to the cache TTL.
+    for(const key of Array.isArray(scope?.personaKeys)?scope.personaKeys.filter(Boolean):[])
+      _pkCognitionInvalidate(key);
     const personaKeys=Array.isArray(scope?.personaKeys)?scope.personaKeys.filter(Boolean):[];
     const hasBase=Object.prototype.hasOwnProperty.call(scope||{},'base')
       &&typeof scope.base==='string';
@@ -6083,8 +6088,10 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   // changes observable to the keyed stage diff. No image appears until the
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   if(!identityVerified){
+    // The deterministic identicon is derived from the id alone; it claims no
+    // persona authorship, so it may stand in while the identity proof settles.
     return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
-      +`<span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>identity proof pending · portrait withheld</small></span></span>`;
+      +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>identity proof pending · portrait withheld</small></span></span>`;
   }
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
@@ -6095,7 +6102,7 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
     ?'neutral person silhouette shown while persona-authored raster avatar is verified'
     :fallback.accessible;
   return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
-    +`<span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${esc(placeholderLabel)}</small></span></span>`;
+    +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor,signal=null){
   if(typeof createImageBitmap==='function'){
@@ -6266,10 +6273,13 @@ function _neutralPersonaAvatar(mount,state='failed'){
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
   mount.dataset.avatarLifecycle=fallback.lifecycle;
   mount.setAttribute('aria-label',fallback.accessible);
-  const silhouette=document.createElement('span'); silhouette.className='pc-avatar-silhouette';
-  silhouette.append(document.createElement('i'));
+  // Deterministic identicon in place of the shared silhouette: stable per-id
+  // art with no persona-authorship claim. Markup is generated locally from the
+  // hash alone (no remote bytes), so innerHTML carries only our own SVG.
+  const identicon=document.createElement('span'); identicon.className='pk-identicon-holder';
+  identicon.innerHTML=identiconSVG(ref.sid);
   const label=document.createElement('small'); label.textContent=fallback.visible;
-  placeholder.append(silhouette,label);
+  placeholder.append(identicon,label);
   mount.replaceChildren(placeholder);
 }
 function _schedulePersonaAvatarRetry(mount,revision){
@@ -6949,6 +6959,128 @@ function _personaActivityHTML(acts,personaKey){
     :'';
   return authoredHTML+diagnosticsHTML;
 }
+// ==== Collectible card gallery (landing redesign) ====================
+// Deterministic identicon: 5x5 mirrored grid, hue from an FNV-1a hash of the
+// id. Pure presentation — no fetched bytes, no authorship claim; it simply
+// gives every persona/environment stable, distinct art instead of one shared
+// fallback image.
+function _identiconHash(value){ let h=2166136261>>>0;
+  for(const ch of String(value||'')){ h^=ch.codePointAt(0); h=Math.imul(h,16777619)>>>0; }
+  return h>>>0; }
+function identiconSVG(id,{className='pk-identicon',title=''}={}){
+  let h=_identiconHash(id);
+  const next=()=>{ h=Math.imul(h^(h>>>15),2246822519)>>>0;
+    h=Math.imul(h^(h>>>13),3266489917)>>>0; return (h^=h>>>16)>>>0; };
+  const hue=_identiconHash(`hue:${id}`)%360;
+  const cells=[];
+  for(let x=0;x<3;x++) for(let y=0;y<5;y++) if(next()%2===1){
+    cells.push([x,y]); if(x<2) cells.push([4-x,y]); }
+  if(!cells.length) cells.push([2,1],[1,2],[2,2],[3,2],[2,3]);
+  const rects=cells.map(([x,y])=>`<rect x="${3+x*10}" y="${3+y*10}" width="10" height="10" rx="1.5"/>`).join('');
+  return `<svg class="${esc(className)}" viewBox="0 0 56 56" role="img" aria-label="${esc(title||'deterministic identicon derived from the identifier')}" style="--pk-idhue:${hue}"><rect class="pk-id-bg" x="0" y="0" width="56" height="56" rx="10"/><g class="pk-id-fg">${rects}</g></svg>`;
+}
+// Lazy, cached, presentation-only read of the persona's public cognition
+// document (personas/<id>/thinking). It enriches the collectible face with
+// stat counters (EP/FR/TL/EV), the current model id, and the persona-authored
+// work note. 403/404 (message tier not public) and malformed bodies degrade to
+// "no stat row"; nothing here feeds a verification decision, and every string
+// is HTML-escaped at render time.
+const _pkCog={cache:new Map(),inflight:new Set()};
+const PK_COG_TTL_MS=60000, PK_COG_NEG_TTL_MS=120000;
+function _pkCognitionInvalidate(personaKey){
+  if(personaKey===undefined){ _pkCog.cache.clear(); return; }
+  _pkCog.cache.delete(String(personaKey||''));
+}
+function _pkCount(value){ return Number.isSafeInteger(value)&&value>=0&&value<=1e9?value:null; }
+function _pkCognitionProjection(doc){
+  if(!doc||typeof doc!=='object'||Array.isArray(doc)
+      ||!String(doc.schema||'').startsWith('personaos-persona-public-cognition/')) return null;
+  const calls=[...(Array.isArray(doc.active_calls)?doc.active_calls:[]),
+    ...(Array.isArray(doc.recent_calls)?doc.recent_calls:[])].slice(0,32);
+  const model=String(calls.find((call)=>call&&typeof call==='object'
+    &&typeof call.model_id==='string'&&call.model_id)?.model_id||'').slice(0,80);
+  const development=doc.agentic_development;
+  const tools=development&&typeof development==='object'&&!Array.isArray(development)
+    &&Array.isArray(development.acquired_tools)?development.acquired_tools.length:null;
+  const workState=doc.current_work_state&&typeof doc.current_work_state==='object'
+    &&!Array.isArray(doc.current_work_state)?doc.current_work_state:null;
+  const workNote=workState&&workState.work_note&&typeof workState.work_note==='object'
+    &&!Array.isArray(workState.work_note)?workState.work_note:null;
+  return {model,ep:_pkCount(doc.brain_episode_count),fr:_pkCount(doc.brain_fragment_count),
+    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),workNote};
+}
+function _pkBaseForKernel(kernel){
+  const want=String(kernel||'');
+  for(const key of (S.boots?S.boots.keys():[])){
+    const base=key==='@origin'?'':key;
+    const kid=String(kernelForBase(base)||(S.boots.get(key)||{}).kernel_id||'');
+    if(kid&&kid===want) return {found:true,base};
+  }
+  return {found:false,base:''};
+}
+function _pkCognitionStats(personaKey){
+  const key=String(personaKey||''); if(!key) return null;
+  const cached=_pkCog.cache.get(key), now=Date.now();
+  if(cached&&now-cached.at<(cached.stats?PK_COG_TTL_MS:PK_COG_NEG_TTL_MS)) return cached.stats;
+  // The strictly verified cognition store outranks the tolerant lazy fetch.
+  const verified=S.verifiedPublicCognitionByPersona?.get(key)?.doc;
+  if(verified){ const stats=_pkCognitionProjection(verified);
+    if(stats){ _pkCog.cache.set(key,{at:now,stats}); return stats; } }
+  if(_pkCog.inflight.has(key)) return cached?.stats||null;
+  const ref=_personaRef(key);
+  const route=_pkBaseForKernel(ref.kernel);
+  if(!route.found) return cached?.stats||null;
+  _pkCog.inflight.add(key);
+  (async()=>{
+    try{
+      const endpoint=join(route.base,`personas/${encodeURIComponent(ref.sid)}/thinking`);
+      const doc=await fetchResponsivePublicJson(endpoint,
+        {maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
+      const stats=doc&&String(doc.persona_id||'')===ref.sid?_pkCognitionProjection(doc):null;
+      _pkCog.cache.set(key,{at:Date.now(),stats:stats||null});
+      if(stats) scheduleRealtimeRepaint();
+    }catch(_error){ _pkCog.cache.set(key,{at:Date.now(),stats:null}); }
+    finally{ _pkCog.inflight.delete(key); }
+  })();
+  return cached?.stats||null;
+}
+// Kernel-signed task discovery facts for an environment/run: mechanical
+// task_state / acceptance_state tokens from the record's capability summary.
+function _pkTaskFacts(kernel,envSid,run){
+  const wantEnv=environmentIdentity(envSid||'');
+  for(const id of S.order){ const r=S.recs.get(id);
+    if(!r||r.kind!=='task'||String(r._kernel||'')!==String(kernel||'')) continue;
+    const caps=Array.isArray(r.capability_summary)?r.capability_summary.filter((cap)=>typeof cap==='string'):[];
+    const runMatch=!!run&&caps.includes(`task_run:${run}`);
+    const envMatch=!!wantEnv&&caps.some((cap)=>cap.startsWith('task_environment:')
+      &&environmentIdentity(cap.slice('task_environment:'.length))===wantEnv);
+    if(!runMatch&&!envMatch) continue;
+    const token=(prefix)=>{ const hit=caps.find((cap)=>cap.startsWith(prefix));
+      return hit?hit.slice(prefix.length).slice(0,64):''; };
+    return {state:token('task_state:'),acceptance:token('acceptance_state:'),
+      run:token('task_run:'),recordId:id};
+  }
+  return null;
+}
+// Tool-kind discovery records mounted in this environment → bounded name chips.
+function _pkEnvTools(kernel,envSid){
+  const want=environmentIdentity(envSid||''); if(!want) return [];
+  const out=[];
+  for(const id of S.order){ const r=S.recs.get(id);
+    if(!r||r.kind!=='tool'||String(r._kernel||'')!==String(kernel||'')) continue;
+    const caps=Array.isArray(r.capability_summary)?r.capability_summary.filter((cap)=>typeof cap==='string'):[];
+    const envCap=caps.find((cap)=>cap.startsWith('environment_id:'));
+    if(!envCap||environmentIdentity(envCap.slice('environment_id:'.length))!==want) continue;
+    const nameCap=caps.find((cap)=>cap.startsWith('tool_name:'));
+    const name=String(nameCap?nameCap.slice('tool_name:'.length):(r.label||'')).trim().slice(0,48);
+    if(name) out.push({name,recordId:id});
+    if(out.length>=16) break;
+  }
+  return out;
+}
+const PK_TASK_EXEC_DOING=Object.freeze({running_llm:'thinking…',run_participant:'on a mission',
+  idle:'resting',away:'away',available:'ready',paused_participant:'paused'});
+// ==== end collectible card gallery helpers ============================
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
   const enrichmentPending=context.enrichmentPending===true;
@@ -7159,17 +7291,72 @@ function renderPersonaCard(pid,kernel='',context={}){
       ?`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">loading workspace details…</span></div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">working independently</span></div></section>`;
   const authoredWorkHTML=_personaAuthoredWorkHTML(personaKey,ref.kernel,mechanicalRun);
-  return `<article class="pcard ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(name)}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PUBLIC WORK LOG</span></div>`
-    +`<header class="pc-profile">${_personaAvatarHTML(personaKey,{identityVerified})}`
-    +`<i class="pc-dot ${dotCls}" aria-hidden="true"></i>`
-    +`<div class="pc-identity"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==name?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(name)}</h3><span class="pc-name-proof">${hasSignedName?icon('check','ico-sm')+' self-chosen name verified':identityPending?icon('check','ico-sm')+' profile verified · name pending':hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable':icon('warn','ico-sm')+` profile proof ${identityProofState}`}</span><span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span></div>`
+  // ---- collectible face bindings ----
+  // Verified signed card body (retained on the record only after the exact
+  // participation-card signature verified) supplies alias + self_publication.
+  const verifiedCardBody=identityVerified&&signedIdentity?.persona_card?.card
+    &&typeof signedIdentity.persona_card.card==='object'
+    &&!Array.isArray(signedIdentity.persona_card.card)?signedIdentity.persona_card.card:null;
+  const aliasRaw=verifiedCardBody?.display_name_alias;
+  const aliasName=aliasRaw&&typeof aliasRaw==='object'&&!Array.isArray(aliasRaw)
+    ?String(aliasRaw.display_name||'').trim().slice(0,80):'';
+  const pkName=aliasName||(hasSignedName?name:'')||sid.slice(0,6);
+  const selfPub=verifiedCardBody?.self_publication;
+  const selfPubBody=selfPub&&typeof selfPub==='object'&&!Array.isArray(selfPub)
+    ?String(selfPub.body||'').trim():'';
+  const speciesLine=_compactHumanLabel(selfPubBody||signedDescription||'',120)||'Neutral persona';
+  const speciesTitle=selfPubBody?'persona self-publication (signed card)'
+    :signedDescription?'signed card description':'no self-description published yet';
+  // DOING NOW: persona-authored work note first, then the mechanical
+  // task-execution state, then the richer live-telemetry line computed above.
+  const cogStats=_pkCognitionStats(personaKey);
+  const feedWorkNote=currentWorkState&&currentWorkState.work_note
+    &&typeof currentWorkState.work_note==='object'&&!Array.isArray(currentWorkState.work_note)
+    ?currentWorkState.work_note:null;
+  const pkWorkNote=feedWorkNote||cogStats?.workNote||null;
+  const pkWorkNoteText=pkWorkNote
+    ?String(pkWorkNote.observed_state||pkWorkNote.status||'').trim():'';
+  const execDoing=PK_TASK_EXEC_DOING[String(s.task_execution_state||'')]||'';
+  const pkPulse=s.llm_execution_state==='running'||running;
+  const pkDoingHTML=pkWorkNoteText
+    ?`<strong title="persona-authored work note">${esc(_compactHumanLabel(pkWorkNoteText,90))}</strong>`
+    :execDoing?`<strong>${esc(execDoing)}</strong>`:doingHTML;
+  const envBadgeCount=Array.isArray(s.active_environment_ids)
+    ?s.active_environment_ids.length:environments.length;
+  const pkTypeRow=`<div class="pk-typerow">`
+    +(cogStats?.model?`<span class="pk-type model" title="model in the public cognition doc">${icon('mode','ico-sm')}<span>${esc(cogStats.model)}</span></span>`:'')
+    +`<span class="pk-type envs" title="environment memberships">${icon('box','ico-sm')}<span>${envBadgeCount} env${envBadgeCount===1?'':'s'}</span></span>`
+    +`</div>`;
+  const pkStat=(value,label,title)=>value!=null
+    ?`<span class="pk-stat" title="${esc(title)}"><b>${esc(value)}</b><small>${esc(label)}</small></span>`:'';
+  const pkStatRow=cogStats?`<div class="pk-statrow" aria-label="public cognition counters">`
+    +pkStat(cogStats.ep,'EP','brain episodes')
+    +pkStat(cogStats.fr,'FR','brain fragments')
+    +pkStat(cogStats.tl,'TL','acquired tools')
+    +pkStat(cogStats.ev,'EV','brain evolution applications')
+    +`</div>`:'';
+  const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
+    :identityPending?icon('check','ico-sm')+' profile verified · name pending'
+    :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
+    :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
+  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
+    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
+    +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(pkName)}</h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
-    +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(name)}" aria-label="focus on ${esc(name)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
-    +aboutHTML+capabilityHTML+authoredWorkHTML+environmentHTML+currentTaskHTML+`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`
+    +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(pkName)}" aria-label="focus on ${esc(pkName)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
+    +`<figure class="pk-art">${_personaAvatarHTML(personaKey,{identityVerified})}<i class="pc-dot ${dotCls}" aria-hidden="true"></i></figure>`
+    +`<span class="pc-name-proof">${proofHTML}</span>`
+    +`<p class="pk-species" title="${esc(speciesTitle)}">${esc(speciesLine)}</p>`
+    +`<section class="pc-current pk-doing-face"><span class="pc-current-label">Doing now${pkPulse?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${pkDoingHTML}</div></section>`
+    +pkTypeRow+pkStatRow
+    +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
+    +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
+    +aboutHTML+capabilityHTML+authoredWorkHTML+environmentHTML+currentTaskHTML
+    +(pkWorkNoteText||execDoing?`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
     +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
     +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
+    +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +'</article>';
 }
@@ -7661,16 +7848,13 @@ function _paintVerifiedIdentityShells(host){
     const rawType=(record.capability_summary||[])
       .filter((value)=>value&&value!=='project_workspace').at(-1)||'workspace';
     const type=humanizeMachineKey(rawType);
-    const words=name.split(/\s+/).filter(Boolean);
-    const initials=(words.length>1
-      ?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
-    return `<article class="env-card record-signed" data-envsid="${esc(sid)}" data-envkernel="${esc(kernel)}" data-verification="signed-record" style="--envhue:${_envHue(sid)}" aria-label="environment ${esc(name)}">`
-      +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
-      +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
-      +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE · ${esc(type)}</span>`
-      +`<span class="env-name" data-envrec="${esc(sid)}" data-envkernel="${esc(kernel)}" role="button" tabindex="0">${esc(name)}</span>`
-      +`<span class="env-card-id">SIGNED WORKSPACE IDENTITY</span></div>`
-      +`<span class="env-state ok">verified</span></header>`
+    return `<article class="env-card pk record-signed" data-envsid="${esc(sid)}" data-envkernel="${esc(kernel)}" data-verification="signed-record" style="--envhue:${_envHue(sid)}" aria-label="environment ${esc(name)}">`
+      +`<div class="env-card-foil" aria-hidden="true"></div>`
+      +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
+      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(sid)}" data-envkernel="${esc(kernel)}" role="button" tabindex="0" title="open ${esc(name)}">${esc(name)}</h3>`
+      +`<div class="pc-badges"><span class="env-state ok">verified</span></div></header>`
+      +`<figure class="pk-art env">${identiconSVG(sid,{className:'pk-identicon env',title:`workspace identicon for ${name}`})}</figure>`
+      +`<span class="env-kicker">SHARED WORKSPACE · ${esc(type)} · SIGNED IDENTITY</span>`
       +`<div class="env-card-empty">Loading people, current work, and files…</div>`
       +`<div class="env-card-footer"><span>Workspace identity verified</span><span>Details loading</span></div></article>`;
   }).join('');
@@ -7814,6 +7998,16 @@ async function refreshSystemView(){
       b.members.forEach((m)=>assigned.add(m));
       if(!b.status) b.status=ed.status||'';
       b.fromExport=true;
+    }
+    if(exportMatches){
+      // Environment-authored display title from the export's
+      // environment_identity. Presentation only (bounded + escaped at render);
+      // the verified record label remains the workspace's identity authority.
+      const exportIdentity=ed.environment_identity;
+      const exportTitle=exportIdentity&&typeof exportIdentity==='object'
+        &&!Array.isArray(exportIdentity)?String(exportIdentity.title||'').trim():'';
+      if(exportTitle&&!/[\u0000-\u001f\u007f]/u.test(exportTitle))
+        b.exportTitle=exportTitle.slice(0,120);
     }
     const manifestRel=b.artifactManifestRel||(exportMatches&&ed.artifact_manifest)||'';
     if(manifestRel){
@@ -7995,21 +8189,55 @@ async function refreshSystemView(){
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
     const membershipRow=b.members.length?'':'<div class="env-card-empty">Waiting for the first participant</div>';
-    const type=String(b.type||'workspace').replace(/_/g,' '), words=String(b.name||'workspace').trim().split(/\s+/).filter(Boolean);
-    const initials=(words.length>1?(words[0][0]+words[words.length-1][0]):words[0]?.slice(0,2)||'EN').toUpperCase();
-    return `<article class="env-card record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(b.name)}">`
-      +`<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">`
-      +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
-      +`<div class="env-identity"><span class="env-kicker">SHARED WORKSPACE · ${esc(type)}</span>`
-      +`<span class="env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0">${esc(b.name)}</span>`
-      +`<span class="env-card-id">${b.live?'UPDATES LIVE':'VERIFIED WORKSPACE'}</span></div>`
-      +`<span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span></header>`
+    const type=String(b.type||'workspace').replace(/_/g,' ');
+    // Environment-authored title (export environment_identity.title) leads the
+    // name bar; the verified record label stays as the identity in the tooltip.
+    const envName=b.exportTitle||b.name;
+    // Mechanical task facts from the signed task discovery record for this
+    // environment/run: task_state + acceptance_state capability tokens.
+    const facts=_pkTaskFacts(b.kernel,b.sid,b.run||'');
+    const acceptChip=facts?.acceptance?`<span class="pk-accept" title="acceptance state from the signed task record">${esc(facts.acceptance.replace(/_/g,' '))}</span>`:'';
+    // DOING NOW: task lifecycle state + active model calls from the verified
+    // public environment telemetry feed (model_status.active_calls).
+    const envFeedDoc=_retainedVerifiedEntityFeed('environment',b.sid,b.kernel);
+    const envActiveCalls=telemetryActiveCalls(envFeedDoc||{}).length;
+    const taskState=String(facts?.state||'').replace(/_/g,' ');
+    const doingBits=[taskState?`task ${taskState}`:'',
+      envActiveCalls?`${envActiveCalls} model call${envActiveCalls===1?'':'s'} running`:''].filter(Boolean);
+    const envDoing=doingBits.length?doingBits.join(' · ')
+      :(b.live?'live updates streaming':String(output.statusTxt||'available').toLowerCase());
+    // HAVING row: members (count + up to five deterministic mini identicons),
+    // mounted tool chips (tool-kind discovery records), current files + bytes.
+    const memberMinis=b.members.slice(0,5).map((personaKey)=>{ const mref=_personaRef(personaKey);
+      return `<span class="pk-mini" title="${esc(_signedPersonaNameFor(personaKey))}">${identiconSVG(mref.sid,{className:'pk-identicon mini'})}</span>`; }).join('');
+    const tools=_pkEnvTools(b.kernel,b.sid);
+    const toolChips=tools.slice(0,4).map((tool)=>`<span class="pk-tool"${tool.recordId?` data-artid="${esc(tool.recordId)}" role="button" tabindex="0"`:''} title="persona-acquired tool record">${esc(tool.name)}</span>`).join('')
+      +(tools.length>4?`<span class="pk-tool more">+${tools.length-4}</span>`:'');
+    const liveState=b.run?liveArtifactState(b.base,b.run):null;
+    const liveBytes=liveState?.files?[...liveState.files.values()]
+      .reduce((total,file)=>total+(Number(file.size_bytes)||0),0):null;
+    const fileCount=output.metaFiles||0;
+    return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
+      +`<div class="env-card-foil" aria-hidden="true"></div>`
+      +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
+      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${b.exportTitle?`environment-authored title · verified record label: ${esc(b.name)}`:`open ${esc(envName)}`}">${esc(envName)}</h3>`
+      +`<div class="pc-badges"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span>${acceptChip}</div></header>`
+      +`<figure class="pk-art env">${identiconSVG(b.sid,{className:'pk-identicon env',title:`workspace identicon for ${envName}`})}</figure>`
+      +`<span class="env-kicker">SHARED WORKSPACE · ${esc(type)} · ${b.live?'UPDATES LIVE':'VERIFIED IDENTITY'}</span>`
+      +`<section class="pk-having"><span class="pc-current-label">Having</span><div class="pk-having-row">`
+      +`<span class="pk-have members" title="participants"><span class="pk-minis">${memberMinis}</span><b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
+      +(toolChips?`<span class="pk-have tools" title="mounted persona-acquired tools">${toolChips}</span>`:'')
+      +`<span class="pk-have files" title="current shared files${liveBytes!=null?' · live workspace bytes':''}"><b>${fileCount}</b><small>file${fileCount===1?'':'s'}${liveBytes?` · ${fmtBytes(liveBytes)}`:''}</small></span>`
+      +`</div></section>`
+      +`<section class="pc-current pk-doing-face env"><span class="pc-current-label">Doing now${envActiveCalls?' <i class="pk-pulse" aria-hidden="true" title="model calls running"></i>':''}</span><div class="pc-doing"><strong>${esc(_sentenceStart(envDoing))}</strong></div></section>`
       +`<section class="env-card-stats" aria-label="workspace facts">`
       +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
       +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
       +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>updates · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`</section>${membershipRow}${network.html}${liveRow}${output.artRow}<div class="env-card-footer"><span>${b.live?'People and files update live':'Workspace profile verified'}</span><span>Open for full history</span></div></article>`;
+      +`</section>${membershipRow}`
+      +`<details class="pk-dossier"><summary>Workspace activity · people · files</summary>${network.html}${liveRow}${output.artRow}</details>`
+      +`<div class="env-card-footer"><span>${b.live?'People and files update live':'Workspace profile verified'}</span><span>Open for full history</span></div></article>`;
   };
   // (3) Preserve every exact environment identity. Shared titles, rosters,
   // tasks, or run references are observations, never authority to collapse one
@@ -12453,7 +12681,7 @@ function wire(){
     // Verification disclosures inside a persona card are independently
     // interactive; opening one must not also navigate away to the card drawer.
     const disclosure=e.target.closest('details');
-    if(disclosure&&!e.target.closest('[data-live-current-file],[data-current-artifact-path],[data-artid]')){
+    if(disclosure&&!e.target.closest('[data-live-current-file],[data-current-artifact-path],[data-artid],[data-envrec],[data-live-output-run]')){
       e.stopPropagation(); return;
     }
     const liveFile=e.target.closest('[data-live-current-file]'); if(liveFile){ e.preventDefault(); e.stopPropagation();
