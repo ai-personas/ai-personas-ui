@@ -405,6 +405,24 @@ function compact(value,maximum=112){
   return text.length<=maximum?text:`${text.slice(0,Math.max(1,maximum-1)).trimEnd()}…`;
 }
 
+// Deterministic identicon (same 5x5 mirrored-grid algorithm as the full app):
+// stable per-id art from the identifier hash alone, no persona-authorship claim.
+function identiconHash(value){ let h=2166136261>>>0;
+  for(const ch of String(value||'')){ h^=ch.codePointAt(0); h=Math.imul(h,16777619)>>>0; }
+  return h>>>0; }
+function identiconSVG(id){
+  let h=identiconHash(id);
+  const next=()=>{ h=Math.imul(h^(h>>>15),2246822519)>>>0;
+    h=Math.imul(h^(h>>>13),3266489917)>>>0; return (h^=h>>>16)>>>0; };
+  const hue=identiconHash(`hue:${id}`)%360;
+  const cells=[];
+  for(let x=0;x<3;x++) for(let y=0;y<5;y++) if(next()%2===1){
+    cells.push([x,y]); if(x<2) cells.push([4-x,y]); }
+  if(!cells.length) cells.push([2,1],[1,2],[2,2],[3,2],[2,3]);
+  const rects=cells.map(([x,y])=>`<rect x="${3+x*10}" y="${3+y*10}" width="10" height="10" rx="1.5"/>`).join('');
+  return `<svg class="pk-identicon" viewBox="0 0 56 56" role="img" aria-label="deterministic identicon derived from the identifier" style="--pk-idhue:${hue}"><rect class="pk-id-bg" x="0" y="0" width="56" height="56" rx="10"/><g class="pk-id-fg">${rects}</g></svg>`;
+}
+
 function personaCard(row,kernelId,index,{offline=false,storedAt=''}={}){
   const hue=(Array.from(row.id).reduce((sum,char)=>sum+char.codePointAt(0),0)+index*29)%360;
   const when=storedAt?new Date(storedAt).toLocaleString():'an earlier visit';
@@ -412,7 +430,7 @@ function personaCard(row,kernelId,index,{offline=false,storedAt=''}={}){
     +'<div class="pc-card-shine" aria-hidden="true"></div>'
     +`<div class="pc-card-edition"><span>${offline?'OFFLINE HISTORY':'✓ VERIFIED PROFILE'}</span><span>${offline?'NOT LIVE':'IDENTITY FIRST'}</span></div>`
     +'<header class="pc-profile">'
-    +`<span class="pc-avatar" data-avatar-state="identity-first" aria-label="${offline?'portrait body is not retained in offline history':'portrait loads with the full persona view'}"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${offline?(row.avatar_available?'portrait offline':'portrait unavailable'):'portrait loading'}</small></span></span>`
+    +`<span class="pc-avatar" data-avatar-state="identity-first" aria-label="${offline?'portrait body is not retained in offline history':'portrait loads with the full persona view'}"><span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(row.id)}<small>${offline?(row.avatar_available?'portrait offline':'portrait unavailable'):'portrait loading'}</small></span></span>`
     +'<i class="pc-dot off" aria-hidden="true"></i>'
     +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">${offline?'historical signatures rechecked':'✓ signed identity verified'}</span>`
     +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(row.description||'Self-description still forming')}</strong></span></div>`
