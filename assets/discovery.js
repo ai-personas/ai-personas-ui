@@ -1289,7 +1289,9 @@ const P2P_BOOTSTRAP_LIMITS=Object.freeze({maxKnown:64,maxCandidatesPerSource:256
   maxQueue:16,maxConcurrent:2,dialTimeoutMs:5000,retryBaseMs:5000,
   retryMaxMs:60000,successfulRedialMs:60000});
 const PORTAL_P2P_HINTS_MAX_BYTES=16*1024;
-const PORTAL_P2P_HINTS_URL=new URL('../p2p-bootstrap-hints.json?v=20260718-bootstrap-commons-v4',import.meta.url).href;
+// Served beside the module so node-served shells (which mount only assets/ +
+// index.html) stop 404ing; the GitHub Pages mirror keeps a root-level copy.
+const PORTAL_P2P_HINTS_URL=new URL('./p2p-bootstrap-hints.json?v=20260822-assets-path-v5',import.meta.url).href;
 const P2P_ROUTE_LIMITS=Object.freeze({maxCandidatesPerResolution:16,
   maxReconciliationsPerJob:8,maxRouteAttemptsPerSource:4,maxMultiaddrsPerProvider:8,
   maxRendezvousBucketsPerRefresh:3,
@@ -11504,9 +11506,110 @@ async function renderPlain(host,ctx){
   if(trunc) host.appendChild(el('div','fv-note','first 20 KB'));
   host.appendChild(renderPlainTextWithLinks(shown,document));
 }
+// GeoJSON: a real 2-D preview instead of the code view. Planar fit-to-viewbox
+// projection (persona-authored plans use planar feet/metres, not lon/lat);
+// Polygon/MultiPolygon rings are drawn, other geometry kinds are counted.
+const GEOJSON_LIMITS=Object.freeze({maxFeatures:500,maxRingPoints:4096,maxTotalPoints:120000});
+const GEOJSON_COLOURS=Object.freeze(['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2','#56b5ff']);
+function _geojsonRings(geometry){
+  const type=String(geometry?.type||'');
+  const polygons=type==='Polygon'&&Array.isArray(geometry.coordinates)?[geometry.coordinates]
+    :type==='MultiPolygon'&&Array.isArray(geometry.coordinates)?geometry.coordinates:[];
+  const rings=[];
+  for(const polygon of polygons){ if(!Array.isArray(polygon)) continue;
+    for(const ring of polygon){ if(!Array.isArray(ring)||ring.length<3) continue;
+      const points=[];
+      for(const position of ring.slice(0,GEOJSON_LIMITS.maxRingPoints)){
+        const x=Number(position?.[0]),y=Number(position?.[1]);
+        if(Number.isFinite(x)&&Number.isFinite(y)) points.push({x,y});
+      }
+      if(points.length>=3) rings.push(points);
+    }
+  }
+  return rings;
+}
+async function renderGeojson(host,ctx){
+  ctx.assertCurrent?.();
+  let doc; try{ doc=JSON.parse(String(ctx.text||'')); }
+  catch(_error){ throw new Error('GeoJSON body is not valid JSON'); }
+  const features=doc?.type==='FeatureCollection'&&Array.isArray(doc.features)?doc.features
+    :doc?.type==='Feature'?[doc]
+    :doc?.type&&doc.coordinates?[{type:'Feature',geometry:doc,properties:{}}]:null;
+  if(!features) throw new Error('no FeatureCollection, Feature, or geometry found');
+  const shown=features.slice(0,GEOJSON_LIMITS.maxFeatures);
+  const drawn=[]; let skippedKinds=0,totalPoints=0;
+  for(let index=0;index<shown.length;index++){
+    const feature=shown[index]; if(!feature||typeof feature!=='object') continue;
+    const geometry=feature.geometry&&typeof feature.geometry==='object'?feature.geometry:feature;
+    const rings=_geojsonRings(geometry);
+    if(!rings.length){ if(geometry?.type) skippedKinds++; continue; }
+    const kept=[];
+    for(const ring of rings){
+      if(totalPoints+ring.length>GEOJSON_LIMITS.maxTotalPoints) break;
+      totalPoints+=ring.length; kept.push(ring);
+    }
+    if(!kept.length) break;
+    const properties=feature.properties&&typeof feature.properties==='object'?feature.properties:{};
+    const name=String(properties.name??'').trim();
+    const areaSf=properties.area_sf;
+    const label=name||(areaSf!==undefined&&areaSf!==null&&areaSf!==''?`${areaSf} sf`:'');
+    drawn.push({rings:kept,label:label.slice(0,60),index});
+  }
+  ctx.assertCurrent?.(); host.innerHTML='';
+  const card=el('div','fv-card');
+  card.appendChild(el('div','fv-cardhd','GeoJSON · 2-D preview'));
+  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label));
+    row.appendChild(el('span','v2',value)); card.appendChild(row); };
+  add('Features',String(features.length)+(features.length>shown.length?` · first ${shown.length} shown`:''));
+  add('Polygons drawn',String(drawn.length)||'0');
+  if(skippedKinds) add('Other geometry',`${skippedKinds} feature${skippedKinds===1?'':'s'} without Polygon/MultiPolygon geometry (not drawn)`);
+  if(!drawn.length){
+    card.appendChild(el('div','fv-note','No Polygon or MultiPolygon geometry was found; showing the bounded source instead.'));
+    host.appendChild(card);
+    host.appendChild(plainPre(String(ctx.text||'').slice(0,64*1024),'first 64 KB'));
+    return;
+  }
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const feature of drawn) for(const ring of feature.rings) for(const point of ring){
+    minX=Math.min(minX,point.x); maxX=Math.max(maxX,point.x);
+    minY=Math.min(minY,point.y); maxY=Math.max(maxY,point.y);
+  }
+  if(maxX===minX){ minX-=1; maxX+=1; } if(maxY===minY){ minY-=1; maxY+=1; }
+  add('Bounds',`${_cadFormatNumber(maxX-minX)} × ${_cadFormatNumber(maxY-minY)} (planar units from the file)`);
+  card.appendChild(el('div','fv-note','The browser drew Polygon/MultiPolygon rings from the fetched GeoJSON on a planar fit-to-view projection (no geodesy). The download remains the authoritative source.'));
+  host.appendChild(card);
+  const width=1000,padding=32;
+  const aspect=(maxY-minY)/(maxX-minX);
+  const height=Math.max(360,Math.min(760,Math.round((width-padding*2)*aspect+padding*2)));
+  const scale=Math.min((width-padding*2)/(maxX-minX),(height-padding*2)/(maxY-minY));
+  const px=(x)=>padding+(x-minX)*scale, py=(y)=>height-padding-(y-minY)*scale;
+  const svg=svgEl('svg',{class:'fv-geo',viewBox:`0 0 ${width} ${height}`,role:'img',
+    'aria-label':`${ctx.title} GeoJSON polygon preview`});
+  svg.appendChild(svgEl('rect',{x:0,y:0,width,height,class:'fv-geo-bg'}));
+  const labels=[];
+  for(const feature of drawn){
+    const colour=GEOJSON_COLOURS[feature.index%GEOJSON_COLOURS.length];
+    for(const ring of feature.rings){
+      const path=ring.map((point,index)=>`${index?'L':'M'}${px(point.x).toFixed(2)} ${py(point.y).toFixed(2)}`).join(' ')+' Z';
+      svg.appendChild(svgEl('path',{d:path,class:'fv-geo-poly',stroke:colour,fill:colour}));
+    }
+    if(feature.label){
+      const ring=feature.rings[0];
+      const cx=ring.reduce((total,point)=>total+point.x,0)/ring.length;
+      const cy=ring.reduce((total,point)=>total+point.y,0)/ring.length;
+      labels.push({x:px(cx),y:py(cy),text:feature.label});
+    }
+  }
+  for(const label of labels.slice(0,120)){
+    const node=svgEl('text',{x:label.x.toFixed(2),y:label.y.toFixed(2),class:'fv-geo-label',
+      'text-anchor':'middle'});
+    node.textContent=label.text; svg.appendChild(node);
+  }
+  const wrap=el('div','fv-geo-wrap'); wrap.appendChild(svg); host.appendChild(wrap);
+}
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
   dxf:renderDxf,cad3d:renderCad3d,openscad:renderOpenScad,code:renderCode,pdf:renderPdf,archive:renderArchive,
-  plain:renderPlain,generic:renderGeneric };
+  geojson:renderGeojson,plain:renderPlain,generic:renderGeneric };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);

@@ -188,6 +188,7 @@ export function selectDeclaredArtifactRenderer(mediaKind) {
   else if(mediaType.startsWith('video/')) id='video';
   else if(mediaType==='application/pdf') id='pdf';
   else if(ARCHIVE_MEDIA_TYPES.has(mediaType)) id='archive';
+  else if(mediaType==='application/geo+json') id='geojson';
   else if(mediaType==='application/json'||mediaType==='application/x-ndjson'
     ||mediaType==='application/sql'||mediaType==='application/yaml'
     ||mediaType==='application/toml'||mediaType.endsWith('+json')) id='code';
