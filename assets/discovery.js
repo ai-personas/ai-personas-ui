@@ -7008,8 +7008,14 @@ function _pkCognitionProjection(doc){
     &&!Array.isArray(doc.current_work_state)?doc.current_work_state:null;
   const workNote=workState&&workState.work_note&&typeof workState.work_note==='object'
     &&!Array.isArray(workState.work_note)?workState.work_note:null;
+  const envIds=new Set();
+  for(const call of calls){ const eid=String(call?.environment_id||'').trim();
+    if(eid&&envIds.size<64) envIds.add(eid); }
+  const workEnv=String(workState?.environment_id||'').trim();
+  if(workEnv) envIds.add(workEnv);
   return {model,ep:_pkCount(doc.brain_episode_count),fr:_pkCount(doc.brain_fragment_count),
-    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),workNote};
+    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),workNote,
+    envCount:envIds.size};
 }
 function _pkBaseForKernel(kernel){
   const want=String(kernel||'');
@@ -7324,7 +7330,8 @@ function renderPersonaCard(pid,kernel='',context={}){
     ?`<strong title="persona-authored work note">${esc(_compactHumanLabel(pkWorkNoteText,90))}</strong>`
     :execDoing?`<strong>${esc(execDoing)}</strong>`:doingHTML;
   const envBadgeCount=Array.isArray(s.active_environment_ids)
-    ?s.active_environment_ids.length:environments.length;
+    ?s.active_environment_ids.length
+    :(environments.length||cogStats?.envCount||0);
   const pkTypeRow=`<div class="pk-typerow">`
     +(cogStats?.model?`<span class="pk-type model" title="model in the public cognition doc">${icon('mode','ico-sm')}<span>${esc(cogStats.model)}</span></span>`:'')
     +`<span class="pk-type envs" title="environment memberships">${icon('box','ico-sm')}<span>${envBadgeCount} env${envBadgeCount===1?'':'s'}</span></span>`
