@@ -2542,3 +2542,121 @@ body{overflow-x:hidden;overflow-y:auto}
 .env-card>.owned-outputs .artifact-group-copy small{display:none}
 .pcard.pk>.owned-outputs .artifact-file-group>summary,
 .env-card>.owned-outputs .artifact-file-group>summary{gap:7px;padding:7px 9px}
+
+/* ============================================================================
+   POKéDEX CHROME — the non-card components join the trading-card system.
+   One shared plate language (steel face, top-light bevel, gold caps labels,
+   energy-pill controls) across the header, scope bar, mission dock,
+   constellation, section furniture, footer, drawer and log modal.
+   ========================================================================= */
+:root{
+  --pkx-gold:#e3c05c;
+  --pkx-plate:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,0) 46%),
+    linear-gradient(165deg,#141f30,#0b1422 58%,#0d1626);
+  --pkx-plate-line:1px solid rgba(148,166,190,.22);
+  --pkx-bevel:inset 0 1px 0 rgba(255,255,255,.09),inset 0 -1px 0 rgba(0,0,0,.5);
+}
+
+/* ---- header: the device faceplate ---- */
+.vitals{border-radius:18px;border:var(--pkx-plate-line);background:var(--pkx-plate);
+  box-shadow:var(--pkx-bevel),0 16px 40px rgba(0,0,0,.4)}
+.vitals::after{content:'';position:absolute;inset:auto 18px -1px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--pkx-gold) 65%,transparent),transparent)}
+.livedot{width:15px;height:15px;border:2px solid rgba(255,255,255,.25);
+  box-shadow:0 0 12px currentColor,inset 0 1px 2px rgba(255,255,255,.35)}
+.brandmark .vsub{color:color-mix(in srgb,var(--pkx-gold) 70%,var(--mut));letter-spacing:.22em}
+.verify-badge{border-radius:999px;border:1px solid color-mix(in srgb,var(--up) 45%,var(--line2));
+  background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 55%),rgba(6,14,23,.9);
+  box-shadow:var(--pkx-bevel)}
+.vcounts{border-radius:12px;background:rgba(4,10,18,.55);box-shadow:var(--pkx-bevel)}
+.vitals .btn,.header-tools-toggle,.header-toggle{border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.015) 52%),rgba(10,18,30,.92);
+  box-shadow:var(--pkx-bevel)}
+.vitals .btn:active{transform:translateY(1px)}
+#q{border-radius:999px;background:rgba(4,10,18,.72);box-shadow:inset 0 1px 3px rgba(0,0,0,.5)}
+
+/* ---- scope bar + kernels: energy badges ---- */
+.globalbar{border-radius:14px;border:var(--pkx-plate-line);background:var(--pkx-plate);box-shadow:var(--pkx-bevel)}
+.network-scope,.globalbar-list [data-kernel]{border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),transparent 55%),rgba(8,16,27,.9);
+  box-shadow:var(--pkx-bevel)}
+.network-scope.on{border-color:color-mix(in srgb,var(--accent) 60%,var(--line2));
+  box-shadow:var(--pkx-bevel),0 0 14px color-mix(in srgb,var(--accent) 30%,transparent)}
+
+/* ---- mission dock + input requests: card-plate strips ---- */
+.missions,.input-requests{border-radius:16px;border:var(--pkx-plate-line);
+  background:var(--pkx-plate);box-shadow:var(--pkx-bevel),0 14px 34px rgba(0,0,0,.35);overflow:hidden}
+.mission-summary,.input-request-summary{background:linear-gradient(90deg,rgba(255,255,255,.04),transparent 60%)}
+.mission-eyebrow,.input-request-eyebrow{color:color-mix(in srgb,var(--pkx-gold) 72%,var(--mut));
+  font:700 8px/1.2 var(--mono);letter-spacing:.16em}
+.mission-summary-icon,.input-request-summary-icon{width:22px;height:22px;display:grid;place-items:center;
+  border-radius:50%;border:1px solid rgba(255,255,255,.16);
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.6),color-mix(in srgb,var(--accent) 70%,#fff0) 40%,#0a1424 85%);
+  color:transparent;box-shadow:0 0 10px color-mix(in srgb,var(--accent) 40%,transparent)}
+
+/* ---- constellation: the map screen ---- */
+.constellation{border-radius:16px;border:var(--pkx-plate-line);background:var(--pkx-plate);
+  box-shadow:var(--pkx-bevel),0 14px 34px rgba(0,0,0,.35)}
+.con-title{color:color-mix(in srgb,var(--pkx-gold) 72%,var(--dim));letter-spacing:.18em}
+.scope-pill{border-radius:999px;box-shadow:var(--pkx-bevel)}
+#sysGraph{border-radius:12px;background:
+  radial-gradient(90% 80% at 50% 0%,rgba(86,181,255,.06),transparent 60%),
+  repeating-linear-gradient(0deg,rgba(255,255,255,.02) 0 1px,transparent 1px 16px),
+  repeating-linear-gradient(90deg,rgba(255,255,255,.016) 0 1px,transparent 1px 16px),#060d18}
+
+/* ---- section furniture: set labels in the binder ---- */
+.section-kicker{display:inline-flex;align-items:center;gap:6px;
+  color:color-mix(in srgb,var(--pkx-gold) 72%,var(--int))}
+.section-kicker::before{content:'◆';font-size:8px;color:var(--pkx-gold);
+  text-shadow:0 0 6px color-mix(in srgb,var(--pkx-gold) 55%,transparent)}
+.stage-section-head{border-bottom:1px solid color-mix(in srgb,var(--pkx-gold) 22%,transparent)}
+.stage-summary{border:var(--pkx-plate-line);border-radius:12px;background:var(--pkx-plate);
+  box-shadow:var(--pkx-bevel);padding:9px 14px}
+.window-more{border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.08),transparent 55%),rgba(10,18,30,.92);
+  box-shadow:var(--pkx-bevel)}
+.persona-window-note{border-radius:12px}
+
+/* ---- footer: bottom device bar ---- */
+footer{border-radius:14px 14px 0 0;border:var(--pkx-plate-line);border-bottom:none;
+  background:var(--pkx-plate);box-shadow:var(--pkx-bevel)}
+footer .link,#logbtn{border-radius:999px;padding:3px 11px;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),transparent 55%),rgba(10,18,30,.9);
+  box-shadow:var(--pkx-bevel);text-decoration:none}
+
+/* ---- drawer: an inspected card held up to the light ---- */
+.drawer{border:none;border-radius:22px;padding:9px;
+  background:
+    linear-gradient(325deg,rgba(255,255,255,.14),transparent 38%),
+    repeating-linear-gradient(115deg,rgba(255,255,255,.045) 0 1px,transparent 1px 7px),
+    linear-gradient(158deg,#5b708c,#243447 40%,#1b2939 66%,#4e6480 98%);
+  box-shadow:0 34px 90px rgba(0,0,0,.6)}
+.drawer::before{content:'';position:absolute;inset:9px;z-index:0;border-radius:14px;
+  background:linear-gradient(178deg,#0e1826,#080f1a 58%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.drawer>*{position:relative;z-index:1}
+.drawer-accent{height:3px;border-radius:3px;margin:2px 10px 0;
+  background:linear-gradient(90deg,transparent,var(--pkx-gold),color-mix(in srgb,var(--accent) 70%,transparent),transparent)}
+.drawer-eyebrow{color:color-mix(in srgb,var(--pkx-gold) 72%,var(--mut));letter-spacing:.16em}
+.drawer-head{border-bottom:1px solid rgba(255,255,255,.08)}
+
+/* ---- log modal ---- */
+.logcard{border-radius:18px;border:var(--pkx-plate-line);background:var(--pkx-plate);
+  box-shadow:var(--pkx-bevel),0 30px 80px rgba(0,0,0,.55)}
+
+/* ---- empty state: an open binder slot ---- */
+.empty-card{border:2px dashed color-mix(in srgb,var(--pkx-gold) 34%,var(--line2));border-radius:22px;
+  background:
+    radial-gradient(80% 60% at 50% 0%,color-mix(in srgb,var(--pkx-gold) 6%,transparent),transparent 60%),
+    var(--surface-empty)}
+.empty-card h3{display:flex;align-items:center;gap:8px}
+
+/* proven facts plate (card face) */
+.pc-proven-facts{position:relative;z-index:5;display:grid;gap:6px;margin:10px 14px 0;padding:10px;
+  border:1px solid color-mix(in srgb,var(--pkx-gold) 30%,var(--line));border-radius:11px;
+  background:linear-gradient(125deg,color-mix(in srgb,var(--pkx-gold) 7%,rgba(3,10,17,.9)),rgba(3,10,17,.76))}
+.pc-proven-facts .pc-section-head{margin:0}
+.pc-proven-facts .pc-section-head small{display:inline-flex;align-items:center;gap:4px;color:var(--up)}
+.pc-proven-facts p{margin:0;color:var(--ink);font:500 11px/1.5 var(--sans);overflow-wrap:anywhere}
+.brain-counters{display:flex;flex-wrap:wrap;gap:4px 10px}
+.brain-counters b{color:var(--off-white);font:700 12px/1 var(--mono)}
+@media(max-width:719px){.pc-proven-facts{margin:9px 11px 0}}

@@ -843,8 +843,16 @@ function _rememberPersonaCognitionEvent(event){
 // verification. Keep the latest admitted document for each monitored persona:
 // signed messages and assembled provider output are durable activity history,
 // not presence signals that should disappear when the 30-second live lease ends.
+// Public-cognition schema family: /3 replaced the retired lessons/tactics
+// optimizer surfaces with mechanical brain_* fact counters; both wire shapes
+// verify field-exactly below and render everywhere the other does.
+const PUBLIC_COGNITION_SCHEMAS=new Set([
+  'personaos-persona-public-cognition/2','personaos-persona-public-cognition/3']);
+function _publicCognitionDocOk(doc){
+  return PUBLIC_COGNITION_SCHEMAS.has(doc?.schema)&&doc?.tier==='public';
+}
 function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
-  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public') return false;
+  if(!_publicCognitionDocOk(doc)) return false;
   const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
   const modelProjection=canon([...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>[
     call.model_id,call.requested_purpose,call.environment_id,call.started_at,call.ended_at||'',
@@ -858,7 +866,7 @@ function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',pers
 function _personaModelHistory(personaKey,fallback=[]){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
-  if(doc?.schema!=='personaos-persona-public-cognition/2'||doc?.tier!=='public')
+  if(!_publicCognitionDocOk(doc))
     return fallback;
   const models=[...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>({
     t:Date.parse(call.ended_at||call.started_at||'')||0,
@@ -2177,10 +2185,19 @@ function _telemetryEntitySlug(value){
   return out.replace(/^_+|_+$/g,'')||'unknown';
 }
 function _entityFeedPath(rel){ return String(rel||'').split(/[?#]/,1)[0].replace(/^\/+/, ''); }
-function _freshPublicGeneratedAt(value,now=Date.now()){
+function _freshPublicGeneratedAt(value,now=Date.now(),maxAgeMs=30000){
   const at=Date.parse(String(value||''));
-  return Number.isFinite(at)&&at>=now-30000&&at<=now+30000;
+  return Number.isFinite(at)&&at>=now-maxAgeMs&&at<=now+30000;
 }
+// The kernel regenerates the public cognition document on publication epochs,
+// not per request; between epochs it serves the cached master-signed copy. A
+// 30s freshness gate silently blanked the entire brain surface whenever the
+// node was mid-run, which is exactly the fail-silent observability trap.
+// Verified-but-older snapshots stay renderable and carry their generated_at
+// age on the face. Currency comes from the binding to the CURRENT master key
+// (rotation invalidates the document); this bound only stops indefinite
+// replay of a long-dead node's final snapshot.
+const PUBLIC_COGNITION_MAX_AGE_MS=86400000;
 function _safeEntityMap(value,prefix){
   if(!value||typeof value!=='object'||Array.isArray(value)
       ||Object.keys(value).length>NETWORK_LIMITS.cachedRecords) return false;
@@ -6834,8 +6851,7 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
-  const publicCognition=doc?.schema==='personaos-persona-public-cognition/2'
-    &&doc?.tier==='public';
+  const publicCognition=_publicCognitionDocOk(doc);
   const fastState=S.liveByPersona.get(personaKey)?.currentWorkState;
   const state=publicCognition
     &&doc.current_work_state?.schema==='personaos-persona-work-state-surface/5'
@@ -6869,10 +6885,19 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
       +(summary?`<p>${esc(_compactHumanLabel(summary,280))}</p>`:'')
       +'</div>';
   }
+  const snapshotAge=publicCognition&&doc.generated_at
+    ?` · as of ${_friendlyInstant(doc.generated_at)}`:'';
   const currentHTML=state||latestOutput
     ?`<section class="pc-authored-work"><div class="pc-section-head"><span>Current thinking and work</span>`
-      +`<small>${icon('check','ico-sm')} signed snapshot verified</small></div>${stateHTML}${outputHTML}</section>`:'';
-  return currentHTML+agenticHTML;
+      +`<small>${icon('check','ico-sm')} signed snapshot verified${esc(snapshotAge)}</small></div>${stateHTML}${outputHTML}</section>`:'';
+  // The newest kernel-signed proven facts belong on the face: they are the
+  // clearest "what this persona has actually learned" a visitor can consume.
+  const facts=publicCognition?(doc.proven_facts||[]).slice(-2).reverse():[];
+  const factsHTML=facts.length
+    ?`<section class="pc-proven-facts"><div class="pc-section-head"><span>Proven facts it holds</span>`
+      +`<small>${icon('check','ico-sm')} kernel-signed snapshot</small></div>`
+      +facts.map((fact)=>`<p>${esc(_compactHumanLabel(String(fact),220))}</p>`).join('')+'</section>':'';
+  return currentHTML+factsHTML+agenticHTML;
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -8844,7 +8869,7 @@ function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
 }
 function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=false}={}){
   let h='';
-  const publicCognition=t.schema==='personaos-persona-public-cognition/2';
+  const publicCognition=_publicCognitionDocOk(t);
   const activeCalls=t.active_calls||[];
   const recentCalls=publicCognition?(t.recent_calls||[]):[];
   const callsById=new Map([...recentCalls,...activeCalls]
@@ -9002,6 +9027,18 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         `<div class="think">${esc(String(x.action||x.trigger||''))}`
         +`<div class="l2">${esc(x.source||'manual')} · score ${esc(Number(x.score||0).toFixed(2))} · v${esc(x.version||1)}${x.cohort?' · '+esc(x.cohort):''}</div></div>`).join('');
   }
+  // /3 carries the brain as mechanical fact counters (the retired
+  // lessons/tactics optimizer surfaces are gone); show them as a labeled row.
+  if(Number.isSafeInteger(t.brain_episode_count)){
+    h+=`<div class="l2" style="margin:6px 0 3px">${retainedSnapshot?'Signed brain state in retained public snapshot':'Signed brain state in current public state'}</div>`
+      +`<div class="think brain-counters">`
+      +[['episodes',t.brain_episode_count],['fragments',t.brain_fragment_count],
+        ['bindings',t.brain_fragment_binding_count],
+        ['evolution decisions',t.brain_evolution_decision_count],
+        ['evolution applications',t.brain_evolution_application_count]]
+        .map(([label,value])=>`<span><b>${esc(value)}</b> <span class="l2">${label}</span></span>`).join(' · ')
+      +`</div>`;
+  }
   const facts=t.proven_facts||[];
   if(facts.length){
     h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition
@@ -9056,6 +9093,14 @@ const PUBLIC_PERSONA_COGNITION_FIELDS=Object.freeze([
   'identity_materialization_state','lessons','lifecycle_state','name','persona_id',
   'proven_facts','provisional_outputs','recent_calls','recent_outputs','schema','signature_hex','signing_key_id','tactics','tier',
   'current_work_state','work_state_history',
+].sort());
+const PUBLIC_COGNITION_BRAIN_COUNT_FIELDS=Object.freeze([
+  'brain_episode_count','brain_evolution_application_count','brain_evolution_decision_count',
+  'brain_fragment_binding_count','brain_fragment_count',
+]);
+const PUBLIC_PERSONA_COGNITION_FIELDS_V3=Object.freeze([
+  ...PUBLIC_PERSONA_COGNITION_FIELDS.filter((field)=>field!=='lessons'&&field!=='tactics'),
+  ...PUBLIC_COGNITION_BRAIN_COUNT_FIELDS,
 ].sort());
 const PUBLIC_PERSONA_OUTPUT_FIELDS=Object.freeze([
   'at','audience_persona_ids','authority','author_persona_id','environment_id','kind','text',
@@ -9146,12 +9191,81 @@ const PUBLIC_PERSONA_LOCAL_EXECUTION_FIELDS=Object.freeze([
 ].sort());
 const PUBLIC_PERSONA_WORK_STATE_FIELDS=Object.freeze([
   'active_membership_current','authored_at','automatic_action',
-  'bound_to_latest_observation','causal_disposition','causal_ref_count','causal_refs','environment_id',
+  'bound_to_latest_observation','causal_disposition','causal_ref_count','causal_refs',
+  'disposition_frontier_settlement','environment_id',
   'latest_observed_situation_hash','note_id','persona_id','projection_tier','revision',
   'schema','semantic_interpretation_performed','signature_hex','signature_verified',
-  'signing_key_id','situation_hash','supersedes_work_state_ref','task_id','work_note',
+  'signing_key_id','situation_hash','supersedes_work_state_ref','task_id',
+  'terminal_frontier_bound','work_note',
   'work_state_content_hash','work_state_id',
 ].sort());
+const PUBLIC_WORK_STATE_SETTLEMENT_FIELDS=Object.freeze([
+  'authenticated_action_count','authored_situation_hash','automatic_action_selected',
+  'bound_to_latest_observation','disposition_action_identity','disposition_kind','environment_id',
+  'independent_effect_count','lineage_event_id','persona_id','preceding_effect_action_identities',
+  'preceding_effect_count','preceding_effect_manifest_hash','read_only_action_count',
+  'read_only_action_identities','read_only_action_manifest_hash','response_publication_count',
+  'response_publication_hashes','schema','semantic_interpretation_performed',
+  'settled_situation_hash','settled_situation_lineage_event_id','settled_workspace_state_signature',
+  'settlement_hash','source_wake_event_id','task_id','work_state_content_hash','work_state_id',
+  'workspace_changed_in_authoring_turn',
+].sort());
+const PUBLIC_SETTLEMENT_ACTION_IDENTITY_FIELDS=Object.freeze([
+  'action_descriptor_hash','action_dispatch_descriptor_hash','action_event_id','action_hash',
+  'action_id','action_invocation_id','action_name','replication_effect_descriptors','schema',
+].sort());
+function _validPublicSettlementActionIdentity(value){
+  return _exactObjectFields(value,PUBLIC_SETTLEMENT_ACTION_IDENTITY_FIELDS)
+    &&value.schema==='personaos-authenticated-action-identity/2'
+    &&['action_id','action_invocation_id','action_name','action_event_id']
+      .every((field)=>_safePublicCognitionAtom(value[field],512))
+    &&['action_descriptor_hash','action_dispatch_descriptor_hash','action_hash']
+      .every((field)=>value[field]===''||SHA256_CONTENT_RE.test(String(value[field]||'')))
+    &&Array.isArray(value.replication_effect_descriptors)
+    &&value.replication_effect_descriptors.length<=64
+    &&value.replication_effect_descriptors.every((item)=>
+      _exactObjectFields(item,PUBLIC_REPLICATION_EFFECT_DESCRIPTOR_FIELDS)
+      &&_safePublicCognitionAtom(item.effect_kind,128,{required:true})
+      &&_safePublicCognitionAtom(item.schema,128,{required:true}));
+}
+// The settlement is either exactly {} (superseded_or_unbound frontier) or the
+// full /3 record bound to its parent work state. Same fail-closed exact-field
+// style as the rest of the cognition surface.
+function _validPublicWorkStateSettlement(value,parent){
+  if(!value||typeof value!=='object'||Array.isArray(value)) return false;
+  if(!Object.keys(value).length) return true;
+  const hashOk=(item)=>item===''||SHA256_CONTENT_RE.test(String(item||''));
+  const idOk=(item)=>_validPublicSettlementActionIdentity(item)
+    ||_safePublicCognitionAtom(item,512,{required:true});
+  return _exactObjectFields(value,PUBLIC_WORK_STATE_SETTLEMENT_FIELDS)
+    &&value.schema==='personaos-persona-disposition-frontier-settlement/3'
+    &&value.work_state_id===parent.work_state_id
+    &&value.persona_id===parent.persona_id
+    &&value.environment_id===parent.environment_id
+    &&value.task_id===parent.task_id
+    &&value.work_state_content_hash===parent.work_state_content_hash
+    &&_safePublicCognitionAtom(value.disposition_kind,128,{required:true})
+    &&['authored_situation_hash','settled_situation_hash','settled_workspace_state_signature',
+       'read_only_action_manifest_hash','preceding_effect_manifest_hash','settlement_hash']
+      .every((field)=>hashOk(value[field]))
+    &&['settled_situation_lineage_event_id','source_wake_event_id','lineage_event_id']
+      .every((field)=>_safePublicCognitionAtom(value[field],512))
+    &&['authenticated_action_count','independent_effect_count','read_only_action_count',
+       'preceding_effect_count','response_publication_count']
+      .every((field)=>Number.isSafeInteger(value[field])&&value[field]>=0)
+    &&['workspace_changed_in_authoring_turn','semantic_interpretation_performed',
+       'automatic_action_selected','bound_to_latest_observation']
+      .every((field)=>typeof value[field]==='boolean')
+    &&Array.isArray(value.read_only_action_identities)
+    &&value.read_only_action_identities.length<=64
+    &&value.read_only_action_identities.every(idOk)
+    &&Array.isArray(value.preceding_effect_action_identities)
+    &&value.preceding_effect_action_identities.length<=64
+    &&value.preceding_effect_action_identities.every(idOk)
+    &&Array.isArray(value.response_publication_hashes)
+    &&value.response_publication_hashes.length<=64
+    &&value.response_publication_hashes.every(hashOk);
+}
 const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=new Set(['persona_signature','signed_lineage']);
 const PUBLIC_PERSONA_ACTION_OUTPUT_KIND='PERSONA_ACTION_AUTHORED';
 const PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND='PERSONA_COMMUNICATION_AUTHORED';
@@ -9269,7 +9383,9 @@ function _validPublicPersonaWorkState(value,identity){
       ||!value.causal_refs.every((item)=>_validPublicWorkRef(item))
       ||new Set(value.causal_refs).size!==value.causal_refs.length
       ||!Number.isSafeInteger(value.causal_ref_count)
-      ||value.causal_ref_count!==value.causal_refs.length) return false;
+      ||value.causal_ref_count!==value.causal_refs.length
+      ||typeof value.terminal_frontier_bound!=='boolean'
+      ||!_validPublicWorkStateSettlement(value.disposition_frontier_settlement,value)) return false;
   return true;
 }
 function _validPublicPersonaWorkStateHistory(doc,identity){
@@ -9766,9 +9882,10 @@ function _currentInventoryPersona(kernel,pid){
 async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
   const pid=_shortId(personaId), row=_currentInventoryPersona(kernel,pid);
   const identity=signedPersonaIdentity(row);
+  const v3=doc?.schema==='personaos-persona-public-cognition/3';
   if(!row||!identity||identity.canonicalId!==pid
-      ||!_exactObjectFields(doc,PUBLIC_PERSONA_COGNITION_FIELDS)
-      ||doc.schema!=='personaos-persona-public-cognition/2'||doc.tier!=='public'
+      ||!_exactObjectFields(doc,v3?PUBLIC_PERSONA_COGNITION_FIELDS_V3:PUBLIC_PERSONA_COGNITION_FIELDS)
+      ||!_publicCognitionDocOk(doc)
       ||String(doc.persona_id||'')!==identity.signedId||!_safePublicCognitionInstant(doc.generated_at)
       ||!_freshPublicGeneratedAt(doc.generated_at)
       ||!_safePublicCognitionAtom(doc.persona_id,512,{required:true})
@@ -9782,8 +9899,9 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!doc.current_work_state||typeof doc.current_work_state!=='object'
       ||Array.isArray(doc.current_work_state)
       ||!Array.isArray(doc.work_state_history)
-      ||!Array.isArray(doc.lessons)
-      ||!Array.isArray(doc.tactics)
+      ||(v3?PUBLIC_COGNITION_BRAIN_COUNT_FIELDS.some((field)=>
+            !Number.isSafeInteger(doc[field])||doc[field]<0)
+          :(!Array.isArray(doc.lessons)||!Array.isArray(doc.tactics)))
       ||!Array.isArray(doc.proven_facts)
       ||!Array.isArray(doc.evolution_timeline)
       ||!_validPublicPersonaAgenticDevelopment(doc.agentic_development)) return false;
@@ -9800,19 +9918,19 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
   // so cognition cannot invent a name or turn a pending fallback label into one.
   const materializedName=lifecycle.identityFields.name.state==='materialized';
   const expectedName=materializedName?String(row._personaSignedName||''):'';
-  if(materializedName!==Boolean(doc.name)||String(doc.name||'')!==expectedName) return false;
+  if(materializedName!==Boolean(doc.name)||String(doc.name||'')!==expectedName)return false;
   for(const field of ['name','characteristics','avatar']){
     const value=doc.identity_fields[field], expected=lifecycle.identityFields[field];
     if(!_exactObjectFields(value,['persona_authored','state'])
-        ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored) return false;
+        ||value.state!==expected.state||value.persona_authored!==expected.personaAuthored)return false;
   }
-  if(!_validPublicPersonaWorkStateHistory(doc,identity)) return false;
+  if(!_validPublicPersonaWorkStateHistory(doc,identity))return false;
   const callIds=new Set(), callsById=new Map(), flattenedProvisional=[];
   for(const call of [...doc.recent_calls,...doc.active_calls]){
     const recent=call?.status==='finished';
     if((recent?!_validPublicPersonaRecentCall(call,identity,doc.generated_at)
       :!_validPublicPersonaActiveCall(call,identity,doc.generated_at))
-        ||callIds.has(call.call_id)) return false;
+        ||callIds.has(call.call_id))return false;
     callIds.add(call.call_id); callsById.set(call.call_id,call);
     let previousSequence=0,previousObservedAt=Date.parse(call.started_at);
     for(const event of call.provisional_events){
@@ -9827,7 +9945,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
     }
   }
   const expectedProvisional=flattenedProvisional;
-  if(canon(doc.provisional_outputs)!==canon(expectedProvisional)) return false;
+  if(canon(doc.provisional_outputs)!==canon(expectedProvisional))return false;
   // Exact equality to the independently validated nested records proves content
   // integrity without hashing every assistant chunk twice. Close the flattened
   // shape explicitly and bind its transport identifiers to the owning call.
@@ -9837,11 +9955,11 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
         ||event.persona_id!==identity.signedId||event.call_status!==call.status) return false;
   }
   for(const output of doc.recent_outputs)
-    if(!await _validPublicPersonaOutput(output,identity,row)) return false;
-  if(doc.lessons.some((lesson)=>!_validPublicPersonaLesson(lesson))
-      ||doc.tactics.some((tactic)=>!_validPublicPersonaTactic(tactic))
+    if(!await _validPublicPersonaOutput(output,identity,row))return false;
+  if((!v3&&(doc.lessons.some((lesson)=>!_validPublicPersonaLesson(lesson))
+        ||doc.tactics.some((tactic)=>!_validPublicPersonaTactic(tactic))))
       ||doc.proven_facts.some((fact)=>!_safePublicCognitionText(fact,4096,{required:true}))
-      ||doc.evolution_timeline.some((event)=>!_validPublicPersonaEvolution(event))) return false;
+      ||doc.evolution_timeline.some((event)=>!_validPublicPersonaEvolution(event)))return false;
   return true;
 }
 async function refreshThinking(){
@@ -10146,13 +10264,13 @@ function _publicCognitionRows(doc,{kernel=''}={}){
       trustLabel:trust.label,trustTitle:trust.title,
     });
   }
-  for(const lesson of doc.lessons) rows.push({
+  for(const lesson of doc.lessons||[]) rows.push({
     source:'lesson',kind:'COGNITION_LESSON',at:observedAt,scope:'cognition',scopeId:'',
     msg:lesson.action,rationale:[lesson.trigger,lesson.rationale].filter(Boolean).join(' · '),
     cognition:true,ctype:'think',recipients:[],dedup:lesson,observedState:true,
     provenance:{snapshotAt:observedAt},trustLabel:'KERNEL SIGNED SNAPSHOT',
   });
-  for(const tactic of doc.tactics) rows.push({
+  for(const tactic of doc.tactics||[]) rows.push({
     source:'tactic',kind:'COGNITION_TACTIC',at:observedAt,scope:'cognition',scopeId:'',
     msg:tactic.action,rationale:[tactic.trigger,tactic.source].filter(Boolean).join(' · '),
     cognition:true,ctype:'think',recipients:[],dedup:tactic,observedState:true,
@@ -10251,7 +10369,7 @@ async function streamPersonaCognition(options={}){
           :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
         if(accepted){
           t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
-          if(r?.schema==='personaos-persona-public-cognition/2'){
+          if(PUBLIC_COGNITION_SCHEMAS.has(r?.schema)){
             S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
             while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
               S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
@@ -10264,7 +10382,7 @@ async function streamPersonaCognition(options={}){
       if(!read) continue;
       const {candidate,t,usedBase}=read;
       const {key:personaKey,sid,kernel,endpointId}=candidate;
-      const publicCognition=t.schema==='personaos-persona-public-cognition/2';
+      const publicCognition=_publicCognitionDocOk(t);
       if(publicCognition){
         cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
           {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
@@ -13642,11 +13760,11 @@ async function initP2P(){
   // locator while any verified direct/P2P route exists and gives the in-flight
   // peer startup its bounded first-contact opportunity.
   scheduleFastGlobalRefresh(75);
-  await discover();
-  prefetchNodeStatuses();
-  renderMissions();
-  refreshVisibleOpenInputs().catch(()=>{});
-  streamPersonaCognition();
+  // The periodic cadences are armed BEFORE the first full discovery pass
+  // resolves: one slow plane (a busy node, a hanging locator probe) used to
+  // hold the 5s live cadence and persona-cognition streaming hostage forever,
+  // leaving cards without their verified brain/stat surfaces. Every tick body
+  // is idempotent against partial discovery state.
   // periodic live re-discovery (genuinely re-resolves + re-verifies; ticks in new personas)
   setInterval(()=>{
     maintainP2PBootstrapConnectivity().catch(()=>{});
@@ -13663,4 +13781,9 @@ async function initP2P(){
   // newly authored requests visible without waiting for the 15s inventory pass.
   setInterval(()=>{ refreshVisibleOpenInputs().catch(()=>{}); },1500);
   requestAnimationFrame(tick);
+  await discover();
+  prefetchNodeStatuses();
+  renderMissions();
+  refreshVisibleOpenInputs().catch(()=>{});
+  streamPersonaCognition();
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });
