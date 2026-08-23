@@ -9510,8 +9510,30 @@ async function _validPublicPersonaAuthority(output,identity,row){
   }
   return verified;
 }
+const PUBLIC_ATOMIC_ACTION_AUTHORITY_FIELDS=Object.freeze([
+  'authenticated_action','container_event_hash','container_event_id','schema',
+].sort());
+// The kernel may wrap the flat authenticated action in an atomic-projection
+// envelope that names the containing lineage event; consumers unwrap exactly
+// like the node does (node.py reads authority.authenticated_action when the
+// wrapper schema matches). The persona_authority_hash stays bound to the
+// outer object as served.
+function _actionAuthorityPayload(authority){
+  return authority&&typeof authority==='object'&&!Array.isArray(authority)
+    &&authority.schema==='personaos-atomic-persona-action-authority/1'
+    ?authority.authenticated_action:authority;
+}
 async function _validPublicPersonaActionAuthority(output,identity,row){
-  const authority=output.persona_authority;
+  const served=output.persona_authority;
+  let authority=served;
+  if(served&&typeof served==='object'&&!Array.isArray(served)
+      &&served.schema==='personaos-atomic-persona-action-authority/1'){
+    if(!_exactObjectFields(served,PUBLIC_ATOMIC_ACTION_AUTHORITY_FIELDS)
+        ||!_safePublicCognitionAtom(served.container_event_id,512)
+        ||!(served.container_event_hash===''
+          ||SHA256_CONTENT_RE.test(String(served.container_event_hash||'')))) return false;
+    authority=served.authenticated_action;
+  }
   const publicKey=String(row?._personaIdentityPublicKeyHex||'').toLowerCase();
   const signingKeyId=String(row?._personaIdentitySigningKeyId||'');
   const replicationEffects=authority?.replication_effect_descriptors;
@@ -9548,7 +9570,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
       ||Array.isArray(authority.action_arguments)
       ||authority.authored_text!==output.text
       ||`sha256:${await sha256Hex(enc.encode(output.text))}`!==authority.authored_text_hash
-      ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
+      ||`sha256:${await sha256Hex(enc.encode(canon(served)))}`!==output.persona_authority_hash)
     return false;
   const actionIdentity={
     schema:'personaos-authenticated-persona-action-identity/2',
@@ -9887,7 +9909,7 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||!_exactObjectFields(doc,v3?PUBLIC_PERSONA_COGNITION_FIELDS_V3:PUBLIC_PERSONA_COGNITION_FIELDS)
       ||!_publicCognitionDocOk(doc)
       ||String(doc.persona_id||'')!==identity.signedId||!_safePublicCognitionInstant(doc.generated_at)
-      ||!_freshPublicGeneratedAt(doc.generated_at)
+      ||!_freshPublicGeneratedAt(doc.generated_at,Date.now(),PUBLIC_COGNITION_MAX_AGE_MS)
       ||!_safePublicCognitionAtom(doc.persona_id,512,{required:true})
       ||!_safePublicCognitionText(doc.name,512)
       ||!_safePublicCognitionAtom(doc.lifecycle_state,64,{required:true})
@@ -10142,7 +10164,7 @@ function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun
     at:_publicProvenanceAtom(output?.at,80),authority:_publicProvenanceAtom(output?.authority,128),
   };
   if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND){
-    const authority=output.persona_authority||{};
+    const authority=_actionAuthorityPayload(output.persona_authority)||{};
     try{
       const action=JSON.parse(output.text), args=action.arguments||{};
       provenance.action=_publicProvenanceAtom(action.action);
