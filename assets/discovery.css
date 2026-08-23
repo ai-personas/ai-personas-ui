@@ -2470,3 +2470,75 @@ body{overflow-x:hidden;overflow-y:auto}
 @media(prefers-reduced-motion:reduce){
   .pcard:hover,.env-card:hover{transform:none}
 }
+
+/* ============================================================================
+   FACE-SURFACED CONTENT — the consumable story moved out of the dossier.
+   Current task, working-in rooms, the newest persona-authored note/update and
+   published files now sit on the persona card face; environment cards carry
+   their produced file sections. These rules place and compact those sections
+   for the card face; the drawer and dossier keep their original density.
+   ========================================================================= */
+
+/* face placement + compact task row (dossier .pc-current keeps the big orb) */
+.pcard.pk>.pc-current{position:relative;z-index:5;min-height:0;margin:10px 14px 0;
+  padding:8px 11px;border-width:1px;border-radius:11px}
+.pcard.pk>.pc-current::before{content:none}
+.pcard.pk>.pc-current .pc-doing{margin:4px 0 0;font-size:12px}
+.pcard.pk>.pc-environments{position:relative;z-index:5;margin:10px 14px 0;border-width:1px}
+.pcard.pk>.pc-authored-work{margin:10px 14px 0;border-width:1px;padding:10px}
+.pcard.pk>.pc-agentic-development{margin:10px 14px 0}
+.pcard.pk>.owned-outputs{margin:10px 14px 0}
+.env-card>.owned-outputs{position:relative;z-index:5;margin:10px 14px 0}
+
+/* authored work reads as the card's story: clamp runaway paragraphs on the face */
+.pcard.pk>.pc-authored-work .pc-authored-focus,
+.pcard.pk>.pc-authored-work .pc-authored-understanding,
+.pcard.pk>.pc-authored-work .pc-authored-output p{display:-webkit-box;-webkit-line-clamp:3;
+  -webkit-box-orient:vertical;overflow:hidden}
+.pcard.pk>.pc-authored-work .pc-authored-state dl{display:none}
+.pcard.pk>.pc-authored-work .pc-authored-state dl:first-of-type{display:grid}
+
+/* published-file sections on faces: tighter rows, no deep history */
+.pcard.pk>.owned-outputs .current-artifact-file,
+.env-card>.owned-outputs .current-artifact-file{min-height:52px;padding:6px 8px}
+.pcard.pk>.owned-outputs .artifact-revision-history,
+.env-card>.owned-outputs .artifact-revision-history{display:none}
+.pcard.pk>.owned-outputs .artifact-preview-note,
+.env-card>.owned-outputs .artifact-preview-note{margin-top:6px;font-size:8px}
+/* flat lists cap at four rows on a face; the full set stays one click away */
+.pcard.pk>.owned-outputs .current-artifact-list>.current-artifact-file:nth-child(n+5),
+.env-card>.owned-outputs .current-artifact-list>.current-artifact-file:nth-child(n+5){display:none}
+.pcard.pk>.owned-outputs .current-artifact-list:has(>.current-artifact-file:nth-child(5))::after,
+.env-card>.owned-outputs .current-artifact-list:has(>.current-artifact-file:nth-child(5))::after{
+  content:'More files · open the card for the complete verified set';display:block;
+  padding:7px 4px 2px;color:var(--mut);font:700 7.5px/1.2 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;text-align:center}
+/* grouped (8+) lists: keep the format overview, collapse every group on a face */
+.pcard.pk>.owned-outputs .artifact-file-group[open],
+.env-card>.owned-outputs .artifact-file-group[open]{background:rgba(3,9,16,.5)}
+.pcard.pk>.owned-outputs .artifact-group-list .current-artifact-file:nth-child(n+4),
+.env-card>.owned-outputs .artifact-group-list .current-artifact-file:nth-child(n+4){display:none}
+.pcard.pk>.owned-outputs .artifact-group-list:has(>.current-artifact-file:nth-child(4))::after,
+.env-card>.owned-outputs .artifact-group-list:has(>.current-artifact-file:nth-child(4))::after{
+  content:'More in this group · open the card for the complete verified set';display:block;
+  padding:6px 4px;color:var(--mut);font:700 7.5px/1.2 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;text-align:center}
+
+/* faces grew content, so the arena yields a little height */
+.pk-art{min-height:184px}
+.env-card .pk-art{min-height:132px}
+@media(max-width:719px){
+  .pk-art{min-height:150px}
+  .env-card .pk-art{min-height:118px}
+  .pcard.pk>.pc-current,.pcard.pk>.pc-environments,.pcard.pk>.pc-authored-work,
+  .pcard.pk>.pc-agentic-development,.pcard.pk>.owned-outputs,.env-card>.owned-outputs{margin:9px 11px 0}
+}
+/* persona-updates stream on the face: bounded two-row card view, quiet chrome */
+.pcard.pk>.pc-activity{position:relative;z-index:5;margin:10px 14px 0}
+.pcard.pk>.pc-activity ol{margin:6px 0 0}
+.pcard.pk>.pc-diagnostics{position:relative;z-index:5;margin:6px 14px 0}
+/* face artifact groups: label + formats + count on one quiet line */
+.pcard.pk>.owned-outputs .artifact-group-copy small,
+.env-card>.owned-outputs .artifact-group-copy small{display:none}
+.pcard.pk>.owned-outputs .artifact-file-group>summary,
+.env-card>.owned-outputs .artifact-file-group>summary{gap:7px;padding:7px 9px}

@@ -7357,14 +7357,18 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<span class="pc-name-proof">${proofHTML}</span>`
     +`<p class="pk-species" title="${esc(speciesTitle)}">${esc(speciesLine)}</p>`
     +`<section class="pc-current pk-doing-face"><span class="pc-current-label">Doing now${pkPulse?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${pkDoingHTML}</div></section>`
+    // The consumable story lives on the face: the exact task, the rooms the
+    // persona works in, its newest signed thinking/update, and the files it
+    // published. The dossier keeps identity detail and the long activity tail.
+    +currentTaskHTML+environmentHTML+authoredWorkHTML
+    +_personaActivityHTML(acts,personaKey)
     +pkTypeRow+pkStatRow
+    +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
-    +aboutHTML+capabilityHTML+authoredWorkHTML+environmentHTML+currentTaskHTML
+    +aboutHTML+capabilityHTML
     +(pkWorkNoteText||execDoing?`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
-    +_personaActivityHTML(acts,personaKey)
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
-    +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +`<footer class="pk-setline"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kernel" title="host kernel ${esc(ref.kernel)}">${esc(String(ref.kernel||'').replace(/^kernel:/,'').slice(0,12))}</span><span class="pk-set-id" title="persona id ${esc(sid)}">${esc(sid.slice(0,10))}</span></footer>`
@@ -8246,7 +8250,11 @@ async function refreshSystemView(){
       +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>updates · 5m</small></span>`
       +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
       +`</section>${membershipRow}`
-      +`<details class="pk-dossier"><summary>Workspace activity · people · files</summary>${network.html}${liveRow}${output.artRow}</details>`
+      // The workspace's produced files ARE the point of the card: surface the
+      // published/live output sections; the dossier keeps the social graph
+      // and the run lane detail.
+      +output.artRow
+      +`<details class="pk-dossier"><summary>Workspace activity · people</summary>${network.html}${liveRow}</details>`
       +`<div class="env-card-footer"><span>${b.live?'People and files update live':'Workspace profile verified'}</span><span>Open for full history</span></div></article>`;
   };
   // (3) Preserve every exact environment identity. Shared titles, rosters,
