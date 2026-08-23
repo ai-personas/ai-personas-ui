@@ -7339,10 +7339,10 @@ function renderPersonaCard(pid,kernel='',context={}){
   const pkStat=(value,label,title)=>value!=null
     ?`<span class="pk-stat" title="${esc(title)}"><b>${esc(value)}</b><small>${esc(label)}</small></span>`:'';
   const pkStatRow=cogStats?`<div class="pk-statrow" aria-label="public cognition counters">`
-    +pkStat(cogStats.ep,'EP','brain episodes')
-    +pkStat(cogStats.fr,'FR','brain fragments')
-    +pkStat(cogStats.tl,'TL','acquired tools')
-    +pkStat(cogStats.ev,'EV','brain evolution applications')
+    +pkStat(cogStats.ep,'EPISODES','brain episodes')
+    +pkStat(cogStats.fr,'FRAGMENTS','brain fragments')
+    +pkStat(cogStats.tl,'TOOLS','acquired tools')
+    +pkStat(cogStats.ev,'EVOLUTIONS','brain evolution applications')
     +`</div>`:'';
   const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
@@ -7367,6 +7367,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
+    +`<footer class="pk-setline"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kernel" title="host kernel ${esc(ref.kernel)}">${esc(String(ref.kernel||'').replace(/^kernel:/,'').slice(0,12))}</span><span class="pk-set-id" title="persona id ${esc(sid)}">${esc(sid.slice(0,10))}</span></footer>`
     +'</article>';
 }
 
@@ -8233,7 +8234,7 @@ async function refreshSystemView(){
       +`<div class="pc-badges"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span>${acceptChip}</div></header>`
       +`<figure class="pk-art env">${identiconSVG(b.sid,{className:'pk-identicon env',title:`workspace identicon for ${envName}`})}</figure>`
       +`<span class="env-kicker">SHARED WORKSPACE · ${esc(type)} · ${b.live?'UPDATES LIVE':'VERIFIED IDENTITY'}</span>`
-      +`<section class="pk-having"><span class="pc-current-label">Having</span><div class="pk-having-row">`
+      +`<section class="pk-having"><span class="pc-current-label">In this workspace</span><div class="pk-having-row">`
       +`<span class="pk-have members" title="participants"><span class="pk-minis">${memberMinis}</span><b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
       +(toolChips?`<span class="pk-have tools" title="mounted persona-acquired tools">${toolChips}</span>`:'')
       +`<span class="pk-have files" title="current shared files${liveBytes!=null?' · live workspace bytes':''}"><b>${fileCount}</b><small>file${fileCount===1?'':'s'}${liveBytes?` · ${fmtBytes(liveBytes)}`:''}</small></span>`

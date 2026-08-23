@@ -2209,3 +2209,264 @@ body{overflow-x:hidden;overflow-y:auto}
    art window (the 96-120px avatar box must fit icon + up to 3 caption lines) */
 .pk-art .pc-avatar .pk-identicon{width:min(56%,64px)}
 .pk-art .pc-avatar-placeholder{gap:5px}
+
+/* ============================================================================
+   POKéDECK TRADING-CARD SKIN — final override layer.
+   Persona cards read like creature trading cards (frame → name plate → art
+   window → caption → flavor → move rows → labeled stats → set line) and
+   environment cards like stadium cards. Purely presentational: every string,
+   badge and counter underneath stays the honest verified/pending copy the
+   builders emit. Later-in-file rules override the base collectible layer.
+   ========================================================================= */
+
+/* ---- deck grids: card proportions, breathing room, collection numbering ---- */
+.persona-deck{grid-template-columns:repeat(auto-fill,minmax(min(100%,308px),1fr));
+  gap:30px 24px;counter-reset:pkcard;perspective:1700px}
+.environment-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));
+  gap:30px 24px;counter-reset:envcard;perspective:1700px}
+.environment-grid .env-card{counter-increment:envcard}
+
+/* ---- persona card frame: thick type-colored border around a dark face ---- */
+.pcard{--pk-h:var(--avatar-hue,210);--pk-sat:58%;
+  --pk-f1:hsl(var(--pk-h) var(--pk-sat) 64%);
+  --pk-f2:hsl(var(--pk-h) calc(var(--pk-sat)*.9) 34%);
+  --pk-f3:hsl(calc(var(--pk-h) + 42) calc(var(--pk-sat)*.92) 52%);
+  counter-increment:pkcard;
+  max-width:410px;padding:11px 11px 12px;border:none;border-radius:24px;overflow:hidden;
+  background:
+    linear-gradient(325deg,rgba(255,255,255,.16),transparent 38%),
+    repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 1px,transparent 1px 7px),
+    linear-gradient(158deg,var(--pk-f1),var(--pk-f2) 38%,hsl(var(--pk-h) calc(var(--pk-sat)*.8) 26%) 64%,var(--pk-f3) 98%);
+  box-shadow:0 24px 54px rgba(0,0,0,.45),0 4px 14px rgba(0,0,0,.42),
+    inset 0 1px 0 rgba(255,255,255,.32),inset 0 -1px 0 rgba(0,0,0,.45)}
+/* the inner dark face plate the content sits on */
+.pcard::before{content:'';position:absolute;z-index:-1;inset:11px 11px 12px;border:none;border-radius:14px;
+  background:
+    radial-gradient(120% 55% at 50% 0%,color-mix(in srgb,hsl(var(--pk-h) 60% 42%) 16%,transparent),transparent 62%),
+    linear-gradient(178deg,color-mix(in srgb,hsl(var(--pk-h) 45% 26%) 30%,#0a1322),#070e19 58%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.055),inset 0 12px 26px rgba(0,0,0,.5)}
+/* frame bevel hairline */
+.pcard::after{content:'';position:absolute;z-index:7;inset:3px;left:3px;right:3px;top:3px;height:auto;border-radius:21px;
+  border:1px solid rgba(255,255,255,.14);background:none;opacity:1;pointer-events:none;
+  mask:linear-gradient(180deg,#000,transparent 55%);-webkit-mask:linear-gradient(180deg,#000,transparent 55%)}
+.pcard:hover{transform:translateY(-6px) rotateX(1deg);
+  box-shadow:0 34px 74px rgba(0,0,0,.5),0 10px 22px rgba(0,0,0,.4),
+    0 0 30px color-mix(in srgb,var(--pk-f1) 26%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.32)}
+/* identity still materializing → quieter steel frame with amber accents */
+.pcard.identity-pending{--pk-sat:20%}
+.pcard.identity-unpublished{--pk-sat:12%}
+/* persona-authored (signed) name → the holo/gold rare frame */
+.pcard[data-identity-state="named"]{background:
+    linear-gradient(325deg,rgba(255,255,255,.22),transparent 40%),
+    repeating-linear-gradient(115deg,rgba(255,255,255,.07) 0 1px,transparent 1px 6px),
+    linear-gradient(152deg,#efd27a,#a9821f 30%,#e3c05c 50%,#7e5f14 74%,#f4dc8b 100%)}
+.pcard[data-identity-state="named"] .pc-card-shine::after{opacity:.2}
+/* live execution → the whole card glows on the heartbeat */
+.pcard.running{box-shadow:0 24px 54px rgba(0,0,0,.45),
+    0 0 0 2px color-mix(in srgb,var(--up) 60%,transparent),0 0 36px rgba(33,208,122,.3),
+    inset 0 1px 0 rgba(255,255,255,.32)}
+.pcard.running:hover{transform:translateY(-6px) rotateX(1deg)}
+
+/* ---- holo foil sweep (kept subtle; stronger on the rare frame) ---- */
+.pc-card-shine::before{width:46%;height:170%;top:-35%;right:2%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent)}
+.pc-card-shine::after{opacity:.12}
+
+/* ---- edition strip: set banner across the face top ---- */
+.pc-card-edition{margin:0;min-height:0;padding:7px 13px 6px;border-radius:14px 14px 0 0;
+  border-bottom:1px solid rgba(0,0,0,.55);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--pk-f2,#22364e) 46%,rgba(5,11,20,.9)),rgba(5,11,20,.55) 72%);
+  font-size:7.5px;letter-spacing:.14em}
+.pc-card-edition>span:first-child{padding:3px 8px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--pk-f1,hsl(210 60% 64%)) 44%,transparent);
+  background:rgba(2,8,14,.5)}
+
+/* ---- name plate ---- */
+.pk-namebar{margin:10px 13px 0;padding:7px 8px 7px 12px;gap:9px;border-radius:11px;
+  border:1px solid color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 62%)) 38%,var(--line2));
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 58%),
+    linear-gradient(90deg,color-mix(in srgb,var(--pk-f2,hsl(var(--avatar-hue,210) 60% 34%)) 34%,rgba(8,15,26,.94)),rgba(8,15,26,.66))}
+.pk-namebar .pc-name{font-size:19px;font-weight:800;letter-spacing:-.015em}
+.pk-namebar .pc-run,.pk-namebar .pc-idle,.pk-namebar .pc-life{white-space:nowrap}
+
+/* ---- art window: big framed scene, identicon as the creature ---- */
+.pk-art{margin:10px 14px 0;min-height:200px;border:none;border-radius:7px;
+  background:
+    radial-gradient(95% 65% at 50% 0%,color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 58%)) 24%,transparent),transparent 62%),
+    radial-gradient(130% 70% at 50% 112%,color-mix(in srgb,var(--pk-f3,hsl(var(--avatar-hue,210) 70% 52%)) 17%,transparent),transparent 58%),
+    repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 15px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.02) 0 1px,transparent 1px 15px),
+    linear-gradient(180deg,color-mix(in srgb,hsl(var(--pk-h,210) 45% 24%) 44%,#0a1424),#060d18 72%);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 0 0 3px color-mix(in srgb,var(--pk-f1,#3a5a80) 46%,#182238),
+    0 0 0 4px rgba(0,0,0,.55),0 8px 20px rgba(0,0,0,.35)}
+.pk-art::after{background:linear-gradient(150deg,rgba(255,255,255,.09),transparent 30%,transparent 68%,rgba(0,0,0,.34))}
+.pk-art .pc-avatar{width:100%;height:100%;min-height:inherit;border:none;border-radius:0;
+  background:transparent;box-shadow:none}
+.pk-art .pc-avatar::before{display:none}
+.pk-art .pc-avatar img{width:100%;height:100%;object-fit:cover}
+.pk-art .pc-avatar-placeholder{position:relative;display:grid;place-items:center;width:100%;height:100%;padding:0;gap:0}
+.pk-art .pc-avatar .pk-identicon{width:clamp(104px,46%,158px);border-radius:18px;
+  filter:drop-shadow(0 20px 32px rgba(0,0,0,.55))
+    drop-shadow(0 0 30px color-mix(in srgb,hsl(var(--pk-h,210) 85% 60%) 34%,transparent))}
+/* the avatar-state caption becomes a tiny art-credit strip pinned to the frame */
+.pk-art .pc-avatar .pc-avatar-placeholder small,
+.pk-art .pc-avatar[data-avatar-lifecycle] .pc-avatar-placeholder small{position:absolute;left:50%;bottom:7px;
+  transform:translateX(-50%);width:max-content;max-width:calc(100% - 16px);padding:3px 10px;
+  border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  border:1px solid rgba(255,255,255,.09);background:rgba(3,8,15,.78);
+  font:700 6.5px/1.6 var(--mono);letter-spacing:.09em}
+/* soft ground shadow so the identicon reads as standing in the arena */
+.pk-art .pc-avatar-placeholder::after{content:'';position:absolute;z-index:-1;left:50%;bottom:22px;
+  width:46%;height:16px;transform:translateX(-50%);border-radius:50%;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(0,0,0,.55),transparent 72%)}
+.pk-art .pc-dot{right:9px;bottom:9px;width:15px;height:15px;border-width:3px}
+
+/* ---- caption + flavor lines ---- */
+.pcard.pk>.pc-name-proof{margin:8px 14px 0;justify-content:center;letter-spacing:.1em}
+.pk-species{margin:7px 16px 0;padding:5px 8px 6px;
+  border-block:1px solid color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 62%)) 22%,transparent);
+  color:var(--dim);font:italic var(--w-semi) 10.5px/1.45 var(--sans);text-align:center}
+
+/* ---- "Doing now" as the live move row ---- */
+/* the earlier face layer painted its own absolute orb + 51px pad on every
+   .pc-current; the move row draws its inline energy orb instead */
+.pc-current.pk-doing-face::before{content:none}
+.pc-current.pk-doing-face{min-height:0;margin:11px 14px 0;padding:8px 11px;border-radius:11px;
+  border:1px solid color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 62%)) 26%,var(--line2));
+  background:linear-gradient(90deg,color-mix(in srgb,hsl(var(--pk-h,210) 55% 40%) 12%,rgba(4,10,18,.7)),rgba(4,10,18,.5))}
+.pk-doing-face .pc-doing{margin-top:4px}
+.pk-doing-face .pc-doing::before{content:'';flex:0 0 auto;width:13px;height:13px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.85),color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 75% 60%)) 80%,#fff0) 42%,hsl(var(--pk-h,210) 60% 30%) 88%);
+  box-shadow:0 0 8px color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 75% 60%)) 55%,transparent)}
+.env-card .pk-doing-face .pc-doing::before{background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.85),color-mix(in srgb,var(--envhue,var(--intr)) 85%,#fff0) 42%,color-mix(in srgb,var(--envhue,var(--intr)) 55%,#000) 88%);
+  box-shadow:0 0 8px color-mix(in srgb,var(--envhue,var(--intr)) 55%,transparent)}
+.pk-doing-face .pc-doing strong{font-size:12px}
+
+/* ---- energy-type badges ---- */
+.pk-typerow{margin:10px 15px 0;gap:7px}
+.pk-type{min-height:24px;padding:3px 11px;border-radius:999px;font-size:9.5px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 55%),rgba(8,16,27,.9);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
+
+/* ---- labeled stat table (the move-damage strip) ---- */
+.pk-statrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:10px 14px 0;
+  border:1px solid color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 62%)) 24%,var(--line));
+  border-radius:11px;overflow:hidden;background:rgba(4,10,18,.66)}
+.pk-stat{gap:4px;padding:9px 3px 8px;border:none;border-right:1px solid color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 62%)) 14%,var(--line));border-radius:0;background:transparent}
+.pk-stat:last-child{border-right:none}
+.pk-stat b{font:800 17px/1 var(--mono);color:var(--bright)}
+.pk-stat small{font:700 6.4px/1.1 var(--mono);letter-spacing:.13em;color:var(--mut)}
+
+/* ---- dossier box reads as the card text box ---- */
+.pk-dossier{margin:11px 14px 12px;border-radius:11px}
+.pcard.pk .pc-stats{margin:0 14px 10px;justify-content:center}
+
+/* ---- set line: collection number · kernel · id (+ rarity star) ---- */
+.pk-setline{position:relative;z-index:5;display:flex;align-items:center;gap:12px;
+  margin:0 15px 4px;padding:7px 2px 0;border-top:1px solid rgba(255,255,255,.08);
+  color:color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 66%)) 52%,var(--mut));
+  font:700 7.5px/1.2 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.pk-set-no::before{content:'Nº ' counter(pkcard,decimal-leading-zero)}
+.pk-set-id{margin-left:auto}
+.pcard[data-identity-state="named"] .pk-setline::after{content:'★';margin-left:2px;
+  color:#ffd76a;font-size:10px;line-height:1;text-shadow:0 0 8px rgba(255,215,106,.55)}
+
+/* ---- environment (stadium) cards: same frame family, env-colored ---- */
+.env-card{--env-f1:color-mix(in srgb,var(--envhue,var(--intr)) 72%,#dbe7f5);
+  --env-f2:color-mix(in srgb,var(--envhue,var(--intr)) 52%,#0c1a2c);
+  --env-f3:color-mix(in srgb,var(--envhue,var(--intr)) 62%,#33507a);
+  max-width:430px;padding:11px 11px 12px;border:none;border-radius:24px;
+  background:
+    linear-gradient(325deg,rgba(255,255,255,.15),transparent 38%),
+    repeating-linear-gradient(115deg,rgba(255,255,255,.05) 0 1px,transparent 1px 7px),
+    linear-gradient(158deg,var(--env-f1),var(--env-f2) 40%,color-mix(in srgb,var(--envhue,var(--intr)) 40%,#0a1626) 66%,var(--env-f3) 98%);
+  box-shadow:0 24px 54px rgba(0,0,0,.45),0 4px 14px rgba(0,0,0,.42),
+    inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.45)}
+.env-card::before{content:'';position:absolute;z-index:-1;inset:11px 11px 12px;border:none;border-radius:14px;
+  background:
+    radial-gradient(120% 55% at 50% 0%,color-mix(in srgb,var(--envhue,var(--intr)) 14%,transparent),transparent 62%),
+    linear-gradient(178deg,color-mix(in srgb,var(--envhue,var(--intr)) 12%,#0a1322),#070e19 58%);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.055),inset 0 12px 26px rgba(0,0,0,.5)}
+.env-card::after{content:'';position:absolute;z-index:7;inset:3px;left:3px;right:3px;top:3px;height:auto;border-radius:21px;
+  border:1px solid rgba(255,255,255,.13);background:none;opacity:1;pointer-events:none;
+  mask:linear-gradient(180deg,#000,transparent 55%);-webkit-mask:linear-gradient(180deg,#000,transparent 55%)}
+.env-card:hover{transform:translateY(-6px) rotateX(1deg);
+  box-shadow:0 34px 74px rgba(0,0,0,.5),0 10px 22px rgba(0,0,0,.4),
+    0 0 30px color-mix(in srgb,var(--envhue,var(--intr)) 30%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.3)}
+.env-card .pc-card-edition{border-radius:14px 14px 0 0;border-bottom:1px solid rgba(0,0,0,.55);font-size:7.5px}
+.env-card .pk-namebar{margin:10px 13px 0;padding:7px 8px 7px 12px;border-radius:11px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 58%),
+    linear-gradient(90deg,color-mix(in srgb,var(--envhue,var(--intr)) 22%,rgba(8,15,26,.94)),rgba(8,15,26,.66))}
+.env-card .pk-namebar .pc-name{font-size:17px;font-weight:800;white-space:normal;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.env-card .pk-art{margin:10px 14px 0;min-height:150px;border:none;border-radius:7px;
+  background:
+    radial-gradient(95% 70% at 50% 0%,color-mix(in srgb,var(--envhue,var(--intr)) 22%,transparent),transparent 60%),
+    radial-gradient(130% 70% at 50% 112%,color-mix(in srgb,var(--envhue,var(--intr)) 14%,transparent),transparent 58%),
+    repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 15px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.02) 0 1px,transparent 1px 15px),
+    linear-gradient(180deg,color-mix(in srgb,var(--envhue,var(--intr)) 15%,#0a1424),#060d18 72%);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 0 0 3px color-mix(in srgb,var(--envhue,var(--intr)) 42%,#182238),
+    0 0 0 4px rgba(0,0,0,.55),0 8px 20px rgba(0,0,0,.35)}
+.pk-identicon.env{width:118px;height:118px;border-radius:20px;
+  filter:drop-shadow(0 20px 32px rgba(0,0,0,.55))
+    drop-shadow(0 0 30px color-mix(in srgb,var(--envhue,var(--intr)) 40%,transparent))}
+.env-card>.env-kicker{margin:8px 14px 0;text-align:center;font-size:6.8px;letter-spacing:.13em}
+.pk-having{margin:10px 14px 0;border-radius:11px;
+  border-color:color-mix(in srgb,var(--envhue,var(--intr)) 26%,var(--line2))}
+.env-card .pk-doing-face{margin:11px 14px 0;padding:8px 11px;border-radius:11px;
+  border:1px solid color-mix(in srgb,var(--envhue,var(--intr)) 30%,var(--line2));
+  background:linear-gradient(90deg,color-mix(in srgb,var(--envhue,var(--intr)) 10%,rgba(4,10,18,.7)),rgba(4,10,18,.5))}
+.env-card-stats{margin:10px 14px 0;border-radius:11px;
+  border-color:color-mix(in srgb,var(--envhue,var(--intr)) 28%,var(--line));background:rgba(4,10,18,.66)}
+.env-card-stats>span{padding:9px 5px 8px}
+.env-card-stats b{font:800 15px/1 var(--mono)}
+.env-card-stats small{font-size:6.6px;letter-spacing:.12em}
+.env-card .pk-dossier{margin:11px 14px 12px;border-radius:11px}
+.env-card-footer{position:relative;z-index:5;display:flex;align-items:center;gap:12px;
+  margin:0 15px 4px;padding:7px 2px 6px;border-top:1px solid rgba(255,255,255,.08);
+  color:color-mix(in srgb,var(--envhue,var(--intr)) 52%,var(--mut));
+  font:700 7.5px/1.2 var(--mono);letter-spacing:.13em;text-transform:uppercase}
+.env-card-footer::before{content:'Nº ' counter(envcard,decimal-leading-zero) ' ·';letter-spacing:.13em}
+.env-card-footer span:last-child{margin-left:auto}
+.env-card-empty{position:relative;z-index:5}
+
+/* ---- offline history keeps the muted, dashed, non-live look on the new frame ---- */
+.offline-history-card{border:none!important;filter:saturate(.5) brightness(.92);
+  background:linear-gradient(158deg,#55606f,#2a323f 40%,#1f2733 70%,#4a5462 98%)!important}
+.offline-history-card::before{background:linear-gradient(178deg,#10161f,#0a0f16 58%)!important}
+.offline-history-card:hover{transform:none!important;box-shadow:0 24px 54px rgba(0,0,0,.45)!important}
+
+/* ---- fast-path identity-first cards inherit the frame; their compact
+        profile header just needs to sit tight on the face ---- */
+.identity-first-card .pc-profile{padding:14px 14px 12px}
+.identity-first-card .pc-current{margin:10px 14px 0}
+.identity-first-card .pc-stats{margin:10px 14px 12px}
+.identity-first-card .env-card-empty{margin:10px 14px 12px}
+
+/* ---- small screens ---- */
+@media(max-width:719px){
+  .persona-deck,.environment-grid{gap:22px 16px}
+  .pcard,.env-card{padding:9px 9px 10px;border-radius:20px}
+  .pcard::before,.env-card::before{inset:9px 9px 10px;border-radius:12px}
+  .pcard::after,.env-card::after{inset:2px;border-radius:18px}
+  .pk-art{min-height:158px;margin:9px 11px 0}
+  .env-card .pk-art{min-height:126px}
+  .pk-art .pc-avatar .pk-identicon{width:clamp(88px,42%,120px)}
+  .pk-identicon.env{width:92px;height:92px}
+  .pk-namebar{margin:9px 11px 0}.pk-namebar .pc-name{font-size:16px}
+  .pk-statrow{margin:9px 11px 0}.pk-stat b{font-size:15px}
+  .pk-stat small{font-size:5.9px;letter-spacing:.1em}
+  .pk-typerow{margin:9px 12px 0}
+  .pc-current.pk-doing-face,.env-card .pk-doing-face{margin:9px 11px 0}
+  .pk-having,.env-card-stats{margin:9px 11px 0}
+  .pk-dossier,.env-card .pk-dossier{margin:9px 11px 10px}
+  .pk-setline,.env-card-footer{margin:0 12px 3px}
+}
+@media(prefers-reduced-motion:reduce){
+  .pcard:hover,.env-card:hover{transform:none}
+}
