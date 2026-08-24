@@ -439,11 +439,15 @@ async function fetchJson(u,init={}){
     // on the only usable transport. A disconnected relay must not suppress the
     // same independently verified public document on the provider's HTTPS route.
   }
-  try{ const r=await fetch(u,secureFetchInit(u,init)); if(r.ok){
+  // Callers may pass their own signal; every un-signaled fetch still gets a
+  // bounded default so one hung connection can never stall a refresh pipeline
+  // (a stuck stage guard used to freeze card faces on their loading shells).
+  const transportSignal=init.signal||AbortSignal.timeout(20000);
+  try{ const r=await fetch(u,secureFetchInit(u,{...init,signal:transportSignal})); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)); }
   }catch(e){}
-  if(init.signal?.aborted) return null;
+  if(transportSignal.aborted) return null;
   // The peer route was already tried first above. Do not pay the same failed
   // transport timeout twice before the next live refresh.
   return peerRouted?null:fetchP2PJson(u,init);
@@ -5899,8 +5903,12 @@ function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',w
     source:'signed task lifecycle'});
 }
 function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
-  if(value===null||typeof value!=='object')
-    return `<span class="work-note-scalar">${esc(value===null?'null':String(value))}</span>`;
+  if(value===null||typeof value!=='object'){
+    const text=value===null?'null':String(value);
+    // compact faces keep scalars to a readable sentence; the dossier and the
+    // drawer carry the exact full-length values
+    return `<span class="work-note-scalar"${compact&&text.length>220?` title="${esc(text)}"`:''}>${esc(compact?_compactHumanLabel(text,220):text)}</span>`;
+  }
   const maximum=compact?4:32;
   if(Array.isArray(value)){
     const rows=value.slice(0,maximum);
@@ -5909,6 +5917,11 @@ function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
   }
   const entries=Object.entries(value),rows=entries.slice(0,maximum);
   if(!rows.length) return '<span class="work-note-empty">Empty note</span>';
+  // compact faces flatten nested mappings into inline key/value chips so a
+  // card face stays scannable; the full nested tree renders in the dossier
+  if(compact&&depth>=1)
+    return `<span class="work-note-inline">${rows.map(([key,item])=>`<span><b title="${esc(key)}">${esc(humanizeMachineKey(key))}</b>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</span>`).join('')}`
+      +(entries.length>rows.length?`<span class="work-note-more">+${entries.length-rows.length} more</span>`:'')+'</span>';
   return `<dl class="work-note-fields">${rows.map(([key,item])=>`<div><dt title="${esc(key)}">${esc(humanizeMachineKey(key))}</dt><dd>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</dd></div>`).join('')}`
     +(entries.length>rows.length?`<div class="work-note-more"><dt>More</dt><dd>+${entries.length-rows.length} fields</dd></div>`:'')+'</dl>';
 }
@@ -6547,7 +6560,7 @@ function _artifactGroupedListHTML(items,{pathOf,render,ariaLabel='Current files'
   const primary=groups.has('cad')?'cad':ordered[0]?.id;
   const overview=`<div class="artifact-format-overview" aria-label="File groups">${ordered.map((group)=>
     `<span class="artifact-format-summary${group.id==='cad'?' cad':''}"><small>${esc(group.label)}</small><strong>${group.rows.length}</strong><em>${esc([...group.formats].slice(0,5).join(' · ')||'mixed formats')}</em></span>`).join('')}</div>`;
-  const grouped=ordered.map((group)=>`<details class="artifact-file-group group-${esc(group.id)}"${group.id===primary?' open':''}><summary>`
+  const grouped=ordered.map((group)=>`<details class="artifact-file-group group-${esc(group.id)}"${group.id===primary&&group.rows.length<=4?' open':''}><summary>`
     +`<span class="artifact-group-copy"><strong>${esc(group.label)}</strong><small>${esc(group.description)}</small></span>`
     +`<span class="artifact-group-formats">${[...group.formats].slice(0,6).map((format)=>`<em>${esc(format)}</em>`).join('')}</span>`
     +`<span class="artifact-group-count">${group.rows.length} file${group.rows.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
@@ -7573,11 +7586,11 @@ function renderCoordGraph(persons,totalPersons){
     let core=svg._cores.querySelector(`[data-kernel-core="${cssEsc(kernel)}"]`);
     if(!core){ core=_svg('g',{},'core'); core.setAttribute('data-kernel-core',kernel);
       core.setAttribute('role','button'); core.setAttribute('tabindex','0');
-      core.appendChild(_svg('title',{})); core.appendChild(_svg('circle',{r:36},'core-ring'));
+      core.appendChild(_svg('title',{}));       core.appendChild(_svg('circle',{r:36},'core-ring'));
       core.appendChild(_svg('circle',{r:30},'core-c'));
-      core.appendChild(_svg('text',{y:-9},'core-t'));
-      core.appendChild(_svg('text',{y:5},'core-id'));
-      core.appendChild(_svg('text',{y:19},'core-s')); svg._cores.appendChild(core); }
+      core.appendChild(_svg('text',{y:-14},'core-t'));
+      core.appendChild(_svg('text',{y:4},'core-id'));
+      core.appendChild(_svg('text',{y:22},'core-s')); svg._cores.appendChild(core); }
     core.setAttribute('transform',`translate(${x},${y})`);
     core.setAttribute('class',`core${focused?' focused':''}${fresh?'':' core-offline'}`);
     core.style.setProperty('--beat',beat+'s');
@@ -7780,7 +7793,11 @@ function drawVital(){
   _vitalPhase+=1;
   let sample=0, col='#21d07a';
   const beatFrames=Math.max(40,Math.round((scopedHeartbeat?.interval_s||5)*60/3)); // visible blip cadence
-  if(running && !RM && _vitalPhase-_lastBeatAt>=beatFrames){ _lastBeatAt=_vitalPhase; sample=Math.max(sample,.34); }
+  if(running && !RM && _vitalPhase-_lastBeatAt>=beatFrames){ _lastBeatAt=_vitalPhase; }
+  // render each heartbeat as a short decay pulse rather than a 1-frame tick —
+  // at 180×32 a single-frame spike is invisible and the vital reads as dead
+  if(running && !RM){ const beat=Math.exp(-(_vitalPhase-_lastBeatAt)/4);
+    if(beat>.03) sample=Math.max(sample,.34*beat); }
   if(S.vitalSpikes.length){ const sp=S.vitalSpikes[S.vitalSpikes.length-1];
     sample=Math.max(sample,.55+sp.a*.4); col=sp.col; sp.a-=.5; if(sp.a<=0) S.vitalSpikes.pop(); }
   _vitalBuf.push({v:sample,col}); if(_vitalBuf.length>N) _vitalBuf.shift();
@@ -7794,9 +7811,11 @@ function drawVital(){
   for(let i=0;i<_vitalBuf.length;i++){ const x=i*(w/N); const y=mid-_vitalBuf[i].v*amp;
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
   ctx.stroke();
-  // leading-edge dot, coloured by the most recent event class
+  // leading-edge dot, coloured by the most recent event class (dim when idle so
+  // the trace still reads as a live instrument, not an empty box)
   const last=_vitalBuf[_vitalBuf.length-1];
-  if(last.v>.1){ ctx.fillStyle=last.col; ctx.beginPath(); ctx.arc((N-1)*(w/N),mid-last.v*amp,2.2,0,7); ctx.fill(); }
+  ctx.fillStyle=last.v>.1?last.col:'rgba(72,88,106,.9)';
+  ctx.beginPath(); ctx.arc((N-1)*(w/N),mid-last.v*amp,2.2,0,7); ctx.fill();
 }
 
 // ---- humane VITALS counters (replaces the exchange board-stats cluster) ----
@@ -13099,7 +13118,15 @@ function wire(){
     headerToolsToggle.setAttribute('aria-label',open?'hide search and network controls':'show search and network controls');
     headerToolsToggle.title=open?'hide search and network controls':'show search and network controls';
     headerToolsToggle.innerHTML=icon('chevron','ico-sm')+'<span>controls</span>'; };
-  setHeaderToolsOpen(false); headerToolsToggle?.addEventListener('click',()=>setHeaderToolsOpen(!header.classList.contains('tools-open')));
+  // tools default to open where there is room for them (the search, vitals and
+  // public-data surface), closed on narrow screens; an explicit viewer choice
+  // persists across reloads like the collapse key does
+  const toolsPref=()=>{ try{ return localStorage.getItem('personaos_header_tools'); }catch(e){ return null; } };
+  const toolsDefaultOpen=()=>!!(window.matchMedia&&matchMedia('(min-width:1100px)').matches);
+  setHeaderToolsOpen(toolsPref()!==null?toolsPref()==='1':toolsDefaultOpen());
+  headerToolsToggle?.addEventListener('click',()=>{
+    const open=!header.classList.contains('tools-open'); setHeaderToolsOpen(open);
+    try{ localStorage.setItem('personaos_header_tools',open?'1':'0'); }catch(e){} });
   const setHeaderCollapsed=(collapsed)=>{ if(!header||!headerToggle) return;
     header.classList.toggle('collapsed',collapsed); document.body.classList.toggle('header-collapsed',collapsed);
     if(collapsed) document.querySelector('.command-shell')?.prepend(headerToggle); else header.after(headerToggle);
