@@ -192,6 +192,7 @@ export function selectDeclaredArtifactRenderer(mediaKind) {
   else if(mediaType==='application/json'||mediaType==='application/x-ndjson'
     ||mediaType==='application/sql'||mediaType==='application/yaml'
     ||mediaType==='application/toml'||mediaType.endsWith('+json')) id='code';
+  else if(mediaType==='text/x-spice') id='spice';
   else if(mediaType.startsWith('text/')) id='plain';
   return Object.freeze({id,mediaType});
 }

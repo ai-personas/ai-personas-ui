@@ -56,7 +56,7 @@ import {
   artifactTypeLabel,
   selectArtifactRenderer,
   sniffArtifactMediaType,
-} from './artifact-types.mjs?v=20260804-technical-artifacts-v5';
+} from './artifact-types.mjs?v=20260824-viewer-v1';
 import {
   renderMarkdownDocument,
   renderPlainTextWithLinks,
@@ -7928,8 +7928,47 @@ function _paintVerifiedIdentityShells(host){
 }
 
 let _sysBusy=false, _sysQueued=false;
+// ---- disclosure persistence across stage repaints -------------------------
+// The stage is repainted by innerHTML swap on every data change, which used to
+// snap every open <details> (artifact groups, dossiers, diagnostics) shut
+// within seconds of the viewer opening it. Record explicit viewer toggles by a
+// stable key and re-apply them after each swap.
+function _disclosureKey(details){
+  const card=details.closest('[data-pcard],[data-envsid]');
+  const scope=card?`${card.dataset.pcard?'p':'e'}:${card.dataset.pcard||card.dataset.envsid}`:'stage';
+  const group=[...details.classList].find((cls)=>cls.startsWith('group-'));
+  let kind=group||['pk-dossier','pc-diagnostics','fv-source','artifact-file-group']
+    .find((cls)=>details.classList.contains(cls))||details.className||'details';
+  if(!group){
+    const siblings=[...(card||details.closest('#sysEnvs')||document).querySelectorAll('details')]
+      .filter((candidate)=>candidate.className===details.className);
+    const index=siblings.indexOf(details);
+    if(index>0) kind+=`#${index}`;
+  }
+  return `${scope} ${kind}`;
+}
+function _rememberDisclosure(details){
+  const store=S.openDisclosures=S.openDisclosures||new Map();
+  const key=_disclosureKey(details);
+  store.delete(key); store.set(key,details.open);
+  while(store.size>400) store.delete(store.keys().next().value);
+}
+function _restoreDisclosures(host){
+  const store=S.openDisclosures; if(!store||!store.size) return;
+  for(const details of host.querySelectorAll('details')){
+    const wanted=store.get(_disclosureKey(details));
+    if(wanted!==undefined&&details.open!==wanted) details.open=wanted;
+  }
+}
 async function refreshSystemView(){
   const host=$('#sysEnvs'); if(!host) return;
+  if(host.dataset.disclosureWatch!=='1'){
+    host.dataset.disclosureWatch='1';
+    host.addEventListener('toggle',(event)=>{
+      const details=event.target;
+      if(details instanceof HTMLDetailsElement) _rememberDisclosure(details);
+    },true);
+  }
   // Provider inventory verification often finishes before slower environment,
   // artifact and telemetry enrichment. Paint those already-admitted persona
   // identities immediately, while naming the still-pending join honestly.
@@ -8383,7 +8422,8 @@ async function refreshSystemView(){
   // only rewrite when the stage actually changed → unchanged (idle) renders keep
   // their in-flight breathing/flash animations instead of restarting every 5s.
   delete host.dataset.identityShell;
-  if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML; }
+  if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML;
+    _restoreDisclosures(host); }
   rebindInspectionSource();
   _hydratePersonaAvatars();
   _applyFollow();
@@ -11463,13 +11503,185 @@ function lazyTechnicalRenderer(name){
 const renderDxf=lazyTechnicalRenderer('renderDxf');
 const renderCad3d=lazyTechnicalRenderer('renderCad3d');
 const renderArchive=lazyTechnicalRenderer('renderArchive');
+
+// ---- JSON tree view --------------------------------------------------------
+// Structured artifacts render as a real collapsible tree (typed leaves, entry
+// counts, bounded node budget) instead of a flattened row projection. Pure
+// DOM construction; every string passes through textContent.
+function _jsonLeafNode(value){
+  const span=document.createElement('span');
+  if(value===null){ span.className='fv-json-null'; span.textContent='null'; }
+  else if(typeof value==='boolean'){ span.className='fv-json-bool'; span.textContent=String(value); }
+  else if(typeof value==='number'){ span.className='fv-json-num'; span.textContent=String(value); }
+  else{ const text=String(value); span.className='fv-json-str';
+    span.textContent=text.length>400?`"${text.slice(0,400)}…"`:`"${text}"`;
+    if(text.length>400) span.title=`${text.length} characters — open the raw source below for the full value`; }
+  return span;
+}
+function _jsonBranchNode(key,value,depth,budget){
+  const isArray=Array.isArray(value);
+  const entries=isArray?value.map((item,index)=>[String(index),item]):Object.entries(value);
+  const details=document.createElement('details');
+  details.className='fv-json-node';
+  if(depth<2&&entries.length<=64) details.open=true;
+  const summary=document.createElement('summary');
+  const name=document.createElement('span'); name.className='fv-json-key';
+  name.textContent=key===undefined?(isArray?'[…]':'{…}'):key; summary.appendChild(name);
+  const meta=document.createElement('span'); meta.className='fv-json-meta';
+  meta.textContent=isArray?`[ ${entries.length} item${entries.length===1?'':'s'} ]`
+    :`{ ${entries.length} ${entries.length===1?'key':'keys'} }`;
+  summary.appendChild(meta); details.appendChild(summary);
+  const body=document.createElement('div'); body.className='fv-json-children';
+  let shown=0;
+  for(const [entryKey,entryValue] of entries){
+    if(budget.nodes>=budget.max||shown>=512){ const more=document.createElement('div');
+      more.className='fv-json-more'; more.textContent=`… ${entries.length-shown} more entr${entries.length-shown===1?'y':'ies'} — open the raw source below`;
+      body.appendChild(more); break; }
+    budget.nodes++; shown++;
+    if(entryValue&&typeof entryValue==='object'){
+      body.appendChild(_jsonBranchNode(entryKey,entryValue,depth+1,budget));
+    }else{
+      const row=document.createElement('div'); row.className='fv-json-row';
+      const keySpan=document.createElement('span'); keySpan.className='fv-json-key';
+      keySpan.textContent=entryKey; row.appendChild(keySpan);
+      row.appendChild(_jsonLeafNode(entryValue)); body.appendChild(row);
+    }
+  }
+  details.appendChild(body);
+  return details;
+}
+function jsonTreeView(text,{label='Verified JSON artifact'}={}){
+  let value; try{ value=JSON.parse(text); }catch(_){ return null; }
+  const wrap=el('div','fv-json-tree');
+  const head=el('div','fv-json-head'); head.textContent=label; wrap.appendChild(head);
+  if(value&&typeof value==='object') wrap.appendChild(_jsonBranchNode(undefined,value,0,{nodes:0,max:5000}));
+  else{ const row=el('div','fv-json-row'); row.appendChild(_jsonLeafNode(value)); wrap.appendChild(row); }
+  const source=document.createElement('details'); source.className='fv-source';
+  const summary=document.createElement('summary'); summary.textContent='Exact raw JSON source';
+  source.appendChild(summary); source.appendChild(plainPre(text.slice(0,400*1024),text.length>400*1024?'first 400 KB':''));
+  wrap.appendChild(source);
+  return wrap;
+}
+// ---- SPICE netlist renderer ------------------------------------------------
+// A .cir/.sp netlist gets a structural reading — components with their nodes,
+// parameters, models, analyses and measurements — plus the colorized source.
+// Inspection only; nothing is simulated or executed.
+const SPICE_COMPONENT_KINDS=Object.freeze({R:'Resistor',C:'Capacitor',L:'Inductor',
+  V:'Voltage source',I:'Current source',D:'Diode',Q:'BJT',M:'MOSFET',J:'JFET',
+  S:'Voltage-controlled switch',W:'Current-controlled switch',X:'Subcircuit call',
+  K:'Coupled inductors',E:'VCVS',F:'CCCS',G:'VCCS',H:'CCVS',T:'Transmission line'});
+function _parseSpice(text){
+  const rawLines=String(text||'').split(/\r?\n/).slice(0,4000);
+  const logical=[];
+  for(const line of rawLines){
+    if(/^\s*\+/.test(line)&&logical.length) logical[logical.length-1].text+=' '+line.replace(/^\s*\+/,'').trim();
+    else logical.push({text:line});
+  }
+  const out={title:'',components:[],params:[],models:[],analyses:[],measures:[],comments:0,control:[],other:[]};
+  let inControl=false;
+  logical.forEach((entry,index)=>{
+    const line=entry.text.trim();
+    if(!line) return;
+    if(index===0&&!/^[.*]/.test(line)&&!/^[A-Za-z]\S*\s+\S+\s+\S+/.test(line)){ out.title=line; return; }
+    if(line.startsWith('*')){ out.comments++; if(index===0) out.title=line.replace(/^\*+\s?/,''); return; }
+    if(line.startsWith('.')){
+      const word=line.split(/\s+/,1)[0].toLowerCase();
+      if(word==='.control'){ inControl=true; out.analyses.push(line); return; }
+      if(word==='.endc'){ inControl=false; return; }
+      if(word==='.param') out.params.push(line.slice(6).trim());
+      else if(word==='.model'){ const m=line.match(/^\.model\s+(\S+)\s+(\S+)\s*(.*)$/i);
+        out.models.push(m?{name:m[1],kind:m[2],args:m[3]}:{name:line,kind:'',args:''}); }
+      else if(word==='.meas'||word==='.measure') out.measures.push(line.replace(/^\.\w+\s+/,''));
+      else if(['.tran','.ac','.dc','.op','.noise','.tf','.four'].includes(word)) out.analyses.push(line);
+      else out.other.push(line);
+      return;
+    }
+    // Between .control and .endc every line is an interactive-interpreter
+    // command (run, wrdata, print, plot…), never a circuit element.
+    if(inControl){ out.control.push(line); return; }
+    const match=line.match(/^([A-Za-z])(\S*)\s+(.*)$/);
+    if(match){ const kind=match[1].toUpperCase();
+      const tokens=match[3].split(/\s+/);
+      out.components.push({name:match[1]+match[2],kind:SPICE_COMPONENT_KINDS[kind]||`Element ${kind}`,
+        nodes:tokens.slice(0,kind==='Q'||kind==='M'?4:2).join(' → '),value:tokens.slice(kind==='Q'||kind==='M'?4:2).join(' ')}); }
+    else out.other.push(line);
+  });
+  return out;
+}
+function _spiceSourcePre(text){
+  const pre=el('pre','filview fv-code fv-spice');
+  for(const line of String(text||'').split(/\r?\n/).slice(0,4000)){
+    const span=document.createElement('span');
+    const trimmed=line.trim();
+    span.className=trimmed.startsWith('*')?'sp-cmt'
+      :trimmed.startsWith('.')?'sp-dir'
+      :trimmed.startsWith('+')?'sp-cont'
+      :/^[A-Za-z]/.test(trimmed)?'sp-comp':'sp-plain';
+    span.textContent=line+'\n';
+    pre.appendChild(span);
+  }
+  return pre;
+}
+async function renderSpice(host,ctx){
+  const text=String(ctx.text??new TextDecoder().decode(await artifactBytes(ctx)));
+  ctx.assertCurrent?.(); host.innerHTML='';
+  const parsed=_parseSpice(text);
+  const card=el('div','fv-card');
+  card.appendChild(el('div','fv-cardhd','SPICE netlist · structural reading · nothing was simulated'));
+  const add=(label,value)=>{ const row=el('div','row'); row.appendChild(el('span','l2',label));
+    row.appendChild(el('span','v2',value)); card.appendChild(row); };
+  if(parsed.title) add('Title',parsed.title);
+  add('Components',String(parsed.components.length));
+  if(parsed.models.length) add('Models',parsed.models.map((model)=>`${model.name} (${model.kind})`).join(' · '));
+  if(parsed.analyses.length) add('Analyses',parsed.analyses.join(' · ').slice(0,400));
+  if(parsed.measures.length) add('Measurements',String(parsed.measures.length));
+  host.appendChild(card);
+  if(parsed.components.length){
+    const grid=el('div','fv-spice-grid');
+    grid.appendChild(el('div','fv-spice-hd','Component'));
+    grid.appendChild(el('div','fv-spice-hd','Kind'));
+    grid.appendChild(el('div','fv-spice-hd','Nodes'));
+    grid.appendChild(el('div','fv-spice-hd','Value / args'));
+    for(const component of parsed.components.slice(0,80)){
+      grid.appendChild(el('b',null,component.name));
+      grid.appendChild(el('span',null,component.kind));
+      grid.appendChild(el('span','fv-spice-nodes',component.nodes));
+      grid.appendChild(el('span','fv-spice-val',component.value||'—'));
+    }
+    host.appendChild(grid);
+    if(parsed.components.length>80) host.appendChild(el('div','fv-note',`${parsed.components.length-80} more components in the source below`));
+  }
+  if(parsed.params.length){
+    const params=el('div','fv-card');
+    params.appendChild(el('div','fv-cardhd','Parameters'));
+    for(const param of parsed.params.slice(0,40)){ const row=el('div','row');
+      row.appendChild(el('span','v2 fv-spice-param',param)); params.appendChild(row); }
+    host.appendChild(params);
+  }
+  if(parsed.measures.length){
+    const measures=el('div','fv-card');
+    measures.appendChild(el('div','fv-cardhd','Measurements the netlist requests'));
+    for(const measure of parsed.measures.slice(0,40)){ const row=el('div','row');
+      row.appendChild(el('span','v2 fv-spice-param',measure)); measures.appendChild(row); }
+    host.appendChild(measures);
+  }
+  if(parsed.control.length){
+    const control=el('div','fv-card');
+    control.appendChild(el('div','fv-cardhd','Control-block commands (not simulated here)'));
+    for(const command of parsed.control.slice(0,24)){ const row=el('div','row');
+      row.appendChild(el('span','v2 fv-spice-param',command)); control.appendChild(row); }
+    host.appendChild(control);
+  }
+  host.appendChild(el('div','fv-note','Colorized source · comments, directives and elements'));
+  host.appendChild(_spiceSourcePre(text));
+}
 async function renderGeneric(host,ctx){
   const bytes=await artifactBytes(ctx); host.innerHTML='';
   const integrity=ctx.integrityVerified?'hash-checked':'unhashed';
   if(bytesLookTextual(bytes)){
     const text=new TextDecoder().decode(bytes), truncated=text.length>400*1024;
-    if(/^[{[]/.test(text.trim())){ try{ JSON.parse(text); const view=el('div','fv-human-json');
-      view.innerHTML=structuredContentHTML(text,{label:'Exact artifact JSON'}); host.appendChild(view); return; }catch(e){} }
+    if(/^[{[]/.test(text.trim())){ const tree=jsonTreeView(text,{label:'Verified JSON artifact · collapsible tree'});
+      if(tree){ host.appendChild(tree); return; } }
     host.appendChild(plainPre(text.slice(0,400*1024),truncated?`first 400 KB · ${integrity} generic text`:`generic ${integrity} text`));
     return;
   }
@@ -11486,8 +11698,8 @@ async function renderCode(host,ctx){
   const isJson=media==='application/json'||media.endsWith('+json');
   if(isJson){
     if((ctx.realSize??body.length)>200*1024){ host.appendChild(plainPre(body,'json > 200 KB — plain text (perf)')); return; }
-    try{ JSON.parse(body); const view=el('div','fv-human-json');
-      view.innerHTML=structuredContentHTML(body,{label:'Exact artifact JSON'}); host.appendChild(view); return; }catch(e){}
+    const tree=jsonTreeView(body,{label:'Verified JSON artifact · collapsible tree'});
+    if(tree){ host.appendChild(tree); return; }
   }
   // highlight.js tokenises the WHOLE string on the main thread; a multi-MB generated
   // bundle / huge xml would freeze the UI for seconds. The JSON path is already capped
@@ -11765,7 +11977,7 @@ async function renderGeojson(host,ctx){
 }
 const RENDERERS={ markdown:renderMarkdown, csv:renderCsv, image:renderImage,audio:renderAudio,video:renderVideo,
   dxf:renderDxf,cad3d:renderCad3d,openscad:renderOpenScad,code:renderCode,pdf:renderPdf,archive:renderArchive,
-  geojson:renderGeojson,plain:renderPlain,generic:renderGeneric };
+  geojson:renderGeojson,plain:renderPlain,generic:renderGeneric,spice:renderSpice };
 
 function _lineDiffHTML(prior,current){
   const diff=boundedLineDiff(prior,current);
