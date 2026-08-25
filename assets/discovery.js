@@ -7638,6 +7638,11 @@ function renderCoordGraph(persons,totalPersons){
       upsertCore(row.kernel,+x.toFixed(1),cy,summary,{fresh:row.fresh||row.reachable,label:'PUBLIC NODE'}); coreIds.add(row.kernel); });
     [...svg._cores.children].forEach((core)=>{ if(!coreIds.has(core.getAttribute('data-kernel-core'))) core.remove(); });
     svg._edges.innerHTML=''; svg._chords.innerHTML=''; svg._axons.innerHTML=''; svg._nodes.innerHTML=''; svg._linkfire.innerHTML='';
+    // an empty map states itself instead of rendering a silent dark plate
+    if(!n){
+      svg._edges.innerHTML=`<text x="${cx}" y="${cy-6}" text-anchor="middle" class="cg-hint">no nodes discovered yet</text>`
+        +`<text x="${cx}" y="${cy+14}" text-anchor="middle" class="cg-hint dim">nodes appear here as signed announcements resolve</text>`;
+    }
     const total=Math.max(rows.length,Number(S.globalTotal)||0,S.kernels?.size||0);
     if(graphScope) graphScope.textContent='GLOBAL NETWORK';
     if(graphWindow) graphWindow.textContent=`${window.returned} of ${compactCount(total)} nodes`;
