@@ -1682,6 +1682,12 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 .context-dock .constellation.collapsed .con-toggle{margin-left:auto;flex:0 0 auto}
 .context-dock .scope-pill{min-width:0}
 .context-dock #sysGraph{margin-top:6px}
+/* dock row 1 holds both disclosure summaries side by side; the collapsed
+   topology plate spans the full dock width below them. An opened input
+   requests drawer reclaims the full row for its cards. */
+.context-dock #openInputs{grid-column:2}
+.context-dock:has(#openInputs[open]) #openInputs{grid-column:1/-1}
+.context-dock #constellation{grid-column:1/-1}
 .context-dock:has(.constellation:not(.collapsed)){grid-template-columns:1fr}
 .context-dock:has(.constellation:not(.collapsed)) .missions{max-width:560px}
 .stage-wrap{padding-top:0}

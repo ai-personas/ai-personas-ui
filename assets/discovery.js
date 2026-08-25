@@ -427,6 +427,21 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024
     {timeoutMs:10000,maxBytes,path:found.path}).catch(()=>null);
   return result?.bytes||null;
 }
+// Large signed inventories are fetched concurrently by the HTTP and P2P
+// discovery lanes at boot. Share one in-flight (and just-settled) download per
+// absolute URL so the same multi-megabyte document is never transferred twice;
+// both lanes verify the identical signed document downstream.
+const _sharedDocJobs=new Map();
+function sharedDocumentJson(url,fetch_){
+  const hit=_sharedDocJobs.get(url);
+  if(hit&&Date.now()-hit.ts<10000) return hit.promise;
+  const promise=Promise.resolve().then(fetch_).finally(()=>{
+    setTimeout(()=>{ const job=_sharedDocJobs.get(url);
+      if(job&&job.promise===promise) _sharedDocJobs.delete(url); },10000);
+  });
+  _sharedDocJobs.set(url,{promise,ts:Date.now()});
+  return promise;
+}
 async function fetchJson(u,init={}){
   // A current-master-verified provider route is already a stronger transport
   // binding than an opportunistic cross-origin HTTP attempt. Public refetches
@@ -3133,8 +3148,9 @@ async function discoverFrom(base,plane,knownBoot=null,
   // parallel. The roster normally carries only persona/environment documents,
   // so a cold viewer can verify people and workspaces without waiting for every
   // artifact/task/telemetry byte in the generation.
-  const providerPromise=fetchJson(join(base,boot.providers_url||'discovery/providers.json'),
-    {maxBytes:providerIndexMaxBytes,signal});
+  const providerUrl=join(base,boot.providers_url||'discovery/providers.json');
+  const providerPromise=sharedDocumentJson(providerUrl,
+    ()=>fetchJson(providerUrl,{maxBytes:providerIndexMaxBytes,signal}));
   let identityAccepted=false;
   if(boot.identity_index_url){
     const identityDoc=await fetchJson(join(base,boot.identity_index_url),{
@@ -13603,8 +13619,9 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
   if(!providerIndexMaxBytes) return {boot:null,found:[],inventory:null};
   const providerPath=String(boot.providers_url||'discovery/public/providers.json');
-  const providerPromise=P2P.fetchPublicJson(p,providerPath,
-    {timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null);
+  const providerUrl=join(base,providerPath);
+  const providerPromise=sharedDocumentJson(providerUrl,
+    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null));
   // The peer-bound transport carries the same signed compact identity surface
   // as HTTP. Admit it first so P2P discovery paints people/workspaces and seeds
   // the warm browser cache without waiting for every artifact and telemetry
@@ -14008,7 +14025,14 @@ async function initP2P(){
   // request before libp2p starts so it participates in the initial dial set.
   // Direct/same-origin discovery does not wait for that optional file.
   const portalP2PHints=loadPortalP2PBootstrapHints();
-  portalP2PHints.catch(()=>[]).then(()=>initP2P()).catch(()=>{})
+  // The 1.2MB vendored libp2p bundle competes with first paint for bandwidth.
+  // The same-origin/direct lane is the primary operating path: give it a short
+  // head start (settled first discovery pass, capped at 2.5s) before the peer
+  // transport starts dialling. P2P remains fully independent afterwards.
+  const firstDiscoveryPass=discover({refreshGlobal:true}).catch(()=>{});
+  portalP2PHints.catch(()=>[]).then(()=>Promise.race([
+    firstDiscoveryPass,new Promise((resolve)=>setTimeout(resolve,2500))
+  ])).then(()=>initP2P()).catch(()=>{})
     .finally(()=>{ _p2pStartupSettled=true; });
   // The discovery pass below already starts local + optional IPFS planes once;
   // only their later maintenance ticks are scheduled here.
@@ -14042,7 +14066,7 @@ async function initP2P(){
   // newly authored requests visible without waiting for the 15s inventory pass.
   setInterval(()=>{ refreshVisibleOpenInputs().catch(()=>{}); },1500);
   requestAnimationFrame(tick);
-  await discover();
+  await firstDiscoveryPass;
   prefetchNodeStatuses();
   renderMissions();
   refreshVisibleOpenInputs().catch(()=>{});
