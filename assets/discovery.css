@@ -2396,7 +2396,7 @@ body{overflow-x:hidden;overflow-y:auto}
   color:color-mix(in srgb,var(--pk-f1,hsl(var(--avatar-hue,210) 70% 66%)) 52%,var(--mut));
   font:700 11px/1.2 var(--mono);letter-spacing:0.084em;text-transform:uppercase}
 .pk-set-no::before{content:'Nº ' counter(pkcard,decimal-leading-zero)}
-.pk-set-id{margin-left:auto}
+.pk-set-kind{margin-left:auto;text-transform:uppercase}
 .pcard[data-identity-state="named"] .pk-setline::after{content:'★';margin-left:2px;
   color:#ffd76a;font-size:12.5px;line-height:1;text-shadow:0 0 8px rgba(255,215,106,.55)}
 

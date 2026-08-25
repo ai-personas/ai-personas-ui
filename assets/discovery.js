@@ -1070,12 +1070,21 @@ function _artifactDeclarationMetadataHTML(declaration){
   const metadata=declaration?.metadata&&typeof declaration.metadata==='object'?declaration.metadata:{};
   const entries=Object.entries(metadata).slice(0,24);
   if(!entries.length&&!declaration?.metadata_omitted) return '';
-  const rows=entries.map(([key,value])=>{ let rendered='';
-    try{ rendered=typeof value==='string'?value:JSON.stringify(value); }catch(_){ rendered=String(value); }
-    return kv(key,`<span class="artifact-authored-value">${esc(rendered)}</span>`);
-  }).join('');
-  return H('Persona-authored file details')+rows
-    +(declaration?.metadata_omitted?`<div class="fv-note">Additional authored metadata is retained in the signed record but is too large for this compact view.</div>`:'');
+  // authored provenance is verification detail, not story: keep it reachable
+  // but out of the main reading flow, and summarize structured values
+  const renderValue=(value)=>{
+    if(typeof value==='string') return esc(value);
+    try{
+      const text=JSON.stringify(value);
+      const keys=value&&typeof value==='object'&&!Array.isArray(value)?Object.keys(value).length:null;
+      return `<span class="artifact-authored-value">${esc(text.length>120
+        ?(keys!=null?`structured details · ${keys} field${keys===1?'':'s'} (exact values under “plain text view”)`:text.slice(0,117)+'…')
+        :text)}</span>`;
+    }catch(_){ return esc(String(value)); }
+  };
+  const rows=entries.map(([key,value])=>kv(key,renderValue(value))).join('');
+  return `<details class="fv-technical"><summary>Persona-authored file details</summary><div>${rows}`
+    +(declaration?.metadata_omitted?`<div class="fv-note">Additional authored metadata is retained in the signed record but is too large for this compact view.</div>`:'')+`</div></details>`;
 }
 function manifestRun(m){ for(const a of manifestArtifacts(m)){ if(a&&a.run) return String(a.run); } return ''; }
 function indexLiveTelemetry(base,live,meta={}){
@@ -4183,15 +4192,22 @@ function offlineHistoryHTML(){
     return `<article class="env-card record-signed offline-history-card" aria-label="offline history for workspace ${esc(row.name)}">`
       +'<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">'
       +`<div class="env-card-avatar"><span class="env-card-glyph">${icon('box')}</span><strong>${esc(initials)}</strong></div>`
-      +`<div class="env-identity"><span class="env-kicker">OFFLINE WORKSPACE HISTORY</span><span class="env-name">${esc(row.name)}</span><span class="env-card-id">${esc(row.kernel)}</span></div>`
+      +`<div class="env-identity"><span class="env-kicker">OFFLINE WORKSPACE HISTORY</span><span class="env-name">${esc(row.name)}</span><span class="env-card-id" title="host node ${esc(row.kernel)}">cached signed history</span></div>`
       +'<span class="env-state">offline</span></header>'
       +`<div class="env-card-empty">Signed workspace evidence was valid at ${esc(when)}. Current membership and work state are unknown.</div></article>`;
   }).join('');
   const artifactRows=artifacts.slice(0,80).map((row)=>{
     const presentation=_artifactFilePresentation(row.path),media=String(row.media?.[0]||'');
-    return `<div class="current-artifact-file artifact-preview-unavailable offline-history-artifact" aria-label="${esc(row.path)} — offline metadata only">`
+    const workspaceName=row.environment_id?(_environmentNameFor(row.environment_id,row.kernel)||''):'';
+    const factBits=[
+      artifactTypeLabel(media),
+      row.size_bytes!=null?fmtBytes(row.size_bytes):'',
+      workspaceName?`workspace ${workspaceName}`:'',
+      row.storedAt?`signed snapshot ${_friendlyInstant(row.storedAt)}`:'signed snapshot earlier',
+    ].filter(Boolean);
+    return `<div class="current-artifact-file artifact-preview-unavailable offline-history-artifact" aria-label="${esc(row.path)} — offline metadata only"${row.content_hash?` title="content sha256 ${esc(row.content_hash)}"`:''}>`
       +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation)}`
-      +`<small>${esc(artifactTypeLabel(media))}${row.size_bytes!=null?` · ${esc(fmtBytes(row.size_bytes))}`:''}${row.environment_id?` · workspace ${esc(row.environment_id)}`:''}${row.content_hash?` · ${esc(row.content_hash.slice(0,18))}…`:''} · signed snapshot ${esc(_friendlyInstant(row.storedAt)||'earlier')}</small></span>`
+      +`<small>${esc(factBits.join(' · '))}</small></span>`
       +'<span class="current-artifact-preview">Metadata only · offline</span></div>';
   }).join('');
   const matchCount=personas.length+environments.length+artifacts.length;
@@ -5918,6 +5934,9 @@ function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',w
     currentExecution:lifecycle?.currentExecution===true,
     source:'signed task lifecycle'});
 }
+// face notes are for humans: verification plumbing (hashes, receipts, paths,
+// signatures) stays in the dossier and the drawer, not on the card face
+const FACE_TECHNICAL_KEY=/(?:^|_)(?:sha256|hash|receipt|path|url|uri|signature|sig|nonce|token|key|did|urn)(?:$|_)/i;
 function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
   if(value===null||typeof value!=='object'){
     const text=value===null?'null':String(value);
@@ -5931,15 +5950,19 @@ function _personaWorkNoteValueHTML(value,{compact=false,depth=0}={}){
     return `<ul class="work-note-list">${rows.map((item)=>`<li>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</li>`).join('')}`
       +(value.length>rows.length?`<li class="work-note-more">+${value.length-rows.length} more values</li>`:'')+'</ul>';
   }
-  const entries=Object.entries(value),rows=entries.slice(0,maximum);
-  if(!rows.length) return '<span class="work-note-empty">Empty note</span>';
+  const entries=Object.entries(value);
+  const rows=entries.filter(([key])=>!(compact&&FACE_TECHNICAL_KEY.test(key))).slice(0,maximum);
+  const hiddenCount=compact?entries.length-rows.length:Math.max(0,entries.length-rows.length);
+  if(!rows.length) return compact
+    ?'<span class="work-note-more">Full details in the dossier</span>'
+    :'<span class="work-note-empty">Empty note</span>';
   // compact faces flatten nested mappings into inline key/value chips so a
   // card face stays scannable; the full nested tree renders in the dossier
   if(compact&&depth>=1)
     return `<span class="work-note-inline">${rows.map(([key,item])=>`<span><b title="${esc(key)}">${esc(humanizeMachineKey(key))}</b>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</span>`).join('')}`
-      +(entries.length>rows.length?`<span class="work-note-more">+${entries.length-rows.length} more</span>`:'')+'</span>';
+      +(hiddenCount>0?`<span class="work-note-more">+${hiddenCount} detail${hiddenCount===1?'':'s'} in dossier</span>`:'')+'</span>';
   return `<dl class="work-note-fields">${rows.map(([key,item])=>`<div><dt title="${esc(key)}">${esc(humanizeMachineKey(key))}</dt><dd>${_personaWorkNoteValueHTML(item,{compact,depth:depth+1})}</dd></div>`).join('')}`
-    +(entries.length>rows.length?`<div class="work-note-more"><dt>More</dt><dd>+${entries.length-rows.length} fields</dd></div>`:'')+'</dl>';
+    +(hiddenCount>0?`<div class="work-note-more"><dt>More</dt><dd>+${hiddenCount} field${hiddenCount===1?'':'s'} in the full dossier</dd></div>`:'')+'</dl>';
 }
 function _personaCausalDispositionHTML(disposition,{compact=false,mechanical=null}={}){
   if(!disposition||typeof disposition!=='object') return '';
@@ -7376,12 +7399,15 @@ function renderPersonaCard(pid,kernel='',context={}){
     &&typeof currentWorkState.work_note==='object'&&!Array.isArray(currentWorkState.work_note)
     ?currentWorkState.work_note:null;
   const pkWorkNote=feedWorkNote||cogStats?.workNote||null;
+  // the doing line is for humans: machine-style states ("executed_and_published")
+  // read as words, and the exact authored text stays one hover away
   const pkWorkNoteText=pkWorkNote
     ?String(pkWorkNote.observed_state||pkWorkNote.status||'').trim():'';
+  const pkWorkNoteHuman=pkWorkNoteText?humanizeMachineKey(pkWorkNoteText):'';
   const execDoing=PK_TASK_EXEC_DOING[String(s.task_execution_state||'')]||'';
   const pkPulse=s.llm_execution_state==='running'||running;
-  const pkDoingHTML=pkWorkNoteText
-    ?`<strong title="persona-authored work note">${esc(_compactHumanLabel(pkWorkNoteText,90))}</strong>`
+  const pkDoingHTML=pkWorkNoteHuman
+    ?`<strong title="${esc(pkWorkNoteText)} — persona-authored work note">${esc(_compactHumanLabel(pkWorkNoteHuman,90))}</strong>`
     :execDoing?`<strong>${esc(execDoing)}</strong>`:doingHTML;
   const envBadgeCount=Array.isArray(s.active_environment_ids)
     ?s.active_environment_ids.length
@@ -7392,11 +7418,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`</div>`;
   const pkStat=(value,label,title)=>value!=null
     ?`<span class="pk-stat" title="${esc(title)}"><b>${esc(value)}</b><small>${esc(label)}</small></span>`:'';
-  const pkStatRow=cogStats?`<div class="pk-statrow" aria-label="public cognition counters">`
-    +pkStat(cogStats.ep,'EPISODES','brain episodes')
-    +pkStat(cogStats.fr,'FRAGMENTS','brain fragments')
-    +pkStat(cogStats.tl,'TOOLS','acquired tools')
-    +pkStat(cogStats.ev,'EVOLUTIONS','brain evolution applications')
+  const pkStatRow=cogStats?`<div class="pk-statrow" aria-label="verified cognition counters">`
+    +pkStat(cogStats.ep,'EPISODES','thinking episodes retained in this persona\'s verified memory')
+    +pkStat(cogStats.fr,'FRAGMENTS','memory fragments kept from its work')
+    +pkStat(cogStats.tl,'TOOLS','tools it acquired and can use')
+    +pkStat(cogStats.ev,'EVOLUTIONS','times it updated its own knowledge or tactics')
     +`</div>`:'';
   const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
@@ -7404,7 +7430,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
   return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
-    +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:''}>${esc(pkName)}</h3>`
+    +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}>${esc(pkName)}</h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(pkName)}" aria-label="focus on ${esc(pkName)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +`<figure class="pk-art">${_personaAvatarHTML(personaKey,{identityVerified})}<i class="pc-dot ${dotCls}" aria-hidden="true"></i></figure>`
@@ -7416,16 +7442,17 @@ function renderPersonaCard(pid,kernel='',context={}){
     // published. The dossier keeps identity detail and the long activity tail.
     +currentTaskHTML+environmentHTML+authoredWorkHTML
     +_personaActivityHTML(acts,personaKey)
-    +pkTypeRow+pkStatRow
+    +pkTypeRow
     +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
+    +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
     +aboutHTML+capabilityHTML
     +(pkWorkNoteText||execDoing?`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
     +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
-    +`<footer class="pk-setline"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kernel" title="host kernel ${esc(ref.kernel)}">${esc(String(ref.kernel||'').replace(/^kernel:/,'').slice(0,12))}</span><span class="pk-set-id" title="persona id ${esc(sid)}">${esc(sid.slice(0,10))}</span></footer>`
+    +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kind">verified persona</span></footer>`
     +'</article>';
 }
 
@@ -12851,18 +12878,21 @@ function missionCardList(){
     const lineageKey=`${record._kernel}::${lifecycle.rootRun||lifecycle.run}`;
     const order=_taskLifecycleRecordOrder(record,lifecycle);
     const refs=[
-      lifecycle.resumedFrom?`resumed from ${_missionRunLabel(lifecycle.resumedFrom)}`:'',
-      lifecycle.continuedFrom?`continued from ${_missionRunLabel(lifecycle.continuedFrom)}`:'',
-      lifecycle.amendedFrom?`amended from ${_missionRunLabel(lifecycle.amendedFrom)}`:'',
+      lifecycle.resumedFrom?'resumed from an earlier run':'',
+      lifecycle.continuedFrom?'continued from an earlier run':'',
+      lifecycle.amendedFrom?'amended from an earlier run':'',
     ].filter(Boolean);
+    const revision=String(lifecycle.revision??'').trim();
+    const revisionShort=/^[0-9]{1,4}$/.test(revision)?` · revision ${revision}`:'';
     const meta=[
       mechanical.detail,
-      mechanical.exactState?`exact state ${mechanical.exactState}`:'',
       lifecycle.environment?`workspace ${_environmentNameFor(lifecycle.environment,record._kernel)}`:'',
       ...refs,
-      `signed task lifecycle · revision ${lifecycle.revision}`,
+      `signed task record${revisionShort}`,
     ].filter(Boolean);
-    const card={key:`task:${lineageKey}`,task:lifecycle.task,state:mechanical.key,
+    const cardTitle=lifecycle.task+(mechanical.exactState?` — exact state ${mechanical.exactState}`:'')
+      +(lifecycle.resumedFrom?` — resumed from ${lifecycle.resumedFrom}`:'');
+    const card={key:`task:${lineageKey}`,task:lifecycle.task,title:cardTitle,state:mechanical.key,
       mechanical,kernel:record._kernel||'',meta,recId:id,run:lifecycle.run,
       base:nodeBaseForRecord(record),order,
       nodeAvailability:_missionNodeAvailability(record._kernel)};
@@ -13086,7 +13116,7 @@ function renderMissions(){
   const html=window.items.length?window.items.map((c)=>{
     return `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
       +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.mechanical?.label||humanizeMachineKey(c.state))}</span>`
-      +`<h2 class="mtask" title="${esc(c.task)}">${esc(c.task)}</h2><div class="mmeta">`
+      +`<h2 class="mtask" title="${esc(c.title||c.task)}">${esc(c.task)}</h2><div class="mmeta">`
       +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`;
   }).join('')
     :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`;
