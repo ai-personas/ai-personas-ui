@@ -2018,6 +2018,65 @@ async function verifyCurrentMasterSignedDocument(base,doc){
   try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(payload)),hexToBytes(key)); }
   catch(_){ return false; }
 }
+// ---- C-OP-16 member-view siblings: kernel-signed, additive, verified per
+// sibling and failed closed per sibling (an unverified sibling is absent; the
+// record itself still renders). Field sets are exact: an extra or missing
+// member refuses the document. ----
+const PUBLIC_RUN_SCORECARD_SCHEMA='personaos-public-run-scorecard/1';
+const PUBLIC_RUN_SCORECARD_FIELDS=Object.freeze(['counters','environment_id','record_hash','run_id','schema',
+  'scorecard_event_id','settled_at','signature_hex','signing_key_id','task_id','unavailable_counters']);
+const PUBLIC_IDENTITY_REQUIREMENT_STATUS_SCHEMA='personaos-public-identity-requirement-status/1';
+const PUBLIC_IDENTITY_REQUIREMENT_STATUS_FIELDS=Object.freeze(['claim_hash','declared_at','declined','persona_id',
+  'reason','refusal_event_id','requirement_id','schema','signature_hex','signing_key_id']);
+const PUBLIC_IDENTITY_REQUIREMENT_REASON_MAX_CHARS=600;
+const _SCORECARD_COUNTER_NAME=/^[a-z][a-z0-9_]{0,63}$/;
+function _exactFieldSet(doc,fields){
+  if(!doc||typeof doc!=='object'||Array.isArray(doc)) return false;
+  const keys=Object.keys(doc).sort();
+  return keys.length===fields.length&&keys.every((key,index)=>key===fields[index]);
+}
+function _boundedPublicText(value,max){
+  return typeof value==='string'&&value.length>0&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
+}
+function publicRunScorecardShapeOk(doc){
+  if(!_exactFieldSet(doc,PUBLIC_RUN_SCORECARD_FIELDS)) return false;
+  if(doc.schema!==PUBLIC_RUN_SCORECARD_SCHEMA||doc.signing_key_id!=='kernel-master') return false;
+  for(const key of ['environment_id','task_id','run_id','settled_at','scorecard_event_id'])
+    if(!_boundedPublicText(doc[key],200)) return false;
+  if(!/^sha256:[0-9a-f]{64}$/.test(String(doc.record_hash||''))) return false;
+  const counters=doc.counters;
+  if(!counters||typeof counters!=='object'||Array.isArray(counters)) return false;
+  const names=Object.keys(counters);
+  if(names.length>64) return false;
+  for(const name of names){
+    if(!_SCORECARD_COUNTER_NAME.test(name)||!Number.isInteger(counters[name])||counters[name]<0) return false;
+  }
+  const unavailable=doc.unavailable_counters;
+  if(!Array.isArray(unavailable)||unavailable.length>64) return false;
+  const seen=new Set(names);
+  for(const name of unavailable){
+    if(typeof name!=='string'||!_SCORECARD_COUNTER_NAME.test(name)||seen.has(name)) return false;
+    seen.add(name);
+  }
+  return true;
+}
+async function verifyPublicRunScorecard(base,doc,record){
+  if(record?.kind!=='task'||!publicRunScorecardShapeOk(doc)) return false;
+  return verifyCurrentMasterSignedDocument(base,doc);
+}
+function publicIdentityRequirementStatusShapeOk(doc,personaId){
+  if(!_exactFieldSet(doc,PUBLIC_IDENTITY_REQUIREMENT_STATUS_FIELDS)) return false;
+  if(doc.schema!==PUBLIC_IDENTITY_REQUIREMENT_STATUS_SCHEMA||doc.signing_key_id!=='kernel-master') return false;
+  if(doc.requirement_id!=='R-ID-1'||doc.declined!==true) return false;
+  if(!_boundedPublicText(doc.persona_id,200)||_shortId(doc.persona_id)!==_shortId(personaId||'')) return false;
+  if(!_boundedPublicText(doc.reason,PUBLIC_IDENTITY_REQUIREMENT_REASON_MAX_CHARS)) return false;
+  if(!_boundedPublicText(doc.declared_at,80)||!_boundedPublicText(doc.refusal_event_id,200)) return false;
+  return /^sha256:[0-9a-f]{64}$/.test(String(doc.claim_hash||''));
+}
+async function verifyPublicIdentityRequirementStatus(base,doc,record,personaId){
+  if(record?.kind!=='persona'||!publicIdentityRequirementStatusShapeOk(doc,personaId)) return false;
+  return verifyCurrentMasterSignedDocument(base,doc);
+}
 const PROVIDER_INVENTORY_FIELDS=Object.freeze([
   'base','document_count','documents','expires_at','generated_at','inventory_generation',
   'inventory_hash','inventory_manifest','inventory_manifest_hash','kernel_id',
@@ -2317,6 +2376,11 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   const projectTopologyVerified=r.kind==='project'
     ?await verifyPublicProjectTopology(doc.project_topology,
       doc.project_topology_signature_hex,doc.record,doc.access_policy,signature.entry):false;
+  // C-OP-16 siblings: each verified on its own; failure leaves it absent.
+  const runScorecardVerified=r.kind==='task'&&doc.run_scorecard!=null
+    ?await verifyPublicRunScorecard(base,doc.run_scorecard,r):false;
+  const identityStatusVerified=!!personaId&&doc.identity_requirement_status!=null
+    ?await verifyPublicIdentityRequirementStatus(base,doc.identity_requirement_status,r,personaId):false;
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     // Keep the reached provider route separate from the read-gated content
@@ -2339,6 +2403,10 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     task_lifecycle:taskLifecycleVerified?doc.task_lifecycle:null,
     _projectTopologyVerified:projectTopologyVerified,
     _projectTopology:projectTopologyVerified?doc.project_topology:null,
+    _runScorecardVerified:runScorecardVerified,
+    run_scorecard:runScorecardVerified?doc.run_scorecard:null,
+    _identityRequirementStatusVerified:identityStatusVerified,
+    identity_requirement_status:identityStatusVerified?doc.identity_requirement_status:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -3821,6 +3889,16 @@ function upsert(r){
       ?r.persona_lifecycle_card:null,
     _taskLifecycleVerified:r.kind==='task'&&r._taskLifecycleVerified===true,
     task_lifecycle:r.kind==='task'&&r.task_lifecycle?r.task_lifecycle:null,
+    // C-OP-16: kernel-signed member-view siblings and the signed
+    // persona↔artifact↔run attribution ride the stored row only when verified.
+    _runScorecardVerified:r.kind==='task'&&r._runScorecardVerified===true,
+    run_scorecard:r.kind==='task'&&r._runScorecardVerified===true&&r.run_scorecard?r.run_scorecard:null,
+    _identityRequirementStatusVerified:r.kind==='persona'&&r._identityRequirementStatusVerified===true,
+    identity_requirement_status:r.kind==='persona'&&r._identityRequirementStatusVerified===true
+      &&r.identity_requirement_status?r.identity_requirement_status:null,
+    declaring_persona_id:r.kind==='artifact'&&typeof r.declaring_persona_id==='string'
+      ?r.declaring_persona_id.slice(0,200):'',
+    run_id:r.kind==='artifact'&&typeof r.run_id==='string'?r.run_id.slice(0,200):'',
     avatar:r.kind==='persona'&&Object.hasOwn(r,'avatar')?r.avatar:null});
   if(row.kind==='persona'){
     const sid=_shortId(row.did||row.record_id);
@@ -6155,12 +6233,17 @@ function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
 }
 function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const ref=_personaRef(personaKey);
+  // C-OP-16: a stated refusal of the identity requirement is the persona's
+  // own claim; the placeholder says so instead of "pending" forever.
+  const decline=_verifiedIdentityDecline(ref.key);
   // Avatar shape is inspected synchronously only to make signed descriptor
   // changes observable to the keyed stage diff. No image appears until the
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   if(!identityVerified){
     // The deterministic identicon is derived from the id alone; it claims no
     // persona authorship, so it may stand in while the identity proof settles.
+    if(decline) return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="portrait declined by the persona; its stated reason is shown">`
+      +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
     return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>identity proof pending · portrait withheld</small></span></span>`;
   }
@@ -6168,6 +6251,10 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
+  if(!descriptor&&decline){
+    return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="portrait declined by the persona; its stated reason is shown">`
+      +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
+  }
   const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
   const avatarLabel=descriptor
     ?'neutral person silhouette shown while persona-authored raster avatar is verified'
@@ -6900,6 +6987,20 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
     +(executionRows.length?`<div class="agentic-practice"><b>Executable evidence from task runs</b><div>${executionRows.map((row)=>{const at=Date.parse(String(row.last_at||''));return `<span title="${esc(row.last_command_hash)}">${esc(row.executable)} · ${esc(row.successful_count)}/${esc(row.invocation_count)} succeeded${Number.isFinite(at)?` · ${esc(_ago(at))}`:''}</span>`;}).join('')}</div></div>`:'')
     +`<p class="agentic-neutrality">Retained knowledge can return through the persona's bounded future-cognition inventory. Authored tactics, active bindings, acquired tools, and practice remain separate verified facts—not an automatic expertise score. Executable evidence contains exact launchers plus mechanically sampled child processes; it does not parse shell text, and short-lived child programs may be absent.</p></section>`;
 }
+function _latestLessonHTML(agentic){
+  if(!['personaos-persona-agentic-development/2','personaos-persona-agentic-development/3'].includes(agentic?.schema)) return '';
+  const methods=Array.isArray(agentic.authored_methods)?agentic.authored_methods.filter((m)=>m&&typeof m==='object'):[];
+  if(!methods.length) return '';
+  const authoredAt=(m)=>String(m.updated_at||m.created_at||'');
+  const latest=[...methods].sort((a,b)=>authoredAt(b).localeCompare(authoredAt(a)))[0];
+  const text=_firstAuthoredMethodText(latest.body);
+  if(!text) return '';
+  const when=Number.isFinite(Date.parse(authoredAt(latest)))?_friendlyInstant(authoredAt(latest)):'';
+  return `<section class="pk-latest-lesson"><div class="pc-section-head"><span>Latest lesson</span>`
+    +`<small>${icon('check','ico-sm')} persona-authored</small></div>`
+    +`<p title="${esc(_compactHumanLabel(text,600))}"><strong>${esc(_compactHumanLabel(text,200))}</strong>`
+    +(when?`<small>authored ${esc(when)}</small>`:'')+`</p></section>`;
+}
 function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
   const doc=retained?.doc;
@@ -6949,7 +7050,10 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
     ?`<section class="pc-proven-facts"><div class="pc-section-head"><span>Proven facts it holds</span>`
       +`<small>${icon('check','ico-sm')} kernel-signed snapshot</small></div>`
       +facts.map((fact)=>`<p>${esc(_compactHumanLabel(String(fact),220))}</p>`).join('')+'</section>':'';
-  return currentHTML+factsHTML+agenticHTML;
+  // C-OP-16: the member's latest lesson leads -- the newest persona-authored
+  // method, by its own authored time, as the persona's claim.
+  const latestLessonHTML=_latestLessonHTML(publicCognition?doc.agentic_development:null);
+  return latestLessonHTML+currentHTML+factsHTML+agenticHTML;
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -7165,6 +7269,54 @@ function _pkEnvTools(kernel,envSid){
 }
 const PK_TASK_EXEC_DOING=Object.freeze({running_llm:'thinking…',run_participant:'on a mission',
   idle:'resting',away:'away',available:'ready',paused_participant:'paused'});
+// ---- C-OP-16 member view: who and what, per member ----
+// The signed declaring persona of an artifact outranks the access owner.
+function _artifactDeclaringSid(record){
+  return _shortId(record?.declaring_persona_id||record?._access?.owner_persona_id||'');
+}
+// The persona's own stated refusal of the identity requirement (R-ID-1),
+// verified as a kernel-signed sibling; null when none was stated.
+function _verifiedIdentityDecline(personaKey){
+  const row=S.personaDiscoveryByKey.get(personaKey)||null;
+  const status=row?._identityRequirementStatusVerified===true?row.identity_requirement_status:null;
+  return status&&status.declined===true
+    ?{reason:String(status.reason||''),declaredAt:String(status.declared_at||'')}:null;
+}
+function _identityDeclineCaptionHTML(decline){
+  // The persona's OWN statement, rendered as its claim -- never a host verdict.
+  return `<small class="pc-avatar-claim persona-authored-claim-inline" title="${esc(decline.reason)}">`
+    +`portrait declined — ${esc(_compactHumanLabel(decline.reason,110))}<em>persona's own statement</em></small>`;
+}
+// The kernel-signed scorecard of one run, found on its verified task record.
+function _scorecardForRun(kernel,run){
+  const exactRun=String(run||'').trim(); if(!kernel||!exactRun) return null;
+  for(const id of (S.order||[])){ const r=S.recs.get(id);
+    if(!r||r.kind!=='task'||String(r._kernel||'')!==String(kernel||'')||r._runScorecardVerified!==true) continue;
+    if(String(r.run_scorecard?.run_id||'')===exactRun) return r.run_scorecard; }
+  return null;
+}
+function _runScorecardHTML(scorecard,{compact=false}={}){
+  if(!publicRunScorecardShapeOk(scorecard)) return '';
+  const names=Object.keys(scorecard.counters).sort();
+  const unavailable=[...scorecard.unavailable_counters].sort();
+  const rows=names.map((name)=>`<div><dt>${esc(humanizeMachineKey(name))}</dt><dd><b>${esc(String(scorecard.counters[name]))}</b></dd></div>`).join('')
+    // C-OP-14: an unreadable source is named, never counted as zero.
+    +unavailable.map((name)=>`<div class="scorecard-unavailable"><dt>${esc(humanizeMachineKey(name))}</dt><dd><em>not measurable — source unreadable</em></dd></div>`).join('');
+  const settled=_friendlyInstant(scorecard.settled_at);
+  return `<section class="pc-run-scorecard mechanical-run-observation is-scorecard${compact?' compact':''}" aria-label="run scorecard, kernel-signed">`
+    +`<div class="pc-section-head"><span>Run scorecard</span><small>${icon('check','ico-sm')} kernel-signed · system-observed</small></div>`
+    +`<dl class="scorecard-rows">${rows||'<div><dt>no counters</dt><dd><em>the scorecard carried no measurable counter</em></dd></div>'}</dl>`
+    +`<small class="scorecard-foot" title="${esc(`run ${scorecard.run_id} · scorecard ${scorecard.scorecard_event_id}`)}">${names.length} measured · ${unavailable.length} not measurable${settled?` · settled ${esc(settled)}`:''}</small></section>`;
+}
+// What the member built this run: its current live workspaces scoped to the
+// exact run when one is known, else its latest run.
+function _builtThisRunHTML(context,run){
+  const rows=Array.isArray(context?.liveWorkspaces)?context.liveWorkspaces:[];
+  const exactRun=String(run||'').trim();
+  const scoped=exactRun?rows.filter((row)=>String(row?.run||'')===exactRun):[];
+  return _liveWorkspacesHTML(scoped.length?scoped:rows,
+    {label:scoped.length?'Built this run':'Built in my latest run',scope:'my work'});
+}
 // ==== end collectible card gallery helpers ============================
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
@@ -7424,11 +7576,15 @@ function renderPersonaCard(pid,kernel='',context={}){
     +pkStat(cogStats.tl,'TOOLS','tools it acquired and can use')
     +pkStat(cogStats.ev,'EVOLUTIONS','times it updated its own knowledge or tactics')
     +`</div>`:'';
+  // C-OP-16: a persona that stated its refusal of the identity requirement is
+  // shown with its own reason, as its claim, instead of an indefinite "pending".
+  const identityDecline=hasSignedName?null:_verifiedIdentityDecline(personaKey);
   const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
+    :identityDecline?icon('check','ico-sm')+` identity declined · stated reason: <q class="persona-authored-claim-inline" title="${esc(identityDecline.reason)}">${esc(_compactHumanLabel(identityDecline.reason,96))}</q>`
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
     :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
-  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
+  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
     +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}>${esc(pkName)}</h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
@@ -7444,12 +7600,15 @@ function renderPersonaCard(pid,kernel='',context={}){
     +_personaActivityHTML(acts,personaKey)
     +pkTypeRow
     +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
+    // C-OP-16: what the member built this run, and the run's kernel-signed
+    // scorecard, lead the face beside the published files.
+    +_builtThisRunHTML(context,taskRun)
+    +_runScorecardHTML(_scorecardForRun(ref.kernel,taskRun),{compact:true})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
     +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
     +aboutHTML+capabilityHTML
     +(pkWorkNoteText||execDoing?`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
-    +_liveWorkspacesHTML(context.liveWorkspaces,{label:'My current files',scope:'my work'})
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kind">verified persona</span></footer>`
@@ -8198,8 +8357,11 @@ async function refreshSystemView(){
     if(authoredName)
       _PERSONA_NAME.set(personaKey,authoredName);
     else _PERSONA_NAME.delete(personaKey); } }
-  // Artifacts join only through their exact verified environment authority.
-  // A run, title, owner or observation order can never manufacture that binding.
+  // Artifacts join their environment only through exact verified environment
+  // authority, and their member only through the signed declaring persona
+  // (falling back to the access owner). A run, title or observation order
+  // can never manufacture either binding; an artifact belongs to both
+  // (C-OP-16: "what the member built").
   const artByEnv=new Map();
   const artByPersona=new Map();
   const unresolvedArtifacts=[];
@@ -8210,8 +8372,8 @@ async function refreshSystemView(){
     if(authority.status==='resolved') target=envKey(r._kernel,authority.environmentId);
     else unresolvedArtifacts.push({record:r,authority});
     if(target) (artByEnv.get(target)||artByEnv.set(target,[]).get(target)).push(r);
-    const owner=_shortId(r._access?.owner_persona_id||'');
-    if(owner&&!target){ const pk=_personaKey(r._kernel,owner);
+    const owner=_artifactDeclaringSid(r);
+    if(owner){ const pk=_personaKey(r._kernel,owner);
       (artByPersona.get(pk)||artByPersona.set(pk,[]).get(pk)).push(r); }
   }
   const envArtifacts=(b)=>artByEnv.get(envKey(b.kernel,b.sid))||[];
@@ -10720,6 +10882,10 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     ?renderPersonaFeedDoc(retainedPersonaTelemetry,personaKey)
     :renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
+  // C-OP-16: the run's kernel-signed scorecard beside the member's work status.
+  const _personaScorecard=_scorecardForRun(S.drawerLiveKernel,_prun);
+  html+=H('Run scorecard')+(_personaScorecard?_runScorecardHTML(_personaScorecard)
+    :'<div class="privacy-note">No kernel-signed scorecard for this run yet — the run has not reached its settle point, or its task record carries none.</div>');
   // Public activity combines persona-signed final output with explicitly
   // provisional kernel observations; the private thinking frame remains
   // available only with operator authority. Both refresh on the live cadence.
