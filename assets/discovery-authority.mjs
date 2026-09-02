@@ -275,13 +275,6 @@ export function projectDiscoveryRecord(record, canRead) {
     out.identity_signing_key_id = record.identity_signing_key_id;
     out.identity_public_key_hex = record.identity_public_key_hex;
   }
-  // The signed persona↔artifact↔run attribution: two bounded identifiers, no
-  // locator, so "what the member built" joins without a read grant (C-OP-16).
-  if (record?.kind === 'artifact') {
-    for (const key of ['declaring_persona_id', 'run_id']) {
-      if (Object.hasOwn(record, key) && typeof record[key] === 'string') out[key] = record[key];
-    }
-  }
   return out;
 }
 

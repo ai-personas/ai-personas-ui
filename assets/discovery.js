@@ -6242,7 +6242,7 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   if(!identityVerified){
     // The deterministic identicon is derived from the id alone; it claims no
     // persona authorship, so it may stand in while the identity proof settles.
-    if(decline) return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="portrait declined by the persona; its stated reason is shown">`
+    if(decline) return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
     return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>identity proof pending · portrait withheld</small></span></span>`;
@@ -6252,7 +6252,7 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
   if(!descriptor&&decline){
-    return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="portrait declined by the persona; its stated reason is shown">`
+    return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
   }
   const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
@@ -7272,7 +7272,12 @@ const PK_TASK_EXEC_DOING=Object.freeze({running_llm:'thinking…',run_participan
 // ---- C-OP-16 member view: who and what, per member ----
 // The signed declaring persona of an artifact outranks the access owner.
 function _artifactDeclaringSid(record){
-  return _shortId(record?.declaring_persona_id||record?._access?.owner_persona_id||'');
+  // The persona who declared the artifact: the exported artifact_declaration
+  // (the persona's own signed declare_artifact action) names it; the access
+  // policy's owner is the RUN persona and is only the fallback.
+  let declared='';
+  try{ declared=String(_artifactDeclarationDisplayProjection(record||{})?.declaring_persona_id||''); }catch(_){ declared=''; }
+  return _shortId(declared||record?.declaring_persona_id||record?._access?.owner_persona_id||'');
 }
 // The persona's own stated refusal of the identity requirement (R-ID-1),
 // verified as a kernel-signed sibling; null when none was stated.
@@ -7285,7 +7290,7 @@ function _verifiedIdentityDecline(personaKey){
 function _identityDeclineCaptionHTML(decline){
   // The persona's OWN statement, rendered as its claim -- never a host verdict.
   return `<small class="pc-avatar-claim persona-authored-claim-inline" title="${esc(decline.reason)}">`
-    +`portrait declined — ${esc(_compactHumanLabel(decline.reason,110))}<em>persona's own statement</em></small>`;
+    +`identity declined — ${esc(_compactHumanLabel(decline.reason,110))}<em>persona's own statement</em></small>`;
 }
 // The kernel-signed scorecard of one run, found on its verified task record.
 function _scorecardForRun(kernel,run){
