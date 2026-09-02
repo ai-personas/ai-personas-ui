@@ -2064,6 +2064,37 @@ async function verifyPublicRunScorecard(base,doc,record){
   if(record?.kind!=='task'||!publicRunScorecardShapeOk(doc)) return false;
   return verifyCurrentMasterSignedDocument(base,doc);
 }
+const PUBLIC_RUN_SCORECARDS_MAX=64;
+// Environment records carry `run_scorecards`: one signed scorecard per task
+// of the environment (the newest settle of that task), newest first. The
+// task record is not a durable carrier -- an operator stop leaves the run
+// document incomplete and the live task doc vanishes at termination, exactly
+// when the scorecard appears -- so the environment record carries them.
+// Admission is exact and fails closed per element: an oversized array admits
+// nothing; each element must have the exact scorecard shape and name THIS
+// environment; a later element repeating a task id is dropped (the first,
+// newest, stands). Signatures are verified afterwards, one element at a time.
+function _admitRunScorecardsArray(list,envIdentity){
+  if(!Array.isArray(list)||list.length>PUBLIC_RUN_SCORECARDS_MAX) return [];
+  const want=String(envIdentity||''); if(!want) return [];
+  const seenTasks=new Set(), admitted=[];
+  for(const element of list){
+    if(!publicRunScorecardShapeOk(element)) continue;
+    if(environmentIdentity(element.environment_id)!==want) continue;
+    if(seenTasks.has(element.task_id)) continue;
+    seenTasks.add(element.task_id); admitted.push(element);
+  }
+  return admitted;
+}
+async function verifyPublicRunScorecardsForEnvironment(base,list,record){
+  if(record?.kind!=='env') return [];
+  const envIdentity=environmentIdentity(String(record.did||record.record_id||''));
+  const verified=[];
+  for(const element of _admitRunScorecardsArray(list,envIdentity)){
+    if(await verifyCurrentMasterSignedDocument(base,element)) verified.push(element);
+  }
+  return verified;
+}
 function publicIdentityRequirementStatusShapeOk(doc,personaId){
   if(!_exactFieldSet(doc,PUBLIC_IDENTITY_REQUIREMENT_STATUS_FIELDS)) return false;
   if(doc.schema!==PUBLIC_IDENTITY_REQUIREMENT_STATUS_SCHEMA||doc.signing_key_id!=='kernel-master') return false;
@@ -2381,6 +2412,8 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     ?await verifyPublicRunScorecard(base,doc.run_scorecard,r):false;
   const identityStatusVerified=!!personaId&&doc.identity_requirement_status!=null
     ?await verifyPublicIdentityRequirementStatus(base,doc.identity_requirement_status,r,personaId):false;
+  const runScorecards=r.kind==='env'&&Array.isArray(doc.run_scorecards)
+    ?await verifyPublicRunScorecardsForEnvironment(base,doc.run_scorecards,r):[];
   return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     // Keep the reached provider route separate from the read-gated content
@@ -2405,6 +2438,8 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     _projectTopology:projectTopologyVerified?doc.project_topology:null,
     _runScorecardVerified:runScorecardVerified,
     run_scorecard:runScorecardVerified?doc.run_scorecard:null,
+    _runScorecardsVerified:runScorecards.length>0,
+    run_scorecards:runScorecards,
     _identityRequirementStatusVerified:identityStatusVerified,
     identity_requirement_status:identityStatusVerified?doc.identity_requirement_status:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
@@ -3893,6 +3928,9 @@ function upsert(r){
     // persona↔artifact↔run attribution ride the stored row only when verified.
     _runScorecardVerified:r.kind==='task'&&r._runScorecardVerified===true,
     run_scorecard:r.kind==='task'&&r._runScorecardVerified===true&&r.run_scorecard?r.run_scorecard:null,
+    _runScorecardsVerified:r.kind==='env'&&r._runScorecardsVerified===true,
+    run_scorecards:r.kind==='env'&&r._runScorecardsVerified===true&&Array.isArray(r.run_scorecards)
+      ?r.run_scorecards.slice(0,PUBLIC_RUN_SCORECARDS_MAX):[],
     _identityRequirementStatusVerified:r.kind==='persona'&&r._identityRequirementStatusVerified===true,
     identity_requirement_status:r.kind==='persona'&&r._identityRequirementStatusVerified===true
       &&r.identity_requirement_status?r.identity_requirement_status:null,
@@ -7293,14 +7331,35 @@ function _identityDeclineCaptionHTML(decline){
     +`identity declined — ${esc(_compactHumanLabel(decline.reason,110))}<em>persona's own statement</em></small>`;
 }
 // The kernel-signed scorecard of one run, found on its verified task record.
-function _scorecardForRun(kernel,run){
-  const exactRun=String(run||'').trim(); if(!kernel||!exactRun) return null;
+// The kernel-signed scorecard for a member's run: (a) the task record of
+// that run, (b) the environment records' scorecard for that run, (c) the
+// newest settle of the same TASK (labelled as such), (d) nothing -- never a
+// guess. `envIds` bounds (b) and (c) to the member's environments when known.
+function _scorecardForRun(kernel,run,taskId='',envIds=[]){
+  const exactKernel=String(kernel||''); if(!exactKernel) return null;
+  const exactRun=String(run||'').trim(), exactTask=String(taskId||'').trim();
+  const wantEnvs=new Set((envIds||[]).map((id)=>environmentIdentity(String(id||''))).filter(Boolean));
+  const envRows=[], taskRows=[];
   for(const id of (S.order||[])){ const r=S.recs.get(id);
-    if(!r||r.kind!=='task'||String(r._kernel||'')!==String(kernel||'')||r._runScorecardVerified!==true) continue;
-    if(String(r.run_scorecard?.run_id||'')===exactRun) return r.run_scorecard; }
+    if(!r||String(r._kernel||'')!==exactKernel) continue;
+    if(r.kind==='task'&&r._runScorecardVerified===true&&r.run_scorecard) taskRows.push(r.run_scorecard);
+    if(r.kind==='env'&&r._runScorecardsVerified===true&&Array.isArray(r.run_scorecards)
+      &&(!wantEnvs.size||wantEnvs.has(environmentIdentity(String(r.did||r.record_id||'')))))
+      envRows.push(...r.run_scorecards);
+  }
+  if(exactRun){
+    const byRun=taskRows.find((card)=>String(card.run_id||'')===exactRun)
+      ||envRows.find((card)=>String(card.run_id||'')===exactRun);
+    if(byRun) return {scorecard:byRun,via:'run'};
+  }
+  if(exactTask){
+    const sameTask=[...taskRows,...envRows].filter((card)=>String(card.task_id||'')===exactTask)
+      .sort((a,b)=>String(b.settled_at||'').localeCompare(String(a.settled_at||'')));
+    if(sameTask.length) return {scorecard:sameTask[0],via:'task'};
+  }
   return null;
 }
-function _runScorecardHTML(scorecard,{compact=false}={}){
+function _runScorecardHTML(scorecard,{compact=false,via='run'}={}){
   if(!publicRunScorecardShapeOk(scorecard)) return '';
   const names=Object.keys(scorecard.counters).sort();
   const unavailable=[...scorecard.unavailable_counters].sort();
@@ -7308,8 +7367,9 @@ function _runScorecardHTML(scorecard,{compact=false}={}){
     // C-OP-14: an unreadable source is named, never counted as zero.
     +unavailable.map((name)=>`<div class="scorecard-unavailable"><dt>${esc(humanizeMachineKey(name))}</dt><dd><em>not measurable — source unreadable</em></dd></div>`).join('');
   const settled=_friendlyInstant(scorecard.settled_at);
-  return `<section class="pc-run-scorecard mechanical-run-observation is-scorecard${compact?' compact':''}" aria-label="run scorecard, kernel-signed">`
-    +`<div class="pc-section-head"><span>Run scorecard</span><small>${icon('check','ico-sm')} kernel-signed · system-observed</small></div>`
+  const heading=via==='task'?"Scorecard of this task's latest settle":'Run scorecard';
+  return `<section class="pc-run-scorecard mechanical-run-observation is-scorecard via-${esc(via)}${compact?' compact':''}" aria-label="${esc(heading.toLowerCase())}, kernel-signed">`
+    +`<div class="pc-section-head"><span>${esc(heading)}</span><small>${icon('check','ico-sm')} kernel-signed · system-observed</small></div>`
     +`<dl class="scorecard-rows">${rows||'<div><dt>no counters</dt><dd><em>the scorecard carried no measurable counter</em></dd></div>'}</dl>`
     +`<small class="scorecard-foot" title="${esc(`run ${scorecard.run_id} · scorecard ${scorecard.scorecard_event_id}`)}">${names.length} measured · ${unavailable.length} not measurable${settled?` · settled ${esc(settled)}`:''}</small></section>`;
 }
@@ -7524,6 +7584,11 @@ function renderPersonaCard(pid,kernel='',context={}){
   // lifecycle independently says this run is the current live execution.
   const currentTask=verifiedCurrentTask?.liveTask===true
     &&typeof verifiedCurrentTask.task==='string'?verifiedCurrentTask.task:'';
+  // C-OP-16: the member's own scorecard -- by its exact run first, then by
+  // its task's newest settle (labelled), bounded to its environments.
+  const scorecardTaskId=String(verifiedCurrentTask?.taskId
+    ||(taskRun?(S.recs.get(_pkTaskFacts(ref.kernel,'',taskRun)?.recordId)?.task_lifecycle?.task_id||''):'')||'');
+  const scorecardHit=_scorecardForRun(ref.kernel,taskRun,scorecardTaskId,environments.map((env)=>env.sid));
   const currentTaskHTML=currentTask
     ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong title="${esc(currentTask)}">${esc(_compactHumanLabel(currentTask,104))}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
@@ -7608,7 +7673,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     // C-OP-16: what the member built this run, and the run's kernel-signed
     // scorecard, lead the face beside the published files.
     +_builtThisRunHTML(context,taskRun)
-    +_runScorecardHTML(_scorecardForRun(ref.kernel,taskRun),{compact:true})
+    +_runScorecardHTML(scorecardHit?.scorecard,{compact:true,via:scorecardHit?.via||'run'})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
     +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
@@ -10888,9 +10953,13 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     :renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
   // C-OP-16: the run's kernel-signed scorecard beside the member's work status.
-  const _personaScorecard=_scorecardForRun(S.drawerLiveKernel,_prun);
-  html+=H('Run scorecard')+(_personaScorecard?_runScorecardHTML(_personaScorecard)
-    :'<div class="privacy-note">No kernel-signed scorecard for this run yet — the run has not reached its settle point, or its task record carries none.</div>');
+  const _personaEnvIds=_personaEnv.authority?.status==='resolved'&&_personaEnv.authority.environmentId
+    ?[_personaEnv.authority.environmentId]:[];
+  const _personaTaskId=String(S.recs.get(_pkTaskFacts(S.drawerLiveKernel,_personaEnvIds[0]||'',_prun)?.recordId)?.task_lifecycle?.task_id||'');
+  const _personaScorecardHit=_scorecardForRun(S.drawerLiveKernel,_prun,_personaTaskId,_personaEnvIds);
+  html+=H(_personaScorecardHit?.via==='task'?"Scorecard of this task's latest settle":'Run scorecard')
+    +(_personaScorecardHit?_runScorecardHTML(_personaScorecardHit.scorecard,{via:_personaScorecardHit.via})
+    :'<div class="privacy-note">No kernel-signed scorecard for this run yet — the run has not reached its settle point, or no environment or task record carries one.</div>');
   // Public activity combines persona-signed final output with explicitly
   // provisional kernel observations; the private thinking frame remains
   // available only with operator authority. Both refresh on the live cadence.
@@ -11011,6 +11080,16 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
   const retainedEnvironmentTelemetry=_retainedVerifiedEntityFeed(
     'env',envId,S.drawerLiveKernel);
+  // C-OP-16: the environment is the durable carrier of its runs' scorecards
+  // (one per task, newest settle first), each independently kernel-signed.
+  if(r._runScorecardsVerified===true&&Array.isArray(r.run_scorecards)&&r.run_scorecards.length){
+    html+=H(`Run scorecards (${r.run_scorecards.length})`)
+      +`<div class="env-scorecards">`+r.run_scorecards.map((card)=>{
+        const settled=_friendlyInstant(card.settled_at)||String(card.settled_at||'');
+        return `<div class="env-scorecard"><div class="env-scorecard-head" title="${esc(`task ${card.task_id} · run ${card.run_id}`)}">`
+          +`<span>task ${esc(_shortId(card.task_id).slice(0,12))}</span><span>run ${esc(_shortId(card.run_id).slice(0,16))}</span><span>settled ${esc(settled)}</span></div>`
+          +_runScorecardHTML(card,{via:'run'})+`</div>`; }).join('')+`</div>`;
+  }
   html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${retainedEnvironmentTelemetry
     ?renderEnvFeedDoc(retainedEnvironmentTelemetry)
     :renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
