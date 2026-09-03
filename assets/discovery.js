@@ -879,7 +879,10 @@ function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',pers
   const modelHistoryChanged=store.get(personaKey)?.modelProjection!==modelProjection;
   store.delete(personaKey);
   store.set(personaKey,{doc,base,kernel,personaId,modelProjection,observedAt:Date.now()});
-  while(store.size>4) store.delete(store.keys().next().value);
+  // Retain one verified cognition document per hydrated persona up to the
+  // cognition window: a four-document cap rotated the lesson lead off every
+  // fifth card as the deck hydrated (observed 2026-09-03: 4 leads, then 0).
+  while(store.size>NETWORK_LIMITS.cognitionPersonas) store.delete(store.keys().next().value);
   return modelHistoryChanged;
 }
 function _personaModelHistory(personaKey,fallback=[]){
@@ -2289,6 +2292,41 @@ const PUBLIC_ENVIRONMENT_FEED_FIELDS=Object.freeze([
   'activity','communication_routes','communication_routes_hash','environment_id','generated_at',
   'member_count','members','model_status','node_id','schema','signature_hex','signing_key_id','status','tier',
 ].sort());
+// /2 adds run_budgets: the node's live signed model-call balance per run
+// (counts only; a run whose ledger does not verify says available:false).
+const PUBLIC_ENVIRONMENT_FEED_FIELDS_V2=Object.freeze([...PUBLIC_ENVIRONMENT_FEED_FIELDS,'run_budgets'].sort());
+const PUBLIC_LIVE_RUN_BUDGET_SCHEMA='personaos-live-run-budget/1';
+const PUBLIC_LIVE_RUN_BUDGET_FIELDS=Object.freeze(['available','environment_id','run','schema','status_at_last_export','task_id']);
+const PUBLIC_LIVE_RUN_BUDGET_OPTIONAL=Object.freeze(['budget_mode','granted','remaining','spent_net','remaining_exceeds_grant_from_topups']);
+function _validPublicRunBudgets(rows,eid){
+  if(!Array.isArray(rows)||rows.length>8) return false;
+  for(const row of rows){
+    if(!row||typeof row!=='object'||Array.isArray(row)||row.schema!==PUBLIC_LIVE_RUN_BUDGET_SCHEMA) return false;
+    const keys=Object.keys(row);
+    if(PUBLIC_LIVE_RUN_BUDGET_FIELDS.some((k)=>!keys.includes(k))
+        ||keys.some((k)=>!PUBLIC_LIVE_RUN_BUDGET_FIELDS.includes(k)&&!PUBLIC_LIVE_RUN_BUDGET_OPTIONAL.includes(k))) return false;
+    if(typeof row.available!=='boolean'||String(row.environment_id||'')!==eid
+        ||!_safePublicCognitionAtom(row.run,512,{required:true})||!_safePublicCognitionAtom(row.task_id,512)
+        ||typeof row.status_at_last_export!=='string'||row.status_at_last_export.length>64) return false;
+    if('budget_mode' in row&&!_safePublicCognitionAtom(row.budget_mode,32)) return false;
+    for(const k of ['granted','remaining','spent_net']){
+      if(row.available){ if(!Number.isSafeInteger(row[k])||row[k]<0) return false; }
+      else if(k in row) return false;
+    }
+    if('remaining_exceeds_grant_from_topups' in row&&row.remaining_exceeds_grant_from_topups!==true) return false;
+  }
+  return true;
+}
+// The newest verified balance of one environment's runs, for the cards.
+function _environmentRunBudget(doc){
+  const rows=Array.isArray(doc?.run_budgets)?doc.run_budgets.filter((r)=>r&&r.available===true):[];
+  return rows.length?rows[rows.length-1]:null;
+}
+function _runBudgetLabel(budget){
+  if(!budget) return '';
+  const used=`${budget.spent_net} of ${budget.granted} model call${budget.granted===1?'':'s'} used`;
+  return budget.remaining_exceeds_grant_from_topups?`${used} · ${budget.remaining} remaining after top-ups`:`${used} · ${budget.remaining} remaining`;
+}
 const PUBLIC_PROJECT_TOPOLOGY_FIELDS=Object.freeze([
   'cross_verified','environment_creation_event_id','environment_ids','hosting_link_event_id',
   'members','primary_environment_id','project_creation_event_id','project_id','schema','status',
@@ -2389,9 +2427,11 @@ async function verifyPublicEntityDocument(base,rel,doc){
         ||!Array.isArray(doc.activity)
         ||!Array.isArray(doc.communication_routes)
         ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
-  }else if(doc?.schema==='personaos-environment-telemetry-public/1'){
+  }else if(doc?.schema==='personaos-environment-telemetry-public/1'||doc?.schema==='personaos-environment-telemetry-public/2'){
     const eid=String(doc.environment_id||'');
-    if(!_exactObjectFields(doc,PUBLIC_ENVIRONMENT_FEED_FIELDS)||!eid||eid.length>512
+    const feedV2=doc.schema==='personaos-environment-telemetry-public/2';
+    if(!_exactObjectFields(doc,feedV2?PUBLIC_ENVIRONMENT_FEED_FIELDS_V2:PUBLIC_ENVIRONMENT_FEED_FIELDS)||!eid||eid.length>512
+        ||(feedV2&&!_validPublicRunBudgets(doc.run_budgets,eid))
         ||path!==`telemetry/environments/${_telemetryEntitySlug(eid)}.json`
         ||doc.tier!=='public_redacted'||!Number.isSafeInteger(doc.member_count)
         ||doc.member_count<0||!Array.isArray(doc.members)||doc.members.length!==doc.member_count
@@ -6998,7 +7038,7 @@ function _firstAuthoredMethodText(value,depth=0){
   return '';
 }
 function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
-  if(!['personaos-persona-agentic-development/2','personaos-persona-agentic-development/3'].includes(agentic?.schema)) return '';
+  if(!PUBLIC_PERSONA_AGENTIC_SCHEMAS.includes(agentic?.schema)) return '';
   const retainedKnowledge=agentic.authored_knowledge||[];
   const methods=agentic.authored_methods||[], bindings=agentic.active_bindings||[];
   const practice=agentic.recent_action_practice||[], acquired=agentic.acquired_tools||[];
@@ -7025,8 +7065,10 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
   }).join('');
   const methodRows=[...methods].reverse().slice(0,compact?2:12).map((method)=>{
     const authoredText=_firstAuthoredMethodText(method.body);
+    const omittedReason=String(method.body_omitted_reason||'').trim();
     const title=authoredText?_compactHumanLabel(authoredText,compact?180:420)
-      :'Authored method body is retained by hash';
+      :(omittedReason?`Authored method body is retained by hash (${humanizeMachineKey(omittedReason)})`
+        :'Authored method body is retained by hash');
     const active=activeIds.has(method.fragment_id);
     const authoredAt=Date.parse(String(method.updated_at||method.created_at||''));
     const authoredWhen=Number.isFinite(authoredAt)?` · authored ${_friendlyInstant(method.updated_at||method.created_at)}`:'';
@@ -7057,7 +7099,7 @@ function _personaAgenticDevelopmentHTML(agentic,{compact=false}={}){
     +`<p class="agentic-neutrality">Retained knowledge can return through the persona's bounded future-cognition inventory. Authored tactics, active bindings, acquired tools, and practice remain separate verified facts—not an automatic expertise score. Executable evidence contains exact launchers plus mechanically sampled child processes; it does not parse shell text, and short-lived child programs may be absent.</p></section>`;
 }
 function _latestLessonHTML(agentic){
-  if(!['personaos-persona-agentic-development/2','personaos-persona-agentic-development/3'].includes(agentic?.schema)) return '';
+  if(!PUBLIC_PERSONA_AGENTIC_SCHEMAS.includes(agentic?.schema)) return '';
   const methods=Array.isArray(agentic.authored_methods)?agentic.authored_methods.filter((m)=>m&&typeof m==='object'):[];
   if(!methods.length) return '';
   const authoredAt=(m)=>String(m.updated_at||m.created_at||'');
@@ -7406,7 +7448,7 @@ function _runScorecardHTML(scorecard,{compact=false,via='run'}={}){
   const unavailable=[...scorecard.unavailable_counters].sort();
   const rows=names.map((name)=>`<div><dt>${esc(humanizeMachineKey(name))}</dt><dd><b>${esc(String(scorecard.counters[name]))}</b></dd></div>`).join('')
     // C-OP-14: an unreadable source is named, never counted as zero.
-    +unavailable.map((name)=>`<div class="scorecard-unavailable"><dt>${esc(humanizeMachineKey(name))}</dt><dd><em>not measurable — source unreadable</em></dd></div>`).join('');
+    +unavailable.map((name)=>`<div class="scorecard-unavailable"><dt>${esc(humanizeMachineKey(name))}</dt><dd><em>not measurable — no readable source</em></dd></div>`).join('');
   const settled=_friendlyInstant(scorecard.settled_at);
   const heading=via==='task'?"Scorecard of this task's latest settle"
     :via==='latest'?"Latest settled scorecard in this member's environments":'Run scorecard';
@@ -8622,8 +8664,10 @@ async function refreshSystemView(){
     const envFeedDoc=_retainedVerifiedEntityFeed('environment',b.sid,b.kernel);
     const envActiveCalls=telemetryActiveCalls(envFeedDoc||{}).length;
     const taskState=String(facts?.state||'').replace(/_/g,' ');
+    const envBudget=_environmentRunBudget(envFeedDoc||{});
     const doingBits=[taskState?`task ${taskState}`:'',
-      envActiveCalls?`${envActiveCalls} model call${envActiveCalls===1?'':'s'} running`:''].filter(Boolean);
+      envActiveCalls?`${envActiveCalls} model call${envActiveCalls===1?'':'s'} running`:'',
+      _runBudgetLabel(envBudget)].filter(Boolean);
     const envDoing=doingBits.length?doingBits.join(' · ')
       :(b.live?'live updates streaming':String(output.statusTxt||'available').toLowerCase());
     // HAVING row: members (count + up to five deterministic mini identicons),
@@ -9108,6 +9152,8 @@ function renderEnvFeedDoc(doc){
     +`<div class="lm"><div class="lmv">${esc(String(doc.env_type||'workspace').replace(/_/g,' '))}</div><div class="lmk">workspace kind</div></div>`
     +`<div class="lm"><div class="lmv">${esc(doc.member_count??(doc.members||[]).length)}</div><div class="lmk">people</div></div>`
     +`<div class="lm"><div class="lmv">${esc((doc.spans||[]).length)}</div><div class="lmk">updates</div></div>`
+    +(()=>{ const budget=_environmentRunBudget(doc);
+      return budget?`<div class="lm" title="${esc(_runBudgetLabel(budget))}"><div class="lmv">${esc(`${budget.spent_net}/${budget.granted}`)}</div><div class="lmk">model calls used</div></div>`:''; })()
     +`</div>`;
   const sp=doc.spans||[];
   if(sp.length){ const counts={}; sp.forEach((x)=>{const k2=(x.attributes||{})['personaos.lineage.event_kind']||x.name||'SPAN'; counts[k2]=(counts[k2]||0)+1;});
@@ -9554,6 +9600,21 @@ const PUBLIC_PERSONA_METHOD_FIELDS=Object.freeze([
   'authority_scope','body','body_included','created_at','fragment_hash','fragment_id',
   'persona_signature_verified','updated_at','version',
 ].sort());
+const PUBLIC_PERSONA_METHOD_FIELDS_V4=Object.freeze([...PUBLIC_PERSONA_METHOD_FIELDS,'body_omitted_reason'].sort());
+const PUBLIC_PERSONA_AGENTIC_SCHEMAS=Object.freeze(['personaos-persona-agentic-development/2',
+  'personaos-persona-agentic-development/3','personaos-persona-agentic-development/4']);
+// A method body is the persona's own distillation: a bounded mapping or a bounded
+// text, carried verbatim when included and empty when the node stated a reason.
+function _validPublicMethodBody(method,{v4=false}={}){
+  if(typeof method.body_included!=='boolean') return false;
+  if(v4){
+    if(typeof method.body_omitted_reason!=='string'
+        ||(method.body_omitted_reason&&!_safePublicCognitionAtom(method.body_omitted_reason,64))
+        ||(method.body_included!==(method.body_omitted_reason===''))) return false;
+  }
+  if(typeof method.body==='string') return v4&&method.body_included&&_safePublicCognitionText(method.body,4000,{required:true});
+  return _validPublicWorkDocument(method.body)&&(method.body_included||!Object.keys(method.body).length);
+}
 const PUBLIC_PERSONA_BINDING_FIELDS=Object.freeze([
   'binding_hash','binding_id','carrier_scope_refs','created_at','fragment_ids',
   'persona_signature_verified','updated_at','version',
@@ -10143,10 +10204,11 @@ function _validPublicPersonaEvolution(event){
     &&_safePublicCognitionAtom(event.task_id,512);
 }
 function _validPublicPersonaAgenticDevelopment(value){
-  const developmentV3=value?.schema==='personaos-persona-agentic-development/3';
+  const developmentV4=value?.schema==='personaos-persona-agentic-development/4';
+  const developmentV3=developmentV4||value?.schema==='personaos-persona-agentic-development/3';
   if(!value||typeof value!=='object'||Array.isArray(value)
       ||!_exactObjectFields(value,PUBLIC_PERSONA_AGENTIC_FIELDS)
-      ||(!developmentV3&&value.schema!=='personaos-persona-agentic-development/2')
+      ||!PUBLIC_PERSONA_AGENTIC_SCHEMAS.includes(value.schema)
       ||value.expertise_awarded_by_substrate!==false
       ||value.semantic_interpretation_performed!==false) return false;
   for(const field of ['authored_knowledge','authored_methods','active_bindings','recent_action_practice',
@@ -10176,13 +10238,11 @@ function _validPublicPersonaAgenticDevelopment(value){
   }
   const fragmentIds=new Set();
   for(const method of value.authored_methods){
-    if(!_exactObjectFields(method,PUBLIC_PERSONA_METHOD_FIELDS)
+    if(!_exactObjectFields(method,developmentV4?PUBLIC_PERSONA_METHOD_FIELDS_V4:PUBLIC_PERSONA_METHOD_FIELDS)
         ||!_safePublicCognitionAtom(method.fragment_id,512,{required:true})
         ||fragmentIds.has(method.fragment_id)
         ||!Number.isSafeInteger(method.version)||method.version<1
-        ||typeof method.body_included!=='boolean'
-        ||!_validPublicWorkDocument(method.body)
-        ||(!method.body_included&&Object.keys(method.body).length)
+        ||!_validPublicMethodBody(method,{v4:developmentV4})
         ||!_safePublicCognitionAtom(method.authority_scope,512)
         ||!_safePublicCognitionInstant(method.created_at)
         ||!_safePublicCognitionInstant(method.updated_at)

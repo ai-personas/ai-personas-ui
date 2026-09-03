@@ -5,6 +5,7 @@
 export const PUBLIC_PERSONA_TELEMETRY_SCHEMA='personaos-persona-telemetry-public/2';
 export const PUBLIC_ENVIRONMENT_TELEMETRY_SCHEMAS=Object.freeze(new Set([
   'personaos-environment-telemetry-public/1',
+  'personaos-environment-telemetry-public/2',
 ]));
 export const PUBLIC_ENTITY_INDEX_SCHEMA='personaos-telemetry-entities-public/1';
 export const OPERATOR_LIVE_TELEMETRY_SCHEMA='personaos-live-telemetry/1';
