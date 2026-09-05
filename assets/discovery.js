@@ -1,3 +1,4 @@
+import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
 import {
@@ -215,7 +216,7 @@ async function verifyRecord(doc,keyEntries){
   }
   return {ok:false,entry:null};
 }
-const isAbs=(u)=>/^https?:\/\//i.test(String(u||''));
+const isAbs=(u)=>/^(?:https?|libp2p):\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
 function normalizedHttpsBase(value){
@@ -353,7 +354,7 @@ function p2pDataRouteForUrl(value){
   }
   for(const [rawBase,route] of (S.p2pDataRoutes||new Map())){
     let base; try{ base=new URL(rawBase,location.href); }catch(_){ continue; }
-    if(target.origin!==base.origin) continue;
+    if(!sameRouteOrigin(target,base)) continue;
     const root=base.pathname.replace(/\/+$/,'');
     if(root&&target.pathname!==root&&!target.pathname.startsWith(root+'/')) continue;
     let path=target.pathname.slice(root.length).replace(/^\/+/, '');
@@ -445,6 +446,7 @@ async function fetchJson(u,init={}){
   // bounded default so one hung connection can never stall a refresh pipeline
   // (a stuck stage guard used to freeze card faces on their loading shells).
   const transportSignal=init.signal||AbortSignal.timeout(20000);
+  if(String(u).startsWith('libp2p:')) return null;
   try{ const r=await fetch(u,secureFetchInit(u,{...init,signal:transportSignal})); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return JSON.parse(new TextDecoder().decode(bytes)); }
@@ -2165,6 +2167,13 @@ async function verifiedCanonicalBaseMatch(value,base,boot){
   const expectedBase=String(requestedBase||location.origin).replace(/\/$/,'');
   const canonicalBase=String(value||'').replace(/\/$/,'');
   if(canonicalBase===expectedBase||(!requestedBase&&!canonicalBase)) return true;
+  const peerRoute=S.p2pDataRoutes?.get(requestedBase), provider=peerRoute?.providerRecord;
+  if(provider&&providerRouteBase(provider)===requestedBase
+      &&provider.provider_peer_id===peerRoute.peerId
+      &&provider.host_kernel_id===boot?.kernel_id
+      &&String(provider.base_url||'').replace(/\/$/,'')===canonicalBase
+      &&provider.public_key_hex===currentMasterKey(
+        S.keyDocs.get(base||'@origin')?.entries||[])) return true;
   // A loopback probe — or a route this node itself published in its current-
   // master signed reachability profile — is an alternate delivery route, not
   // the canonical outward route written into a signed inventory.  Bind that
@@ -2962,7 +2971,7 @@ async function verifiedRouteHintsFromP2PResult(result,{signal=null}={}){
   for(const item of records){
     if(signal?.aborted) break;
     const doc=item?.document, p=item?.record||{};
-    const base=normalizedHttpsBase(p.base_url);
+    const base=providerRouteBase(p);
     if(!doc?.record||!expectedKey||!base
         ||String(p.key||'')!==expectedKey
         ||p.visibility_tier!=='public'
@@ -14233,6 +14242,9 @@ async function _discoverFromP2P(hint,{signal=null}={}){
       ||keysDoc?.kernel_id!==hint.kernel) return {boot:null,found:[],inventory:null};
   const keys=admitKeysDocument(base,boot,keysDoc,{expectedMaster:p.public_key_hex});
   if(!keys['kernel-master']) return {boot:null,found:[],inventory:null};
+  // The verified provider already binds this peer and canonical address.
+  // Register that transport before checking the inventory's canonical base.
+  _registerP2PDataRoute(hint);
   const advertisedRecordCount=Number(boot.record_count);
   const providerIndexMaxBytes=providerIndexResponseByteLimit(
     advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
@@ -14262,6 +14274,7 @@ async function _discoverFromP2P(hint,{signal=null}={}){
       // same verification; neither is a locator or an identity authority.
       const identityUrl=join(base,identityPath);
       const directIdentity=(async()=>{
+        if(!isHttp(identityUrl)) return null;
         const response=await fetch(identityUrl,secureFetchInit(identityUrl,{signal:identitySignal}));
         if(!response.ok) return null;
         const bytes=await readBoundedResponseBytes(response,2*1024*1024);
@@ -14307,7 +14320,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
     // ProviderRecord; the complete inventory still passes the same manifest,
     // chain, document and policy verification as HTTP before promotion.
     let resolved=await _discoverFromP2P(hint,{signal});
-    if(!resolved.boot&&!signal?.aborted){
+    if(!resolved.boot&&!signal?.aborted&&isHttp(base)){
       resolved=await discoverFrom(base,'internet',null,
         {expectedKernel:kernel,resolveProviderAliases:false,signal});
     }
@@ -14345,7 +14358,7 @@ async function _resolveProviderHintJob(job){
     }
     const unique=new Map();
     for(const routeHint of routeHints){
-      const base=normalizedHttpsBase(routeHint?.base), kernel=String(routeHint?.kernel||'');
+      const base=normalizedPeerRouteBase(routeHint?.base), kernel=String(routeHint?.kernel||'');
       if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...routeHint,base,kernel});
       if(unique.size>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
     }
@@ -14402,7 +14415,7 @@ function _pumpVerifiedGossipJobs(){
   }
 }
 function _enqueueVerifiedGossipHint(hint){
-  const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||''),
+  const base=normalizedPeerRouteBase(hint?.base),kernel=String(hint?.kernel||''),
     peerId=String(hint?.peerId||''),provider=hint?.providerRecord||{};
   if(!base||!kernel||!peerId) return;
   const id=`${kernel}\u0000${base}\u0000${peerId}`,now=Date.now(),
@@ -14431,7 +14444,7 @@ async function onVerifiedGossipProvider(result){
   const verified=await verifiedRouteHintsFromP2PResult(result);
   const unique=new Map();
   for(const hint of verified.routeHints){
-    const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||''),
+    const base=normalizedPeerRouteBase(hint?.base),kernel=String(hint?.kernel||''),
       peerId=String(hint?.peerId||'');
     if(base&&kernel&&peerId) unique.set(`${kernel}\u0000${base}\u0000${peerId}`,
       {...hint,base,kernel,peerId});
@@ -14492,7 +14505,7 @@ async function refreshP2PRendezvous(){
           result,{signal});
         const unique=new Map();
         for(const hint of verified.routeHints){
-          const base=normalizedHttpsBase(hint?.base),kernel=String(hint?.kernel||'');
+          const base=normalizedPeerRouteBase(hint?.base),kernel=String(hint?.kernel||'');
           if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...hint,base,kernel});
         }
         let routeVerified=false;
@@ -14596,7 +14609,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260803-persona-envelope-v30');
+    const mod=await import('./p2p-libp2p.js?v=20260905-peer-discovery-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

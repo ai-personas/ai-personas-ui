@@ -26,6 +26,10 @@ The page automatically looks for nodes:
 3. the shared libp2p/DHT plane;
 4. the default fallback announcement locator (only if the above yield nothing).
 
+Libp2p nodes can supply signed personas, environments, and complete responses
+without publishing an HTTPS address. Each peer's records retain their own
+verified identity and transport binding.
+
 To see personas immediately, start a node first:
 
 ```bash
@@ -84,7 +88,7 @@ the node's authenticated HTTP API; persona actions run through their own signed 
 ## Check the connection transport
 
 ```bash
-node --test test/node-connection.test.mjs
+node --test test/*.test.mjs
 ```
 
 ## Deeper details
