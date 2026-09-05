@@ -47,7 +47,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260727-latest-outcome-v8';
+} from './network-view.mjs?v=20260905-peer-workspace-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -218,6 +218,7 @@ async function verifyRecord(doc,keyEntries){
 }
 const isAbs=(u)=>/^(?:https?|libp2p):\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
+const isHttpRequest=(u)=>{ try{ return /^https?:$/.test(new URL(u,location.href).protocol); }catch(_){ return false; } };
 const join=(b,r)=>{ if(isAbs(r))return r; if(!b)return r; return b.replace(/\/$/,'')+'/'+String(r||'').replace(/^\//,''); };
 function normalizedHttpsBase(value){
   const raw=String(value||'').replace(/\/$/,'');
@@ -306,12 +307,13 @@ async function secureDownloadFromButton(btn){
   if(label) label.textContent='checking bytes';
   try{
     const target=new URL(btn.dataset.url||'',location.href);
-    if(!/^https?:$/.test(target.protocol)) throw new Error('unsupported download URL');
+    if(!/^https?:$/.test(target.protocol)&&target.protocol!=='libp2p:') throw new Error('unsupported download URL');
     const rawExpected=String(btn.dataset.hash||'').replace(/^sha256:/i,'').toLowerCase();
     if(rawExpected){
       if(!/^[a-f0-9]{64}$/.test(rawExpected)) throw new Error('invalid expected SHA-256'); }
     let bytes=null;
     try{
+      if(!isHttp(target.href)) throw new Error('peer download unavailable');
       const response=await fetch(target.href,secureFetchInit(target.href));
       if(!response.ok) throw new Error(`body HTTP ${response.status}`);
       bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
@@ -487,6 +489,7 @@ async function fetchResponsivePublicJson(u,init={}){
     const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
     const request=(async()=>{
       const directDocument=async()=>{
+        if(!isHttpRequest(u)) return null;
         try{
           const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
             redirect:'error',referrerPolicy:'no-referrer'});
@@ -5027,8 +5030,9 @@ function personaIdFromDid(did){
   return (did||'').replace('did:personaos:',''); }
 async function fetchText(u,{signal=null}={}){
   if(signal?.aborted) return null;
-  try{ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok)
+  try{ if(isHttpRequest(u)){ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok)
     return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes));
+    }
   }catch(e){}
   if(signal?.aborted) return null;
   const bytes=await settleBeforeAbort(
@@ -5038,10 +5042,10 @@ async function fetchText(u,{signal=null}={}){
 // Binary-safe bounded fetch for any artifact body — returns {blob,size,type} or null.
 async function fetchBlob(u,{signal=null}={}){
   if(signal?.aborted) return null;
-  try{ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok){
+  try{ if(isHttpRequest(u)){ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
     const type=r.headers.get('content-type')||'application/octet-stream';
-    const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }
+    const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }}
   }catch(e){}
   if(signal?.aborted) return null;
   const bytes=await settleBeforeAbort(
@@ -5072,21 +5076,23 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
   let job;
   const request=(async()=>{ try{
     const controller=new AbortController();
-    const httpAttempt=(async()=>{
+    const attempts=[];
+    if(isHttp(absoluteUrl)) attempts.push((async()=>{
       const r=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
       if(!r.ok) throw new Error(`body HTTP ${r.status}`);
       const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
       return {bytes,type:r.headers.get('content-type')||'application/octet-stream'};
-    })();
-    const attempts=[httpAttempt];
-    if(p2pDataRouteForUrl(absoluteUrl)&&P2P?.fetchPublicBlob) attempts.push((async()=>{
+    })());
+    // The blob reader validates its own exact hash query. JSON route matching
+    // accepts only `since`, so using it here would reject every live-file URL.
+    if(P2P?.fetchPublicBlob) attempts.push((async()=>{
       const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,
         LIVE_ARTIFACT_LIMITS.maxFileBytes);
       if(!bytes) throw new Error('verified peer body unavailable');
       return {bytes,type:'application/octet-stream'};
     })());
     let loaded;
-    try{ loaded=attempts.length===1?await httpAttempt:await Promise.any(attempts); }
+    try{ loaded=await Promise.any(attempts); }
     finally{ controller.abort(); }
     const {bytes,type}=loaded,actual=await sha256Hex(bytes);
     if(actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
@@ -5179,7 +5185,7 @@ function _nodeScopedBodyUrl(base,value){
     const root=new URL(opBaseKey(base||location.origin)+'/',location.href);
     const target=new URL(join(base,value),location.href);
     const rootPath=root.pathname.replace(/\/$/,'');
-    if(!/^https?:$/.test(target.protocol)||target.username||target.password||target.origin!==root.origin) return '';
+    if(!['http:','https:','libp2p:'].includes(target.protocol)||target.username||target.password||!sameRouteOrigin(target,root)) return '';
     if(rootPath&&rootPath!=='/'&&target.pathname!==rootPath&&!target.pathname.startsWith(rootPath+'/')) return '';
     return target.href;
   }catch(e){ return ''; }
@@ -6492,6 +6498,7 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
           }});
         }).then((loaded)=>({loaded,persistent:false}));
         const httpAttempt=verifyWith(async(requestUrl,init={})=>{
+          if(!isHttp(requestUrl)) throw _personaAvatarBodyTransientError();
           try{
             const response=await fetch(requestUrl,secureFetchInit(requestUrl,{
               ...init,signal:controller.signal,
@@ -12493,8 +12500,12 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const advertisedHash=String(opts.liveFile?.sha256||opts.contentHash||'').trim();
   const expectedHash=advertisedHash.replace(/^sha256:/i,'').toLowerCase();
   const hashAdvertised=!!advertisedHash, validExpectedHash=/^[a-f0-9]{64}$/.test(expectedHash);
-  if(validExpectedHash&&p2pDataRouteForUrl(sourceUrl)){
-    let artifactUrl=''; try{ artifactUrl=new URL(sourceUrl,location.href).href; }catch(_){}
+  if(validExpectedHash){
+    let artifactUrl=''; try{
+      const target=new URL(sourceUrl,location.href);
+      if(target.search===`?sha256=${expectedHash}`) target.search='';
+      if(p2pDataRouteForUrl(target.href)) artifactUrl=target.href;
+    }catch(_){}
     if(artifactUrl){
       const artifacts=S.p2pArtifactHashes=S.p2pArtifactHashes||new Map();
       artifacts.set(artifactUrl,`sha256:${expectedHash}`);
@@ -13034,10 +13045,10 @@ function connectedCallMessages(doc){
 function connectedCognitionHtml(doc){
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
-  let html=H('Model responses')+(messages.length?messages.map((message)=>
+  let html=H('Assistant text')+(messages.length?messages.map((message)=>
     `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(_friendlyInstant(message.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(message.text)}</pre></div></div>`).join('')
-    :'<div class="l2">No completed model response is available yet.</div>');
+    :'<div class="l2">No assistant text has been returned. Tool activity appears below.</div>');
   const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string');
   if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
     `<div class="think"><div class="l2">${esc(_friendlyInstant(output.at))}</div>`

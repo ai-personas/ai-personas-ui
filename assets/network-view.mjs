@@ -6,6 +6,8 @@
  * that index as another array.
  */
 
+import { normalizedPeerRouteBase } from './peer-route.mjs';
+
 export const NETWORK_VIEW_LIMITS = Object.freeze({
   priorityWindow: 80,
   searchWindow: 160,
@@ -339,7 +341,8 @@ export function selectVerifiedPublicTaskRunTargets(
     if (base) {
       let parsed;
       try { parsed = new URL(base); } catch (_) { continue; }
-      if (!['http:', 'https:'].includes(parsed.protocol)
+      if ((!['http:', 'https:'].includes(parsed.protocol)
+            && normalizedPeerRouteBase(base) !== base)
           || parsed.username || parsed.password || parsed.search || parsed.hash
           || parsed.href.replace(/\/$/, '') !== base) continue;
     }
