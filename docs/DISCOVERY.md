@@ -227,7 +227,7 @@ independently collapsible and consumes zero layout height while closed.
 persona/environment feed must use their exact public schemas, bind the current node id, be fresh,
 and verify under the sole current kernel master. Public communication topology admits only exact,
 independently signed direct or broadcast route metadata. A persona card's public activity stream
-comes only from the exact whole-document-signed `personaos-persona-public-cognition/2` endpoint for
+comes only from the exact whole-document-signed `personaos-persona-public-cognition/3` document for
 that current-inventory persona. Its current signed work-state revision leads with the persona's own
 task understanding, contribution, present focus, completed work, next intent, open commitments,
 uncertainties, assumptions, and collaboration plan. Model calls and provider diagnostics remain in
@@ -237,14 +237,17 @@ task context, state, and friendly local time lead the surface. Exact persona/env
 references and ISO instants remain secondary verification detail rather than primary labels.
 Addressed messages retain their verified recipients without inferring content type. A wrong author/subject, extra field,
 invalid nested shape, stale document, or changed byte is rejected. Private thinking frames remain
-available only through the bearer-gated operator schema. Anonymous cognition refresh remains bounded
-GET-only polling; viewing this surface cannot submit persona actions.
+available only through the bearer-gated operator schema. The `persona_cognition` SSE event
+carries the complete document after a response arrives or persisted communication changes.
+The browser verifies the same document contract on SSE and GET; GET remains a reconnect
+and older-node fallback. There is no token or word animation, and viewing cannot submit actions.
 
 ## Realtime execution and live workspace files
 
-For each active run, the UI consumes `GET /runs/<run>/live-artifacts` and, for public streams,
-the SSE event `live_artifact_update`. A 3-second poll is the fallback when EventSource is
-buffered or blocked and is the primary path when an operator token is required.
+For each active public run, the UI consumes `GET /runs/<run>/live-artifacts` and, for public streams,
+the SSE event `live_artifact_update`. A 3-second poll is the fallback when the stream is
+buffered or blocked. SSE uses fetch so explicit private connections can send a scoped
+Authorization header without putting credentials in a URL.
 An anonymous page also seeds this poll from an exact run bound by a browser-verified public task
 DID in the node's current hash-chained provider inventory. The inventory supplies the matching
 bootstrapped API base; links, labels, cached gossip, and unsigned status cannot create the join.
@@ -372,10 +375,14 @@ telemetry, and open-input records. Public read access does not imply input or co
 Open-input questions remain display-only in this browser, and the portal exposes no owner
 mutation surface.
 
-Click **PUBLIC DATA** to inspect complete verified node read projections and run drill-downs:
-live execution state, pressure/review state, workspace files, artifact lists, and per-objective
-evidence. The page neither asks for nor retains a process bearer. Older browser credentials are
-deleted on load, and the UI renders no task, response, budget, stop, or tool-invocation control.
+Open **MY NODES** to inspect public node read projections or connect to a private node.
+An entered token is sent only to that exact node origin and path, in an Authorization header.
+The UI requires the node's `X-PersonaOS-Read-Tier: operator` status response before admitting
+private views. Personas, environments, complete responses, and persona messages remain in
+that connection's memory store; public record caches, offline history, and peer gossip never
+receive them. Disconnect aborts pending reads and SSE, clears the credential and private data,
+and removes the private view. Reload also clears connections. Older stored credentials are
+deleted on load. The UI renders no task, response, budget, stop, or tool-invocation control.
 
 Owner automation remains a separate controlled-client API protected by the node's process bearer;
 signed personas use their own authenticated action transport. Browser mutation may return only

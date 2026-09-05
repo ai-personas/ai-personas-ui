@@ -1,4 +1,5 @@
 import * as ed from './noble-ed25519.js';
+import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -234,36 +235,22 @@ function normalizedHttpBase(value){
     return url.toString().replace(/\/$/,'');
   }catch(_){ return ''; }
 }
-/* ---------- node authority (A5-01/A5-08: explicit node policy, never network position) ----------
-   The current browser surface is deliberately read-only. Public reachability may publish a
-   complete read projection, but the portal neither retains a process bearer nor originates
-   owner mutations. Controlled non-browser clients and authenticated persona transports are
-   separate authority surfaces. */
-function opTokens(){
-  // Fail closed across upgrades: browser-held owner credentials from an older build
-  // must not silently re-enable task, input, budget, stop, or tool mutations.
-  try{ localStorage.removeItem('personaos_operator'); }catch(e){}
-  try{ localStorage.removeItem('personaos_peers'); }catch(e){}
-  try{ sessionStorage.removeItem('personaos_operator'); }catch(e){}
-  return {};
-}
+/* ---------- explicit node read access ---------- */
+// Do not restore credentials from older builds. An entered node token is held
+// in memory until the user disconnects it or this page is closed/reloaded.
+try{ localStorage.removeItem('personaos_operator'); }catch(e){}
+try{ localStorage.removeItem('personaos_peers'); }catch(e){}
+try{ sessionStorage.removeItem('personaos_operator'); }catch(e){}
+function opTokens(){ return {}; }
 const opBaseKey=(b)=>String(b||location.origin).replace(/\/$/,'');
 // Loopback detection is only a discovery/convenience hint. Network position never
 // grants authority; only an accepted process bearer grants owner control.
 const isLocalBase=(b)=>{ try{ const h=new URL(opBaseKey(b),location.href).hostname;
   return h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'; }catch(e){ return false; } };
-function tokenFor(u){
-  let target; try{ target=new URL(isAbs(u)?u:join(location.origin,u),location.href); }catch(e){ return ''; }
-  let best='',tok='';
-  for(const [rawBase,candidate] of Object.entries(opTokens())){
-    let base; try{ base=new URL(rawBase,location.href); }catch(e){ continue; }
-    if(target.origin!==base.origin) continue;
-    const root=base.pathname.replace(/\/+$/,'')||'/';
-    const within=root==='/'||target.pathname===root||target.pathname.startsWith(root+'/');
-    if(within&&rawBase.length>best.length){ best=rawBase; tok=candidate; }
-  }
-  return tok;
-}
+// Public discovery always reads anonymously. My nodes uses its own scoped
+// connection and memory store, so private responses never enter public gossip,
+// offline history, or the shared public record cache.
+function tokenFor(_u){ return ''; }
 function authHeaders(u){ const t=tokenFor(u); return t?{'Authorization':'Bearer '+t}:{}; }
 function secureFetchInit(u,init={}){
   return {...init,cache:init.cache||'no-store',credentials:'omit',redirect:'error',
@@ -350,8 +337,8 @@ async function secureDownloadFromButton(btn){
   }
 }
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
-  opTokens(); b.classList.remove('on');
-  b.innerHTML='<span class="opbtn-label">PUBLIC DATA</span>'; }
+  b.classList.toggle('on',MY_NODES.size>0);
+  b.innerHTML='<span class="opbtn-label">MY NODES</span>'; }
 const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
 function p2pDataRouteForUrl(value){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
@@ -3595,7 +3582,7 @@ function peerList(){
   // reverse them here to keep the newest live route in the monitoring window.
   // This is the active monitoring window, not a claim that the rest of the
   // discovered population ceased to exist.
-  const all=[...new Set([...focused,...(S.localPeers||[]),...(S.portalPeers||[]),
+  const all=[...new Set([...focused,...[...MY_NODES.values()].filter((entry)=>entry.tier==='public').map((entry)=>entry.base),...(S.localPeers||[]),...(S.portalPeers||[]),
     ...recentGossip,...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
@@ -4303,17 +4290,10 @@ function emptyStateHTML(){
     <h4>Peers tried</h4>${rows}
     <h4>Get live data</h4>
     <div class="desc2">
-    1 · From the AI Personas repository, run <code>./start-node.sh</code>.<br>
-    ${httpsPage?`2 · This page is <b>https://</b> — browsers block direct fetches to a plain-http
-    LAN/localhost node. A public <code>--libp2p</code> launch creates HTTPS/WSS quick-tunnel routes
-    automatically; a stable deployment may supply its own <code>--public-url</code> and
-    <code>--libp2p-advertise-host</code>. A same-origin node-served shell requires both
-    <code>--ui-shell-dir</code> and <code>--ui-shell-manifest-sha256</code>.`:`2 · LAN peers
-    also meet over mDNS; a public node joins the shared DHT.`}<br>
-    3 · The global directory refreshes every few seconds and inspects changed nodes immediately.<br>
-    4 · Click <b>PUBLIC DATA</b> to inspect any complete verified route discovered by the network.
-    This browser is display-only: task, response, budget, stop, and tool mutations are unavailable
-    until the deployment runtime has a separately verified secure boundary.</div>
+    1 · Run <code>ai-personas</code> and open the UI link it prints.<br>
+    ${httpsPage?'2 · For a local HTTP node, open its own UI link. This hosted HTTPS page needs an HTTPS node URL.':'2 · Published nodes appear here as the network discovers them.'}<br>
+    3 · Open <b>MY NODES</b> to connect to a node URL. Enter its token to view private personas and environments.
+    </div>
   </div>`;
 }
 
@@ -4657,18 +4637,11 @@ function _ensurePeerDiscoveryStream(base,boot,route){
 }
 function connectDiscoveryStream(base,boot){
   const peerRoute=S.p2pDataRoutes?.get(opBaseKey(base));
-  if(peerRoute){ _ensurePeerDiscoveryStream(base,boot,peerRoute); return; }
-  if(!boot?.discovery_stream_url||typeof EventSource==='undefined') return;
+  if(peerRoute&&!tokenFor(join(base,'status'))){ _ensurePeerDiscoveryStream(base,boot,peerRoute); return; }
+  if(!boot?.discovery_stream_url||typeof fetch==='undefined') return;
   const url=join(base,boot.discovery_stream_url);
   if(S.streams.has(url)) return;
-  // EventSource cannot set an Authorization header. Never move an operator token
-  // into its URL: private nodes use authenticated status/live-artifact polling.
-  if(tokenFor(url)){
-    S.streams.set(url,{pollOnly:true,_base:String(base||'').replace(/\/$/,'')});
-    log('stream',`${url} uses authenticated polling (token omitted from URL)`,true);
-    return;
-  }
-  const es=new EventSource(url);
+  const es=fetchEventSource(url,{requestInit:()=>secureFetchInit(url)});
   es._base=String(base||'').replace(/\/$/,'');
   S.streams.set(url,es);
   let liveArtifactQueue=Promise.resolve();
@@ -4678,7 +4651,22 @@ function connectDiscoveryStream(base,boot){
     });
   };
   es.addEventListener('open',()=>log('stream',`${url} connected`,true));
-  es.addEventListener('discovery_snapshot',async (ev)=>{
+  let cognitionQueue=Promise.resolve();
+  es.addEventListener('hello',(ev)=>{
+    try{ es._cognitionDocuments=JSON.parse(ev.data).cognition_documents===true; }catch(_){}
+  });
+  es.addEventListener('persona_cognition',(ev)=>{
+    cognitionQueue=cognitionQueue.then(async()=>{
+      const t=JSON.parse(ev.data), kernel=String(kernelForBase(base)||boot?.kernel_id||'');
+      const endpointId=String(t?.persona_id||'');
+      if(!kernel||!await verifyPublicPersonaCognition(base,t,{personaId:endpointId,kernel})) return;
+      const candidate={..._personaRef(endpointId,kernel),endpointId};
+      S.publicCognitionFetchAfter.set(candidate.key,Date.now()+12000);
+      ingestPersonaCognitionReads([{candidate,t,usedBase:base}]);
+    }).catch(()=>{});
+  });
+  es.addEventListener('discovery_snapshot',(ev)=>{
+    cognitionQueue=cognitionQueue.then(async()=>{
     try{
       const snap=JSON.parse(ev.data||'{}');
       const providerIndex=snap?.providers;
@@ -4690,8 +4678,9 @@ function connectDiscoveryStream(base,boot){
         base,boot,verified.rows,inventory,providerIndex);
       const added=accepted?verified.rows.length:0;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
-      if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); scheduleSseCognitionRefresh(); }
+      if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); if(!es._cognitionDocuments) scheduleSseCognitionRefresh(); }
     }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
+    }).catch(()=>{});
   });
   es.addEventListener('telemetry_update',async (ev)=>{
     try{
@@ -4706,11 +4695,12 @@ function connectDiscoveryStream(base,boot){
         verifiedCommunicationRoutes,publicFrameVerified});
       if(!admitted.accepted) return;
       appendTelemetryEvent(payload,base,boot,'LIVE_TELEMETRY');
-      scheduleSseCognitionRefresh();
+      if(!es._cognitionDocuments) scheduleSseCognitionRefresh();
     }
     catch(e){ return; }
   });
   es.addEventListener('cognition_invalidate',(ev)=>{
+    if(es._cognitionDocuments) return;
     // This frame is intentionally content-free and conveys no authority. It
     // can only schedule a refetch; model text is rendered solely after the
     // fetched public cognition document verifies under the current master.
@@ -4741,7 +4731,7 @@ function connectDiscoveryStream(base,boot){
       catch(e){ log('stream','live artifact frame parse failed',false); return; }
       const previous=liveArtifactState(base,payload?.run);
       const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
-        verifyLiveArtifactEvent(payload,{...context,requirePublic:true,
+        verifyLiveArtifactEvent(payload,{...context,requirePublic:!tokenFor(url),
           expectedPreviousRevision:previous?.revision||''}));
       if(!verification.ok){
         _logLiveVerificationRefusal(payload?.run,verification); return;
@@ -7235,7 +7225,7 @@ function _personaActivityHTML(acts,personaKey){
         ?exactProjection.headline:'';
       const detail=exactHumanText||(modelUpdate?presentation.summary:(observedDetail||presentation.summary));
       const routeLabel=exactText
-        ?`${selfName} · ${e._cognition===true?'Shared thought':'Shared update'}`
+        ?`${selfName} · ${e._providerProvisional===true?'Model response':e._cognition===true?'Shared thought':'Shared update'}`
         :modelUpdate?`${selfName} · Work update`:route;
       const context=_activityPrimaryContextHTML(e,{className:'pc-message-context',kernel});
       const technical=_activityTechnicalHTML(e,kernel);
@@ -7244,14 +7234,18 @@ function _personaActivityHTML(acts,personaKey){
         +`<b>${esc(presentation.headline)}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
         +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('');
   const authoredRows=rows.filter(personaAuthored);
-  const diagnosticRows=rows.filter((row)=>!personaAuthored(row));
+  const responseRows=candidates.filter(({event})=>event?._providerComplete===true
+    &&event?.kind==='PROVISIONAL_ASSISTANT_MESSAGE'&&event?._exactText).slice(0,1);
+  const diagnosticRows=rows.filter((row)=>!personaAuthored(row)&&!responseRows.includes(row));
   const authoredHTML=authoredRows.length
     ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona-authored updates</span><small><i></i> newest first</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">${renderRows(authoredRows)}</ol></section>`
     :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none shared yet</small></div><div class="pc-activity-empty">The persona has not published a signed message or thought yet.</div></section>`;
   const diagnosticsHTML=diagnosticRows.length
     ?`<details class="pc-diagnostics"><summary>Technical activity · ${diagnosticRows.length}</summary><ol>${renderRows(diagnosticRows)}</ol></details>`
     :'';
-  return authoredHTML+diagnosticsHTML;
+  const responseHTML=responseRows.length
+    ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Latest model response</span><small>complete response</small></div><ol aria-live="polite">${renderRows(responseRows)}</ol></section>`:'';
+  return authoredHTML+responseHTML+diagnosticsHTML;
 }
 // ==== Collectible card gallery (landing redesign) ====================
 // Deterministic identicon: 5x5 mirrored grid, hue from an FNV-1a hash of the
@@ -9323,7 +9317,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
   if(activeCalls.length){
     technical+=`<div class="l2" style="margin:2px 0 3px">${retainedSnapshot
       ?'Calls active when this verified snapshot was captured — retained history, not current execution'
-      :'Active model calls — verified current snapshot'}</div>`
+      :publicCognition?'Active model calls — verified current snapshot':'Active model calls reported by this node'}</div>`
       +[...activeCalls].reverse().map((call)=>{
         const started=Date.parse(String(call.started_at||''));
         const purpose=String(call.requested_purpose||'').trim()||'purpose not declared';
@@ -9458,7 +9452,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
   // /3 carries the brain as mechanical fact counters (the retired
   // lessons/tactics optimizer surfaces are gone); show them as a labeled row.
   if(Number.isSafeInteger(t.brain_episode_count)){
-    h+=`<div class="l2" style="margin:6px 0 3px">${retainedSnapshot?'Signed brain state in retained public snapshot':'Signed brain state in current public state'}</div>`
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?(retainedSnapshot?'Signed brain state in retained public snapshot':'Signed brain state in current public state'):'Brain state reported by this node'}</div>`
       +`<div class="think brain-counters">`
       +[['episodes',t.brain_episode_count],['fragments',t.brain_fragment_count],
         ['bindings',t.brain_fragment_binding_count],
@@ -9476,7 +9470,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
   }
   const tl=t.evolution_timeline||[];
   if(tl.length){
-    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed evolution timeline':'Cognition timeline (signed evolution log)'}</div><div class="tape-mini">`
+    h+=`<div class="l2" style="margin:6px 0 3px">${publicCognition?'Signed evolution timeline':'Cognition timeline reported by this node'}</div><div class="tape-mini">`
       +[...tl].reverse().map((e)=>
         `<div class="row2"><span class="l2">${esc(e.kind||'')}</span><span>${esc(e.mode||'')}</span>`
         +`<span class="${e.accepted===true?'ok':e.accepted===false?'down':'l2'}">${e.accepted===true?icon('check'):e.accepted===false?icon('x'):''}</span></div>`).join('')+`</div>`;
@@ -10139,6 +10133,8 @@ async function _validPublicPersonaOutput(output,identity,row){
       &&!await _validPublicPersonaAuthoredOutput(output.authored_output,output.text)) return false;
   return await _validPublicPersonaAuthority(output,identity,row);
 }
+// Models without a reasoning setting legitimately report both effort and
+// its source as empty. A reported effort still requires its provenance.
 function _validPublicPersonaActiveCall(call,identity,generatedAt){
   return _exactObjectFields(call,PUBLIC_PERSONA_ACTIVE_CALL_FIELDS)
     &&_safePublicCognitionAtom(call.call_id,512,{required:true})
@@ -10146,7 +10142,7 @@ function _validPublicPersonaActiveCall(call,identity,generatedAt){
     &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
     &&call.persona_id===identity.signedId
     &&_safePublicCognitionAtom(call.reasoning_effort,128)
-    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:true})
+    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:!!call.reasoning_effort})
     &&_safePublicCognitionText(call.requested_purpose,512)
     &&_safePublicCognitionAtom(call.environment_id,512)
     &&_safePublicCognitionAtom(call.run_id,512)
@@ -10166,7 +10162,7 @@ function _validPublicPersonaRecentCall(call,identity,generatedAt){
     &&_safePublicCognitionAtom(call.persona_id,512,{required:true})
     &&call.persona_id===identity.signedId
     &&_safePublicCognitionAtom(call.reasoning_effort,128)
-    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:true})
+    &&_safePublicCognitionAtom(call.reasoning_effort_source,128,{required:!!call.reasoning_effort})
     &&_safePublicCognitionText(call.requested_purpose,512)
     &&_safePublicCognitionAtom(call.environment_id,512)
     &&_safePublicCognitionAtom(call.run_id,512)
@@ -10699,7 +10695,8 @@ function _publicCognitionRows(doc,{kernel=''}={}){
     rows.push({
       source:'provisional',kind,at:event.at,scope:'provider',scopeId:event.call_id,
       msg:assistant?presented.text:statusDetail,rationale:assistant?presented.text:statusDetail,
-      exactText:assistant?presented.text:'',cognition:false,providerProvisional:true,ctype:'think',
+      exactText:assistant?presented.text:'',cognition:false,providerProvisional:true,
+      providerComplete:assistant&&presented.complete,ctype:'think',
       recipients:[],authority:event.authority,dedup:assistant?presented.events:event,
       presentationKey:assistant?presented.presentationKey:'',personaSigned:false,provenance,
       trustLabel:assistant
@@ -10755,6 +10752,101 @@ function _publicCognitionRows(doc,{kernel=''}={}){
   });
   return rows;
 }
+function ingestPersonaCognitionReads(cognitionReads){
+  S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
+  let added=0, cognitionHydrated=false;
+  for(const read of cognitionReads){
+    if(!read) continue;
+    const {candidate,t,usedBase}=read;
+    const {key:personaKey,sid,kernel,endpointId}=candidate;
+    const publicCognition=_publicCognitionDocOk(t);
+    if(publicCognition){
+      cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
+        {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
+    }
+    const retainedCognition=S.cognitionByPersona?.get(personaKey);
+    if(retainedCognition){
+      S.cognitionByPersona.delete(personaKey);
+      S.cognitionByPersona.set(personaKey,retainedCognition);
+    }
+    if(publicCognition) _indexPublicCognitionActiveCalls(personaKey,t.active_calls,
+      {base:usedBase,kernel,observedAt:Date.now()});
+    const rows=publicCognition?_publicCognitionRows(t,{kernel}):[];
+    if(!publicCognition){
+      for(const output of (t.recent_outputs||[])) rows.push({source:'output',kind:String(output.kind||'LLM_OUTPUT'),
+        msg:output.text,at:output.at,scope:'cognition',scopeId:'',recipients:[],dedup:output});
+      const lessons=t.lessons||[]; if(lessons.length){ const lesson=lessons[lessons.length-1];
+        rows.push({source:'lesson',kind:'LLM_LESSON',msg:lesson.action,at:t.generated_at||'',scope:'cognition',
+          scopeId:'',recipients:[],dedup:lesson}); }
+    }
+    S.publicCognitionSeen=S.publicCognitionSeen||new Map();
+    let personaSeen=null;
+    if(publicCognition){
+      personaSeen=S.publicCognitionSeen.get(personaKey)||new Set();
+      S.publicCognitionSeen.delete(personaKey); S.publicCognitionSeen.set(personaKey,personaSeen);
+      while(S.publicCognitionSeen.size>NETWORK_LIMITS.cognitionPersonas*4)
+        S.publicCognitionSeen.delete(S.publicCognitionSeen.keys().next().value);
+    }
+    for(const row of rows){
+      const msg=typeof row.msg==='string'?row.msg:String(row.msg??'');
+      if(!msg.trim()&&row.providerProvisional!==true) continue;
+      const revision=_publicCognitionFingerprint(row.dedup);
+      const presentationKey=typeof row.presentationKey==='string'?row.presentationKey:'';
+      const identity=presentationKey?_publicCognitionFingerprint(presentationKey):revision;
+      const key=`cog|${personaKey}|${row.source}|${row.kind}|${identity}`;
+      const interactionIndex=presentationKey
+        ?S.interactions.findIndex((event)=>event?._key===key):-1;
+      const prior=presentationKey
+        ?S.cognitionByPersona?.get(personaKey)?.get(key)
+          ||(interactionIndex>=0?S.interactions[interactionIndex]:null)
+        :null;
+      const known=personaSeen?.has(key)||S.ixKeys.has(key)
+        ||S.cognitionByPersona?.get(personaKey)?.has(key);
+      if((!presentationKey&&known)||(presentationKey&&prior?._presentationRevision===revision)) continue;
+      if(personaSeen&&!personaSeen.has(key)){
+        personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value);
+      }
+      S.ixKeys.add(key); added++;
+      const contentPreview=_cognitionPreview(msg);
+      const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
+      const preview=prefix?`${prefix} — ${contentPreview}`:contentPreview;
+      const recipients=(row.recipients||[]).map((id)=>({kind:'persona',id}));
+      const personaSigned=publicCognition&&row.personaSigned!==false;
+      const trustTitle=row.trustTitle||(personaSigned
+        ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'');
+      const event={actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
+        scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:personaSigned,
+        _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
+        _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
+        _exactText:typeof row.exactText==='string'?row.exactText:'',
+        _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
+        _providerProvisional:row.providerProvisional===true,
+        _providerComplete:row.providerComplete===true,
+        _observedState:row.observedState===true,
+        _provenance:row.provenance&&typeof row.provenance==='object'?row.provenance:null,
+        _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
+        _trustTitle:String(trustTitle),
+        _presentationRevision:presentationKey?revision:'',
+      };
+      if(presentationKey&&interactionIndex>=0) S.interactions[interactionIndex]=event;
+      else S.interactions.push(event);
+      _rememberPersonaCognitionEvent(event);
+    }
+  }
+  if(added){
+    S.interactions.sort((a,b)=>a._t-b._t);
+    if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
+    S.ixKeys=new Set(S.interactions.map((e)=>e._key));
+    // Cognition is merged after the node-wide telemetry ingest, so rebuild the
+    // per-persona index here as well; otherwise the global feed advances while
+    // the corresponding collectible card remains falsely quiet.
+    _refreshPersonaInteractionIndex();
+    scheduleRealtimeRepaint();
+  }
+  // A verified snapshot can hydrate model history without adding a new feed
+  // row. Paint that state now instead of waiting for another telemetry tick.
+  else if(cognitionHydrated) scheduleRealtimeRepaint();
+}
 async function streamPersonaCognition(options={}){
   if(_cogBusy) return false;
   _cogBusy=true;
@@ -10797,7 +10889,6 @@ async function streamPersonaCognition(options={}){
       searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items
       .filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    let added=0, cognitionHydrated=false;
     // Persona cognition documents are independent signed subjects. Fetch and
     // verify the bounded visible window concurrently; serial reads made the
     // fourth persona wait behind the bytes and cryptography of the first three.
@@ -10842,96 +10933,7 @@ async function streamPersonaCognition(options={}){
       }
       return t?{candidate,t,usedBase}:null;
     }));
-    for(const read of cognitionReads){
-      if(!read) continue;
-      const {candidate,t,usedBase}=read;
-      const {key:personaKey,sid,kernel,endpointId}=candidate;
-      const publicCognition=_publicCognitionDocOk(t);
-      if(publicCognition){
-        cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
-          {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
-      }
-      const retainedCognition=S.cognitionByPersona?.get(personaKey);
-      if(retainedCognition){
-        S.cognitionByPersona.delete(personaKey);
-        S.cognitionByPersona.set(personaKey,retainedCognition);
-      }
-      if(publicCognition) _indexPublicCognitionActiveCalls(personaKey,t.active_calls,
-        {base:usedBase,kernel,observedAt:Date.now()});
-      const rows=publicCognition?_publicCognitionRows(t,{kernel}):[];
-      if(!publicCognition){
-        for(const output of (t.recent_outputs||[])) rows.push({source:'output',kind:String(output.kind||'LLM_OUTPUT'),
-          msg:output.text,at:output.at,scope:'cognition',scopeId:'',recipients:[],dedup:output});
-        const lessons=t.lessons||[]; if(lessons.length){ const lesson=lessons[lessons.length-1];
-          rows.push({source:'lesson',kind:'LLM_LESSON',msg:lesson.action,at:t.generated_at||'',scope:'cognition',
-            scopeId:'',recipients:[],dedup:lesson}); }
-      }
-      S.publicCognitionSeen=S.publicCognitionSeen||new Map();
-      let personaSeen=null;
-      if(publicCognition){
-        personaSeen=S.publicCognitionSeen.get(personaKey)||new Set();
-        S.publicCognitionSeen.delete(personaKey); S.publicCognitionSeen.set(personaKey,personaSeen);
-        while(S.publicCognitionSeen.size>NETWORK_LIMITS.cognitionPersonas*4)
-          S.publicCognitionSeen.delete(S.publicCognitionSeen.keys().next().value);
-      }
-      for(const row of rows){
-        const msg=typeof row.msg==='string'?row.msg:String(row.msg??'');
-        if(!msg.trim()&&row.providerProvisional!==true) continue;
-        const revision=_publicCognitionFingerprint(row.dedup);
-        const presentationKey=typeof row.presentationKey==='string'?row.presentationKey:'';
-        const identity=presentationKey?_publicCognitionFingerprint(presentationKey):revision;
-        const key=`cog|${personaKey}|${row.source}|${row.kind}|${identity}`;
-        const interactionIndex=presentationKey
-          ?S.interactions.findIndex((event)=>event?._key===key):-1;
-        const prior=presentationKey
-          ?S.cognitionByPersona?.get(personaKey)?.get(key)
-            ||(interactionIndex>=0?S.interactions[interactionIndex]:null)
-          :null;
-        const known=personaSeen?.has(key)||S.ixKeys.has(key)
-          ||S.cognitionByPersona?.get(personaKey)?.has(key);
-        if((!presentationKey&&known)||(presentationKey&&prior?._presentationRevision===revision)) continue;
-        if(personaSeen&&!personaSeen.has(key)){
-          personaSeen.add(key); while(personaSeen.size>128) personaSeen.delete(personaSeen.values().next().value);
-        }
-        S.ixKeys.add(key); added++;
-        const contentPreview=_cognitionPreview(msg);
-        const prefix={lesson:'lesson',tactic:'tactic',fact:'proven fact'}[row.source];
-        const preview=prefix?`${prefix} — ${contentPreview}`:contentPreview;
-        const recipients=(row.recipients||[]).map((id)=>({kind:'persona',id}));
-        const personaSigned=publicCognition&&row.personaSigned!==false;
-        const trustTitle=row.trustTitle||(personaSigned
-          ?`whole public cognition document verified under the current kernel master${row.authority?`; output authority: ${row.authority}`:''}`:'');
-        const event={actor_id:sid,actor_kind:'persona',affected:[],recipients,kind:row.kind,
-          scope:row.scope||'cognition',scope_id:row.scopeId||'',at:row.at||'',signed:personaSigned,
-          _base:usedBase,_kernel:kernel,_t:Date.parse(row.at||'')||Date.now(),_key:key,
-          _msg:preview.slice(0,200),_rationale:String(row.rationale||msg),
-          _exactText:typeof row.exactText==='string'?row.exactText:'',
-          _recipientCount:recipients.length,_authority:String(row.authority||''),_cognition:row.cognition===true,
-          _providerProvisional:row.providerProvisional===true,
-          _observedState:row.observedState===true,
-          _provenance:row.provenance&&typeof row.provenance==='object'?row.provenance:null,
-          _trustLabel:String(row.trustLabel||(personaSigned?'SIGNED COGNITION':'')),
-          _trustTitle:String(trustTitle),
-          _presentationRevision:presentationKey?revision:'',
-        };
-        if(presentationKey&&interactionIndex>=0) S.interactions[interactionIndex]=event;
-        else S.interactions.push(event);
-        _rememberPersonaCognitionEvent(event);
-      }
-    }
-    if(added){
-      S.interactions.sort((a,b)=>a._t-b._t);
-      if(S.interactions.length>400) S.interactions=S.interactions.slice(-400);
-      S.ixKeys=new Set(S.interactions.map((e)=>e._key));
-      // Cognition is merged after the node-wide telemetry ingest, so rebuild the
-      // per-persona index here as well; otherwise the global feed advances while
-      // the corresponding collectible card remains falsely quiet.
-      _refreshPersonaInteractionIndex();
-      scheduleRealtimeRepaint();
-    }
-    // A verified snapshot can hydrate model history without adding a new feed
-    // row. Paint that state now instead of waiting for another telemetry tick.
-    else if(cognitionHydrated) scheduleRealtimeRepaint();
+    ingestPersonaCognitionReads(cognitionReads);
   }catch(e){}
   finally{ _cogBusy=false; }
   return true;
@@ -12864,25 +12866,211 @@ async function workEvidenceView(r){
 }
 /* ---------- complete public-read views ---------- */
 
+// Explicit connections are isolated from S's public discovery/history stores.
+const MY_NODES=new Map();
+async function connectedNodeJson(entry,path,{requireOperator=false}={}){
+  const url=new URL(join(entry.base,path));
+  const root=new URL(entry.base), rootPath=root.pathname.replace(/\/$/,'');
+  if(url.origin!==root.origin||(rootPath&&url.pathname!==rootPath&&!url.pathname.startsWith(rootPath+'/')))
+    throw new Error('The requested data is outside this node connection.');
+  const controller=new AbortController(); entry.pending.add(controller);
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const token=entry.session.tokenFor(url.href);
+    const response=await fetch(url.href,{method:'GET',signal:controller.signal,
+      credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',cache:'no-store',
+      headers:token?{Authorization:'Bearer '+token}:{}});
+    if(!response.ok) throw new Error('This node did not allow the requested read.');
+    if(requireOperator&&response.headers.get('X-PersonaOS-Read-Tier')!=='operator')
+      throw new Error('The node did not accept that token.');
+    const bytes=await readBoundedResponseBytes(response,DEFAULT_JSON_MAX_BYTES);
+    if(entry.closed) throw new Error('Node disconnected.');
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }finally{ clearTimeout(timeout); entry.pending.delete(controller); }
+}
+function disconnectMyNode(base){
+  const entry=MY_NODES.get(base); if(!entry) return;
+  entry.closed=true; entry.stream?.close(); clearInterval(entry.timer); clearTimeout(entry.paintTimer);
+  for(const controller of entry.pending) controller.abort();
+  entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear();
+  entry.status=null; entry.live=null; MY_NODES.delete(base);
+  updateOpBadge();
+}
+function paintConnectedNode(entry){
+  if(entry.closed||entry.paintTimer) return;
+  entry.paintTimer=setTimeout(()=>{
+    entry.paintTimer=null;
+    const marker=$('#detailbody [data-connected-node]');
+    if(marker?.dataset.connectedNode===entry.base){
+      const scroll=$('#detailbody').scrollTop;
+      renderTop().then(()=>{ $('#detailbody').scrollTop=scroll; });
+    }
+  },75);
+}
+async function rememberConnectedCognition(entry,doc,pid){
+  if(entry.closed||doc?.persona_id!==pid) return false;
+  const accepted=entry.tier==='operator'
+    ?doc.schema==='personaos-persona-thinking/3'&&doc.tier==='operator'
+    :await verifyPublicPersonaCognition(entry.base,doc,{personaId:pid,kernel:entry.status.node_id});
+  if(!accepted||entry.closed) return false;
+  entry.cognition.set(pid,doc); return true;
+}
+async function refreshConnectedNode(entry){
+  if(entry.closed||entry.refreshing) return;
+  entry.refreshing=true;
+  try{
+    const status=await connectedNodeJson(entry,'status',{requireOperator:entry.tier==='operator'});
+    if(status.schema!=='personaos-node-status/1'||status.node_id!==entry.status.node_id) return;
+    entry.status=status; entry.error='';
+    // Support older nodes that only send content-free invalidations.
+    const people=status.personas||[];
+    for(const person of people){
+      const pid=String(person.persona_id||'');
+      if(entry.stream?._cognitionDocuments&&entry.cognition.has(pid)) continue;
+      const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/thinking');
+      await rememberConnectedCognition(entry,doc,pid);
+    }
+  }catch(e){ if(!entry.closed) entry.error=String(e?.message||'Node unavailable'); }
+  finally{ entry.refreshing=false; paintConnectedNode(entry); }
+}
+async function connectMyNode(base,token){
+  const session=new NodeReadSession(), normalized=session.set(base,token);
+  const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
+    cognition:new Map(),profiles:new Map(),closed:false,status:null,live:null,error:''};
+  try{
+    entry.status=await connectedNodeJson(entry,'status',{requireOperator:!!token});
+    if(entry.status?.schema!=='personaos-node-status/1')
+      throw new Error('Enter this node’s token to view its personas and environments.');
+  }catch(e){ session.delete(normalized); throw e; }
+  disconnectMyNode(normalized); MY_NODES.set(normalized,entry);
+  const url=join(normalized,'discovery/events');
+  entry.stream=fetchEventSource(url,{requestInit:()=>({headers:token?{Authorization:'Bearer '+token}:{}})});
+  entry.stream.addEventListener('hello',(event)=>{
+    try{ entry.stream._cognitionDocuments=JSON.parse(event.data).cognition_documents===true; }catch(_){}
+    refreshConnectedNode(entry);
+  });
+  entry.stream.addEventListener('persona_cognition',async(event)=>{
+    if(entry.closed) return;
+    try{
+      const doc=JSON.parse(event.data), pid=String(doc.persona_id||'');
+      if(!(entry.status.personas||[]).some((person)=>person.persona_id===pid)
+          ||!await rememberConnectedCognition(entry,doc,pid)) return;
+      entry.error=''; paintConnectedNode(entry);
+    }catch(_){}
+  });
+  entry.stream.addEventListener('telemetry_update',(event)=>{
+    if(entry.closed) return;
+    try{
+      const live=JSON.parse(event.data).telemetry;
+      if(live&&live.schema==='personaos-live-telemetry/1') entry.live=live;
+      paintConnectedNode(entry);
+    }catch(_){}
+  });
+  entry.stream.onerror=()=>{ if(!entry.closed){ entry.error='Reconnecting to this node…'; paintConnectedNode(entry); } };
+  entry.timer=setInterval(()=>refreshConnectedNode(entry),5000);
+  if(entry.tier==='public') discover().catch(()=>{});
+  updateOpBadge(); refreshConnectedNode(entry); return entry;
+}
+function connectedNodeMarker(entry,extra=''){
+  return `<div data-connected-node="${esc(entry.base)}" ${extra}>`
+    +(entry.error?`<div class="l2" role="status">${esc(entry.error)}</div>`:'');
+}
+function connectedPersonLink(entry,person){
+  return `<a href="#" data-act="my-persona" data-base="${esc(entry.base)}" data-persona="${esc(person.persona_id)}">`
+    +esc(_displayPersonaName(person.name,person.persona_id))+'</a>';
+}
+function connectedCallMessages(doc){
+  const rows=[];
+  for(const call of [...(doc?.recent_calls||[]),...(doc?.active_calls||[])]){
+    const groups=new Map();
+    for(const event of call.provisional_events||[]){
+      if(event.kind!=='assistant_message'||event.stream_delta===true||typeof event.text!=='string') continue;
+      const key=String(event.message_id||'response');
+      if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(event);
+    }
+    for(const chunks of groups.values()){
+      const count=chunks[0]?.chunk_count;
+      const ordered=[...new Map(chunks.map((item)=>[item.chunk_index,item])).values()].sort((a,b)=>a.chunk_index-b.chunk_index);
+      if(!Number.isInteger(count)||ordered.length!==count||ordered.some((item,i)=>item.chunk_index!==i||item.chunk_count!==count)) continue;
+      rows.push({text:ordered.map((item)=>item.text).join(''),at:ordered.at(-1).at,model:call.model_id});
+    }
+  }
+  return rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+}
+function connectedCognitionHtml(doc){
+  if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
+  const messages=connectedCallMessages(doc);
+  let html=H('Model responses')+(messages.length?messages.map((message)=>
+    `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(_friendlyInstant(message.at))}</div>`
+    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(message.text)}</pre></div></div>`).join('')
+    :'<div class="l2">No completed model response is available yet.</div>');
+  const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string');
+  if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
+    `<div class="think"><div class="l2">${esc(_friendlyInstant(output.at))}</div>`
+    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(output.text)}</pre></div></div>`).join('');
+  html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
+  return html;
+}
+async function connectedNodeView(base){
+  const entry=MY_NODES.get(base);
+  if(!entry) return operatorView();
+  const status=entry.status, people=status.personas||[], envs=status.environments||[];
+  let html=connectedNodeMarker(entry)+`<div class="desc2">${entry.tier==='operator'?'Private node access':'Public node access'} · connected in this tab</div>`;
+  html+=H(`Personas (${people.length})`)+people.map((person)=>
+    `<div class="persona-runtime-row"><b>${connectedPersonLink(entry,person)}</b>`
+    +`<div class="l2">${esc(person.task_execution_state||person.lifecycle_state||'')}`
+    +` · ${esc(person.llm_execution_state||'idle')}</div>`
+    +(connectedCallMessages(entry.cognition.get(person.persona_id))[0]?.text
+      ?`<div class="desc2">${esc(connectedCallMessages(entry.cognition.get(person.persona_id))[0].text.slice(0,300))}</div>`:'')+'</div>').join('');
+  html+=H(`Environments (${envs.length})`)+envs.map((env)=>
+    `<div class="grant"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
+    +`<small class="l2">${esc(env.status)} · ${(env.member_persona_ids||[]).length} members</small></span></div>`).join('');
+  html+=`<p><button type="button" data-act="my-disconnect" data-base="${esc(base)}">Disconnect</button></p></div>`;
+  return {title:`<span class="kind k-env">MY NODE</span> ${esc(base)}`,html};
+}
+async function connectedPersonaView(base,pid){
+  const entry=MY_NODES.get(base); if(!entry) return operatorView();
+  const person=(entry.status.personas||[]).find((row)=>row.persona_id===pid);
+  if(!person) return connectedNodeView(base);
+  if(!entry.profiles.has(pid)){
+    const profile=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/profile').catch(()=>null);
+    if(profile?.persona_id===pid&&!entry.closed) entry.profiles.set(pid,profile);
+  }
+  if(entry.closed) return operatorView();
+  const profile=entry.profiles.get(pid)||{}, born=Date.parse(profile.born_at||'');
+  let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}"`);
+  if(profile.description) html+=`<div class="desc2">${esc(profile.description)}</div>`;
+  if(Number.isFinite(born)) html+=kv('Age',esc(friendlyDuration(Math.max(0,Date.now()-born))));
+  html+=kv('State',esc(person.task_execution_state||person.lifecycle_state||''));
+  const envs=(entry.status.environments||[]).filter((env)=>(env.member_persona_ids||[]).includes(pid));
+  html+=H('Environments')+envs.map((env)=>`<p><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
+  html+=connectedCognitionHtml(entry.cognition.get(pid))+'</div>';
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(_displayPersonaName(person.name,pid))}`,html};
+}
+async function connectedEnvironmentView(base,eid){
+  const entry=MY_NODES.get(base); if(!entry) return operatorView();
+  const env=(entry.status.environments||[]).find((row)=>row.environment_id===eid);
+  if(!env) return connectedNodeView(base);
+  const people=(entry.status.personas||[]).filter((person)=>(env.member_persona_ids||[]).includes(person.persona_id));
+  let html=connectedNodeMarker(entry)+`<div class="desc2">${esc(env.description||'')}</div>`;
+  html+=kv('State',esc(env.status))+kv('Visibility',esc(env.visibility_tier));
+  html+=H(`Members (${people.length})`)+people.map((person)=>`<p>${connectedPersonLink(entry,person)}</p>`).join('');
+  return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(env.name||eid)}`,html:html+'</div>'};
+}
 async function operatorView(){
-  opTokens();
-  // Surface verified and directly reached public nodes for inspection. Network
-  // position never grants authority and this browser does not retain a bearer.
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
     ...(isLocalBase(location.origin)?[opBaseKey(location.origin)]:[])])];
-  // Status prefetch may prove that a remote route publishes a full public read
-  // projection. A discovery card by itself never enters this list.
   const publicBases=freshPublicReadStatusBases();
   const bases=[...new Set([...localBases,...publicBases])];
-  let html=H('Public node inspection')
-    +`<div class="desc2">Every published persona, environment, task, artifact, workspace, message, telemetry, knowledge, tool, and open-input record is readable here. Human browser submissions and owner mutations are disabled until the deployment runtime has a separately verified secure boundary. Signed personas continue through their authenticated action transport.</div>`;
-  html+=H(`Public nodes (${bases.length})`);
-  for(const b of bases){ const loc=isLocalBase(b), pub=publicBases.includes(b);
-    html+=`<div class="grant"><span>${esc(b)}${loc?' <span class="l2">· local route</span>':''}</span>`
-    +`<span>${pub?'<span class="ok">public read</span> · ':''}<a href="#" data-act="op-node" data-base="${esc(b)}">inspect →</a>`
-    +`</span></div>`; }
-  if(!bases.length) html+=`<div class="l2">No complete public node route is verified yet. Live cards will appear here as global discovery resolves them.</div>`;
-  return {title:`<span class="kind k-env">PUBLIC DATA</span> nodes`,html};
+  let html=H('Connect to a node')
+    +`<form id="node-connect-form" autocomplete="off"><label>Node URL<input name="node_url" type="url" required placeholder="http://127.0.0.1:8775" style="width:100%"></label>`
+    +`<label>Node token <span class="l2">(for private access)</span><input name="node_token" type="password" autocomplete="off" style="width:100%"></label>`
+    +`<p><button type="submit">Connect</button></p><p id="node-connect-status" role="status"></p></form>`
+    +'<div class="l2">The token and private data stay in this tab until you disconnect or reload.</div>';
+  html+=H(`My nodes (${MY_NODES.size})`);
+  for(const entry of MY_NODES.values()) html+=`<div class="grant"><span>${esc(entry.base)}</span><span><a href="#" data-act="my-node" data-base="${esc(entry.base)}">view personas and environments →</a></span></div>`;
+  if(bases.length) html+=H('Public nodes')+bases.map((base)=>`<div class="grant"><span>${esc(base)}</span><a href="#" data-act="op-node" data-base="${esc(base)}">inspect →</a></div>`).join('');
+  return {title:`<span class="kind k-env">MY NODES</span> connections`,html};
 }
 
 async function operatorNodeView(b){
@@ -13695,6 +13883,19 @@ function wire(){
       S.views=[()=>operatorRunView(c.dataset.mbase||'',c.dataset.mrun)];
       markInspectionSource(c); $('#detailwrap').classList.add('open'); renderTop(); } });   // focus moves in via renderTop() after the title paints
   // in-drawer navigation: follow links to other records / bundles / artifact files
+  $('#detailbody').addEventListener('submit',async(event)=>{
+    if(event.target.id!=='node-connect-form') return;
+    event.preventDefault();
+    const form=event.target, button=form.querySelector('button[type="submit"]');
+    const base=form.elements.node_url.value, token=form.elements.node_token.value;
+    form.elements.node_token.value=''; button.disabled=true;
+    const status=form.querySelector('#node-connect-status'); status.textContent='Connecting…';
+    try{
+      const entry=await connectMyNode(base,token);
+      pushView(()=>connectedNodeView(entry.base));
+    }catch(error){ status.textContent=String(error?.message||'Could not connect to this node.'); }
+    finally{ button.disabled=false; }
+  });
   $('#detailbody').addEventListener('click',(e)=>{
     // click a collapsed model-output to expand it in place (no nav). Guard against the
     // copy button living inside the same block so copying doesn't also expand.
@@ -13713,6 +13914,10 @@ function wire(){
       if(wasCollapsed){ S.bundleDirs.delete(key); S.bundleDirsOpen.add(key); }
       else { S.bundleDirsOpen.delete(key); S.bundleDirs.add(key); }
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
+    if(act==='my-node'){ pushView(()=>connectedNodeView(a.dataset.base)); return; }
+    if(act==='my-persona'){ pushView(()=>connectedPersonaView(a.dataset.base,a.dataset.persona)); return; }
+    if(act==='my-environment'){ pushView(()=>connectedEnvironmentView(a.dataset.base,a.dataset.environment)); return; }
+    if(act==='my-disconnect'){ disconnectMyNode(a.dataset.base); S.views=[()=>operatorView()]; renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
     if(act==='rec') pushView(()=>viewFor(a.dataset.id));
