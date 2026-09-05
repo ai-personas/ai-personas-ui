@@ -4639,10 +4639,11 @@ function connectDiscoveryStream(base,boot){
   const peerRoute=S.p2pDataRoutes?.get(opBaseKey(base));
   if(peerRoute&&!tokenFor(join(base,'status'))){ _ensurePeerDiscoveryStream(base,boot,peerRoute); return; }
   if(!boot?.discovery_stream_url||typeof fetch==='undefined') return;
-  const url=join(base,boot.discovery_stream_url);
+  const url=new URL(join(base,boot.discovery_stream_url),location.href).href;
   if(S.streams.has(url)) return;
   const es=fetchEventSource(url,{requestInit:()=>secureFetchInit(url)});
-  es._base=String(base||'').replace(/\/$/,'');
+  es._base=opBaseKey(base);
+  es._cognitionPersonaKeys=new Set();
   S.streams.set(url,es);
   let liveArtifactQueue=Promise.resolve();
   const enqueueLiveArtifactFrame=(work)=>{
@@ -4650,7 +4651,11 @@ function connectDiscoveryStream(base,boot){
       log('stream','live artifact verification failed: '+String(e&&e.message||e),false);
     });
   };
-  es.addEventListener('open',()=>log('stream',`${url} connected`,true));
+  es.addEventListener('open',()=>{
+    es._cognitionDocuments=false;
+    es._cognitionPersonaKeys.clear();
+    log('stream',`${url} connected`,true);
+  });
   let cognitionQueue=Promise.resolve();
   es.addEventListener('hello',(ev)=>{
     try{ es._cognitionDocuments=JSON.parse(ev.data).cognition_documents===true; }catch(_){}
@@ -4663,6 +4668,7 @@ function connectDiscoveryStream(base,boot){
       const candidate={..._personaRef(endpointId,kernel),endpointId};
       S.publicCognitionFetchAfter.set(candidate.key,Date.now()+12000);
       ingestPersonaCognitionReads([{candidate,t,usedBase:base}]);
+      es._cognitionPersonaKeys.add(candidate.key);
     }).catch(()=>{});
   });
   es.addEventListener('discovery_snapshot',(ev)=>{
@@ -4749,11 +4755,14 @@ function connectDiscoveryStream(base,boot){
   es.onerror=()=>{ if(!es._noted){ log('stream','SSE reconnecting; polling remains active',false); es._noted=true; } };
 }
 function rebalanceDiscoveryStreams(){
-  const allowed=new Set(S.monitoringWindow||[]);
+  const allowed=new Set([...(S.monitoringWindow||[])].map(opBaseKey));
+  // The same-origin node is discovered outside peerList's nonempty URL list.
+  // Its relative and absolute routes name one connection, including at idle.
+  allowed.add(opBaseKey(''));
   for(const [base,calls] of (S.activeModelCallsByBase||new Map())) if((calls||[]).length)
-    allowed.add(String(base==='@origin'?'':base).replace(/\/$/,''));
+    allowed.add(opBaseKey(base==='@origin'?'':base));
   for(const [url,stream] of (S.streams||new Map())){
-    const base=String(stream?._base||'').replace(/\/$/,'');
+    const base=opBaseKey(stream?._base);
     if(allowed.has(base)) continue;
     try{ stream?.close?.(); }catch(e){}
     S.streams.delete(url);
@@ -10588,7 +10597,18 @@ function _publicPersonaOutputDisplayText(output){
   if(output?.authority==='persona_signature'
       &&structured&&typeof structured==='object'&&!Array.isArray(structured))
     return canon(structured);
-  return typeof output?.text==='string'?output.text:String(output?.text??'');
+  const text=typeof output?.text==='string'?output.text:String(output?.text??'');
+  if(output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND
+      ||output?.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND){
+    // The signed envelope remains intact for verification. The conversation
+    // shows its authored message, without rendering routing or learning slots.
+    try{
+      const body=JSON.parse(text);
+      if(body&&typeof body==='object'&&!Array.isArray(body)&&Object.hasOwn(body,'message'))
+        return typeof body.message==='string'?body.message:'';
+    }catch(_){}
+  }
+  return text;
 }
 function _publicOutputLabel(output){
   if(output?.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND) return 'persona message';
@@ -10896,6 +10916,11 @@ async function streamPersonaCognition(options={}){
     // order, and no result is admitted until its normal subject proof passes.
     const cognitionReads=await Promise.all(list.map(async(candidate)=>{
       const {key:personaKey,kernel,endpointId}=candidate;
+      // A connected full-document feed owns updates after its first verified
+      // document. Retain GET fallback during startup, reconnection and cache loss.
+      if(S.cognitionByPersona?.has(personaKey)&&[...S.streams.values()].some((stream)=>
+          stream.readyState===1&&stream._cognitionDocuments===true
+          &&stream._cognitionPersonaKeys?.has(personaKey))) return null;
       if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) return null;
       // Never probe another kernel for a colliding short id. A sticky route is
       // retained only while it still resolves to this persona's owning kernel.
@@ -13007,7 +13032,7 @@ function connectedCognitionHtml(doc){
   const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string');
   if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
     `<div class="think"><div class="l2">${esc(_friendlyInstant(output.at))}</div>`
-    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(output.text)}</pre></div></div>`).join('');
+    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
   html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
   return html;
 }
