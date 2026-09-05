@@ -2329,7 +2329,7 @@ function _runBudgetLabel(budget){
 }
 const PUBLIC_PROJECT_TOPOLOGY_FIELDS=Object.freeze([
   'cross_verified','environment_creation_event_id','environment_ids','hosting_link_event_id',
-  'members','primary_environment_id','project_creation_event_id','project_id','schema','status',
+  'members','primary_environment_id','project_creation_event_id','project_id','schema',
 ].sort());
 async function verifyPublicProjectTopology(topology,signatureHex,record,policy,keyEntry){
   if(record?.kind!=='project'
@@ -10462,7 +10462,7 @@ async function refreshThinking(){
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el2=$('#thinksec'); if(!el2) return;
   const operatorAccepted=hasOperator&&t?.tier==='operator'
-    &&t?.schema==='personaos-persona-thinking/2'&&String(t.persona_id||'')===want;
+    &&t?.schema==='personaos-persona-thinking/3'&&String(t.persona_id||'')===want;
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
@@ -10828,7 +10828,7 @@ async function streamPersonaCognition(options={}){
           verifiedDirectFallback:true,
         });
         const accepted=hasOperator
-          ?r?.schema==='personaos-persona-thinking/2'&&r.tier==='operator'
+          ?r?.schema==='personaos-persona-thinking/3'&&r.tier==='operator'
             &&String(r.persona_id||'')===endpointId
           :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
         if(accepted){
@@ -12761,14 +12761,14 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
   // singular environment_id/env_id aliases never regain presentation authority.
   const d=(L.export?await dfetch(base,L.export):null)||{};
   const liveTopology=r._projectTopologyVerified===true?r._projectTopology:null;
-  const topologySource=d.schema==='personaos-project-export/2'?d:(liveTopology||{});
+  const topologySource=d.schema==='personaos-project-export/3'?d:(liveTopology||{});
   const rawMembers=topologySource.members||{};
   const members=Array.isArray(rawMembers)
     ?rawMembers.map((m)=>typeof m==='string'?{persona_id:m,role:''}:m).filter((m)=>m&&m.persona_id)
     :Object.entries(rawMembers).map(([personaId,value])=>typeof value==='object'&&value!==null
       ?{...value,persona_id:value.persona_id||personaId}
       :{persona_id:personaId,role:String(value||'')});
-  const hasExportTopology=d.schema==='personaos-project-export/2'&&Array.isArray(d.environments);
+  const hasExportTopology=d.schema==='personaos-project-export/3'&&Array.isArray(d.environments);
   const hasLiveTopology=liveTopology?.schema==='personaos-public-project-topology/1'
     &&Array.isArray(liveTopology.environment_ids);
   const hasCanonicalTopology=hasExportTopology||hasLiveTopology;
@@ -12795,7 +12795,7 @@ async function projectView(r){ const base=r._base||'',L=r._links||{}, S0=(v)=>es
     return `<div class="grant"><span>${rid?recLink(rid,label):`<code>${esc(label)}</code>`}</span>`
       +`<span class="l2">${environmentId===primary?'PRIMARY':'HOST'}</span></div>`;
   }).join('');
-  else if(d.schema&&d.schema!=='personaos-project-export/2'&&!liveTopology) html+=`<div class="viewerr">${icon('warn','ico-sm')} Legacy singular project-host topology was refused; republish this project with export/2.</div>`;
+  else if(d.schema&&d.schema!=='personaos-project-export/3'&&!liveTopology) html+=`<div class="viewerr">${icon('warn','ico-sm')} Legacy singular project-host topology was refused; republish this project with export/3.</div>`;
   if(members.length) html+=H(`Members (${members.length})`)+members.slice(0,10).map((m)=>{
     const rid=findRecByDid(m.persona_id,r._kernel)||findRecByDid('did:personaos:'+m.persona_id,r._kernel);
     const memberName=_nameFor(m.persona_id,r._kernel);
