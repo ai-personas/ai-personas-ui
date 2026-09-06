@@ -95,6 +95,14 @@ bootstrap/key documents are admitted on this path only when their kernel/current
 the already verified self-certifying ProviderRecord. An exact `materialization_busy` response from a
 light peer is retried with a bounded delay while retaining the same peer, kernel, content-hash, and
 byte-verification requirements; it is transport flow control, not a failed avatar or artifact.
+Chunk sizes account for the remaining relay allowance and base64 overhead.
+Concurrent reads share that allowance, and exhausted circuits are renewed with
+the same peer identity and content hash. A signed JSON document that will not
+fit inline can use the same byte transfer path: the response identifies one
+exact JSON snapshot by hash and size. Its public path, current master, and
+public projection generation must remain valid for every chunk. Withdrawal or
+an access change cannot be bypassed through cached snapshot bytes. The browser
+reassembles and hashes the complete document before its normal signature checks.
 Provider queries, public data reads, and live event watches also run on circuit-relay
 connections. They reuse an open authenticated connection to that peer, preferring an
 unlimited connection after a successful upgrade; they do not repeat a relay handshake
