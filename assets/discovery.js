@@ -13366,8 +13366,9 @@ async function connectedEnvironmentView(base,eid){
   if(entry.artifactsLoading) html+='<div class="l2" role="status">Reading workspace files…</div>';
   if(!groups.length&&!entry.artifactsLoading) html+='<div class="l2">No saved or captured files are available for this environment.</div>';
   const fileLink=(file,row)=>`<a href="#" data-act="my-file" data-base="${esc(base)}" data-run="${esc(row.run)}" data-environment="${esc(eid)}" data-workspace="${esc(file.workspace_id||'')}" data-path="${esc(file.path)}" data-source="${row.source}" data-artifact="${esc(file.artifact_id||'')}">${esc(file.path)}</a>`;
-  const copyLabel=(row)=>row.source==='saved'?'Saved output':'Worktree · '+_displayPersonaName((entry.status.personas||[])
-    .find((person)=>person.persona_id===row.workspace.persona_id)?.name,row.workspace.persona_id);
+  const copyLabel=(row)=>row.source==='saved'?'Saved output':['Worktree',_displayPersonaName((entry.status.personas||[])
+    .find((person)=>person.persona_id===row.workspace.persona_id)?.name,row.workspace.persona_id),
+    _liveFileSharedState(row.file)].filter(Boolean).join(' · ');
   let previousRun='';
   for(const group of groups){
     const row=group.row;
@@ -13394,6 +13395,7 @@ function connectedFileView(base,run,eid,workspaceId,path,{raw=false,source='live
   const html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}" data-connected-file-run="${esc(run)}" data-connected-file-source="${source}" data-connected-file-version="${esc(connectedFileVersion(state))}"`)
     +kv('Path',`<code>${esc(path)}</code>`)+kv('Size',esc(fmtBytes(file.size_bytes)))
     +kv('Source',source==='saved'?'Saved output · node-exported metadata':'Workspace capture · signed metadata')
+    +(_liveFileSharedState(file)?kv('Workspace copy',esc(_liveFileSharedState(file))):'')
     +`<p><button type="button" data-private-format>${raw?'Formatted view':'Plain text view'}</button> · <a data-private-download hidden>Download verified bytes</a></p>`
     +`<div class="l2" data-private-integrity role="status">Checking file bytes…</div>`
     +'<div id="fv-body" class="fv-body"><div class="fv-loading">Loading verified preview…</div></div></div>';

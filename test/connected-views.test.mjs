@@ -25,6 +25,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     + section('async function readBoundedResponseBytes(', 'function _downloadName(')
     + section('const BINARY_RENDERERS=', 'function pickRenderer(')
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')
+    + section('function _liveFileSharedState(', 'function _liveCurrentFileActionHTML(')
     + section('function _personaCharacteristicValue(', 'const _personaMonogram=') + privateSection;
   const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, esc,
     fetchEventSource: streamFactory,
@@ -329,6 +330,18 @@ test('private environment counts group identical worktree copies and preserve di
   assert.match(view.html,/different content at this path/);
   for(const workspace of ['ws-a','ws-b','ws-c']) assert.ok(view.html.includes(`data-workspace="${workspace}"`));
   assert.match(view.html,/Bob/);
+});
+
+test('private files identify a captured personal copy when the shared merge is incomplete', async t=>{
+  const issuer=signer(), result=await file();
+  result.record.provenance={schema:'personaos-live-artifact-workspace-publication-provenance/1',
+    authority:'verified_persona_workspace_change_capture', publication_complete:false,
+    environment_bytes_present:false};
+  const ui=fixture({fetchImpl:async()=>Response.json(issuer.keys)}); withCleanup(t,ui); prepare(ui,issuer);
+  assert.equal(await ui.remember(ui.entry,issuer.snapshot({files:[result.record]})),true);
+  assert.match((await ui.environmentView(ui.entry.base,'room')).html,/Personal copy · shared merge incomplete/);
+  assert.match(ui.fileView(ui.entry.base,'run-a','room','ws-a','report.md').html,
+    /Workspace copy: Personal copy · shared merge incomplete/);
 });
 
 async function savedFile(options={}){
