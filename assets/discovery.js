@@ -8763,7 +8763,7 @@ async function refreshSystemView(){
   });
   envBlocks.length=0; envBlocks.push(...envWindow.items);
   S.envCount=Math.max(S.observedEnvironmentCount||0,_baseCandidates.length);
-  S.renderedEnvironmentKeys=new Set(envBlocks.map((b)=>envKey(b.kernel,b.sid)));
+  S.renderedEnvironmentKeys=new Set(envBlocks.map((b)=>_environmentKey(b.kernel,b.sid)));
   // Personas are a primary deck, never children of environment cards. Each
   // persona receives the exact environments whose roster or telemetry names it.
   const personaContexts=new Map();

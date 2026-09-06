@@ -10,6 +10,9 @@ const assets = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
 const source = readFileSync(resolve(assets, 'discovery.js'), 'utf8');
 const network = await import(pathToFileURL(resolve(assets, 'network-view.mjs')));
+const {networkEntityKey} = await import(pathToFileURL(resolve(assets, 'network-store.mjs')));
+const personaKey = (kernel, id) => networkEntityKey(kernel, 'persona', id);
+const environmentKey = (kernel, id) => networkEntityKey(kernel, 'env', id);
 function section(start, end) {
   const first = source.indexOf(start), last = source.indexOf(end, first + start.length);
   assert.ok(first >= 0 && last > first, start);
@@ -89,8 +92,8 @@ function feedSelection(personaCount, environmentCount, windows) {
     },
     NETWORK_LIMITS: {personaInitial: 12, environmentInitial: 10},
     _shortId: value => value,
-    _personaKey: (kernel, id) => `${kernel}:${id}`,
-    _environmentKey: (kernel, id) => `${kernel}:${id}`,
+    _personaKey: personaKey,
+    _environmentKey: environmentKey,
     _nameFor: id => id,
     _environmentNameFor: id => id,
   };
@@ -107,7 +110,7 @@ test('entity feed loading advances with the expanded people and environment wind
 test('a displayed person or environment outside the initial feed prefix receives its live feed', () => {
   const selected = feedSelection(617, 613, {
     personas: 12, environments: 10,
-    visiblePersonas: ['node:p616'], visibleEnvironments: ['node:e612'],
+    visiblePersonas: [personaKey('node', 'p616')], visibleEnvironments: [environmentKey('node', 'e612')],
   });
   assert.ok(selected.personaRows.some(([id]) => id === 'p616'));
   assert.ok(selected.environmentRows.some(([id]) => id === 'e612'));
@@ -124,4 +127,20 @@ test('environment enrichment cannot shorten an explicitly expanded inventory', (
   const declaration = section('  const prefetchLimit=', '  await Promise.all(envBlocks.map(async(b)=>{');
   new Function(...Object.keys(values), declaration)(...Object.values(values));
   assert.equal(envBlocks.length, 613);
+});
+
+
+test('enriched environment cards retain the same exact identity for the next feed selection', () => {
+  const S = {};
+  const values = {
+    S, envBlocks: [{kernel: 'node', sid: 'e612'}],
+    envKey: (kernel, id) => `${kernel}\u0000${id}`,
+    _environmentKey: environmentKey,
+  };
+  const declaration = section('  S.renderedEnvironmentKeys=new Set(envBlocks.map(', '  // Personas are a primary deck');
+  new Function(...Object.keys(values), declaration)(...Object.values(values));
+  const selected = feedSelection(617, 613, {
+    personas: 12, environments: 10, visibleEnvironments: [...S.renderedEnvironmentKeys],
+  });
+  assert.ok(selected.environmentRows.some(([id]) => id === 'e612'));
 });
