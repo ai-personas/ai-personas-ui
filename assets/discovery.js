@@ -423,7 +423,7 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024
   if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
   if(queryHash&&queryHash!==contentHash) return null;
   const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
-    {timeoutMs:10000,maxBytes,path:found.path}).catch(()=>null);
+    {timeoutMs:10000,maxBytes,path:found.path,priority:100}).catch(()=>null);
   return result?.bytes||null;
 }
 // Large signed inventories are fetched concurrently by the HTTP and P2P
@@ -14954,7 +14954,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260906-relay-live-v2');
+    const mod=await import('./p2p-libp2p.js?v=20260906-relay-live-v3');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

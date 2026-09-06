@@ -444,6 +444,9 @@ Freshness, current-master signatures, exact routes, and independent communicatio
 verification still govern the whole feed. The producer-to-browser contract test uses actual
 signed environment documents, so a new public field cannot silently blank their members.
 
+Interactive file chunks take precedence over queued background metadata reads for the same
+peer. The active request completes first; requests still share one relay allowance serially,
+and equal-priority downloads alternate chunks. Live invalidation streams remain separate.
 A verified file preview retains the complete bytes for its Download button. Download checks
 that the route and hash still match, hashes the retained bytes again, and confirms the view
 has not changed before saving them. This avoids repeating a slow relay transfer for the same
