@@ -93,6 +93,10 @@ bootstrap/key documents are admitted on this path only when their kernel/current
 the already verified self-certifying ProviderRecord. An exact `materialization_busy` response from a
 light peer is retried with a bounded delay while retaining the same peer, kernel, content-hash, and
 byte-verification requirements; it is transport flow control, not a failed avatar or artifact.
+Provider queries, public data reads, and live event watches also run on circuit-relay
+connections. They reuse an open authenticated connection to that peer, preferring an
+unlimited connection after a successful upgrade; they do not repeat a relay handshake
+for every read. Relay operators retain their connection duration and byte limits.
 When an explicit or node-advertised bootstrap/relay is configured,
 the browser finds AI Personas nodes through rolling 15-minute v2 rendezvous content keys in that peer's
 Kademlia routing table. A publisher provides only the current epoch; a browser queries the current,
