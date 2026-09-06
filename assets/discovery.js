@@ -8397,8 +8397,18 @@ async function refreshSystemView(){
   const liveGroups=await Promise.all(bases.map(async(key)=>{ const base=key==='@origin'?'':key;
     const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) return [];
     const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
-    const personaRows=Object.entries(ent.personas||{}).slice(0,NETWORK_LIMITS.personaInitial*4);
-    const environmentRows=Object.entries(ent.environments||{}).slice(0,NETWORK_LIMITS.environmentInitial*4);
+    // Feed work follows the viewer's window. Prefer cards already on screen,
+    // including a search result beyond the index's initial prefix.
+    const personaRows=selectPriorityWindow(Object.entries(ent.personas||{}),{
+      limit:Math.max(NETWORK_LIMITS.personaInitial*4,S.personaWindows.get('@persona-deck')||0),
+      keyOf:([pid])=>_personaKey(kernel,_shortId(pid)),
+      priorityOf:([pid])=>S.visiblePersonaIds.has(_personaKey(kernel,_shortId(pid)))?1:0,
+    }).items;
+    const environmentRows=selectPriorityWindow(Object.entries(ent.environments||{}),{
+      limit:Math.max(NETWORK_LIMITS.environmentInitial*4,S.environmentWindow),
+      keyOf:([eid])=>_environmentKey(kernel,_shortId(eid)),
+      priorityOf:([eid])=>S.renderedEnvironmentKeys.has(_environmentKey(kernel,_shortId(eid)))?1:0,
+    }).items;
     const [personaFeeds,environmentFeeds]=await Promise.all([
       Promise.all(personaRows.map(async([,rel])=>{
         const feed=await fetchEntityFeed(base,rel);
@@ -8456,7 +8466,7 @@ async function refreshSystemView(){
   // so the personas that worked in the env still SHOW in the env (members + count),
   // instead of a "no members" lane — the env's people don't vanish on restart.
   S.observedEnvironmentCount=envBlocks.length;
-  const prefetchLimit=Math.min(512,Math.max(40,S.environmentWindow*3));
+  const prefetchLimit=Math.max(40,S.environmentWindow*3);
   const prefetchWindow=selectPriorityWindow(envBlocks,{
     query:S.q||'',limit:prefetchLimit,keyOf:(b)=>envKey(b.kernel,b.sid),
     priorityOf:(b)=>(b.live?1e6:0)+(b.status==='active'?1e5:0)+Math.min(9999,b.members.length),

@@ -74,3 +74,54 @@ for (const [kind, count, initial] of [['environments', 613, 10], ['personas', 61
     assert.equal(select(records).items.at(-1), extra);
   });
 }
+
+function feedSelection(personaCount, environmentCount, windows) {
+  const ent = {
+    personas: Object.fromEntries(Array.from({length: personaCount}, (_, i) => [`p${i}`, `people/p${i}.json`])),
+    environments: Object.fromEntries(Array.from({length: environmentCount}, (_, i) => [`e${i}`, `rooms/e${i}.json`])),
+  };
+  const values = {
+    ...network, ent, kernel: 'node', S: {
+      q: '', personaWindows: new Map([['@persona-deck', windows.personas]]),
+      environmentWindow: windows.environments,
+      visiblePersonaIds: new Set(windows.visiblePersonas || []),
+      renderedEnvironmentKeys: new Set(windows.visibleEnvironments || []),
+    },
+    NETWORK_LIMITS: {personaInitial: 12, environmentInitial: 10},
+    _shortId: value => value,
+    _personaKey: (kernel, id) => `${kernel}:${id}`,
+    _environmentKey: (kernel, id) => `${kernel}:${id}`,
+    _nameFor: id => id,
+    _environmentNameFor: id => id,
+  };
+  const declaration = section('    const personaRows=', '    const [personaFeeds,environmentFeeds]=');
+  return new Function(...Object.keys(values), declaration + '\nreturn {personaRows,environmentRows};')(...Object.values(values));
+}
+
+test('entity feed loading advances with the expanded people and environment windows', () => {
+  const selected = feedSelection(617, 613, {personas: 617, environments: 613});
+  assert.equal(selected.personaRows.length, 617);
+  assert.equal(selected.environmentRows.length, 613);
+});
+
+test('a displayed person or environment outside the initial feed prefix receives its live feed', () => {
+  const selected = feedSelection(617, 613, {
+    personas: 12, environments: 10,
+    visiblePersonas: ['node:p616'], visibleEnvironments: ['node:e612'],
+  });
+  assert.ok(selected.personaRows.some(([id]) => id === 'p616'));
+  assert.ok(selected.environmentRows.some(([id]) => id === 'e612'));
+  assert.ok(selected.personaRows.length < 617);
+  assert.ok(selected.environmentRows.length < 613);
+});
+
+test('environment enrichment cannot shorten an explicitly expanded inventory', () => {
+  const envBlocks = Array.from({length: 613}, (_, i) => ({kernel: 'node', sid: `e${i}`, name: `Room ${i}`, members: []}));
+  const values = {
+    ...network, envBlocks, S: {environmentWindow: 613, q: ''},
+    envKey: (kernel, id) => `${kernel}:${id}`, _nameFor: id => id,
+  };
+  const declaration = section('  const prefetchLimit=', '  await Promise.all(envBlocks.map(async(b)=>{');
+  new Function(...Object.keys(values), declaration)(...Object.values(values));
+  assert.equal(envBlocks.length, 613);
+});
