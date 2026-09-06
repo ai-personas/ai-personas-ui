@@ -2054,6 +2054,7 @@ body{overflow-x:hidden;overflow-y:auto}
 .human-model-status>div:first-child{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.human-model-status strong{color:var(--off-white);font:700 13px/1.35 var(--sans)}
 .human-model-status p{margin:0;color:var(--dim);font:12.5px/1.45 var(--sans)}
 .fv-integrity{display:flex;align-items:center;gap:6px;margin:8px 0;padding:8px 10px;border:1px solid currentColor;border-radius:9px;background:rgba(3,10,17,.58);font:700 12.5px/1.4 var(--sans)}
+.drawer-body [data-private-integrity]{overflow-wrap:anywhere}
 .fv-technical{margin:8px 0 10px}.fv-technical>div{display:block}.fv-technical .row:last-child{border-bottom:0}
 .fv-archive-list{display:grid;max-height:380px;overflow:auto;border:1px solid var(--line2);border-radius:9px;background:var(--surface-inset)}
 .fv-archive-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:7px 9px;border-bottom:1px solid var(--line);font:12.5px/1.35 var(--mono)}
