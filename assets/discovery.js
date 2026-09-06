@@ -1,7 +1,7 @@
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
-import {updateStageHTML} from './stage-dom.mjs?v=20260906-stable-stage-v1';
+import {updateStageHTML} from './stage-dom.mjs?v=20260906-stable-stage-v2';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -6211,6 +6211,7 @@ function _humanTaskExecutionState(value){
     paused_participant:'Participation paused',run_participant:'Participating',
     not_participating:'Not participating',completed_participant:'Participation ended',
     failed_participant:'Participation failed',
+    running_llm:'Working on the task',
   })[String(value||'')]||String(value||'').replace(/_/g,' ');
 }
 function _sentenceStart(value){ const text=String(value||'').trim();
@@ -7224,7 +7225,7 @@ function _personaActivityHTML(acts,personaKey){
   // commands or cognition. Admission and signatures are checked upstream.
   const updates=new Set(_latestPersonaUpdates(candidates.map(({event})=>event)));
   const authoredRows=candidates.filter(({event})=>updates.has(event));
-  if(!candidates.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
+  if(!candidates.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none available</small></div><div class="pc-activity-empty">No public work updates are available in this view.</div></section>`;
   const renderRows=(selected)=>selected.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
@@ -7274,7 +7275,7 @@ function _personaActivityHTML(acts,personaKey){
   const diagnosticRows=candidates.filter((row)=>!_isPersonaUpdate(row.event)&&!responseRows.includes(row)).slice(0,4);
   const authoredHTML=authoredRows.length
     ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona-authored updates</span><small><i></i> newest first</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">${renderRows(authoredRows)}</ol></section>`
-    :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none shared yet</small></div><div class="pc-activity-empty">The persona has not published a signed message or thought yet.</div></section>`;
+    :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none available</small></div><div class="pc-activity-empty">No signed message or thought is available in this view.</div></section>`;
   const diagnosticsHTML=diagnosticRows.length
     ?`<details class="pc-diagnostics"><summary>Technical activity · ${diagnosticRows.length}</summary><ol>${renderRows(diagnosticRows)}</ol></details>`
     :'';

@@ -207,7 +207,7 @@ test('kernel observations and action requests cannot become signed messages', ()
   assert.ok(!visible.includes('Unverified message'));
   assert.ok(!visible.includes('Kernel claim'));
   assert.ok(!visible.includes('A persona_message tool request'));
-  assert.ok(visible.includes('has not published a signed message or thought'));
+  assert.ok(visible.includes('No signed message or thought is available in this view'));
 });
 
 test('a complete model response retains its own lane and full text', () => {
