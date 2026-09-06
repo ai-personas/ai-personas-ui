@@ -9944,8 +9944,8 @@ async function _validPublicPersonaAuthority(output,identity,row){
     const exactTextBound=authoredOutputPresent
       ?authorityPayload&&typeof authorityPayload==='object'&&!Array.isArray(authorityPayload)
         &&canon(authorityPayload.authored_output)===canon(output.authored_output)
-      :authorityPayload&&typeof authorityPayload==='object'&&!Array.isArray(authorityPayload)
-        &&typeof authorityPayload.message==='string'&&authorityPayload.message===output.text;
+      :(typeof authorityPayload?.message==='string'&&authorityPayload.message.trim()
+        ?authorityPayload.message:canon(authorityPayload))===output.text;
     if(!_exactObjectFields(authority,PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS)
         ||authority.schema!=='personaos-persona-communication/1'
         ||authority.authored_by!==identity.signedId
@@ -10620,8 +10620,8 @@ function _publicPersonaOutputDisplayText(output){
     // shows its authored message, without rendering routing or learning slots.
     try{
       const body=JSON.parse(text);
-      if(body&&typeof body==='object'&&!Array.isArray(body)&&Object.hasOwn(body,'message'))
-        return typeof body.message==='string'?body.message:'';
+      if(body&&typeof body==='object'&&!Array.isArray(body)
+          &&typeof body.message==='string'&&body.message.trim()) return body.message;
     }catch(_){}
   }
   return text;
