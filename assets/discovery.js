@@ -13006,16 +13006,7 @@ function paintConnectedNode(entry){
           &&marker.dataset.connectedFileVersion===connectedFileVersion(
             (marker.dataset.connectedFileSource==='saved'?entry.savedArtifacts:entry.artifacts).get(marker.dataset.connectedFileRun))
           &&(entry.status.environments||[]).some((env)=>env.environment_id===marker.dataset.connectedEnvironment)) return;
-      const openCopies=new Set([...marker.querySelectorAll('details[data-connected-copy-key][open]')]
-        .map((details)=>details.dataset.connectedCopyKey));
-      const scroll=$('#detailbody').scrollTop;
-      renderTop().then(()=>{
-        const current=$('#detailbody [data-connected-node]');
-        if(entry.closed||current?.dataset.connectedNode!==entry.base) return;
-        for(const details of current.querySelectorAll('details[data-connected-copy-key]'))
-          details.open=openCopies.has(details.dataset.connectedCopyKey);
-        $('#detailbody').scrollTop=scroll;
-      });
+      renderTop({refresh:true});
     }
   },75);
 }
@@ -13324,13 +13315,13 @@ async function connectedNodeView(base){
   const status=entry.status, people=status.personas||[], envs=status.environments||[];
   let html=connectedNodeMarker(entry)+`<div class="desc2">${entry.tier==='operator'?'Private node access':'Public node access'} · connected in this tab</div>`;
   html+=H(`Personas (${people.length})`)+people.map((person)=>
-    `<div class="persona-runtime-row"><b>${connectedPersonLink(entry,person)}</b>`
+    `<div class="persona-runtime-row" data-stage-key="${esc(JSON.stringify(['person',person.persona_id]))}"><b>${connectedPersonLink(entry,person)}</b>`
     +`<div class="l2">${esc(person.task_execution_state||person.lifecycle_state||'')}`
     +` · ${esc(person.llm_execution_state||'idle')}</div>`
     +(connectedCallMessages(entry.cognition.get(person.persona_id))[0]?.text
       ?`<div class="desc2">${esc(connectedCallMessages(entry.cognition.get(person.persona_id))[0].text.slice(0,300))}</div>`:'')+'</div>').join('');
   html+=H(`Environments (${envs.length})`)+envs.map((env)=>
-    `<div class="grant"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
+    `<div class="grant" data-stage-key="${esc(JSON.stringify(['environment',env.environment_id]))}"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
     +`<small class="l2">${esc(env.status)} · ${(env.member_persona_ids||[]).length} members</small></span></div>`).join('');
   html+=`<p><button type="button" data-act="my-disconnect" data-base="${esc(base)}">Disconnect</button></p></div>`;
   return {title:`<span class="kind k-env">MY NODE</span> ${esc(base)}`,html};
@@ -13389,9 +13380,10 @@ async function connectedEnvironmentView(base,eid){
       const capture=entry.artifacts.get(row.run);
       if(capture) html+=`<div class="l2">${esc(capture.generatedAt)} · ${capture.ended?'last captured files':'current captured files'}</div>`;
     }
-    html+=`<div class="grant"><span>${fileLink(row.file,row)}<small class="l2">${esc(copyLabel(row))}`
+    const fileKey=JSON.stringify([group.pathKey,row.file.sha256,row.file.size_bytes]);
+    html+=`<div class="grant" data-stage-key="${esc(fileKey)}"><span>${fileLink(row.file,row)}<small class="l2">${esc(copyLabel(row))}`
       +(group.versions>1?' · different content at this path':'')+`</small></span><span class="l2">${esc(fmtBytes(row.file.size_bytes))}</span></div>`;
-    if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(JSON.stringify([group.pathKey,row.file.sha256,row.file.size_bytes]))}"><summary>${group.copies.length} ${group.copies.every(({row})=>row.source==='live')?'worktree copies':'copies'} · identical bytes</summary>`
+    if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(fileKey)}" data-disclosure-key="${esc(fileKey)}"><summary>${group.copies.length} ${group.copies.every(({row})=>row.source==='live')?'worktree copies':'copies'} · identical bytes</summary>`
       +group.copies.map(({file,row})=>`<p>${esc(copyLabel(row))} · ${fileLink(file,row)}</p>`).join('')+'</details>';
   }
   return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(env.name||eid)}`,html:html+'</div>'};
@@ -13700,7 +13692,7 @@ function onViewCleanup(fn){
   if(S.activeViewLifecycle) S.activeViewLifecycle.onCleanup(fn);
   else { try{ fn(); }catch(_){} }
 }
-async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return;
+async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1]; if(!top) return;
   runViewCleanups();
   S.openLiveFile=null;
   S.drawerLiveKind=null; S.drawerLiveId=null; S.drawerLiveKernel=''; S.drawerLiveFeed=null; S.drawerLiveBase=''; S.drawerThinkPid=null;   // the view sets these if it streams
@@ -13709,11 +13701,16 @@ async function renderTop(){ const top=S.views[S.views.length-1]; if(!top) return
   // write LAST and show a view the user already navigated away from — latest wins.
   const gen=(S._renderGen=(S._renderGen||0)+1);
   const lifecycle=createViewLifecycle(gen); S.activeViewLifecycle=lifecycle;
-  $('#detailbody').innerHTML='<div class="fv-loading">resolving…</div>';
+  const body=$('#detailbody');
+  if(!refresh){ body.innerHTML='<div class="fv-loading">resolving…</div>'; delete body.dataset.h; }
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   if(!lifecycle.isCurrent()) return;
-  $('#detail-title').innerHTML=v.title; $('#detailbody').innerHTML=v.html;
-  $('#detailback').hidden=S.views.length<=1; $('#detailbody').scrollTop=0;
+  $('#detail-title').innerHTML=v.title;
+  // Background connection updates retain the same controls and scroll position.
+  // File mounts own separate resources and replace their body when its revision changes.
+  if(refresh&&typeof v.mount!=='function') updateStageHTML(body,v.html);
+  else { body.innerHTML=v.html; delete body.dataset.h; body.scrollTop=0; }
+  $('#detailback').hidden=S.views.length<=1;
   // A11y: move focus into the dialog ONLY after its accessible name (the title) is
   // populated, and only when the drawer is open and focus isn't already inside it.
   // Re-anchors focus on Back/nav when the clicked control was hidden/removed, so focus
