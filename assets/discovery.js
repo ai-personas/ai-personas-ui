@@ -97,6 +97,8 @@ import {
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
+  isExactPublicEnvironmentTelemetryDocument,
+  isPublicEntityModelStatus,
   isEnvironmentTelemetryDocument,
   isPersonaTelemetryDocument,
   isPublicEntityIndexDocument,
@@ -107,7 +109,7 @@ import {
   telemetryActivity,
   telemetryModelEvents,
   telemetrySpans,
-} from './public-telemetry.mjs?v=20260802-work-state-v4';
+} from './public-telemetry.mjs?v=20260906-environment-progress-v5';
 
 // A node-served shell on a plain-HTTP LAN address is not a browser secure
 // context, so SubtleCrypto is withheld and every Ed25519 check would throw
@@ -292,6 +294,7 @@ function secureDownloadMarkup(url,name,expectedHash){
   return `<button class="fv-btn secure-download" type="button" data-act="secure-download" data-url="${esc(url)}" data-name="${esc(_downloadName(name))}" data-hash="${esc(expectedHash||'')}" title="${esc(label)}">`
     +`${icon('download','ico-sm')}<span aria-live="polite">${label}</span></button>`;
 }
+const _verifiedDownloadBytes=new WeakMap();
 async function secureDownloadFromButton(btn){
   if(btn.dataset.busy==='1') return;
   const label=btn.querySelector('span');
@@ -311,21 +314,27 @@ async function secureDownloadFromButton(btn){
     const rawExpected=String(btn.dataset.hash||'').replace(/^sha256:/i,'').toLowerCase();
     if(rawExpected){
       if(!/^[a-f0-9]{64}$/.test(rawExpected)) throw new Error('invalid expected SHA-256'); }
+    const retained=_verifiedDownloadBytes.get(btn);
     let bytes=null;
-    try{
-      if(!isHttp(target.href)) throw new Error('peer download unavailable');
-      const response=await fetch(target.href,secureFetchInit(target.href));
-      if(!response.ok) throw new Error(`body HTTP ${response.status}`);
-      bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
-    }catch(httpError){
-      bytes=await fetchP2PArtifactBytes(target.href,
-        rawExpected?`sha256:${rawExpected}`:'',LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
-      if(!bytes) throw httpError;
+    if(retained&&retained.url===target.href&&retained.hash===rawExpected){
+      retained.assertCurrent(); bytes=retained.bytes;
+    }else{
+      try{
+        if(!isHttp(target.href)) throw new Error('peer download unavailable');
+        const response=await fetch(target.href,secureFetchInit(target.href));
+        if(!response.ok) throw new Error(`body HTTP ${response.status}`);
+        bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+      }catch(httpError){
+        bytes=await fetchP2PArtifactBytes(target.href,
+          rawExpected?`sha256:${rawExpected}`:'',LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+        if(!bytes) throw httpError;
+      }
     }
     if(rawExpected){
       const actual=await sha256Hex(bytes);
       if(actual!==rawExpected) throw new Error('SHA-256 mismatch');
     }
+    retained?.assertCurrent();
     // Model-authored HTML/SVG must never receive a navigable same-origin URL.
     // Rewrap verified bytes as an attachment-only type and discard the URL at once.
     const objectUrl=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
@@ -424,12 +433,13 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024
 const _sharedDocJobs=new Map();
 function sharedDocumentJson(url,fetch_){
   const hit=_sharedDocJobs.get(url);
-  if(hit&&Date.now()-hit.ts<10000) return hit.promise;
+  if(hit&&(!hit.settled||Date.now()-hit.ts<10000)) return hit.promise;
+  const job={settled:false,ts:0,promise:null};
   const promise=Promise.resolve().then(fetch_).finally(()=>{
-    setTimeout(()=>{ const job=_sharedDocJobs.get(url);
-      if(job&&job.promise===promise) _sharedDocJobs.delete(url); },10000);
+    job.settled=true; job.ts=Date.now();
+    setTimeout(()=>{ if(_sharedDocJobs.get(url)===job) _sharedDocJobs.delete(url); },10000);
   });
-  _sharedDocJobs.set(url,{promise,ts:Date.now()});
+  job.promise=promise; _sharedDocJobs.set(url,job);
   return promise;
 }
 async function fetchJson(u,init={}){
@@ -2288,35 +2298,6 @@ const PUBLIC_PERSONA_FEED_FIELDS=Object.freeze([
   'activity','communication_routes','communication_routes_hash','current_work_state','generated_at','model_status',
   'name','node_id','persona_id','schema','signature_hex','signing_key_id','summary','tier',
 ].sort());
-const PUBLIC_ENVIRONMENT_FEED_FIELDS=Object.freeze([
-  'activity','communication_routes','communication_routes_hash','environment_id','generated_at',
-  'member_count','members','model_status','node_id','schema','signature_hex','signing_key_id','status','tier',
-].sort());
-// /2 adds run_budgets: the node's live signed model-call balance per run
-// (counts only; a run whose ledger does not verify says available:false).
-const PUBLIC_ENVIRONMENT_FEED_FIELDS_V2=Object.freeze([...PUBLIC_ENVIRONMENT_FEED_FIELDS,'run_budgets'].sort());
-const PUBLIC_LIVE_RUN_BUDGET_SCHEMA='personaos-live-run-budget/1';
-const PUBLIC_LIVE_RUN_BUDGET_FIELDS=Object.freeze(['available','environment_id','run','schema','status_at_last_export','task_id']);
-const PUBLIC_LIVE_RUN_BUDGET_OPTIONAL=Object.freeze(['budget_mode','granted','remaining','spent_net','remaining_exceeds_grant_from_topups']);
-function _validPublicRunBudgets(rows,eid){
-  if(!Array.isArray(rows)||rows.length>8) return false;
-  for(const row of rows){
-    if(!row||typeof row!=='object'||Array.isArray(row)||row.schema!==PUBLIC_LIVE_RUN_BUDGET_SCHEMA) return false;
-    const keys=Object.keys(row);
-    if(PUBLIC_LIVE_RUN_BUDGET_FIELDS.some((k)=>!keys.includes(k))
-        ||keys.some((k)=>!PUBLIC_LIVE_RUN_BUDGET_FIELDS.includes(k)&&!PUBLIC_LIVE_RUN_BUDGET_OPTIONAL.includes(k))) return false;
-    if(typeof row.available!=='boolean'||String(row.environment_id||'')!==eid
-        ||!_safePublicCognitionAtom(row.run,512,{required:true})||!_safePublicCognitionAtom(row.task_id,512)
-        ||typeof row.status_at_last_export!=='string'||row.status_at_last_export.length>64) return false;
-    if('budget_mode' in row&&!_safePublicCognitionAtom(row.budget_mode,32)) return false;
-    for(const k of ['granted','remaining','spent_net']){
-      if(row.available){ if(!Number.isSafeInteger(row[k])||row[k]<0) return false; }
-      else if(k in row) return false;
-    }
-    if('remaining_exceeds_grant_from_topups' in row&&row.remaining_exceeds_grant_from_topups!==true) return false;
-  }
-  return true;
-}
 // The newest verified balance of one environment's runs, for the cards.
 function _environmentRunBudget(doc){
   const rows=Array.isArray(doc?.run_budgets)?doc.run_budgets.filter((r)=>r&&r.available===true):[];
@@ -2389,14 +2370,6 @@ function _safeEntityMap(value,prefix){
   return Object.entries(value).every(([id,rel])=>id&&id.length<=512
     &&String(rel)===`${prefix}/${_telemetryEntitySlug(id)}.json`);
 }
-function _validPublicEntityModelStatus(value,identityField,identity){
-  if(!value||typeof value!=='object'||Array.isArray(value)
-      ||!_exactObjectFields(value,['active_calls','recent_events'])
-      ||!Array.isArray(value.active_calls)||!Array.isArray(value.recent_events)) return false;
-  const belongs=(entry)=>entry&&typeof entry==='object'&&!Array.isArray(entry)
-    &&String(entry[identityField]||'')===identity;
-  return value.active_calls.every(belongs)&&value.recent_events.every(belongs);
-}
 async function verifyPublicEntityDocument(base,rel,doc){
   const registry=S.keyDocs.get(base||'@origin');
   if(!_freshPublicGeneratedAt(doc?.generated_at)||!registry?.kernelId
@@ -2423,21 +2396,14 @@ async function verifyPublicEntityDocument(base,rel,doc){
         ||String(doc.name||'')!==String(doc.summary.name||'')
         ||(!workStateAbsent&&(!identity
           ||!_validPublicPersonaWorkState(workState,identity)))
-        ||!_validPublicEntityModelStatus(doc.model_status,'persona_id',pid)
+        ||!isPublicEntityModelStatus(doc.model_status,'persona_id',pid)
         ||!Array.isArray(doc.activity)
         ||!Array.isArray(doc.communication_routes)
         ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
   }else if(doc?.schema==='personaos-environment-telemetry-public/1'||doc?.schema==='personaos-environment-telemetry-public/2'){
     const eid=String(doc.environment_id||'');
-    const feedV2=doc.schema==='personaos-environment-telemetry-public/2';
-    if(!_exactObjectFields(doc,feedV2?PUBLIC_ENVIRONMENT_FEED_FIELDS_V2:PUBLIC_ENVIRONMENT_FEED_FIELDS)||!eid||eid.length>512
-        ||(feedV2&&!_validPublicRunBudgets(doc.run_budgets,eid))
+    if(!isExactPublicEnvironmentTelemetryDocument(doc)
         ||path!==`telemetry/environments/${_telemetryEntitySlug(eid)}.json`
-        ||doc.tier!=='public_redacted'||!Number.isSafeInteger(doc.member_count)
-        ||doc.member_count<0||!Array.isArray(doc.members)||doc.members.length!==doc.member_count
-        ||!_validPublicEntityModelStatus(doc.model_status,'environment_id',eid)
-        ||!Array.isArray(doc.activity)
-        ||!Array.isArray(doc.communication_routes)
         ||!VERIFIED_COMMUNICATION_ROUTE_COLLECTIONS.has(doc)) return false;
   }else return false;
   return verifyCurrentMasterSignedDocument(base,doc);
@@ -12654,6 +12620,19 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
     if(unknownNode) unknownNode.hidden=!!pick.mediaType;
     const openNode=root.querySelector('[data-fv-open-as]');
     if(openNode) openNode.innerHTML=`${rawToggle(isBinary,rendererId)} · ${secureDownloadMarkup(sourceUrl,title,opts.contentHash)}`;
+    const download=openNode?.querySelector('[data-act="secure-download"]');
+    if(download&&verified?.ok){
+      // The preview already holds these exact bytes. Keep them only for this
+      // view's button, and recheck the hash and live revision when saving.
+      _verifiedDownloadBytes.set(download,{url:new URL(sourceUrl,location.href).href,
+        hash:expectedHash,bytes:verified.bytes,assertCurrent:()=>{
+          lifecycle.assertCurrent();
+          if(opts.liveFile&&!liveBodyCommitIsCurrent(opts.liveFile,
+              liveArtifactState(base,opts.liveFile.run),S.openLiveFile))
+            throw new Error('The live file changed; reopen its current version.');
+        }});
+      lifecycle.onCleanup(()=>_verifiedDownloadBytes.delete(download));
+    }
     const verificationNode=root.querySelector('[data-fv-verification]');
     if(verificationNode) verificationNode.innerHTML=verificationRows;
     const diffNode=root.querySelector('[data-fv-diff]'); if(diffNode) diffNode.innerHTML=liveDiff;
@@ -14674,18 +14653,24 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
   const {base,kernel}=hint;
   const id=`${kernel}\u0000${base}`;
   const active=S.providerRouteReconciliations.get(id);
-  if(active) return active;
+  const unavailable={accepted:false,count:0};
+  if(active) return settleBeforeAbort(active,signal,unavailable);
   const work=(async()=>{
     // Prefer the peer-bound public-data protocol. Its bootstrap and key registry
     // are anchored to the self-certifying master in the already verified
     // ProviderRecord; the complete inventory still passes the same manifest,
     // chain, document and policy verification as HTTP before promotion.
-    let resolved=await _discoverFromP2P(hint,{signal});
-    if(!resolved.boot&&!signal?.aborted&&isHttp(base)){
+    // A network scan bounds how long it waits for a candidate. Once that
+    // candidate has a verified peer binding, share its complete inventory
+    // transfer independently: each request retains its transport deadline,
+    // and the signed generation still has to pass currentness checks below.
+    // Expiring a scan must not discard an otherwise progressing download.
+    let resolved=await _discoverFromP2P(hint);
+    if(!resolved.boot&&isHttp(base)){
       resolved=await discoverFrom(base,'internet',null,
-        {expectedKernel:kernel,resolveProviderAliases:false,signal});
+        {expectedKernel:kernel,resolveProviderAliases:false});
     }
-    if(signal?.aborted||!resolved.boot) return {accepted:false,count:0};
+    if(!resolved.boot) return unavailable;
     const accepted=applyVerifiedProviderInventory(
       base,resolved.boot,resolved.found,resolved.inventory,resolved.providerIndex);
     if(!accepted) return {accepted:false,count:0};
@@ -14694,15 +14679,16 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
     updateP2PStatus();
     collectP2PBootstraps(resolved.boot,{dial:true});
     noteKernel(kernel,'p2p',base,{reachable:true});
-    await loadTelemetry(base,{signal,boot:resolved.boot});
-    if(!signal?.aborted) connectDiscoveryStream(base,resolved.boot);
+    connectDiscoveryStream(base,resolved.boot);
+    await loadTelemetry(base,{boot:resolved.boot});
     return {accepted:true,count:resolved.found.length};
   })();
-  S.providerRouteReconciliations.set(id,work);
-  return work.finally(()=>{
-    if(S.providerRouteReconciliations.get(id)===work)
+  const tracked=work.finally(()=>{
+    if(S.providerRouteReconciliations.get(id)===tracked)
       S.providerRouteReconciliations.delete(id);
   });
+  S.providerRouteReconciliations.set(id,tracked);
+  return settleBeforeAbort(tracked,signal,unavailable);
 }
 async function _resolveProviderHintJob(job){
   const controller=new AbortController();
@@ -14837,9 +14823,7 @@ async function refreshP2PRendezvous(){
     if(provider?.id?.equals?.(P2P.node.peerId)||signal.aborted) return 0;
     const providerId=provider?.id?.toString?.()||'';
     if(!providerId) return 0;
-    const addresses=[...new Map((provider.multiaddrs||[])
-      .map((target)=>[String(target||''),target])).values()]
-      .filter((target)=>String(target||''))
+    const addresses=P2P.browserDialableMultiaddrs(provider.multiaddrs)
       .slice(0,P2P_ROUTE_LIMITS.maxMultiaddrsPerProvider);
     let routeAttempts=0;
     for(const target of addresses){
@@ -14858,7 +14842,7 @@ async function refreshP2PRendezvous(){
         recent.delete(recent.keys().next().value);
       try{
         const dialSignal=AbortSignal.any([signal,AbortSignal.timeout(5000)]);
-        await P2P.node.dial(dialTarget,{signal:dialSignal});
+        await P2P.node.dial(dialTarget,{signal:dialSignal,priority:100});
         found++;
         const result=await P2P.fetchProviderInventory?.(
           provider,{timeoutMs:8000}).catch(()=>null);
@@ -14970,7 +14954,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260906-relay-chunks-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260906-relay-live-v2');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

@@ -27,6 +27,105 @@ export const isPublicEntityTelemetryDocument=(doc)=>doc?.schema===PUBLIC_PERSONA
   ||PUBLIC_ENVIRONMENT_TELEMETRY_SCHEMAS.has(doc?.schema);
 export const isPublicEntityIndexDocument=(doc)=>doc?.schema===PUBLIC_ENTITY_INDEX_SCHEMA;
 
+const ENVIRONMENT_FEED_FIELDS=Object.freeze([
+  'activity','communication_routes','communication_routes_hash','environment_id','generated_at',
+  'member_count','members','model_status','node_id','schema','signature_hex','signing_key_id','status','tier',
+]);
+const RUN_BUDGET_FIELDS=Object.freeze([
+  'available','environment_id','run','schema','status_at_last_export','task_id',
+]);
+const RUN_BUDGET_OPTIONAL=Object.freeze([
+  'budget_mode','granted','remaining','spent_net','remaining_exceeds_grant_from_topups',
+]);
+const RUN_PROGRESS_FIELDS=Object.freeze(['schema','run','task_id','environment_id']);
+const RUN_PROGRESS_INTS=Object.freeze([
+  'seconds_since_last_persona_append','parked_member_count','active_member_count',
+  'pending_outbox_deliveries','pending_causal_delivery_retries','causal_deliveries_waiting_resource',
+  'pending_initial_delivery_retries','consecutive_failures','refused_calls_zero_spend',
+  'active_call_count','active_calls_beyond_declared_timeout','deliveries_held_for_cooldown',
+  'bytes_written_under_runs_since_last_statement',
+]);
+const RUN_PROGRESS_FLOATS=Object.freeze([
+  'router_cooldown_remaining_s','declared_model_call_timeout_s','oldest_active_call_age_s',
+]);
+const RUN_PROGRESS_BOOLS=Object.freeze([
+  'live','settled','cooldown_active','stated','last_persona_append_readable',
+  'member_facts_readable','outbox_readable','runs_bytes_readable',
+]);
+const RUN_PROGRESS_TEXT=Object.freeze([
+  'run_state','last_refusal_reason_code','observation_hash','observed_at','last_persona_append_at',
+]);
+const RUN_PROGRESS_OPTIONAL=Object.freeze([
+  ...RUN_PROGRESS_INTS,...RUN_PROGRESS_FLOATS,...RUN_PROGRESS_BOOLS,...RUN_PROGRESS_TEXT,
+  'unparked_member_ids',
+]);
+const _closedFields=(value,required,optional=[])=>value&&typeof value==='object'&&!Array.isArray(value)
+  &&required.every((key)=>Object.hasOwn(value,key))
+  &&Object.keys(value).every((key)=>required.includes(key)||optional.includes(key));
+const _exactAtom=(value,max=512,required=false)=>typeof value==='string'&&value.length<=max
+  &&(!required||value.length>0)&&value.trim()===value&&!/[\u0000-\u0020\u007f]/u.test(value);
+const _nonnegativeInteger=(value)=>Number.isSafeInteger(value)&&value>=0;
+
+function validPublicRunBudgets(rows,eid){
+  if(!Array.isArray(rows)||rows.length>8) return false;
+  return rows.every((row)=>{
+    if(!_closedFields(row,RUN_BUDGET_FIELDS,RUN_BUDGET_OPTIONAL)
+        ||row.schema!=='personaos-live-run-budget/1'||typeof row.available!=='boolean'
+        ||row.environment_id!==eid||!_exactAtom(row.run,512,true)||!_exactAtom(row.task_id)
+        ||typeof row.status_at_last_export!=='string'||row.status_at_last_export.length>64
+        ||('budget_mode' in row&&!_exactAtom(row.budget_mode,32))) return false;
+    for(const key of ['granted','remaining','spent_net']){
+      if(row.available){ if(!_nonnegativeInteger(row[key])) return false; }
+      else if(key in row) return false;
+    }
+    return !('remaining_exceeds_grant_from_topups' in row)
+      ||row.remaining_exceeds_grant_from_topups===true;
+  });
+}
+
+function validPublicRunProgress(rows,eid){
+  // Matches the node's closed public projection, including its 32-row window.
+  if(!Array.isArray(rows)||rows.length>32) return false;
+  return rows.every((row)=>_closedFields(row,RUN_PROGRESS_FIELDS,RUN_PROGRESS_OPTIONAL)
+    &&row.schema==='personaos-run-progress-stall/1'&&row.environment_id===eid
+    &&_exactAtom(row.run,512,true)&&_exactAtom(row.task_id)
+    &&RUN_PROGRESS_INTS.every((key)=>!(key in row)||_nonnegativeInteger(row[key]))
+    &&RUN_PROGRESS_FLOATS.every((key)=>!(key in row)
+      ||(typeof row[key]==='number'&&Number.isFinite(row[key])&&row[key]>=0))
+    &&RUN_PROGRESS_BOOLS.every((key)=>!(key in row)||typeof row[key]==='boolean')
+    &&RUN_PROGRESS_TEXT.every((key)=>!(key in row)||(typeof row[key]==='string'
+      &&row[key].length<=128&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(row[key])))
+    &&(!('unparked_member_ids' in row)||(Array.isArray(row.unparked_member_ids)
+      &&row.unparked_member_ids.length<=512
+      &&row.unparked_member_ids.every((id)=>_exactAtom(id,512,true)))));
+}
+
+export function isPublicEntityModelStatus(value,identityField,identity){
+  return _closedFields(value,['active_calls','recent_events'])
+    &&[value.active_calls,value.recent_events].every((rows)=>Array.isArray(rows)
+      &&rows.every((entry)=>entry&&typeof entry==='object'&&!Array.isArray(entry)
+        &&String(entry[identityField]||'')===identity));
+}
+
+/** Shape only: the caller still verifies freshness, route, master signature and
+ * the separately signed communication routes before using this document. */
+export function isExactPublicEnvironmentTelemetryDocument(doc){
+  if(!isEnvironmentTelemetryDocument(doc)) return false;
+  const v2=doc.schema==='personaos-environment-telemetry-public/2';
+  // Older /2 publishers predate the progress observation. No other extension
+  // is admitted implicitly: private observer fields must never enter the UI.
+  if(!_closedFields(doc,v2?[...ENVIRONMENT_FEED_FIELDS,'run_budgets']:ENVIRONMENT_FEED_FIELDS,
+      v2?['run_progress']:[])) return false;
+  const eid=doc.environment_id;
+  return _exactAtom(eid,512,true)&&doc.tier==='public_redacted'
+    &&_nonnegativeInteger(doc.member_count)&&Array.isArray(doc.members)
+    &&doc.members.length===doc.member_count
+    &&isPublicEntityModelStatus(doc.model_status,'environment_id',eid)
+    &&Array.isArray(doc.activity)&&Array.isArray(doc.communication_routes)
+    &&(!v2||validPublicRunBudgets(doc.run_budgets,eid))
+    &&(!('run_progress' in doc)||validPublicRunProgress(doc.run_progress,eid));
+}
+
 export function isExactPublicCommunicationRoute(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw)
       ||Object.keys(raw).sort().join('\u0000')!==PUBLIC_ROUTE_FIELDS.join('\u0000')

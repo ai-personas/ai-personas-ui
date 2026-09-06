@@ -97,19 +97,24 @@ light peer is retried with a bounded delay while retaining the same peer, kernel
 byte-verification requirements; it is transport flow control, not a failed avatar or artifact.
 Chunk sizes account for the remaining relay allowance and base64 overhead.
 Concurrent reads share that allowance, and exhausted circuits are renewed with
-the same peer identity and content hash. A signed JSON document that will not
+the same peer identity and content hash. Interrupted renewal attempts retry
+within the original request deadline. A signed JSON document that will not
 fit inline can use the same byte transfer path: the response identifies one
 exact JSON snapshot by hash and size. Its public path, current master, and
 public projection generation must remain valid for every chunk. Withdrawal or
 an access change cannot be bypassed through cached snapshot bytes. The browser
 reassembles and hashes the complete document before its normal signature checks.
+A pending inventory transfer is shared across discovery attempts until it
+settles. Ending a network scan stops that scan's wait; the transfer can still
+complete and pass the current authority checks. Live watching starts before
+the separate archive load.
 Provider queries, public data reads, and live event watches also run on circuit-relay
 connections. They reuse an open authenticated connection to that peer, preferring an
 unlimited connection after a successful upgrade; they do not repeat a relay handshake
 for every read. Relay operators retain their connection duration and byte limits.
 When an explicit or node-advertised bootstrap/relay is configured,
 the browser finds AI Personas nodes through rolling 15-minute v2 rendezvous content keys in that peer's
-Kademlia routing table. A publisher provides only the current epoch; a browser queries the current,
+Kademlia routing table. A publisher provides the current epoch and prepublishes the next; a browser queries the current,
 previous, and next epochs so a boundary or modest clock skew does not hide a live node. The retired
 fixed v1 key is not queried. With no connected bootstrap/relay there is no shared DHT to query, and
 the UI does not claim otherwise.
@@ -189,9 +194,10 @@ node or data without the current-master, signed-inventory, access-policy, and co
 For each rolling rendezvous bucket, the browser first asks each bounded, connected DHT first-contact
 peer for its local provider view and merges only entries that still carry a route. This prevents one
 fast response full of expired, addressless provider IDs from consuming the Kademlia result bound
-before another peer's live WSS provider is observed. The direct request is only an optimization: if
-none of its routes verifies, the browser always performs normal iterative Kademlia provider discovery
-for that bucket. It tries a bounded set of advertised routes per provider and remembers attempts by
+before another peer's live WSS provider is observed. After the direct pass, the browser spends
+the remaining request budget on normal iterative Kademlia provider discovery. It removes unsupported TCP, bare QUIC, and mixed-content WebSocket
+routes before applying address and attempt bounds, including the first hop of a relay circuit.
+It tries a bounded set of eligible routes per provider and remembers attempts by
 PeerId plus multiaddr, so one dead tunnel does not suppress a replacement route for the same node.
 Bootstrap answers remain untrusted routing hints until the same signed inventory and content
 verification succeeds.
@@ -430,3 +436,15 @@ assets/p2p-libp2p.js                       # vendored js-libp2p (WebRTC + relay 
 
 There is **no `k/` and no `.well-known/` in this repo** — those are *run* surfaces served by a
 live node, never baked into the published page. The page discovers them from peers at runtime.
+
+The public environment reader admits the node's closed `run_progress` projection alongside
+`run_budgets`, including older version-2 publishers without progress rows. Unknown fields,
+private observer text, invalid counts, and rows bound to another environment are refused.
+Freshness, current-master signatures, exact routes, and independent communication-route
+verification still govern the whole feed. The producer-to-browser contract test uses actual
+signed environment documents, so a new public field cannot silently blank their members.
+
+A verified file preview retains the complete bytes for its Download button. Download checks
+that the route and hash still match, hashes the retained bytes again, and confirms the view
+has not changed before saving them. This avoids repeating a slow relay transfer for the same
+file; closing or replacing the preview discards its retained download binding.
