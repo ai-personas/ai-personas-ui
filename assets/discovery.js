@@ -1374,10 +1374,8 @@ async function loadPortalP2PBootstrapHints({dial=false}={}){
   // it can only help the browser reach public peers. It cannot admit a node, persona,
   // telemetry frame or artifact; those still traverse the current-master,
   // signature, inventory and body-hash verification paths below.
-  // Node-served shells already receive signed reachability/bootstrap hints from
-  // their node bootstrap. The repository-level commons exists only on the
-  // hosted portal; do not issue a guaranteed root-file 404 on every local load.
-  if(location.hostname!=='ai-personas.github.io') return [];
+  // The hints file ships beside this module on every portal and node-served
+  // shell. Its availability must not depend on one organization's hostname.
   const hints=await fetchJson(PORTAL_P2P_HINTS_URL,{
     signal:AbortSignal.timeout(3000),maxBytes:PORTAL_P2P_HINTS_MAX_BYTES});
   const libp2p=Array.isArray(hints)?hints:hints?.libp2p;
@@ -14972,7 +14970,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting vendored libp2p — WebRTC + gossipsub; configured peers enable DHT rendezvous…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260905-peer-discovery-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260906-relay-stream-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

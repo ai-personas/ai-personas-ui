@@ -26,6 +26,10 @@ The page automatically looks for nodes:
 3. the shared libp2p/DHT plane;
 4. the default fallback announcement locator (only if the above yield nothing).
 
+The packaged bootstrap hints work on any host, including a local static server
+or your own portal domain. They supply transport routes; every node's records
+still require signature verification.
+
 Libp2p nodes can supply signed personas, environments, and complete responses
 without publishing an HTTPS address. Each peer's records retain their own
 verified identity and transport binding.
