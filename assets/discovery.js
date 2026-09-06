@@ -12965,7 +12965,10 @@ async function connectedNodeBytes(entry,path,{requireOperator=false,maxBytes=DEF
     const response=await fetch(url.href,{method:'GET',signal:controller.signal,
       credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',cache:'no-store',
       headers:token?{Authorization:'Bearer '+token}:{}});
-    if(!response.ok) throw new Error('This node did not allow the requested read.');
+    if(!response.ok){
+      const error=new Error('This node did not allow the requested read.');
+      error.status=response.status; throw error;
+    }
     if(requireOperator&&response.headers.get('X-PersonaOS-Read-Tier')!=='operator')
       throw new Error('The node did not accept that token.');
     const bytes=await readBoundedResponseBytes(response,maxBytes);
@@ -12996,6 +12999,7 @@ function disconnectMyNode(base){
   for(const controller of entry.pending) controller.abort();
   entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear();
   entry.profileJobs.clear(); entry.artifacts.clear(); entry.artifactJobs.clear(); entry.keyDocument=null;
+  entry.savedArtifacts.clear(); entry.savedArtifactJobs.clear();
   for(const cancel of entry.viewCleanups||[]) cancel();
   entry.viewCleanups?.clear();
   entry.status=null; entry.live=null; MY_NODES.delete(base);
@@ -13009,7 +13013,8 @@ function paintConnectedNode(entry){
     if(marker?.dataset.connectedNode===entry.base){
       // Responses and profile refreshes must not restart an unchanged file preview.
       if(marker.dataset.connectedFileRun
-          &&marker.dataset.connectedFileVersion===connectedFileVersion(entry.artifacts.get(marker.dataset.connectedFileRun))
+          &&marker.dataset.connectedFileVersion===connectedFileVersion(
+            (marker.dataset.connectedFileSource==='saved'?entry.savedArtifacts:entry.artifacts).get(marker.dataset.connectedFileRun))
           &&(entry.status.environments||[]).some((env)=>env.environment_id===marker.dataset.connectedEnvironment)) return;
       const openCopies=new Set([...marker.querySelectorAll('details[data-connected-copy-key][open]')]
         .map((details)=>details.dataset.connectedCopyKey));
@@ -13075,15 +13080,61 @@ async function readConnectedArtifacts(entry,run){
   })().finally(()=>entry.artifactJobs.delete(run));
   entry.artifactJobs.set(run,job); return job;
 }
+async function rememberConnectedSavedArtifacts(entry,run,document){
+  const admitted=()=>!entry.closed&&entry.tier==='operator'&&(entry.status.runs||[]).includes(run)
+    &&document?.node_id===entry.status.node_id
+    &&(entry.status.environments||[]).some((env)=>env.environment_id===document?.environment_id);
+  if(!admitted()||document?.schema!=='personaos-run-artifacts/1'||document.run!==run||!Array.isArray(document.metadata))
+    throw new Error('The saved files do not match this node, run and environment.');
+  const files=new Map();
+  for(const metadata of document.metadata){
+    if(metadata?.schema!=='artifact-run-export/1'||!metadata.body_url) continue;
+    const id=metadata.artifact_id, path=metadata.path||metadata.title, hash=String(metadata.content_hash||'');
+    if(typeof id!=='string'||!id||/[\\/\0]/.test(id)||files.has(id)
+        ||typeof path!=='string'||!path||/[\\\0]/.test(path)||/^[A-Za-z]:/.test(path)
+        ||path.split('/').some((part)=>!part||part==='.'||part==='..')
+        ||!/^sha256:[0-9a-f]{64}$/.test(hash)||!Number.isSafeInteger(metadata.size_bytes)||metadata.size_bytes<0
+        ||[metadata.environment_id,metadata.owning_env_id].some((eid)=>eid&&eid!==document.environment_id))
+      throw new Error('A saved file has inconsistent metadata.');
+    const query=new URLSearchParams({artifact_id:id,sha256:hash.slice(7)});
+    const route='runs/'+encodeURIComponent(run)+'/artifacts/body?'+query;
+    const expected=new URL(join(entry.base,route)), actual=new URL(join(entry.base,metadata.body_url));
+    if(actual.origin!==expected.origin||actual.pathname!==expected.pathname||actual.username||actual.password||actual.hash
+        ||[...actual.searchParams].length!==2||actual.searchParams.get('artifact_id')!==id
+        ||actual.searchParams.get('sha256')!==hash.slice(7))
+      throw new Error('The saved file route does not match its export record.');
+    files.set(id,{artifact_id:id,environment_id:document.environment_id,path,sha256:hash.slice(7),
+      size_bytes:metadata.size_bytes,mime_type:String(metadata.mime_type||''),body_url:route});
+  }
+  // This digest tracks changes to node-exported metadata. It is not a signature.
+  const revision=await sha256Hex(new TextEncoder().encode(JSON.stringify({
+    environment_id:document.environment_id,files:[...files.values()].sort((a,b)=>a.artifact_id.localeCompare(b.artifact_id)),
+  })));
+  if(!admitted()) return false;
+  entry.savedArtifacts.set(run,{revision,environmentId:document.environment_id,task:String(document.task||''),files});
+  paintConnectedNode(entry); return true;
+}
+async function readConnectedSavedArtifacts(entry,run){
+  if(entry.closed||entry.tier!=='operator') return;
+  if(entry.savedArtifactJobs.has(run)) return entry.savedArtifactJobs.get(run);
+  const job=(async()=>{
+    const document=await connectedNodeJson(entry,'runs/'+encodeURIComponent(run)+'/artifacts');
+    return rememberConnectedSavedArtifacts(entry,run,document);
+  })().finally(()=>entry.savedArtifactJobs.delete(run));
+  entry.savedArtifactJobs.set(run,job); return job;
+}
 async function refreshConnectedArtifacts(entry){
   if(entry.closed||entry.artifactsLoading) return;
   entry.artifactsRequested=true; entry.artifactsLoading=true; entry.artifactError='';
   try{
     for(const run of entry.status.runs||[]){
       if(entry.closed) break;
-      if(entry.artifacts.get(run)?.finalized) continue;
-      try{ await readConnectedArtifacts(entry,run); }
-      catch(_){ if(!entry.closed) entry.artifactError='Some workspace files could not be refreshed.'; }
+      const reads=await Promise.allSettled([
+        entry.artifacts.get(run)?.finalized?null:readConnectedArtifacts(entry,run),
+        readConnectedSavedArtifacts(entry,run),
+      ]);
+      for(const read of reads) if(read.status==='rejected'&&read.reason?.status!==404&&!entry.closed)
+        entry.artifactError='Some environment files could not be refreshed.';
     }
   }finally{ entry.artifactsLoading=false; paintConnectedNode(entry); }
 }
@@ -13099,17 +13150,23 @@ function connectedEnvironmentFiles(entry,eid){
       const workspace=bindings[0];
       if((file.environment_id&&file.environment_id!==eid)
           ||(file.persona_id&&file.persona_id!==workspace.persona_id)) continue;
-      rows.push({run,state,workspace,file});
+      rows.push({run,state,workspace,file,source:'live',environmentId:eid});
     }
   }
-  return rows.sort((a,b)=>String(b.state.generatedAt).localeCompare(String(a.state.generatedAt))
-    ||a.file.path.localeCompare(b.file.path)||a.file.workspace_id.localeCompare(b.file.workspace_id));
+  for(const [run,state] of entry.savedArtifacts){
+    if(entry.tier!=='operator'||!(entry.status.runs||[]).includes(run)||state.environmentId!==eid) continue;
+    for(const file of state.files.values()) rows.push({run,state,file,source:'saved',environmentId:eid});
+  }
+  return rows.sort((a,b)=>b.run.localeCompare(a.run)||b.source.localeCompare(a.source)
+    ||a.file.path.localeCompare(b.file.path)||String(a.file.workspace_id||a.file.artifact_id).localeCompare(String(b.file.workspace_id||b.file.artifact_id)));
 }
-function connectedFileSelection(entry,run,eid,workspaceId,path){
+function connectedFileSelection(entry,run,eid,workspaceId,path,{source='live',artifactId=''}={}){
   const selected=connectedEnvironmentFiles(entry,eid).find((row)=>
-    row.run===run&&row.file.workspace_id===workspaceId&&row.file.path===path);
+    row.run===run&&row.source===source&&row.file.path===path
+    &&(source==='saved'?row.file.artifact_id===artifactId:row.file.workspace_id===workspaceId));
   if(!selected) throw new Error('This file is no longer available in this environment.');
   const file=selected.file;
+  if(source==='saved') return {...selected,route:file.body_url,expected:{revision:selected.state.revision}};
   const encode=(part)=>encodeURIComponent(part).replace(/[!'()*]/g,(char)=>'%'+char.charCodeAt(0).toString(16).toUpperCase());
   const route='runs/'+encode(run)+'/live-artifacts/body/'+encode(workspaceId)+'/'
     +path.split('/').map(encode).join('/')+'?sha256='+file.sha256;
@@ -13120,19 +13177,21 @@ function connectedFileSelection(entry,run,eid,workspaceId,path){
 }
 function assertConnectedFileCurrent(entry,selection,signal){
   if(entry.closed||signal?.aborted) throw new DOMException('Node read cancelled.','AbortError');
-  if(!liveBodyCommitIsCurrent(selection.expected,entry.artifacts.get(selection.run)))
+  const currentState=(selection.source==='saved'?entry.savedArtifacts:entry.artifacts).get(selection.run);
+  if(selection.source==='saved'?selection.expected.revision!==currentState?.revision
+      :!liveBodyCommitIsCurrent(selection.expected,currentState))
     throw new Error('The file changed while it was being read. Reopen its current version.');
-  const current=connectedFileSelection(entry,selection.run,selection.workspace.environment_id,
-    selection.file.workspace_id,selection.file.path);
+  const current=connectedFileSelection(entry,selection.run,selection.environmentId,
+    selection.file.workspace_id,selection.file.path,{source:selection.source,artifactId:selection.file.artifact_id});
   if(current.route!==selection.route||current.file.size_bytes!==selection.file.size_bytes)
-    throw new Error('The file’s workspace record changed while it was being read.');
+    throw new Error('The file record changed while it was being read.');
 }
 async function connectedFileBytes(entry,selection,signal){
   assertConnectedFileCurrent(entry,selection,signal);
   const loaded=await connectedNodeBytes(entry,selection.route,{signal,maxBytes:Math.max(1,selection.file.size_bytes)});
   assertConnectedFileCurrent(entry,selection,signal);
   if(loaded.bytes.length!==selection.file.size_bytes||await sha256Hex(loaded.bytes)!==selection.file.sha256)
-    throw new Error('The downloaded bytes do not match the signed file record.');
+    throw new Error('The downloaded bytes do not match the file record.');
   assertConnectedFileCurrent(entry,selection,signal); return loaded;
 }
 async function rememberConnectedCognition(entry,doc,pid){
@@ -13154,7 +13213,8 @@ async function refreshConnectedNode(entry){
     for(const cache of [entry.profiles,entry.cognition])
       for(const pid of cache.keys()) if(!admittedPeople.has(pid)) cache.delete(pid);
     const admittedRuns=new Set(status.runs||[]);
-    for(const run of entry.artifacts.keys()) if(!admittedRuns.has(run)) entry.artifacts.delete(run);
+    for(const cache of [entry.artifacts,entry.savedArtifacts])
+      for(const run of cache.keys()) if(!admittedRuns.has(run)) cache.delete(run);
     const marker=$('#detailbody [data-connected-node]');
     if(marker?.dataset.connectedNode===entry.base){
       if(marker.dataset.privatePersona&&admittedPeople.has(marker.dataset.privatePersona))
@@ -13176,6 +13236,7 @@ async function connectMyNode(base,token){
   const session=new NodeReadSession(), normalized=session.set(base,token);
   const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
     cognition:new Map(),profiles:new Map(),profileJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
+    savedArtifacts:new Map(),savedArtifactJobs:new Map(),
     viewCleanups:new Set(),closed:false,status:null,live:null,error:''};
   try{
     entry.status=await connectedNodeJson(entry,'status',{requireOperator:!!token});
@@ -13320,33 +13381,36 @@ async function connectedEnvironmentView(base,eid){
   html+=H(`Workspace files (${groups.length})`);
   if(entry.artifactError) html+=`<div class="l2" role="status">${esc(entry.artifactError)}</div>`;
   if(entry.artifactsLoading) html+='<div class="l2" role="status">Reading workspace files…</div>';
-  if(!groups.length&&!entry.artifactsLoading) html+='<div class="l2">No captured files are available for this environment.</div>';
-  const fileLink=(file,row)=>`<a href="#" data-act="my-file" data-base="${esc(base)}" data-run="${esc(row.run)}" data-environment="${esc(eid)}" data-workspace="${esc(file.workspace_id)}" data-path="${esc(file.path)}">${esc(file.path)}</a>`;
-  const holderName=(row)=>_displayPersonaName((entry.status.personas||[])
+  if(!groups.length&&!entry.artifactsLoading) html+='<div class="l2">No saved or captured files are available for this environment.</div>';
+  const fileLink=(file,row)=>`<a href="#" data-act="my-file" data-base="${esc(base)}" data-run="${esc(row.run)}" data-environment="${esc(eid)}" data-workspace="${esc(file.workspace_id||'')}" data-path="${esc(file.path)}" data-source="${row.source}" data-artifact="${esc(file.artifact_id||'')}">${esc(file.path)}</a>`;
+  const copyLabel=(row)=>row.source==='saved'?'Saved output':'Worktree · '+_displayPersonaName((entry.status.personas||[])
     .find((person)=>person.persona_id===row.workspace.persona_id)?.name,row.workspace.persona_id);
   let previousRun='';
   for(const group of groups){
     const row=group.row;
     if(row.run!==previousRun){
       previousRun=row.run;
-      html+=`<h4>${esc(row.state.snapshot.task||row.run)}</h4><div class="l2">${esc(row.state.generatedAt)} · ${row.state.ended?'last captured files':'current captured files'}</div>`;
-      if(row.state.snapshot.truncated) html+='<div class="l2">The node’s workspace capture is incomplete; additional files may exist.</div>';
+      html+=`<h4>${esc(row.state.task||row.state.snapshot?.task||row.run)}</h4>`;
+      const capture=entry.artifacts.get(row.run);
+      if(capture) html+=`<div class="l2">${esc(capture.generatedAt)} · ${capture.ended?'last captured files':'current captured files'}</div>`;
+      if(capture?.snapshot.truncated) html+='<div class="l2">The node’s workspace capture is incomplete; additional files may exist.</div>';
     }
-    html+=`<div class="grant"><span>${fileLink(row.file,row)}<small class="l2">Worktree · ${esc(holderName(row))}`
+    html+=`<div class="grant"><span>${fileLink(row.file,row)}<small class="l2">${esc(copyLabel(row))}`
       +(group.versions>1?' · different content at this path':'')+`</small></span><span class="l2">${esc(fmtBytes(row.file.size_bytes))}</span></div>`;
-    if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(JSON.stringify([group.pathKey,row.file.sha256,row.file.size_bytes]))}"><summary>${group.copies.length} worktree copies · identical bytes</summary>`
-      +group.copies.map(({file,row})=>`<p>${esc(holderName(row))} · ${fileLink(file,row)}</p>`).join('')+'</details>';
+    if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(JSON.stringify([group.pathKey,row.file.sha256,row.file.size_bytes]))}"><summary>${group.copies.length} ${group.copies.every(({row})=>row.source==='live')?'worktree copies':'copies'} · identical bytes</summary>`
+      +group.copies.map(({file,row})=>`<p>${esc(copyLabel(row))} · ${fileLink(file,row)}</p>`).join('')+'</details>';
   }
   return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(env.name||eid)}`,html:html+'</div>'};
 }
-function connectedFileView(base,run,eid,workspaceId,path,{raw=false}={}){
+function connectedFileView(base,run,eid,workspaceId,path,{raw=false,source='live',artifactId=''}={}){
   const entry=MY_NODES.get(base); if(!entry) return operatorView();
   let selection;
-  try{ selection=connectedFileSelection(entry,run,eid,workspaceId,path); }
+  try{ selection=connectedFileSelection(entry,run,eid,workspaceId,path,{source,artifactId}); }
   catch(error){ return {title:'File unavailable',html:`<div class="viewerr">${esc(error.message)}</div>`}; }
   const {file,state}=selection, kind=declaredArtifactMedia(file);
-  const html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}" data-connected-file-run="${esc(run)}" data-connected-file-version="${esc(connectedFileVersion(state))}"`)
+  const html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}" data-connected-file-run="${esc(run)}" data-connected-file-source="${source}" data-connected-file-version="${esc(connectedFileVersion(state))}"`)
     +kv('Path',`<code>${esc(path)}</code>`)+kv('Size',esc(fmtBytes(file.size_bytes)))
+    +kv('Source',source==='saved'?'Saved output · node-exported metadata':'Workspace capture · signed metadata')
     +`<p><button type="button" data-private-format>${raw?'Formatted view':'Plain text view'}</button> · <a data-private-download hidden>Download verified bytes</a></p>`
     +`<div class="l2" data-private-integrity role="status">Checking file bytes…</div>`
     +'<div id="fv-body" class="fv-body"><div class="fv-loading">Loading verified preview…</div></div></div>';
@@ -13358,7 +13422,7 @@ function connectedFileView(base,run,eid,workspaceId,path,{raw=false}={}){
     const host=root.querySelector('#fv-body'), integrity=root.querySelector('[data-private-integrity]');
     root.querySelector('[data-private-format]').addEventListener('click',()=>{
       if(entry.closed||!lifecycle.isCurrent()) return;
-      S.views[S.views.length-1]=()=>connectedFileView(base,run,eid,workspaceId,path,{raw:!raw}); renderTop();
+      S.views[S.views.length-1]=()=>connectedFileView(base,run,eid,workspaceId,path,{raw:!raw,source,artifactId}); renderTop();
     });
     let loaded;
     try{ loaded=await connectedFileBytes(entry,selection,lifecycle.signal); }
@@ -14248,7 +14312,8 @@ function wire(){
     if(act==='my-node'){ pushView(()=>connectedNodeView(a.dataset.base)); return; }
     if(act==='my-persona'){ pushView(()=>connectedPersonaView(a.dataset.base,a.dataset.persona)); return; }
     if(act==='my-environment'){ pushView(()=>connectedEnvironmentView(a.dataset.base,a.dataset.environment)); return; }
-    if(act==='my-file'){ pushView(()=>connectedFileView(a.dataset.base,a.dataset.run,a.dataset.environment,a.dataset.workspace,a.dataset.path)); return; }
+    if(act==='my-file'){ pushView(()=>connectedFileView(a.dataset.base,a.dataset.run,a.dataset.environment,a.dataset.workspace,a.dataset.path,
+      {source:a.dataset.source||'live',artifactId:a.dataset.artifact||''})); return; }
     if(act==='my-disconnect'){ disconnectMyNode(a.dataset.base); S.views=[()=>operatorView()]; renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }

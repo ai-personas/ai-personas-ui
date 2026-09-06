@@ -54,12 +54,14 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     refresh: refreshConnectedNode, cognition: connectedCognitionHtml, disconnect: disconnectMyNode,
     connect: connectMyNode, profile: connectedProfile, readBytes: connectedNodeBytes,
     remember: rememberConnectedArtifacts, readArtifacts: readConnectedArtifacts, refreshArtifacts: refreshConnectedArtifacts,
+    rememberSaved: rememberConnectedSavedArtifacts, readSaved: readConnectedSavedArtifacts,
     files: connectedEnvironmentFiles, select: connectedFileSelection, body: connectedFileBytes,
     ...(typeof connectedFileView === 'function' ? {fileView: connectedFileView} : {}),
   };`)(...Object.values(values));
   const entry = {base: 'https://node.test/private', tier: 'operator',
     session: new connection.NodeReadSession(), pending: new Set(), cognition: new Map(),
     profiles: new Map(), profileJobs: new Map(), artifacts: new Map(), artifactJobs: new Map(),
+    savedArtifacts: new Map(), savedArtifactJobs: new Map(),
     viewCleanups: new Set(), closed: false, status: {schema: 'personaos-node-status/1', node_id: 'kernel:test', runs: [],
       personas: [{persona_id:'alice', name:'Alice'}, {persona_id:'bob', name:'Bob'}],
       environments: [{environment_id:'room', name:'Workshop', status:'active',
@@ -327,4 +329,105 @@ test('private environment counts group identical worktree copies and preserve di
   assert.match(view.html,/different content at this path/);
   for(const workspace of ['ws-a','ws-b','ws-c']) assert.ok(view.html.includes(`data-workspace="${workspace}"`));
   assert.match(view.html,/Bob/);
+});
+
+async function savedFile(options={}){
+  const result=await file(options), id='artifact:export-a';
+  return {...result, document:{schema:'personaos-run-artifacts/1',node_id:'kernel:test',run:options.run||'run-a',
+    environment_id:options.environment||'room',task:'Build the measured result.',metadata:[{
+      schema:'artifact-run-export/1',artifact_id:id,path:result.record.path,
+      environment_id:result.record.environment_id,owning_env_id:result.record.environment_id,
+      content_hash:'sha256:'+result.record.sha256,size_bytes:result.bytes.length,mime_type:'text/markdown',
+      body_available:false,operator_package_path:'artifacts/operator-package/'+result.record.path,
+      body_url:'/runs/'+(options.run||'run-a')+'/artifacts/body?'+new URLSearchParams({artifact_id:id,sha256:result.record.sha256}),
+    }]}};
+}
+
+test('an idle private node supplies saved output without a live snapshot or public cache',async t=>{
+  const saved=await savedFile({path:"notes/.draft/it's final 🧭 %.md"}), rendered=[], requests=[];
+  const ui=fixture({fetchImpl:async(url,options)=>{
+    requests.push({url,options});
+    if(new URL(url).pathname.endsWith('/live-artifacts')) return new Response('',{status:404});
+    if(new URL(url).pathname.endsWith('/artifacts')) return Response.json(saved.document);
+    return new Response(saved.bytes,{headers:{'Content-Type':'text/markdown'}});
+  },renderer:async(_host,ctx)=>{ctx.assertCurrent();rendered.push(ctx);}});
+  withCleanup(t,ui); ui.entry.status.runs=['run-a'];
+  await ui.refreshArtifacts(ui.entry);
+  assert.equal(ui.entry.artifactError,''); assert.equal(ui.entry.artifacts.size,0);
+  assert.equal(ui.entry.savedArtifacts.size,1); assert.equal(ui.entry.keyDocument,undefined);
+  const environment=await ui.environmentView(ui.entry.base,'room');
+  assert.match(environment.html,/Saved output/); assert.match(environment.html,/Workspace files \(1\)/);
+  const metadata=saved.document.metadata[0], options={source:'saved',artifactId:metadata.artifact_id};
+  const view=ui.fileView(ui.entry.base,'run-a','room','',metadata.path,options), dom=fakeView();
+  t.after(()=>dom.lifecycle.cancel());
+  assert.match(view.html,/node-exported metadata/); assert.doesNotMatch(view.html,/signed metadata/);
+  await view.mount(dom.root,dom.lifecycle);
+  assert.equal(rendered.length,1); assert.deepEqual(rendered[0].verifiedBytes,saved.bytes);
+  assert.equal(dom.elements.get('[data-private-download]').download,"it's final 🧭 %.md");
+  const bodyRequest=requests.find(({url})=>new URL(url).pathname.endsWith('/artifacts/body'));
+  assert.equal(new URL(bodyRequest.url).searchParams.get('artifact_id'),metadata.artifact_id);
+  assert.equal(bodyRequest.options.headers.Authorization,'Bearer private-token');
+  ui.disconnect(ui.entry.base); assert.equal(ui.entry.savedArtifacts.size,0);
+  assert.equal(dom.lifecycle.signal.aborted,true);
+});
+
+test('saved metadata must match the connected node, run, environment and exact body route',async t=>{
+  const saved=await savedFile(), ui=fixture(); withCleanup(t,ui); ui.entry.status.runs=['run-a'];
+  const changes=[
+    doc=>{doc.node_id='kernel:foreign';},doc=>{doc.run='run-b';},doc=>{doc.environment_id='other';},
+    doc=>{doc.metadata[0].owning_env_id='other';},doc=>{doc.metadata[0].artifact_id='../escape';},
+    doc=>{doc.metadata[0].path='../secret';},doc=>{doc.metadata[0].size_bytes=-1;},
+    doc=>{doc.metadata[0].content_hash='sha256:invalid';},doc=>{doc.metadata.push({...doc.metadata[0]});},
+    doc=>{doc.metadata[0].body_url='https://elsewhere.test/private';},
+    doc=>{doc.metadata[0].body_url=doc.metadata[0].body_url.replace('run-a','run-b');},
+    doc=>{doc.metadata[0].body_url+='&artifact_id=another';},
+  ];
+  for(const change of changes){
+    const doc=structuredClone(saved.document); change(doc);
+    await assert.rejects(ui.rememberSaved(ui.entry,'run-a',doc),/match|inconsistent/);
+    assert.equal(ui.entry.savedArtifacts.size,0);
+  }
+  ui.entry.tier='public';
+  await assert.rejects(ui.rememberSaved(ui.entry,'run-a',saved.document),/do not match/);
+  await ui.readSaved(ui.entry,'run-a'); assert.equal(ui.entry.savedArtifactJobs.size,0);
+});
+
+test('saved and captured copies group by exact content and preserve both read routes',async t=>{
+  const issuer=signer(), live=await file(), saved=await savedFile(); saved.document.node_id=issuer.node;
+  const ui=fixture({fetchImpl:async()=>Response.json(issuer.keys)});withCleanup(t,ui);prepare(ui,issuer);
+  await ui.remember(ui.entry,issuer.snapshot({files:[live.record]}));
+  await ui.rememberSaved(ui.entry,'run-a',saved.document);
+  const view=await ui.environmentView(ui.entry.base,'room');
+  assert.match(view.html,/Workspace files \(1\)/); assert.match(view.html,/2 copies · identical bytes/);
+  assert.match(view.html,/Saved output/); assert.match(view.html,/Worktree · Alice/);
+  assert.match(view.html,/data-source="saved"/); assert.match(view.html,/data-source="live"/);
+  const options={source:'saved',artifactId:saved.document.metadata[0].artifact_id};
+  assert.match(ui.select(ui.entry,'run-a','room','',live.record.path,options).route,/\/artifacts\/body\?/);
+  assert.match(ui.select(ui.entry,'run-a','room','ws-a',live.record.path).route,/\/live-artifacts\/body\//);
+});
+
+for(const change of ['metadata','environment','run','disconnect']) test(`saved ${change} changes during a read prevent a late preview`,async t=>{
+  const saved=await savedFile(); let complete;
+  const ui=fixture({fetchImpl:async()=>new Promise(resolve=>{complete=()=>resolve(new Response(saved.bytes));})});
+  withCleanup(t,ui);ui.entry.status.runs=['run-a'];await ui.rememberSaved(ui.entry,'run-a',saved.document);
+  const selection=ui.select(ui.entry,'run-a','room','',saved.record.path,
+    {source:'saved',artifactId:saved.document.metadata[0].artifact_id});
+  const pending=ui.body(ui.entry,selection);
+  const refused=assert.rejects(pending,change==='disconnect'?{name:'AbortError'}:/changed|available/);
+  if(change==='metadata'){
+    const newer=await savedFile({text:'A revised private result.'});
+    await ui.rememberSaved(ui.entry,'run-a',newer.document);
+  }
+  if(change==='environment')ui.entry.status.environments=[];
+  if(change==='run')ui.entry.status.runs=[];
+  if(change==='disconnect')ui.disconnect(ui.entry.base);
+  complete();await refused;assert.equal(ui.entry.pending.size,0);
+});
+
+test('a saved body must still match its advertised bytes and hash',async t=>{
+  const saved=await savedFile(), ui=fixture({fetchImpl:async()=>new Response(new Uint8Array(saved.bytes.length))});
+  withCleanup(t,ui);ui.entry.status.runs=['run-a'];await ui.rememberSaved(ui.entry,'run-a',saved.document);
+  const selection=ui.select(ui.entry,'run-a','room','',saved.record.path,
+    {source:'saved',artifactId:saved.document.metadata[0].artifact_id});
+  await assert.rejects(ui.body(ui.entry,selection),/do not match/);
 });
