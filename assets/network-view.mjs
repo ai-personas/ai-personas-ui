@@ -11,7 +11,6 @@ import { normalizedPeerRouteBase } from './peer-route.mjs';
 export const NETWORK_VIEW_LIMITS = Object.freeze({
   priorityWindow: 80,
   searchWindow: 160,
-  maxWindow: 512,
   maxScan: 1_000_000,
   groupInitial: 24,
   groupStep: 24,
@@ -718,7 +717,9 @@ export function selectPriorityWindow(items, options = {}) {
   const fallbackLimit = query
     ? NETWORK_VIEW_LIMITS.searchWindow
     : NETWORK_VIEW_LIMITS.priorityWindow;
-  const limit = boundedInteger(options.limit, fallbackLimit, 0, NETWORK_VIEW_LIMITS.maxWindow);
+  // The caller owns the requested window. A second private ceiling would make
+  // an explicit "show more" action stop while matching records still exist.
+  const limit = boundedInteger(options.limit, fallbackLimit, 0, Number.MAX_SAFE_INTEGER);
   const scanLimit = boundedInteger(
     options.scanLimit,
     NETWORK_VIEW_LIMITS.maxScan,
@@ -803,7 +804,7 @@ export function progressiveGroupLimit(groupKey, progressByGroup, options = {}) {
     options.max,
     NETWORK_VIEW_LIMITS.groupMax,
     initial,
-    NETWORK_VIEW_LIMITS.maxWindow,
+    Number.MAX_SAFE_INTEGER,
   );
   const step = boundedInteger(
     options.step,
@@ -820,7 +821,7 @@ export function nextProgressiveGroupLevel(groupKey, progressByGroup, options = {
   const initial = boundedInteger(options.initial, NETWORK_VIEW_LIMITS.groupInitial, 1,
     NETWORK_VIEW_LIMITS.groupMax);
   const maximum = boundedInteger(options.max, NETWORK_VIEW_LIMITS.groupMax, initial,
-    NETWORK_VIEW_LIMITS.maxWindow);
+    Number.MAX_SAFE_INTEGER);
   const step = boundedInteger(options.step, NETWORK_VIEW_LIMITS.groupStep, 1, maximum);
   const current = boundedInteger(progressValue(groupKey, progressByGroup), 0, 0,
     Math.ceil((maximum - initial) / step));

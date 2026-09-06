@@ -8749,7 +8749,7 @@ async function refreshSystemView(){
     ||(liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[]).some((row)=>(row.authored||[]).join(' ').toLowerCase().includes(query));
   const envCandidates=query?_baseCandidates.filter(_envMatches):_baseCandidates;
   const envWindow=selectPriorityWindow(envCandidates,{
-    limit:Math.min(120,S.environmentWindow),keyOf:(b)=>envKey(b.kernel,b.sid),priorityOf:_score,
+    limit:S.environmentWindow,keyOf:(b)=>envKey(b.kernel,b.sid),priorityOf:_score,
   });
   envBlocks.length=0; envBlocks.push(...envWindow.items);
   S.envCount=Math.max(S.observedEnvironmentCount||0,_baseCandidates.length);
@@ -8778,7 +8778,7 @@ async function refreshSystemView(){
     ||(artByPersona.get(context.key)||[]).some((a)=>`${a.label||''} ${a.description||''} ${authoredArtifactLabelText(a)}`.toLowerCase().includes(query))
     ||(liveWorkspacesByPersona.get(context.key)||[]).some((row)=>(row.authored||[]).join(' ').toLowerCase().includes(query)));
   const deckKey='@persona-deck', deckLimit=progressiveGroupLimit(deckKey,S.personaWindows,{
-    initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+    initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:personaCandidates.length,
   });
   const personaWindow=selectPriorityWindow(personaCandidates,{
     limit:deckLimit,keyOf:(context)=>context.key,priorityOf:(context)=>_personaPriority(context.key),
@@ -8790,7 +8790,7 @@ async function refreshSystemView(){
   })).join('');
   const hiddenPersonas=Math.max(0,personaWindow.matched-personaWindow.returned);
   const morePersonas=hiddenPersonas?`<div class="persona-window-note"><span>showing ${personaWindow.returned} of ${personaWindow.matched} matching personas</span>`
-    +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(deckKey)}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenPersonas)} more</button></div>`:'';
+    +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(deckKey)}" data-total="${personaWindow.matched}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenPersonas)} more</button></div>`:'';
   const personaSection=personaCards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
     +`<h2>People doing the work</h2></div><p>Meet each persona, see what they are doing and read the updates they chose to share.</p></header>`
     +`<div class="persona-deck">${personaCards}</div>${morePersonas}</section>`:'';
@@ -14131,10 +14131,10 @@ function wire(){
     const morePersonas=e.target.closest('[data-more-personas]'); if(morePersonas){
       const key=decodeURIComponent(morePersonas.dataset.morePersonas||'');
       S.personaWindows.set(key,nextProgressiveGroupLevel(key,S.personaWindows,{
-        initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:240,
+        initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:Number(morePersonas.dataset.total),
       })); refreshSystemView(); return; }
     if(e.target.closest('[data-more-environments]')){
-      S.environmentWindow=Math.min(120,S.environmentWindow+NETWORK_LIMITS.environmentStep); refreshSystemView(); return; }
+      S.environmentWindow+=NETWORK_LIMITS.environmentStep; refreshSystemView(); return; }
     // follow toggle: the card's ◎ button focuses the stage+feed on ONE persona
     // (the only follow trigger reachable at every breakpoint). Stop here so the
     // click doesn't also open the drawer.
