@@ -57,8 +57,9 @@ URL never needs or interprets a peer-routing query parameter.
 **Mixed-content note.** A page served over **`https://`** cannot `fetch()` an **`http://` LAN
 IP** (browsers block mixed content). A same-origin, node-served shell is available only when the
 node was started with both `--ui-shell-dir` and `--ui-shell-manifest-sha256`; otherwise use the
-hosted portal or the node API directly. For the **internet**, expose the node API through HTTPS
-and its libp2p WebSocket listener through WSS, then advertise that WSS hostname. In every case
+hosted portal or the node API directly. Internet peer routes can use WebRTC-direct,
+secure WebSockets, or certificate-pinned WebTransport, including a reserved circuit
+through a volunteer relay. An HTTPS node API is another usable route. In every case
 trust is the **Ed25519 signature on each record, not the host**.
 
 ## P2P discovery - how it finds things (no trusted central registry)
@@ -81,7 +82,8 @@ mDNS at the kernel, plus direct/local routes the browser can use. Records are ac
 (`discover < read < write < admin`); a private record must not enumerate to an unauthorised peer.
 
 **Real libp2p P2P in the browser.** The page boots a vendored **js-libp2p** node
-(`assets/p2p-libp2p.js`: WebRTC + circuit-relay + gossipsub + a Kademlia client). It gossips
+(`assets/p2p-libp2p.js`: WebRTC, WebSockets, WebTransport, circuit relay, gossipsub,
+and a Kademlia client). It gossips
 signed records on `personaos/discovery/v1` without trusting their unsigned outer locator metadata.
 For each DID/hash key, it finds providers in the DHT, requests the signed envelope and exact record
 over `/personaos/provider-record/1.0.0`, verifies the ProviderRecord against the sole current master,
