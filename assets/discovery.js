@@ -261,7 +261,7 @@ function secureFetchInit(u,init={}){
   return {...init,cache:init.cache||'no-store',credentials:'omit',redirect:'error',
     referrerPolicy:'no-referrer',headers:{...(init.headers||{}),...authHeaders(u)}};
 }
-async function readBoundedResponseBytes(response,maxBytes){
+async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER){
   const declared=Number(response.headers.get('content-length'));
   if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
     throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
@@ -324,10 +324,10 @@ async function secureDownloadFromButton(btn){
         if(!isHttp(target.href)) throw new Error('peer download unavailable');
         const response=await fetch(target.href,secureFetchInit(target.href));
         if(!response.ok) throw new Error(`body HTTP ${response.status}`);
-        bytes=await readBoundedResponseBytes(response,LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+        bytes=await readBoundedResponseBytes(response);
       }catch(httpError){
         bytes=await fetchP2PArtifactBytes(target.href,
-          rawExpected?`sha256:${rawExpected}`:'',LIVE_ARTIFACT_LIMITS.maxDownloadBytes);
+          rawExpected?`sha256:${rawExpected}`:'');
         if(!bytes) throw httpError;
       }
     }
@@ -405,7 +405,7 @@ function settleBeforeAbort(request,signal,abortedValue=null){
     request.then(finish,()=>finish(null));
   });
 }
-async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=64*1024*1024){
+async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
   // JSON polling has its own sole `since=sha256:...` query contract in
   // p2pDataRouteForUrl. Artifact bodies instead permit only the exact hash query
@@ -5021,30 +5021,30 @@ function personaIdFromDid(did){
 async function fetchText(u,{signal=null}={}){
   if(signal?.aborted) return null;
   try{ if(isHttpRequest(u)){ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok)
-    return new TextDecoder().decode(await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes));
+    return new TextDecoder().decode(await readBoundedResponseBytes(r));
     }
   }catch(e){}
   if(signal?.aborted) return null;
   const bytes=await settleBeforeAbort(
-    fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes),signal,null);
+    fetchP2PArtifactBytes(u),signal,null);
   return bytes?new TextDecoder().decode(bytes):null;
 }
-// Binary-safe bounded fetch for any artifact body — returns {blob,size,type} or null.
+// Binary-safe complete fetch for any artifact body — returns {blob,size,type} or null.
 async function fetchBlob(u,{signal=null}={}){
   if(signal?.aborted) return null;
   try{ if(isHttpRequest(u)){ const r=await fetch(u,secureFetchInit(u,{signal})); if(r.ok){
-    const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+    const bytes=await readBoundedResponseBytes(r);
     const type=r.headers.get('content-type')||'application/octet-stream';
     const b=new Blob([bytes],{type}); return {blob:b,size:b.size,type}; }}
   }catch(e){}
   if(signal?.aborted) return null;
   const bytes=await settleBeforeAbort(
-    fetchP2PArtifactBytes(u,'',LIVE_ARTIFACT_LIMITS.maxFileBytes),signal,null);
+    fetchP2PArtifactBytes(u),signal,null);
   if(!bytes) return null;
   const type='application/octet-stream', b=new Blob([bytes],{type});
   return {blob:b,size:b.size,type};
 }
-async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
+async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Number.MAX_SAFE_INTEGER}={}){
   const cancelled={ok:false,checkOutcome:'cancelled',error:'artifact view cancelled'};
   if(signal?.aborted) return cancelled;
   const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
@@ -5055,6 +5055,7 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
   const cacheKey=`${expected}\u0000${absoluteUrl}`;
   const cached=S.verifiedArtifactBodies.get(cacheKey);
   if(cached){
+    if(cached.size>maxBytes) return {ok:false,checkOutcome:'failed',error:'File exceeds its advertised size'};
     // Refresh insertion order so the byte-bound cache behaves as an LRU. The
     // hash was checked before insertion; a reused entry never skips the
     // advertised-hash binding because the digest is part of the cache key.
@@ -5070,14 +5071,14 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
     if(isHttp(absoluteUrl)) attempts.push((async()=>{
       const r=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
       if(!r.ok) throw new Error(`body HTTP ${r.status}`);
-      const bytes=await readBoundedResponseBytes(r,LIVE_ARTIFACT_LIMITS.maxFileBytes);
+      const bytes=await readBoundedResponseBytes(r,Math.max(1,maxBytes));
       return {bytes,type:r.headers.get('content-type')||'application/octet-stream'};
     })());
     // The blob reader validates its own exact hash query. JSON route matching
     // accepts only `since`, so using it here would reject every live-file URL.
     if(P2P?.fetchPublicBlob) attempts.push((async()=>{
       const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,
-        LIVE_ARTIFACT_LIMITS.maxFileBytes);
+        Math.max(1,maxBytes));
       if(!bytes) throw new Error('verified peer body unavailable');
       return {bytes,type:'application/octet-stream'};
     })());
@@ -5089,7 +5090,7 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null}={}){
     const verified={ok:true,actual,bytes,type,size:bytes.byteLength};
     S.verifiedArtifactBodies.set(cacheKey,verified);
     S.verifiedArtifactBodyBytes+=bytes.byteLength;
-    const maxCacheBytes=LIVE_ARTIFACT_LIMITS.maxFileBytes*2;
+    const maxCacheBytes=LIVE_ARTIFACT_LIMITS.maxBodyCacheBytes;
     while(S.verifiedArtifactBodies.size>16||S.verifiedArtifactBodyBytes>maxCacheBytes){
       const oldestKey=S.verifiedArtifactBodies.keys().next().value;
       if(oldestKey===undefined) break;
@@ -5311,7 +5312,7 @@ async function fetchLiveArtifacts(base,run,options={}){
       +(startedRevision?`?since=${encodeURIComponent(startedRevision)}`:'');
     const endpoint=join(base,relative);
     const doc=await fetchJson(endpoint,
-      {signal:controller.signal,maxBytes:LIVE_ARTIFACT_LIMITS.maxSnapshotBytes});
+      {signal:controller.signal,maxBytes:Number.MAX_SAFE_INTEGER});
     if(doc){
       const expectedSince=startedRevision||null;
       const verification=await _verifyLiveWithKeyRefresh(base,endpoint,null,(context)=>
@@ -5470,7 +5471,7 @@ function liveArtifactsHTML(base,run){
     +(state.ended?`<div class="fv-note"><span class="transport-badge verified live-terminal-badge">SIGNED TERMINAL${signedTerminalFields.length?` · ${esc(signedTerminalFields.join(' · '))}`:''}</span>. ${terminalNote}${state.endedAt?` · ${esc(_friendlyInstant(state.endedAt)||state.endedAt)}`:''}. Polling stopped; this is the final captured workspace revision.</div>`:'')
     +`<div class="live-revision"><span>${changed}</span><span title="${esc(revision)}">current signed revision</span></div>`
     +(changeRows?`<div class="live-change-list">${changeRows}</div>`:'')
-    +(snap.truncated?`<div class="fv-warn">Snapshot truncated: ${esc(snap.omitted_file_count||0)} file(s) omitted by node or browser limits.</div>`:'')
+    +(snap.truncated?`<div class="fv-warn">Workspace capture is incomplete: ${esc(snap.omitted_file_count||0)} file(s) unavailable.</div>`:'')
     +trees+`<div class="live-integrity-note"><b>Workspace snapshot only · no artifact meaning or review state is inferred.</b> Snapshot metadata is Ed25519 signature-checked against the node kernel key. Opened file bytes are separately SHA-256 checked against the exact signed hash before rendering.</div></div>`;
 }
 
@@ -6637,7 +6638,7 @@ if(typeof MutationObserver==='function'){
     cleanupQueued=true; queueMicrotask(()=>{ cleanupQueued=false; _releaseDisconnectedPersonaAvatarMountUrls(); });
   }).observe(document.documentElement,{childList:true,subtree:true});
 }
-function _boundedLatestUnique(rows,keyOf,limit){
+function _boundedLatestUnique(rows,keyOf,limit=Number.MAX_SAFE_INTEGER){
   const selected=new Map(); let fallback=0;
   for(const row of (rows||[])){
     if(!row) continue;
@@ -6813,7 +6814,7 @@ function _artifactRevisionOrder(rows){
   return `${run}\u0000${record}`;
 }
 function _artifactRevisionProjection(artifacts){
-  const rows=_boundedLatestUnique(artifacts,_artifactPresentationKey,LIVE_ARTIFACT_LIMITS.maxFiles*4);
+  const rows=_boundedLatestUnique(artifacts,_artifactPresentationKey);
   const files=rows.filter((row)=>{ const L=row?._links||{};
     return typeof L.content==='string'||typeof L.content_stub==='string'||row?.package_path
       ||(L.bundle_id&&(L.content_hash||row?.content_hash)); });
@@ -7036,10 +7037,11 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
   const projection=_liveWorkspaceFileProjection(rows);
   if(!projection.current.length) return '';
   const fileCount=projection.files.length;
+  const incomplete=projection.current.some((row)=>row.captureIncomplete===true);
   // A finalized, empty scratch worktree is not a useful "current files"
   // surface. Durable environment outputs remain visible through independently
   // verified file cards, so this does not imply that published work vanished.
-  if(!fileCount&&projection.current.every((row)=>row.ended===true)) return '';
+  if(!fileCount&&!incomplete&&projection.current.every((row)=>row.ended===true)) return '';
   const captureSummary=fileCount
     ?`${fileCount} current file version${fileCount===1?'':'s'}`
       +(projection.copyCount>fileCount?` · ${projection.copyCount} worktree copies`:'')
@@ -7052,6 +7054,7 @@ function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree
       +`<small class="artifact-copy-origin" title="${esc(exact)}">Worktree${holder?` · ${esc(holder)}`:''}${updated?` · captured ${esc(updated)}`:''}</small>`;
   };
   return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${captureSummary}</small></div>`
+    +(incomplete?'<div class="fv-warn">Run capture is incomplete; some files are unavailable.</div>':'')
     +(fileCount?_artifactExactFormatCountsHTML(projection.files,({file})=>String(file.path||''))
       +_artifactGroupedListHTML(projection.files,{pathOf:({file})=>String(file.path||''),
         render:(entry)=>`<div class="artifact-copy-group">${renderCopy(entry)}`
@@ -8589,7 +8592,7 @@ async function refreshSystemView(){
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
       const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,personaId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
-        captureBoundary:snap.capture_boundary||null,ended:state.ended===true,
+        captureBoundary:snap.capture_boundary||null,captureIncomplete:snap.truncated===true,ended:state.ended===true,
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
       if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
@@ -8638,10 +8641,10 @@ async function refreshSystemView(){
     const arts=envArtifacts(b);
     const declaredProjection=_artifactRevisionProjection(arts);
     const routedManifestEntries=b.artifactManifestRouteVerified===true?envManifestFiles(b):[];
-    const routedManifestFiles=routedManifestEntries.slice(0,LIVE_ARTIFACT_LIMITS.maxFiles);
+    const routedManifestFiles=routedManifestEntries;
     const manifestUnique=new Map();
     for(const file of routedManifestFiles){ const path=String(_artifactDisplayPath(file)||'').normalize('NFC')
-        .replace(/[\u0000-\u001f\u007f]/gu,' ').trim().slice(0,LIVE_ARTIFACT_LIMITS.maxPathLength);
+        .replace(/[\u0000-\u001f\u007f]/gu,' ').trim();
       if(!path) continue; if(manifestUnique.has(path)) manifestUnique.delete(path);
       // Only the bounded filename crosses this unverified-manifest fallback.
       // MIME, size, hashes, semantic claims and body routes remain unavailable.
@@ -12236,7 +12239,8 @@ async function renderOpenScadCompanion(host,ctx,file){
     return;
   }
   const bodyPath=String(file.body_url||file.bodyPath||'');
-  const verified=bodyPath?await fetchVerifiedLiveBody(join(ctx.base,bodyPath),advertised):null;
+  const verified=bodyPath?await fetchVerifiedLiveBody(join(ctx.base,bodyPath),advertised,
+    {signal:ctx.signal,maxBytes:Number.isSafeInteger(file.size_bytes)?file.size_bytes:Number.MAX_SAFE_INTEGER}):null;
   if(!verified?.ok){
     host.innerHTML=''; host.appendChild(el('div','fv-warn',`Inline geometry stayed closed because its bytes could not be verified${verified?.error?`: ${verified.error}`:'.'}`));
     return;
@@ -12567,9 +12571,12 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
     if(hashAdvertised){
       report(validExpectedHash?'fetching artifact bytes…':'checking advertised SHA-256…');
       verified=validExpectedHash
-        ?await fetchVerifiedLiveBody(sourceUrl,expectedHash,{signal:lifecycle.signal})
+        ?await fetchVerifiedLiveBody(sourceUrl,expectedHash,{signal:lifecycle.signal,
+          maxBytes:Number.isSafeInteger(opts.size)?opts.size:Number.MAX_SAFE_INTEGER})
         :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
       lifecycle.assertCurrent();
+      if(verified.ok&&Number.isSafeInteger(opts.size)&&verified.size!==opts.size)
+        verified={ok:false,checkOutcome:'failed',error:'File size does not match signed metadata'};
       if(opts.liveFile){ const current=liveArtifactState(base,opts.liveFile.run);
         if(verified.ok&&!liveBodyCommitIsCurrent(opts.liveFile,current,S.openLiveFile))
           verified={ok:false,checkOutcome:'failed',error:'stale live body response discarded'};
@@ -13057,7 +13064,7 @@ async function readConnectedArtifacts(entry,run){
   const job=(async()=>{
     const path='runs/'+encodeURIComponent(run)+'/live-artifacts'
       +(startedRevision?'?since='+encodeURIComponent(startedRevision):'');
-    const doc=await connectedNodeJson(entry,path);
+    const doc=await connectedNodeJson(entry,path,{maxBytes:Number.MAX_SAFE_INTEGER});
     if(doc?.run!==run) throw new Error('The workspace response belongs to a different run.');
     return rememberConnectedArtifacts(entry,doc,{startedRevision});
   })().finally(()=>entry.artifactJobs.delete(run));
@@ -13101,7 +13108,8 @@ async function readConnectedSavedArtifacts(entry,run){
   if(entry.closed||entry.tier!=='operator') return;
   if(entry.savedArtifactJobs.has(run)) return entry.savedArtifactJobs.get(run);
   const job=(async()=>{
-    const document=await connectedNodeJson(entry,'runs/'+encodeURIComponent(run)+'/artifacts');
+    const document=await connectedNodeJson(entry,'runs/'+encodeURIComponent(run)+'/artifacts',
+      {maxBytes:Number.MAX_SAFE_INTEGER});
     return rememberConnectedSavedArtifacts(entry,run,document);
   })().finally(()=>entry.savedArtifactJobs.delete(run));
   entry.savedArtifactJobs.set(run,job); return job;
@@ -13362,6 +13370,9 @@ async function connectedEnvironmentView(base,eid){
   const groups=_groupLiveWorkspaceFiles(connectedEnvironmentFiles(entry,eid).map((row)=>({...row,
     kernel:entry.status.node_id,environmentId:eid,files:[row.file]}))).files;
   html+=H(`Workspace files (${groups.length})`);
+  if([...entry.artifacts.values()].some((state)=>state.snapshot?.truncated
+      &&state.snapshot.workspaces?.some((workspace)=>workspace.environment_id===eid)))
+    html+='<div class="l2" role="status">The node’s workspace capture is incomplete; some files are unavailable.</div>';
   if(entry.artifactError) html+=`<div class="l2" role="status">${esc(entry.artifactError)}</div>`;
   if(entry.artifactsLoading) html+='<div class="l2" role="status">Reading workspace files…</div>';
   if(!groups.length&&!entry.artifactsLoading) html+='<div class="l2">No saved or captured files are available for this environment.</div>';
@@ -13377,7 +13388,6 @@ async function connectedEnvironmentView(base,eid){
       html+=`<h4>${esc(row.state.task||row.state.snapshot?.task||row.run)}</h4>`;
       const capture=entry.artifacts.get(row.run);
       if(capture) html+=`<div class="l2">${esc(capture.generatedAt)} · ${capture.ended?'last captured files':'current captured files'}</div>`;
-      if(capture?.snapshot.truncated) html+='<div class="l2">The node’s workspace capture is incomplete; additional files may exist.</div>';
     }
     html+=`<div class="grant"><span>${fileLink(row.file,row)}<small class="l2">${esc(copyLabel(row))}`
       +(group.versions>1?' · different content at this path':'')+`</small></span><span class="l2">${esc(fmtBytes(row.file.size_bytes))}</span></div>`;

@@ -344,6 +344,13 @@ test('private files identify a captured personal copy when the shared merge is i
     /Workspace copy: Personal copy · shared merge incomplete/);
 });
 
+test('a private environment reports an incomplete capture even when no file was retained', async t=>{
+  const issuer=signer();
+  const ui=fixture({fetchImpl:async()=>Response.json(issuer.keys)}); withCleanup(t,ui); prepare(ui,issuer);
+  assert.equal(await ui.remember(ui.entry,issuer.snapshot({extra:{truncated:true,omitted_file_count:2}})),true);
+  assert.match((await ui.environmentView(ui.entry.base,'room')).html,/workspace capture is incomplete/);
+});
+
 async function savedFile(options={}){
   const result=await file(options), id='artifact:export-a';
   return {...result, document:{schema:'personaos-run-artifacts/1',node_id:'kernel:test',run:options.run||'run-a',

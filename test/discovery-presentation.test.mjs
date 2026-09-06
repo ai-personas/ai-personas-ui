@@ -270,6 +270,11 @@ const workspace = (workspaceId, hash = 'a'.repeat(64), extra = {}) => ({
   files: [{path: 'delivery/model.step', sha256: hash, size_bytes: 123}], ...extra,
 });
 
+test('an incomplete empty capture remains visible as an incomplete run', () => {
+  const row=workspace('ws-a','a'.repeat(64),{files:[],captureIncomplete:true});
+  assert.match(renderer().files([row]),/Run capture is incomplete/);
+});
+
 test('identical captured copies count once and each source remains openable', () => {
   const ui = renderer(), rows = [workspace('ws-a'), workspace('ws-b'), workspace('ws-c')];
   assert.equal(ui.fileCount(rows), 1);

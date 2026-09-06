@@ -1,19 +1,10 @@
 const MAX_DIFF_LINES = 180;
 const MAX_DIFF_CHARS = 48 * 1024;
 export const LIVE_ARTIFACT_LIMITS = Object.freeze({
-  maxFiles: 512,
-  maxWorkspaces: 64,
-  maxActiveCalls: 64,
-  maxPathDepth: 16,
-  maxPathLength: 512,
-  maxBodyUrlLength: 2048,
-  // Body materialization stays deliberately small. Metadata for a signed
-  // snapshot may describe larger opaque outputs without making the browser
-  // fetch those bytes for a preview.
+  // Preview rendering and memory caching may be bounded without rejecting
+  // signed file metadata or limiting a viewer's complete verified download.
   maxFileBytes: 8 * 1024 * 1024,
-  maxAdvertisedFileBytes: 512 * 1024 * 1024,
-  maxSnapshotBytes: 2 * 1024 * 1024,
-  maxDownloadBytes: 32 * 1024 * 1024,
+  maxBodyCacheBytes: 16 * 1024 * 1024,
   maxArtifactRoles: 16,
   maxArtifactCapabilities: 24,
   maxArtifactSemanticLength: 160,
@@ -259,12 +250,6 @@ function artifactSemanticKey(value) {
   return JSON.stringify(sanitizeArtifactSemantics(value));
 }
 
-function snapshotFileByteLimit(snapshot) {
-  const value = snapshot?.limits?.max_file_bytes;
-  if (!Number.isSafeInteger(value) || value < 1) return LIVE_ARTIFACT_LIMITS.maxFileBytes;
-  return Math.min(value, LIVE_ARTIFACT_LIMITS.maxAdvertisedFileBytes);
-}
-
 function liveArtifactCaptureBoundary(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (value.schema !== 'personaos-live-artifact-capture-boundary/1'
@@ -283,7 +268,7 @@ function liveArtifactCaptureBoundary(value) {
   };
 }
 
-function publicFile(file, maxAdvertisedBytes) {
+function publicFile(file) {
   if (!file || typeof file !== 'object') return null;
   const workspaceId = String(file.workspace_id || '');
   const path = String(file.path || '');
@@ -291,11 +276,11 @@ function publicFile(file, maxAdvertisedBytes) {
   const bodyUrl = String(file.body_url || '');
   const sizeBytes = Number(file.size_bytes);
   const parts = path.split('/');
-  if (!workspaceId || workspaceId.length > 128 || !path || path.length > LIVE_ARTIFACT_LIMITS.maxPathLength
-      || path.startsWith('/') || path.includes('\\') || parts.length > LIVE_ARTIFACT_LIMITS.maxPathDepth
+  if (!workspaceId || workspaceId.length > 128 || !path
+      || path.startsWith('/') || path.includes('\\')
       || parts.some((part) => !part || part === '.' || part === '..')
-      || !bodyUrl || bodyUrl.length > LIVE_ARTIFACT_LIMITS.maxBodyUrlLength
-      || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > maxAdvertisedBytes
+      || !bodyUrl
+      || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0
       || !/^[0-9a-f]{64}$/.test(sha256)) return null;
   const clean={...file, workspace_id: workspaceId, path, body_url: bodyUrl,
     size_bytes: sizeBytes, sha256};
@@ -306,25 +291,18 @@ function publicFile(file, maxAdvertisedBytes) {
 
 export function sanitizeLiveArtifactSnapshot(snapshot) {
   const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
-  // `limits` is covered by the snapshot signature before this sanitizer is
-  // reached. Bound it again locally so even a malformed caller can never raise
-  // metadata admission beyond the kernel's hard ceiling.
-  const maxAdvertisedBytes = snapshotFileByteLimit(source);
   const files = [];
   let rejected = 0;
   const rawFiles = Array.isArray(source.files) ? source.files : [];
   for (const raw of rawFiles) {
-    if (files.length >= LIVE_ARTIFACT_LIMITS.maxFiles) { rejected++; continue; }
-    const file = publicFile(raw, maxAdvertisedBytes);
+    const file = publicFile(raw);
     if (file) files.push(file); else rejected++;
   }
   const workspaces = (Array.isArray(source.workspaces) ? source.workspaces : [])
-    .slice(0, LIVE_ARTIFACT_LIMITS.maxWorkspaces)
     .filter((item) => item && typeof item === 'object' && String(item.workspace_id || '').length <= 128)
     .map((item) => ({...item, workspace_id: String(item.workspace_id || '')}));
   const active = source.active && typeof source.active === 'object' ? source.active : {};
   const calls = (Array.isArray(active.calls) ? active.calls : [])
-    .slice(0, LIVE_ARTIFACT_LIMITS.maxActiveCalls)
     .filter((item) => item && typeof item === 'object');
   const captureBoundary = liveArtifactCaptureBoundary(source.capture_boundary);
   return {
@@ -340,7 +318,7 @@ export function sanitizeLiveArtifactSnapshot(snapshot) {
     file_count: Number.isSafeInteger(source.file_count) ? source.file_count : rawFiles.length,
     indexed_file_count: files.length,
     total_size_bytes: files.reduce((total, file) => total + file.size_bytes, 0),
-    limits: {max_file_bytes: maxAdvertisedBytes},
+    limits: source.limits && typeof source.limits==='object' ? {...source.limits} : {},
     ...(captureBoundary ? {capture_boundary: captureBoundary} : {}),
     files,
     truncated: Boolean(source.truncated || rejected),
