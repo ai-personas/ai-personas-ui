@@ -5506,7 +5506,8 @@ const PURPOSE_LABEL={candidate:'producing candidate',repair:'repairing candidate
 // (EnvironmentModelRegistry), so summarise the distinct models a persona/env used
 // → the roles/purposes each served, busiest first, as mono <code> chips. Honest:
 // pure live telemetry; renders nothing when idle.
-const _modelLabel=(value)=>{ const v=String(value||'').trim(); return /^[a-z0-9][a-z0-9._:/+@-]{0,95}$/i.test(v)?v:'model unavailable'; };
+// Public activity may omit a model's identity while still reporting its work.
+const _modelLabel=(value)=>{ const v=String(value||'').trim(); return /^[a-z0-9][a-z0-9._:/+@-]{0,95}$/i.test(v)?v:'Identity not published'; };
 const _modelFacet=(value)=>String(value??'').trim();
 function _modelSummary(models){
   if(!models||!models.length) return '';
