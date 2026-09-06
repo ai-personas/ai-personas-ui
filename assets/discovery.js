@@ -1,6 +1,7 @@
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
+import {updateStageHTML} from './stage-dom.mjs?v=20260906-stable-stage-v1';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -8319,19 +8320,16 @@ function _paintVerifiedIdentityShells(host){
     +` <span class="scope-copy">· ${warmPending?'previously verified identities · checking the current signed inventory':'loading live activity and artifacts'}</span></div></div>`
     +personaSection+environmentSection;
   host.dataset.identityShell='1';
-  host.dataset.h=html;
-  host.innerHTML=html;
+  updateStageHTML(host,html);
+  _restoreDisclosures(host);
   rebindInspectionSource();
   _hydratePersonaAvatars();
   _applyFollow();
 }
 
 let _sysBusy=false, _sysQueued=false;
-// ---- disclosure persistence across stage repaints -------------------------
-// The stage is repainted by innerHTML swap on every data change, which used to
-// snap every open <details> (artifact groups, dossiers, diagnostics) shut
-// within seconds of the viewer opening it. Record explicit viewer toggles by a
-// stable key and re-apply them after each swap.
+// Retained disclosures keep their state during updates. Remember explicit
+// viewer toggles for cards that leave and later re-enter the visible window.
 function _disclosureKey(details){
   const card=details.closest('[data-pcard],[data-envsid]');
   const scope=card?JSON.stringify([card.dataset.pcard?'persona':'env',
@@ -8825,11 +8823,11 @@ async function refreshSystemView(){
     :(S.recs.size||S.liveByPersona.size)
     ?'<div class="dim" style="padding:20px">no environments discovered yet — start or add a node.</div>'
     :emptyStateHTML());
-  // only rewrite when the stage actually changed → unchanged (idle) renders keep
-  // their in-flight breathing/flash animations instead of restarting every 5s.
+  // Update surviving cards in place so incoming activity leaves controls,
+  // open dossiers and verified portrait mounts usable.
   delete host.dataset.identityShell;
-  if(host.dataset.h!==finalHTML){ host.dataset.h=finalHTML; host.innerHTML=finalHTML;
-    _restoreDisclosures(host); }
+  updateStageHTML(host,finalHTML);
+  _restoreDisclosures(host);
   rebindInspectionSource();
   _hydratePersonaAvatars();
   _applyFollow();

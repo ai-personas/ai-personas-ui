@@ -360,6 +360,13 @@ keeps the page alive. Persona cards expose task/LLM execution state, the current
 run pressure/review/block state when the node API provides it. This visual system does not reuse
 third-party trading-card artwork, logos, nomenclature, or layouts.
 
+Live stage updates retain existing persona and environment cards. Their controls,
+keyboard focus, open dossiers and verified portrait mounts survive new activity
+and card reordering. A portrait is replaced when its persona, signed descriptor,
+identity key or provider changes; a card whose authority leaves the view is
+removed. Disclosure preferences also survive a card leaving and re-entering the
+visible window. `assets/stage-dom.mjs` performs this update without a framework.
+
 Persona→persona graph edges are exact claims, not inferred social links. A standing chord and its
 directional pulse exist only when one observed telemetry event names both an actor persona and an
 explicit persona recipient/affected endpoint. Shared environment, scope, or cohort membership
