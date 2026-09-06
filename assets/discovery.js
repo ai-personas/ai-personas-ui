@@ -7564,13 +7564,13 @@ function renderPersonaCard(pid,kernel='',context={}){
   const actTally=(S.ixCountBySid&&S.ixCountBySid.get(personaKey))||0;
   const grew=_personaGrew(personaKey,models.length+actTally);
   let doingHTML, focusLabel="What I'm doing now";
-  if(activeCall){
-    const purpose=String(activeCall.requested_purpose||activeCall.purpose||'model');
-    const model=String(activeCall.model_id||activeCall.model||'—');
+  if(running){
+    const purpose=String(activeCall?.requested_purpose||activeCall?.purpose||'model');
+    const model=String(activeCall?.model_id||activeCall?.model||'');
     const purposeLabel=humanActivityPresentation('MODEL_CALL',{purpose}).context
       ||PURPOSE_VERB[purpose]||purpose.replace(/_/g,' ');
-    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong title="model ${esc(model)}">${esc(_sentenceStart(purposeLabel))}</strong>`
-      +(activeCall.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
+    doingHTML=`<span class="pulse">${icon('dot','ico-sm')}</span><strong${model?` title="model ${esc(model)}"`:''}>${esc(_sentenceStart(purposeLabel))}</strong>`
+      +(activeCall?.role?` <span class="pc-when">${esc(activeCall.role)}</span>`:'');
   } else if(terminalFailure){
     focusLabel='Work status';
     const purpose=PURPOSE_VERB[terminalFailure.purpose]

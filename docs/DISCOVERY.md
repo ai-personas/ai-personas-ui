@@ -364,6 +364,9 @@ run pressure/review/block state when the node API provides it. This visual syste
 third-party trading-card artwork, logos, nomenclature, or layouts.
 
 The card's activity line and status badge use the same current observation.
+A fresh signed `running_llm` summary can establish activity before detailed
+call rows arrive. Show that activity without inventing a model name or purpose;
+an older paused run or expired call detail cannot replace that observation.
 An authored work note remains labeled as the persona's own statement in the
 work-state section; it cannot replace an active call or resource pause with a
 claim such as "accepted and settled." Recent work retains a history label when

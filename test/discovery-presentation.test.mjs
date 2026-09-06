@@ -227,6 +227,35 @@ for (const state of ['running', 'resource-paused']) {
   });
 }
 
+test('a fresh running summary agrees with the card before call details arrive', () => {
+  const ui = renderer(null, {
+    _personaMechanicalRunProjection: () => ({key: 'resource-paused', detail: 'Earlier run'}),
+  });
+  ui.S.liveByPersona.set('node:alice', {summary: {running_llm: true},
+    receivedAt: Date.now(), stale: false});
+  const html = ui.card('alice', 'node');
+  const current = html.match(/<section class="pc-current pk-doing-face">([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(html.includes('WORKING NOW'));
+  assert.ok(current.includes("What I&#39;m doing now"));
+  assert.ok(!current.includes('Resource-paused'));
+});
+
+test('an expired summary cannot present an old detailed call as current activity', () => {
+  const ui = renderer(null, {
+    runtimeForPersona: () => ({current_model_call: {
+      model_id: 'older-model', purpose: 'persona_communication',
+    }}),
+    _personaMechanicalRunProjection: () => ({key: 'resource-paused', detail: 'Earlier run'}),
+  });
+  ui.S.liveByPersona.set('node:alice', {summary: {running_llm: true},
+    receivedAt: Date.now() - 31000, stale: false});
+  const html = ui.card('alice', 'node');
+  const current = html.match(/<section class="pc-current pk-doing-face">([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(!html.includes('WORKING NOW'));
+  assert.ok(current.includes('Resource-paused'));
+  assert.ok(!current.includes('older-model'));
+});
+
 test('kernel observations and action requests cannot become signed messages', () => {
   const html = renderer().activity([
     event('PERSONA_COMMUNICATION_AUTHORED', 'Unverified message', 1, {signed: false}),
