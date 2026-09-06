@@ -280,6 +280,21 @@ test('identical captured copies count once and each source remains openable', ()
   assert.ok(ui.files([...rows, workspace('ws-b', 'b'.repeat(64))]).includes('different content'));
 });
 
+test('a captured personal version states that its shared merge is incomplete', () => {
+  const ui = renderer(), row = workspace('ws-a');
+  const provenance = {schema: 'personaos-live-artifact-workspace-publication-provenance/1',
+    authority: 'verified_persona_workspace_change_capture',
+    publication_complete: false, environment_bytes_present: false};
+  row.files[0].provenance = provenance;
+  assert.ok(ui.files([row]).includes('Personal copy · shared merge incomplete'));
+  assert.ok(ui.files([row]).includes('data-live-file-workspace="ws-a"'));
+  for (const change of [{environment_bytes_present: true}, {publication_complete: true},
+    {authority: 'unverified'}, {schema: ''}]) {
+    row.files[0].provenance = {...provenance, ...change};
+    assert.ok(!ui.files([row]).includes('shared merge incomplete'));
+  }
+});
+
 test('same paths in another node, environment or run stay distinct', () => {
   const ui = renderer();
   for (const extra of [{kernel: 'other-node'}, {environmentId: 'env-b'}, {run: 'run-3'}])

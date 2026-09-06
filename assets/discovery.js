@@ -5422,7 +5422,7 @@ function _renderLiveTreeNode(node,prefix,depth,state,workspaceId){
     const declarer=_artifactDeclarationPersonaLabel(declaration,String(state?.snapshot?.node_id||''));
     html+=`<div class="tnode tfile live-file-row" style="padding-left:${depth*14}px"><a class="live-tree-file-action" href="#" data-act="live-file" data-run="${esc(state.run)}" data-workspace="${esc(workspaceId)}" data-path="${esc(file.path)}" title="Open ${esc(presentation.exactPath)}">`
       +`${_artifactFormatTileHTML(presentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(presentation,declaration)}`
-      +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
+      +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}${_liveFileSharedState(file)?` · ${esc(_liveFileSharedState(file))}`:''}</small></span>`
       +`<span class="current-artifact-preview">Open file →</span></a></div>`;
   }
   return html;
@@ -7009,6 +7009,13 @@ function _groupLiveWorkspaceFiles(rows){
 function _liveWorkspaceCurrentFileCount(rows){
   return _liveWorkspaceFileProjection(rows).files.length;
 }
+function _liveFileSharedState(file){
+  const p=file?.provenance;
+  return p?.schema==='personaos-live-artifact-workspace-publication-provenance/1'
+    &&p.authority==='verified_persona_workspace_change_capture'
+    &&p.publication_complete===false&&p.environment_bytes_present===false
+    ?'Personal copy · shared merge incomplete':'';
+}
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact'), filePresentation=_artifactFilePresentation(label);
   const metadata=_liveFileSignedArtifactMetadata(file,row);
@@ -7022,7 +7029,7 @@ function _liveCurrentFileActionHTML(file,row,scope){
   const proof=[media||'type not declared',metadata?'signed file-card metadata':'signed workspace metadata',scope].join(' · ');
   return `<button type="button" class="current-artifact-file live-current-artifact" data-live-current-file="1" data-live-file-run="${esc(row.run)}" data-live-file-base="${esc(row.base||'')}" data-live-file-workspace="${esc(row.workspaceId)}" data-live-file-path="${esc(file.path)}" title="${esc(`Open ${label}. ${proof}`)}">`
     +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation,declaration)}`
-    +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
+    +`<small>${esc(artifactTypeLabel(media))} · ${fmtBytes(file.size_bytes)}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}${_liveFileSharedState(file)?` · ${esc(_liveFileSharedState(file))}`:''}</small></span>`
     +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
@@ -12531,6 +12538,7 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
   const sizeLabel=opts.size!=null?fmtBytes(opts.size):'—';
   let html=kv(declaration.title?'Persona title':'Name',`<span class="fv-human-file-name"><strong>${esc(humanTitle)}</strong>${filePresentation.extensionLabel?`<span class="artifact-extension-badge">${esc(filePresentation.extensionLabel)}</span>`:''}</span>`)
     +kv('Filename',`<code>${esc(filePresentation.filename)}</code>`)
+    +(_liveFileSharedState(opts.liveFile)?kv('Workspace copy',esc(_liveFileSharedState(opts.liveFile))):'')
     +(filePresentation.folderLabel?kv('Folder',esc(filePresentation.folderLabel)):'')
     +(declarer?kv('Declared by',`<strong>${esc(declarer)}</strong>`):'')
     +kv('Type',`<strong data-fv-type>${esc(artifactTypeLabel(initialPick.mediaType||kind))}</strong>`)
