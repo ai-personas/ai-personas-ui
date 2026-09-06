@@ -850,13 +850,42 @@ function _interactionPersonaKeys(event){
   return [event?.actor_kind==='persona'?_eventPersonaKey(event,event.actor_id):null,
     ..._personaEndpoints(event).map((endpoint)=>_eventPersonaKey(event,endpoint.id))].filter(Boolean);
 }
+function _isPersonaUpdate(event){
+  return event?.signed===true
+    &&event?._authority==='persona_signature'
+    &&event?._providerProvisional!==true
+    &&[PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND,PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND].includes(event?.kind)
+    &&typeof event?._exactText==='string'&&!!event._exactText.trim();
+}
+function _latestPersonaUpdates(events){
+  const shared=[...events].filter(_isPersonaUpdate)
+    .sort((a,b)=>Number(b._t||0)-Number(a._t||0));
+  const selected=[];
+  const message=shared.find((event)=>event.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND);
+  if(message) selected.push(message);
+  for(const event of shared) if(selected.length<2&&!selected.includes(event)) selected.push(event);
+  return selected.sort((a,b)=>Number(b._t||0)-Number(a._t||0));
+}
+function _personaActivityWindow(events,limit){
+  const ordered=[...events].sort((a,b)=>Number(a._t||0)-Number(b._t||0));
+  const selected=new Map(_latestPersonaUpdates(ordered).map((event)=>[event._key,event]));
+  for(const event of ordered.filter(_durablePublicPersonaActivity).reverse()){
+    if(selected.size>=4) break;
+    selected.set(event._key,event);
+  }
+  for(let index=ordered.length-1;index>=0&&selected.size<limit;index--)
+    selected.set(ordered[index]._key,ordered[index]);
+  return [...selected.values()].sort((a,b)=>Number(a._t||0)-Number(b._t||0)).slice(-limit);
+}
 function _rememberPersonaCognitionEvent(event){
   const store=S.cognitionByPersona=S.cognitionByPersona||new Map();
   for(const personaKey of new Set(_interactionPersonaKeys(event))){
     let rows=store.get(personaKey); if(!rows) rows=new Map();
     if(rows.has(event._key)) rows.delete(event._key);
     rows.set(event._key,event);
-    while(rows.size>NETWORK_LIMITS.cognitionRowsPerPersona) rows.delete(rows.keys().next().value);
+    if(rows.size>NETWORK_LIMITS.cognitionRowsPerPersona)
+      rows=new Map(_personaActivityWindow(rows.values(),NETWORK_LIMITS.cognitionRowsPerPersona)
+        .map((row)=>[row._key,row]));
     store.delete(personaKey); store.set(personaKey,rows);
   }
   while(store.size>NETWORK_LIMITS.cognitionPersonas*4) store.delete(store.keys().next().value);
@@ -916,17 +945,10 @@ function _refreshPersonaInteractionIndex(){
     const rows=indexed.get(personaKey)||indexed.set(personaKey,new Map()).get(personaKey);
     for(const [key,event] of retained) rows.set(key,event);
   }
-  S.ixByPersona=new Map([...indexed].map(([personaKey,events])=>{
-    const ordered=[...events.values()].sort((a,b)=>a._t-b._t);
-    const selected=new Map();
-    // Keep exact public persona text visible even when frequently refreshed
-    // model-status snapshots have newer observation times.
-    for(const event of ordered.filter(_durablePublicPersonaActivity).slice(-4))
-      selected.set(event._key,event);
-    for(let index=ordered.length-1;index>=0&&selected.size<12;index--)
-      selected.set(ordered[index]._key,ordered[index]);
-    return [personaKey,[...selected.values()].sort((a,b)=>a._t-b._t)];
-  }));
+  // Retention, indexing and the face use the same signed-update selection.
+  // Tool activity cannot evict a message before the renderer gets to see it.
+  S.ixByPersona=new Map([...indexed].map(([personaKey,events])=>
+    [personaKey,_personaActivityWindow(events.values(),12)]));
 }
 
 function ingestLiveTelemetry(base,live,{source='poll',eventId='',verifiedCommunicationRoutes=[],
@@ -5545,34 +5567,25 @@ function _terminalModelFailureHTML(failure){
     +(failure.reason?`<p>${esc(failure.reason)}</p>`:'')
     +(detail?`<details class="activity-technical"><summary>Technical details</summary><div><code>${esc(detail)}</code><span class="ix-trust transport">OBSERVED LIVE</span></div></details>`:'')+`</div>`;
 }
+function _personaStatusHTML(s,running){
+  const tiles=(s.lifecycle_state!=null?`<div class="lm"><div class="lmv">${esc(_sentenceStart(String(s.lifecycle_state).toLowerCase().replace(/_/g,' ')))}</div><div class="lmk">lifecycle</div></div>`:'')
+    +(s.experience_tasks!=null?`<div class="lm"><div class="lmv">${esc(s.experience_tasks)}</div><div class="lmk">tasks worked</div></div>`:'')
+    +(s.reputation_score!=null?`<div class="lm"><div class="lmv">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'');
+  return (tiles?`<div class="livegrid">${tiles}</div>`:'')
+    +(s.task_execution_state?kv('Task',esc(_humanTaskExecutionState(s.task_execution_state))):'')
+    +kv('Model-assisted step',esc(running?'Running now':'No current model call observed'));
+}
 function renderPersonaLive(pid,profileFallback,kernel=''){
   // profileFallback (the served persona card) lets the grid render for IDLE personas too
   // (state/tasks/reputation), since the drawer no longer duplicates those as kv rows.
   const ref=_personaRef(pid,kernel), rt=runtimeForPersona(ref.key);
   const d=S.liveByPersona.get(ref.key)||(profileFallback||rt?{summary:profileFallback||rt||{},models:[]}:null);
   if(!d) return '<div class="l2">— no live telemetry yet (idle or not streaming) —</div>';
-  const s=d.summary||profileFallback||rt||{}; let h='';
-  // PER-04 / 09_PROTOCOLS §4.1: public tiles only (state, tasks, reputation);
-  // operator-tier evolution internals (fitness, tactics, lessons, memory) appear
-  // only when an operator token is held.
-  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  if(s.lifecycle_state!=null||s.reputation_score!=null||s.experience_tasks!=null){
-    h+=`<div class="livegrid">`
-      +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state==='ACTIVE'?'Available':_sentenceStart(String(s.lifecycle_state||'observed').replace(/_/g,' ')))}</div><div class="lmk">availability</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks worked</div></div>`
-      +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
-      +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
-        +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
-        +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
-        +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
-      +`</div>`;
-  }
-  const running=_activeModelCallsForPersona(ref.key).length>0;
+  const s=d.summary||profileFallback||rt||{};
+  const running=_runningNow(ref.key);
+  let h=_personaStatusHTML(s,running);
   const terminalFailure=running?null:(d.terminalFailure||null);
-  if(rt){
-    h+=`<div class="sublabel">Current participation</div>`
-      +kv('Task',esc(_humanTaskExecutionState(rt.task_execution_state||'not_participating')))
-      +kv('Model-assisted step',esc(rt.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(rt.llm_execution_state||'not reported').replace(/_/g,' '))));
+  if(rt&&running){
     const call=rt.current_model_call;
     if(call){ const purpose=humanActivityPresentation('MODEL_CALL',{purpose:call.requested_purpose}).context;
       h+=kv('Working on',`<span class="ok" title="model ${esc(call.model_id||'not reported')}">${esc(_sentenceStart(purpose||call.requested_purpose||'the current task'))}</span>`); }
@@ -7165,6 +7178,9 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
     const summary=details[0]||(!headline||headline==='Latest shared update'
       ?_compactHumanLabel(exact,240):'');
     outputHTML=`<div class="pc-authored-output"><span>${esc(_publicOutputLabel(latestOutput))}</span>`
+      +(()=>{ const at=latestOutput.persona_authority?.authored_at||latestOutput.at;
+        return Number.isFinite(Date.parse(at||''))
+          ?`<small>Shared <time datetime="${esc(at)}" title="${esc(at)}">${esc(_friendlyInstant(at))}</time></small>`:''; })()
       +`<strong>${esc(headline||'Latest shared update')}</strong>`
       +(summary?`<p>${esc(_compactHumanLabel(summary,280))}</p>`:'')
       +'</div>';
@@ -7172,7 +7188,7 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   const snapshotAge=publicCognition&&doc.generated_at
     ?` · as of ${_friendlyInstant(doc.generated_at)}`:'';
   const currentHTML=state||latestOutput
-    ?`<section class="pc-authored-work"><div class="pc-section-head"><span>Current thinking and work</span>`
+    ?`<section class="pc-authored-work"><div class="pc-section-head"><span>Work notes and shared thoughts</span>`
       +`<small>${icon('check','ico-sm')} signed snapshot verified${esc(snapshotAge)}</small></div>${stateHTML}${outputHTML}</section>`:'';
   // The newest kernel-signed proven facts belong on the face: they are the
   // clearest "what this persona has actually learned" a visitor can consume.
@@ -7206,16 +7222,8 @@ function _personaActivityHTML(acts,personaKey){
   // Signed action requests are work evidence, not delivered messages. Reserve
   // a visible slot for the latest actual communication, even during a burst of
   // commands or cognition. Admission and signatures are checked upstream.
-  const personaAuthored=({event})=>event?.signed===true
-    &&event?._authority==='persona_signature'
-    &&event?._providerProvisional!==true
-    &&[PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND,PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND].includes(event?.kind)
-    &&typeof event?._exactText==='string'&&event._exactText.trim();
-  const shared=candidates.filter(personaAuthored), authoredRows=[];
-  const latestMessage=shared.find(({event})=>event.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND);
-  if(latestMessage) authoredRows.push(latestMessage);
-  for(const row of shared) if(authoredRows.length<2&&!authoredRows.includes(row)) authoredRows.push(row);
-  authoredRows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
+  const updates=new Set(_latestPersonaUpdates(candidates.map(({event})=>event)));
+  const authoredRows=candidates.filter(({event})=>updates.has(event));
   if(!candidates.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
   const renderRows=(selected)=>selected.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
@@ -7263,7 +7271,7 @@ function _personaActivityHTML(acts,personaKey){
         +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('');
   const responseRows=candidates.filter(({event})=>event?._providerComplete===true
     &&event?.kind==='PROVISIONAL_ASSISTANT_MESSAGE'&&event?._exactText).slice(0,1);
-  const diagnosticRows=candidates.filter((row)=>!personaAuthored(row)&&!responseRows.includes(row)).slice(0,4);
+  const diagnosticRows=candidates.filter((row)=>!_isPersonaUpdate(row.event)&&!responseRows.includes(row)).slice(0,4);
   const authoredHTML=authoredRows.length
     ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona-authored updates</span><small><i></i> newest first</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">${renderRows(authoredRows)}</ol></section>`
     :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none shared yet</small></div><div class="pc-activity-empty">The persona has not published a signed message or thought yet.</div></section>`;
@@ -9135,30 +9143,11 @@ function _verifiedPublicModelStatusHTML(doc){
   }).join('');
 }
 function renderPersonaFeedDoc(doc,personaKey=''){
-  const s=doc.summary||{}; let h='';
-  // PER-04 / §4.1: public tiles (state, tasks, reputation); operator-tier evolution
-  // internals + GEPA cohort only with an operator token.
-  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  h+=`<div class="livegrid">`
-    +`<div class="lm"><div class="lmv ${s.lifecycle_state==='ACTIVE'?'ok':''}">${esc(s.lifecycle_state==='ACTIVE'?'Available':_sentenceStart(String(s.lifecycle_state||'observed').replace(/_/g,' ')))}</div><div class="lmk">availability</div></div>`
-    +`<div class="lm"><div class="lmv">${esc(s.experience_tasks??0)}</div><div class="lmk">tasks worked</div></div>`
-    +(s.reputation_score!=null?`<div class="lm"><div class="lmv ok">${esc(Number(s.reputation_score).toFixed(2))}</div><div class="lmk">reputation</div></div>`:'')
-    +(hasOp?`<div class="lm"><div class="lmv">${esc(s.tactic_count??s.cohort_visible_tactic_count??0)}</div><div class="lmk">tactics</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.lesson_count??0)}</div><div class="lmk">lessons</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.memory_count??0)}</div><div class="lmk">memory</div></div>`
-      +`<div class="lm"><div class="lmv">${esc(s.fitness!=null?Number(s.fitness).toFixed(1):'—')}</div><div class="lmk">fitness (op)</div></div>`:'')
-    +`</div>`;
-  if(hasOp&&(s.evolution_trace_count!=null||s.accepted_trace_count!=null))
-    h+=`<div class="l2" style="margin:4px 0 0">evolution: ${esc(s.accepted_trace_count??0)}/${esc(s.evolution_trace_count??0)} accepted trials${s.gepa_cohort_id?' · cohort '+esc(String(s.gepa_cohort_id).slice(0,18)):''}</div>`;
-  if(s.task_execution_state||s.llm_execution_state){
-    h+=`<div class="sublabel">Current participation</div>`
-      +kv('Task',esc(_humanTaskExecutionState(s.task_execution_state||'not_participating')))
-      +kv('Model-assisted step',esc(s.llm_execution_state==='not_currently_calling'?'Not running now':_sentenceStart(String(s.llm_execution_state||'not reported').replace(/_/g,' '))));
-  }
+  const ref=_personaRef(personaKey||doc.persona_id||'',String(doc.node_id||doc.kernel_id||''));
+  const running=_runningNow(ref.key);
+  let h=_personaStatusHTML(doc.summary||{},running);
   if(doc.current_work_state?.schema==='personaos-persona-work-state-surface/5')
     h+=_renderPersonaWorkState(doc,{kernel:String(doc.node_id||doc.kernel_id||'')});
-  const ref=_personaRef(personaKey||doc.persona_id||'');
-  const running=_activeModelCallsForPersona(ref.key).length>0;
   const projected=projectTerminalModelFailures(telemetryModelEvents(doc));
   const feedFailure=projected.byPersona.get(doc.persona_id)||projected.latest;
   const indexedFailure=S.liveByPersona.get(ref.key)?.terminalFailure||null;
@@ -11051,8 +11040,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const drawerCharacteristics=identityVerified&&r._personaCharacteristics
     ?r._personaCharacteristics:null;
   const drawerHeadline=_personaCharacteristicHeadline(drawerCharacteristics,displayName);
-  const availability=String(state||'').toUpperCase()==='ACTIVE'?'Available'
-    :_sentenceStart(String(state||'observed').replace(/_/g,' '));
+  const lifecycleLabel=_sentenceStart(String(state||'observed').toLowerCase().replace(/_/g,' '));
   const identityDetails=(lifecycle?kv('Profile creation',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
     +(lifecycle?kv('Profile fields',['name','characteristics','avatar'].map((field)=>{
       const value=lifecycle.identityFields[field];
@@ -11067,7 +11055,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
     +verificationIdentityDetails('persona id',personaIdentity);
   let html=(!identityVerified
       ?`<div class="viewerr">${icon('warn','ico-sm')} This public persona profile is still being verified. Name, self-description and portrait stay hidden until that finishes.</div>`:'')
-    +kv('Availability',`<span class="${availability==='Available'?'ok':''}">${esc(availability)}</span>`)
+    +kv('Lifecycle',esc(lifecycleLabel))
     +(role!==_ROLE_NOT_DECLARED?kv('Role',`<span class="cap">${esc(role)}</span>`):'')
     +(role===_ROLE_NOT_DECLARED&&drawerHeadline
       ?kv(drawerHeadline.label,`<span class="cap">${esc(drawerHeadline.value)}</span>`):'')

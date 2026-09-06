@@ -83,6 +83,8 @@ All optional; the defaults just work.
   with sender and recipients, work notes, and files the persona declared.
   Personal worktree captures expand separately because they can include inherited files.
   Model names appear when published; an omitted identity does not imply a failed call.
+  Latest signed messages stay visible during tool activity. Shared thoughts show
+  their authored time; lifecycle and current model activity have separate labels.
   Use **show more** to expand the current matching personas and environments.
 - **Environment cards** — shared workspaces with people, activity, and file groups.
   Identical path/content copies appear once with each source available; differing

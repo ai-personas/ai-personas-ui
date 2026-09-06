@@ -22,6 +22,12 @@ const short = (value) => String(value || '').replace(/^persona:/, '');
 const nameFor = (value) => ({'node:alice': 'Alice', 'node:bob': 'Bob'}[value] || value);
 const declarations = [
   section('function _eventKernel(', 'function _eventEntityLabel('),
+  section('function _personaEndpoints(', '// The live feed has already'),
+  section('function _refreshPersonaInteractionIndex(', 'function ingestLiveTelemetry('),
+  section('function _durablePublicPersonaActivity(', '// the live COORDINATION FEED'),
+  section('function _runningNow(', 'function _modelFresh('),
+  section('function _terminalModelFailureHTML(', 'function renderEnvLive('),
+  section('function renderPersonaFeedDoc(', 'function renderEnvFeedDoc('),
   section('function _personaCharacteristicValue(', 'const _personaMonogram='),
   section('function _boundedLatestUnique(', 'function _artifactPresentationKey('),
   section('const _ARTIFACT_DECLARATION_DISPLAY_SCHEMA=', 'function artifactDeclarationAttr('),
@@ -68,7 +74,10 @@ function renderer(observation = null) {
     _artifactFormatTileHTML: empty,
     _artifactFileIdentityHTML: (file) => `<b>${esc(file.path)}</b>`,
     artifactTypeLabel: () => 'Text', fmtBytes: (value) => `${value} B`,
-    _personaRef: (sid, kernel = 'node') => ({sid, kernel, key: `${kernel}:${sid}`}),
+    _personaRef: (value, kernel = 'node') => {
+      const key = String(value).includes(':') ? value : `${kernel || 'node'}:${value}`;
+      return {key, kernel: key.split(':')[0], sid: key.split(':').at(-1)};
+    },
     _personaModelHistory: () => [], runtimeForPersona: () => ({}),
     _activeModelCallsForPersona: () => [],
     providerVerifiedPersonaObservation: () => observation,
@@ -76,7 +85,7 @@ function renderer(observation = null) {
     _personaNameRolePresentation: () => ({name: 'Alice', exactName: 'Alice'}),
     _ROLE_NOT_DECLARED: 'not declared', _coordRole: () => 'not declared',
     _latestPersonaActivityForRecency: () => null, _modelFresh: () => false,
-    _runningNow: () => false, _personaMechanicalRunProjection: () => ({key: 'unknown'}),
+    _personaMechanicalRunProjection: () => ({key: 'unknown'}),
     _personaGrew: () => false, TOOL_KINDS: new Set(), _personaAvatarHue: () => 0,
     _pkCognitionStats: () => null, _scorecardForRun: () => null,
     _verifiedIdentityDecline: () => null,
@@ -87,6 +96,12 @@ function renderer(observation = null) {
     _artifactRevisionProjection: (rows) => ({current: rows.length ? {rows} : null}),
     LIVE_ARTIFACT_LIMITS: {maxFiles: 4096}, runOf: (row) => row.run,
     _sentenceStart: (value) => value,
+    NETWORK_LIMITS: {cognitionRowsPerPersona: 24, cognitionPersonas: 24},
+    opTokens: () => ({}), kv: (key, value) => `<div>${key}: ${value}</div>`,
+    _humanTaskExecutionState: (value) => value,
+    _liveFeed: empty, feedModels: () => [], _verifiedPublicModelStatusHTML: empty,
+    telemetryModelEvents: () => [], isPublicEntityTelemetryDocument: () => true,
+    projectTerminalModelFailures: () => ({byPersona: new Map()}),
   };
   return new Function(...Object.keys(values), declarations + `\nreturn {
     S, activity: _personaActivityHTML, work: _personaAuthoredWorkHTML,
@@ -94,6 +109,8 @@ function renderer(observation = null) {
     declaringPersona: _artifactDeclaringSid, card: renderPersonaCard,
     worktreeFiles: _personaWorktreeFilesHTML, environment: envOutputContext, liveWorkspacesByEnv,
     rememberDisclosure: _rememberDisclosure, restoreDisclosures: _restoreDisclosures,
+    rememberActivity: _rememberPersonaCognitionEvent, indexActivity: _refreshPersonaInteractionIndex,
+    liveStatus: renderPersonaLive, feedStatus: renderPersonaFeedDoc,
   };`)(...Object.values(values));
 }
 
@@ -128,6 +145,58 @@ test('an incoming message names its author and displayed recipients', () => {
   assert.ok(html.includes('2 other recipients'));
 });
 
+test('activity indexing keeps the latest communication through a command burst', () => {
+  const ui = renderer();
+  const message = event('PERSONA_COMMUNICATION_AUTHORED', 'Please independently verify the delivery.', 1,
+    {recipients: [{kind: 'persona', id: 'bob'}]});
+  ui.S.interactions = [message, event('PERSONA_COGNITIVE_INTENT', 'Measuring the repaired geometry.', 2),
+    ...Array.from({length: 30}, (_, i) => event('PERSONA_ACTION_AUTHORED', `command ${i}`, i + 3))];
+  ui.indexActivity();
+  for (const persona of ['node:alice', 'node:bob']) {
+    const visible = visibleUpdates(ui.activity(ui.S.ixByPersona.get(persona), persona));
+    assert.ok(visible.includes(message._exactText), `${persona} retains the actual message`);
+    assert.ok(visible.includes('Alice → Bob'));
+  }
+  assert.ok(ui.S.ixByPersona.get('node:alice').some(e => e._exactText === 'command 29'));
+});
+
+test('per-persona retention keeps signed updates when the global tape rolls off', () => {
+  const ui = renderer();
+  const message = event('PERSONA_COMMUNICATION_AUTHORED', 'Review both the positive and failing cases.', 1,
+    {recipients: [{kind: 'persona', id: 'bob'}]});
+  for (const row of [message, event('PERSONA_COGNITIVE_INTENT', 'Checking the measurements.', 2),
+    ...Array.from({length: 80}, (_, i) => event('PERSONA_ACTION_AUTHORED', `command ${i}`, i + 3))])
+    ui.rememberActivity(row);
+  ui.S.interactions = [];
+  ui.indexActivity();
+  const visible = visibleUpdates(ui.activity(ui.S.ixByPersona.get('node:alice'), 'node:alice'));
+  assert.ok(visible.includes(message._exactText));
+  assert.ok(visible.includes('Checking the measurements.'));
+  assert.ok(ui.S.cognitionByPersona.get('node:alice').size <= 24);
+  const newer = event('PERSONA_COMMUNICATION_AUTHORED', 'The corrected delivery is ready for review.', 100);
+  ui.rememberActivity(newer);
+  ui.rememberActivity(message); // A repeated old snapshot must not replace the newer update.
+  ui.indexActivity();
+  assert.ok(visibleUpdates(ui.activity(ui.S.ixByPersona.get('node:alice'), 'node:alice'))
+    .includes(newer._exactText));
+});
+
+test('the profile status agrees with a freshly verified active model call', () => {
+  const ui = renderer(), summary = {lifecycle_state: 'ACTIVE',
+    task_execution_state: 'participating', llm_execution_state: 'not_currently_calling', running_llm: true};
+  ui.S.liveByPersona.set('node:alice', {summary, receivedAt: Date.now(), stale: false});
+  for (const html of [ui.liveStatus('alice', summary, 'node'),
+    ui.feedStatus({persona_id: 'alice', kernel_id: 'node', summary}, 'node:alice')]) {
+    assert.ok(html.includes('Running now'), 'fresh live state overrides an older idle detail');
+    assert.ok(!html.includes('Not running now'));
+    assert.ok(!html.includes('Available'));
+    assert.ok(!html.includes('tasks worked'), 'an unpublished count is not zero');
+  }
+  ui.S.liveByPersona.get('node:alice').receivedAt = Date.now() - 31000;
+  const stale = ui.feedStatus({persona_id: 'alice', kernel_id: 'node', summary}, 'node:alice');
+  assert.ok(!stale.includes('Running now'), 'an expired presence cannot keep claiming activity');
+});
+
 test('kernel observations and action requests cannot become signed messages', () => {
   const html = renderer().activity([
     event('PERSONA_COMMUNICATION_AUTHORED', 'Unverified message', 1, {signed: false}),
@@ -158,6 +227,20 @@ test('current thinking selects authored cognition instead of a newer action requ
   const html = ui.work('node:alice');
   assert.ok(html.includes('Check the geometry'));
   assert.ok(!html.includes('Run a command'));
+});
+
+test('a fresh snapshot preserves the older authorship time of its latest thought', () => {
+  const ui = renderer();
+  ui.S.verifiedPublicCognitionByPersona.set('node:alice', {doc: {
+    generated_at: '2026-09-06T14:03:00Z', recent_outputs: [{
+      kind: 'PERSONA_COGNITIVE_INTENT', authority: 'persona_signature',
+      at: '2026-09-06T12:38:00Z', text: 'I have a coherent positive and negative check.',
+    }],
+  }});
+  const html = ui.work('node:alice');
+  assert.ok(html.includes('datetime="2026-09-06T12:38:00Z"'));
+  assert.ok(html.includes('Shared '));
+  assert.ok(!html.includes('Current thinking and work'));
 });
 
 test('the persona face uses its verified character and renders structured self-description', () => {
