@@ -11,6 +11,7 @@ const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
 const source = readFileSync(resolve(assetRoot, 'discovery.js'), 'utf8');
 const human = await import(pathToFileURL(resolve(assetRoot, 'human-content.mjs')));
+const {environmentIdentity} = await import(pathToFileURL(resolve(assetRoot, 'routing-authority.mjs')));
 const section = (start, end) => {
   const first = source.indexOf(start), last = source.indexOf(end, first + start.length);
   assert.ok(first >= 0 && last > first, `Missing renderer declarations: ${start}`);
@@ -34,7 +35,6 @@ const declarations = [
   section('function _liveWorkspaceRevisionOrder(', 'function _firstAuthoredMethodText('),
   section('function _personaAuthoredWorkHTML(', '// ==== Collectible card gallery'),
   section('function _artifactDeclaringSid(', '// The persona\'s own stated refusal'),
-  section('const PK_TASK_EXEC_DOING=', '// ---- C-OP-16'),
   // Include the complete card, so description assertions cover the face binding.
   section('// Personal worktrees may contain', '// ==== end collectible card gallery helpers'),
   section('function renderPersonaCard(', '\nfunction '),
@@ -42,7 +42,7 @@ const declarations = [
   section('  const envOutputContext=(b)=>{', '  const environmentCardHTML='),
 ].join('\n');
 
-function renderer(observation = null) {
+function renderer(observation = null, overrides = {}) {
   const S = {liveByPersona: new Map(), verifiedPublicCognitionByPersona: new Map(),
     personaDiscoveryByKey: new Map(), recs: new Map(), ixByPersona: new Map()};
   const liveWorkspacesByEnv = new Map();
@@ -102,6 +102,8 @@ function renderer(observation = null) {
     _liveFeed: empty, feedModels: () => [], _verifiedPublicModelStatusHTML: empty,
     telemetryModelEvents: () => [], isPublicEntityTelemetryDocument: () => true,
     projectTerminalModelFailures: () => ({byPersona: new Map()}),
+    PURPOSE_VERB: {}, environmentIdentity,
+    ...overrides,
   };
   return new Function(...Object.keys(values), declarations + `\nreturn {
     S, activity: _personaActivityHTML, work: _personaAuthoredWorkHTML,
@@ -196,6 +198,34 @@ test('the profile status agrees with a freshly verified active model call', () =
   const stale = ui.feedStatus({persona_id: 'alice', kernel_id: 'node', summary}, 'node:alice');
   assert.ok(!stale.includes('Running now'), 'an expired presence cannot keep claiming activity');
 });
+
+for (const state of ['running', 'resource-paused']) {
+  test(`an authored completion note cannot replace the ${state} card state`, () => {
+    const ui = renderer(null, {
+      _activeModelCallsForPersona: () => state === 'running' ? [{
+        _signedPublicCognition: true, model_id: 'test-model',
+        purpose: 'persona_communication', environment_id: 'env:current',
+      }] : [],
+      _personaMechanicalRunProjection: () => ({key: state, detail: 'Current run observation'}),
+    });
+    ui.S.verifiedPublicCognitionByPersona.set('node:alice', {doc: {
+      current_work_state: {schema: 'personaos-persona-work-state-surface/5',
+        environment_id: 'env:previous', work_note: {observed_state: 'accepted_and_settled'}},
+    }});
+    const html = ui.card('alice', 'node');
+    const current = html.match(/<section class="pc-current pk-doing-face">([\s\S]*?)<\/section>/)?.[1];
+    assert.ok(current);
+    assert.ok(!current.includes('Accepted and settled'));
+    if (state === 'running') {
+      assert.ok(current.includes('test-model'), 'the actual active model call supplies the activity');
+      assert.ok(html.includes('WORKING NOW'));
+    } else {
+      assert.ok(current.includes('Resource-paused'));
+      assert.ok(current.includes('Mechanical run state'));
+      assert.ok(!current.includes('Doing now'));
+    }
+  });
+}
 
 test('kernel observations and action requests cannot become signed messages', () => {
   const html = renderer().activity([

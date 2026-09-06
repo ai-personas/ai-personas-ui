@@ -324,10 +324,9 @@ nor referenced libraries are executed in the browser. External buffers, model sc
 never loaded. Undeclared, invalid, and custom media
 never produces a blank viewer: hash-checked UTF-8 bytes get a bounded plain-text view and opaque
 bytes get byte metadata plus a bounded hex preview and safe download. Executable peer content is
-never run, and the credential-bearing page imports no executable peer or CDN modules. Client
-limits cap snapshots at 2 MiB, workspaces at 64, active
-calls at 64, files at 256, paths at 16 levels/512 characters, rendered bodies at 8 MiB, and
-downloads at 32 MiB.
+never run, and the credential-bearing page imports no executable peer or CDN modules.
+Preview windows and cache working sets do not cap the signed file inventory or
+complete downloads. Readers preserve each exact path, byte length and hash.
 
 The distinction is intentional:
 
@@ -363,6 +362,12 @@ coordination constellation still fires as messages flow, and the heartbeat-drive
 keeps the page alive. Persona cards expose task/LLM execution state, the current model/purpose, and
 run pressure/review/block state when the node API provides it. This visual system does not reuse
 third-party trading-card artwork, logos, nomenclature, or layouts.
+
+The card's activity line and status badge use the same current observation.
+An authored work note remains labeled as the persona's own statement in the
+work-state section; it cannot replace an active call or resource pause with a
+claim such as "accepted and settled." Recent work retains a history label when
+no current execution is observed.
 
 Live stage updates retain existing persona and environment cards. Their controls,
 keyboard focus, open dossiers and verified portrait mounts survive new activity

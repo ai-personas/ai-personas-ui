@@ -7315,8 +7315,8 @@ function identiconSVG(id,{className='pk-identicon',title=''}={}){
 }
 // Lazy, cached, presentation-only read of the persona's public cognition
 // document (personas/<id>/thinking). It enriches the collectible face with
-// stat counters (EP/FR/TL/EV), the current model id, and the persona-authored
-// work note. 403/404 (message tier not public) and malformed bodies degrade to
+// stat counters (EP/FR/TL/EV) and the current model id.
+// 403/404 (message tier not public) and malformed bodies degrade to
 // "no stat row"; nothing here feeds a verification decision, and every string
 // is HTML-escaped at render time.
 const _pkCog={cache:new Map(),inflight:new Set()};
@@ -7338,15 +7338,13 @@ function _pkCognitionProjection(doc){
     &&Array.isArray(development.acquired_tools)?development.acquired_tools.length:null;
   const workState=doc.current_work_state&&typeof doc.current_work_state==='object'
     &&!Array.isArray(doc.current_work_state)?doc.current_work_state:null;
-  const workNote=workState&&workState.work_note&&typeof workState.work_note==='object'
-    &&!Array.isArray(workState.work_note)?workState.work_note:null;
   const envIds=new Set();
   for(const call of calls){ const eid=String(call?.environment_id||'').trim();
     if(eid&&envIds.size<64) envIds.add(eid); }
   const workEnv=String(workState?.environment_id||'').trim();
   if(workEnv) envIds.add(workEnv);
   return {model,ep:_pkCount(doc.brain_episode_count),fr:_pkCount(doc.brain_fragment_count),
-    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),workNote,
+    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),
     envCount:envIds.size};
 }
 function _pkBaseForKernel(kernel){
@@ -7418,8 +7416,6 @@ function _pkEnvTools(kernel,envSid){
   }
   return out;
 }
-const PK_TASK_EXEC_DOING=Object.freeze({running_llm:'thinking…',run_participant:'on a mission',
-  idle:'resting',away:'away',available:'ready',paused_participant:'paused'});
 // ---- C-OP-16 member view: who and what, per member ----
 // Attribution comes from the declaration. Access ownership grants access; it
 // does not establish who authored or declared a file.
@@ -7740,23 +7736,9 @@ function renderPersonaCard(pid,kernel='',context={}){
     ||'Self-description not shared yet';
   const speciesTitle=selfPubBody?'persona self-publication (signed card)'
     :signedDescription?'signed card description':identityLineTitle;
-  // DOING NOW: persona-authored work note first, then the mechanical
-  // task-execution state, then the richer live-telemetry line computed above.
+  // The activity line uses the same observation as the status badge.
+  // Authored notes remain in the separately labelled work-state section.
   const cogStats=_pkCognitionStats(personaKey);
-  const feedWorkNote=currentWorkState&&currentWorkState.work_note
-    &&typeof currentWorkState.work_note==='object'&&!Array.isArray(currentWorkState.work_note)
-    ?currentWorkState.work_note:null;
-  const pkWorkNote=feedWorkNote||cogStats?.workNote||null;
-  // the doing line is for humans: machine-style states ("executed_and_published")
-  // read as words, and the exact authored text stays one hover away
-  const pkWorkNoteText=pkWorkNote
-    ?String(pkWorkNote.observed_state||pkWorkNote.status||'').trim():'';
-  const pkWorkNoteHuman=pkWorkNoteText?humanizeMachineKey(pkWorkNoteText):'';
-  const execDoing=PK_TASK_EXEC_DOING[String(s.task_execution_state||'')]||'';
-  const pkPulse=s.llm_execution_state==='running'||running;
-  const pkDoingHTML=pkWorkNoteHuman
-    ?`<strong title="${esc(pkWorkNoteText)} — persona-authored work note">${esc(_compactHumanLabel(pkWorkNoteHuman,90))}</strong>`
-    :execDoing?`<strong>${esc(execDoing)}</strong>`:doingHTML;
   const envBadgeCount=Array.isArray(s.active_environment_ids)
     ?s.active_environment_ids.length
     :(environments.length||cogStats?.envCount||0);
@@ -7788,7 +7770,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<figure class="pk-art">${_personaAvatarHTML(personaKey,{identityVerified})}<i class="pc-dot ${dotCls}" aria-hidden="true"></i></figure>`
     +`<span class="pc-name-proof">${proofHTML}</span>`
     +`<p class="pk-species" title="${esc(speciesTitle)}">${esc(speciesLine)}</p>`
-    +`<section class="pc-current pk-doing-face"><span class="pc-current-label">Doing now${pkPulse?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${pkDoingHTML}</div></section>`
+    +`<section class="pc-current pk-doing-face"><span class="pc-current-label">${esc(focusLabel)}${running?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${doingHTML}</div></section>`
     // The consumable story lives on the face: the exact task, the rooms the
     // persona works in, its newest signed thinking/update, and the files it
     // published. The dossier keeps identity detail and the long activity tail.
@@ -7802,7 +7784,6 @@ function renderPersonaCard(pid,kernel='',context={}){
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
     +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
     +aboutHTML+capabilityHTML
-    +(pkWorkNoteText||execDoing?`<section class="pc-current"><span class="pc-current-label">${esc(focusLabel)}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kind">verified persona</span></footer>`
