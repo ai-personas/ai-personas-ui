@@ -674,6 +674,7 @@ footer{display:flex;align-items:center;gap:12px;padding:6px var(--gutter);backgr
 .persona-capability-detail p{margin:4px 0 0;color:var(--ink);font-size:var(--fs-body);line-height:var(--lh-body);white-space:pre-wrap;overflow-wrap:anywhere}
 .persona-capability-detail small{display:block;margin-top:7px;color:var(--mut);font:var(--fs-meta)/1.4 var(--mono);overflow-wrap:anywhere}
 .grant{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:var(--fs-body);color:var(--dim);border-bottom:1px solid var(--line);line-height:var(--lh-snug)}
+.grant small.l2{display:block}
 .drawer-body a{color:var(--int);text-decoration:underline;text-underline-offset:2px}
 .drawer-body .desc2{color:var(--ink);font-size:var(--fs-body);line-height:var(--lh-body);padding:2px 0;text-wrap:pretty}
 .drawer-body .filview{background:var(--surface-inset);border:1px solid var(--line2);border-radius:var(--radius-md);padding:8px 10px;font-size:var(--fs-label);

@@ -458,3 +458,12 @@ A verified file preview retains the complete bytes for its Download button. Down
 that the route and hash still match, hashes the retained bytes again, and confirms the view
 has not changed before saving them. This avoids repeating a slow relay transfer for the same
 file; closing or replacing the preview discards its retained download binding.
+
+Live workspace inventories and downloads have no fixed file-count or file-size
+ceiling. Preview parsers may show a bounded portion, while Download preserves the
+complete verified bytes. Both public and connected private views retain all
+admitted routes, including deep paths and files beyond the initial list window.
+Unchanged connected-node refreshes preserve the current file controls and scroll
+position. Capture read or storage failures appear as an incomplete-capture notice,
+including when no file is currently readable; they never become a complete-looking
+prefix. A cached peer body still requires current publication authority.
