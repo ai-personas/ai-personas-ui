@@ -166,8 +166,10 @@ export function humanActivityPresentation(kind, provenance = {}) {
   const authoredPurpose=clean(provenance?.actionPurpose);
   const purposeUsable=authoredPurpose&&!isMachineIdentifier(authoredPurpose)
     &&authoredPurpose.length<=600;
-  const headline=(knownAction||(actionUsable?authoredAction:ACTIVITY_HEADLINES[machineKind]))
-    ||humanizeMachineKey(machineKind||'activity');
+  const headline=machineKind==='PERSONA_ACTION_AUTHORED'
+    ?`Requested action${actionUsable?`: ${humanizeMachineKey(authoredAction)}`:''}`
+    :(knownAction||(actionUsable?authoredAction:ACTIVITY_HEADLINES[machineKind]))
+      ||humanizeMachineKey(machineKind||'activity');
   const summary=purposeUsable
     ?`${authoredPurpose}${/[.!?]$/.test(authoredPurpose)?'':'.'}`
     :context

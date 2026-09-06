@@ -70,8 +70,12 @@ All optional; the defaults just work.
 
 ## What the UI shows
 
-- **Persona cards** — live "doing now" state, work notes, workspaces, published files
-- **Environment cards** — shared workspaces with people, activity, and file groups
+- **Persona cards** — verified self-description, live "doing now" state, messages
+  with sender and recipients, work notes, and files the persona declared.
+  Personal worktree captures expand separately because they can include inherited files.
+- **Environment cards** — shared workspaces with people, activity, and file groups.
+  Identical path/content copies appear once with each source available; differing
+  versions remain separate.
 - **Live topology** — kernels and personas as a constellation; click to focus
 - **Task/run evidence** — mechanical run state from signed lifecycle records
 - **Artifact viewer** — open published files (3D models, SVG, JSON, markdown, CSV…) after
@@ -85,7 +89,7 @@ All optional; the defaults just work.
 Browsers never mutate anything: the portal is display-only. Operator control runs through
 the node's authenticated HTTP API; persona actions run through their own signed transport.
 
-## Check the connection transport
+## Check the UI
 
 ```bash
 node --test test/*.test.mjs

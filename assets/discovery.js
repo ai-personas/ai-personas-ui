@@ -79,7 +79,7 @@ import {
   humanizeMachineKey,
   isTechnicalKey,
   structuredContentProjection,
-} from './human-content.mjs?v=20260728-agency-v3';
+} from './human-content.mjs?v=20260906-authored-requests-v1';
 import {
   expiredProviderKernels,
   reconcileResolverDirectory,
@@ -6980,10 +6980,10 @@ function _liveWorkspaceRevisionOrder(row){
 }
 function _currentLiveWorkspaceProjection(rows){
   const bounded=_boundedLatestUnique(rows,(row)=>
-    `${row?.kernel||row?.base||''}\u0000${row?.run||''}\u0000${row?.workspaceId||''}`,48);
+    `${row?.kernel||row?.base||''}\u0000${row?.environmentId||''}\u0000${row?.run||''}\u0000${row?.workspaceId||''}`,48);
   const currentByWorkspace=new Map(), history=[];
   for(const row of bounded){
-    const key=`${row?.kernel||row?.base||''}\u0000${row?.workspaceId||row?.run||''}`, prior=currentByWorkspace.get(key);
+    const key=`${row?.kernel||row?.base||''}\u0000${row?.environmentId||''}\u0000${row?.workspaceId||row?.run||''}`, prior=currentByWorkspace.get(key);
     if(!prior){ currentByWorkspace.set(key,row); continue; }
     if(_liveWorkspaceRevisionOrder(row)>_liveWorkspaceRevisionOrder(prior)){
       history.push(prior); currentByWorkspace.set(key,row);
@@ -6994,8 +6994,33 @@ function _currentLiveWorkspaceProjection(rows){
   history.sort((a,b)=>_liveWorkspaceRevisionOrder(b).localeCompare(_liveWorkspaceRevisionOrder(a)));
   return {current,history};
 }
+function _liveWorkspaceFileProjection(rows){
+  const projection=_currentLiveWorkspaceProjection(rows), byContent=new Map(), byPath=new Map();
+  let copyCount=0;
+  for(const row of projection.current) for(const file of row.files||[]){
+    copyCount++;
+    const path=String(file.path||''), hash=String(file.sha256||'').replace(/^sha256:/,'').toLowerCase();
+    const pathKey=JSON.stringify([row.kernel,row.environmentId,row.run,path]);
+    // Group only identical bytes at the exact path in one verified run/context.
+    // Every copy keeps its original workspace and fetch route. Missing metadata
+    // or a conflicting hash/size leaves a separate entry.
+    const comparable=row.kernel&&row.environmentId&&row.run&&path
+      &&/^[0-9a-f]{64}$/.test(hash)&&Number.isSafeInteger(file.size_bytes)&&file.size_bytes>=0;
+    const key=comparable?JSON.stringify([pathKey,hash,file.size_bytes]):`uncompared:${copyCount}`;
+    let entry=byContent.get(key);
+    if(!entry){ entry={file,row,mtime:file.mtime,copies:[],pathKey}; byContent.set(key,entry); }
+    entry.copies.push({file,row});
+    if(!byPath.has(pathKey)) byPath.set(pathKey,new Set());
+    if(comparable) byPath.get(pathKey).add(hash);
+  }
+  const files=[...byContent.values()];
+  for(const entry of files) entry.versions=byPath.get(entry.pathKey).size;
+  const totalBytes=files.every(({file})=>Number.isSafeInteger(file.size_bytes)&&file.size_bytes>=0)
+    ?files.reduce((total,{file})=>total+file.size_bytes,0):null;
+  return {...projection,files,copyCount,totalBytes};
+}
 function _liveWorkspaceCurrentFileCount(rows){
-  return _currentLiveWorkspaceProjection(rows).current.reduce((total,row)=>total+(row.files?.length||0),0);
+  return _liveWorkspaceFileProjection(rows).files.length;
 }
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact'), filePresentation=_artifactFilePresentation(label);
@@ -7014,27 +7039,33 @@ function _liveCurrentFileActionHTML(file,row,scope){
     +`<span class="current-artifact-preview">Open file →</span></button>`;
 }
 function _liveWorkspacesHTML(rows,{label='Live worktree',scope='persona worktree'}={}){
-  const projection=_currentLiveWorkspaceProjection(rows);
+  const projection=_liveWorkspaceFileProjection(rows);
   if(!projection.current.length) return '';
-  const fileCount=projection.current.reduce((total,row)=>total+(row.files?.length||0),0);
+  const fileCount=projection.files.length;
   // A finalized, empty scratch worktree is not a useful "current files"
   // surface. Durable environment outputs remain visible through independently
   // verified file cards, so this does not imply that published work vanished.
   if(!fileCount&&projection.current.every((row)=>row.ended===true)) return '';
   const captureSummary=fileCount
-    ?`${fileCount} current file${fileCount===1?'':'s'}`
+    ?`${fileCount} current file version${fileCount===1?'':'s'}`
+      +(projection.copyCount>fileCount?` · ${projection.copyCount} worktree copies`:'')
     :'No new live-run files yet';
+  const renderCopy=({file,row})=>{
+    const updated=_friendlyInstant(row.generatedAt);
+    const holder=row.personaId?_nameFor(_personaKey(row.kernel,row.personaId)):'';
+    const exact=[`workspace ${row.workspaceId}`,`run ${row.run}`,`revision ${row.revision}`].join(' · ');
+    return _liveCurrentFileActionHTML(file,row,scope)
+      +`<small class="artifact-copy-origin" title="${esc(exact)}">Worktree${holder?` · ${esc(holder)}`:''}${updated?` · captured ${esc(updated)}`:''}</small>`;
+  };
   return `<section class="owned-outputs live-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>${esc(label)}</span><small>${captureSummary}</small></div>`
-    +projection.current.map((row)=>{
-      const updated=_friendlyInstant(row.generatedAt);
-      const exact=[row.workspaceId?`workspace ${row.workspaceId}`:'',row.run?`run ${row.run}`:'',row.revision?`revision ${row.revision}`:''].filter(Boolean).join(' · ');
-      const workspaceStatus=row.ended?'Saved from the latest work':row.files.length?'Updating as work continues':'Live run started; no files captured yet';
-      return `<div class="current-workspace"><div class="current-workspace-head"><span title="${esc(exact)}"><b>${esc(workspaceStatus)}</b>${updated?` · ${esc(updated)}`:''}</span><span>${row.files.length} file${row.files.length===1?'':'s'}</span></div>`
-        +(row.files.length?_artifactExactFormatCountsHTML(row.files,(file)=>String(file?.path||''))
-          +_artifactGroupedListHTML(row.files,{pathOf:(file)=>String(file?.path||''),
-            render:(file)=>_liveCurrentFileActionHTML(file,row,scope),ariaLabel:`${label} — current files`})
-          :'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>')+'</div>';
-    }).join('')
+    +(fileCount?_artifactExactFormatCountsHTML(projection.files,({file})=>String(file.path||''))
+      +_artifactGroupedListHTML(projection.files,{pathOf:({file})=>String(file.path||''),
+        render:(entry)=>`<div class="artifact-copy-group">${renderCopy(entry)}`
+          +(entry.versions>1?'<small class="artifact-copy-origin">Other worktrees contain different content at this path.</small>':'')
+          +(entry.copies.length>1?`<details class="artifact-copy-sources" data-disclosure-key="${esc(JSON.stringify(['file-copies',entry.pathKey,entry.file.sha256,entry.file.size_bytes]))}"><summary>Same file in ${entry.copies.length} worktrees</summary>`
+            +entry.copies.slice(1).map(renderCopy).join('')+'</details>':'')+'</div>',
+        ariaLabel:`${label} — current file versions`})
+      :'<span class="l2">No files were captured in this run snapshot. Durable published and shared outputs, when available, are shown separately.</span>')
     +`<div class="artifact-preview-note">${fileCount?'Files load only when opened. Before showing a preview, the browser checks that the downloaded bytes match the workspace record.':'This is the signed live-run capture, not a claim that the durable workspace is empty.'}</div>`
     +(projection.history.length?`<div class="artifact-revision-history"><b>Earlier versions</b><span>${projection.history.length} earlier workspace version${projection.history.length===1?'':'s'} retained.</span>`
       +projection.history.slice(0,12).map((row)=>`<span title="${esc(`run ${row.run||''} · revision ${row.revision||''}`)}">Earlier version${_friendlyInstant(row.generatedAt)?` · ${esc(_friendlyInstant(row.generatedAt))}`:''} · ${row.files.length} file${row.files.length===1?'':'s'}</span>`).join('')
@@ -7138,7 +7169,8 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
     :fastState?.schema==='personaos-persona-work-state-surface/5'?fastState:null;
   if(!publicCognition&&!state) return '';
   const outputs=publicCognition?[...(doc.recent_outputs||[])].reverse():[];
-  const latestOutput=outputs.find((output)=>output?.authority==='persona_signature');
+  const latestOutput=outputs.find((output)=>output?.authority==='persona_signature'
+    &&output.kind===PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND);
   const agenticHTML=publicCognition
     ?_personaAgenticDevelopmentHTML(doc.agentic_development,{compact:true}):'';
   if(!state&&!latestOutput&&!agenticHTML) return '';
@@ -7197,29 +7229,21 @@ function _personaActivityHTML(acts,personaKey){
     const prior=seen.get(key); if(prior){ prior.count++; continue; }
     const row={event:e,count:1}; seen.set(key,row); candidates.push(row);
   }
-  // Repeated kernel model snapshots can have a newer observation timestamp than
-  // the exact persona-authored output they report on. Keep that transport status
-  // visible, but reserve half of this compact surface for the newest verified
-  // exact persona messages/actions when they exist. Trust still comes from the
-  // already-verified public-cognition document; this is presentation only.
+  candidates.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
+  // Signed action requests are work evidence, not delivered messages. Reserve
+  // a visible slot for the latest actual communication, even during a burst of
+  // commands or cognition. Admission and signatures are checked upstream.
   const personaAuthored=({event})=>event?.signed===true
+    &&event?._authority==='persona_signature'
     &&event?._providerProvisional!==true
+    &&[PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND,PUBLIC_PERSONA_COGNITIVE_OUTPUT_KIND].includes(event?.kind)
     &&typeof event?._exactText==='string'&&event._exactText.trim();
-  const rows=[];
-  const add=(row)=>{ if(row&&!rows.includes(row)&&rows.length<4) rows.push(row); };
-  candidates.filter(personaAuthored)
-    .slice(0,2).forEach(add);
-  candidates.forEach(add);
-  // The card shows only the first two rows. Keep exact persona-authored text in
-  // those human-facing slots before sorting within each evidence class by
-  // recency; otherwise a pair of newer mechanical kernel observations can
-  // conceal the actual thought that explains what the persona concluded.
-  rows.sort((left,right)=>{
-    const leftAuthored=personaAuthored(left)?1:0;
-    const rightAuthored=personaAuthored(right)?1:0;
-    return rightAuthored-leftAuthored||Number(right.event?._t||0)-Number(left.event?._t||0);
-  });
-  if(!rows.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
+  const shared=candidates.filter(personaAuthored), authoredRows=[];
+  const latestMessage=shared.find(({event})=>event.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND);
+  if(latestMessage) authoredRows.push(latestMessage);
+  for(const row of shared) if(authoredRows.length<2&&!authoredRows.includes(row)) authoredRows.push(row);
+  authoredRows.sort((left,right)=>Number(right.event?._t||0)-Number(left.event?._t||0));
+  if(!candidates.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>quiet now</small></div><div class="pc-activity-empty">No public work updates have been shared yet.</div></section>`;
   const renderRows=(selected)=>selected.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
       const actor=actorKey?_nameFor(actorKey):(e.actor_kind||'kernel');
@@ -7228,7 +7252,10 @@ function _personaActivityHTML(acts,personaKey){
         ?_nameFor(_eventPersonaKey(e,endpoint.id))
         :_eventEntityLabel(endpoint.kind,endpoint.id,kernel)).slice(0,3);
       const recipientCount=Number.isSafeInteger(e._recipientCount)&&e._recipientCount>0?e._recipientCount:0;
-      const targetLabel=recipientCount?`${recipientCount} recipient${recipientCount===1?'':'s'}`:targets.join(', ');
+      const undisplayedRecipients=Math.max(0,recipientCount-targets.length);
+      const targetLabel=targets.length
+        ?targets.join(', ')+(undisplayedRecipients?` + ${undisplayedRecipients} other recipient${undisplayedRecipients===1?'':'s'}`:'')
+        :recipientCount?`${recipientCount} recipient${recipientCount===1?'':'s'}`:'';
       const selfName=_nameFor(personaKey);
       const route=mine
         ?`${selfName}${targetLabel?` → ${targetLabel}`:''}`
@@ -7242,15 +7269,18 @@ function _personaActivityHTML(acts,personaKey){
       // Model telemetry often carries transport summaries such as
       // "200 · 26036 ms" as its message. Keep those values in the collapsed
       // verification disclosure and use human work context on the card.
-      // Signed persona outputs are often JSON envelopes. Keep those exact
-      // bytes in verification details and put their authored message or
-      // purpose—not raw JSON—on the human-facing card.
-      const exactHumanText=exactProjection?.headline
-        &&exactProjection.headline!==String(e._provenance?.action||'')
-        ?exactProjection.headline:'';
+      // Preserve complete plain text. Structured output includes its authored
+      // prose and values; routing/proof fields have their own disclosures.
+      const exactHumanText=exactProjection?.parsed
+        ?[exactProjection.headline,...exactProjection.paragraphs,
+          ...exactProjection.facts.map(({label,value})=>`${label}: ${value}`),
+          ...exactProjection.items].filter((text)=>text&&text!==String(e._provenance?.action||''))
+          .join('\n')
+        :exactText;
       const detail=exactHumanText||(modelUpdate?presentation.summary:(observedDetail||presentation.summary));
-      const routeLabel=exactText
-        ?`${selfName} · ${e._providerProvisional===true?'Model response':e._cognition===true?'Shared thought':'Shared update'}`
+      const routeLabel=e.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND?route
+        :exactText
+        ?`${actorKey?actor:selfName} · ${e._providerProvisional===true?'Model response':e._cognition===true?'Shared thought':'Work update'}`
         :modelUpdate?`${selfName} · Work update`:route;
       const context=_activityPrimaryContextHTML(e,{className:'pc-message-context',kernel});
       const technical=_activityTechnicalHTML(e,kernel);
@@ -7258,10 +7288,9 @@ function _personaActivityHTML(acts,personaKey){
         +`<span class="pc-activity-mark">${_ixGlyph(cls)}</span><span class="pc-activity-copy"><span class="pc-message-route">${esc(routeLabel)} ${_activityTrustBadgeHTML(e)}</span>`
         +`<b>${esc(presentation.headline)}${count>1?` <span class="pc-message-count">×${count}</span>`:''}</b>`+(detail?`<span class="pc-message-body">${esc(detail)}</span>`:'')
         +context+technical+`</span>${_eventTimeHTML(e)}</li>`; }).join('');
-  const authoredRows=rows.filter(personaAuthored);
   const responseRows=candidates.filter(({event})=>event?._providerComplete===true
     &&event?.kind==='PROVISIONAL_ASSISTANT_MESSAGE'&&event?._exactText).slice(0,1);
-  const diagnosticRows=rows.filter((row)=>!personaAuthored(row)&&!responseRows.includes(row));
+  const diagnosticRows=candidates.filter((row)=>!personaAuthored(row)&&!responseRows.includes(row)).slice(0,4);
   const authoredHTML=authoredRows.length
     ?`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona-authored updates</span><small><i></i> newest first</small></div><ol aria-live="polite" aria-relevant="additions text" aria-atomic="false">${renderRows(authoredRows)}</ol></section>`
     :`<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none shared yet</small></div><div class="pc-activity-empty">The persona has not published a signed message or thought yet.</div></section>`;
@@ -7400,14 +7429,10 @@ function _pkEnvTools(kernel,envSid){
 const PK_TASK_EXEC_DOING=Object.freeze({running_llm:'thinking…',run_participant:'on a mission',
   idle:'resting',away:'away',available:'ready',paused_participant:'paused'});
 // ---- C-OP-16 member view: who and what, per member ----
-// The signed declaring persona of an artifact outranks the access owner.
+// Attribution comes from the declaration. Access ownership grants access; it
+// does not establish who authored or declared a file.
 function _artifactDeclaringSid(record){
-  // The persona who declared the artifact: the exported artifact_declaration
-  // (the persona's own signed declare_artifact action) names it; the access
-  // policy's owner is the RUN persona and is only the fallback.
-  let declared='';
-  try{ declared=String(_artifactDeclarationDisplayProjection(record||{})?.declaring_persona_id||''); }catch(_){ declared=''; }
-  return _shortId(declared||record?.declaring_persona_id||record?._access?.owner_persona_id||'');
+  return _shortId(_artifactDeclarationDisplayProjection(record)?.declaring_persona_id||'');
 }
 // The persona's own stated refusal of the identity requirement (R-ID-1),
 // verified as a kernel-signed sibling; null when none was stated.
@@ -7476,14 +7501,16 @@ function _runScorecardHTML(scorecard,{compact=false,via='run'}={}){
     +`<dl class="scorecard-rows">${rows||'<div><dt>no counters</dt><dd><em>the scorecard carried no measurable counter</em></dd></div>'}</dl>`
     +`<small class="scorecard-foot" title="${esc(`run ${scorecard.run_id} · scorecard ${scorecard.scorecard_event_id}`)}">${names.length} measured · ${unavailable.length} not measurable${settled?` · settled ${esc(settled)}`:''}</small></section>`;
 }
-// What the member built this run: its current live workspaces scoped to the
-// exact run when one is known, else its latest run.
-function _builtThisRunHTML(context,run){
+// Personal worktrees may contain inherited or shared files. Keep their exact
+// captures accessible without claiming the holder built everything in them.
+function _personaWorktreeFilesHTML(context,run){
   const rows=Array.isArray(context?.liveWorkspaces)?context.liveWorkspaces:[];
   const exactRun=String(run||'').trim();
   const scoped=exactRun?rows.filter((row)=>String(row?.run||'')===exactRun):[];
-  return _liveWorkspacesHTML(scoped.length?scoped:rows,
-    {label:scoped.length?'Built this run':'Built in my latest run',scope:'my work'});
+  const selected=scoped.length?scoped:rows;
+  const label=exactRun&&!scoped.length?'Files from my earlier worktree captures':'Files in my worktree';
+  const filesHTML=_liveWorkspacesHTML(selected,{label,scope:'persona worktree capture'});
+  return filesHTML?`<details class="pk-dossier pc-worktree-files" data-disclosure-key="worktree-files"><summary>${label} · ${_liveWorkspaceCurrentFileCount(selected)} file versions</summary>${filesHTML}</details>`:'';
 }
 // ==== end collectible card gallery helpers ============================
 function renderPersonaCard(pid,kernel='',context={}){
@@ -7714,10 +7741,13 @@ function renderPersonaCard(pid,kernel='',context={}){
   const pkName=aliasName||(hasSignedName?name:'')||sid.slice(0,6);
   const selfPub=verifiedCardBody?.self_publication;
   const selfPubBody=selfPub&&typeof selfPub==='object'&&!Array.isArray(selfPub)
-    ?String(selfPub.body||'').trim():'';
-  const speciesLine=_compactHumanLabel(selfPubBody||signedDescription||'',120)||'Neutral persona';
+    ?_personaCharacteristicValue(selfPub.body):'';
+  const speciesLine=_compactHumanLabel(selfPubBody||signedDescription
+    ||(role!==_ROLE_NOT_DECLARED?role:'')
+    ||(characteristicHeadline?`${characteristicHeadline.label}: ${characteristicHeadline.value}`:''),120)
+    ||'Self-description not shared yet';
   const speciesTitle=selfPubBody?'persona self-publication (signed card)'
-    :signedDescription?'signed card description':'no self-description published yet';
+    :signedDescription?'signed card description':identityLineTitle;
   // DOING NOW: persona-authored work note first, then the mechanical
   // task-execution state, then the richer live-telemetry line computed above.
   const cogStats=_pkCognitionStats(personaKey);
@@ -7773,10 +7803,8 @@ function renderPersonaCard(pid,kernel='',context={}){
     +currentTaskHTML+environmentHTML+authoredWorkHTML
     +_personaActivityHTML(acts,personaKey)
     +pkTypeRow
-    +_ownedOutputsHTML(context.artifacts,{label:'My published files',scope:'my work'})
-    // C-OP-16: what the member built this run, and the run's kernel-signed
-    // scorecard, lead the face beside the published files.
-    +_builtThisRunHTML(context,taskRun)
+    +_ownedOutputsHTML(context.artifacts,{label:'Files I declared',scope:'persona-declared files'})
+    +_personaWorktreeFilesHTML(context,taskRun)
     +_runScorecardHTML(scorecardHit?.scorecard,{compact:true,via:scorecardHit?.via||'run'})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
@@ -8335,7 +8363,9 @@ let _sysBusy=false, _sysQueued=false;
 // stable key and re-apply them after each swap.
 function _disclosureKey(details){
   const card=details.closest('[data-pcard],[data-envsid]');
-  const scope=card?`${card.dataset.pcard?'p':'e'}:${card.dataset.pcard||card.dataset.envsid}`:'stage';
+  const scope=card?JSON.stringify([card.dataset.pcard?'persona':'env',
+    card.dataset.pkernel||card.dataset.envkernel||'',card.dataset.pcard||card.dataset.envsid]):'stage';
+  if(details.dataset.disclosureKey) return `${scope} ${details.dataset.disclosureKey}`;
   const group=[...details.classList].find((cls)=>cls.startsWith('group-'));
   let kind=group||['pk-dossier','pc-diagnostics','fv-source','artifact-file-group']
     .find((cls)=>details.classList.contains(cls))||details.className||'details';
@@ -8562,7 +8592,7 @@ async function refreshSystemView(){
         .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
+      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,personaId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
         captureBoundary:snap.capture_boundary||null,ended:state.ended===true,
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
@@ -8629,8 +8659,8 @@ async function refreshSystemView(){
     const fileCount=declaredProjection.current?.rows.length||(manifestRunId?currentManifestFiles.length:0);
     const metaFiles=fileCount;
     const liveEnvRows=liveWorkspacesByEnv.get(envKey(b.kernel,b.sid))||[];
-    const liveProjection=_currentLiveWorkspaceProjection(liveEnvRows);
-    const liveFileCount=_liveWorkspaceCurrentFileCount(liveEnvRows);
+    const liveProjection=_liveWorkspaceFileProjection(liveEnvRows);
+    const liveFileCount=liveProjection.files.length;
     const newestLiveRun=[...new Set(liveProjection.current
       .filter((row)=>(row.files?.length||0)>0).map((row)=>String(row.run||'')).filter(Boolean))]
       .sort().at(-1)||'';
@@ -8645,7 +8675,7 @@ async function refreshSystemView(){
     // generation first when its monotonic run id outranks the live capture.
     const publishedOutranksLive=!!newestDeclaredRun&&(!newestLiveRun||newestDeclaredRun>newestLiveRun);
     const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:publishedOutranksLive
-      ?'Earlier captured worktrees':'Live shared worktree',scope:'environment worktree'});
+      ?'Earlier captured worktrees':'Files across personal worktrees',scope:'environment worktree'});
     const manifestOutputs=!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
       ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
         +_artifactExactFormatCountsHTML(currentManifestFiles,(file)=>String(file?.title||''))
@@ -8664,8 +8694,10 @@ async function refreshSystemView(){
     const statusTxt=departed?'Archived':({active:'Open',running:'Working',paused:'Paused',idle:'Idle',discovered:'Discovered'})[rawStatus]
       ||_sentenceStart(rawStatus||'Available');
     const statusOk=(b.status==='active' && !departed);
+    const countFromLive=liveFileCount>0&&(!publishedOutranksLive||!metaFiles);
     return {artRow,departed,statusTxt,statusOk,
-      metaFiles:publishedOutranksLive?(metaFiles||liveFileCount):(liveFileCount||metaFiles)};
+      metaFiles:countFromLive?liveFileCount:metaFiles,
+      currentFileBytes:countFromLive?liveProjection.totalBytes:null};
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
@@ -8696,9 +8728,7 @@ async function refreshSystemView(){
     const tools=_pkEnvTools(b.kernel,b.sid);
     const toolChips=tools.slice(0,4).map((tool)=>`<span class="pk-tool"${tool.recordId?` data-artid="${esc(tool.recordId)}" role="button" tabindex="0"`:''} title="persona-acquired tool record">${esc(tool.name)}</span>`).join('')
       +(tools.length>4?`<span class="pk-tool more">+${tools.length-4}</span>`:'');
-    const liveState=b.run?liveArtifactState(b.base,b.run):null;
-    const liveBytes=liveState?.files?[...liveState.files.values()]
-      .reduce((total,file)=>total+(Number(file.size_bytes)||0),0):null;
+    const liveBytes=output.currentFileBytes;
     const fileCount=output.metaFiles||0;
     return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div>`
@@ -8710,7 +8740,7 @@ async function refreshSystemView(){
       +`<section class="pk-having"><span class="pc-current-label">In this workspace</span><div class="pk-having-row">`
       +`<span class="pk-have members" title="participants"><span class="pk-minis">${memberMinis}</span><b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
       +(toolChips?`<span class="pk-have tools" title="mounted persona-acquired tools">${toolChips}</span>`:'')
-      +`<span class="pk-have files" title="current shared files${liveBytes!=null?' · live workspace bytes':''}"><b>${fileCount}</b><small>file${fileCount===1?'':'s'}${liveBytes?` · ${fmtBytes(liveBytes)}`:''}</small></span>`
+      +`<span class="pk-have files" title="current file versions${liveBytes!=null?' · identical worktree copies counted once':''}"><b>${fileCount}</b><small>file${fileCount===1?'':'s'}${liveBytes!=null?` · ${fmtBytes(liveBytes)}`:''}</small></span>`
       +`</div></section>`
       +`<section class="pc-current pk-doing-face env"><span class="pc-current-label">Doing now${envActiveCalls?' <i class="pk-pulse" aria-hidden="true" title="model calls running"></i>':''}</span><div class="pc-doing"><strong>${esc(_sentenceStart(envDoing))}</strong></div></section>`
       +`<section class="env-card-stats" aria-label="workspace facts">`
