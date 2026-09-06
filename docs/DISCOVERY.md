@@ -261,6 +261,10 @@ available only through the bearer-gated operator schema. The `persona_cognition`
 carries the complete document after a response arrives or persisted communication changes.
 The browser verifies the same document contract on SSE and GET; GET remains a reconnect
 and older-node fallback. There is no token or word animation, and viewing cannot submit actions.
+Acquired capability rows retain the provisioning receipt's exact 64-character
+SHA-256 hex recipe identity. This field is not a `sha256:` content-store reference.
+The reader verifies that format without rewriting the signed document; acquiring
+a tool must not hide the persona's messages, methods or current work.
 
 ## Realtime execution and live workspace files
 

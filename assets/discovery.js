@@ -10316,7 +10316,9 @@ function _validPublicPersonaAgenticDevelopment(value){
         ||!_safePublicCognitionAtom(row.environment_id,512,{required:true})
         ||!_safePublicCognitionText(row.capability,500,{required:true})
         ||row.capability.trim()!==row.capability
-        ||!SHA256_CONTENT_RE.test(String(row.recipe_hash||''))
+        // Provisioning recipes retain their SHA-256 hex identity; they are
+        // not content-addressed-store references with a sha256: prefix.
+        ||!/^[0-9a-f]{64}$/.test(String(row.recipe_hash||''))
         ||!_safePublicCognitionInstant(row.acquired_at)) return false;
   for(const row of value.acquired_tools)
     if(!_exactObjectFields(row,PUBLIC_PERSONA_ACQUIRED_TOOL_FIELDS)
