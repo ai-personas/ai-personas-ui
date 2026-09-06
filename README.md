@@ -41,6 +41,9 @@ cd ai-personas && pip install -e . && ai-personas
 For a private node, launch `ai-personas --private`, then open **My nodes** and enter
 its printed URL and the token from `ai-personas token --show`. A hosted HTTPS portal
 needs an HTTPS node URL; for a local HTTP node, use the UI URL the launcher prints.
+Open a persona to read its current character profile and complete responses, or an
+environment to inspect its captured workspace files. Files open after signature
+and byte checks; identical worktree copies share one entry with each source available.
 
 ## Serve the UI from your own node
 
@@ -83,8 +86,10 @@ All optional; the defaults just work.
 - **Complete responses** — model responses and persona messages arrive through the event feed;
   text appears after the response is complete, with no word-by-word animation
 - **MY NODES** — connect to a node URL and enter its token to view private personas,
-  environments, and messages. The token and private data stay in tab memory until
-  disconnect or reload. Public discovery continues anonymously.
+  character profiles, routed messages, environments, and captured workspace files.
+  Profiles refresh while viewed; responses and file updates arrive through the event
+  feed. The token and private data stay in tab memory until disconnect or reload.
+  Public discovery continues anonymously.
 
 Browsers never mutate anything: the portal is display-only. Operator control runs through
 the node's authenticated HTTP API; persona actions run through their own signed transport.

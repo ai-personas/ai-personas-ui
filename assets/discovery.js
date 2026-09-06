@@ -1392,8 +1392,7 @@ async function loadPortalP2PBootstrapHints({dial=false}={}){
     log('bootstrap',`${peerRoutes.length} direct peer route hint(s) admitted; records still require signature verification`);
   return admitted;
 }
-function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
-  const key=base||'@origin';
+function validatedKeysDocument(boot,keysDoc,{expectedMaster=''}={}){
   const keys={}; const entries=[]; const currentIds=new Set();
   let valid=keysDoc?.schema==='personaos-keys/1'
     &&!!String(keysDoc?.kernel_id||'')
@@ -1417,11 +1416,15 @@ function admitKeysDocument(base,boot,keysDoc,{expectedMaster=''}={}){
       !==String(expectedMaster).toLowerCase()) valid=false;
   if(masters.length===1&&String(keysDoc.kernel_id||'')
       !==`kernel:${String(masters[0].public_key_hex).toLowerCase().slice(0,16)}`) valid=false;
-  if(!valid){ S.keys.delete(key); S.keyDocs.delete(key);
+  return valid?{keys,document:{schema:keysDoc.schema,
+    kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()}}:null;
+}
+function admitKeysDocument(base,boot,keysDoc,options={}){
+  const key=base||'@origin', registry=validatedKeysDocument(boot,keysDoc,options);
+  if(!registry){ S.keys.delete(key); S.keyDocs.delete(key);
     log('keys',`${boot?.kernel_id||key}: current master registry invalid`,false); return {}; }
-  S.keys.set(key,keys); S.keyDocs.set(key,{schema:keysDoc.schema,
-    kernelId:String(keysDoc.kernel_id||''),entries,at:Date.now()});
-  return keys;
+  S.keys.set(key,registry.keys); S.keyDocs.set(key,registry.document);
+  return registry.keys;
 }
 const keyRegistryFetchJobs=new Map();
 async function keysFor(base,boot,{refresh=false,signal=null,expectedMaster=''}={}){
@@ -6995,9 +6998,13 @@ function _currentLiveWorkspaceProjection(rows){
   return {current,history};
 }
 function _liveWorkspaceFileProjection(rows){
-  const projection=_currentLiveWorkspaceProjection(rows), byContent=new Map(), byPath=new Map();
+  const projection=_currentLiveWorkspaceProjection(rows);
+  return {...projection,..._groupLiveWorkspaceFiles(projection.current)};
+}
+function _groupLiveWorkspaceFiles(rows){
+  const byContent=new Map(), byPath=new Map();
   let copyCount=0;
-  for(const row of projection.current) for(const file of row.files||[]){
+  for(const row of rows) for(const file of row.files||[]){
     copyCount++;
     const path=String(file.path||''), hash=String(file.sha256||'').replace(/^sha256:/,'').toLowerCase();
     const pathKey=JSON.stringify([row.kernel,row.environmentId,row.run,path]);
@@ -7017,7 +7024,7 @@ function _liveWorkspaceFileProjection(rows){
   for(const entry of files) entry.versions=byPath.get(entry.pathKey).size;
   const totalBytes=files.every(({file})=>Number.isSafeInteger(file.size_bytes)&&file.size_bytes>=0)
     ?files.reduce((total,{file})=>total+file.size_bytes,0):null;
-  return {...projection,files,copyCount,totalBytes};
+  return {files,copyCount,totalBytes};
 }
 function _liveWorkspaceCurrentFileCount(rows){
   return _liveWorkspaceFileProjection(rows).files.length;
@@ -12943,12 +12950,15 @@ async function workEvidenceView(r){
 
 // Explicit connections are isolated from S's public discovery/history stores.
 const MY_NODES=new Map();
-async function connectedNodeJson(entry,path,{requireOperator=false}={}){
+async function connectedNodeBytes(entry,path,{requireOperator=false,maxBytes=DEFAULT_JSON_MAX_BYTES,signal=null}={}){
+  if(entry.closed||signal?.aborted) throw new DOMException('Node read cancelled.','AbortError');
   const url=new URL(join(entry.base,path));
   const root=new URL(entry.base), rootPath=root.pathname.replace(/\/$/,'');
-  if(url.origin!==root.origin||(rootPath&&url.pathname!==rootPath&&!url.pathname.startsWith(rootPath+'/')))
+  if(url.username||url.password||url.hash||url.origin!==root.origin
+      ||(rootPath&&url.pathname!==rootPath&&!url.pathname.startsWith(rootPath+'/')))
     throw new Error('The requested data is outside this node connection.');
   const controller=new AbortController(); entry.pending.add(controller);
+  const abort=()=>controller.abort(); signal?.addEventListener('abort',abort,{once:true});
   const timeout=setTimeout(()=>controller.abort(),15000);
   try{
     const token=entry.session.tokenFor(url.href);
@@ -12958,16 +12968,36 @@ async function connectedNodeJson(entry,path,{requireOperator=false}={}){
     if(!response.ok) throw new Error('This node did not allow the requested read.');
     if(requireOperator&&response.headers.get('X-PersonaOS-Read-Tier')!=='operator')
       throw new Error('The node did not accept that token.');
-    const bytes=await readBoundedResponseBytes(response,DEFAULT_JSON_MAX_BYTES);
-    if(entry.closed) throw new Error('Node disconnected.');
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }finally{ clearTimeout(timeout); entry.pending.delete(controller); }
+    const bytes=await readBoundedResponseBytes(response,maxBytes);
+    if(entry.closed||controller.signal.aborted) throw new DOMException('Node read cancelled.','AbortError');
+    return {bytes,type:response.headers.get('Content-Type')||''};
+  }finally{ clearTimeout(timeout); signal?.removeEventListener('abort',abort); entry.pending.delete(controller); }
+}
+async function connectedNodeJson(entry,path,options={}){
+  const {bytes}=await connectedNodeBytes(entry,path,options);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function connectedProfile(entry,pid,{refresh=false}={}){
+  const cached=entry.profiles.get(pid);
+  if(!refresh&&cached&&Date.now()-cached.at<5000) return cached.doc;
+  if(entry.profileJobs.has(pid)) return entry.profileJobs.get(pid);
+  const job=(async()=>{
+    const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/profile');
+    if(doc?.schema!=='personaos-persona-profile/1'||doc.persona_id!==pid
+        ||entry.closed||!(entry.status.personas||[]).some((person)=>person.persona_id===pid))
+      throw new Error('The persona profile no longer matches this connection.');
+    entry.profiles.set(pid,{doc,at:Date.now()}); return doc;
+  })().finally(()=>entry.profileJobs.delete(pid));
+  entry.profileJobs.set(pid,job); return job;
 }
 function disconnectMyNode(base){
   const entry=MY_NODES.get(base); if(!entry) return;
   entry.closed=true; entry.stream?.close(); clearInterval(entry.timer); clearTimeout(entry.paintTimer);
   for(const controller of entry.pending) controller.abort();
   entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear();
+  entry.profileJobs.clear(); entry.artifacts.clear(); entry.artifactJobs.clear(); entry.keyDocument=null;
+  for(const cancel of entry.viewCleanups||[]) cancel();
+  entry.viewCleanups?.clear();
   entry.status=null; entry.live=null; MY_NODES.delete(base);
   updateOpBadge();
 }
@@ -12977,10 +13007,133 @@ function paintConnectedNode(entry){
     entry.paintTimer=null;
     const marker=$('#detailbody [data-connected-node]');
     if(marker?.dataset.connectedNode===entry.base){
+      // Responses and profile refreshes must not restart an unchanged file preview.
+      if(marker.dataset.connectedFileRun
+          &&marker.dataset.connectedFileVersion===connectedFileVersion(entry.artifacts.get(marker.dataset.connectedFileRun))
+          &&(entry.status.environments||[]).some((env)=>env.environment_id===marker.dataset.connectedEnvironment)) return;
+      const openCopies=new Set([...marker.querySelectorAll('details[data-connected-copy-key][open]')]
+        .map((details)=>details.dataset.connectedCopyKey));
       const scroll=$('#detailbody').scrollTop;
-      renderTop().then(()=>{ $('#detailbody').scrollTop=scroll; });
+      renderTop().then(()=>{
+        const current=$('#detailbody [data-connected-node]');
+        if(entry.closed||current?.dataset.connectedNode!==entry.base) return;
+        for(const details of current.querySelectorAll('details[data-connected-copy-key]'))
+          details.open=openCopies.has(details.dataset.connectedCopyKey);
+        $('#detailbody').scrollTop=scroll;
+      });
     }
   },75);
+}
+async function connectedArtifactKeys(entry){
+  if(entry.keyDocument&&Date.now()-entry.keyDocument.at<10000) return entry.keyDocument.entries;
+  if(!entry.keyJob) entry.keyJob=(async()=>{
+    const doc=await connectedNodeJson(entry,'.well-known/personaos-keys.json');
+    const registry=validatedKeysDocument({kernel_id:entry.status.node_id},doc);
+    if(!registry||entry.closed) throw new Error('The node’s file signing key could not be verified.');
+    entry.keyDocument=registry.document; return registry.document.entries;
+  })().finally(()=>{ entry.keyJob=null; });
+  return entry.keyJob;
+}
+async function rememberConnectedArtifacts(entry,document,{event=false,startedRevision=null}={}){
+  const run=String(document?.run||'');
+  if(entry.closed||!(entry.status.runs||[]).includes(run)) return false;
+  const context={keyEntries:await connectedArtifactKeys(entry),expectedNodeId:entry.status.node_id,
+    expectedRun:run,requirePublic:entry.tier!=='operator'};
+  const verified=event?await verifyLiveArtifactEvent(document,context)
+    :await verifyLiveArtifactSnapshot(document,{...context,expectedSinceRevision:startedRevision});
+  if(!verified.ok) throw new Error('The node’s workspace signature or revision could not be verified.');
+  if(entry.closed||!(entry.status.runs||[]).includes(run)) return false;
+  const previous=entry.artifacts.get(run);
+  if(event&&verified.kind==='run_ended'){
+    const ended=endLiveArtifactState(previous,document,verified);
+    if(!ended) return false;
+    entry.artifacts.set(run,ended); paintConnectedNode(entry); return true;
+  }
+  const snapshot=event?document.snapshot:document;
+  const proof=event?verified.snapshot:verified;
+  if(!event&&!proof.immutableFinalizedBootstrap
+      &&String(previous?.revision||'')!==String(startedRevision||'')) return false;
+  const decision=decideLiveArtifactUpdate(previous,snapshot,{source:event?'sse':'poll',
+    previousRevision:event?document.previous_revision:null,startedRevision});
+  // A finalized, signed snapshot can strengthen a prior terminal observation.
+  if(!decision.accept&&!proof.immutableFinalizedBootstrap) return false;
+  let state=transitionLiveArtifacts(previous,snapshot);
+  state.verification=proof;
+  if(proof.immutableFinalizedBootstrap) state=finalizeLiveArtifactState(state,proof)||state;
+  entry.artifacts.set(run,state); paintConnectedNode(entry); return true;
+}
+async function readConnectedArtifacts(entry,run){
+  if(entry.closed) return;
+  if(entry.artifactJobs.has(run)) return entry.artifactJobs.get(run);
+  const startedRevision=entry.artifacts.get(run)?.revision||null;
+  const job=(async()=>{
+    const path='runs/'+encodeURIComponent(run)+'/live-artifacts'
+      +(startedRevision?'?since='+encodeURIComponent(startedRevision):'');
+    const doc=await connectedNodeJson(entry,path);
+    if(doc?.run!==run) throw new Error('The workspace response belongs to a different run.');
+    return rememberConnectedArtifacts(entry,doc,{startedRevision});
+  })().finally(()=>entry.artifactJobs.delete(run));
+  entry.artifactJobs.set(run,job); return job;
+}
+async function refreshConnectedArtifacts(entry){
+  if(entry.closed||entry.artifactsLoading) return;
+  entry.artifactsRequested=true; entry.artifactsLoading=true; entry.artifactError='';
+  try{
+    for(const run of entry.status.runs||[]){
+      if(entry.closed) break;
+      if(entry.artifacts.get(run)?.finalized) continue;
+      try{ await readConnectedArtifacts(entry,run); }
+      catch(_){ if(!entry.closed) entry.artifactError='Some workspace files could not be refreshed.'; }
+    }
+  }finally{ entry.artifactsLoading=false; paintConnectedNode(entry); }
+}
+function connectedFileVersion(state){ return state?state.revision+'|'+(state.endedAt||''):''; }
+function connectedEnvironmentFiles(entry,eid){
+  if(entry.closed||!(entry.status.environments||[]).some((env)=>env.environment_id===eid)) return [];
+  const rows=[];
+  for(const [run,state] of entry.artifacts){
+    if(!(entry.status.runs||[]).includes(run)) continue;
+    for(const file of state.files.values()){
+      const bindings=(state.snapshot.workspaces||[]).filter((workspace)=>workspace.workspace_id===file.workspace_id);
+      if(bindings.length!==1||bindings[0].environment_id!==eid) continue;
+      const workspace=bindings[0];
+      if((file.environment_id&&file.environment_id!==eid)
+          ||(file.persona_id&&file.persona_id!==workspace.persona_id)) continue;
+      rows.push({run,state,workspace,file});
+    }
+  }
+  return rows.sort((a,b)=>String(b.state.generatedAt).localeCompare(String(a.state.generatedAt))
+    ||a.file.path.localeCompare(b.file.path)||a.file.workspace_id.localeCompare(b.file.workspace_id));
+}
+function connectedFileSelection(entry,run,eid,workspaceId,path){
+  const selected=connectedEnvironmentFiles(entry,eid).find((row)=>
+    row.run===run&&row.file.workspace_id===workspaceId&&row.file.path===path);
+  if(!selected) throw new Error('This file is no longer available in this environment.');
+  const file=selected.file;
+  const encode=(part)=>encodeURIComponent(part).replace(/[!'()*]/g,(char)=>'%'+char.charCodeAt(0).toString(16).toUpperCase());
+  const route='runs/'+encode(run)+'/live-artifacts/body/'+encode(workspaceId)+'/'
+    +path.split('/').map(encode).join('/')+'?sha256='+file.sha256;
+  if(new URL(join(entry.base,file.body_url)).href!==new URL(join(entry.base,route)).href)
+    throw new Error('The file route does not match its signed workspace record.');
+  return {...selected,route,expected:{...file,revision:selected.state.revision,
+    terminalAtStart:!!selected.state.ended,endedAt:selected.state.endedAt||''}};
+}
+function assertConnectedFileCurrent(entry,selection,signal){
+  if(entry.closed||signal?.aborted) throw new DOMException('Node read cancelled.','AbortError');
+  if(!liveBodyCommitIsCurrent(selection.expected,entry.artifacts.get(selection.run)))
+    throw new Error('The file changed while it was being read. Reopen its current version.');
+  const current=connectedFileSelection(entry,selection.run,selection.workspace.environment_id,
+    selection.file.workspace_id,selection.file.path);
+  if(current.route!==selection.route||current.file.size_bytes!==selection.file.size_bytes)
+    throw new Error('The file’s workspace record changed while it was being read.');
+}
+async function connectedFileBytes(entry,selection,signal){
+  assertConnectedFileCurrent(entry,selection,signal);
+  const loaded=await connectedNodeBytes(entry,selection.route,{signal,maxBytes:Math.max(1,selection.file.size_bytes)});
+  assertConnectedFileCurrent(entry,selection,signal);
+  if(loaded.bytes.length!==selection.file.size_bytes||await sha256Hex(loaded.bytes)!==selection.file.sha256)
+    throw new Error('The downloaded bytes do not match the signed file record.');
+  assertConnectedFileCurrent(entry,selection,signal); return loaded;
 }
 async function rememberConnectedCognition(entry,doc,pid){
   if(entry.closed||doc?.persona_id!==pid) return false;
@@ -12997,6 +13150,17 @@ async function refreshConnectedNode(entry){
     const status=await connectedNodeJson(entry,'status',{requireOperator:entry.tier==='operator'});
     if(status.schema!=='personaos-node-status/1'||status.node_id!==entry.status.node_id) return;
     entry.status=status; entry.error='';
+    const admittedPeople=new Set((status.personas||[]).map((person)=>person.persona_id));
+    for(const cache of [entry.profiles,entry.cognition])
+      for(const pid of cache.keys()) if(!admittedPeople.has(pid)) cache.delete(pid);
+    const admittedRuns=new Set(status.runs||[]);
+    for(const run of entry.artifacts.keys()) if(!admittedRuns.has(run)) entry.artifacts.delete(run);
+    const marker=$('#detailbody [data-connected-node]');
+    if(marker?.dataset.connectedNode===entry.base){
+      if(marker.dataset.privatePersona&&admittedPeople.has(marker.dataset.privatePersona))
+        await connectedProfile(entry,marker.dataset.privatePersona,{refresh:true});
+      if(marker.dataset.connectedEnvironment) refreshConnectedArtifacts(entry);
+    }
     // Support older nodes that only send content-free invalidations.
     const people=status.personas||[];
     for(const person of people){
@@ -13011,7 +13175,8 @@ async function refreshConnectedNode(entry){
 async function connectMyNode(base,token){
   const session=new NodeReadSession(), normalized=session.set(base,token);
   const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
-    cognition:new Map(),profiles:new Map(),closed:false,status:null,live:null,error:''};
+    cognition:new Map(),profiles:new Map(),profileJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
+    viewCleanups:new Set(),closed:false,status:null,live:null,error:''};
   try{
     entry.status=await connectedNodeJson(entry,'status',{requireOperator:!!token});
     if(entry.status?.schema!=='personaos-node-status/1')
@@ -13040,6 +13205,14 @@ async function connectMyNode(base,token){
       if(live&&live.schema==='personaos-live-telemetry/1') entry.live=live;
       paintConnectedNode(entry);
     }catch(_){}
+  });
+  entry.stream.addEventListener('live_artifact_update',(event)=>{
+    // Keep revision checks in arrival order even when signature verification awaits.
+    entry.artifactEvents=(entry.artifactEvents||Promise.resolve()).then(async()=>{
+      if(entry.closed) return;
+      try{ await rememberConnectedArtifacts(entry,JSON.parse(event.data),{event:true}); }
+      catch(_){ if(!entry.closed){ entry.artifactError='A workspace update could not be verified.'; paintConnectedNode(entry); } }
+    });
   });
   entry.stream.onerror=()=>{ if(!entry.closed){ entry.error='Reconnecting to this node…'; paintConnectedNode(entry); } };
   entry.timer=setInterval(()=>refreshConnectedNode(entry),5000);
@@ -13072,7 +13245,14 @@ function connectedCallMessages(doc){
   }
   return rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
 }
-function connectedCognitionHtml(doc){
+function connectedMessageRoute(entry,output){
+  const name=(pid)=>_displayPersonaName((entry?.status.personas||[])
+    .find((person)=>person.persona_id===pid)?.name,pid);
+  const author=output.author_persona_id?name(output.author_persona_id):'Shared message';
+  const audience=Array.isArray(output.audience_persona_ids)?output.audience_persona_ids:[];
+  return esc(author+(audience.length?' → '+audience.map(name).join(', '):''));
+}
+function connectedCognitionHtml(doc,entry){
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
   let html=H('Assistant text')+(messages.length?messages.map((message)=>
@@ -13081,7 +13261,7 @@ function connectedCognitionHtml(doc){
     :'<div class="l2">No assistant text has been returned. Tool activity appears below.</div>');
   const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string');
   if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
-    `<div class="think"><div class="l2">${esc(_friendlyInstant(output.at))}</div>`
+    `<div class="think"><div class="l2">${connectedMessageRoute(entry,output)} · ${esc(_friendlyInstant(output.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
   html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
   return html;
@@ -13107,19 +13287,23 @@ async function connectedPersonaView(base,pid){
   const entry=MY_NODES.get(base); if(!entry) return operatorView();
   const person=(entry.status.personas||[]).find((row)=>row.persona_id===pid);
   if(!person) return connectedNodeView(base);
-  if(!entry.profiles.has(pid)){
-    const profile=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/profile').catch(()=>null);
-    if(profile?.persona_id===pid&&!entry.closed) entry.profiles.set(pid,profile);
-  }
+  let profileError='';
+  const profile=await connectedProfile(entry,pid).catch((error)=>{
+    profileError=String(error.message||'Profile unavailable'); return entry.profiles.get(pid)?.doc||{};
+  });
   if(entry.closed) return operatorView();
-  const profile=entry.profiles.get(pid)||{}, born=Date.parse(profile.born_at||'');
+  const born=Date.parse(profile.born_at||'');
   let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}"`);
+  if(profileError) html+=`<div class="l2" role="status">${esc(profileError)}</div>`;
   if(profile.description) html+=`<div class="desc2">${esc(profile.description)}</div>`;
   if(Number.isFinite(born)) html+=kv('Age',esc(friendlyDuration(Math.max(0,Date.now()-born))));
   html+=kv('State',esc(person.task_execution_state||person.lifecycle_state||''));
+  const character=profile.characteristic_identity?.characteristics;
+  html+=H('Character')+(_personaCharacteristicsHTML(character,{name:person.name,
+    limit:Object.keys(character||{}).length})||'<div class="l2">Character fields have not been shared.</div>');
   const envs=(entry.status.environments||[]).filter((env)=>(env.member_persona_ids||[]).includes(pid));
   html+=H('Environments')+envs.map((env)=>`<p><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
-  html+=connectedCognitionHtml(entry.cognition.get(pid))+'</div>';
+  html+=connectedCognitionHtml(entry.cognition.get(pid),entry)+'</div>';
   return {title:`<span class="kind k-persona">PERSONA</span> ${esc(_displayPersonaName(person.name,pid))}`,html};
 }
 async function connectedEnvironmentView(base,eid){
@@ -13127,10 +13311,82 @@ async function connectedEnvironmentView(base,eid){
   const env=(entry.status.environments||[]).find((row)=>row.environment_id===eid);
   if(!env) return connectedNodeView(base);
   const people=(entry.status.personas||[]).filter((person)=>(env.member_persona_ids||[]).includes(person.persona_id));
-  let html=connectedNodeMarker(entry)+`<div class="desc2">${esc(env.description||'')}</div>`;
+  if(!entry.artifactsRequested) refreshConnectedArtifacts(entry);
+  let html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}"`)+`<div class="desc2">${esc(env.description||'')}</div>`;
   html+=kv('State',esc(env.status))+kv('Visibility',esc(env.visibility_tier));
   html+=H(`Members (${people.length})`)+people.map((person)=>`<p>${connectedPersonLink(entry,person)}</p>`).join('');
+  const groups=_groupLiveWorkspaceFiles(connectedEnvironmentFiles(entry,eid).map((row)=>({...row,
+    kernel:entry.status.node_id,environmentId:eid,files:[row.file]}))).files;
+  html+=H(`Workspace files (${groups.length})`);
+  if(entry.artifactError) html+=`<div class="l2" role="status">${esc(entry.artifactError)}</div>`;
+  if(entry.artifactsLoading) html+='<div class="l2" role="status">Reading workspace files…</div>';
+  if(!groups.length&&!entry.artifactsLoading) html+='<div class="l2">No captured files are available for this environment.</div>';
+  const fileLink=(file,row)=>`<a href="#" data-act="my-file" data-base="${esc(base)}" data-run="${esc(row.run)}" data-environment="${esc(eid)}" data-workspace="${esc(file.workspace_id)}" data-path="${esc(file.path)}">${esc(file.path)}</a>`;
+  const holderName=(row)=>_displayPersonaName((entry.status.personas||[])
+    .find((person)=>person.persona_id===row.workspace.persona_id)?.name,row.workspace.persona_id);
+  let previousRun='';
+  for(const group of groups){
+    const row=group.row;
+    if(row.run!==previousRun){
+      previousRun=row.run;
+      html+=`<h4>${esc(row.state.snapshot.task||row.run)}</h4><div class="l2">${esc(row.state.generatedAt)} · ${row.state.ended?'last captured files':'current captured files'}</div>`;
+      if(row.state.snapshot.truncated) html+='<div class="l2">The node’s workspace capture is incomplete; additional files may exist.</div>';
+    }
+    html+=`<div class="grant"><span>${fileLink(row.file,row)}<small class="l2">Worktree · ${esc(holderName(row))}`
+      +(group.versions>1?' · different content at this path':'')+`</small></span><span class="l2">${esc(fmtBytes(row.file.size_bytes))}</span></div>`;
+    if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(JSON.stringify([group.pathKey,row.file.sha256,row.file.size_bytes]))}"><summary>${group.copies.length} worktree copies · identical bytes</summary>`
+      +group.copies.map(({file,row})=>`<p>${esc(holderName(row))} · ${fileLink(file,row)}</p>`).join('')+'</details>';
+  }
   return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(env.name||eid)}`,html:html+'</div>'};
+}
+function connectedFileView(base,run,eid,workspaceId,path,{raw=false}={}){
+  const entry=MY_NODES.get(base); if(!entry) return operatorView();
+  let selection;
+  try{ selection=connectedFileSelection(entry,run,eid,workspaceId,path); }
+  catch(error){ return {title:'File unavailable',html:`<div class="viewerr">${esc(error.message)}</div>`}; }
+  const {file,state}=selection, kind=declaredArtifactMedia(file);
+  const html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}" data-connected-file-run="${esc(run)}" data-connected-file-version="${esc(connectedFileVersion(state))}"`)
+    +kv('Path',`<code>${esc(path)}</code>`)+kv('Size',esc(fmtBytes(file.size_bytes)))
+    +`<p><button type="button" data-private-format>${raw?'Formatted view':'Plain text view'}</button> · <a data-private-download hidden>Download verified bytes</a></p>`
+    +`<div class="l2" data-private-integrity role="status">Checking file bytes…</div>`
+    +'<div id="fv-body" class="fv-body"><div class="fv-loading">Loading verified preview…</div></div></div>';
+  const mount=async(root,lifecycle)=>{
+    const assertCurrent=()=>{ lifecycle.assertCurrent(); assertConnectedFileCurrent(entry,selection,lifecycle.signal); };
+    assertCurrent();
+    entry.viewCleanups.add(lifecycle.cancel);
+    lifecycle.onCleanup(()=>entry.viewCleanups.delete(lifecycle.cancel));
+    const host=root.querySelector('#fv-body'), integrity=root.querySelector('[data-private-integrity]');
+    root.querySelector('[data-private-format]').addEventListener('click',()=>{
+      if(entry.closed||!lifecycle.isCurrent()) return;
+      S.views[S.views.length-1]=()=>connectedFileView(base,run,eid,workspaceId,path,{raw:!raw}); renderTop();
+    });
+    let loaded;
+    try{ loaded=await connectedFileBytes(entry,selection,lifecycle.signal); }
+    catch(error){
+      lifecycle.assertCurrent(); host.innerHTML='';
+      integrity.textContent=String(error.message||'The file could not be verified.'); return;
+    }
+    assertCurrent();
+    const detectedMedia=sniffArtifactMediaType(loaded.bytes), pick=pickRenderer(kind,path,loaded.type,detectedMedia);
+    const ctx={base,path:selection.route,url:join(base,selection.route),title:path,kind:pick.mediaType||kind,
+      declaredMedia:kind,responseMedia:loaded.type,detectedMedia,forcedPlain:raw,
+      verifiedBytes:loaded.bytes,text:raw||!BINARY_RENDERERS.has(pick.id)?new TextDecoder().decode(loaded.bytes):null,size:file.size_bytes,
+      realSize:loaded.bytes.length,contentHash:file.sha256,integrityVerified:true,
+      lifecycle,signal:lifecycle.signal,assertCurrent,
+      onCleanup:lifecycle.onCleanup,reportProgress:lifecycle.reportProgress};
+    const download=root.querySelector('[data-private-download]');
+    download.href=mkBlobURL(new Blob([loaded.bytes],{type:'application/octet-stream'}),ctx);
+    download.download=_downloadName(path); download.hidden=false;
+    download.addEventListener('click',(event)=>{ try{ assertCurrent(); }catch(_){ event.preventDefault(); } });
+    integrity.textContent='Verified bytes · SHA-256 '+file.sha256;
+    host.innerHTML='';
+    try{ await (raw?renderPlain:(RENDERERS[pick.id]||renderPlain))(host,ctx); }
+    catch(error){
+      lifecycle.assertCurrent(); host.innerHTML='';
+      host.appendChild(el('div','fv-note','The format preview is unavailable. The verified file can still be downloaded.'));
+    }
+  };
+  return {title:`<span class="kind k-artifact">FILE</span> ${esc(path)}`,html,mount};
 }
 async function operatorView(){
   const localBases=[...new Set([...peerList().map(opBaseKey).filter(isLocalBase),
@@ -13992,6 +14248,7 @@ function wire(){
     if(act==='my-node'){ pushView(()=>connectedNodeView(a.dataset.base)); return; }
     if(act==='my-persona'){ pushView(()=>connectedPersonaView(a.dataset.base,a.dataset.persona)); return; }
     if(act==='my-environment'){ pushView(()=>connectedEnvironmentView(a.dataset.base,a.dataset.environment)); return; }
+    if(act==='my-file'){ pushView(()=>connectedFileView(a.dataset.base,a.dataset.run,a.dataset.environment,a.dataset.workspace,a.dataset.path)); return; }
     if(act==='my-disconnect'){ disconnectMyNode(a.dataset.base); S.views=[()=>operatorView()]; renderTop(); return; }
     if(act==='op-node'){ pushView(()=>operatorNodeView(a.dataset.base)); return; }
     if(act==='op-run'){ pushView(()=>operatorRunView(a.dataset.base,a.dataset.run)); return; }
