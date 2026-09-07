@@ -90,7 +90,8 @@ All optional; the defaults just work.
   Use **show more** to expand the current matching personas and environments.
 - **Environment cards** — shared workspaces with people, activity, and file groups.
   Identical path/content copies appear once with each source available; differing
-  versions remain separate.
+  versions remain separate. Verified files and identities appear as they arrive;
+  slower workspace details fill in without blocking those controls.
 - **Live topology** — kernels and personas as a constellation; click to focus
 - **Task/run evidence** — mechanical run state from signed lifecycle records
 - **Artifact viewer** — open published files (3D models, SVG, JSON, markdown, CSV…) after

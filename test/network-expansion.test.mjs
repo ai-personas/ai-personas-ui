@@ -97,7 +97,7 @@ function feedSelection(personaCount, environmentCount, windows) {
     _nameFor: id => id,
     _environmentNameFor: id => id,
   };
-  const declaration = section('    const personaRows=', '    const [personaFeeds,environmentFeeds]=');
+  const declaration = section('    const personaRows=', '    for(const [,rel] of personaRows)');
   return new Function(...Object.keys(values), declaration + '\nreturn {personaRows,environmentRows};')(...Object.values(values));
 }
 
@@ -124,7 +124,7 @@ test('environment enrichment cannot shorten an explicitly expanded inventory', (
     ...network, envBlocks, S: {environmentWindow: 613, q: ''},
     envKey: (kernel, id) => `${kernel}:${id}`, _nameFor: id => id,
   };
-  const declaration = section('  const prefetchLimit=', '  await Promise.all(envBlocks.map(async(b)=>{');
+  const declaration = section('  const prefetchLimit=', '  envBlocks.forEach((b)=>{');
   new Function(...Object.keys(values), declaration)(...Object.values(values));
   assert.equal(envBlocks.length, 613);
 });

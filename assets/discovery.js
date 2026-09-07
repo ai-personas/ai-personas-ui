@@ -3260,20 +3260,11 @@ async function admitVerifiedIdentityIndex(identityDoc,base,boot,where,{transport
   const personaKeys=identity.rows.filter((row)=>row?.kind==='persona')
     .map((row)=>_personaKey(boot.kernel_id,_shortId(row.did||row.record_id)))
     .filter((key)=>!!providerVerifiedPersonaObservation(key));
-  const personaFeeds=identity.rows.filter((row)=>row?.kind==='persona'
-      &&typeof row?._links?.telemetry==='string')
-    .map(async(row)=>_ingestVerifiedPersonaEntityFeed(
-      base,await fetchEntityFeed(base,row._links.telemetry)));
-  if(personaFeeds.length){
-    Promise.all(personaFeeds).then((keys)=>{
-      const hydrated=keys.filter(Boolean);
-      if(hydrated.length) scheduleRealtimeRepaint();
-      if(personaKeys.length) scheduleSseCognitionRefresh({base:base||'',personaKeys});
-    }).catch(()=>{
-      if(personaKeys.length) scheduleSseCognitionRefresh({base:base||'',personaKeys});
-    });
-  }else if(personaKeys.length)
-    scheduleSseCognitionRefresh({base:base||'',personaKeys});
+  for(const row of identity.rows){
+    if(row?.kind==='persona'&&typeof row?._links?.telemetry==='string')
+      fetchEntityFeed(base,row._links.telemetry).catch(()=>{});
+  }
+  if(personaKeys.length) scheduleSseCognitionRefresh({base:base||'',personaKeys});
   log('identity',`${identity.rows.length} current signed persona/environment record(s) verified first`,true);
   // Let the roster reach the compositor before full inventory verification.
   await yieldAfterVerifiedRosterPaint();
@@ -4564,6 +4555,7 @@ function _personaKeysForInvalidation(base,boot,personaIds){
 function _clearEntityFeedCache(base){
   const prefix=(base||'@origin')+'|';
   for(const key of (S.entFeed||new Map()).keys()) if(key.startsWith(prefix)) S.entFeed.delete(key);
+  for(const [key,job] of (S.entFeedPending||new Map())) if(key.startsWith(prefix)) job.invalidated=true;
 }
 async function _refreshPeerInventory(base){
   const route=S.p2pDataRoutes?.get(opBaseKey(base)); if(!route) return false;
@@ -7503,7 +7495,6 @@ function _personaWorktreeFilesHTML(context,run){
 // ==== end collectible card gallery helpers ============================
 function renderPersonaCard(pid,kernel='',context={}){
   const ref=_personaRef(pid,kernel), sid=ref.sid, personaKey=ref.key;
-  const enrichmentPending=context.enrichmentPending===true;
   const d=S.liveByPersona.get(personaKey)||{}; const s=d.summary||{};
   const models=_personaModelHistory(personaKey,d.models||[]);
   const last=models[models.length-1];
@@ -7713,9 +7704,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
-    :enrichmentPending
-      ?`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">loading workspace details…</span></div></section>`
-    :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">working independently</span></div></section>`;
+    :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">No shared workspace observed</span></div></section>`;
   const authoredWorkHTML=_personaAuthoredWorkHTML(personaKey,ref.kernel,mechanicalRun);
   // ---- collectible face bindings ----
   // Verified signed card body (retained on the record only after the exact
@@ -8258,77 +8247,6 @@ function updateVitalsCounters(){
     dot.setAttribute('aria-label',beating?'node heartbeat live':'node idle'); }
 }
 
-function _paintVerifiedIdentityShells(host){
-  if(host.querySelector('.pcard,.env-card')&&host.dataset.identityShell!=='1') return;
-  const query=String(S.q||'').trim().toLowerCase();
-  const personaCandidates=[...S.personaDiscoveryByKey.keys()].filter((personaKey)=>{
-    const ref=_personaRef(personaKey);
-    if(!kernelIsFocused(ref.kernel)||!providerVerifiedPersonaObservation(personaKey)) return false;
-    return !query||`${_signedPersonaNameFor(personaKey)} ${_coordRole(ref.sid,{},ref.kernel)}`.toLowerCase().includes(query);
-  });
-  const environmentCandidates=S.order.map((id)=>S.recs.get(id)).filter((record)=>{
-    if(record?.kind!=='env'||!kernelIsFocused(record._kernel)) return false;
-    const sid=_envSid(record), name=_environmentNameFor(sid,record._kernel);
-    const type=(record.capability_summary||[])
-      .filter((value)=>value&&value!=='project_workspace').at(-1)||'workspace';
-    return !query||`${name} ${humanizeMachineKey(type)} ${sid}`.toLowerCase().includes(query);
-  });
-  if(!personaCandidates.length&&!environmentCandidates.length) return;
-  const visible=personaCandidates.slice(0,NETWORK_LIMITS.personaInitial);
-  const visibleEnvironments=environmentCandidates.slice(0,NETWORK_LIMITS.environmentInitial);
-  S.visiblePersonaIds.clear();
-  visible.forEach((personaKey)=>S.visiblePersonaIds.add(personaKey));
-  const cards=visible.map((personaKey)=>{
-    const ref=_personaRef(personaKey);
-    return renderPersonaCard(personaKey,ref.kernel,{enrichmentPending:true});
-  }).join('');
-  const environmentCards=visibleEnvironments.map((record)=>{
-    const sid=_envSid(record), kernel=String(record._kernel||'');
-    const name=_environmentNameFor(sid,kernel);
-    const rawType=(record.capability_summary||[])
-      .filter((value)=>value&&value!=='project_workspace').at(-1)||'workspace';
-    const type=humanizeMachineKey(rawType);
-    return `<article class="env-card pk record-signed" data-envsid="${esc(sid)}" data-envkernel="${esc(kernel)}" data-verification="signed-record" style="--envhue:${_envHue(sid)}" aria-label="environment ${esc(name)}">`
-      +`<div class="env-card-foil" aria-hidden="true"></div>`
-      +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
-      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(sid)}" data-envkernel="${esc(kernel)}" role="button" tabindex="0" title="open ${esc(name)}">${esc(name)}</h3>`
-      +`<div class="pc-badges"><span class="env-state ok">verified</span></div></header>`
-      +`<figure class="pk-art env">${identiconSVG(sid,{className:'pk-identicon env',title:`workspace identicon for ${name}`})}</figure>`
-      +`<span class="env-kicker">SHARED WORKSPACE · ${esc(type)} · SIGNED IDENTITY</span>`
-      +`<div class="env-card-empty">Loading people, current work, and files…</div>`
-      +`<div class="env-card-footer"><span>Workspace identity verified</span><span>Details loading</span></div></article>`;
-  }).join('');
-  const hidden=Math.max(0,personaCandidates.length-visible.length);
-  const hiddenEnvironments=Math.max(0,environmentCandidates.length-visibleEnvironments.length);
-  const warmPending=S.fastOriginRefreshPending===true;
-  S.envCount=Math.max(S.envCount,environmentCandidates.length);
-  S.renderedEnvironmentKeys=new Set(visibleEnvironments.map((record)=>
-    _environmentKey(record._kernel,_envSid(record))));
-  const counts=[];
-  if(visible.length) counts.push(`${compactCount(visible.length)} ${visible.length===1?'persona':'personas'}`);
-  if(visibleEnvironments.length) counts.push(`${compactCount(visibleEnvironments.length)} ${visibleEnvironments.length===1?'workspace':'workspaces'}`);
-  const personaSection=cards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
-    +`<h2>${warmPending?'Previously verified personas':'Verified personas'}</h2></div><p role="status">${warmPending?'Signature checks passed; freshness is being confirmed now.':'Verified personas found; loading live workspace details.'}</p></header>`
-    +`<div class="persona-deck">${cards}</div>`
-    +(hidden?`<div class="persona-window-note"><span>${hidden} additional verified ${hidden===1?'persona':'personas'} will appear with the enriched view</span></div>`:'')
-    +`</section>`:'';
-  const environmentSection=environmentCards?`<section class="environment-section"><header class="stage-section-head compact"><div><span class="section-kicker">ENVIRONMENT INDEX</span>`
-    +`<h2>${warmPending?'Previously verified workspaces':'Verified workspaces'}</h2></div><p role="status">${warmPending?'Signature checks passed; freshness is being confirmed now.':'Workspace identities found; loading people, activity, and files.'}</p></header>`
-    +`<div class="environment-grid">${environmentCards}</div>`
-    +(hiddenEnvironments?`<div class="persona-window-note"><span>${hiddenEnvironments} additional verified ${hiddenEnvironments===1?'workspace':'workspaces'} will appear with the enriched view</span></div>`:'')
-    +`</section>`:'';
-  const html=`<div class="stage-summary"><div><strong>${counts.join(' · ')} on screen</strong>`
-    +` <span class="scope-copy">· ${warmPending?'previously verified identities · checking the current signed inventory':'loading live activity and artifacts'}</span></div></div>`
-    +personaSection+environmentSection;
-  host.dataset.identityShell='1';
-  updateStageHTML(host,html);
-  _restoreDisclosures(host);
-  rebindInspectionSource();
-  _hydratePersonaAvatars();
-  _applyFollow();
-}
-
-let _sysBusy=false, _sysQueued=false;
 // Retained disclosures keep their state during updates. Remember explicit
 // viewer toggles for cards that leave and later re-enter the visible window.
 function _disclosureKey(details){
@@ -8360,7 +8278,7 @@ function _restoreDisclosures(host){
     if(wanted!==undefined&&details.open!==wanted) details.open=wanted;
   }
 }
-async function refreshSystemView(){
+function refreshSystemView(){
   const host=$('#sysEnvs'); if(!host) return;
   if(host.dataset.disclosureWatch!=='1'){
     host.dataset.disclosureWatch='1';
@@ -8369,16 +8287,8 @@ async function refreshSystemView(){
       if(details instanceof HTMLDetailsElement) _rememberDisclosure(details);
     },true);
   }
-  // Provider inventory verification often finishes before slower environment,
-  // artifact and telemetry enrichment. Paint those already-admitted persona
-  // identities immediately, while naming the still-pending join honestly.
-  _paintVerifiedIdentityShells(host);
-  if(_sysBusy){ _sysQueued=true; return; }
-  // re-entrancy guard (mirrors _cogBusy): the 5s interval fires this unconditionally,
-  // and its many serial awaited fetches can overrun the interval on a slow link, so
-  // invocations would otherwise overlap and stack duplicate fetches + full rebuilds.
-  _sysBusy=true;
-  try{
+  // Paint every already-admitted identity and file from available observations.
+  // Optional feed reads fill the cache and request a later paint independently.
   // Structure: a bounded monitoring window of bases → their visible env feeds.
   // Selected and actively-running bases rank first; the global population stays
   // represented by aggregates in the navigator instead of being polled en masse.
@@ -8394,8 +8304,8 @@ async function refreshSystemView(){
   const bySid=new Map();        // kernel\0sid -> block; short ids alone may collide globally
   const envKey=(kernel,sid)=>String(kernel||'@unknown')+'\u0000'+String(sid||'');
   // (1) LIVE-telemetry environments — rich: members, status, lineage spans.
-  const liveGroups=await Promise.all(bases.map(async(key)=>{ const base=key==='@origin'?'':key;
-    const ent=await fetchEntityFeed(base,'telemetry/live/entities.json'); if(!ent) return [];
+  const liveGroups=bases.map((key)=>{ const base=key==='@origin'?'':key;
+    const ent=cachedEntityFeed(base,'telemetry/live/entities.json'); if(!ent) return [];
     const kernel=(S.boots.get(key)||{}).kernel_id||base||'@origin';
     // Feed work follows the viewer's window. Prefer cards already on screen,
     // including a search result beyond the index's initial prefix.
@@ -8409,13 +8319,9 @@ async function refreshSystemView(){
       keyOf:([eid])=>_environmentKey(kernel,_shortId(eid)),
       priorityOf:([eid])=>S.renderedEnvironmentKeys.has(_environmentKey(kernel,_shortId(eid)))?1:0,
     }).items;
-    const [personaFeeds,environmentFeeds]=await Promise.all([
-      Promise.all(personaRows.map(async([,rel])=>{
-        const feed=await fetchEntityFeed(base,rel);
-        return _ingestVerifiedPersonaEntityFeed(base,feed);
-      })),
-      Promise.all(environmentRows.map(async([eid,rel])=>{
-      const feed=await fetchEntityFeed(base,rel); if(!feed) return null;
+    for(const [,rel] of personaRows) cachedEntityFeed(base,rel);
+    const environmentFeeds=environmentRows.map(([eid,rel])=>{
+      const feed=cachedEntityFeed(base,rel); if(!feed) return null;
       const members=(feed.members||[]).map((member)=>{
         const raw=member&&typeof member==='object'?(member.persona_id||member.id):member;
         const memberSid=_shortId(raw); return memberSid?_personaKey(kernel,memberSid):'';
@@ -8424,16 +8330,9 @@ async function refreshSystemView(){
       return {base,kernel,envId:eid,sid,name:feed.name||eid,type:feed.env_type||'',
         status:feed.status||'',members,spans:feed.spans||[],feedDoc:feed,run:null,
         recId:null,live:true,verified:false};
-      })),
-    ]);
-    const personaKeys=personaFeeds.filter(Boolean);
-    if(personaKeys.length) scheduleSseCognitionRefresh({base,personaKeys});
+    });
     return environmentFeeds.filter(Boolean);
-  }));
-  // The compact verified cards are already on screen. Repaint them with the
-  // just-arrived signed entity state before exports, manifests and artifact
-  // history perform their separate, potentially larger joins below.
-  _paintVerifiedIdentityShells(host);
+  });
   for(const rows of liveGroups) for(const b of rows){ const k=envKey(b.kernel,b.sid), prev=bySid.get(k);
     b.members.forEach((m)=>assigned.add(m));
     if(prev){ if(b.members.length>prev.members.length) prev.members=b.members;
@@ -8473,9 +8372,9 @@ async function refreshSystemView(){
     searchTextOf:(b)=>`${b.kernel} ${b.name} ${b.type} ${b.status} ${b.members.map((m)=>_nameFor(m,b.kernel)).join(' ')}`,
   });
   envBlocks.length=0; envBlocks.push(...prefetchWindow.items);
-  await Promise.all(envBlocks.map(async(b)=>{
+  envBlocks.forEach((b)=>{
     let ed=null;
-    if(b.exportRel) ed=await fetchEntityFeed(b.base,b.exportRel);
+    if(b.exportRel) ed=cachedEntityFeed(b.base,b.exportRel);
     const exportedEnvironment=environmentIdentity(ed?.environment_id);
     const exportMatches=!!exportedEnvironment&&exportedEnvironment===environmentIdentity(b.sid);
     if(exportMatches&&Array.isArray(ed.members)&&!b.members.length){
@@ -8499,13 +8398,13 @@ async function refreshSystemView(){
     }
     const manifestRel=b.artifactManifestRel||(exportMatches&&ed.artifact_manifest)||'';
     if(manifestRel){
-      const mf=await fetchEntityFeed(b.base,manifestRel);
+      const mf=cachedEntityFeed(b.base,manifestRel);
       if(mf&&Array.isArray(mf.artifacts)){
         b.artifactManifestRel=manifestRel;
         b.artifactManifest=mf;
       }
     }
-  }));
+  });
   // Only verified discovery labels and exact signed task context lead the
   // visual surface. The export route has no independent document-authenticity
   // marker, so its self-asserted name is never promoted into a workspace name.
@@ -8587,7 +8486,7 @@ async function refreshSystemView(){
   // in those already provider/document-verified artifact rows. Conflicting
   // routes or run bindings fail closed; environment titles and fetch order have
   // no authority here.
-  await Promise.all(envBlocks.map(async(b)=>{
+  envBlocks.forEach((b)=>{
     const rows=envArtifacts(b); if(!rows.length||_artifactRevisionProjection(rows).current?.rows.length) return;
     const runs=[...new Set(rows.map((row)=>runOf(row)).filter(Boolean))].sort();
     const run=runs.at(-1); if(!run) return;
@@ -8596,10 +8495,10 @@ async function refreshSystemView(){
     if(routes.length!==1) return;
     const route=routes[0], routeRun=(route.match(/(?:^|\/)k\/(run-[0-9A-Za-z]+)(?:\/|$)/)||[])[1]||'';
     if(routeRun!==run) return;
-    const manifest=await fetchEntityFeed(b.base,route);
+    const manifest=cachedEntityFeed(b.base,route);
     if(manifest?.schema!=='personaos-event-driven-artifact-manifest/1'||!Array.isArray(manifest.artifacts)) return;
     b.artifactManifestRel=route; b.artifactManifest=manifest; b.artifactManifestRouteVerified=true;
-  }));
+  });
 
   // presence rank for in-lane ordering: running-now (0) → live/model-bearing (1) → idle (2),
   // so the one persona actually working floats to the top of its lane instead of sitting in
@@ -8681,7 +8580,7 @@ async function refreshSystemView(){
   };
   const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
     const network=_environmentCommunicationGraphHTML(b);
-    const membershipRow=b.members.length?'':'<div class="env-card-empty">Waiting for the first participant</div>';
+    const membershipRow=b.members.length?'':'<div class="env-card-empty">Participants not observed yet</div>';
     const type=String(b.type||'workspace').replace(/_/g,' ');
     // Environment-authored title (export environment_identity.title) leads the
     // name bar; the verified record label stays as the identity in the tooltip.
@@ -8836,7 +8735,6 @@ async function refreshSystemView(){
     :emptyStateHTML());
   // Update surviving cards in place so incoming activity leaves controls,
   // open dossiers and verified portrait mounts usable.
-  delete host.dataset.identityShell;
   updateStageHTML(host,finalHTML);
   _restoreDisclosures(host);
   rebindInspectionSource();
@@ -8862,8 +8760,6 @@ async function refreshSystemView(){
   renderInteractionStream();
   updateVitalsCounters();
   if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
-  }finally{ _sysBusy=false;
-    if(_sysQueued){ _sysQueued=false; Promise.resolve().then(()=>refreshSystemView()).catch(()=>{}); } }
 }
 // per-env accent hue (stable, from the design palette) for the lane border/badge
 const _ENV_HUES=['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2'];
@@ -9008,28 +8904,57 @@ function renderInteractionStream(){
 // (09_PROTOCOLS §4.1 / A-TF2). The drawer prefers that authoritative document;
 // the client-side index over the node-wide aggregate stays as the fallback for
 // older nodes that only publish telemetry/live/latest.json.
-async function fetchEntityFeed(base,rel){
+function fetchEntityFeed(base,rel){
   const key=(base||'@origin')+'|'+rel;
   const m=(S.entFeed=S.entFeed||new Map()); const hit=m.get(key);
-  if(hit&&(Date.now()-hit.ts)<4000) return hit.v;
-  const v=await fetchJson(join(base,rel));
-  if(v&&typeof v==='object'){
-    await verifyPublicCommunicationRoutes(base,v);
-    if(isPublicEntityTelemetryDocument(v)||isPublicEntityIndexDocument(v)){
-      const verified=await verifyPublicEntityDocument(base,rel,v);
-      if(!verified){
-        const refusalKey=`${base||'@origin'}\u0000public_entity_signature_invalid`;
-        const last=S.telemetryRefusals.get(refusalKey)||0;
-        if(Date.now()-last>10000){
-          S.telemetryRefusals.set(refusalKey,Date.now());
-          log('telemetry',`${base||'@origin'}: refused invalid public entity-feed signature`,false);
+  if(hit&&(Date.now()-hit.ts)<4000) return Promise.resolve(hit.v);
+  const pending=(S.entFeedPending=S.entFeedPending||new Map());
+  if(pending.has(key)) return pending.get(key).promise;
+  const job={invalidated:false,promise:null}; pending.set(key,job);
+  job.promise=(async()=>{
+    try{
+      let v=await fetchJson(join(base,rel));
+      if(v&&typeof v==='object'){
+        await verifyPublicCommunicationRoutes(base,v);
+        if(isPublicEntityTelemetryDocument(v)||isPublicEntityIndexDocument(v)){
+          const verified=await verifyPublicEntityDocument(base,rel,v);
+          if(!verified){
+            const refusalKey=`${base||'@origin'}\u0000public_entity_signature_invalid`;
+            const last=S.telemetryRefusals.get(refusalKey)||0;
+            if(Date.now()-last>10000){
+              S.telemetryRefusals.set(refusalKey,Date.now());
+              log('telemetry',`${base||'@origin'}: refused invalid public entity-feed signature`,false);
+            }
+            v=null;
+          }
         }
-        m.set(key,{v:null,ts:Date.now()}); return null;
       }
+      // A peer invalidation during this read requires a fresh observation.
+      // Let the one pending request drain before a subsequent paint retries it.
+      if(job.invalidated) return null;
+      m.set(key,{v,ts:Date.now()});
+      if(v&&typeof v==='object'){
+        _ingestVerifiedEntityRoutes(base,v);
+        const personaKey=_ingestVerifiedPersonaEntityFeed(base,v);
+        if(personaKey) scheduleSseCognitionRefresh({base,personaKeys:[personaKey]});
+      }
+      return v;
+    }catch(error){
+      if(!job.invalidated) m.set(key,{v:null,ts:Date.now()});
+      throw error;
+    }finally{
+      pending.delete(key);
+      scheduleRealtimeRepaint();
     }
-    _ingestVerifiedEntityRoutes(base,v);
-  }
-  m.set(key,{v,ts:Date.now()}); return v;
+  })();
+  return job.promise;
+}
+// Render with the last admitted observation while its refresh is pending.
+// A slow or absent optional feed cannot hold already-verified files hostage.
+function cachedEntityFeed(base,rel){
+  const hit=S.entFeed?.get((base||'@origin')+'|'+rel);
+  fetchEntityFeed(base,rel).catch(()=>{});
+  return hit?.v||null;
 }
 
 // Project the small, independently current-master-signed persona entity feed

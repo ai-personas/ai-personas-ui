@@ -38,7 +38,7 @@ const declarations = [
   // Include the complete card, so description assertions cover the face binding.
   section('// Personal worktrees may contain', '// ==== end collectible card gallery helpers'),
   section('function renderPersonaCard(', '\nfunction '),
-  section('function _disclosureKey(', 'async function refreshSystemView('),
+  section('function _disclosureKey(', 'function refreshSystemView('),
   section('  const envOutputContext=(b)=>{', '  const environmentCardHTML='),
 ].join('\n');
 
