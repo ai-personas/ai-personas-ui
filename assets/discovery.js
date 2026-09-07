@@ -48,7 +48,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260907-complete-inventory-v2';
+} from './network-view.mjs?v=20260907-independent-cognition-v1';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -10453,7 +10453,7 @@ async function refreshThinking(){
 // kernel-signed snapshot into the live feed. Persona-signed final output and
 // provisional kernel observations keep separate trust labels. With a token this
 // accepts the operator tier; a private node's anonymous 404 remains a quiet no-op.
-let _cogBusy=false;
+const _cognitionInFlight=new Set();
 function _cognitionPreview(value){
   for(const line of String(value||'').split('\n')){
     const text=line.trim(); if(text) return text.slice(0,150);
@@ -10832,8 +10832,6 @@ function ingestPersonaCognitionReads(cognitionReads){
   else if(cognitionHydrated) scheduleRealtimeRepaint();
 }
 async function streamPersonaCognition(options={}){
-  if(_cogBusy) return false;
-  _cogBusy=true;
   try{
     const scopedPersonaKeys=new Set(
       (Array.isArray(options?.personaKeys)?options.personaKeys:[])
@@ -10873,58 +10871,59 @@ async function streamPersonaCognition(options={}){
       searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items
       .filter((row)=>row.key&&row.sid);
     S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    // Persona cognition documents are independent signed subjects. Fetch and
-    // verify the bounded visible window concurrently; serial reads made the
-    // fourth persona wait behind the bytes and cryptography of the first three.
-    // Each persona still tries only its own current-master-verified routes in
-    // order, and no result is admitted until its normal subject proof passes.
-    const cognitionReads=await Promise.all(list.map(async(candidate)=>{
+    // Each independently verified persona read paints when it completes. A
+    // slow peer must neither hold another persona's response nor block that
+    // persona's next refresh. One in-flight read per exact persona prevents
+    // overlapping polls from fetching or applying its documents out of order.
+    await Promise.allSettled(list.map(async(candidate)=>{
       const {key:personaKey,kernel,endpointId}=candidate;
-      // A connected full-document feed owns updates after its first verified
-      // document. Retain GET fallback during startup, reconnection and cache loss.
-      if(S.cognitionByPersona?.has(personaKey)&&[...S.streams.values()].some((stream)=>
-          stream.readyState===1&&stream._cognitionDocuments===true
-          &&stream._cognitionPersonaKeys?.has(personaKey))) return null;
-      if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) return null;
-      // Never probe another kernel for a colliding short id. A sticky route is
-      // retained only while it still resolves to this persona's owning kernel.
-      const routes=[S.cogBaseFor.get(personaKey),candidate.base,
-        ...apiBases.filter((base)=>kernelForBase(base)===kernel),
-        ...[...(S.globalKernels?.get(kernel)?.bases||[])]];
-      const order=[...new Set(routes.filter((b)=>b!==undefined)
-        .map((b)=>String(b==='@origin'?'':b).replace(/\/$/,'')))]
-        .filter((base)=>(!scopedBases.size||scopedBases.has(base))
-          &&(kernelForBase(base)===kernel || (!!base&&base===candidate.base)));
-      let t=null, usedBase='';
-      for(const base of order){
-        // Node routes are identity-bound: a PersonaOS-born identity is exactly
-        // `persona:<ULID>`, while an initial founder may be the bare id. The
-        // canonical `sid` remains only the browser join key.
-        const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
-        const hasOperator=!!tokenFor(endpoint);
-        const r=await fetchResponsivePublicJson(endpoint,{
-          maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
-          peerOnly:true,
-          verifiedDirectFallback:true,
-        });
-        const accepted=hasOperator
-          ?r?.schema==='personaos-persona-thinking/3'&&r.tier==='operator'
-            &&String(r.persona_id||'')===endpointId
-          :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
-        if(accepted){
-          t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
-          if(PUBLIC_COGNITION_SCHEMAS.has(r?.schema)){
-            S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
-            while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
-              S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
-          }
-          break; }
-      }
-      return t?{candidate,t,usedBase}:null;
+      if(_cognitionInFlight.has(personaKey)) return;
+      _cognitionInFlight.add(personaKey);
+      try{
+        // A connected full-document feed owns updates after its first verified
+        // document. Retain GET fallback during startup, reconnection and cache loss.
+        if(S.cognitionByPersona?.has(personaKey)&&[...S.streams.values()].some((stream)=>
+            stream.readyState===1&&stream._cognitionDocuments===true
+            &&stream._cognitionPersonaKeys?.has(personaKey))) return null;
+        if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) return null;
+        // Never probe another kernel for a colliding short id. A sticky route is
+        // retained only while it still resolves to this persona's owning kernel.
+        const routes=[S.cogBaseFor.get(personaKey),candidate.base,
+          ...apiBases.filter((base)=>kernelForBase(base)===kernel),
+          ...[...(S.globalKernels?.get(kernel)?.bases||[])]];
+        const order=[...new Set(routes.filter((b)=>b!==undefined)
+          .map((b)=>String(b==='@origin'?'':b).replace(/\/$/,'')))]
+          .filter((base)=>(!scopedBases.size||scopedBases.has(base))
+            &&(kernelForBase(base)===kernel || (!!base&&base===candidate.base)));
+        let t=null, usedBase='';
+        for(const base of order){
+          // Node routes are identity-bound: a PersonaOS-born identity is exactly
+          // `persona:<ULID>`, while an initial founder may be the bare id. The
+          // canonical `sid` remains only the browser join key.
+          const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
+          const hasOperator=!!tokenFor(endpoint);
+          const r=await fetchResponsivePublicJson(endpoint,{
+            maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+            peerOnly:true,
+            verifiedDirectFallback:true,
+          });
+          const accepted=hasOperator
+            ?r?.schema==='personaos-persona-thinking/3'&&r.tier==='operator'
+              &&String(r.persona_id||'')===endpointId
+            :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
+          if(accepted){
+            t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
+            if(PUBLIC_COGNITION_SCHEMAS.has(r?.schema)){
+              S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
+              while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
+                S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
+            }
+            break; }
+        }
+        if(t) ingestPersonaCognitionReads([{candidate,t,usedBase}]);
+      }finally{ _cognitionInFlight.delete(personaKey); }
     }));
-    ingestPersonaCognitionReads(cognitionReads);
   }catch(e){}
-  finally{ _cogBusy=false; }
   return true;
 }
 function refreshLiveSection(){

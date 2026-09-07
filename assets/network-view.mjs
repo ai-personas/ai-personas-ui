@@ -849,6 +849,8 @@ export function normalizeMonitoringBase(value) {
   if (raw == null) return null;
   const text = String(raw).trim();
   if (!text || text === '@origin') return '';
+  const peerBase = normalizedPeerRouteBase(text);
+  if (peerBase) return peerBase;
   try {
     const url = new URL(text);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
