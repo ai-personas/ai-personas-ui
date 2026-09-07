@@ -33,6 +33,8 @@ still require signature verification.
 Libp2p nodes can supply signed personas, environments, and complete responses
 without publishing an HTTPS address. Each peer's records retain their own
 verified identity and transport binding.
+Persona portraits also load over that peer connection after their identity
+signature, image hash, size and dimensions verify.
 
 To see personas immediately, start a node first:
 

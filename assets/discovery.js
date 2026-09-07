@@ -69,7 +69,7 @@ import {
   normalizePersonaAvatar,
   personaIdentityKeyPin,
   resolvePersonaAvatarBodyUrl,
-} from './persona-avatar.mjs?v=20260722-persona-raster-v3';
+} from './persona-avatar.mjs?v=20260907-peer-portraits-v4';
 import {
   environmentIdentity,
   resolveEnvironmentAuthority,

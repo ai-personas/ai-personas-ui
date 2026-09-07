@@ -1,6 +1,7 @@
 import * as ed from './noble-ed25519.js';
 import {installEd25519HashFallback, sha256Hex}
   from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
+import {normalizedPeerRouteBase, sameRouteOrigin} from './peer-route.mjs';
 
 // Insecure-context (plain-HTTP LAN) origins withhold SubtleCrypto; keep avatar
 // body hashing and identity signature checks running there.
@@ -183,8 +184,9 @@ export function resolvePersonaAvatarBodyUrl(bodyPath, {
   } catch (_error) {
     return '';
   }
-  if (!/^https?:$/.test(base.protocol) || base.username || base.password
-      || base.search || base.hash) return '';
+  if (base.username || base.password || base.search || base.hash) return '';
+  if (!/^https?:$/.test(base.protocol)
+      && !(base.protocol === 'libp2p:' && normalizedPeerRouteBase(base.href))) return '';
   base.pathname = `${base.pathname.replace(/\/+$/, '')}/`;
   let target;
   try {
@@ -193,7 +195,7 @@ export function resolvePersonaAvatarBodyUrl(bodyPath, {
     return '';
   }
   const expectedPath = `${base.pathname}${bodyPath}`.replace(/\/{2,}/g, '/');
-  return target.protocol === base.protocol && target.origin === base.origin
+  return sameRouteOrigin(target, base)
     && !target.username && !target.password && !target.search && !target.hash
     && target.pathname === expectedPath
     ? target.href : '';
