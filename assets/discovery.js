@@ -5200,8 +5200,8 @@ function _renderLiveArtifactMount(base,run){
 }
 function _rememberTrackedLiveRun(key,base,run,meta={}){
   // Anonymous automatic probes must re-establish their current unexpired
-  // provider-inventory authority on every poll. Promoting a successful probe
-  // into the generic tracker would let it outlive the inventory that supplied
+  // signed source on every poll. Promoting a successful probe
+  // into the generic tracker would let it outlive the document that supplied
   // its base/run join. Operator status, explicit drawer opens, and verified SSE
   // snapshots retain the ordinary short-lived tracking fallback.
   if(meta.publicSeed===true) return;
@@ -5339,7 +5339,29 @@ function endLiveArtifactRun(base,event,meta={}){
   renderMissions(); updateVitalsCounters(); renderGlobalKernels(); refreshLiveSection();
   Promise.resolve().then(()=>refreshSystemView()).catch(()=>{});
 }
-function pollLiveArtifacts(){
+async function _verifiedPublicEnvironmentRunTargets(){
+  const targets=[];
+  await Promise.all([...(S.entFeed||new Map())].map(async([key,hit])=>{
+    const doc=hit?.v;
+    if(!isEnvironmentTelemetryDocument(doc)) return;
+    const split=key.indexOf('|'); if(split<0) return;
+    const baseKey=key.slice(0,split), base=baseKey==='@origin'?'':baseKey;
+    const kernel=String(doc.node_id||'');
+    if(S.kernelFocus&&S.kernelFocus!==kernel) return;
+    const registry=S.keyDocs.get(baseKey);
+    // Recheck the cached document against today's key, freshness and exact
+    // route. A prior admission or a read still draining after invalidation
+    // cannot extend its authority to start another anonymous request.
+    if(!await verifyPublicEntityDocument(base,key.slice(split+1),doc)
+        ||S.entFeed?.get(key)!==hit||S.keyDocs.get(baseKey)!==registry) return;
+    // Progress identifies the node's currently observed runs. Older /2 feeds
+    // expose the latest retained run in their ordered budget projection.
+    const rows=doc.run_progress?.length?doc.run_progress:(doc.run_budgets||[]).slice(-1);
+    for(const row of rows) targets.push({base,run:row.run,kernel});
+  }));
+  return targets;
+}
+async function pollLiveArtifacts(){
   const targets=new Map(); const now=Date.now();
   for(const [baseKey,hit] of currentRuntimeStatusEntries(now,15000)){
     const base=baseKey==='@origin'?'':baseKey;
@@ -5352,14 +5374,16 @@ function pollLiveArtifacts(){
   }
   // Anonymous hosted viewers cannot learn run ids from operator `/status`, and
   // SSE has no obligation to replay a snapshot published before this tab joined.
-  // Seed polling only from an exact signed task DID that remains in the same
-  // kernel's current verified provider inventory. The inventory supplies the
-  // API base; links, labels and unsigned status never invent a run/base join.
-  const publicTargets=selectVerifiedPublicTaskRunTargets(
+  // A fresh signed environment feed supplies exact run ids before the full
+  // historical inventory arrives. Signed task records also supply history.
+  // Both are discovery hints: each file snapshot still needs its own node/run
+  // binding, current signature and public access policy before admission.
+  const publicTargets=[...await _verifiedPublicEnvironmentRunTargets(),
+    ...selectVerifiedPublicTaskRunTargets(
     S.recs.values(),S.providerInventories,S.boots,
     {focusedKernel:S.kernelFocus||'',limit:48,
       includeHistorical:true,latestOutcomeOnly:true},
-  );
+  )];
   const currentPublicKeys=new Set();
   for(const item of publicTargets){
     const key=_liveRunKey(item.base,item.run); currentPublicKeys.add(key);
@@ -14956,7 +14980,7 @@ async function initP2P(){
     refreshSystemView(); streamPersonaCognition(); }catch(e){} }, 5000);
   // Exact live workspace snapshots: SSE is primary; this 3s poll is the bounded
   // fallback for proxies/browsers that buffer or block EventSource.
-  setInterval(()=>{ try{ pollLiveArtifacts(); }catch(e){} },3000);
+  setInterval(()=>{ pollLiveArtifacts().catch(()=>{}); },3000);
   // Small current-master-signed directories are cheap to refresh and keep
   // newly authored requests visible without waiting for the 15s inventory pass.
   setInterval(()=>{ refreshVisibleOpenInputs().catch(()=>{}); },1500);
