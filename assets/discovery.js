@@ -524,7 +524,10 @@ async function fetchResponsivePublicJson(u,init={}){
       });
       const peerRouted=!!p2pDataRouteForUrl(u)&&!!P2P?.fetchPublicJson;
       if(peerRouted){
-        const peerRead=fetchP2PJson(u,transportInit);
+        // A queued/chunked peer read has its own deadline for each request.
+        // The direct HTTP deadline must not discard it while another signed
+        // transfer occupies the peer queue or this download is making progress.
+        const peerRead=fetchP2PJson(u,{...transportInit,signal:null});
         if(!verifiedDirectFallback) return peerRead;
         // Dynamic signed documents must not disappear behind a slow peer read.
         // Race the peer transport with the same current-master-verified
@@ -537,7 +540,7 @@ async function fetchResponsivePublicJson(u,init={}){
       const direct=await directDocument();
       if(direct!==null&&direct!==undefined) return direct;
       if(transportSignal.aborted) return null;
-      return fetchP2PJson(u,transportInit);
+      return fetchP2PJson(u,{...transportInit,signal:null});
     })();
     job=request.finally(()=>{
       if(responsivePublicJsonJobs.get(key)===job) responsivePublicJsonJobs.delete(key);
@@ -14912,7 +14915,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260907-peer-read-lifetime-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260907-range-recovery-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
