@@ -6037,9 +6037,13 @@ function _modelFresh(value,models,kernel=''){
   return !!(models&&models.length) && !!seen && (Date.now()-seen)<300000;
 }
 function _taskLifecycleRecordOrder(record,lifecycle){
+  // Native run ids carry their admission ULID. Choose the execution first;
+  // a later export of an older run is only a newer revision of that old run.
+  // Live records use stable rec:public:task ids instead of export ULIDs.
+  const run=String(lifecycle?.run||'');
   const recordId=String(record?.record_id||record?.card_id||'');
   const ulid=/^rec:([0-9A-HJKMNP-TV-Z]{26})$/.exec(recordId)?.[1]||'';
-  return `${ulid?'2':'1'}${ulid||String(lifecycle?.run||'')}`;
+  return `${run}\u0000${ulid?'2':'1'}${ulid||recordId}`;
 }
 function _latestTaskLifecycle(kernel,{task='',environment=''}={}){
   const taskId=String(task||''), envId=environmentIdentity(environment), matches=[];

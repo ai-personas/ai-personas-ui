@@ -71,6 +71,27 @@ test('the latest revision of the same run wins over a retained exhausted revisio
   assert.equal(taskSelector([current, old])('node', 'env:room', 'run-same').state, 'running');
 });
 
+test('a live task with a stable public record id outranks the archived predecessor', () => {
+  const old = record('run-01M1Y7D6TDZQDZHGQ00VP301AE', 'budget_exhausted');
+  old.record_id = 'rec:01M1YCXQ6XKBQTYN3K2GE865NM';
+  const current = record('run-01M1YGKDAHYCVEBM81QNFC7058', 'running');
+  current.task_lifecycle.amended_from_run = old.task_lifecycle.run_id;
+  current.task_lifecycle.root_run_id = old.task_lifecycle.run_id;
+  for (const records of [[old, current], [current, old]]) {
+    assert.equal(taskSelector(records)('node', 'env:room', '').run,
+      current.task_lifecycle.run_id);
+  }
+});
+
+test('republishing an earlier run does not make it the latest workspace task', () => {
+  const old = record('run-01M1Y7D6TDZQDZHGQ00VP301AE', 'budget_exhausted');
+  old.record_id = 'rec:01M1ZZZZZZKBQTYN3K2GE865NM';
+  const current = record('run-01M1YGKDAHYCVEBM81QNFC7058', 'operator_terminated');
+  current.record_id = 'rec:01M1YHKDAHKBQTYN3K2GE865NM';
+  assert.equal(taskSelector([current, old])('node', 'env:room', '').run,
+    current.task_lifecycle.run_id);
+});
+
 function observedMembers({live = [], cognition = [], admitted = []} = {}) {
   const S = {liveByPersona: new Map(live), verifiedPublicCognitionByPersona: new Map(cognition),
     ixByPersona: new Map()};
