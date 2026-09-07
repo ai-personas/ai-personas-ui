@@ -14514,10 +14514,10 @@ async function _discoverFromP2P(hint,{signal=null}={}){
   if(!P2P?.fetchPublicJson||!base||p.host_kernel_id!==hint.kernel
       ||p.provider_peer_id!==hint.peerId) return {boot:null,found:[],inventory:null};
   const keysDoc=await settleBeforeAbort(P2P.fetchPublicJson(p,'.well-known/personaos-keys.json',
-    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null),signal,null);
+    {timeoutMs:6000,maxBytes:1024*1024,priority:100}).catch(()=>null),signal,null);
   if(signal?.aborted||!keysDoc) return {boot:null,found:[],inventory:null};
   const boot=await settleBeforeAbort(P2P.fetchPublicJson(p,'.well-known/personaos-discovery.json',
-    {timeoutMs:6000,maxBytes:1024*1024}).catch(()=>null),signal,null);
+    {timeoutMs:6000,maxBytes:1024*1024,priority:100}).catch(()=>null),signal,null);
   if(signal?.aborted||!boot||boot.kernel_id!==hint.kernel
       ||keysDoc?.kernel_id!==hint.kernel) return {boot:null,found:[],inventory:null};
   const keys=admitKeysDocument(base,boot,keysDoc,{expectedMaster:p.public_key_hex});
@@ -14533,8 +14533,11 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     return {boot:null,found:[],inventory:null};
   const providerPath=String(boot.providers_url||'discovery/public/providers.json');
   const providerUrl=join(base,providerPath);
+  // Completing this authority read enables saved-file discovery. Repeated
+  // optional refreshes must not starve its chunks; compact identities and
+  // files the reader opens keep the existing higher foreground priority.
   const providerPromise=sharedDocumentJson(providerUrl,
-    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:Number.MAX_SAFE_INTEGER}).catch(()=>null));
+    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:Number.MAX_SAFE_INTEGER,priority:50}).catch(()=>null));
   // The peer-bound transport carries the same signed compact identity surface
   // as HTTP. Admit it first so P2P discovery paints people/workspaces and seeds
   // the warm browser cache without waiting for every artifact and telemetry
@@ -14564,7 +14567,7 @@ async function _discoverFromP2P(hint,{signal=null}={}){
       })().catch(()=>null);
       const identityDoc=await Promise.any([
         usableIdentity(P2P.fetchPublicJson(p,identityPath,
-          {timeoutMs:6000,maxBytes:2*1024*1024}).catch(()=>null)),
+          {timeoutMs:6000,maxBytes:2*1024*1024,priority:100}).catch(()=>null)),
         usableIdentity(directIdentity),
       ]).catch(()=>null);
       if(identityDoc)
@@ -14896,7 +14899,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260906-relay-live-v3');
+    const mod=await import('./p2p-libp2p.js?v=20260907-inventory-priority-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
