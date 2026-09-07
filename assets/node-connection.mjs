@@ -38,9 +38,10 @@ export function fetchEventSource(url, {requestInit = () => ({}), fetchImpl = glo
     removeEventListener: (...args) => target.removeEventListener(...args),
     close() { closed = true; source.readyState = 2; controller?.abort(); clearTimeout(timer); resume?.(); },
   };
-  function emit(type, data) {
+  function emit(type, data, error) {
     if (closed) return;
     const event = data === undefined ? new Event(type) : new MessageEvent(type, {data, lastEventId});
+    if (error) event.error = error;
     target.dispatchEvent(event);
     if (type === 'error') source.onerror?.(event);
   }
@@ -52,7 +53,11 @@ export function fetchEventSource(url, {requestInit = () => ({}), fetchImpl = glo
       try {
         const response = await fetchImpl(url, {...requestInit(), method: 'GET', signal: controller.signal,
           credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', cache: 'no-store'});
-        if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream'))
+        if (!response.ok) {
+          const error = new Error('Node event stream unavailable');
+          error.status = response.status; throw error;
+        }
+        if (!response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream'))
           throw new Error('Node event stream unavailable');
         reader = response.body.getReader();
         source.readyState = 1; emit('open');
@@ -88,8 +93,8 @@ export function fetchEventSource(url, {requestInit = () => ({}), fetchImpl = glo
           if (done) break;
         }
         if (!closed) { source.readyState = 0; emit('error'); }
-      } catch (_) {
-        if (!closed) { source.readyState = 0; emit('error'); }
+      } catch (error) {
+        if (!closed) { source.readyState = 0; emit('error', undefined, error); }
       } finally {
         try { await reader?.cancel(); reader?.releaseLock(); } catch (_) {}
       }

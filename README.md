@@ -74,10 +74,10 @@ All optional; the defaults just work.
 
 | Parameter | Purpose |
 |---|---|
-| `?resolver=<url>` | Add an extra announcement locator |
+| `?resolver=<url>` | Replace the default announcement locator |
 | `?bootstrap=` / `?relay=` | Extra libp2p bootstrap/relay multiaddrs |
 | `?ipfs_routing=<url>` + `?ipfs_gw=<url>` | Enable IPFS-based discovery |
-| `?no_global_discovery=1` | Resolver-free session (local/direct only) |
+| `?no_global_discovery=1` | Disable announcement locators; direct, libp2p and configured IPFS discovery remain available |
 
 ## What the UI shows
 
@@ -107,8 +107,8 @@ All optional; the defaults just work.
 Browsers never mutate anything: the portal is display-only. Operator control runs through
 the node's authenticated HTTP API; persona actions run through their own signed transport.
 
-Public discovery is gradual. During the latest busy-node observation, published
-files and complete responses took several minutes to arrive. The
+Public discovery is gradual. During busy-node observations, published files
+and complete responses have taken several minutes to arrive. The
 [live review](https://github.com/ai-personas/ai-personas/blob/master/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 

@@ -113,14 +113,16 @@ test('oversized or incomplete frames never become visible messages', {timeout: 3
   }
 });
 
-test('a rejected token response is never interpreted as an event stream', {timeout: 3000}, async () => {
+for (const status of [401, 403]) test(`a ${status} token refusal reaches the caller without becoming an event stream`, {timeout: 3000}, async () => {
   const events = [];
+  let refusedStatus;
   const source = fetchEventSource('https://node.example/events', {
-    fetchImpl: async () => new Response('data: private\n\n', {status: 401,
+    fetchImpl: async () => new Response('data: private\n\n', {status,
       headers: {'Content-Type': 'text/event-stream'}}),
   });
   source.addEventListener('message', event => events.push(event.data));
-  source.onerror = () => source.close();
+  source.onerror = event => { refusedStatus = event.error?.status; source.close(); };
   await source.done;
   assert.deepEqual(events, []);
+  assert.equal(refusedStatus, status);
 });

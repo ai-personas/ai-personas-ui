@@ -10,6 +10,66 @@ export const PUBLIC_ENVIRONMENT_TELEMETRY_SCHEMAS=Object.freeze(new Set([
 export const PUBLIC_ENTITY_INDEX_SCHEMA='personaos-telemetry-entities-public/1';
 export const OPERATOR_LIVE_TELEMETRY_SCHEMA='personaos-live-telemetry/1';
 
+/** Present one already verified cognition snapshot. The caller must verify its
+ * current-master signature, nested event hashes and exact call projection first.
+ * Incomplete indexed messages and legacy deltas carry no visible text. Nothing
+ * is accumulated between snapshots, so distinct signed versions cannot blend. */
+export function publicProvisionalPresentationRows(events){
+  const source=Array.isArray(events)?events:[], rows=[], messages=new Map();
+  for(let index=0;index<source.length;index++){
+    const event=source[index];
+    if(event?.kind!=='assistant_message'){
+      if(event?.kind==='provider_status'||event?.kind==='tool_status')
+        rows.push({index,row:{event,events:[event],assistant:false,text:'',
+          firstSequence:event.sequence,lastSequence:event.sequence,complete:false,
+          mode:'status',presentationKey:''}});
+      continue;
+    }
+    if(Object.hasOwn(event,'stream_delta')||typeof event.call_id!=='string'||!event.call_id
+        ||(Object.hasOwn(event,'message_id')
+          &&(typeof event.message_id!=='string'||!event.message_id))) continue;
+    const messageId=event.message_id||'', firstSequence=event.sequence-event.chunk_index;
+    // An absent provider message ID has an exact boundary from its first
+    // sequence and indexed chunks. A call ID is required for either binding.
+    const key=JSON.stringify(messageId?['message',event.call_id,messageId]
+      :['chunks',event.call_id,firstSequence]);
+    let message=messages.get(key);
+    if(!message){
+      message={first:event,firstSequence,events:[],invalid:false,index};
+      messages.set(key,message);
+    }
+    const first=message.first;
+    if(message.invalid) continue;
+    if(typeof event.text!=='string'||!event.text
+        ||!Number.isSafeInteger(event.sequence)||event.sequence<1
+        ||!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
+        ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
+        ||event.chunk_index>=event.chunk_count
+        ||!Number.isSafeInteger(message.firstSequence)||message.firstSequence<1
+        ||event.chunk_count!==first.chunk_count
+        ||event.chunk_index!==message.events.length
+        ||event.sequence!==message.firstSequence+event.chunk_index
+        ||event.model_id!==first.model_id||event.persona_id!==first.persona_id
+        ||event.call_status!==first.call_status){
+      message.invalid=true; continue;
+    }
+    message.events.push(event); message.index=index;
+  }
+  for(const message of messages.values()){
+    const first=message.first, group=message.events;
+    if(message.invalid||group.length!==first.chunk_count) continue;
+    const last=group[group.length-1], messageId=first.message_id||'';
+    rows.push({index:message.index,row:{
+      event:last,events:group,assistant:true,mode:'chunks',complete:true,
+      text:group.map(event=>event.text).join(''),firstSequence:first.sequence,
+      lastSequence:last.sequence,chunkCount:first.chunk_count,
+      presentationKey:messageId?['message',first.call_id,messageId].join('\u0000')
+        :['chunks',first.call_id,'',String(first.sequence),String(first.chunk_count)].join('\u0000'),
+    }});
+  }
+  return rows.sort((left,right)=>left.index-right.index).map(value=>value.row);
+}
+
 const PUBLIC_ROUTE_FIELDS=Object.freeze([
   'at','environment_id','event_id','lineage_signature_verified',
   'persona_signature_verified','recipient_persona_ids','route_kind','schema',

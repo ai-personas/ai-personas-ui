@@ -81,3 +81,26 @@ test('operator reads keep their authenticated path', async () => {
   assert.deepEqual(state.reads.map(row => row.kind), ['operator']);
   assert.equal(state.timers.length, 0);
 });
+
+test('peer queue priority cannot invalidate an HTTP request or replace its HTTP hint', async () => {
+  const requests = [];
+  const values = {tokenFor: () => 'operator', DEFAULT_JSON_MAX_BYTES: 4000000,
+    secureFetchInit: (_url, init) => ({...init, headers: {Authorization: 'Bearer operator'}}),
+    fetch: async (_url, init) => {
+      // A browser rejects numeric RequestInit.priority values before sending.
+      assert.ok(init.priority === undefined || ['high', 'low', 'auto'].includes(init.priority));
+      requests.push(init); return {ok: true};
+    },
+    readBoundedResponseBytes: async () => new TextEncoder().encode('{"operator":true}'),
+    parseSignedJson: JSON.parse,
+  };
+  const start = source.indexOf('async function fetchJson(');
+  const end = source.indexOf('const bootstrapFetchJobs=', start);
+  const fetchJson = new Function(...Object.keys(values), source.slice(start, end)
+    + '\nreturn fetchJson;')(...Object.values(values));
+  for (const priority of [75, 'high']) {
+    assert.deepEqual(await fetchJson('https://node/personas/alice/thinking', {priority}), {operator: true});
+  }
+  assert.deepEqual(requests.map(request => request.priority), [undefined, 'high']);
+  assert.ok(requests.every(request => request.headers.Authorization === 'Bearer operator'));
+});

@@ -9,6 +9,10 @@ import test from 'node:test';
 const assets = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
 const source = readFileSync(resolve(assets, 'discovery.js'), 'utf8');
+const priorityDeclaration = source.match(/const PUBLIC_COGNITION_READ_PRIORITY=(\d+);/);
+assert.ok(priorityDeclaration, 'Cognition reads must have an explicit peer scheduling priority');
+const PUBLIC_COGNITION_READ_PRIORITY = Number(priorityDeclaration[1]);
+assert.ok(PUBLIC_COGNITION_READ_PRIORITY > 50 && PUBLIC_COGNITION_READ_PRIORITY < 100);
 const {selectPriorityWindow, selectMonitoringBases, normalizeMonitoringBase} = await import(pathToFileURL(resolve(assets, 'network-view.mjs')));
 function deferred() {
   let resolve, reject;
@@ -28,6 +32,7 @@ function fixture() {
   const values = {S, selectPriorityWindow, selectMonitoringBases,
     Date: {now: () => now}, NETWORK_LIMITS: {monitoredBases: 8, cognitionPersonas: 8},
     PUBLIC_PERSONA_COGNITION_LIMITS: {documentBytes: 1000000},
+    PUBLIC_COGNITION_READ_PRIORITY,
     PUBLIC_COGNITION_SCHEMAS: new Set(['personaos-persona-public-cognition/3']),
     _cognitionInFlight: new Set(), _runningNow: () => false,
     kernelIsFocused: () => true, baseIsFocused: () => true,
@@ -39,8 +44,8 @@ function fixture() {
     },
     _signedPersonaEndpointId: key => key.split('/')[1],
     join: (route, path) => `${route}/${path}`, tokenFor: () => '',
-    fetchResponsivePublicJson: route => {
-      const request = {route, ...deferred()}; requests.push(request); return request.promise;
+    fetchResponsivePublicJson: (route, options) => {
+      const request = {route, options, ...deferred()}; requests.push(request); return request.promise;
     },
     verifyPublicPersonaCognition: async (_base, doc, {personaId}) => {
       const verification = {doc, personaId, ...deferred()};
@@ -70,6 +75,7 @@ test('a verified response appears while another persona is still loading', async
   const f = fixture();
   const first = f.stream();
   assert.equal(f.requests.length, 2);
+  assert.ok(f.requests.every(request => request.options.priority === PUBLIC_COGNITION_READ_PRIORITY));
   f.requests[0].resolve(response('Alice is ready'));
   await tick();
   assert.equal(f.verifications.length, 1);

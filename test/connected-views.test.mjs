@@ -20,7 +20,8 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g,
   char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 
 function fixture({fetchImpl = async () => { throw new Error('Unexpected request'); },
-  renderer = async () => {}, query = () => null, streamFactory = connection.fetchEventSource} = {}) {
+  renderer = async () => {}, query = () => null, streamFactory = connection.fetchEventSource,
+  repaint = async () => {}} = {}) {
   const privateSection = section('// Explicit connections are isolated', 'async function operatorView(');
   const declarations = section('function validatedKeysDocument(', 'function admitKeysDocument(')
     + section('async function readBoundedResponseBytes(', 'function _downloadName(')
@@ -34,7 +35,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     fetch: fetchImpl, join: (base, path) => /^https?:\/\//.test(path) ? path
       : base.replace(/\/$/, '') + '/' + path.replace(/^\//, ''),
     DEFAULT_JSON_MAX_BYTES: 4 * 1024 * 1024,
-    $: query, updateOpBadge() {}, renderTop: async () => {},
+    $: query, updateOpBadge() {}, renderTop: repaint, discover: async () => {},
     S: new Proxy({}, {get(_target, key) { throw new Error(`Private view touched public store: ${String(key)}`); }}),
     pickRenderer: (kind, path, responseMedia, contentMedia) => formats.selectArtifactRenderer(kind, {path, responseMedia, contentMedia}),
     declaredArtifactMedia: file => file.mime_type || '',
@@ -109,6 +110,167 @@ test('private messages retain their exact author, audience and complete text', (
   }]}, ui.entry);
   assert.match(html, /Bob → Alice/); assert.ok(html.includes(esc(message)));
   ui.disconnect(ui.entry.base);
+});
+
+for (const [refusal, view] of [['lost-tier','node'], [401,'node'], [403,'node'], ['lost-tier','connections']])
+test(`a ${refusal} operator refusal clears only that node in the ${view} view`, async t => {
+  const requests = [], paints = [];
+  const ui = fixture({
+    fetchImpl: async (url, options) => {
+      requests.push({url, options});
+      if (url.startsWith('https://public.test/'))
+        return Response.json({schema:'personaos-node-status/1', node_id:'kernel:public'},
+          {headers:{'X-PersonaOS-Read-Tier':'public'}});
+      return refusal === 'lost-tier'
+        ? Response.json({schema:'personaos-node-status-public/1', node_id:'kernel:test'})
+        : new Response('', {status:refusal});
+    },
+    query: selector => view === 'connections'
+      ? selector === '#detailbody #node-connect-form' ? {} : null
+      : selector === '#detailbody [data-connected-node]' ? {dataset:{connectedNode:'https://node.test/private'}} : null,
+    repaint: options => { paints.push(options); },
+  });
+  withCleanup(t, ui);
+  const entry = ui.entry, pending = new AbortController();
+  entry.pending.add(pending);
+  entry.profiles.set('alice', {doc:profile('Private history')});
+  entry.cognition.set('alice', {recent_outputs:[{text:'Private message'}]});
+  entry.artifacts.set('run-a', {private:true}); entry.savedArtifacts.set('run-a', {private:true});
+  entry.keyDocument = {private:true}; entry.live = {private:true};
+  let streamClosed = false, viewCancelled = false;
+  entry.stream = {close() { streamClosed = true; }};
+  entry.viewCleanups.add(() => { viewCancelled = true; });
+  const publicEntry = {...entry, base:'https://public.test', tier:'public', session:new connection.NodeReadSession(),
+    pending:new Set(), profiles:new Map(), cognition:new Map(), profileJobs:new Map(),
+    artifacts:new Map(), artifactJobs:new Map(), savedArtifacts:new Map(), savedArtifactJobs:new Map(),
+    viewCleanups:new Set(), stream:null, status:{node_id:'kernel:public'}};
+  const otherEntry = {...publicEntry, base:'https://other.test', tier:'operator', session:new connection.NodeReadSession()};
+  otherEntry.session.set(otherEntry.base, 'other-token');
+  ui.nodes.set(publicEntry.base, publicEntry); ui.nodes.set(otherEntry.base, otherEntry);
+
+  await ui.refresh(entry);
+  assert.equal(ui.nodes.has(entry.base), false); assert.equal(entry.closed, true);
+  assert.equal(entry.status, null); assert.equal(entry.live, null); assert.equal(entry.keyDocument, null);
+  for (const cache of [entry.profiles, entry.cognition, entry.artifacts, entry.savedArtifacts]) assert.equal(cache.size, 0);
+  assert.deepEqual(entry.session.entries(), []); assert.equal(pending.signal.aborted, true);
+  assert.equal(streamClosed, true); assert.equal(viewCancelled, true); assert.equal(paints.length, 1);
+  assert.equal((await ui.personaView(entry.base, 'alice')).title, 'Connections');
+  assert.equal(ui.nodes.get(publicEntry.base), publicEntry); assert.equal(publicEntry.closed, false);
+  assert.equal(ui.nodes.get(otherEntry.base), otherEntry);
+  assert.equal(otherEntry.session.tokenFor(otherEntry.base+'/status'), 'other-token');
+  const publicRead = await ui.readBytes(publicEntry, 'status');
+  assert.equal(JSON.parse(new TextDecoder().decode(publicRead.bytes)).node_id, 'kernel:public');
+  assert.equal(requests.at(-1).options.headers.Authorization, undefined);
+});
+
+for (const failure of ['network', 500]) test(`a ${failure} failure preserves an admitted private connection`, async t => {
+  const ui = fixture({fetchImpl:async () => {
+    if (failure === 'network') throw new TypeError('Network unavailable');
+    return new Response('', {status:failure});
+  }});
+  withCleanup(t, ui);
+  const status = ui.entry.status;
+  ui.entry.cognition.set('alice', {recent_outputs:[{text:'Existing response'}]});
+  await ui.refresh(ui.entry);
+  assert.equal(ui.nodes.get(ui.entry.base), ui.entry); assert.equal(ui.entry.closed, false);
+  assert.equal(ui.entry.status, status); assert.equal(ui.entry.cognition.size, 1);
+  assert.equal(ui.entry.session.tokenFor(ui.entry.base+'/status'), 'private-token');
+  assert.ok(ui.entry.error);
+});
+
+test('a closed private stream checks current authority without waiting for the periodic refresh', async t => {
+  let status, failure = null, streamClosed = false;
+  const stream = {addEventListener() {}, close() { streamClosed = true; }};
+  const ui = fixture({
+    fetchImpl: async () => failure === 'revoked'
+      ? Response.json({schema:'personaos-node-status-public/1', node_id:'kernel:test'})
+      : failure ? new Response('', {status:failure})
+      : Response.json(status, {headers:{'X-PersonaOS-Read-Tier':'operator'}}),
+    streamFactory: () => stream,
+  });
+  withCleanup(t, ui); status = {...ui.entry.status, personas:[]};
+  const entry = await ui.connect(ui.entry.base, 'private-token');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(entry.refreshing, false);
+  failure = 500; stream.onerror();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(entry.closed, false); assert.equal(streamClosed, false);
+  failure = 'revoked'; stream.onerror();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(entry.closed, true); assert.equal(streamClosed, true);
+  assert.equal(ui.nodes.has(entry.base), false); assert.deepEqual(entry.session.entries(), []);
+});
+
+test('a late refusal from a replaced connection cannot revoke the replacement', async t => {
+  let finish;
+  const ui = fixture({fetchImpl:() => new Promise(resolve=>{ finish=resolve; })});
+  withCleanup(t, ui);
+  const previous = ui.entry, oldStatus = previous.status;
+  const pending = ui.readBytes(previous, 'status', {requireOperator:true});
+  const refused = assert.rejects(pending, /did not accept/);
+  ui.disconnect(previous.base);
+  const replacement = {...previous, closed:false, status:oldStatus, session:new connection.NodeReadSession()};
+  replacement.session.set(replacement.base, 'replacement-token'); ui.nodes.set(replacement.base, replacement);
+  finish(Response.json({schema:'personaos-node-status-public/1', node_id:'kernel:test'}));
+  await refused;
+  assert.equal(ui.nodes.get(replacement.base), replacement); assert.equal(replacement.closed, false);
+  assert.equal(replacement.session.tokenFor(replacement.base+'/status'), 'replacement-token');
+});
+
+for (const status of [401, 403]) test(`an explicit SSE ${status} refusal revokes even during a pending status refresh`, async t => {
+  let current, finish, reads = 0;
+  const stream = {addEventListener() {}, close() { this.closed=true; }};
+  const ui = fixture({fetchImpl:async () => ++reads === 1
+    ? Response.json(current, {headers:{'X-PersonaOS-Read-Tier':'operator'}})
+    : new Promise(resolve=>{ finish=resolve; }), streamFactory:()=>stream});
+  withCleanup(t, ui); current = {...ui.entry.status, personas:[]};
+  const entry = await ui.connect(ui.entry.base, 'private-token');
+  assert.equal(entry.refreshing, true);
+  stream.onerror({error:{status}});
+  assert.equal(entry.closed, true); assert.equal(stream.closed, true);
+  assert.equal(ui.nodes.has(entry.base), false); assert.deepEqual(entry.session.entries(), []);
+  finish(new Response('', {status:500}));
+  await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('an operator connection reads and streams a complete message beyond four MiB', {timeout:10000}, async t => {
+  const text = 'A complete response. 🧭\n'.repeat(200000);
+  const document = {schema:'personaos-persona-thinking/3', tier:'operator', persona_id:'alice',
+    recent_outputs:[{kind:'PERSONA_COMMUNICATION_AUTHORED', author_persona_id:'alice', text}]};
+  assert.ok(new TextEncoder().encode(JSON.stringify(document)).length > 4*1024*1024);
+  let status, stream, streamBody;
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({url, options});
+    if (url.endsWith('/status')) return Response.json(status, {headers:{'X-PersonaOS-Read-Tier':'operator'}});
+    if (url.endsWith('/discovery/events')) return new Response(new ReadableStream({start(controller) { streamBody=controller; }}),
+      {headers:{'Content-Type':'text/event-stream'}});
+    return Response.json(document);
+  };
+  const ui = fixture({fetchImpl, streamFactory:(url, options) => {
+    stream = connection.fetchEventSource(url, {...options, fetchImpl}); return stream;
+  }});
+  withCleanup(t, ui); status = {...ui.entry.status, personas:[{persona_id:'alice', name:'Alice'}]};
+  await ui.refresh(ui.entry);
+  assert.ok(ui.entry.cognition.get('alice')?.recent_outputs[0].text === text,
+    'the complete large message must survive the operator JSON read');
+  const entry = await ui.connect(ui.entry.base, 'private-token');
+  const until = async predicate => {
+    const deadline = Date.now()+5000;
+    while (!predicate() && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,5));
+    assert.ok(predicate());
+  };
+  await until(()=>streamBody && !entry.refreshing);
+  entry.cognition.clear();
+  streamBody.enqueue(new TextEncoder().encode('event: persona_cognition\ndata: '+JSON.stringify(document)+'\n\n'));
+  try {
+    await until(()=>entry.cognition.get('alice')?.recent_outputs[0].text === text);
+    assert.ok(ui.cognition(entry.cognition.get('alice'), entry).includes(esc(text)));
+    assert.ok(requests.every(({url, options}) => url.startsWith(entry.base+'/')
+      && options.headers.Authorization === 'Bearer private-token'));
+  } finally {
+    streamBody.close(); ui.disconnect(entry.base); await stream.done;
+  }
 });
 
 function signer() {

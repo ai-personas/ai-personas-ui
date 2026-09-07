@@ -1,8 +1,8 @@
 import {canonicalJson, canonicalMember, parseSignedJson} from './canonical-json.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
-import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
-import {updateStageHTML} from './stage-dom.mjs?v=20260906-stable-stage-v2';
+import {NodeReadSession, fetchEventSource} from './node-connection.mjs?v=20260907-access-revocation-v1';
+import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260907-private-close-v1';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -106,11 +106,12 @@ import {
   isPublicEntityTelemetryDocument,
   OPERATOR_LIVE_TELEMETRY_SCHEMA,
   publicCommunicationRouteEvents,
+  publicProvisionalPresentationRows,
   telemetryActiveCalls,
   telemetryActivity,
   telemetryModelEvents,
   telemetrySpans,
-} from './public-telemetry.mjs?v=20260906-environment-progress-v5';
+} from './public-telemetry.mjs?v=20260907-complete-response-v7';
 
 // A node-served shell on a plain-HTTP LAN address is not a browser secure
 // context, so SubtleCrypto is withheld and every Ed25519 check would throw
@@ -379,6 +380,7 @@ async function fetchP2PJson(value,init={}){
     timeoutMs:Math.min(12000,Number(init.timeoutMs)||8000),
     maxBytes:init.maxBytes||DEFAULT_JSON_MAX_BYTES,
     sinceRevision:found.sinceRevision,
+    priority:init.priority,
     signal:init.signal,
   }).catch(()=>null);
   return settleBeforeAbort(request,init.signal,null);
@@ -457,7 +459,10 @@ async function fetchJson(u,init={}){
   // (a stuck stage guard used to freeze card faces on their loading shells).
   const transportSignal=init.signal||AbortSignal.timeout(20000);
   if(String(u).startsWith('libp2p:')) return null;
-  try{ const r=await fetch(u,secureFetchInit(u,{...init,signal:transportSignal})); if(r.ok){
+  const httpInit={...init,signal:transportSignal};
+  // Numeric peer queue priorities are not HTTP's high/low/auto fetch hint.
+  if(typeof httpInit.priority==='number') delete httpInit.priority;
+  try{ const r=await fetch(u,secureFetchInit(u,httpInit)); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
     return parseSignedJson(new TextDecoder().decode(bytes)); }
   }catch(e){}
@@ -494,7 +499,7 @@ async function fetchResponsivePublicJson(u,init={}){
     const transportSignal=AbortSignal.timeout(15000);
     // This shared job is deliberately anonymous and GET-only. Do not inherit
     // caller headers or consult token state again after it starts.
-    const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000};
+    const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000,priority:init.priority};
     const request=(async()=>{
       const directDocument=async()=>{
         if(!isHttpRequest(u)) return null;
@@ -556,7 +561,7 @@ const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:
 // population is reported as an aggregate instead of silently disappearing.
 const NETWORK_LIMITS=Object.freeze({
   kernelChips:10, monitoredBases:12, cachedKernels:4096, cachedRecords:20000,
-  resolverPage:100, resolverPages:4, discoveryLogRows:24, telemetryTapeRows:2000,
+  resolverPage:100, discoveryLogRows:24, telemetryTapeRows:2000,
   graphKernels:6, graphPersonasGlobal:30, graphPersonasFocused:36,
   environmentInitial:10, environmentStep:10, personaInitial:12, personaStep:12,
   cognitionPersonas:24, cognitionRowsPerPersona:24, interactionRows:120,
@@ -902,20 +907,52 @@ const PUBLIC_COGNITION_SCHEMAS=new Set([
 function _publicCognitionDocOk(doc){
   return PUBLIC_COGNITION_SCHEMAS.has(doc?.schema)&&doc?.tier==='public';
 }
+function _comparePublicCognitionGeneratedAt(left,right){
+  const a=Date.parse(left), b=Date.parse(right);
+  if(!Number.isFinite(a)||!Number.isFinite(b)) return Number.NaN;
+  if(a!==b) return a<b?-1:1;
+  // Date.parse normalizes zones but discards precision beyond milliseconds.
+  // Retain every signed fractional digit when two instants share that millisecond.
+  const tail=(value)=>(String(value).match(/\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/)?.[1]||'').slice(3);
+  const leftTail=tail(left), rightTail=tail(right), width=Math.max(leftTail.length,rightTail.length);
+  const preciseLeft=leftTail.padEnd(width,'0'), preciseRight=rightTail.padEnd(width,'0');
+  return preciseLeft===preciseRight?0:preciseLeft<preciseRight?-1:1;
+}
 function _rememberVerifiedPublicCognition(personaKey,doc,{base='',kernel='',personaId=''}={}){
-  if(!_publicCognitionDocOk(doc)) return false;
+  if(!_publicCognitionDocOk(doc)||!Number.isFinite(Date.parse(doc.generated_at)))
+    return {accepted:false,reason:'invalid_snapshot',doc:null,modelHistoryChanged:false};
   const store=S.verifiedPublicCognitionByPersona=S.verifiedPublicCognitionByPersona||new Map();
+  const previous=store.get(personaKey);
+  if(previous){
+    const order=_comparePublicCognitionGeneratedAt(doc.generated_at,previous.doc.generated_at);
+    if(order<0) return {accepted:false,reason:'older_signed_snapshot',doc:previous.doc,modelHistoryChanged:false};
+    if(order===0){
+      const {signature_hex:previousSignature,...previousPayload}=previous.doc;
+      const {signature_hex:signature,...payload}=doc;
+      const same=String(signature).toLowerCase()===String(previousSignature).toLowerCase()
+        ||canon(payload)===canon(previousPayload);
+      if(!same){
+        // This schema has no signed revision chain. Neither arrival time nor
+        // response length can order two different documents at one signed instant.
+        log('cognition',`${personaKey}: same_time_conflicting_snapshot at ${doc.generated_at}`,false);
+        return {accepted:false,reason:'same_time_conflicting_snapshot',doc:previous.doc,modelHistoryChanged:false};
+      }
+      store.delete(personaKey);
+      store.set(personaKey,{...previous,base,kernel,personaId,observedAt:Date.now()});
+      return {accepted:true,reason:'same_signed_snapshot',doc:previous.doc,modelHistoryChanged:false};
+    }
+  }
   const modelProjection=canon([...(doc.recent_calls||[]),...(doc.active_calls||[])].map((call)=>[
     call.model_id,call.requested_purpose,call.environment_id,call.started_at,call.ended_at||'',
   ]));
-  const modelHistoryChanged=store.get(personaKey)?.modelProjection!==modelProjection;
+  const modelHistoryChanged=previous?.modelProjection!==modelProjection;
   store.delete(personaKey);
   store.set(personaKey,{doc,base,kernel,personaId,modelProjection,observedAt:Date.now()});
   // Retain one verified cognition document per hydrated persona up to the
   // cognition window: a four-document cap rotated the lesson lead off every
   // fifth card as the deck hydrated (observed 2026-09-03: 4 leads, then 0).
   while(store.size>NETWORK_LIMITS.cognitionPersonas) store.delete(store.keys().next().value);
-  return modelHistoryChanged;
+  return {accepted:true,reason:'new_signed_snapshot',doc,modelHistoryChanged};
 }
 function _personaModelHistory(personaKey,fallback=[]){
   const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
@@ -2386,6 +2423,9 @@ function _freshPublicGeneratedAt(value,now=Date.now(),maxAgeMs=30000){
 // (rotation invalidates the document); this bound only stops indefinite
 // replay of a long-dead node's final snapshot.
 const PUBLIC_COGNITION_MAX_AGE_MS=86400000;
+// Complete current responses precede inventory chunks (50); bootstrap and
+// files explicitly opened by the reader retain foreground priority (100).
+const PUBLIC_COGNITION_READ_PRIORITY=75;
 function _safeEntityMap(value,prefix){
   if(!value||typeof value!=='object'||Array.isArray(value)
       ||Object.keys(value).length>NETWORK_LIMITS.cachedRecords) return false;
@@ -3033,7 +3073,7 @@ async function verifyGlobalEnvelope(env){
       ||String(ann.base_url||'').endsWith('/')
       ||!['public','nat_private','intranet_only'].includes(ann.reachability_class)
       ||ann.public_discovery!==true||ann.public_bundle_hash!==''
-      ||!Number.isSafeInteger(ann.record_count)||ann.record_count<0||ann.record_count>100000
+      ||!Number.isSafeInteger(ann.record_count)||ann.record_count<0
       ||!Number.isSafeInteger(ann.sequence)||ann.sequence<0
       ||!Array.isArray(multiaddrs)||multiaddrs.length>64
       ||multiaddrs.some((value)=>typeof value!=='string'||!value.startsWith('/')
@@ -3068,6 +3108,8 @@ async function loadGlobalNodes({onUpdate=null}={}){
 }
 async function _loadGlobalNodes(){
   const endpoints=globalDiscoveryEndpoints();
+  const walks=S.resolverWalks||(S.resolverWalks=new Map());
+  for(const endpoint of walks.keys()) if(!endpoints.includes(endpoint)) walks.delete(endpoint);
   const previousFingerprint=String(S.resolverFingerprint||'');
   const previousTotal=Number(S.globalTotal)||0;
   const firstSuccessfulSnapshot=!S.globalLastSuccessAt;
@@ -3082,7 +3124,7 @@ async function _loadGlobalNodes(){
   const finishResolverResult=(result)=>{
     settledResults.set(result.endpoint,result);
     // Preserve the still-live prior view for endpoints that have not settled,
-    // while atomically replacing the endpoint that just completed. This lets a
+    // while applying each completed or explicitly partial walk. This lets a
     // fast explicit resolver expose signed node routes immediately instead of
     // waiting for an unrelated slow/dead locator's deadline.
     const partial=endpoints.map((endpoint)=>settledResults.get(endpoint)
@@ -3104,13 +3146,17 @@ async function _loadGlobalNodes(){
       .catch(()=>({endpoint,document:null}))));
   const pagesPromise=Promise.all(endpoints.map(async(endpoint)=>{
     // One dead or pathological locator must not hold the first useful paint.
-    // Share one bounded deadline across the whole cursor walk rather than
-    // giving every page a fresh timeout.
+    // Each poll shares one deadline. Resume its cursor on the next poll rather
+    // than spending every deadline on the same prefix of a slow directory.
     const resolverSignal=AbortSignal.timeout(5000);
-    const envelopes=[]; let total=0, cursor='', pages=0, successful=false;
-    let complete=false, revision='', pollAfterMs=0, queryMode='recent';
-    while(pages<NETWORK_LIMITS.resolverPages
-        &&envelopes.length<NETWORK_LIMITS.cachedKernels){
+    const continuation=walks.get(endpoint);
+    const envelopes=[]; let total=0, cursor=continuation?.cursor||'', pages=0, successful=false;
+    const resumed=!!cursor, seenCursors=new Set(continuation?.seenCursors||[]);
+    let reachedEnd=false, invalidCursor=false, revision='', pollAfterMs=0,
+      queryMode=continuation?.queryMode||'recent',
+      firstRevision=continuation?.revision??null,
+      revisionChanged=!!continuation?.revisionChanged;
+    while(!resolverSignal.aborted){
       const params=new URLSearchParams({limit:String(NETWORK_LIMITS.resolverPage)});
       if(queryMode==='recent'){
         params.set('order','recent'); params.set('status','active');
@@ -3120,31 +3166,41 @@ async function _loadGlobalNodes(){
         {signal:resolverSignal});
       // Fall back through the two older resolver contracts once. All three
       // return the same self-signed envelopes; only ordering/query syntax differs.
-      if(!document&&!pages&&queryMode==='recent'){
+      if(!document&&!cursor&&!pages&&!resolverSignal.aborted&&queryMode==='recent'){
         queryMode='active'; params.delete('order');
         document=await fetchJson(join(endpoint,'/v1/nodes?'+params.toString()),
           {signal:resolverSignal});
       }
-      if(!document&&!pages&&queryMode==='active'){
+      if(!document&&!cursor&&!pages&&!resolverSignal.aborted&&queryMode==='active'){
         queryMode='legacy'; params.delete('status');
         document=await fetchJson(join(endpoint,'/v1/nodes?'+params.toString()),
           {signal:resolverSignal});
       }
       if(!document||!Array.isArray(document.nodes)) break;
       successful=true; pages+=1;
-      revision=String(document.revision??document.change_id??revision);
+      revision=String(document.revision??document.change_id??'');
+      if(firstRevision===null) firstRevision=revision;
+      else if(firstRevision!==revision) revisionChanged=true;
       const hintSeconds=Number(document.refresh_after_s);
       if(Number.isFinite(hintSeconds)&&hintSeconds>=1&&hintSeconds<=30)
         pollAfterMs=pollAfterMs?Math.min(pollAfterMs,hintSeconds*1000):hintSeconds*1000;
-      envelopes.push(...document.nodes.slice(
-        0,NETWORK_LIMITS.cachedKernels-envelopes.length));
+      for(const envelope of document.nodes) envelopes.push(envelope);
       total=Math.max(total,
         Number(document.total??document.total_count??document.node_count
           ??document.count??envelopes.length)||envelopes.length);
       const next=String(document.next_cursor??document.pagination?.next_cursor??'');
-      if(!next||next===cursor){ complete=true; break; }
+      if(!next){ reachedEnd=true; break; }
+      if(next.length>512||seenCursors.has(next)){ invalidCursor=true; break; }
+      seenCursors.add(next);
       cursor=next;
     }
+    if(resolverSignal.aborted&&cursor&&!reachedEnd&&!invalidCursor)
+      walks.set(endpoint,{cursor,seenCursors,queryMode,revision:firstRevision,revisionChanged});
+    else walks.delete(endpoint);
+    // Pages spanning polls or observed directory revisions are not an atomic
+    // replacement. Merge only verified, unexpired leases through the existing
+    // partial-snapshot path; reaching the end starts a fresh walk next time.
+    const complete=reachedEnd&&!resumed&&!revisionChanged;
     if(!successful) return finishResolverResult({endpoint,successful:false,
       complete:false,total:0,announcements:[],pages:0,revision:'',pollAfterMs:0});
     const verified=await Promise.all(envelopes.map(verifyGlobalEnvelope));
@@ -3174,7 +3230,7 @@ async function _loadGlobalNodes(){
   if(changed||firstSuccessfulSnapshot){
     for(const result of results.filter((item)=>item.successful))
       log('global',result.endpoint+': '+result.announcements.length+'/'+result.total
-        +' signed node announcement(s) in '+result.pages+' bounded page(s)',true);
+        +' signed node announcement(s) in '+result.pages+' page(s)',true);
     if(S.globalPeers.size) log('resolver','verified current resolver peer(s): '
       +[...S.globalPeers].slice(0,4).join(', '),true);
   }
@@ -4628,7 +4684,8 @@ function connectDiscoveryStream(base,boot){
   if(!boot?.discovery_stream_url||typeof fetch==='undefined') return;
   const url=new URL(join(base,boot.discovery_stream_url),location.href).href;
   if(S.streams.has(url)) return;
-  const es=fetchEventSource(url,{requestInit:()=>secureFetchInit(url)});
+  const es=fetchEventSource(url,{requestInit:()=>secureFetchInit(url),
+    maxFrameBytes:Number.MAX_SAFE_INTEGER});
   es._base=opBaseKey(base);
   es._cognitionPersonaKeys=new Set();
   S.streams.set(url,es);
@@ -6878,7 +6935,22 @@ function _signedArtifactWorkspaceBinding(r){
     path:route[2],contentHash:linkHash,mimeType,authoredLabels:authoredArtifactLabels(r),
     declaration:_artifactDeclarationDisplayProjection(r)};
 }
-function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId='',workspaceId=''}={}){
+function _signedArtifactWorkspaceKey({kernel,run,environmentId,path,contentHash}){
+  return JSON.stringify([kernel,run,environmentId,path,contentHash]);
+}
+function _signedArtifactWorkspaceIndex(){
+  const index=new Map();
+  for(const id of S.order||[]){
+    const candidate=_signedArtifactWorkspaceBinding(S.recs.get(id));
+    if(!candidate) continue;
+    const key=_signedArtifactWorkspaceKey(candidate);
+    // Preserve ambiguity even when identical metadata is repeated by several
+    // admitted records. A later third witness cannot restore a unique match.
+    index.set(key,index.has(key)?null:candidate);
+  }
+  return index;
+}
+function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId='',workspaceId=''}={},index=null){
   const liveHash=_exactSha256Digest(file?.sha256), livePath=String(file?.path||'');
   const liveEnvironmentId=environmentIdentity(file?.environment_id);
   // The live snapshot remains the authority for workspace membership, route,
@@ -6887,17 +6959,8 @@ function _liveFileSignedArtifactMetadata(file,{kernel='',run='',environmentId=''
   if(!kernel||!run||!environmentId||!workspaceId||!liveHash||!livePath
       ||String(file?.workspace_id||'')!==workspaceId
       ||liveEnvironmentId!==environmentId) return null;
-  let match=null;
-  for(const id of S.order||[]){
-    const candidate=_signedArtifactWorkspaceBinding(S.recs.get(id));
-    if(!candidate||candidate.kernel!==kernel||candidate.run!==run
-        ||candidate.environmentId!==environmentId||candidate.path!==livePath
-        ||candidate.contentHash!==liveHash) continue;
-    // Two admitted records matching the same live file are ambiguous even if
-    // they happen to repeat the same MIME. Fail closed instead of picking one.
-    if(match) return null;
-    match=candidate;
-  }
+  const match=(index||_signedArtifactWorkspaceIndex()).get(_signedArtifactWorkspaceKey({
+    kernel,run,environmentId,path:livePath,contentHash:liveHash}));
   if(!match) return null;
   return Object.freeze({mimeType:match.mimeType,
     authoredLabels:Object.freeze([...match.authoredLabels]),declaration:match.declaration,
@@ -7043,7 +7106,7 @@ function _liveFileSharedState(file){
 }
 function _liveCurrentFileActionHTML(file,row,scope){
   const label=String(file?.path||'artifact'), filePresentation=_artifactFilePresentation(label);
-  const metadata=_liveFileSignedArtifactMetadata(file,row);
+  const metadata=_liveFileSignedArtifactMetadata(file,row,row.artifactMetadataIndex);
   const declaration=metadata?.declaration?.present?metadata.declaration:_artifactDeclarationDisplayProjection(file);
   const presentation=metadata
     ?selectArtifactRenderer(metadata.mimeType,{path:label})
@@ -7397,7 +7460,8 @@ function _pkCognitionStats(personaKey){
     try{
       const endpoint=join(route.base,`personas/${encodeURIComponent(ref.sid)}/thinking`);
       const doc=await fetchResponsivePublicJson(endpoint,
-        {maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes});
+        {maxBytes:Number.MAX_SAFE_INTEGER,
+          priority:PUBLIC_COGNITION_READ_PRIORITY});
       const stats=doc&&String(doc.persona_id||'')===ref.sid?_pkCognitionProjection(doc):null;
       _pkCog.cache.set(key,{at:Date.now(),stats:stats||null});
       if(stats) scheduleRealtimeRepaint();
@@ -8501,6 +8565,10 @@ function refreshSystemView(){
   const envManifestFiles=(b)=>manifestArtifacts(b&&b.artifactManifest);
   const envHasArtifacts=(b)=>envManifestFiles(b).length>0||envArtifacts(b).length>0;
   const liveWorkspacesByPersona=new Map(), liveWorkspacesByEnv=new Map();
+  // One synchronous render shares one index. These workspace rows are local
+  // to this render, so later admissions, withdrawals and record replacements
+  // build a fresh index instead of retaining an earlier authority decision.
+  const artifactMetadataIndex=_signedArtifactWorkspaceIndex();
   for(const state of S.liveArtifacts.values()){
     const snap=state?.snapshot||{};
     for(const ws of (snap.workspaces||[])){
@@ -8509,7 +8577,7 @@ function refreshSystemView(){
         .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
       const fileCount=workspaceFiles.length;
       const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,personaId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',
+      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,personaId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',artifactMetadataIndex,
         captureBoundary:snap.capture_boundary||null,captureIncomplete:snap.truncated===true,ended:state.ended===true,
         terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
         generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
@@ -9143,88 +9211,7 @@ function renderEnvFeedDoc(doc){
 // Persona-signed final output remains distinct from closed, kernel-observed
 // provisional provider events; the exact thinking FRAME remains operator-only.
 function _provisionalPresentationRows(events){
-  const source=Array.isArray(events)?events:[], rows=[];
-  for(let index=0;index<source.length;index++){
-    const first=source[index];
-    if(first?.kind!=='assistant_message'){
-      rows.push({event:first,events:[first],assistant:false,text:'',firstSequence:first?.sequence,
-        lastSequence:first?.sequence,complete:false,mode:'status',presentationKey:''});
-      continue;
-    }
-    const stream=first.stream_delta===true, messageId=String(first.message_id||'');
-    const callId=String(first.call_id||''), group=[first];
-    // Stream deltas need the provider's exact message binding. Indexed chunks
-    // can also be joined without one because their verified 0..count-1 shape
-    // supplies an unambiguous boundary inside one exact call.
-    if(messageId||!stream){
-      while(index+1<source.length){
-        const previous=group[group.length-1], next=source[index+1];
-        const sameBinding=next?.kind==='assistant_message'
-          &&String(next.call_id||'')===callId&&String(next.message_id||'')===messageId
-          &&next.sequence===previous.sequence+1;
-        const sameShape=stream
-          ?next?.stream_delta===true
-          :next?.stream_delta!==true&&next?.chunk_count===first.chunk_count
-            &&next?.chunk_index===previous.chunk_index+1;
-        if(!sameBinding||!sameShape) break;
-        group.push(next); index++;
-      }
-    }
-    const last=group[group.length-1], chunkCount=stream?null:first.chunk_count;
-    const complete=!stream&&Number.isSafeInteger(chunkCount)
-      &&first.chunk_index===0&&group.length===chunkCount
-      &&last.chunk_index===chunkCount-1;
-    rows.push({
-      event:last,events:group,assistant:true,mode:stream?'stream':'chunks',complete,
-      text:group.map((event)=>event.text).join(''),firstSequence:first.sequence,
-      lastSequence:last.sequence,chunkCount,
-      // An exact provider message binding, or an indexed chunk boundary inside
-      // one call, is stable enough to replace a growing presentation row.
-      presentationKey:messageId?['message',callId,messageId].join('\u0000')
-        :!stream?['chunks',callId,'',String(first.sequence),String(chunkCount)].join('\u0000'):'',
-    });
-  }
-  // Tool/provider status can legitimately occur between deltas for the same
-  // exact provider message. Present those admitted text segments as one logical
-  // window while retaining the intervening status rows in chronological order.
-  const streamGroups=new Map();
-  rows.forEach((row,index)=>{
-    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
-    if(row.mode!=='stream'||!messageId||!callId) return;
-    const key=`${callId}\u0000${messageId}`;
-    const group=streamGroups.get(key)||{events:[],text:'',firstSequence:row.firstSequence,
-      lastSequence:row.lastSequence,lastIndex:index,lastRow:row};
-    group.events.push(...row.events); group.text+=row.text;
-    group.lastSequence=row.lastSequence; group.lastIndex=index; group.lastRow=row;
-    streamGroups.set(key,group);
-  });
-  const presented=rows.flatMap((row,index)=>{
-    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
-    if(row.mode!=='stream'||!messageId||!callId) return [row];
-    const group=streamGroups.get(`${callId}\u0000${messageId}`);
-    if(!group||group.lastIndex!==index) return [];
-    return [{...group.lastRow,events:group.events,text:group.text,
-      firstSequence:group.firstSequence,lastSequence:group.lastSequence}];
-  });
-  // Select exactly one presentation for each exact provider message. A full
-  // indexed set is strongest; until it arrives, an aggregated live stream is
-  // more informative than a partial indexed window. Source events remain in
-  // the signed document and its verification path.
-  const choices=new Map();
-  presented.forEach((row,index)=>{
-    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
-    if(!row.assistant||!messageId||!callId) return;
-    const key=`${callId}\u0000${messageId}`;
-    const priority=row.complete?3:row.mode==='stream'?2:1;
-    const prior=choices.get(key);
-    if(!prior||priority>prior.priority||(priority===prior.priority&&index>prior.index))
-      choices.set(key,{index,priority});
-  });
-  return presented.filter((row,index)=>{
-    const messageId=String(row.event?.message_id||''), callId=String(row.event?.call_id||'');
-    if(!row.assistant||!messageId||!callId) return true;
-    return choices.get(`${callId}\u0000${messageId}`)?.index===index;
-  });
+  return publicProvisionalPresentationRows(events);
 }
 function _renderPersonaWorkState(t,{kernel='',retainedSnapshot=false}={}){
   const state=t?.current_work_state;
@@ -9336,41 +9323,29 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
       }).join('');
   }
   const provisional=publicCognition?(t.provisional_outputs||[]):[];
-  if(provisional.length){
-    const visibleProvisional=_provisionalPresentationRows(provisional);
-    technical+=`<div class="privacy-note">${retainedSnapshot?'Retained provider-stream snapshot':'Live provider stream'} — kernel-observed and provisional, not persona-signed cognition or hidden reasoning${retainedSnapshot?', and not current execution':''}.</div>`
+  const visibleProvisional=_provisionalPresentationRows(provisional);
+  if(visibleProvisional.length){
+    technical+=`<div class="privacy-note">${retainedSnapshot?'Retained provider response snapshot':'Provider responses and activity'} — kernel-observed and provisional, not persona-signed cognition or hidden reasoning${retainedSnapshot?', and not current execution':''}.</div>`
       +visibleProvisional.map((presented,index)=>{ const event=presented.event;
         const call=callsById.get(event.call_id);
         const provenance=_publicProvisionalProvenance(event,call);
         if(presented.assistant&&presented.firstSequence!==presented.lastSequence)
           provenance.sequence=`${presented.firstSequence}–${presented.lastSequence}`;
-        const trustLabel=presented.assistant
-          ?presented.complete?'KERNEL OBSERVED · COMPLETE CHUNK SET':'KERNEL OBSERVED · ADMITTED WINDOW'
-          :'KERNEL OBSERVED · PROVISIONAL';
+        const trustLabel=presented.assistant?'KERNEL OBSERVED · COMPLETE MESSAGE':'KERNEL OBSERVED · PROVISIONAL';
         const trustTitle=presented.assistant
-          ?presented.complete
-            ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
-            :'verified kernel-signed public snapshot; all displayed text is from the admitted provider-event stream, whose beginning and end are not asserted'
+          ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
           :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning';
         const signedMeta=_activityProvenanceHTML(provenance,{className:'think-provenance',full:true,kernel,
           prepend:_eventTrustHTML({signed:true,_trustLabel:trustLabel,_trustTitle:trustTitle})});
         const sequence=presented.firstSequence===presented.lastSequence
           ?String(presented.firstSequence):`${presented.firstSequence}–${presented.lastSequence}`;
-        const assistantWindow=presented.mode==='stream'
-          ?`${presented.events.length} verified delta${presented.events.length===1?'':'s'} · admitted stream window`
-          :presented.complete
-            ?`${presented.events.length}/${presented.chunkCount} verified chunks · complete chunk set`
-            :`${presented.events.length}/${presented.chunkCount} verified chunks · admitted chunk window`;
+        const assistantWindow=`${presented.events.length}/${presented.chunkCount} verified chunks · complete message`;
         const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
           +` · sequence ${esc(sequence)}`
           +(presented.assistant?` · ${esc(assistantWindow)}`:'')
           +`</div>${signedMeta}`;
         if(presented.assistant){
-          const label=presented.mode==='stream'
-            ?'provisional assistant stream · admitted window'
-            :presented.complete?'provisional assistant message · complete chunk set'
-              :'provisional assistant message · admitted chunk window';
-          return `<div class="think llmout copy-host"><span class="amber">${label}</span> ${copyBtn()}`
+          return `<div class="think llmout copy-host"><span class="amber">complete assistant message</span> ${copyBtn()}`
             +`<pre class="ct-pre copy-src" data-provisional-presentation-index="${index}"></pre>${callMeta}</div>`;
         }
         const subject=event.kind==='tool_status'
@@ -10428,7 +10403,8 @@ async function refreshThinking(){
   const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
   const hasOperator=!!tokenFor(endpoint);
   const t=await fetchResponsivePublicJson(endpoint,{
-    maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+    maxBytes:Number.MAX_SAFE_INTEGER,
+    priority:PUBLIC_COGNITION_READ_PRIORITY,
     peerOnly:true,
     verifiedDirectFallback:true,
   });
@@ -10439,15 +10415,20 @@ async function refreshThinking(){
   const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
     {personaId:want,kernel:wantKernel});
   if(operatorAccepted||publicAccepted){
+    let displayDoc=t;
     if(publicAccepted){
-      const modelHistoryChanged=_rememberVerifiedPublicCognition(personaKey,t,
+      const admission=_rememberVerifiedPublicCognition(personaKey,t,
         {base:wantBase,kernel:wantKernel,personaId:want});
+      // GET and SSE verification can finish independently. Render the retained
+      // newer document when this drawer read loses the signed timestamp race.
+      if(!admission.doc) return;
+      displayDoc=admission.doc;
       // The drawer and the card consume the same kernel-qualified cognition
       // projection. Repaint the card when this asynchronous fetch hydrates it.
-      if(modelHistoryChanged) scheduleRealtimeRepaint();
+      if(admission.modelHistoryChanged) scheduleRealtimeRepaint();
     }
-    el2.innerHTML=renderThinking(t,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
-    hydrateThinkingOutputText(el2,t); return; }
+    el2.innerHTML=renderThinking(displayDoc,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
+    hydrateThinkingOutputText(el2,displayDoc); return; }
   const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
   if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
   const el3=$('#thinksec'); if(el3&&!retainedRendered) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
@@ -10749,8 +10730,10 @@ function ingestPersonaCognitionReads(cognitionReads){
     const {key:personaKey,sid,kernel,endpointId}=candidate;
     const publicCognition=_publicCognitionDocOk(t);
     if(publicCognition){
-      cognitionHydrated=_rememberVerifiedPublicCognition(personaKey,t,
-        {base:usedBase,kernel,personaId:endpointId})||cognitionHydrated;
+      const admission=_rememberVerifiedPublicCognition(personaKey,t,
+        {base:usedBase,kernel,personaId:endpointId});
+      if(!admission.accepted) continue;
+      cognitionHydrated=admission.modelHistoryChanged||cognitionHydrated;
     }
     const retainedCognition=S.cognitionByPersona?.get(personaKey);
     if(retainedCognition){
@@ -10907,7 +10890,8 @@ async function streamPersonaCognition(options={}){
           const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
           const hasOperator=!!tokenFor(endpoint);
           const r=await fetchResponsivePublicJson(endpoint,{
-            maxBytes:PUBLIC_PERSONA_COGNITION_LIMITS.documentBytes,
+            maxBytes:Number.MAX_SAFE_INTEGER,
+            priority:PUBLIC_COGNITION_READ_PRIORITY,
             peerOnly:true,
             verifiedDirectFallback:true,
           });
@@ -12881,7 +12865,8 @@ async function workEvidenceView(r){
 
 // Explicit connections are isolated from S's public discovery/history stores.
 const MY_NODES=new Map();
-async function connectedNodeBytes(entry,path,{requireOperator=false,maxBytes=DEFAULT_JSON_MAX_BYTES,signal=null}={}){
+async function connectedNodeBytes(entry,path,{requireOperator=false,
+  maxBytes=entry.tier==='operator'?Number.MAX_SAFE_INTEGER:DEFAULT_JSON_MAX_BYTES,signal=null}={}){
   if(entry.closed||signal?.aborted) throw new DOMException('Node read cancelled.','AbortError');
   const url=new URL(join(entry.base,path));
   const root=new URL(entry.base), rootPath=root.pathname.replace(/\/$/,'');
@@ -12898,10 +12883,14 @@ async function connectedNodeBytes(entry,path,{requireOperator=false,maxBytes=DEF
       headers:token?{Authorization:'Bearer '+token}:{}});
     if(!response.ok){
       const error=new Error('This node did not allow the requested read.');
-      error.status=response.status; throw error;
+      error.status=response.status;
+      if(entry.tier==='operator'&&(response.status===401||response.status===403)) revokeConnectedNode(entry);
+      throw error;
     }
-    if(requireOperator&&response.headers.get('X-PersonaOS-Read-Tier')!=='operator')
+    if(requireOperator&&response.headers.get('X-PersonaOS-Read-Tier')!=='operator'){
+      revokeConnectedNode(entry);
       throw new Error('The node did not accept that token.');
+    }
     const bytes=await readBoundedResponseBytes(response,maxBytes);
     if(entry.closed||controller.signal.aborted) throw new DOMException('Node read cancelled.','AbortError');
     return {bytes,type:response.headers.get('Content-Type')||''};
@@ -12933,8 +12922,22 @@ function disconnectMyNode(base){
   entry.savedArtifacts.clear(); entry.savedArtifactJobs.clear();
   for(const cancel of entry.viewCleanups||[]) cancel();
   entry.viewCleanups?.clear();
+  const body=$('#detailbody'), title=$('#detail-title');
+  const ownsBody=body?.querySelector?.('[data-connected-node]')?.dataset.connectedNode===base;
+  if(ownsBody) replaceStageHTML(body,'');
+  if(title&&(ownsBody||title.dataset.connectedNode===base)){
+    title.textContent=''; delete title.dataset.connectedNode;
+  }
   entry.status=null; entry.live=null; MY_NODES.delete(base);
   updateOpBadge();
+}
+function revokeConnectedNode(entry){
+  // An old read must never revoke a newer connection to the same URL.
+  if(entry.closed||MY_NODES.get(entry.base)!==entry) return;
+  const visible=$('#detailbody [data-connected-node]')?.dataset.connectedNode===entry.base
+    ||!!$('#detailbody #node-connect-form');
+  disconnectMyNode(entry.base);
+  if(visible) renderTop({refresh:true});
 }
 function paintConnectedNode(entry){
   if(entry.closed||entry.paintTimer) return;
@@ -13149,7 +13152,8 @@ async function refreshConnectedNode(entry){
     for(const person of people){
       const pid=String(person.persona_id||'');
       if(entry.stream?._cognitionDocuments&&entry.cognition.has(pid)) continue;
-      const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/thinking');
+      const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/thinking',
+        {maxBytes:Number.MAX_SAFE_INTEGER});
       await rememberConnectedCognition(entry,doc,pid);
     }
   }catch(e){ if(!entry.closed) entry.error=String(e?.message||'Node unavailable'); }
@@ -13168,7 +13172,10 @@ async function connectMyNode(base,token){
   }catch(e){ session.delete(normalized); throw e; }
   disconnectMyNode(normalized); MY_NODES.set(normalized,entry);
   const url=join(normalized,'discovery/events');
-  entry.stream=fetchEventSource(url,{requestInit:()=>({headers:token?{Authorization:'Bearer '+token}:{}})});
+  entry.stream=fetchEventSource(url,{
+    requestInit:()=>({headers:token?{Authorization:'Bearer '+token}:{}}),
+    maxFrameBytes:Number.MAX_SAFE_INTEGER,
+  });
   entry.stream.addEventListener('hello',(event)=>{
     try{ entry.stream._cognitionDocuments=parseSignedJson(event.data).cognition_documents===true; }catch(_){}
     refreshConnectedNode(entry);
@@ -13198,7 +13205,15 @@ async function connectMyNode(base,token){
       catch(_){ if(!entry.closed){ entry.artifactError='A workspace update could not be verified.'; paintConnectedNode(entry); } }
     });
   });
-  entry.stream.onerror=()=>{ if(!entry.closed){ entry.error='Reconnecting to this node…'; paintConnectedNode(entry); } };
+  entry.stream.onerror=(event)=>{ if(!entry.closed){
+    if(entry.tier==='operator'&&(event?.error?.status===401||event?.error?.status===403)){
+      revokeConnectedNode(entry); return;
+    }
+    entry.error='Reconnecting to this node…'; paintConnectedNode(entry);
+    // Confirm current authority after a closed stream; transport failures alone
+    // do not discard the already admitted view.
+    refreshConnectedNode(entry);
+  } };
   entry.timer=setInterval(()=>refreshConnectedNode(entry),5000);
   if(entry.tier==='public') discover().catch(()=>{});
   updateOpBadge(); refreshConnectedNode(entry); return entry;
@@ -13212,6 +13227,10 @@ function connectedPersonLink(entry,person){
     +esc(_displayPersonaName(person.name,person.persona_id))+'</a>';
 }
 function connectedCallMessages(doc){
+  if(doc?.tier==='public') return publicProvisionalPresentationRows(doc.provisional_outputs)
+    .filter(row=>row.assistant)
+    .map(row=>({text:row.text,at:row.event.at,model:row.event.model_id}))
+    .sort((a,b)=>String(b.at).localeCompare(String(a.at)));
   const rows=[];
   for(const call of [...(doc?.recent_calls||[]),...(doc?.active_calls||[])]){
     const groups=new Map();
@@ -13643,14 +13662,17 @@ async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1
   const gen=(S._renderGen=(S._renderGen||0)+1);
   const lifecycle=createViewLifecycle(gen); S.activeViewLifecycle=lifecycle;
   const body=$('#detailbody');
-  if(!refresh){ body.innerHTML='<div class="fv-loading">resolving…</div>'; delete body.dataset.h; }
+  if(!refresh) replaceStageHTML(body,'<div class="fv-loading">resolving…</div>');
   let v; try{ v=await top(); }catch(e){ v={title:'error',html:'<div class="l2">'+esc(e.message)+'</div>'}; }
   if(!lifecycle.isCurrent()) return;
-  $('#detail-title').innerHTML=v.title;
+  const title=$('#detail-title'); title.innerHTML=v.title;
   // Background connection updates retain the same controls and scroll position.
   // File mounts own separate resources and replace their body when its revision changes.
   if(refresh&&typeof v.mount!=='function') updateStageHTML(body,v.html);
-  else { body.innerHTML=v.html; delete body.dataset.h; body.scrollTop=0; }
+  else { replaceStageHTML(body,v.html); body.scrollTop=0; }
+  const connected=body.querySelector('[data-connected-node]')?.dataset.connectedNode;
+  if(connected) title.dataset.connectedNode=connected;
+  else delete title.dataset.connectedNode;
   $('#detailback').hidden=S.views.length<=1;
   // A11y: move focus into the dialog ONLY after its accessible name (the title) is
   // populated, and only when the drawer is open and focus isn't already inside it.
@@ -14764,31 +14786,32 @@ async function refreshP2PRendezvous(){
   if(!P2P?._rendezvousConfigured||!P2P.node?.contentRouting||!P2P.rendezvousCids) return false;
   if(P2P._rendezvousLastVerifiedAt
       &&Date.now()-P2P._rendezvousLastVerifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs) return true;
-  const seen=P2P._rendezvousProvidersSeen||(P2P._rendezvousProvidersSeen=new Map());
-  const recent=P2P._rendezvousProviderAttempts||(P2P._rendezvousProviderAttempts=new Map());
   const now=Date.now();
-  for(const [routeKey,verifiedAt] of seen)
-    if(now-verifiedAt>=P2P_ROUTE_LIMITS.successfulRefreshMs) seen.delete(routeKey);
-  for(const [routeKey,attemptedAt] of recent)
-    if(now-attemptedAt>=P2P_ROUTE_LIMITS.providerRetryMs) recent.delete(routeKey);
   const buckets=(await P2P.rendezvousCids(now).catch(()=>[]))
     .filter((bucket)=>bucket?.cid)
     .slice(0,P2P_ROUTE_LIMITS.maxRendezvousBucketsPerRefresh);
   if(!buckets.length) return false;
+  const routes=P2P._rendezvousProviderRoutes||(P2P._rendezvousProviderRoutes=new Map());
+  const currentBuckets=new Set(buckets.map((bucket)=>String(bucket.cid)));
+  // A scan budget limits concurrent work, not the population we may discover.
+  // Keep candidates and their turn order across scans. Their lifetime follows
+  // the actual temporal rendezvous keys, so vanished routes do not accumulate
+  // forever and a stable result prefix cannot starve the routes behind it.
+  for(const [key,route] of routes){
+    route.buckets=new Set([...route.buckets].filter((bucket)=>currentBuckets.has(bucket)));
+    if(!route.buckets.size) routes.delete(key);
+  }
   const signal=AbortSignal.timeout(P2P_ROUTE_LIMITS.jobDeadlineMs);
-  const attemptedThisScan=new Set();
-  const eagerProviderKeys=new Set(),eagerProviderJobs=new Set();
+  const attemptedThisScan=new Set(),activeProviders=new Set(),verifiedProviders=new Set(),
+    eagerProviderJobs=new Set();
   let eagerProviderAttempts=0;
-  let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0,queriedBuckets=0;
-  const inspectProvider=async(provider,maxNewAttempts)=>{
-    if(provider?.id?.equals?.(P2P.node.peerId)||signal.aborted) return 0;
+  let attempted=0,found=0,reconciledRoutes=0,reconciledRecords=0,queriedBuckets=0,
+    activeReconciliations=0;
+  const enqueueProvider=(provider,bucket)=>{
+    if(provider?.id?.equals?.(P2P.node.peerId)||signal.aborted) return;
     const providerId=provider?.id?.toString?.()||'';
-    if(!providerId) return 0;
-    const addresses=P2P.browserDialableMultiaddrs(provider.multiaddrs)
-      .slice(0,P2P_ROUTE_LIMITS.maxMultiaddrsPerProvider);
-    let routeAttempts=0;
-    for(const target of addresses){
-      if(signal.aborted||routeAttempts>=maxNewAttempts) break;
+    if(!providerId) return;
+    for(const target of P2P.browserDialableMultiaddrs(provider.multiaddrs)){
       let terminal,dialTarget;
       try{
         const components=target.getComponents?.()||[]; terminal=components.at(-1);
@@ -14796,55 +14819,87 @@ async function refreshP2PRendezvous(){
         dialTarget=terminal?.name==='p2p'?target:target.encapsulate(`/p2p/${providerId}`);
       }catch(_){ continue; }
       const routeKey=`${providerId}\u0000${String(target)}`;
-      if(seen.has(routeKey)||recent.has(routeKey)||attemptedThisScan.has(routeKey)) continue;
-      attemptedThisScan.add(routeKey); routeAttempts++; attempted++;
-      recent.delete(routeKey); recent.set(routeKey,now);
-      while(recent.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
-        recent.delete(recent.keys().next().value);
-      try{
-        const dialSignal=AbortSignal.any([signal,AbortSignal.timeout(5000)]);
-        await P2P.node.dial(dialTarget,{signal:dialSignal,priority:100});
-        found++;
-        const result=await P2P.fetchProviderInventory?.(
-          provider,{timeoutMs:8000}).catch(()=>null);
-        const verified=await verifiedRouteHintsFromP2PResult(
-          result,{signal});
-        const unique=new Map();
-        for(const hint of verified.routeHints){
-          const base=normalizedPeerRouteBase(hint?.base),kernel=String(hint?.kernel||'');
-          if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...hint,base,kernel});
-        }
-        let routeVerified=false;
-        for(const hint of unique.values()){
-          if(signal.aborted
-              ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+      const route=routes.get(routeKey)||{key:routeKey,buckets:new Set(),
+        attemptedAt:0,verifiedAt:0,lastAttempt:0};
+      Object.assign(route,{provider,providerId,dialTarget});
+      route.buckets.add(String(bucket)); routes.set(routeKey,route);
+    }
+  };
+  const nextRoute=()=>{
+    const attemptedAt=Date.now(); let next=null;
+    for(const route of routes.values()){
+      if(attemptedThisScan.has(route.key)||activeProviders.has(route.providerId)
+          ||verifiedProviders.has(route.providerId)
+          ||(route.attemptedAt&&attemptedAt-route.attemptedAt<P2P_ROUTE_LIMITS.providerRetryMs)
+          ||(route.verifiedAt&&attemptedAt-route.verifiedAt<P2P_ROUTE_LIMITS.successfulRefreshMs)) continue;
+      if(!next||route.lastAttempt<next.lastAttempt) next=route;
+    }
+    if(!next) return null;
+    attemptedThisScan.add(next.key); next.attemptedAt=attemptedAt;
+    next.lastAttempt=(P2P._rendezvousAttemptSequence||0)+1;
+    P2P._rendezvousAttemptSequence=next.lastAttempt;
+    activeProviders.add(next.providerId); attempted++;
+    return next;
+  };
+  const inspectRoute=async(route)=>{
+    try{
+      const dialSignal=AbortSignal.any([signal,AbortSignal.timeout(5000)]);
+      await P2P.node.dial(route.dialTarget,{signal:dialSignal,priority:100});
+      found++;
+      const result=await P2P.fetchProviderInventory?.(
+        route.provider,{timeoutMs:8000}).catch(()=>null);
+      const verified=await verifiedRouteHintsFromP2PResult(result,{signal});
+      const unique=new Map();
+      for(const hint of verified.routeHints){
+        const base=normalizedPeerRouteBase(hint?.base),kernel=String(hint?.kernel||'');
+        if(base&&kernel) unique.set(`${kernel}\u0000${base}`,{...hint,base,kernel});
+      }
+      for(const hint of unique.values()){
+        if(signal.aborted||reconciledRoutes+activeReconciliations
+            >=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+        activeReconciliations++;
+        try{
           const reconciled=await _reconcileP2PRouteHint(hint,{signal});
           if(reconciled.accepted){
-            reconciledRoutes++; reconciledRecords+=reconciled.count; routeVerified=true;
+            reconciledRoutes++; reconciledRecords+=reconciled.count;
+            route.verifiedAt=Date.now();
+            verifiedProviders.add(route.providerId);
           }
-        }
-        if(routeVerified){
-          seen.delete(routeKey); seen.set(routeKey,Date.now());
-          while(seen.size>P2P_ROUTE_LIMITS.maxRememberedProviders)
-            seen.delete(seen.keys().next().value);
-          break;
-        }
-      }catch(e){}
-    }
-    return routeAttempts;
+        }finally{ activeReconciliations--; }
+      }
+    }catch(e){}
+    finally{ activeProviders.delete(route.providerId); }
   };
-  const inspectEagerProvider=(provider)=>{
-    if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob
-        ||eagerProviderAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource) return;
-    const providerId=provider?.id?.toString?.()||'', firstAddress=String(provider?.multiaddrs?.[0]||'');
-    const key=`${providerId}\u0000${firstAddress}`;
-    if(!providerId||!firstAddress||eagerProviderKeys.has(key)) return;
-    eagerProviderKeys.add(key); eagerProviderAttempts++;
-    const job=inspectProvider(provider,1).catch(()=>0)
-      .finally(()=>eagerProviderJobs.delete(job));
-    eagerProviderJobs.add(job);
+  const inspectEagerProvider=(provider,bucket)=>{
+    enqueueProvider(provider,bucket);
+    while(!signal.aborted&&reconciledRoutes+activeReconciliations
+        <P2P_ROUTE_LIMITS.maxReconciliationsPerJob
+        &&eagerProviderAttempts<P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource){
+      const route=nextRoute(); if(!route) break;
+      eagerProviderAttempts++;
+      const job=inspectRoute(route).finally(()=>eagerProviderJobs.delete(job));
+      eagerProviderJobs.add(job);
+    }
+  };
+  const drainRoutes=async()=>{
+    for(let count=0;count<P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource;count++){
+      if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+      const route=nextRoute(); if(!route) break;
+      await inspectRoute(route);
+    }
   };
   try{
+    // Locating candidates must not wait for inventory reads or failed dials.
+    // Start every iterative bucket beside the direct first-contact queries;
+    // both sources feed the same fair route queue and bounded read workers.
+    const iterativeJobs=buckets.map(async(bucket)=>{
+      try{
+        for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
+          if(signal.aborted) break;
+          inspectEagerProvider(provider,bucket.cid);
+        }
+      }catch(e){}
+    });
     // Give every adjacent temporal bucket a direct first-contact chance in
     // parallel. A sequential current-bucket traversal could consume the whole
     // job deadline exactly at an epoch rollover and starve the already
@@ -14853,41 +14908,22 @@ async function refreshP2PRendezvous(){
       bucket,
       direct:await P2P.findRendezvousProviders?.(bucket.cid,{
         signal,timeoutMs:6000,maxProviders:P2P_ROUTE_LIMITS.maxCandidatesPerResolution,
-        onProvider:inspectEagerProvider
+        onProvider:(provider)=>inspectEagerProvider(provider,bucket.cid)
       }).catch(()=>null)
     })));
     await Promise.allSettled([...eagerProviderJobs]);
     queriedBuckets=directBuckets.length;
-    for(const {direct} of directBuckets){
-      if(signal.aborted) break;
-      let sourceAttempts=0,sourceCandidates=0;
-      for(const provider of direct?.providers||[]){
-        if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
-            ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource
-            ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
-        sourceCandidates++;
-        sourceAttempts+=await inspectProvider(provider,
-          P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
-      }
-      if(reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
-    }
-    // Direct first-contact queries merge live routes hidden by another
-    // responder's stale K-provider window, but one verified direct route does
-    // not prove that window is complete. Give iterative Kademlia its own
-    // remaining bounded budget after every temporal bucket had a direct chance.
-    for(const bucket of buckets){
+    for(const {bucket,direct} of directBuckets)
+      for(const provider of direct?.providers||[]) enqueueProvider(provider,bucket.cid);
+    for(const _ of directBuckets){
       if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
-      let sourceAttempts=0,sourceCandidates=0;
-      try{
-        for await(const provider of P2P.node.contentRouting.findProviders(bucket.cid,{signal})){
-          if(signal.aborted||sourceCandidates>=P2P_ROUTE_LIMITS.maxCandidatesPerResolution
-              ||sourceAttempts>=P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource
-              ||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
-          sourceCandidates++;
-          sourceAttempts+=await inspectProvider(provider,
-            P2P_ROUTE_LIMITS.maxRouteAttemptsPerSource-sourceAttempts);
-        }
-      }catch(e){}
+      await drainRoutes();
+    }
+    await Promise.allSettled(iterativeJobs);
+    await Promise.allSettled([...eagerProviderJobs]);
+    for(const _ of buckets){
+      if(signal.aborted||reconciledRoutes>=P2P_ROUTE_LIMITS.maxReconciliationsPerJob) break;
+      await drainRoutes();
     }
     log('p2p',`DHT rendezvous scan: ${queriedBuckets} temporal bucket(s) · ${attempted} route(s) tried · ${found} dialed · ${reconciledRoutes} verified route(s)`,reconciledRoutes>0);
     if(reconciledRoutes){
@@ -14915,7 +14951,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260907-signed-json-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260907-native-peer-reader-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

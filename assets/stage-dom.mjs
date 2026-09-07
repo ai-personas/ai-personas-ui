@@ -97,6 +97,15 @@ function stageState(host) {
   return state;
 }
 
+// Navigation and authority loss replace a whole view. Keep deferred pointer
+// work bound to that replacement instead of replaying an earlier view's HTML.
+export function replaceStageHTML(host, html) {
+  const state = stageState(host);
+  state.html = html; state.pending = false; state.pressed = null;
+  host.innerHTML = html;
+  host.dataset.h = html;
+}
+
 export function updateStageHTML(host, html) {
   const state = stageState(host);
   state.html = html;
