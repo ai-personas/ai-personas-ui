@@ -6095,7 +6095,11 @@ function _taskLifecycleForPersonaWork(model,kernel='',acts=[],personaKey='',work
   const activeCall=_activeModelCallsForPersona(personaKey,kernel).at(-1)||null;
   let lifecycle=activeCall?.run_id
     ?_verifiedPublicTaskForRun(kernel,activeCall.run_id):null;
-  if(!lifecycle&&(workState?.task_id||workState?.environment_id))
+  // A retained note can describe a previous task after new work begins. Only
+  // a note still bound to the latest observation takes precedence over the
+  // persona's newer model calls and task-scoped activity.
+  if(!lifecycle&&workState?.bound_to_latest_observation===true
+      &&(workState?.task_id||workState?.environment_id))
     lifecycle=_latestTaskLifecycle(kernel,{task:workState?.task_id||'',
       environment:workState?.environment_id||''});
   if(!lifecycle&&model?.run) lifecycle=_verifiedPublicTaskForRun(kernel,model.run);
@@ -6118,6 +6122,9 @@ function _taskLifecycleForPersonaWork(model,kernel='',acts=[],personaKey='',work
     if(task||model?.environment)
       lifecycle=_latestTaskLifecycle(kernel,{task,environment:model?.environment||''});
   }
+  if(!lifecycle&&(workState?.task_id||workState?.environment_id))
+    lifecycle=_latestTaskLifecycle(kernel,{task:workState?.task_id||'',
+      environment:workState?.environment_id||''});
   return lifecycle;
 }
 function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',workState=null){
