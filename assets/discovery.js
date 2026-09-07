@@ -14508,6 +14508,9 @@ async function _discoverFromP2P(hint,{signal=null}={}){
   // The verified provider already binds this peer and canonical address.
   // Register that transport before checking the inventory's canonical base.
   _registerP2PDataRoute(hint);
+  // Current signed invalidations and their separately verified snapshots can
+  // arrive while the complete historical inventory is still downloading.
+  connectDiscoveryStream(base,boot);
   const advertisedRecordCount=Number(boot.record_count);
   const providerIndexMaxBytes=providerIndexResponseByteLimit(
     advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
