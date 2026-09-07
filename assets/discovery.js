@@ -36,7 +36,6 @@ import {
   collectBrowserLibp2pBootstraps,
   compactCount,
   nextProgressiveGroupLevel,
-  providerIndexResponseByteLimit,
   publicTaskLifecycleProjection,
   projectTerminalModelFailures,
   progressiveGroupLimit,
@@ -48,7 +47,7 @@ import {
   verifiedPersonaIdentityPresent,
   verifiedPersonaRenderable,
   personaLifecycleProjection,
-} from './network-view.mjs?v=20260905-peer-workspace-v1';
+} from './network-view.mjs?v=20260907-complete-inventory-v2';
 import {
   NetworkStore,
   TelemetryAdmissionGate,
@@ -3300,10 +3299,8 @@ async function discoverFrom(base,plane,knownBoot=null,
   // publish several independently signed ProviderRecords (DID, record id,
   // handle) that all bind the same hash-addressed document.
   const advertisedRecordCount=Number(boot.record_count);
-  const providerIndexMaxBytes=providerIndexResponseByteLimit(
-    advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
-  if(!providerIndexMaxBytes){
-    log('dht',`${boot.kernel_id||where}: provider record count missing, invalid, or over browser ceiling`,false);
+  if(!Number.isSafeInteger(advertisedRecordCount)||advertisedRecordCount<0){
+    log('dht',`${boot.kernel_id||where}: provider record count missing or invalid`,false);
     S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found:[]};
   }
@@ -3313,7 +3310,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   // artifact/task/telemetry byte in the generation.
   const providerUrl=join(base,boot.providers_url||'discovery/providers.json');
   const providerPromise=sharedDocumentJson(providerUrl,
-    ()=>fetchJson(providerUrl,{maxBytes:providerIndexMaxBytes,signal}));
+    ()=>fetchJson(providerUrl,{maxBytes:Number.MAX_SAFE_INTEGER,signal}));
   let identityAccepted=false;
   if(boot.identity_index_url){
     const identityDoc=await fetchJson(join(base,boot.identity_index_url),{
@@ -4559,13 +4556,9 @@ function _clearEntityFeedCache(base){
 }
 async function _refreshPeerInventory(base){
   const route=S.p2pDataRoutes?.get(opBaseKey(base)); if(!route) return false;
-  const resolved=await _discoverFromP2P({base,kernel:route.kernel,peerId:route.peerId,
-    providerRecord:route.providerRecord}).catch(()=>null);
-  if(!resolved?.boot) return false;
-  const accepted=applyVerifiedProviderInventory(
-    base,resolved.boot,resolved.found,resolved.inventory,resolved.providerIndex);
-  if(accepted){ classifyMap(); updateVitalsCounters(); renderMissions(); }
-  return accepted;
+  const resolved=await _reconcileP2PRouteHint({base,kernel:route.kernel,peerId:route.peerId,
+    providerRecord:route.providerRecord});
+  return resolved.accepted;
 }
 function _schedulePeerInvalidation(base,boot,event){
   if(!event||event.kind==='heartbeat') return;
@@ -14512,13 +14505,12 @@ async function _discoverFromP2P(hint,{signal=null}={}){
   // arrive while the complete historical inventory is still downloading.
   connectDiscoveryStream(base,boot);
   const advertisedRecordCount=Number(boot.record_count);
-  const providerIndexMaxBytes=providerIndexResponseByteLimit(
-    advertisedRecordCount,NETWORK_LIMITS.cachedRecords);
-  if(!providerIndexMaxBytes) return {boot:null,found:[],inventory:null};
+  if(!Number.isSafeInteger(advertisedRecordCount)||advertisedRecordCount<0)
+    return {boot:null,found:[],inventory:null};
   const providerPath=String(boot.providers_url||'discovery/public/providers.json');
   const providerUrl=join(base,providerPath);
   const providerPromise=sharedDocumentJson(providerUrl,
-    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:providerIndexMaxBytes}).catch(()=>null));
+    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:Number.MAX_SAFE_INTEGER}).catch(()=>null));
   // The peer-bound transport carries the same signed compact identity surface
   // as HTTP. Admit it first so P2P discovery paints people/workspaces and seeds
   // the warm browser cache without waiting for every artifact and telemetry

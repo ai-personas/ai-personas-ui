@@ -1,14 +1,60 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
 
 const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
 const source = readFileSync(resolve(assetRoot, 'discovery.js'), 'utf8');
+const network = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
 const declarations = source.slice(source.indexOf('const _sharedDocJobs='),
   source.indexOf('async function fetchJson('));
+
+for (const [recordCount, bodyBytes] of [[714, 4_939_998], [1, 100_000], [20_001, 80_000_000]]) {
+  test(`a complete ${bodyBytes}-byte peer inventory reaches verification for ${recordCount} records`, async () => {
+    const section = source.slice(source.indexOf('async function _discoverFromP2P('),
+      source.indexOf('function _reconcileP2PRouteHint('));
+    const hint = {base: 'libp2p://peer', kernel: 'kernel:test', peerId: 'peer',
+      providerRecord: {host_kernel_id: 'kernel:test', provider_peer_id: 'peer', public_key_hex: 'master'}};
+    const boot = {kernel_id: hint.kernel, record_count: recordCount};
+    const inventory = {document_count: recordCount};
+    let verified = 0, fetched = 0;
+    const values = {
+      ...network,
+      P2P: {fetchPublicJson: async (_provider, path, options) => {
+        if (path.endsWith('personaos-keys.json')) return {kernel_id: hint.kernel};
+        if (path.endsWith('personaos-discovery.json')) return boot;
+        fetched++;
+        // The transport refuses the body before signature admission if its
+        // caller guessed a byte limit smaller than the actual complete body.
+        return bodyBytes <= options.maxBytes ? inventory : null;
+      }},
+      settleBeforeAbort: promise => promise,
+      admitKeysDocument: () => ({'kernel-master': 'master'}),
+      _registerP2PDataRoute() {}, connectDiscoveryStream() {},
+      NETWORK_LIMITS: {cachedRecords: 20_000},
+      join: (base, path) => base + '/' + path,
+      sharedDocumentJson: (_url, read) => read(),
+      verifiedRowsFromProviderIndex: async document => {
+        assert.equal(document, inventory);
+        verified++;
+        return {rows: [], refused: 0, inventory: {ok: true, recordIds: new Set()}};
+      },
+      log() {},
+    };
+    const discover = new Function(...Object.keys(values), section + '\nreturn _discoverFromP2P;')(
+      ...Object.values(values));
+    assert.equal((await discover(hint)).inventory?.complete, true);
+    assert.equal(fetched, 1);
+    assert.equal(verified, 1, 'The complete response must reach independent verification');
+    for (const invalid of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      boot.record_count = invalid;
+      assert.equal((await discover(hint)).inventory, null);
+    }
+    assert.equal(fetched, 1, 'Invalid record counts cannot start an inventory fetch');
+  });
+}
 
 test('a slow shared inventory stays one download through later discovery attempts', async () => {
   let now = 0, calls = 0, complete;
@@ -33,6 +79,42 @@ test('a slow shared inventory stays one download through later discovery attempt
   assert.equal(shared('libp2p://peer/providers', fetch), next);
   complete({generation: 2});
   await next;
+});
+
+test('peer invalidations share the complete discovery already in flight', async () => {
+  const section = (start, end) => source.slice(source.indexOf(start),
+    source.indexOf(end, source.indexOf(start)));
+  const hint = {base: 'libp2p://peer', kernel: 'kernel:test', peerId: 'peer', providerRecord: {}};
+  const releases = [];
+  let applied = 0;
+  const values = {
+    S: {p2pDataRoutes: new Map([[hint.base, hint]]),
+      providerRouteReconciliations: new Map(), boots: new Map()},
+    opBaseKey: value => value,
+    _discoverFromP2P: () => new Promise(resolve => { releases.push(resolve); }),
+    applyVerifiedProviderInventory: () => { applied++; return true; },
+    isHttp: () => false,
+    classifyMap() {}, updateVitalsCounters() {}, renderMissions() {},
+    _rememberP2PRouteHint() {}, updateP2PStatus() {}, collectP2PBootstraps() {}, noteKernel() {},
+    connectDiscoveryStream() {}, loadTelemetry: async () => {},
+  };
+  const functions = new Function(...Object.keys(values),
+    section('function settleBeforeAbort(', 'async function fetchP2PArtifactBytes(')
+    + section('async function _refreshPeerInventory(', 'function _schedulePeerInvalidation(')
+    + section('function _reconcileP2PRouteHint(', 'async function _resolveProviderHintJob(')
+    + '\nreturn {refresh: _refreshPeerInventory, reconcile: _reconcileP2PRouteHint};')(...Object.values(values));
+  const pending = [functions.reconcile(hint), functions.refresh(hint.base), functions.refresh(hint.base)];
+  assert.equal(releases.length, 1, 'Invalidations must not queue duplicate key, bootstrap and inventory reads');
+  const resolved = {boot: {kernel_id: hint.kernel}, found: [{}], inventory: {}};
+  releases[0](resolved);
+  const results = await Promise.all(pending);
+  assert.deepEqual(results.slice(1), [true, true]);
+  assert.equal(applied, 1);
+  const next = functions.refresh(hint.base);
+  assert.equal(releases.length, 2, 'A later invalidation still fetches the next generation');
+  releases[1](resolved);
+  assert.equal(await next, true);
+  assert.equal(applied, 2);
 });
 
 test('an expired network scan does not discard its still-progressing verified inventory', async () => {
