@@ -1,3 +1,4 @@
+import {canonicalJson as canonical} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
 import {installEd25519HashFallback, sha256Hex}
   from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
@@ -54,16 +55,6 @@ export class PersonaAvatarVerificationError extends Error {
 
 function avatarVerificationError(message, permanent = false) {
   return new PersonaAvatarVerificationError(message, {permanent});
-}
-
-function canonical(value) {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function hexToBytes(value) {

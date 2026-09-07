@@ -1,3 +1,4 @@
+import {canonicalJson as canon, parseSignedJson} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
 import {
   evaluatePublicRecordAccess,
@@ -74,14 +75,6 @@ const enc=new TextEncoder();
 const hex=(value)=>Uint8Array.from(String(value||'').match(/.{1,2}/g)
   ?.map((byte)=>Number.parseInt(byte,16))||[]);
 
-function canon(value){
-  if(value===null||value===undefined) return 'null';
-  if(Array.isArray(value)) return '['+value.map(canon).join(',')+']';
-  if(typeof value==='object') return '{'+Object.keys(value).sort()
-    .map((key)=>JSON.stringify(key)+':'+canon(value[key])).join(',')+'}';
-  return JSON.stringify(value);
-}
-
 function exactFields(value,fields){
   return !!value&&typeof value==='object'&&!Array.isArray(value)
     &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
@@ -103,9 +96,7 @@ function finiteInstant(value){
 }
 
 function withoutSignature(value){
-  const out={};
-  for(const key of Object.keys(value||{})) if(key!=='signature_hex') out[key]=value[key];
-  return out;
+  const out={...value}; delete out.signature_hex; return out;
 }
 
 function policyPayload(policy){
@@ -177,7 +168,7 @@ export function readOfflineHistorySnapshots(){
       if(raw) localStorage.removeItem(OFFLINE_HISTORY_CACHE_KEY);
       return [];
     }
-    const cache=JSON.parse(raw);
+    const cache=parseSignedJson(raw);
     if(cache?.schema!==CACHE_SCHEMA||!Array.isArray(cache.snapshots)){
       localStorage.removeItem(OFFLINE_HISTORY_CACHE_KEY); return [];
     }
@@ -193,7 +184,7 @@ export function writeOfflineHistorySnapshot(snapshot){
     const snapshots=[snapshot,...readOfflineHistorySnapshots()
       .filter((item)=>item.kernel_id!==snapshot.kernel_id)].slice(0,MAX_SNAPSHOTS);
     while(snapshots.length){
-      const raw=JSON.stringify({schema:CACHE_SCHEMA,snapshots});
+      const raw=canon({schema:CACHE_SCHEMA,snapshots});
       if(raw.length<=CACHE_MAX_BYTES){
         localStorage.setItem(OFFLINE_HISTORY_CACHE_KEY,raw); return true;
       }

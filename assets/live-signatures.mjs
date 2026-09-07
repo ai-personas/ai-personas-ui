@@ -1,3 +1,4 @@
+import {canonicalJson} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
 
 const encoder = new TextEncoder();
@@ -26,15 +27,7 @@ const REVISION_RE = /^sha256:[0-9a-f]{64}$/;
 const HEX_KEY_RE = /^[0-9a-f]{64}$/i;
 const HEX_SIGNATURE_RE = /^[0-9a-f]{128}$/i;
 
-export function canonicalJson(value) {
-  if (value === null || value === undefined) return 'null';
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (typeof value === 'object') {
-    return `{${Object.keys(value).sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
+export {canonicalJson} from './canonical-json.mjs';
 
 const isObject = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const failed = (reason) => ({ok: false, reason});
@@ -47,7 +40,7 @@ function bytesFromHex(value, pattern) {
 
 export function liveMetadataSigningPayload(document) {
   if (!isObject(document)) return null;
-  return Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'signature_hex'));
+  const payload = {...document}; delete payload.signature_hex; return payload;
 }
 
 function exactFields(source, fields) {

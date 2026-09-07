@@ -14,6 +14,7 @@ const artifacts = await import(pathToFileURL(resolve(assetRoot, 'live-artifacts.
 const signatures = await import(pathToFileURL(resolve(assetRoot, 'live-signatures.mjs')));
 const formats = await import(pathToFileURL(resolve(assetRoot, 'artifact-types.mjs')));
 const network = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
+const signedJson = await import(pathToFileURL(resolve(assetRoot, 'canonical-json.mjs')));
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
 const esc = value => String(value ?? '').replace(/[&<>"']/g,
   char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
@@ -27,7 +28,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')
     + section('function _liveFileSharedState(', 'function _liveCurrentFileActionHTML(')
     + section('function _personaCharacteristicValue(', 'const _personaMonogram=') + privateSection;
-  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, esc,
+  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, ...signedJson, esc,
     fetchEventSource: streamFactory,
     AbortController, setTimeout, clearTimeout, setInterval, clearInterval, URL,
     fetch: fetchImpl, join: (base, path) => /^https?:\/\//.test(path) ? path

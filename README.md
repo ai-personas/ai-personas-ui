@@ -113,6 +113,12 @@ the node's authenticated HTTP API; persona actions run through their own signed 
 node --test test/*.test.mjs
 ```
 
+`assets/p2p-libp2p.js` and `assets/canonical-json.mjs` are generated from the
+native repository's `tools/libp2p/browser_entry.js` and `canonical_json.js`.
+Build both into this checkout before committing and vendoring a release.
+The shared JSON reader preserves number spellings in existing signatures,
+including measurements such as `14.0`; it does not rewrite authored records.
+
 ## Deeper details
 
 The full discovery protocol — provider-record verification, gossip/DHT rendezvous, lease

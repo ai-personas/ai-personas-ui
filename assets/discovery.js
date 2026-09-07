@@ -1,3 +1,4 @@
+import {canonicalJson, canonicalMember, parseSignedJson} from './canonical-json.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs';
@@ -20,7 +21,7 @@ import {
 import {
   verifyLiveArtifactEvent,
   verifyLiveArtifactSnapshot,
-} from './live-signatures.mjs?v=20260718-live-current-v3';
+} from './live-signatures.mjs?v=20260907-signed-json-v1';
 import {
   currentMasterKey,
   evaluatePublicRecordAccess,
@@ -68,7 +69,7 @@ import {
   normalizePersonaAvatar,
   personaIdentityKeyPin,
   resolvePersonaAvatarBodyUrl,
-} from './persona-avatar.mjs?v=20260907-peer-portraits-v4';
+} from './persona-avatar.mjs?v=20260907-signed-json-v1';
 import {
   environmentIdentity,
   resolveEnvironmentAuthority,
@@ -93,7 +94,7 @@ import {
   readOfflineHistorySnapshots,
   verifyOfflineHistorySnapshots,
   writeOfflineHistorySnapshot,
-} from './offline-history.mjs?v=20260808-offline-history-v2';
+} from './offline-history.mjs?v=20260907-signed-json-v1';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -204,12 +205,7 @@ const KIND_LABEL={persona:'PERSONA',env:'ENV',project:'PROJECT',domain:'DOMAIN',
 const SPARK_N=32, BUCKET_MS=650;
 
 // canonical bytes == personaos canonical_bytes (sorted keys, compact, UTF-8)
-function canon(v){
-  if(v===null||v===undefined)return 'null';
-  if(Array.isArray(v))return '['+v.map(canon).join(',')+']';
-  if(typeof v==='object')return '{'+Object.keys(v).sort().map((k)=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}';
-  return JSON.stringify(v);
-}
+function canon(v){ return canonicalJson(v); }
 async function verifyRecord(doc,keyEntries){
   for(const entry of recordVerificationEntries(keyEntries,doc?.signing_key_id)){
     try{ if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),
@@ -463,7 +459,7 @@ async function fetchJson(u,init={}){
   if(String(u).startsWith('libp2p:')) return null;
   try{ const r=await fetch(u,secureFetchInit(u,{...init,signal:transportSignal})); if(r.ok){
     const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
-    return JSON.parse(new TextDecoder().decode(bytes)); }
+    return parseSignedJson(new TextDecoder().decode(bytes)); }
   }catch(e){}
   if(transportSignal.aborted) return null;
   // The peer route was already tried first above. Do not pay the same failed
@@ -507,7 +503,7 @@ async function fetchResponsivePublicJson(u,init={}){
             redirect:'error',referrerPolicy:'no-referrer'});
           if(r.ok){
             const bytes=await readBoundedResponseBytes(r,maxBytes);
-            return JSON.parse(new TextDecoder().decode(bytes));
+            return parseSignedJson(new TextDecoder().decode(bytes));
           }
         }catch(_){}
         return null;
@@ -1806,7 +1802,7 @@ function _exactPersonaCharacteristics(value){
   const source=value.characteristics;
   try{
     if(!bounded(source)||enc.encode(canon(source)).length>65536) return null;
-    return Object.freeze(JSON.parse(JSON.stringify(source)));
+    return Object.freeze(parseSignedJson(canon(source)));
   }catch(_){ return null; }
 }
 function _currentPersonaParticipationExpiry(value,now=Date.now()){
@@ -1975,8 +1971,7 @@ async function verifyPublicTaskLifecycle(lifecycle,record,documentKey,kernelId){
   if(PUBLIC_TASK_LIFECYCLE_CAPABILITY_PREFIXES.some((prefix)=>
     capabilities.filter((item)=>typeof item==='string'&&item.startsWith(prefix)).length!==1))
     return false;
-  const payload={}; for(const field of Object.keys(lifecycle))
-    if(field!=='signature_hex') payload[field]=lifecycle[field];
+  const payload={...lifecycle}; delete payload.signature_hex;
   try{ return await ed.verifyAsync(hexToBytes(lifecycle.signature_hex),enc.encode(canon(payload)),
     hexToBytes(documentKey.public_key_hex)); }catch(_){ return false; }
 }
@@ -1997,7 +1992,7 @@ async function verifyPublicCommunicationRoutes(base,live){
   const verified=[];
   for(const route of routes){
     if(!isExactPublicCommunicationRoute(route)) continue;
-    const payload={}; for(const field of Object.keys(route)) if(field!=='signature_hex') payload[field]=route[field];
+    const payload={...route}; delete payload.signature_hex;
     try{ if(await ed.verifyAsync(hexToBytes(route.signature_hex),enc.encode(canon(payload)),hexToBytes(key)))
       verified.push(route); }catch(_){ /* one bad route cannot poison independently signed siblings */ }
   }
@@ -2047,7 +2042,7 @@ async function verifyCurrentMasterSignedDocument(base,doc){
       ||!/^[0-9a-f]{128}$/i.test(String(doc.signature_hex||''))) return false;
   const registry=S.keyDocs.get(base||'@origin');
   const key=currentMasterKey(registry?.entries||[]); if(!key) return false;
-  const payload={}; for(const field of Object.keys(doc)) if(field!=='signature_hex') payload[field]=doc[field];
+  const payload={...doc}; delete payload.signature_hex;
   try{ return await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(payload)),hexToBytes(key)); }
   catch(_){ return false; }
 }
@@ -2716,7 +2711,7 @@ function readFastSignedIdentitySnapshots(){
       if(raw) localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY);
       return [];
     }
-    const cache=JSON.parse(raw), snapshots=cache?.snapshots;
+    const cache=parseSignedJson(raw), snapshots=cache?.snapshots;
     if(cache?.schema!=='personaos-browser-signed-identity-cache/1'
         ||!Array.isArray(snapshots)){
       localStorage.removeItem(FAST_SIGNED_IDENTITY_CACHE_KEY); return [];
@@ -2731,7 +2726,7 @@ function writeFastSignedIdentitySnapshots(snapshots){
   try{
     const bounded=(snapshots||[]).slice(0,FAST_SIGNED_IDENTITY_CACHE_MAX_SNAPSHOTS);
     while(bounded.length){
-      const raw=JSON.stringify({schema:'personaos-browser-signed-identity-cache/1',
+      const raw=canon({schema:'personaos-browser-signed-identity-cache/1',
         snapshots:bounded});
       if(raw.length<=FAST_SIGNED_IDENTITY_CACHE_MAX_BYTES){
         localStorage.setItem(FAST_SIGNED_IDENTITY_CACHE_KEY,raw); return true;
@@ -2847,7 +2842,7 @@ function _clearFastOriginInventory(){
 function persistFastOriginInventory(boot,providerIndex){
   if(!boot?.kernel_id||providerIndex?.kernel_id!==boot.kernel_id) return false;
   try{
-    const raw=JSON.stringify({schema:'personaos-browser-fast-origin/1',
+    const raw=canon({schema:'personaos-browser-fast-origin/1',
       kernel_id:boot.kernel_id,stored_at:new Date().toISOString(),provider_index:providerIndex});
     if(raw.length>FAST_ORIGIN_CACHE_MAX_BYTES){ _clearFastOriginInventory(); return false; }
     localStorage.setItem(FAST_ORIGIN_CACHE_KEY,raw); return true;
@@ -2858,7 +2853,7 @@ function readFastOriginInventory(){
     const raw=localStorage.getItem(FAST_ORIGIN_CACHE_KEY)||'';
     if(!raw||raw.length>FAST_ORIGIN_CACHE_MAX_BYTES){
       if(raw) _clearFastOriginInventory(); return null; }
-    const cached=JSON.parse(raw);
+    const cached=parseSignedJson(raw);
     if(cached?.schema!=='personaos-browser-fast-origin/1'
         ||!cached.kernel_id||!cached.provider_index){
       _clearFastOriginInventory(); return null; }
@@ -4650,11 +4645,11 @@ function connectDiscoveryStream(base,boot){
   });
   let cognitionQueue=Promise.resolve();
   es.addEventListener('hello',(ev)=>{
-    try{ es._cognitionDocuments=JSON.parse(ev.data).cognition_documents===true; }catch(_){}
+    try{ es._cognitionDocuments=parseSignedJson(ev.data).cognition_documents===true; }catch(_){}
   });
   es.addEventListener('persona_cognition',(ev)=>{
     cognitionQueue=cognitionQueue.then(async()=>{
-      const t=JSON.parse(ev.data), kernel=String(kernelForBase(base)||boot?.kernel_id||'');
+      const t=parseSignedJson(ev.data), kernel=String(kernelForBase(base)||boot?.kernel_id||'');
       const endpointId=String(t?.persona_id||'');
       if(!kernel||!await verifyPublicPersonaCognition(base,t,{personaId:endpointId,kernel})) return;
       const candidate={..._personaRef(endpointId,kernel),endpointId};
@@ -4666,7 +4661,7 @@ function connectDiscoveryStream(base,boot){
   es.addEventListener('discovery_snapshot',(ev)=>{
     cognitionQueue=cognitionQueue.then(async()=>{
     try{
-      const snap=JSON.parse(ev.data||'{}');
+      const snap=parseSignedJson(ev.data||'{}');
       const providerIndex=snap?.providers;
       const verified=await verifiedRowsFromProviderIndex(providerIndex,base,boot,'internet','SSE provider snapshot');
       const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
@@ -4682,7 +4677,7 @@ function connectDiscoveryStream(base,boot){
   });
   es.addEventListener('telemetry_update',async (ev)=>{
     try{
-      const payload=JSON.parse(ev.data||'{}');
+      const payload=parseSignedJson(ev.data||'{}');
       const live=payload.telemetry||payload;
       const publicFrameVerified=await verifyPublicTelemetryFrame(base,live);
       if(!publicFrameVerified) return;
@@ -4703,7 +4698,7 @@ function connectDiscoveryStream(base,boot){
     // can only schedule a refetch; model text is rendered solely after the
     // fetched public cognition document verifies under the current master.
     try{
-      const payload=JSON.parse(ev.data||'{}');
+      const payload=parseSignedJson(ev.data||'{}');
       const expectedKernel=String(kernelForBase(base)||boot?.kernel_id||'');
       const personaIds=Array.isArray(payload?.persona_ids)?payload.persona_ids:[];
       if(!expectedKernel
@@ -4725,7 +4720,7 @@ function connectDiscoveryStream(base,boot){
   es.addEventListener('live_artifact_update',(ev)=>{
     const raw=ev.data||'{}';
     enqueueLiveArtifactFrame(async()=>{
-      let payload; try{ payload=JSON.parse(raw); }
+      let payload; try{ payload=parseSignedJson(raw); }
       catch(e){ log('stream','live artifact frame parse failed',false); return; }
       const previous=liveArtifactState(base,payload?.run);
       const verification=await _verifyLiveWithKeyRefresh(base,url,boot,(context)=>
@@ -9885,8 +9880,7 @@ async function _validPublicPersonaAuthority(output,identity,row){
         ||!authority.intent||typeof authority.intent!=='object'||Array.isArray(authority.intent)
         ||canon(authority.intent.authored_output)!==canon(output.authored_output)) return false;
     signature=String(authority.persona_signature||'');
-    payload={};
-    for(const field of Object.keys(authority)) if(field!=='persona_signature') payload[field]=authority[field];
+    payload={...authority}; delete payload.persona_signature;
   }else if(output.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND){
     const authorityPayload=authority?.payload;
     const authoredOutputPresent=Object.hasOwn(output,'authored_output');
@@ -9894,7 +9888,7 @@ async function _validPublicPersonaAuthority(output,identity,row){
       ?authorityPayload&&typeof authorityPayload==='object'&&!Array.isArray(authorityPayload)
         &&canon(authorityPayload.authored_output)===canon(output.authored_output)
       :(typeof authorityPayload?.message==='string'&&authorityPayload.message.trim()
-        ?authorityPayload.message:canon(authorityPayload))===output.text;
+        ?authorityPayload.message:canonicalMember(authority,'payload'))===output.text;
     if(!_exactObjectFields(authority,PUBLIC_PERSONA_COMMUNICATION_AUTHORITY_FIELDS)
         ||authority.schema!=='personaos-persona-communication/1'
         ||authority.authored_by!==identity.signedId
@@ -9904,8 +9898,7 @@ async function _validPublicPersonaAuthority(output,identity,row){
         ||canon(authority.addressed_to)!==canon(output.audience_persona_ids)
         ||!exactTextBound) return false;
     signature=String(authority.signed_by||'');
-    payload={};
-    for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+    payload={...authority}; delete payload.signed_by;
   }else return false;
   if(!/^[0-9a-f]{128}$/i.test(signature)) return false;
   const cacheKey=`${publicKey}:${output.persona_authority_hash}:${signature}`;
@@ -10000,7 +9993,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
     return false;
   let action;
   try{
-    action=JSON.parse(output.text);
+    action=parseSignedJson(output.text);
     if(!_exactObjectFields(action,['action','arguments'])
         ||!_safePublicCognitionAtom(action.action,512,{required:true})
         ||!action.arguments||typeof action.arguments!=='object'||Array.isArray(action.arguments)
@@ -10012,8 +10005,7 @@ async function _validPublicPersonaActionAuthority(output,identity,row){
   if(!/^[0-9a-f]{128}$/.test(signature)) return false;
   const cacheKey=`action:${publicKey}:${output.persona_authority_hash}:${signature}`;
   if(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.get(cacheKey)===true) return true;
-  const payload={};
-  for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+  const payload={...authority}; delete payload.signed_by;
   let verified=false;
   try{ verified=await ed.verifyAsync(hexToBytes(signature),enc.encode(canon(payload)),hexToBytes(publicKey)); }
   catch(_){ verified=false; }
@@ -10044,7 +10036,7 @@ async function _validPublicPersonaStructuredAuthority(output,identity,row){
       ||`sha256:${await sha256Hex(enc.encode(canon(authority)))}`!==output.persona_authority_hash)
     return false;
   let parsed;
-  try{ parsed=JSON.parse(output.text); }catch(_){ return false; }
+  try{ parsed=parseSignedJson(output.text); }catch(_){ return false; }
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)
       ||canon(parsed)!==canon(structured)
       ||!Object.keys(structured).every((field)=>Object.hasOwn(authority,field)
@@ -10053,8 +10045,7 @@ async function _validPublicPersonaStructuredAuthority(output,identity,row){
   if(!/^[0-9a-f]{128}$/.test(signature)) return false;
   const cacheKey=`structured:${publicKey}:${output.persona_authority_hash}:${signature}`;
   if(PUBLIC_PERSONA_AUTHORITY_SIGNATURE_CACHE.get(cacheKey)===true) return true;
-  const payload={};
-  for(const field of Object.keys(authority)) if(field!=='signed_by') payload[field]=authority[field];
+  const payload={...authority}; delete payload.signed_by;
   let verified=false;
   try{ verified=await ed.verifyAsync(hexToBytes(signature),enc.encode(canon(payload)),hexToBytes(publicKey)); }
   catch(_){ verified=false; }
@@ -10591,7 +10582,7 @@ function _publicOutputProvenance(output,kernel,resolveRun=_verifiedPublicTaskRun
   if(output?.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND){
     const authority=_actionAuthorityPayload(output.persona_authority)||{};
     try{
-      const action=JSON.parse(output.text), args=action.arguments||{};
+      const action=parseSignedJson(output.text), args=action.arguments||{};
       provenance.action=_publicProvenanceAtom(action.action);
       provenance.actionPurpose=_publicProvenanceAtom(args.purpose,600);
       provenance.run=_publicProvenanceAtom(args.run_id);
@@ -12909,7 +12900,7 @@ async function connectedNodeBytes(entry,path,{requireOperator=false,maxBytes=DEF
 }
 async function connectedNodeJson(entry,path,options={}){
   const {bytes}=await connectedNodeBytes(entry,path,options);
-  return JSON.parse(new TextDecoder().decode(bytes));
+  return parseSignedJson(new TextDecoder().decode(bytes));
 }
 async function connectedProfile(entry,pid,{refresh=false}={}){
   const cached=entry.profiles.get(pid);
@@ -13170,13 +13161,13 @@ async function connectMyNode(base,token){
   const url=join(normalized,'discovery/events');
   entry.stream=fetchEventSource(url,{requestInit:()=>({headers:token?{Authorization:'Bearer '+token}:{}})});
   entry.stream.addEventListener('hello',(event)=>{
-    try{ entry.stream._cognitionDocuments=JSON.parse(event.data).cognition_documents===true; }catch(_){}
+    try{ entry.stream._cognitionDocuments=parseSignedJson(event.data).cognition_documents===true; }catch(_){}
     refreshConnectedNode(entry);
   });
   entry.stream.addEventListener('persona_cognition',async(event)=>{
     if(entry.closed) return;
     try{
-      const doc=JSON.parse(event.data), pid=String(doc.persona_id||'');
+      const doc=parseSignedJson(event.data), pid=String(doc.persona_id||'');
       if(!(entry.status.personas||[]).some((person)=>person.persona_id===pid)
           ||!await rememberConnectedCognition(entry,doc,pid)) return;
       entry.error=''; paintConnectedNode(entry);
@@ -13185,7 +13176,7 @@ async function connectMyNode(base,token){
   entry.stream.addEventListener('telemetry_update',(event)=>{
     if(entry.closed) return;
     try{
-      const live=JSON.parse(event.data).telemetry;
+      const live=parseSignedJson(event.data).telemetry;
       if(live&&live.schema==='personaos-live-telemetry/1') entry.live=live;
       paintConnectedNode(entry);
     }catch(_){}
@@ -13194,7 +13185,7 @@ async function connectMyNode(base,token){
     // Keep revision checks in arrival order even when signature verification awaits.
     entry.artifactEvents=(entry.artifactEvents||Promise.resolve()).then(async()=>{
       if(entry.closed) return;
-      try{ await rememberConnectedArtifacts(entry,JSON.parse(event.data),{event:true}); }
+      try{ await rememberConnectedArtifacts(entry,parseSignedJson(event.data),{event:true}); }
       catch(_){ if(!entry.closed){ entry.artifactError='A workspace update could not be verified.'; paintConnectedNode(entry); } }
     });
   });
@@ -14579,7 +14570,7 @@ async function _discoverFromP2P(hint,{signal=null}={}){
         const response=await fetch(identityUrl,secureFetchInit(identityUrl,{signal:identitySignal}));
         if(!response.ok) return null;
         const bytes=await readBoundedResponseBytes(response,2*1024*1024);
-        return JSON.parse(new TextDecoder().decode(bytes));
+        return parseSignedJson(new TextDecoder().decode(bytes));
       })().catch(()=>null);
       const identityDoc=await Promise.any([
         usableIdentity(P2P.fetchPublicJson(p,identityPath,
@@ -14915,7 +14906,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260907-range-recovery-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260907-signed-json-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

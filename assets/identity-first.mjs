@@ -1,10 +1,11 @@
+import {canonicalJson as canon, parseSignedJson} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
 import {installEd25519HashFallback, sha256Hex}
   from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
 import {evaluatePublicRecordAccess, validateProviderInventoryWindow}
   from './discovery-authority.mjs?v=20260715-provider-window-v1';
 import {readOfflineHistorySnapshots,verifyOfflineHistorySnapshots}
-  from './offline-history.mjs?v=20260808-offline-history-v2';
+  from './offline-history.mjs?v=20260907-signed-json-v1';
 
 // This entry never discovers a route or consults a locator. It can only retry
 // direct provider bases that the full application previously admitted and
@@ -46,18 +47,8 @@ const esc=(value)=>String(value??'').replace(/[&<>"]/g,
 const hex=(value)=>Uint8Array.from(String(value||'').match(/.{1,2}/g)
   ?.map((byte)=>Number.parseInt(byte,16))||[]);
 
-function canon(value){
-  if(value===null||value===undefined) return 'null';
-  if(Array.isArray(value)) return '['+value.map(canon).join(',')+']';
-  if(typeof value==='object') return '{'+Object.keys(value).sort()
-    .map((key)=>JSON.stringify(key)+':'+canon(value[key])).join(',')+'}';
-  return JSON.stringify(value);
-}
-
 function withoutSignature(value){
-  const out={};
-  for(const key of Object.keys(value||{})) if(key!=='signature_hex') out[key]=value[key];
-  return out;
+  const out={...value}; delete out.signature_hex; return out;
 }
 
 function exactFields(value,fields){
@@ -124,7 +115,7 @@ async function boundedJson(url,{signal,maxBytes}){
     if(Number.isFinite(declared)&&declared>maxBytes) return null;
     const bytes=new Uint8Array(await response.arrayBuffer());
     if(bytes.byteLength>maxBytes) return null;
-    return JSON.parse(new TextDecoder().decode(bytes));
+    return parseSignedJson(new TextDecoder().decode(bytes));
   }catch(_){
     return null;
   }
@@ -134,7 +125,7 @@ function cachedSnapshots(){
   try{
     const raw=localStorage.getItem(CACHE_KEY)||'';
     if(!raw||raw.length>CACHE_MAX_BYTES) return [];
-    const cache=JSON.parse(raw);
+    const cache=parseSignedJson(raw);
     if(cache?.schema!=='personaos-browser-signed-identity-cache/1'
         ||!Array.isArray(cache.snapshots)) return [];
     return cache.snapshots
@@ -583,7 +574,7 @@ function publishOfflineHistory(values){
 // Current identity verification, the full live application, and historical
 // cryptography start together. Cached bytes can therefore never delay direct or
 // peer discovery. History stays an inert DOM projection with no reusable route.
-const applicationJob=import('./discovery.js?v=20260907-range-recovery-v1');
+const applicationJob=import('./discovery.js?v=20260907-signed-json-v1');
 const currentIdentityJob=identityFirst().catch(()=>false);
 const historicalJob=(async()=>{
   const [providerHistory,identityHistory]=await Promise.all([
