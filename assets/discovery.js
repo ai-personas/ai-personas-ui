@@ -383,6 +383,7 @@ async function fetchP2PJson(value,init={}){
     timeoutMs:Math.min(12000,Number(init.timeoutMs)||8000),
     maxBytes:init.maxBytes||DEFAULT_JSON_MAX_BYTES,
     sinceRevision:found.sinceRevision,
+    signal:init.signal,
   }).catch(()=>null);
   return settleBeforeAbort(request,init.signal,null);
 }
@@ -404,7 +405,8 @@ function settleBeforeAbort(request,signal,abortedValue=null){
     request.then(finish,()=>finish(null));
   });
 }
-async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER){
+async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER,{signal=null}={}){
+  if(signal?.aborted) return null;
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
   // JSON polling has its own sole `since=sha256:...` query contract in
   // p2pDataRouteForUrl. Artifact bodies instead permit only the exact hash query
@@ -423,7 +425,7 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_S
   if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
   if(queryHash&&queryHash!==contentHash) return null;
   const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
-    {timeoutMs:10000,maxBytes,path:found.path,priority:100}).catch(()=>null);
+    {timeoutMs:10000,maxBytes,path:found.path,priority:100,signal}).catch(()=>null);
   return result?.bytes||null;
 }
 // Large signed inventories are fetched concurrently by the HTTP and P2P
@@ -6239,7 +6241,7 @@ function _personaAvatarHue(value){ let h=0; for(const c of String(value||'')) h=
 const _PERSONA_AVATAR_CACHE_MAX_ENTRIES=96;
 const _PERSONA_AVATAR_CACHE_MAX_BYTES=64*1024*1024;
 const _PERSONA_AVATAR_FETCH_CONCURRENCY=4;
-const _PERSONA_AVATAR_ATTEMPT_TIMEOUT_MS=15000;
+const _PERSONA_AVATAR_HTTP_TIMEOUT_MS=15000;
 const _PERSONA_AVATAR_MOUNT_TIMEOUT_MS=5000;
 const _PERSONA_AVATAR_RETRY_BASE_MS=500;
 const _PERSONA_AVATAR_RETRY_MAX_MS=30000;
@@ -6457,7 +6459,6 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   if(!job){
     const controller=new AbortController(); _personaAvatarJobControllers.add(controller);
     job=_queuePersonaAvatarFetch(async()=>{
-      const timeout=globalThis.setTimeout(()=>controller.abort(),_PERSONA_AVATAR_ATTEMPT_TIMEOUT_MS);
       const aborted=new Promise((_,reject)=>{
         if(controller.signal.aborted){ reject(_personaAvatarBodyTransientError()); return; }
         controller.signal.addEventListener('abort',
@@ -6482,8 +6483,11 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         }).then((loaded)=>({loaded,persistent:true}));
         const peerAttempt=verifyWith(async(requestUrl)=>{
           if(!p2pDataRouteForUrl(requestUrl)) throw _personaAvatarBodyTransientError();
-          const bytes=await settleBeforeAbort(fetchP2PArtifactBytes(
-            requestUrl,`sha256:${descriptor.sha256}`,descriptor.byte_length),controller.signal,null);
+          // The peer reader bounds each request. Keep this shared job until
+          // the complete image arrives; circuit renewals may take longer than
+          // a single HTTP attempt and must not create duplicate transfers.
+          const bytes=await fetchP2PArtifactBytes(requestUrl,
+            `sha256:${descriptor.sha256}`,descriptor.byte_length,{signal:controller.signal});
           if(bytes?.byteLength!==descriptor.byte_length) throw _personaAvatarBodyTransientError();
           return new Response(bytes,{status:200,headers:{
             'Content-Type':descriptor.mime_type,
@@ -6494,7 +6498,8 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
           if(!isHttp(requestUrl)) throw _personaAvatarBodyTransientError();
           try{
             const response=await fetch(requestUrl,secureFetchInit(requestUrl,{
-              ...init,signal:controller.signal,
+              ...init,signal:AbortSignal.any([controller.signal,
+                AbortSignal.timeout(_PERSONA_AVATAR_HTTP_TIMEOUT_MS)]),
             }));
             if(response?.ok) return response;
           }catch(_){ /* the peer-bound public-data route remains available */ }
@@ -6515,7 +6520,8 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         const currentPin=S.personaIdentityKeys.get(ref.key)||'';
         if(currentPin&&currentPin!==observedKey) throw new Error('persona identity key pin mismatch');
         const blob=new Blob([loaded.bytes],{type:loaded.descriptor.mime_type});
-        await _decodePersonaAvatarBlob(blob,loaded.descriptor,controller.signal);
+        await _decodePersonaAvatarBlob(blob,loaded.descriptor,AbortSignal.any([
+          controller.signal,AbortSignal.timeout(_PERSONA_AVATAR_MOUNT_TIMEOUT_MS)]));
         if(controller.signal.aborted) throw _personaAvatarBodyTransientError();
         if(!winner.persistent) await _persistPersonaAvatarResponse(loaded.sourceUrl,loaded);
         S.personaIdentityKeys.set(ref.key,observedKey);
@@ -6525,7 +6531,7 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
         }));
       })();
       try{ return await Promise.race([attempt,aborted]); }
-      finally{ globalThis.clearTimeout(timeout); controller.abort(); }
+      finally{ controller.abort(); }
     },controller.signal).catch((error)=>{
       if(error?.avatarBodyTransient!==true) _rememberPersonaAvatarFailure(cacheKey);
       throw error;
@@ -14899,7 +14905,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260907-inventory-priority-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260907-peer-read-lifetime-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
