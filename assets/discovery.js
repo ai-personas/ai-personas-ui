@@ -3552,7 +3552,7 @@ function renderGlobalKernels(){
     return `<button type="button" class="gk ${liveRoute?'ok':'dim'}${kid===S.kernelFocus?' on':''}" data-kernel="${esc(kid)}"`
       +` aria-pressed="${kid===S.kernelFocus?'true':'false'}" title="${esc(title)}">`
       +`<span class="dot ${liveRoute?'live':''}"></span>${esc(context.label)}`
-      +(active?` <span class="n k">${active} RUNNING</span>`:via)+`</button>`;
+      +(active?` <span class="n k">${active} THINKING</span>`:via)+`</button>`;
   }).join('');
   if(scope) scope.textContent=S.kernelFocus
     ?`focused node · ${compactCount(Number(g.get(S.kernelFocus)?.meta?.recordCount)||0)} public records`
@@ -7402,23 +7402,24 @@ function _pkCognitionStats(personaKey){
   })();
   return cached?.stats||null;
 }
-// Kernel-signed task discovery facts for an environment/run: mechanical
-// task_state / acceptance_state tokens from the record's capability summary.
+// Use an exact run when supplied, otherwise the newest verified lifecycle in
+// the environment. Retained exports can still point at an earlier run.
 function _pkTaskFacts(kernel,envSid,run){
-  const wantEnv=environmentIdentity(envSid||'');
+  const wantEnv=environmentIdentity(envSid||''), wantRun=String(run||''), matches=[];
+  if(!wantEnv&&!wantRun) return null;
   for(const id of S.order){ const r=S.recs.get(id);
     if(!r||r.kind!=='task'||String(r._kernel||'')!==String(kernel||'')) continue;
+    const lifecycle=publicTaskLifecycleProjection(r); if(!lifecycle) continue;
+    if(wantRun&&lifecycle.run!==wantRun) continue;
+    if(wantEnv&&environmentIdentity(lifecycle.environment)!==wantEnv) continue;
     const caps=Array.isArray(r.capability_summary)?r.capability_summary.filter((cap)=>typeof cap==='string'):[];
-    const runMatch=!!run&&caps.includes(`task_run:${run}`);
-    const envMatch=!!wantEnv&&caps.some((cap)=>cap.startsWith('task_environment:')
-      &&environmentIdentity(cap.slice('task_environment:'.length))===wantEnv);
-    if(!runMatch&&!envMatch) continue;
-    const token=(prefix)=>{ const hit=caps.find((cap)=>cap.startsWith(prefix));
-      return hit?hit.slice(prefix.length).slice(0,64):''; };
-    return {state:token('task_state:'),acceptance:token('acceptance_state:'),
-      run:token('task_run:'),recordId:id};
+    const acceptance=caps.find((cap)=>cap.startsWith('acceptance_state:'))||'';
+    matches.push({order:_taskLifecycleRecordOrder(r,lifecycle),
+      facts:{state:lifecycle.state,acceptance:acceptance.slice('acceptance_state:'.length).slice(0,64),
+        run:lifecycle.run,recordId:id}});
   }
-  return null;
+  matches.sort((left,right)=>left.order.localeCompare(right.order));
+  return matches.at(-1)?.facts||null;
 }
 // Tool-kind discovery records mounted in this environment → bounded name chips.
 function _pkEnvTools(kernel,envSid){
@@ -7644,8 +7645,8 @@ function renderPersonaCard(pid,kernel='',context={}){
     +(s.brain_fragment_count!=null?`<span class="tag" title="brain fragments">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
     +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
     +(rt.task_execution_state?`<span class="tag runtime-tag" title="live task participation status">${icon('task','ico-sm')} ${esc(_humanTaskExecutionState(rt.task_execution_state))}</span>`:'');
-  // Runtime state is separate from lifecycle. RUNNING is LLM/model-call only;
-  // RECENT is public activity; IDLE means available but no recent activity.
+  // The pulsing dot and WORKING NOW show an active model call. RUNNING shows
+  // the task's lifecycle between calls; RECENT UPDATE shows public activity.
   const dotCls=running?'run':(terminalFailure||mechanicalRun.key==='cancelled'
     ?'error':(recent?'on':'off'));
   const statusBadge=transportStale
@@ -7847,8 +7848,8 @@ function _environmentCommunicationGraphHTML(b){
       return (state.running?2:0)+(state.recent?1:0); }}).items;
   const shownSet=new Set(shown), hidden=Math.max(0,refs.length-shown.length);
   if(!shown.length) return {activeCount,eventCount:scopedEvents.length,directCount:0,
-    html:`<section class="env-network empty"><div class="env-network-head"><span>People working together</span><small>No participants yet</small></div>`
-      +`<div class="env-network-empty">No participants have joined this workspace yet.</div></section>`};
+    html:`<section class="env-network empty"><div class="env-network-head"><span>People working together</span><small>Participants not observed</small></div>`
+      +`<div class="env-network-empty">No participant information has arrived for this workspace yet.</div></section>`};
 
   const positions=new Map();
   shown.forEach((key,index)=>{ const count=shown.length;
@@ -8445,14 +8446,19 @@ function refreshSystemView(){
   // persona with a shared environment only when live model or interaction
   // telemetry explicitly names that environment; this is observed ownership,
   // not a guessed join from display names.
-  for(const [personaKey,d] of S.liveByPersona){
-    let sid=String([...(d.models||[])].reverse().find((m)=>m.environment)?.environment||'');
+  const observedPersonas=new Set([...S.liveByPersona.keys(),
+    ...(S.verifiedPublicCognitionByPersona?.keys()||[])]);
+  for(const personaKey of observedPersonas){
+    const d=S.liveByPersona.get(personaKey), ref=_personaRef(personaKey);
+    if(!providerVerifiedPersonaObservation(personaKey)) continue;
+    const models=_personaModelHistory(personaKey,d?.models||[]);
+    let sid=String([...models].reverse().find((m)=>m.environment)?.environment||'');
     if(!sid){ const hit=[...(S.ixByPersona?.get(personaKey)||[])].reverse().find((e)=>e.scope==='environment'&&e.scope_id);
       sid=_shortId(hit?.scope_id||''); }
     if(!sid) continue;
-    const ref=_personaRef(personaKey), block=bySid.get(envKey(d.kernel||ref.kernel,sid));
-    if(block&&providerVerifiedPersonaObservation(personaKey)
-      &&!block.members.includes(personaKey)){ block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed telemetry'; }
+    const block=bySid.get(envKey(ref.kernel,sid));
+    if(block&&!block.members.includes(personaKey)){
+      block.members.push(personaKey); assigned.add(personaKey); block.memberSource='observed activity'; }
   }
   S.envCount=envBlocks.length;
   // personas known live but not in any env feed → a node-roster lane
@@ -8615,7 +8621,7 @@ function refreshSystemView(){
     const envName=b.exportTitle||b.name;
     // Mechanical task facts from the signed task discovery record for this
     // environment/run: task_state + acceptance_state capability tokens.
-    const facts=_pkTaskFacts(b.kernel,b.sid,b.run||'');
+    const facts=_pkTaskFacts(b.kernel,b.sid,'');
     const acceptChip=facts?.acceptance?`<span class="pk-accept" title="acceptance state from the signed task record">${esc(facts.acceptance.replace(/_/g,' '))}</span>`:'';
     // DOING NOW: task lifecycle state + active model calls from the verified
     // public environment telemetry feed (model_status.active_calls).

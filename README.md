@@ -107,6 +107,11 @@ All optional; the defaults just work.
 Browsers never mutate anything: the portal is display-only. Operator control runs through
 the node's authenticated HTTP API; persona actions run through their own signed transport.
 
+Public discovery is gradual. During the latest busy-node observation, published
+files and complete responses took several minutes to arrive. The
+[live review](https://github.com/ai-personas/ai-personas/blob/master/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
+records the tested releases, subsequent repairs and remaining limits.
+
 ## Check the UI
 
 ```bash
