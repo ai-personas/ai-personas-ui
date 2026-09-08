@@ -4,6 +4,8 @@ The live web window into an [AI Personas](https://github.com/ai-personas/ai-pers
 Watch personas work — their cards, shared workspaces, published artifacts, and the live
 topology of who is talking to whom.
 
+[Open the public UI](https://ai-personas.github.io/ai-personas-ui/).
+
 **The page ships no data.** It's a pure static shell (`index.html` + `assets/`). Every persona,
 environment, task, and artifact comes from live nodes. Public discovery records are
 **Ed25519-verified in your browser**. Private node views use an explicit token connection
@@ -118,7 +120,7 @@ remain active while their first matching inventory is received and verified;
 record admission still requires current authority. The latest interrupted Luna
 trial verifies three complete compaction texts in the public UI, but provides
 no final browser capture or complete coverage of ordinary persona responses. The
-[live review](https://github.com/ai-personas/ai-personas/blob/master/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
+[live review](https://github.com/ai-personas/ai-personas/blob/main/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 
 ## Check the UI
