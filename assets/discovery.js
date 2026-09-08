@@ -4841,6 +4841,13 @@ function rebalanceDiscoveryStreams(){
   for(const [url,stream] of (S.streams||new Map())){
     const base=opBaseKey(stream?._base);
     if(allowed.has(base)) continue;
+    // A verified route can open its watch before its first full inventory is
+    // admitted into the monitoring window. Let that active reconciliation
+    // finish; closing the watch here would invalidate its own pending read.
+    const route=S.p2pDataRoutes?.get(base);
+    if(url===`p2p:${base}`&&route&&stream?._kernel===route.kernel
+        &&stream?._peerId===route.peerId
+        &&S.providerRouteReconciliations?.has(`${route.kernel}\u0000${stream._base}`)) continue;
     try{ stream?.close?.(); }catch(e){}
     S.streams.delete(url);
   }
