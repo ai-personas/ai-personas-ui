@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
+import {createPublicEvidence} from './helpers/public-evidence.mjs';
 
 const assets = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -39,7 +40,7 @@ const S = {keyDocs:new Map([[base, {entries:[{
   key_id:'kernel-master', role:'master', status:'current', public_key_hex:publicKey,
 }]}]])};
 const empty = () => '';
-const values = {...telemetry, ...json, ...artifact, ...authority, ed, S,
+const values = {...telemetry, ...json, ...artifact, ...authority, createPublicEvidence, ed, S,
   esc:value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;'),
   icon:empty, copyBtn:empty, _ago:empty,
   _renderPersonaWorkState:empty, _personaAgenticDevelopmentHTML:empty,

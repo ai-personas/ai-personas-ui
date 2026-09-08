@@ -1,8 +1,9 @@
 import {canonicalJson, canonicalMember, parseSignedJson} from './canonical-json.mjs';
+import {createPublicEvidence} from './public-evidence.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs?v=20260907-access-revocation-v1';
-import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260907-private-close-v1';
+import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260908-public-evidence-v1';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -207,6 +208,18 @@ const SPARK_N=32, BUCKET_MS=650;
 
 // canonical bytes == personaos canonical_bytes (sorted keys, compact, UTF-8)
 function canon(v){ return canonicalJson(v); }
+// Disabled unless a reader explicitly enables public observation. Producers
+// remain module-private; signed input objects are never changed by this hook.
+const _publicEvidenceBridge=createPublicEvidence({canon:canonicalJson});
+const _publicEvidence=_publicEvidenceBridge.producer;
+const _publicEvidenceAttempt=Symbol('browser public inventory observation attempt');
+const _publicEvidenceRegistry=Symbol('browser public inventory verifier input');
+globalThis.__personaOSPublicEvidence=_publicEvidenceBridge.reader;
+function _reconcilePublicEvidenceControls(){
+  if(!_publicEvidence.active()) return;
+  _publicEvidence.reconcileControls([...document.querySelectorAll('[data-public-evidence-key]')]
+    .map((control)=>control.dataset.publicEvidenceKey));
+}
 async function verifyRecord(doc,keyEntries){
   for(const entry of recordVerificationEntries(keyEntries,doc?.signing_key_id)){
     try{ if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(doc.record)),
@@ -431,16 +444,53 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_S
 // absolute URL so the same multi-megabyte document is never transferred twice;
 // both lanes verify the identical signed document downstream.
 const _sharedDocJobs=new Map();
-function sharedDocumentJson(url,fetch_){
+function sharedDocumentJson(url,fetch_,
+  {base=null,isCurrent=base==null?null:_peerInventoryReadGuard(base)}={}){
+  if(isCurrent&&!isCurrent()) return Promise.resolve(null);
   const hit=_sharedDocJobs.get(url);
-  if(hit&&(!hit.settled||Date.now()-hit.ts<10000)) return hit.promise;
-  const job={settled:false,ts:0,promise:null};
-  const promise=Promise.resolve().then(fetch_).finally(()=>{
+  if(hit&&(!hit.settled||Date.now()-hit.ts<10000)){
+    if(hit.invalidated){
+      // Finish the existing transfer before selecting one shared successor.
+      // Even a failed old read can be followed by this explicit invalidation.
+      const resume=()=>sharedDocumentJson(url,fetch_,{isCurrent});
+      return hit.promise.then(resume,resume);
+    }
+    return hit.promise;
+  }
+  const job={settled:false,invalidated:false,ts:0,promise:null};
+  const promise=Promise.resolve().then(()=>{
+    if(isCurrent&&!isCurrent()){ job.invalidated=true; return null; }
+    return fetch_();
+  }).finally(()=>{
     job.settled=true; job.ts=Date.now();
-    setTimeout(()=>{ if(_sharedDocJobs.get(url)===job) _sharedDocJobs.delete(url); },10000);
+    const expire=()=>{ if(_sharedDocJobs.get(url)===job) _sharedDocJobs.delete(url); };
+    if(job.invalidated) expire();
+    else setTimeout(expire,10000);
   });
   job.promise=promise; _sharedDocJobs.set(url,job);
   return promise;
+}
+function _invalidatePeerInventory(base,boot){
+  const paths=boot?.providers_url?[boot.providers_url]
+    :['discovery/providers.json','discovery/public/providers.json'];
+  for(const path of paths){
+    const url=join(base,path), job=_sharedDocJobs.get(url);
+    if(!job) continue;
+    if(job.settled) _sharedDocJobs.delete(url);
+    else job.invalidated=true;
+  }
+}
+function _peerInventoryReadGuard(base){
+  const key=opBaseKey(base), route=S.p2pDataRoutes?.get(key);
+  if(!route) return null;
+  const {kernel,peerId}=route, master=route.providerRecord?.public_key_hex;
+  const stream=S.streams?.get('p2p:'+key);
+  return ()=>{
+    const current=S.p2pDataRoutes?.get(key);
+    return !!current&&current.kernel===kernel&&current.peerId===peerId
+      &&current.providerRecord?.public_key_hex===master
+      &&(!stream||S.streams?.get('p2p:'+key)===stream);
+  };
 }
 async function fetchJson(u,init={}){
   // A current-master-verified provider route is already a stronger transport
@@ -2273,7 +2323,7 @@ async function verifiedCanonicalBaseMatch(value,base,boot){
   return normalizedHttpBase(canonicalBase)===canonicalBase
     &&transports.some((route)=>normalizedHttpBase(route)===canonicalBase);
 }
-async function verifyProviderInventory(index,base,boot){
+async function verifyProviderInventory(index,base,boot,{publicEvidenceAttempt=null}={}){
   const inventoryBase=String(index?.base||'').replace(/\/$/,'');
   // `base` is the current-master-signed canonical public route, while `base`
   // passed to this function is the transport route that delivered those bytes.
@@ -2343,12 +2393,15 @@ async function verifyProviderInventory(index,base,boot){
     hashPayload[field]=index[field];
   if(`sha256:${await sha256Hex(enc.encode(canon(hashPayload)))}`!==index.inventory_hash)
     return {ok:false,reason:'provider_inventory_hash_invalid'};
+  const verificationRegistry=publicEvidenceAttempt?S.keyDocs.get(base||'@origin'):null;
   if(!await verifyCurrentMasterSignedDocument(base,index))
     return {ok:false,reason:'provider_inventory_signature_invalid'};
-  return {ok:true,generation:index.inventory_generation,hash:index.inventory_hash,
+  const result={ok:true,generation:index.inventory_generation,hash:index.inventory_hash,
     previousHash:String(index.previous_inventory_hash||''),manifestHash:index.inventory_manifest_hash,
     recordIds,bindings:new Map(rows.map((item)=>[item.record_id,item.document_hash])),
     generatedAt,expiresAt};
+  if(publicEvidenceAttempt) result[_publicEvidenceRegistry]=verificationRegistry;
+  return result;
 }
 const PUBLIC_ENTITY_INDEX_FIELDS=Object.freeze([
   'environments','generated_at','node_id','personas','schema','signature_hex','signing_key_id',
@@ -2513,7 +2566,7 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     ?(r.kind==='env'?await verifyPublicRunScorecardsForEnvironment(base,doc.run_scorecards,r)
       :r.kind==='persona'?await verifyPublicRunScorecardsForPersona(base,doc.run_scorecards,r):[])
     :[];
-  return {ok:true,row:{...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
+  const row={...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     // Keep the reached provider route separate from the read-gated content
     // base. `base` is the endpoint whose bootstrap, current-master keys and
@@ -2546,16 +2599,22 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
           kernel_id:k,host_kernel_id:doc.host_kernel_id||'',base:b,links,
           access_policy:projectedPolicy,record_signature_verified:true,
-          policy_signature_verified:true,task_lifecycle_signature_verified:taskLifecycleVerified}}};
+          policy_signature_verified:true,task_lifecycle_signature_verified:taskLifecycleVerified}};
+  _publicEvidence.rowVerified(meta.publicEvidenceAttempt,row,meta.publicEvidenceEnvelope,registry);
+  return {ok:true,row};
 }
 function logRecordAccess(row,source){
   const label=String(row?.label||row?.record_id||'record').slice(0,36);
   log('access',`${source}: ${label} · ${row?._readAuthorized?'public read granted':'discover-only; read links withheld'}`,true);
 }
 async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,source='http',
-  {signal=null}={}){
+  {signal=null,publicEvidenceAttempt=null}={}){
   const rows=[]; let refused=0;
-  const inventory=await verifyProviderInventory(providerIndex,base,boot);
+  const observation=publicEvidenceAttempt||_publicEvidence.begin(source,base);
+  if(!publicEvidenceAttempt) _publicEvidence.available(observation,providerIndex);
+  const inventory=await verifyProviderInventory(providerIndex,base,boot,{publicEvidenceAttempt:observation});
+  if(observation) inventory[_publicEvidenceAttempt]=observation;
+  _publicEvidence.verified(observation,inventory,inventory[_publicEvidenceRegistry]);
   if(!inventory.ok){
     log('verify',`${source}: signed provider inventory refused · ${inventory.reason}`,false);
     return {rows,refused:Math.max(1,Number(providerIndex?.provider_count)||0),
@@ -2566,6 +2625,7 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
   const indexReason=providerIndex?.kernel_id!==boot?.kernel_id
     ?'provider_index_kernel_mismatch':hydrated.reason;
   if(!hydrated.ok||indexReason){
+    _publicEvidence.refuse(observation,indexReason||'provider_hydration_invalid');
     log('verify',`${source}: compact provider index refused · ${indexReason}`,false);
     return {rows,refused:Math.max(1,declared),envelopeCount:declared,inventory};
   }
@@ -2578,7 +2638,8 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
         ||envelope?.record?.schema!=='provider-record/1'
         ||!envelope?.document?.record
         ||!/^discovery\/public\/records\/[A-Za-z0-9:_.-]+\.json$/.test(url)){
-      refused++; log('verify',`${source}: incomplete or malformed provider envelope refused`,false); continue; }
+      refused++; _publicEvidence.refuse(observation,'malformed_provider_envelope');
+      log('verify',`${source}: incomplete or malformed provider envelope refused`,false); continue; }
     if(!byUrl.has(url)) byUrl.set(url,envelope);
   }
   const entries=[...byUrl.entries()];
@@ -2597,11 +2658,13 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
         envelope,doc,boot,base,'',{signal});
       if(!authority.ok) return {ok:false,envelope,reason:authority.reason||'FAIL'};
       const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
-        {access:authority.access,providerBaseVerified:true});
+        {access:authority.access,providerBaseVerified:true,publicEvidenceAttempt:observation,
+          publicEvidenceEnvelope:envelope});
       return out.ok?{ok:true,row:out.row}:{ok:false,envelope,reason:out.reason||'record refused'};
     }));
     for(const result of batch){
       if(!result.ok){ refused++;
+        _publicEvidence.refuse(observation,'provider_or_record:'+result.reason);
         log('verify',`${source}: ${(result.envelope?.record?.key||'provider').slice(0,28)} · ${result.reason}`,false);
         continue; }
       logRecordAccess(result.row,source); rows.push(result.row);
@@ -2952,6 +3015,7 @@ async function hydrateFastOriginInventory(){
         // Fresh transport won the race while cached verification was running.
         // Keep that complete generation, irrespective of numeric ordering.
         if(S.providerInventories.has(boot.kernel_id)){
+          _publicEvidence.refuse(inventory[_publicEvidenceAttempt],'warm_cache_superseded_by_fresh');
           const current=S.providerInventories.get(boot.kernel_id),
             authoritative=current?.recordKeys instanceof Set
               ?current.recordKeys:new Set(current?.recordKeys||[]);
@@ -3365,8 +3429,11 @@ async function discoverFrom(base,plane,knownBoot=null,
   // so a cold viewer can verify people and workspaces without waiting for every
   // artifact/task/telemetry byte in the generation.
   const providerUrl=join(base,boot.providers_url||'discovery/providers.json');
+  const observation=_publicEvidence.begin('http provider consumer',base);
   const providerPromise=sharedDocumentJson(providerUrl,
-    ()=>fetchJson(providerUrl,{maxBytes:Number.MAX_SAFE_INTEGER,signal}));
+    ()=>fetchJson(providerUrl,{maxBytes:Number.MAX_SAFE_INTEGER,signal}),{base});
+  if(observation) providerPromise.then((value)=>_publicEvidence.available(observation,value),
+    ()=>_publicEvidence.refuse(observation,'provider_promise_rejected'));
   let identityAccepted=false;
   if(boot.identity_index_url){
     const identityDoc=await fetchJson(join(base,boot.identity_index_url),{
@@ -3375,6 +3442,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   }
   const prov=await providerPromise;
   if(!prov||Number(prov.document_count)!==advertisedRecordCount){
+    _publicEvidence.refuse(observation,!prov?'provider_value_absent':'bootstrap_count_mismatch');
     log('dht',`${boot.kernel_id||where}: provider document count does not match advertised bootstrap`,false);
     if(!identityAccepted) S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found:[]};
@@ -3382,7 +3450,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   const providers=Array.isArray(prov?.providers)?prov.providers:[];
   log('dht',`${boot.kernel_id||where}: ${providers.length} provider key(s)${boot.providers_are_aggregate?' · public aggregate':''}`);
   const http=await verifiedRowsFromProviderIndex(
-    prov,base,boot,plane,'http provider',{signal});
+    prov,base,boot,plane,'http provider',{signal,publicEvidenceAttempt:observation});
   const found=[...http.rows];
   const uniqueFound=new Map(found.map((row)=>[
     `${row._kernel||boot.kernel_id||'@unknown'}\u0000${row.record_id||row.did}`,row]));
@@ -3391,6 +3459,7 @@ async function discoverFrom(base,plane,knownBoot=null,
   const inventory={...(http.inventory||{}),complete:http.inventory?.ok===true
     &&http.refused===0&&new Set(found.map((row)=>row.record_id)).size===http.inventory.recordIds?.size};
   if(!inventory.complete){
+    _publicEvidence.refuse(observation,'verified_rows_incomplete');
     if(!identityAccepted) S.peerHealth.set(where,{ok:false,records:0,t:Date.now()});
     return {boot,found,inventory};
   }
@@ -3865,30 +3934,34 @@ function pruneExpiredDiscoveryState(now=Date.now()){
   return changed;
 }
 function applyVerifiedProviderInventory(base,boot,rows,inventory,providerIndex=null){
+  const observation=inventory?.[_publicEvidenceAttempt]||null;
+  const result=(ok,reason)=>{_publicEvidence.admitted(observation,ok,reason);return ok;};
   if(!inventory?.complete||!inventory.ok||!boot?.kernel_id
-    ||!_providerInventoryIsCurrent(inventory)) return false;
+    ||!_providerInventoryIsCurrent(inventory)) return result(false,
+      !inventory?.complete?'inventory_incomplete':!inventory.ok?'inventory_invalid'
+        :!boot?.kernel_id?'missing_kernel':'inventory_expired');
   const source=String(boot.kernel_id), prior=S.providerInventories.get(source);
   if(prior){
     if(inventory.generation<prior.generation
         ||(inventory.generation===prior.generation&&inventory.hash!==prior.hash)){
-      log('verify',`${source}: stale/equivocating provider inventory generation refused`,false); return false;
+      log('verify',`${source}: stale/equivocating provider inventory generation refused`,false); return result(false,'stale_or_equivocating_generation');
     }
     if(inventory.generation===prior.generation+1&&inventory.previousHash!==prior.hash){
-      log('verify',`${source}: provider inventory chain head mismatch refused`,false); return false;
+      log('verify',`${source}: provider inventory chain head mismatch refused`,false); return result(false,'chain_head_mismatch');
     }
   }
   const incoming=new Set();
   for(const row of rows){
     if(String(row?._kernel||'')!==source||!inventory.recordIds.has(String(row.record_id||''))){
-      log('verify',`${source}: provider inventory row escaped its signed manifest`,false); return false;
+      log('verify',`${source}: provider inventory row escaped its signed manifest`,false); return result(false,'row_outside_manifest');
     }
     const id=recordStoreKey(row), current=S.recs.get(id);
     if(!id||_personaLifecycleRegresses(current,row)){
-      log('verify',`${source}: stale persona lifecycle head refused`,false); return false;
+      log('verify',`${source}: stale persona lifecycle head refused`,false); return result(false,!id?'record_key_missing':'persona_lifecycle_regression');
     }
     incoming.add(id);
   }
-  if(incoming.size!==inventory.recordIds.size) return false;
+  if(incoming.size!==inventory.recordIds.size) return result(false,'incomplete_unique_rows');
   // Re-apply an identical, freshly verified generation as well as a newer one.
   // This heals bounded-cache eviction without weakening atomic retirement: the
   // exact inventory hash was checked above and every incoming row must still
@@ -3920,7 +3993,7 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory,providerIndex=n
   // from this single authority gate so the summary cannot remain on an earlier
   // zero-record snapshot while admitted records are already rendered elsewhere.
   scheduleRealtimeRepaint({records:true});
-  return true;
+  return result(true,'accepted');
 }
 function upsert(r){
   const id=recordStoreKey(r); if(!id) return false;
@@ -4560,9 +4633,14 @@ function _clearEntityFeedCache(base){
   for(const [key,job] of (S.entFeedPending||new Map())) if(key.startsWith(prefix)) job.invalidated=true;
 }
 async function _refreshPeerInventory(base){
-  const route=S.p2pDataRoutes?.get(opBaseKey(base)); if(!route) return false;
-  const resolved=await _reconcileP2PRouteHint({base,kernel:route.kernel,peerId:route.peerId,
-    providerRecord:route.providerRecord});
+  const key=opBaseKey(base), route=S.p2pDataRoutes?.get(key); if(!route) return false;
+  const isCurrent=_peerInventoryReadGuard(base);
+  const active=S.providerRouteReconciliations.get(route.kernel+'\u0000'+base);
+  if(active) await Promise.allSettled([active]);
+  if(!isCurrent()) return false;
+  const current=S.p2pDataRoutes.get(key);
+  const resolved=await _reconcileP2PRouteHint({base,kernel:current.kernel,peerId:current.peerId,
+    providerRecord:current.providerRecord});
   return resolved.accepted;
 }
 function _schedulePeerInvalidation(base,boot,event){
@@ -4574,6 +4652,7 @@ function _schedulePeerInvalidation(base,boot,event){
   if(revision){ S.p2pWatchRevisions.delete(revisionKey); S.p2pWatchRevisions.set(revisionKey,revision);
     while(S.p2pWatchRevisions.size>NETWORK_LIMITS.cachedKernels)
       S.p2pWatchRevisions.delete(S.p2pWatchRevisions.keys().next().value); }
+  if(event.kind==='discovery'||event.kind==='resync') _invalidatePeerInventory(baseKey,boot);
   let pending=S.p2pInvalidations.get(baseKey);
   if(!pending){ pending={base:baseKey,boot,kinds:new Set(),personaIds:new Set(),runs:new Map(),timer:null};
     S.p2pInvalidations.set(baseKey,pending); }
@@ -4666,10 +4745,14 @@ function connectDiscoveryStream(base,boot){
   });
   es.addEventListener('discovery_snapshot',(ev)=>{
     cognitionQueue=cognitionQueue.then(async()=>{
+    const observation=_publicEvidence.begin('SSE snapshot consumer',base);
+    let parsed=false;
     try{
-      const snap=parseSignedJson(ev.data||'{}');
+      const snap=parseSignedJson(ev.data||'{}'); parsed=true;
       const providerIndex=snap?.providers;
-      const verified=await verifiedRowsFromProviderIndex(providerIndex,base,boot,'internet','SSE provider snapshot');
+      _publicEvidence.available(observation,providerIndex);
+      const verified=await verifiedRowsFromProviderIndex(providerIndex,base,boot,'internet','SSE provider snapshot',
+        {publicEvidenceAttempt:observation});
       const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
         &&verified.refused===0
         &&new Set(verified.rows.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
@@ -4678,7 +4761,8 @@ function connectDiscoveryStream(base,boot){
       const added=accepted?verified.rows.length:0;
       log('stream',`discovery snapshot: ${added} current ProviderRecord(s) verified; ${verified.refused} refused`,verified.refused===0);
       if(added){ classifyMap(); updateVitalsCounters(); refreshSystemView(); if(!es._cognitionDocuments) scheduleSseCognitionRefresh(); }
-    }catch(e){ log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
+    }catch(e){ _publicEvidence.refuse(observation,parsed?'snapshot_processing_failure':'snapshot_parse_failure');
+      log('stream','snapshot parse failed: '+(e&&e.message||e),false); }
     }).catch(()=>{});
   });
   es.addEventListener('telemetry_update',async (ev)=>{
@@ -6055,7 +6139,7 @@ function _latestTaskLifecycle(kernel,{task='',environment=''}={}){
   const taskId=String(task||''), envId=environmentIdentity(environment), matches=[];
   for(const id of (S.order||[])){
     const record=S.recs.get(id); if(record?._kernel!==kernel) continue;
-    const lifecycle=publicTaskLifecycleProjection(record); if(!lifecycle) continue;
+    const lifecycle=_publicEvidence.rememberProjection(publicTaskLifecycleProjection(record),record); if(!lifecycle) continue;
     if(taskId&&lifecycle.taskId!==taskId) continue;
     if(!taskId&&envId&&environmentIdentity(lifecycle.environment)!==envId) continue;
     matches.push({lifecycle,order:_taskLifecycleRecordOrder(record,lifecycle)});
@@ -6140,9 +6224,9 @@ function _personaMechanicalRunProjection(model,kernel='',acts=[],personaKey='',w
   const lifecycle=_taskLifecycleForPersonaWork(
     model,kernel,acts,personaKey,workState);
   const exactState=String(lifecycle?.state||'');
-  return _mechanicalRunProjection(exactState,{activeCall:activeCalls.length>0,
+  return _publicEvidence.deriveProjection(_mechanicalRunProjection(exactState,{activeCall:activeCalls.length>0,
     currentExecution:lifecycle?.currentExecution===true,
-    source:'signed task lifecycle'});
+    source:'signed task lifecycle'}),lifecycle);
 }
 // face notes are for humans: verification plumbing (hashes, receipts, paths,
 // signatures) stays in the dossier and the drawer, not on the card face
@@ -6946,12 +7030,14 @@ function _artifactPreviewActionHTML(r,{scope='output',base='',run='',verifiedMet
       +`<small>${esc(typeLabel)} · The filename is available, but verified file bytes have not arrived yet.</small></span>`
       +`<span class="current-artifact-preview">${inProgress?'Still being created':'Not ready to open'}</span></div>`;
   }
+  const observation=canPreview?_publicEvidence.bindControl(r,{path,content_hash:hash,base:resolvedBase}):'';
+  const observationAttr=observation?` data-public-evidence-key="${esc(observation)}"`:'';
   const action=canPreview
     ?`data-current-artifact-path="${esc(path)}" data-current-artifact-base="${esc(resolvedBase)}" data-current-artifact-title="${esc(label)}" data-current-artifact-kind="${esc(media)}" data-current-artifact-hash="${esc(hash)}" data-current-artifact-size="${esc(size)}" data-current-artifact-semantics="${esc(semantics)}" data-current-artifact-declaration="${esc(artifactDeclarationAttr(declaration))}"`
     :`data-artid="${esc(aid)}"`;
   const authored=authoredArtifactLabelText(r);
   const declarer=_artifactDeclarationPersonaLabel(declaration,String(r._kernel||''));
-  return `<button type="button" class="current-artifact-file" ${action} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
+  return `<button type="button" class="current-artifact-file" ${action}${observationAttr} title="${canPreview?'Open and verify':'View details for'} ${esc(label)}">`
     +`${_artifactFormatTileHTML(filePresentation)}<span class="current-artifact-copy">${_artifactFileIdentityHTML(filePresentation,declaration)}`
     +`<small>${esc(typeLabel)}${size!==''?` · ${fmtBytes(Number(size))}`:''}${declarer?` · Declared by ${esc(declarer)}`:''}${authored?` · ${esc(authored)}`:''}</small></span>`
     +`<span class="current-artifact-preview">${inProgress?'Still being created · ':''}${canPreview?'Open file':'View details'} →</span></button>`;
@@ -7432,8 +7518,8 @@ function _pkTaskFacts(kernel,envSid,run){
     const caps=Array.isArray(r.capability_summary)?r.capability_summary.filter((cap)=>typeof cap==='string'):[];
     const acceptance=caps.find((cap)=>cap.startsWith('acceptance_state:'))||'';
     matches.push({order:_taskLifecycleRecordOrder(r,lifecycle),
-      facts:{state:lifecycle.state,acceptance:acceptance.slice('acceptance_state:'.length).slice(0,64),
-        run:lifecycle.run,recordId:id}});
+      facts:_publicEvidence.rememberProjection({state:lifecycle.state,acceptance:acceptance.slice('acceptance_state:'.length).slice(0,64),
+        run:lifecycle.run,recordId:id},r,lifecycle)});
   }
   matches.sort((left,right)=>left.order.localeCompare(right.order));
   return matches.at(-1)?.facts||null;
@@ -7739,6 +7825,11 @@ function renderPersonaCard(pid,kernel='',context={}){
   // lifecycle independently says this run is the current live execution.
   const currentTask=verifiedCurrentTask?.liveTask===true
     &&typeof verifiedCurrentTask.task==='string'?verifiedCurrentTask.task:'';
+  const taskObservation=_publicEvidence.selectProjection('persona:'+personaKey+':current-task',
+    currentTask?verifiedCurrentTask:null,{reason:currentTask?'rendered_current_task':'no_rendered_current_task'});
+  const mechanicalObservation=_publicEvidence.selectProjection('persona:'+personaKey+':mechanical-subprojection',mechanicalRun,
+    {display:{key:mechanicalRun.key,label:mechanicalRun.label,exact_state:mechanicalRun.exactState,
+      source:mechanicalRun.source,face_label:focusLabel,active_call_face:running,model_failure_face:!!terminalFailure}});
   // C-OP-16: the member's own scorecard -- by its exact run first, then by
   // its task's newest settle (labelled), bounded to its environments.
   const scorecardTaskId=String(verifiedCurrentTask?.taskId
@@ -7797,7 +7888,7 @@ function renderPersonaCard(pid,kernel='',context={}){
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
     :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
-  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}" data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
+  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
     +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}>${esc(pkName)}</h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
@@ -8643,6 +8734,8 @@ function refreshSystemView(){
     // Mechanical task facts from the signed task discovery record for this
     // environment/run: task_state + acceptance_state capability tokens.
     const facts=_pkTaskFacts(b.kernel,b.sid,'');
+    const taskObservation=_publicEvidence.selectProjection('environment:'+b.kernel+':'+b.sid+':task-facts',facts,
+      {reason:facts?'selected_task_facts':'no_selected_task_facts'});
     const acceptChip=facts?.acceptance?`<span class="pk-accept" title="acceptance state from the signed task record">${esc(facts.acceptance.replace(/_/g,' '))}</span>`:'';
     // DOING NOW: task lifecycle state + active model calls from the verified
     // public environment telemetry feed (model_status.active_calls).
@@ -8664,7 +8757,7 @@ function refreshSystemView(){
       +(tools.length>4?`<span class="pk-tool more">+${tools.length-4}</span>`:'');
     const liveBytes=output.currentFileBytes;
     const fileCount=output.metaFiles||0;
-    return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
+    return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""} data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div>`
       +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
       +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${b.exportTitle?`environment-authored title · verified record label: ${esc(b.name)}`:`open ${esc(envName)}`}">${esc(envName)}</h3>`
@@ -8791,6 +8884,7 @@ function refreshSystemView(){
   // Update surviving cards in place so incoming activity leaves controls,
   // open dossiers and verified portrait mounts usable.
   updateStageHTML(host,finalHTML);
+  _reconcilePublicEvidenceControls();
   _restoreDisclosures(host);
   rebindInspectionSource();
   _hydratePersonaAvatars();
@@ -10427,7 +10521,7 @@ function _verifiedPublicTaskForRun(kernel,runId){
   const matches=[];
   for(const id of (S.order||[])){
     const record=S.recs.get(id); if(record?._kernel!==kernel) continue;
-    const lifecycle=publicTaskLifecycleProjection(record);
+    const lifecycle=_publicEvidence.rememberProjection(publicTaskLifecycleProjection(record),record);
     if(lifecycle?.run===run&&typeof lifecycle.task==='string'&&lifecycle.task.trim())
       matches.push(lifecycle);
   }
@@ -13771,6 +13865,7 @@ async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1
   // File mounts own separate resources and replace their body when its revision changes.
   if(refresh&&typeof v.mount!=='function') updateStageHTML(body,v.html);
   else { replaceStageHTML(body,v.html); body.scrollTop=0; }
+  _reconcilePublicEvidenceControls();
   const connected=body.querySelector('[data-connected-node]')?.dataset.connectedNode;
   if(connected) title.dataset.connectedNode=connected;
   else delete title.dataset.connectedNode;
@@ -14675,8 +14770,13 @@ async function _discoverFromP2P(hint,{signal=null}={}){
   // Completing this authority read enables saved-file discovery. Repeated
   // optional refreshes must not starve its chunks; compact identities and
   // files the reader opens keep the existing higher foreground priority.
+  const isCurrent=_peerInventoryReadGuard(base);
+  const observation=_publicEvidence.begin('p2p provider consumer',base);
   const providerPromise=sharedDocumentJson(providerUrl,
-    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:Number.MAX_SAFE_INTEGER,priority:50}).catch(()=>null));
+    ()=>P2P.fetchPublicJson(p,providerPath,{timeoutMs:8000,maxBytes:Number.MAX_SAFE_INTEGER,priority:50}).catch(()=>null),
+    {isCurrent});
+  if(observation) providerPromise.then((value)=>_publicEvidence.available(observation,value),
+    ()=>_publicEvidence.refuse(observation,'provider_promise_rejected'));
   // The peer-bound transport carries the same signed compact identity surface
   // as HTTP. Admit it first so P2P discovery paints people/workspaces and seeds
   // the warm browser cache without waiting for every artifact and telemetry
@@ -14719,17 +14819,25 @@ async function _discoverFromP2P(hint,{signal=null}={}){
     await Promise.race([identityWork,new Promise((resolve)=>setTimeout(resolve,1000))]);
   }else log('identity',`${boot.kernel_id}: compact signed identity route not advertised; full inventory continues`,false);
   const providerIndex=await settleBeforeAbort(providerPromise,signal,null);
+  // A retired watch is an incomplete inventory, not a transport failure that
+  // should reopen discovery through the HTTP fallback.
+  if(isCurrent&&!isCurrent()){_publicEvidence.refuse(observation,'watch_retired');return {boot,found:[],inventory:null};}
   if(signal?.aborted||!providerIndex
-      ||Number(providerIndex.document_count)!==advertisedRecordCount)
+      ||Number(providerIndex.document_count)!==advertisedRecordCount){
+    _publicEvidence.refuse(observation,signal?.aborted?'consumer_aborted':!providerIndex
+      ?'provider_value_absent':'bootstrap_count_mismatch');
     return {boot:null,found:[],inventory:null};
+  }
   const verified=await verifiedRowsFromProviderIndex(
-    providerIndex,base,boot,'internet','p2p provider',{signal});
+    providerIndex,base,boot,'internet','p2p provider',{signal,publicEvidenceAttempt:observation});
+  if(isCurrent&&!isCurrent()){_publicEvidence.refuse(observation,'watch_retired');return {boot,found:[],inventory:null};}
   const found=[...new Map(verified.rows.map((row)=>[
     `${row._kernel||boot.kernel_id}\u0000${row.record_id||row.did}`,row])).values()];
   const inventory={...(verified.inventory||{}),complete:verified.inventory?.ok===true
     &&verified.refused===0
     &&new Set(found.map((row)=>row.record_id)).size===verified.inventory.recordIds?.size};
-  if(!inventory.complete) return {boot:null,found:[],inventory};
+  if(!inventory.complete){_publicEvidence.refuse(observation,'verified_rows_incomplete');
+    return {boot:null,found:[],inventory};}
   _registerP2PDataRoute(hint,found);
   return {boot,found,inventory,providerIndex};
 }

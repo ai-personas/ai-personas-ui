@@ -15,7 +15,9 @@ function nodeKey(node) {
   else if (node.hasAttribute('data-disclosure-key'))
     key = ['disclosure', attr('data-disclosure-key')];
   else if (node.matches('button,a,[role="button"]')) {
-    const bindings = [...node.attributes].filter(({name}) => name.startsWith('data-'))
+    // Diagnostic provenance updates as an ordinary attribute; it does not replace a control.
+    const bindings = [...node.attributes].filter(({name}) => name.startsWith('data-')
+      && name !== 'data-public-evidence-key')
       .map(({name, value}) => [name, value]).sort(([a], [b]) => a.localeCompare(b));
     key = ['control', bindings.length ? null : attr('class'), attr('href'), bindings];
   } else key = ['section', attr('class')];

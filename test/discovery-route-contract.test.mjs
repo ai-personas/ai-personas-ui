@@ -6,6 +6,7 @@ import {setImmediate as nextTurn} from 'node:timers/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {createContext, runInContext} from 'node:vm';
 import test from 'node:test';
+import {createPublicEvidence} from './helpers/public-evidence.mjs';
 
 const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -201,7 +202,7 @@ function fixture(page = 'https://127.0.0.1:45133/') {
     'queueProviderHints', 'onGossipRecord', 'onVerifiedGossipProvider', 'tick', 'pushView',
   ].map(name => [name, () => {}]));
   const context = createContext({...authority, ...network, ...directory, ...strategy, ...routes,
-    ...connection, ...signedJson, ...noops, S, location, URL, URLSearchParams, Response,
+    ...connection, ...signedJson, createPublicEvidence, ...noops, S, location, URL, URLSearchParams, Response,
     TextEncoder, TextDecoder, Uint8Array, AbortController, DOMException, queueMicrotask,
     Date:time.Date, setTimeout:time.setTimeout, setInterval:time.setInterval,
     clearTimeout:time.clear, clearInterval:time.clear,

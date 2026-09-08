@@ -123,6 +123,14 @@ records the tested releases, subsequent repairs and remaining limits.
 node --test test/*.test.mjs
 ```
 
+For a discovery bug report, `window.__personaOSPublicEvidence.enable()` enables
+optional observation of already received public inventories, admission decisions,
+and selected task/file controls. `read()` returns a canonical JSON string;
+`disable()` clears retained references. This interface makes no network requests
+and captures no My nodes data. Consumer and selection timestamps do not establish
+wire delivery or screen paint; exported outer inventory verification does not
+imply that every embedded record passed admission.
+
 `assets/p2p-libp2p.js` and `assets/canonical-json.mjs` are generated from the
 native repository's `tools/libp2p/browser_entry.js` and `canonical_json.js`.
 Regenerate affected assets into this checkout before committing and vendoring

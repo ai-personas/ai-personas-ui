@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
+import {disabledPublicEvidenceDependencies} from './helpers/public-evidence.mjs';
 
 const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -21,7 +22,7 @@ for (const [recordCount, bodyBytes] of [[714, 4_939_998], [1, 100_000], [20_001,
     const inventory = {document_count: recordCount};
     let verified = 0, fetched = 0;
     const values = {
-      ...network,
+      ...network, ...disabledPublicEvidenceDependencies(),
       P2P: {fetchPublicJson: async (_provider, path, options) => {
         if (path.endsWith('personaos-keys.json')) return {kernel_id: hint.kernel};
         if (path.endsWith('personaos-discovery.json')) return boot;
@@ -33,6 +34,7 @@ for (const [recordCount, bodyBytes] of [[714, 4_939_998], [1, 100_000], [20_001,
       settleBeforeAbort: promise => promise,
       admitKeysDocument: () => ({'kernel-master': 'master'}),
       _registerP2PDataRoute() {}, connectDiscoveryStream() {},
+      _peerInventoryReadGuard: () => null,
       NETWORK_LIMITS: {cachedRecords: 20_000},
       join: (base, path) => base + '/' + path,
       sharedDocumentJson: (_url, read) => read(),
@@ -81,7 +83,7 @@ test('a slow shared inventory stays one download through later discovery attempt
   await next;
 });
 
-test('peer invalidations share the complete discovery already in flight', async () => {
+test('peer invalidations coalesce a trailing reconciliation after the active read', async () => {
   const section = (start, end) => source.slice(source.indexOf(start),
     source.indexOf(end, source.indexOf(start)));
   const hint = {base: 'libp2p://peer', kernel: 'kernel:test', peerId: 'peer', providerRecord: {}};
@@ -99,7 +101,7 @@ test('peer invalidations share the complete discovery already in flight', async 
     connectDiscoveryStream() {}, loadTelemetry: async () => {},
   };
   const functions = new Function(...Object.keys(values),
-    section('function settleBeforeAbort(', 'async function fetchP2PArtifactBytes(')
+    declarations + section('function settleBeforeAbort(', 'async function fetchP2PArtifactBytes(')
     + section('async function _refreshPeerInventory(', 'function _schedulePeerInvalidation(')
     + section('function _reconcileP2PRouteHint(', 'async function _resolveProviderHintJob(')
     + '\nreturn {refresh: _refreshPeerInventory, reconcile: _reconcileP2PRouteHint};')(...Object.values(values));
@@ -107,14 +109,17 @@ test('peer invalidations share the complete discovery already in flight', async 
   assert.equal(releases.length, 1, 'Invalidations must not queue duplicate key, bootstrap and inventory reads');
   const resolved = {boot: {kernel_id: hint.kernel}, found: [{}], inventory: {}};
   releases[0](resolved);
+  for (let i = 0; i < 16; i++) await Promise.resolve();
+  assert.equal(releases.length, 2, 'Coalesced invalidations request one reconciliation after the old read');
+  releases[1](resolved);
   const results = await Promise.all(pending);
   assert.deepEqual(results.slice(1), [true, true]);
-  assert.equal(applied, 1);
-  const next = functions.refresh(hint.base);
-  assert.equal(releases.length, 2, 'A later invalidation still fetches the next generation');
-  releases[1](resolved);
-  assert.equal(await next, true);
   assert.equal(applied, 2);
+  const next = functions.refresh(hint.base);
+  assert.equal(releases.length, 3, 'A later invalidation still fetches the next generation');
+  releases[2](resolved);
+  assert.equal(await next, true);
+  assert.equal(applied, 3);
 });
 
 test('an expired network scan does not discard its still-progressing verified inventory', async () => {
@@ -155,6 +160,7 @@ test('a verified peer watches current changes while its historical inventory is 
   const boot = {kernel_id: hint.kernel, record_count: 700};
   let release, pending = false, watches = 0, routeRegistered = false, keysValid = true;
   const values = {
+    ...disabledPublicEvidenceDependencies(),
     P2P: {fetchPublicJson: async (_provider, path) => {
       if (path.endsWith('personaos-keys.json')) return {kernel_id: hint.kernel};
       if (path.endsWith('personaos-discovery.json')) return boot;
@@ -174,6 +180,7 @@ test('a verified peer watches current changes while its historical inventory is 
       watches++;
     },
     providerIndexResponseByteLimit: () => 10000000,
+    _peerInventoryReadGuard: () => null,
     NETWORK_LIMITS: {cachedRecords: 10000},
     join: (base, path) => `${base}/${path}`,
     sharedDocumentJson: (_url, fetch) => fetch(), log() {},

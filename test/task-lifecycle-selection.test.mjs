@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
+import {disabledPublicEvidenceDependencies} from './helpers/public-evidence.mjs';
 
 const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -23,7 +24,7 @@ function projection({active = [], bound = false, model = null, acts = [], includ
   const S = {order: lifecycles.map(row => row.run),
     recs: new Map(lifecycles.map(lifecycle => [lifecycle.run,
       {_kernel: 'kernel', record_id: `rec:public:task:${lifecycle.run}`, lifecycle}]))};
-  const values = {S, environmentIdentity,
+  const values = {...disabledPublicEvidenceDependencies(), S, environmentIdentity,
     publicTaskLifecycleProjection: record => record.lifecycle,
     _activeModelCallsForPersona: () => active,
     _verifiedPublicTaskForRun: (kernel, run) => kernel === 'kernel'

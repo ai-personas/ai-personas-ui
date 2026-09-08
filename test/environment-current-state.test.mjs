@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
+import {disabledPublicEvidenceDependencies} from './helpers/public-evidence.mjs';
 
 const assetRoot = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -32,10 +33,11 @@ function record(run, state, environment = 'env:room', kernel = 'node') {
 function taskSelector(records) {
   const S = {order: records.map(row => row.record_id),
     recs: new Map(records.map(row => [row.record_id, row]))};
-  return new Function('S', 'environmentIdentity', 'publicTaskLifecycleProjection',
+  return new Function('S', 'environmentIdentity', 'publicTaskLifecycleProjection', '_publicEvidence',
     section('function _taskLifecycleRecordOrder(', 'function _latestTaskLifecycle(')
     + section('function _pkTaskFacts(', '// Tool-kind discovery records')
-    + '\nreturn _pkTaskFacts;')(S, environmentIdentity, publicTaskLifecycleProjection);
+    + '\nreturn _pkTaskFacts;')(S, environmentIdentity, publicTaskLifecycleProjection,
+      disabledPublicEvidenceDependencies()._publicEvidence);
 }
 
 test('the workspace uses the newest lifecycle regardless of discovery order', () => {

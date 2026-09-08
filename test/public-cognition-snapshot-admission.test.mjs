@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'node:test';
+import {createPublicEvidence} from './helpers/public-evidence.mjs';
 
 const assets = process.env.UI_PRESENTATION_ASSETS
   || fileURLToPath(new URL('../assets/', import.meta.url));
@@ -93,7 +94,7 @@ function fixture() {
   const requests = [], rendered = [], indexed = [], logs = [];
   let paints = 0, api;
   const target = {innerHTML:'', querySelectorAll:() => []};
-  const values = {...json, ...authority, ed, S,
+  const values = {...json, ...authority, createPublicEvidence, ed, S,
     NETWORK_LIMITS:{cognitionPersonas:24}, NETWORK:{removeEntity() {}},
     networkEntityKey:() => personaKey, _shortId:value => String(value).split(':').pop(),
     _personaKey:(node, persona) => `${node}/${String(persona).split(':').pop()}`,
