@@ -1330,7 +1330,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
 /* Collapsible application chrome: the disclosure shrinks to a slim identity
    strip — brand and heartbeat stay visible so the page never loses its name
    or its pulse — while every control surface collapses away. */
-.vitals{transition:max-height var(--dur-slow) var(--ease-out),padding var(--dur-slow) var(--ease-out),opacity var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out);max-height:180px}
+.vitals{transition:max-height var(--dur-slow) var(--ease-out),padding-block var(--dur-slow) var(--ease-out),opacity var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out);max-height:180px}
 .vitals.collapsed{max-height:36px!important;min-height:0!important;height:36px;padding-block:4px!important;border:0;opacity:1;overflow:hidden;pointer-events:none}
 .vitals.collapsed>*{display:none}
 .vitals.collapsed .vgroup-identity{display:flex;flex:0 0 auto;align-items:center;gap:9px}
@@ -1508,7 +1508,7 @@ footer{background:rgba(3,7,12,.96);border-top-color:rgba(86,181,255,.16);padding
   #addpeer{grid-column:3/5}
   #opbtn{grid-column:5/7}
   .vgroup-tools .btn{justify-content:center;min-width:0;padding-inline:6px}
-  .vcounts{display:grid;grid-template-columns:1.6fr repeat(5,minmax(0,1fr));width:100%;gap:4px}
+  .vcounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));width:100%;gap:4px}
   .stat{min-width:0;text-align:left}
   .stat .v,.stat.primary .v{font-size:var(--fs-body)}
   .stat .v{max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -2881,6 +2881,20 @@ footer .link,#logbtn{border-radius:999px;padding:3px 11px;
 /* the collapsed bar used to absolutely overlay the counters on the keys;
    they are ordinary flow now */
 .vitals:not(.tools-open) .vgroup-live{position:static!important;width:auto!important;height:auto!important;inset:auto!important}
+
+/* Phone disclosures keep separate slots while the counter row uses the full
+   width. Horizontal padding changes immediately, so a closing control cannot
+   travel through the collapse button during the header animation. */
+@media(max-width:719px){
+  .command-shell .vitals:not(.collapsed) .vgroup-identity{flex:1 1 100%;min-height:34px;padding-right:150px}
+  .command-shell .vitals:not(.collapsed) .vgroup-live{flex:1 1 100%}
+  .command-shell .vitals:not(.tools-open):not(.collapsed){padding-right:12px!important}
+  .command-shell .vitals:not(.tools-open) .header-tools-toggle{position:absolute!important;margin-left:0}
+  .command-shell .header-tools-toggle{width:auto!important;min-width:max-content;justify-content:center;padding-inline:8px}
+  .command-shell .header-tools-toggle span{display:inline}
+  .command-shell .header-toggle{min-width:34px;justify-content:center}
+  .command-shell .header-toggle span{display:none}
+}
 
 /* ---- C-OP-16 member view: latest lesson, built this run, run scorecard, stated identity refusal ---- */
 .pk-latest-lesson{position:relative;z-index:5;display:grid;gap:6px;margin:12px 14px 0;padding:10px 12px;
