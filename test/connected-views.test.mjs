@@ -113,18 +113,23 @@ test('private messages retain their exact author, audience and complete text', (
   ui.disconnect(ui.entry.base);
 });
 
-function remoteMessage({direction='received',payload={message:'Exact remote message.'}}={}){
+function remoteMessage({direction='received',payload={message:'Exact remote message.'},direct=false}={}){
   const sent=direction==='sent';
-  const authority={schema:'personaos-persona-communication/1',communication_id:'communication:one',
-    environment_id:'room',authored_by:sent?'alice':'bob',addressed_to:[sent?'bob':'alice'],payload,
+  const source_kernel_id=sent?'kernel:test':'kernel:foreign', recipient_kernel_id=sent?'kernel:foreign':'kernel:test';
+  const environment_id=direct?(sent?'local-direct-room':'foreign-direct-room'):'room';
+  const authority={schema:direct?'personaos-persona-direct-communication/1':'personaos-persona-communication/1',
+    communication_id:'communication:one',environment_id,authored_by:sent?'alice':'bob',addressed_to:[sent?'bob':'alice'],payload,
     parent_communication_id:sent?'communication:parent':'',parent_communication_hash:sent?'sha256:parent':'',
     signing_key_id:sent?'persona:alice':'persona:bob',signed_by:'signed-original-authority'};
   const source_event={event_id:'event:source',timestamp:'2026-09-08T00:00:00Z',signed_by:'signed-source'};
   return {direction,authority,authority_hash:'sha256:one',communication_id:authority.communication_id,
-    source_event,source_event_id:source_event.event_id,source_kernel_id:sent?'kernel:test':'kernel:foreign',
-    recipient_persona_id:sent?'bob':'alice',recipient_kernel_id:sent?'kernel:foreign':'kernel:test',
-    source_environment_id:'room',source_environment_kernel_id:'kernel:foreign',dispatch_environment_id:'room',
-    dispatch_task_id:'task:dispatch',package:{authority,source_event},package_hash:'sha256:package',
+    source_event,source_event_id:source_event.event_id,source_kernel_id,
+    recipient_persona_id:sent?'bob':'alice',recipient_kernel_id,
+    source_environment_id:environment_id,source_environment_kernel_id:direct?source_kernel_id:'kernel:foreign',
+    dispatch_environment_id:environment_id,dispatch_task_id:'task:dispatch',
+    package:{schema:direct?'personaos-federated-direct-persona-communication/1':'personaos-federated-persona-communication/1',
+      authority,authority_hash:'sha256:one',source_event,source_kernel_id,recipient_kernel_id,recipient_persona_id:sent?'bob':'alice'},
+    package_hash:'sha256:package',
     record_event_id:'event:record',record_event_kind:sent?'FEDERATED_PERSONA_COMMUNICATION_OUTBOUND':'FEDERATED_PERSONA_COMMUNICATION_RECEIVED'};
 }
 
@@ -174,6 +179,162 @@ test('remote correspondence stays within its operator connection and exact local
   ui.entry.tier='operator'; ui.entry.closed=true;
   assert.ok(!ui.cognition(doc,ui.entry).includes('data-federated-communication'));
   ui.entry.closed=false; ui.disconnect(ui.entry.base);
+});
+
+test('owner direct correspondence retains full bodies and the actual reply environment',()=>{
+  const ui=fixture(), text='Exact μ, é, é and 🧭. <body>\n'.repeat(20000);
+  const received=remoteMessage({direct:true,payload:{message:text}});
+  const payload=signedJson.parseSignedJson('{"message":"Reply from my own environment.","integer":900719925474099312345,"nested":[false,0,null]}');
+  const reply=remoteMessage({direct:true,direction:'sent',payload});
+  reply.communication_id=reply.authority.communication_id='communication:reply';
+  reply.authority.parent_communication_id=received.communication_id;
+  reply.authority.parent_communication_hash=received.authority_hash;
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
+    federated_communications:[received,reply]};
+  const html=ui.cognition(doc,ui.entry);
+  assert.equal((html.match(/data-federated-communication=/g)||[]).length,2);
+  assert.ok(html.includes(`<pre class="opmsg copy-src">${esc(text)}</pre>`));
+  assert.ok(html.includes(`<pre class="opmsg copy-src">${esc(signedJson.canonicalJson(payload))}</pre>`));
+  assert.ok(html.includes('Source environment foreign-direct-room · kernel:foreign'));
+  assert.ok(html.includes('Source environment local-direct-room · kernel:test'));
+  assert.ok(html.includes('Reply to communication:one · sha256:one'));
+  assert.ok(html.includes(esc(signedJson.canonicalJson(reply))));
+  // The exact parent link remains useful even when the older message is absent.
+  doc.federated_communications=[reply];
+  assert.ok(ui.cognition(doc,ui.entry).includes('Reply to communication:one · sha256:one'));
+  ui.disconnect(ui.entry.base);
+});
+
+test('direct source-only messages distinguish initial authorship from an exact-parent reply',()=>{
+  const ui=fixture(), row=remoteMessage({direct:true,direction:'sent'});
+  row.package=null; row.package_hash=''; row.recipient_kernel_id='';
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
+  assert.match(ui.cognition(doc,ui.entry),/Authored reply/);
+  row.authority.parent_communication_id=''; row.authority.parent_communication_hash='';
+  const html=ui.cognition(doc,ui.entry);
+  assert.match(html,/Authored message/);
+  assert.doesNotMatch(html,/Authored reply|Reply to/);
+  assert.ok(html.includes('Alice · alice · kernel:test → bob · kernel not recorded'));
+  assert.doesNotMatch(html,/Bob · bob/,'An unrecorded recipient kernel must not borrow a local persona name.');
+  assert.ok(html.includes(`<pre class="opmsg copy-src">${esc(row.authority.payload.message)}</pre>`));
+  ui.disconnect(ui.entry.base);
+});
+
+for(const direct of [false,true]) test(`${direct?'direct':'member'} history requires the current connection and admitted local owner`,()=>{
+  const ui=fixture(), row=remoteMessage({direct});
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
+  assert.match(ui.cognition(doc,ui.entry),/data-federated-communication/);
+  ui.nodes.set(ui.entry.base,{...ui.entry});
+  assert.doesNotMatch(ui.cognition(doc,ui.entry),/data-federated-communication|Exact remote message/);
+  ui.nodes.set(ui.entry.base,ui.entry);
+  ui.entry.status.personas=ui.entry.status.personas.filter(person=>person.persona_id!=='alice');
+  assert.doesNotMatch(ui.cognition(doc,ui.entry),/data-federated-communication|Exact remote message/);
+  ui.disconnect(ui.entry.base);
+});
+
+for(const direction of ['received','sent']) test(`direct ${direction} history refuses wrong owner, scope, recipient and parent contexts`,()=>{
+  const ui=fixture();
+  const makeDoc=row=>({schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]});
+  const fresh=()=>remoteMessage({direct:true,direction});
+  assert.match(ui.cognition(makeDoc(fresh()),ui.entry),/data-federated-communication/);
+  const changes=[
+    ['wrong local kernel',row=>{
+      if(direction==='received') row.recipient_kernel_id=row.package.recipient_kernel_id='kernel:other';
+      else row.source_kernel_id=row.source_environment_kernel_id=row.package.source_kernel_id='kernel:other';
+    }],
+    ['wrong local owner',row=>{
+      if(direction==='received'){
+        row.recipient_persona_id=row.package.recipient_persona_id='bob'; row.authority.addressed_to=['bob'];
+      }else{row.authority.authored_by='bob'; row.authority.signing_key_id='persona:bob';}
+    }],
+    ['nonrecipient',row=>{row.authority.addressed_to=['someone-else'];}],
+    ['empty direct audience',row=>{row.authority.addressed_to=[];}],
+    ['wrong source environment kernel',row=>{row.source_environment_kernel_id='kernel:other';}],
+    ['wrong dispatch environment',row=>{row.dispatch_environment_id='another-environment';}],
+    ['missing direct environment',row=>{delete row.authority.environment_id; delete row.source_environment_id; delete row.dispatch_environment_id;}],
+    ['empty direct environment',row=>{row.authority.environment_id=''; row.source_environment_id=''; row.dispatch_environment_id='';}],
+    ['policy schema',row=>{row.authority.schema='personaos-persona-inbox-policy/1';}],
+    ['unknown authority schema',row=>{row.authority.schema='personaos-persona-direct-communication/2';}],
+    ['members package',row=>{row.package.schema='personaos-federated-persona-communication/1';}],
+    ['unknown package schema',row=>{row.package.schema='personaos-federated-direct-persona-communication/2';}],
+    ['hosted direct package',row=>{row.package.host_kernel_id='kernel:foreign';}],
+    ['unmatched package recipient',row=>{row.package.recipient_persona_id='someone-else';}],
+    ['missing packaged recipient kernel',row=>{row.recipient_kernel_id=''; row.package.recipient_kernel_id='';}],
+    ['received source without a package',row=>{row.direction='received'; row.package=null; row.recipient_kernel_id='';}],
+    ['unmatched package authority',row=>{row.package.authority_hash='sha256:other';}],
+    ['substituted body',row=>{row.authority={...row.authority,payload:{message:'A substituted body.'}};}],
+    ['substituted audience',row=>{row.authority={...row.authority,addressed_to:[row.recipient_persona_id,'extra-recipient']};}],
+    ['substituted provenance',row=>{row.authority={...row.authority,provenance:{changed:true}};}],
+    ['substituted signature',row=>{row.authority={...row.authority,signed_by:'different-signature'};}],
+    ['parent ID without hash',row=>{row.authority.parent_communication_id='communication:parent'; row.authority.parent_communication_hash='';}],
+    ['parent hash without ID',row=>{row.authority.parent_communication_id=''; row.authority.parent_communication_hash='sha256:parent';}],
+    ['unmatched package parent',row=>{row.package.authority={...row.authority,parent_communication_hash:'sha256:other'};}],
+    ...[false,0,'',undefined,[]].map(value=>['invalid source-only package '+String(value),row=>{row.package=value;}]),
+  ];
+  for(const [label,change] of changes){
+    const row=fresh(); change(row);
+    assert.doesNotMatch(ui.cognition(makeDoc(row),ui.entry),/data-federated-communication|Exact remote message|A substituted body/,label);
+  }
+  for(const change of [{tier:'public'},{schema:'personaos-persona-public-cognition/3'},{persona_id:'bob'},{persona_id:'someone-else'}])
+    assert.doesNotMatch(ui.cognition({...makeDoc(fresh()),...change},ui.entry),/data-federated-communication|Exact remote message/);
+  ui.entry.tier='public';
+  assert.doesNotMatch(ui.cognition(makeDoc(fresh()),ui.entry),/data-federated-communication|Exact remote message/);
+  ui.entry.tier='operator'; ui.disconnect(ui.entry.base);
+});
+
+test('legacy admitted member broadcasts keep an empty signed audience',()=>{
+  const ui=fixture(), row=remoteMessage();
+  row.authority.addressed_to=[];
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
+  const html=ui.cognition(doc,ui.entry);
+  assert.match(html,/data-federated-communication/);
+  assert.ok(html.includes(esc(row.authority.payload.message)));
+  ui.disconnect(ui.entry.base);
+});
+
+test('direct correspondence also renders exact endpoints on the same connected kernel',()=>{
+  const ui=fixture(), row=remoteMessage({direct:true,direction:'sent'});
+  row.recipient_kernel_id=row.package.recipient_kernel_id=ui.entry.status.node_id;
+  row.authority.parent_communication_id=''; row.authority.parent_communication_hash='';
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
+  const sent=ui.cognition(doc,ui.entry);
+  assert.match(sent,/Persona correspondence/);
+  assert.doesNotMatch(sent,/Remote persona messages/);
+  assert.ok(sent.includes('Alice · alice · kernel:test → Bob · bob · kernel:test'));
+  row.direction='received'; doc.persona_id='bob';
+  const received=ui.cognition(doc,ui.entry);
+  assert.match(received,/data-federated-communication/);
+  assert.ok(received.includes('Alice · alice · kernel:test → Bob · bob · kernel:test'));
+  ui.disconnect(ui.entry.base);
+});
+
+test('private direct schema admission does not admit signed direct bodies into public cognition',async()=>{
+  const ed=await import(pathToFileURL(resolve(assetRoot,'noble-ed25519.js')));
+  const declarations=section('const _exactObjectFields=',';\n')+';\n'
+    +section('const SHA256_CONTENT_RE=',';\n')+';\n'
+    +section('const PUBLIC_PERSONA_COGNITIVE_AUTHORITY_FIELDS=','const PUBLIC_PERSONA_ACTIVE_CALL_FIELDS=')
+    +section('const PUBLIC_PERSONA_OUTPUT_AUTHORITIES=','function _safePublicCognitionText(')
+    +section('async function _validPublicPersonaAuthority(','const PUBLIC_ATOMIC_ACTION_AUTHORITY_FIELDS=');
+  const values={...signedJson,ed,enc:new TextEncoder(),canon:signedJson.canonicalJson,
+    sha256Hex:artifacts.sha256Hex,hexToBytes:hex=>new Uint8Array(Buffer.from(hex,'hex'))};
+  const accepts=new Function(...Object.keys(values),declarations+'\nreturn _validPublicPersonaAuthority;')(...Object.values(values));
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+  const rawPublic=publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('hex');
+  const unsigned={...remoteMessage().authority,provenance:{}};
+  delete unsigned.signed_by;
+  for(const schema of ['personaos-persona-communication/1','personaos-persona-direct-communication/1',
+    'personaos-persona-inbox-policy/1','personaos-persona-direct-communication/2']){
+    const payload={...unsigned,schema};
+    const authority={...payload,signed_by:sign(null,Buffer.from(signedJson.canonicalJson(payload)),privateKey).toString('hex')};
+    const output={kind:'PERSONA_COMMUNICATION_AUTHORED',text:authority.payload.message,
+      environment_id:authority.environment_id,audience_persona_ids:authority.addressed_to,
+      persona_authority:authority,
+      persona_authority_hash:'sha256:'+await artifacts.sha256Hex(new TextEncoder().encode(signedJson.canonicalJson(authority)))};
+    const accepted=await accepts(output,{signedId:authority.authored_by},{
+      _personaIdentityPublicKeyHex:rawPublic,_personaIdentitySigningKeyId:authority.signing_key_id,
+    });
+    assert.equal(accepted,schema==='personaos-persona-communication/1',schema);
+  }
 });
 
 for (const [refusal, view] of [['lost-tier','node'], [401,'node'], [403,'node'], ['lost-tier','connections']])

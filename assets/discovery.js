@@ -13256,25 +13256,54 @@ function connectedMessageRoute(entry,output){
   return esc(author+(audience.length?' → '+audience.map(name).join(', '):''));
 }
 function connectedFederatedCommunications(doc,entry){
-  if(entry?.closed||entry?.tier!=='operator'||doc?.tier!=='operator'
-      ||doc.schema!=='personaos-persona-thinking/3'||!Array.isArray(doc.federated_communications)) return [];
+  const kernel=entry?.status?.node_id, owner=doc?.persona_id;
+  if(entry?.closed||entry?.tier!=='operator'||MY_NODES.get(entry.base)!==entry||doc?.tier!=='operator'
+      ||doc.schema!=='personaos-persona-thinking/3'||!Array.isArray(doc.federated_communications)
+      ||typeof kernel!=='string'||!kernel
+      ||!(entry.status.personas||[]).some((person)=>person.persona_id===owner)) return [];
   return doc.federated_communications.filter((row)=>{
-    const authority=row?.authority;
-    if(authority?.schema!=='personaos-persona-communication/1'
+    const authority=row?.authority, direct=authority?.schema==='personaos-persona-direct-communication/1';
+    if((!direct&&authority?.schema!=='personaos-persona-communication/1')
         ||authority.communication_id!==row.communication_id
         ||authority.environment_id!==row.source_environment_id
         ||typeof row.authority_hash!=='string'||!row.authority_hash
-        ||!row.source_kernel_id||!row.recipient_kernel_id||!row.source_environment_kernel_id) return false;
+        ||typeof row.recipient_kernel_id!=='string'
+        ||(!row.recipient_kernel_id&&!(direct&&row.direction==='sent'&&row.package===null))
+        ||![row.source_kernel_id,row.source_environment_kernel_id,
+          row.recipient_persona_id,row.communication_id,row.source_environment_id,
+          row.dispatch_environment_id,authority.authored_by].every((value)=>typeof value==='string'&&value)
+        ||!Array.isArray(authority.addressed_to)
+        ||(authority.addressed_to.length&&!authority.addressed_to.includes(row.recipient_persona_id))
+        ||typeof authority.parent_communication_id!=='string'||typeof authority.parent_communication_hash!=='string'
+        ||!!authority.parent_communication_id!==!!authority.parent_communication_hash) return false;
+    // The owning node verifies private history. Keep its direct scope distinct
+    // from a members message, whose empty audience can represent a broadcast.
+    if(direct&&(!authority.addressed_to.length
+        ||row.source_environment_kernel_id!==row.source_kernel_id
+        ||row.dispatch_environment_id!==authority.environment_id)) return false;
+    const packageRecord=row.package;
+    if(packageRecord!==null){
+      if(!packageRecord||typeof packageRecord!=='object'||Array.isArray(packageRecord)
+          ||packageRecord.schema!==(direct?'personaos-federated-direct-persona-communication/1'
+          :'personaos-federated-persona-communication/1')
+          ||packageRecord.source_kernel_id!==row.source_kernel_id
+          ||packageRecord.recipient_kernel_id!==row.recipient_kernel_id
+          ||packageRecord.recipient_persona_id!==row.recipient_persona_id
+          ||packageRecord.authority_hash!==row.authority_hash
+          ||packageRecord.authority?.schema!==authority.schema) return false;
+      try{ if(canonicalJson(packageRecord.authority)!==canonicalJson(authority)) return false; }
+      catch(_){ return false; }
+      if(direct&&['host_kernel_id','membership_id','membership_hash'].some((field)=>Object.hasOwn(packageRecord,field))) return false;
+    }else if(row.direction!=='sent') return false;
     return row.direction==='received'
-      ?row.recipient_kernel_id===entry.status?.node_id&&row.recipient_persona_id===doc.persona_id
-      :row.direction==='sent'&&row.source_kernel_id===entry.status?.node_id
-        &&authority.authored_by===doc.persona_id;
+      ?row.recipient_kernel_id===kernel&&row.recipient_persona_id===owner
+      :row.direction==='sent'&&row.source_kernel_id===kernel&&authority.authored_by===owner;
   });
 }
 function connectedFederatedEndpoint(entry,kernelId,personaId){
   const local=kernelId===entry.status?.node_id;
   const name=local?(entry.status.personas||[]).find((person)=>person.persona_id===personaId)?.name:'';
-  return esc((name?name+' · ':'')+personaId+' · '+kernelId);
+  return esc((name?name+' · ':'')+personaId+' · '+(kernelId||'kernel not recorded'));
 }
 function connectedFederatedMessageHtml(row,entry){
   const authority=row.authority, payload=authority.payload;
@@ -13283,7 +13312,8 @@ function connectedFederatedMessageHtml(row,entry){
     ?payload.message:canonicalMember(authority,'payload');
   const route=connectedFederatedEndpoint(entry,row.source_kernel_id,authority.authored_by)+' → '
     +connectedFederatedEndpoint(entry,row.recipient_kernel_id,row.recipient_persona_id);
-  const direction=row.direction==='received'?'Received':row.package?'Outgoing':'Authored reply';
+  const direction=row.direction==='received'?'Received':row.package?'Outgoing'
+    :authority.parent_communication_id?'Authored reply':'Authored message';
   const source=esc(row.source_environment_id+' · '+row.source_environment_kernel_id);
   const dispatch=row.dispatch_environment_id&&(row.dispatch_environment_id!==row.source_environment_id
     ||row.source_kernel_id!==row.source_environment_kernel_id)
@@ -13312,7 +13342,7 @@ function connectedCognitionHtml(doc,entry){
   if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
     `<div class="think"><div class="l2">${connectedMessageRoute(entry,output)} · ${esc(_friendlyInstant(output.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
-  if(federated.length) html+=H('Remote persona messages')+federated.slice().reverse()
+  if(federated.length) html+=H('Persona correspondence')+federated.slice().reverse()
     .map((row)=>connectedFederatedMessageHtml(row,entry)).join('');
   html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
   return html;
