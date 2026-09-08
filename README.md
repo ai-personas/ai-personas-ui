@@ -113,7 +113,11 @@ Browsers never mutate anything: the portal is display-only. Operator control run
 the node's authenticated HTTP API; persona actions run through their own signed transport.
 
 Public discovery is gradual. During busy-node observations, published files
-and complete responses have taken several minutes to arrive. The
+and complete responses have taken several minutes to arrive. Peer watches now
+remain active while their first matching inventory is received and verified;
+record admission still requires current authority. The latest interrupted Luna
+trial verifies three complete compaction texts in the public UI, but provides
+no final browser capture or complete coverage of ordinary persona responses. The
 [live review](https://github.com/ai-personas/ai-personas/blob/master/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 
