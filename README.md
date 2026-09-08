@@ -120,7 +120,11 @@ node --test test/*.test.mjs
 
 `assets/p2p-libp2p.js` and `assets/canonical-json.mjs` are generated from the
 native repository's `tools/libp2p/browser_entry.js` and `canonical_json.js`.
-Build both into this checkout before committing and vendoring a release.
+Regenerate affected assets into this checkout before committing and vendoring
+a release. From the native repository's `tools/libp2p` directory, build the peer
+bundle with `npm run build:browser -- --outfile /path/to/ai-personas-ui/assets/p2p-libp2p.js`.
+The explicit output keeps generated files in the UI source release; the native
+repository's `tools/sync-ui-shell.py` then vendors the committed release.
 The shared JSON reader preserves number spellings in existing signatures,
 including measurements such as `14.0`; it does not rewrite authored records.
 

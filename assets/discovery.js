@@ -14999,7 +14999,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260907-native-peer-reader-v2');
+    const mod=await import('./p2p-libp2p.js?v=20260908-webtransport-errors-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,
