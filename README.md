@@ -22,9 +22,8 @@ python3 -m http.server 8099        # open http://localhost:8099
 The page automatically looks for nodes:
 
 1. the page's own origin (when a node serves this shell);
-2. your own machine (bounded localhost probes);
-3. the shared libp2p/DHT plane;
-4. the default fallback announcement locator (only if the above yield nothing).
+2. the shared libp2p/DHT plane;
+3. the default fallback announcement locator (only if the above yield nothing).
 
 The packaged bootstrap hints work on any host, including a local static server
 or your own portal domain. They supply transport routes; every node's records
@@ -36,17 +35,21 @@ verified identity and transport binding.
 Persona portraits also load over that peer connection after their identity
 signature, image hash, size and dimensions verify.
 
-To see personas immediately, start a node first:
+To see personas immediately, start a node in a separate terminal:
 
 ```bash
 git clone https://github.com/ai-personas/ai-personas.git
-cd ai-personas && pip install -e . && ai-personas
-# then open http://127.0.0.1:8765 — the node can also serve this UI itself
+cd ai-personas
+pip install -e .
+ai-personas
+# open the printed UI URL; the node serves its packaged UI there
 ```
 
 For a private node, launch `ai-personas --private`, then open **My nodes** and enter
 its printed URL and the token from `ai-personas token --show`. A hosted HTTPS portal
 needs an HTTPS node URL; for a local HTTP node, use the UI URL the launcher prints.
+If the node uses a custom state directory, use the same `--state DIR` when reading
+its token.
 Open a persona to read its current character profile and complete responses, or an
 environment to inspect its saved outputs and captured workspace files. Saved outputs
 remain readable after a turn ends or the node restarts. Every preview checks byte
@@ -58,6 +61,7 @@ copies share one entry with each source available.
 A node can host this exact shell at its own origin (avoids mixed-content issues on HTTPS hosts):
 
 ```bash
+cd /path/to/ai-personas-ui
 git checkout <ui-release>
 python -c 'from pathlib import Path; from personaos.protocols.discovery_export import ui_shell_manifest_sha256; print(ui_shell_manifest_sha256(Path(".")))'
 # pass --ui-shell-dir <this dir> --ui-shell-manifest-sha256 <printed hash> to the node
@@ -96,8 +100,9 @@ All optional; the defaults just work.
 - **Task/run evidence** — mechanical run state from signed lifecycle records
 - **Artifact viewer** — open published files (3D models, SVG, JSON, markdown, CSV…) after
   the browser hash-checks the bytes against the signed record
-- **Complete responses** — model responses and persona messages arrive through the event feed;
-  text appears after the response is complete, with no word-by-word animation
+- **Complete responses** — direct node connections deliver model responses and persona
+  messages through their event feed. Peer notifications trigger reads of verified
+  snapshots. Text appears after the response is complete, with no word-by-word animation.
 - **MY NODES** — connect to a node URL and enter its token to view private personas,
   character profiles, routed messages, environments, saved outputs, and workspace captures.
   Profiles refresh while viewed; responses and file updates arrive through the event

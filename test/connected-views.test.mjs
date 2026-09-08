@@ -17,6 +17,7 @@ const network = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs'
 const signedJson = await import(pathToFileURL(resolve(assetRoot, 'canonical-json.mjs')));
 const telemetry = await import(pathToFileURL(resolve(assetRoot, 'public-telemetry.mjs')));
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const statement = start => section(start, ';\n') + ';';
 const esc = value => String(value ?? '').replace(/[&<>"']/g,
   char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 
@@ -24,7 +25,14 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
   renderer = async () => {}, query = () => null, streamFactory = connection.fetchEventSource,
   repaint = async () => {}} = {}) {
   const privateSection = section('// Explicit connections are isolated', 'async function operatorView(');
-  const declarations = section('function validatedKeysDocument(', 'function admitKeysDocument(')
+  const declarations = [
+    'const _exactObjectFields=', 'const SHA256_CONTENT_RE=',
+    'const PUBLIC_PERSONA_OUTPUT_FIELDS=', 'const PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS=',
+    'const PUBLIC_ATOMIC_ACTION_AUTHORITY_FIELDS=', 'const PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS=',
+    'const PUBLIC_PERSONA_ACTION_OUTPUT_KIND=',
+  ].map(statement).join('\n')
+    + section('function _actionAuthorityPayload(', 'async function _validPublicPersonaActionAuthority(')
+    + section('function validatedKeysDocument(', 'function admitKeysDocument(')
     + section('async function readBoundedResponseBytes(', 'function _downloadName(')
     + section('const BINARY_RENDERERS=', 'function pickRenderer(')
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')

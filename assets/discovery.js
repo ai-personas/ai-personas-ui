@@ -2247,7 +2247,7 @@ async function verifiedCanonicalBaseMatch(value,base,boot){
       &&String(provider.base_url||'').replace(/\/$/,'')===canonicalBase
       &&provider.public_key_hex===currentMasterKey(
         S.keyDocs.get(base||'@origin')?.entries||[])) return true;
-  // A loopback probe — or a route this node itself published in its current-
+  // A loopback URL — or a route this node itself published in its current-
   // master signed reachability profile — is an alternate delivery route, not
   // the canonical outward route written into a signed inventory.  Bind that
   // alias to the same current-master key and that signed profile before
@@ -3587,7 +3587,7 @@ function renderGlobalKernels(){
   const now=Date.now();
   let entries=[...g.entries()].map(([kid,info])=>{
     const fresh=(now-info.lastSeen)<45000;
-    const hasRoute=[...info.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+    const hasRoute=[...info.via].some((v)=>['http','manual','ipfs','p2p','gossip'].includes(v));
     const reachable=info.meta?.reachable===false?false:(info.meta?.reachable===true||hasRoute);
     const active=kernelActivity(info);
     const score=(kid===S.kernelFocus?1e9:0)+(active?1e7+active:0)+(fresh?1e5:0)+(reachable?1e4:0)
@@ -3623,12 +3623,12 @@ function renderGlobalKernels(){
 function peerList(){
   const focused=S.kernelFocus?[...(S.globalKernels?.get(S.kernelFocus)?.bases||[])]:[];
   const recentGossip=[...(S.gossipPeers||[])].reverse();
-  // Explicit and local routes outrank opportunistic/global ones; a focused node
+  // Explicit routes outrank opportunistic/global ones; a focused node
   // is pinned to the front. Verified P2P routes are stored as an LRU Set, so
   // reverse them here to keep the newest live route in the monitoring window.
   // This is the active monitoring window, not a claim that the rest of the
   // discovered population ceased to exist.
-  const all=[...new Set([...focused,...[...MY_NODES.values()].filter((entry)=>entry.tier==='public').map((entry)=>entry.base),...(S.localPeers||[]),...(S.portalPeers||[]),
+  const all=[...new Set([...focused,...[...MY_NODES.values()].filter((entry)=>entry.tier==='public').map((entry)=>entry.base),...(S.portalPeers||[]),
     ...recentGossip,...(S.ipfsPeers||[]),...(S.globalPeers||[])].filter(Boolean))];
   const activeBases=[...(S.activeModelCallsByBase||new Map()).entries()]
     .filter(([,calls])=>Array.isArray(calls)&&calls.length).map(([base])=>base);
@@ -3644,7 +3644,6 @@ function peerSourceTags(base){
   if(!u) return [];
   const inSet=(set)=>[...(set||[])].map((x)=>String(x||'').replace(/\/$/,'')).includes(u);
   const out=[];
-  if(inSet(S.localPeers)) out.push('local');
   if(inSet(S.globalPeers)) out.push('resolver');
   if(inSet(S.gossipPeers)) out.push('gossip');
   if(inSet(S.ipfsPeers)) out.push('ipfs');
@@ -3752,55 +3751,6 @@ async function discoverViaIPFS(opts={}){
   return fresh;
 }
 
-// ---- LOCAL probe: is a PersonaOS node running on THIS machine? -----------------
-// A node's PUBLIC url (a tunnel) and its localhost url are the same kernel, but
-// localhost is never globally advertised (every visitor's localhost is their own
-// box). So probe a few well-known ports here; self-register any that answer. That
-// node then appears in the PUBLIC DATA drawer as a local read route. The browser
-// never treats network position as a credential or retains owner authority.
-// Silent when nothing's running. From an https page: https://localhost works if the
-// node's cert is trusted; plain-http localhost is browser-policy dependent and
-// may fail before CORS, so the empty state explains the public P2P route.
-const LOCAL_PORTS=[8765,8766,8805,8910];
-async function probeBase(base){
-  try{
-    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),2500);
-    const u=join(base,'.well-known/personaos-discovery.json');
-    const r=await fetch(u,secureFetchInit(u,{signal:ctl.signal}));
-    clearTimeout(t);
-    if(!r.ok) return false;
-    const d=await r.json();
-    return !!(d&&typeof d==='object'&&/personaos-discovery/.test(d.schema||''));
-  }catch(e){ return false; }
-}
-async function discoverLocalNode(opts={}){
-  const rediscover = opts.rediscover !== false;
-  S.localPeers=S.localPeers||new Set();
-  const query=new URLSearchParams(location.search);
-  const localRoute=location.protocol!=='https:'||isLocalBase(location.origin);
-  if(query.get('no_local_discovery')==='1'
-      ||(!localRoute&&query.get('local_discovery')!=='1')){
-    S.localPeers=new Set(); return S.localPeers;
-  }
-  const hosts=location.protocol==='https:'
-    ? ['https://localhost','https://127.0.0.1','http://localhost','http://127.0.0.1']
-    : ['http://localhost','http://127.0.0.1'];
-  const found=new Set();
-  await Promise.all(hosts.flatMap((h)=>LOCAL_PORTS.map(async(port)=>{
-    const base=`${h}:${port}`;
-    if(opBaseKey(base)===opBaseKey(location.origin)) return;
-    if(await probeBase(base)) found.add(base);
-  })));
-  const before=[...S.localPeers].sort().join('|'), after=[...found].sort().join('|');
-  S.localPeers=found;                      // rebuild each cycle: a stopped local node drops off
-  if(after!==before){
-    if(found.size) log('local',`PersonaOS node on THIS machine: ${[...found].join(', ')} — open its control console; access follows that node's policy`,true);
-    if(!rediscover) return found;
-    discover().then(()=>{ renderMissions(); }).catch(()=>{});
-  }
-  return found;
-}
-
 function recordStoreKey(r){ const raw=r?.record_id||r?.card_id; if(!raw) return '';
   return `${encodeURIComponent(String(r?._kernel||'@unknown'))}::${encodeURIComponent(String(raw))}`; }
 // Node API requests (status, public cognition, telemetry and live workspaces)
@@ -3862,7 +3812,7 @@ function retireProviderInventory(kernelId,reason='provider lease expired'){
   const kernelInfo=S.globalKernels?.get(source);
   if(kernelInfo){
     kernelChanged=true;
-    for(const via of ['http','p2p','gossip','ipfs','local']){
+    for(const via of ['http','p2p','gossip','ipfs']){
       kernelInfo.via?.delete(via);
       kernelInfo.sourceBases?.delete(via);
       kernelInfo.seenBySource?.delete(via);
@@ -4214,7 +4164,6 @@ async function discover({refreshGlobal=true,trailing=false}={}){
   // P2P data route or healthy direct node read.
   const planeJobs=[
     discoverViaIPFS({rediscover:false}),                            // signed IPFS node cards → peers
-    discoverLocalNode({rediscover:false}),                          // local node, if this browser can reach it
   ];
   await discoverAvailable();
   const sourceJobs=planeJobs.map((job)=>Promise.resolve(job).catch(()=>null).then(discoverAvailable));
@@ -8073,7 +8022,7 @@ function renderCoordGraph(persons,totalPersons){
   if(!effectiveFocus){
     const now=Date.now();
     const rows=[...(S.globalKernels||new Map()).entries()].map(([kernel,info])=>{ const hasRoute=[...info.via]
-      .some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+      .some((v)=>['http','manual','ipfs','p2p','gossip'].includes(v));
       return {kernel,info,fresh:now-(info.lastSeen||0)<45000,active:kernelActivity(info),
         reachable:info.meta?.reachable===false?false:(info.meta?.reachable===true||hasRoute)}; });
     const window=selectPriorityWindow(rows,{limit:NETWORK_LIMITS.graphKernels,keyOf:(row)=>row.kernel,
@@ -8103,7 +8052,7 @@ function renderCoordGraph(persons,totalPersons){
   const coreIds=new Set([effectiveFocus]);
   const runningN=persons.filter((p)=>p.running).length, liveN=persons.filter((p)=>p.live).length;
   const focusedInfo=S.globalKernels?.get(effectiveFocus), now=Date.now();
-  const focusedHasRoute=!!focusedInfo&&[...focusedInfo.via].some((v)=>['http','manual','local','ipfs','p2p','gossip'].includes(v));
+  const focusedHasRoute=!!focusedInfo&&[...focusedInfo.via].some((v)=>['http','manual','ipfs','p2p','gossip'].includes(v));
   const focusedReachable=!!focusedInfo&&focusedInfo.meta?.reachable!==false
     &&(focusedInfo.meta?.reachable===true||focusedHasRoute)&&now-(focusedInfo.lastSeen||0)<45000;
   const coreSummary=runningN?`${runningN} running · ${compactCount(popN)} personas`
@@ -9269,6 +9218,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
     return taskRunCache.get(key);
   };
   const callContext=(call)=>{
+    if(!publicCognition) return [];
     const lifecycle=_taskContextForExactReferences(
       call?.task_id,call?.run_id,call?.environment_id,kernel);
     const task=lifecycle?.task||'';
@@ -9367,7 +9317,7 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
     h+=`<div class="l2" style="margin:2px 0 3px">${publicCognition?'Signed outputs and messages':'Recent authored output'} (newest first)</div>`
       +visibleOutputs.map(({output:o,index})=>{
         const recipients=Array.isArray(o.audience_persona_ids)?o.audience_persona_ids.length:0;
-        const recipientNames=recipients?o.audience_persona_ids.map((id)=>_nameFor(id,kernel)):[];
+        const recipientNames=publicCognition&&recipients?o.audience_persona_ids.map((id)=>_nameFor(id,kernel)):[];
         const trust=publicCognition?_publicOutputTrust(o):null;
         const publicMeta=publicCognition
           ? `<div class="l2">${recipients?`to ${esc(recipientNames.join(', '))}`:'not addressed to another persona'}</div>`
@@ -13326,6 +13276,79 @@ function connectedFederatedMessageHtml(row,entry){
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(text)}</pre></div>`
     +`<details><summary>Signed message record</summary><pre class="opmsg">${esc(canonicalJson(row))}</pre></details></div>`;
 }
+function connectedActionOutputs(doc,entry){
+  const owner=doc?.persona_id, kernel=entry?.status?.node_id;
+  if(entry?.closed||entry?.tier!=='operator'||MY_NODES.get(entry.base)!==entry
+      ||doc?.schema!=='personaos-persona-thinking/3'||doc.tier!=='operator'
+      ||typeof owner!=='string'||!owner||typeof kernel!=='string'||!kernel
+      ||entry.cognition.get(owner)!==doc
+      ||!(entry.status.personas||[]).some((person)=>person.persona_id===owner)) return [];
+  return (Array.isArray(doc.recent_outputs)?doc.recent_outputs:[]).filter((output)=>{
+    // The owner node verifies these records. Keep its exact action projection
+    // bound to the displayed body; unrelated structured text must not override it.
+    if(!_exactObjectFields(output,PUBLIC_PERSONA_AUTHORITY_OUTPUT_FIELDS)
+        ||output.kind!==PUBLIC_PERSONA_ACTION_OUTPUT_KIND||output.authority!=='persona_signature'
+        ||output.author_persona_id!==owner||typeof output.text!=='string'
+        ||typeof output.at!=='string'||typeof output.environment_id!=='string'||!output.environment_id
+        ||!Array.isArray(output.audience_persona_ids)||output.audience_persona_ids.length
+        ||!SHA256_CONTENT_RE.test(String(output.persona_authority_hash||''))) return false;
+    const served=output.persona_authority, authority=_actionAuthorityPayload(served);
+    if(served?.schema==='personaos-atomic-persona-action-authority/1'
+        &&(!_exactObjectFields(served,PUBLIC_ATOMIC_ACTION_AUTHORITY_FIELDS)
+          ||typeof served.container_event_id!=='string'||!served.container_event_id
+          ||!SHA256_CONTENT_RE.test(String(served.container_event_hash||'')))) return false;
+    return _exactObjectFields(authority,PUBLIC_PERSONA_ACTION_AUTHORITY_FIELDS)
+      &&authority.schema==='personaos-authenticated-persona-action/3'
+      &&authority.persona_id===owner&&authority.environment_id===output.environment_id
+      &&authority.authored_text===output.text&&authority.signing_key_id===`persona:${owner}`
+      &&['action_id','action_invocation_id','action_name'].every((field)=>
+        typeof authority[field]==='string'&&authority[field])
+      &&['task_id','model_call_id'].every((field)=>typeof authority[field]==='string')
+      &&typeof authority.signed_by==='string'&&/^[0-9a-f]{128}$/.test(authority.signed_by)
+      &&SHA256_CONTENT_RE.test(String(authority.authored_text_hash||''));
+  });
+}
+function connectedActionProvenanceHtml(output,entry){
+  const served=output.persona_authority, authority=_actionAuthorityPayload(served);
+  const fields=[
+    ['Kernel',entry.status.node_id],['Persona',authority.persona_id],
+    ['Environment',authority.environment_id],['Recorded at',output.at],
+    ['Action',authority.action_name],['Action ID',authority.action_id],
+    ['Task ID',authority.task_id],['Model call ID',authority.model_call_id],
+    ['Invocation ID',authority.action_invocation_id],
+    ['Action descriptor hash',authority.action_descriptor_hash],
+    ['Dispatch descriptor hash',authority.action_dispatch_descriptor_hash],
+    ['Authored text hash',authority.authored_text_hash],
+    ['Authority hash',output.persona_authority_hash],['Signing key',authority.signing_key_id],
+    ['Persona signature',authority.signed_by],
+  ];
+  if(served.schema==='personaos-atomic-persona-action-authority/1') fields.push(
+    ['Authority schema',served.schema],['Container event ID',served.container_event_id],
+    ['Container event hash',served.container_event_hash]);
+  return '<div class="l2">Owner node verified persona action</div>'
+    +'<details class="think-provenance"><summary>Action signature and provenance</summary><dl>'
+    +fields.filter(([,value])=>value!=='').map(([label,value])=>
+      `<div><dt>${esc(label)}</dt><dd><code>${esc(value)}</code></dd></div>`).join('')+'</dl></details>';
+}
+function connectedThinkingHtml(doc,entry){
+  const recent_outputs=connectedActionOutputs(doc,entry);
+  const thinking={...doc,recent_outputs,active_calls:doc.active_calls||[]};
+  const html=renderThinking(thinking,{allowThinkingFrame:false});
+  if(!recent_outputs.length) return html;
+  // Give stage reconciliation the complete hydrated HTML. A mount would reset
+  // refresh scroll, and post-update hydration could be erased on pointer release.
+  const template=document.createElement('template'); template.innerHTML=html;
+  hydrateThinkingOutputText(template.content,thinking);
+  for(const target of template.content.querySelectorAll('[data-thinking-output-index]')){
+    const output=recent_outputs[Number(target.dataset.thinkingOutputIndex)];
+    const action=_actionAuthorityPayload(output.persona_authority), card=target.closest('.think');
+    card.dataset.connectedAction=action.action_id;
+    card.dataset.stageKey=JSON.stringify(['owner-action',entry.status.node_id,
+      action.persona_id,action.action_id,output.persona_authority_hash]);
+    card.insertAdjacentHTML('beforeend',connectedActionProvenanceHtml(output,entry));
+  }
+  return template.innerHTML;
+}
 function connectedCognitionHtml(doc,entry){
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
@@ -13344,7 +13367,7 @@ function connectedCognitionHtml(doc,entry){
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
   if(federated.length) html+=H('Persona correspondence')+federated.slice().reverse()
     .map((row)=>connectedFederatedMessageHtml(row,entry)).join('');
-  html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
+  html+=connectedThinkingHtml(doc,entry);
   return html;
 }
 async function connectedNodeView(base){
@@ -15086,10 +15109,9 @@ async function initP2P(){
     firstDiscoveryPass,new Promise((resolve)=>setTimeout(resolve,2500))
   ])).then(()=>initP2P()).catch(()=>{})
     .finally(()=>{ _p2pStartupSettled=true; });
-  // The discovery pass below already starts local + optional IPFS planes once;
-  // only their later maintenance ticks are scheduled here.
+  // The discovery pass already starts the optional IPFS plane once;
+  // only its later maintenance ticks are scheduled here.
   setInterval(()=>{ discoverViaIPFS().catch(()=>{}); }, 120000);
-  setInterval(()=>{ discoverLocalNode().catch(()=>{}); }, 30000);
   // Same-origin/direct records are the first operating path. Optional transport
   // commons, libp2p and the fallback locator continue independently.
   // Arm the locator decision concurrently so an empty hosted shell is not held
