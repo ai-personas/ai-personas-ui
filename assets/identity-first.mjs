@@ -574,7 +574,7 @@ function publishOfflineHistory(values){
 // Current identity verification, the full live application, and historical
 // cryptography start together. Cached bytes can therefore never delay direct or
 // peer discovery. History stays an inert DOM projection with no reusable route.
-const applicationJob=import('./discovery.js?v=20260907-response-access-v2');
+const applicationJob=import('./discovery.js?v=20260908-remote-messages-v1');
 const currentIdentityJob=identityFirst().catch(()=>false);
 const historicalJob=(async()=>{
   const [providerHistory,identityHistory]=await Promise.all([

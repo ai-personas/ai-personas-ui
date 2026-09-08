@@ -15,6 +15,7 @@ const signatures = await import(pathToFileURL(resolve(assetRoot, 'live-signature
 const formats = await import(pathToFileURL(resolve(assetRoot, 'artifact-types.mjs')));
 const network = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
 const signedJson = await import(pathToFileURL(resolve(assetRoot, 'canonical-json.mjs')));
+const telemetry = await import(pathToFileURL(resolve(assetRoot, 'public-telemetry.mjs')));
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
 const esc = value => String(value ?? '').replace(/[&<>"']/g,
   char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
@@ -29,7 +30,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')
     + section('function _liveFileSharedState(', 'function _liveCurrentFileActionHTML(')
     + section('function _personaCharacteristicValue(', 'const _personaMonogram=') + privateSection;
-  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, ...signedJson, esc,
+  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, ...signedJson, ...telemetry, esc,
     fetchEventSource: streamFactory,
     AbortController, setTimeout, clearTimeout, setInterval, clearInterval, URL,
     fetch: fetchImpl, join: (base, path) => /^https?:\/\//.test(path) ? path
@@ -110,6 +111,69 @@ test('private messages retain their exact author, audience and complete text', (
   }]}, ui.entry);
   assert.match(html, /Bob → Alice/); assert.ok(html.includes(esc(message)));
   ui.disconnect(ui.entry.base);
+});
+
+function remoteMessage({direction='received',payload={message:'Exact remote message.'}}={}){
+  const sent=direction==='sent';
+  const authority={schema:'personaos-persona-communication/1',communication_id:'communication:one',
+    environment_id:'room',authored_by:sent?'alice':'bob',addressed_to:[sent?'bob':'alice'],payload,
+    parent_communication_id:sent?'communication:parent':'',parent_communication_hash:sent?'sha256:parent':'',
+    signing_key_id:sent?'persona:alice':'persona:bob',signed_by:'signed-original-authority'};
+  const source_event={event_id:'event:source',timestamp:'2026-09-08T00:00:00Z',signed_by:'signed-source'};
+  return {direction,authority,authority_hash:'sha256:one',communication_id:authority.communication_id,
+    source_event,source_event_id:source_event.event_id,source_kernel_id:sent?'kernel:test':'kernel:foreign',
+    recipient_persona_id:sent?'bob':'alice',recipient_kernel_id:sent?'kernel:foreign':'kernel:test',
+    source_environment_id:'room',source_environment_kernel_id:'kernel:foreign',dispatch_environment_id:'room',
+    dispatch_task_id:'task:dispatch',package:{authority,source_event},package_hash:'sha256:package',
+    record_event_id:'event:record',record_event_kind:sent?'FEDERATED_PERSONA_COMMUNICATION_OUTBOUND':'FEDERATED_PERSONA_COMMUNICATION_RECEIVED'};
+}
+
+test('owner remote correspondence keeps kernel-qualified routes and exact signed JSON',()=>{
+  const ui=fixture();
+  const payload=signedJson.parseSignedJson('{"message":"Exact μ, é, é and 🧭. <body>","integer":900719925474099312345,"nested":[false,0,null]}');
+  const received=remoteMessage({payload}), sent=remoteMessage({direction:'sent'});
+  sent.package=null;
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
+    federated_communications:[received,sent]};
+  const html=ui.cognition(doc,ui.entry);
+  assert.ok(html.includes(esc(signedJson.canonicalJson(payload))));
+  assert.ok(html.includes('900719925474099312345'));
+  assert.ok(html.includes('bob · kernel:foreign'));
+  assert.ok(!html.includes('Bob · bob · kernel:foreign'),'An ID collision must not give a remote author a local alias.');
+  assert.ok(html.includes('Source environment room · kernel:foreign'));
+  assert.ok(html.includes('Authored from room · kernel:test'));
+  assert.ok(html.includes('Authored reply'));
+  assert.ok(html.includes('Reply to communication:parent'));
+  assert.ok(html.includes(esc(signedJson.canonicalJson(received))));
+  ui.disconnect(ui.entry.base);
+});
+
+test('hosted outgoing correspondence deduplicates only exact signed communication identity',()=>{
+  const ui=fixture(), remote=remoteMessage({direction:'sent'});
+  const output={kind:'PERSONA_COMMUNICATION_AUTHORED',author_persona_id:'alice',
+    communication_id:remote.communication_id,communication_hash:remote.authority_hash,
+    text:remote.authority.payload.message,environment_id:'room',audience_persona_ids:['bob']};
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
+    federated_communications:[remote],recent_outputs:[output,{...output,communication_id:'communication:distinct'}]};
+  const html=ui.cognition(doc,ui.entry);
+  assert.equal((html.match(/<pre class="opmsg copy-src">/g)||[]).length,2);
+  assert.equal((html.match(/data-federated-communication=/g)||[]).length,1);
+  doc.recent_outputs[1].communication_id=remote.communication_id;
+  doc.recent_outputs[1].communication_hash='sha256:distinct';
+  assert.equal((ui.cognition(doc,ui.entry).match(/<pre class="opmsg copy-src">/g)||[]).length,2);
+  ui.disconnect(ui.entry.base);
+});
+
+test('remote correspondence stays within its operator connection and exact local owner',()=>{
+  const ui=fixture(), remote=remoteMessage();
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[remote]};
+  for(const changed of [{...doc,tier:'public'},{...doc,schema:'personaos-persona-public-cognition/3'},
+    {...doc,persona_id:'bob'}]) assert.ok(!ui.cognition(changed,ui.entry).includes('data-federated-communication'));
+  ui.entry.tier='public';
+  assert.ok(!ui.cognition(doc,ui.entry).includes('data-federated-communication'));
+  ui.entry.tier='operator'; ui.entry.closed=true;
+  assert.ok(!ui.cognition(doc,ui.entry).includes('data-federated-communication'));
+  ui.entry.closed=false; ui.disconnect(ui.entry.base);
 });
 
 for (const [refusal, view] of [['lost-tier','node'], [401,'node'], [403,'node'], ['lost-tier','connections']])

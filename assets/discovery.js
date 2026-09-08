@@ -13255,6 +13255,47 @@ function connectedMessageRoute(entry,output){
   const audience=Array.isArray(output.audience_persona_ids)?output.audience_persona_ids:[];
   return esc(author+(audience.length?' → '+audience.map(name).join(', '):''));
 }
+function connectedFederatedCommunications(doc,entry){
+  if(entry?.closed||entry?.tier!=='operator'||doc?.tier!=='operator'
+      ||doc.schema!=='personaos-persona-thinking/3'||!Array.isArray(doc.federated_communications)) return [];
+  return doc.federated_communications.filter((row)=>{
+    const authority=row?.authority;
+    if(authority?.schema!=='personaos-persona-communication/1'
+        ||authority.communication_id!==row.communication_id
+        ||authority.environment_id!==row.source_environment_id
+        ||typeof row.authority_hash!=='string'||!row.authority_hash
+        ||!row.source_kernel_id||!row.recipient_kernel_id||!row.source_environment_kernel_id) return false;
+    return row.direction==='received'
+      ?row.recipient_kernel_id===entry.status?.node_id&&row.recipient_persona_id===doc.persona_id
+      :row.direction==='sent'&&row.source_kernel_id===entry.status?.node_id
+        &&authority.authored_by===doc.persona_id;
+  });
+}
+function connectedFederatedEndpoint(entry,kernelId,personaId){
+  const local=kernelId===entry.status?.node_id;
+  const name=local?(entry.status.personas||[]).find((person)=>person.persona_id===personaId)?.name:'';
+  return esc((name?name+' · ':'')+personaId+' · '+kernelId);
+}
+function connectedFederatedMessageHtml(row,entry){
+  const authority=row.authority, payload=authority.payload;
+  const text=payload&&typeof payload==='object'&&!Array.isArray(payload)
+    &&Object.keys(payload).length===1&&typeof payload.message==='string'
+    ?payload.message:canonicalMember(authority,'payload');
+  const route=connectedFederatedEndpoint(entry,row.source_kernel_id,authority.authored_by)+' → '
+    +connectedFederatedEndpoint(entry,row.recipient_kernel_id,row.recipient_persona_id);
+  const direction=row.direction==='received'?'Received':row.package?'Outgoing':'Authored reply';
+  const source=esc(row.source_environment_id+' · '+row.source_environment_kernel_id);
+  const dispatch=row.dispatch_environment_id&&(row.dispatch_environment_id!==row.source_environment_id
+    ||row.source_kernel_id!==row.source_environment_kernel_id)
+    ?`<div class="l2">Authored from ${esc(row.dispatch_environment_id+' · '+row.source_kernel_id)}</div>`:'';
+  const parent=authority.parent_communication_id
+    ?`<div class="l2">Reply to ${esc(authority.parent_communication_id)} · ${esc(authority.parent_communication_hash)}</div>`:'';
+  return `<div class="think" data-federated-communication="${esc(row.communication_id)}" data-direction="${esc(row.direction)}">`
+    +`<div class="l2">${direction} · ${route} · ${esc(_friendlyInstant(row.source_event?.timestamp||''))}</div>`
+    +`<div class="l2">Source environment ${source}</div>`+dispatch+parent
+    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(text)}</pre></div>`
+    +`<details><summary>Signed message record</summary><pre class="opmsg">${esc(canonicalJson(row))}</pre></details></div>`;
+}
 function connectedCognitionHtml(doc,entry){
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
@@ -13262,10 +13303,17 @@ function connectedCognitionHtml(doc,entry){
     `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(_friendlyInstant(message.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(message.text)}</pre></div></div>`).join('')
     :'<div class="l2">No assistant text has been returned. Tool activity appears below.</div>');
-  const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string');
+  const federated=connectedFederatedCommunications(doc,entry);
+  const outgoing=new Set(federated.filter((row)=>row.direction==='sent').map((row)=>JSON.stringify([
+    row.source_kernel_id,row.authority.authored_by,row.communication_id,row.authority_hash,
+  ])));
+  const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string'
+    &&!outgoing.has(JSON.stringify([entry?.status?.node_id,output.author_persona_id,output.communication_id,output.communication_hash])));
   if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
     `<div class="think"><div class="l2">${connectedMessageRoute(entry,output)} · ${esc(_friendlyInstant(output.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
+  if(federated.length) html+=H('Remote persona messages')+federated.slice().reverse()
+    .map((row)=>connectedFederatedMessageHtml(row,entry)).join('');
   html+=renderThinking({...doc,recent_outputs:[],active_calls:doc.active_calls||[]},{allowThinkingFrame:false});
   return html;
 }
