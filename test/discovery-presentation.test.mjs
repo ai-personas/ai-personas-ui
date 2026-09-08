@@ -12,6 +12,7 @@ const assetRoot = process.env.UI_PRESENTATION_ASSETS
 const source = readFileSync(resolve(assetRoot, 'discovery.js'), 'utf8');
 const human = await import(pathToFileURL(resolve(assetRoot, 'human-content.mjs')));
 const {environmentIdentity} = await import(pathToFileURL(resolve(assetRoot, 'routing-authority.mjs')));
+const {publicTaskLifecycleProjection} = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
 const section = (start, end) => {
   const first = source.indexOf(start), last = source.indexOf(end, first + start.length);
   assert.ok(first >= 0 && last > first, `Missing renderer declarations: ${start}`);
@@ -38,6 +39,7 @@ const declarations = [
   // Include the complete card, so description assertions cover the face binding.
   section('// Personal worktrees may contain', '// ==== end collectible card gallery helpers'),
   section('function renderPersonaCard(', '\nfunction '),
+  section('function _verifiedPublicTaskForRun(', 'function _withVerifiedTaskRun('),
   section('function _disclosureKey(', 'function refreshSystemView('),
   section('  const envOutputContext=(b)=>{', '  const environmentCardHTML='),
 ].join('\n');
@@ -102,7 +104,9 @@ function renderer(observation = null, overrides = {}) {
     _liveFeed: empty, feedModels: () => [], _verifiedPublicModelStatusHTML: empty,
     telemetryModelEvents: () => [], isPublicEntityTelemetryDocument: () => true,
     projectTerminalModelFailures: () => ({byPersona: new Map()}),
-    PURPOSE_VERB: {}, environmentIdentity,
+    PURPOSE_VERB: {}, environmentIdentity, publicTaskLifecycleProjection,
+    _publicProvenanceAtom: (value) => typeof value === 'string' ? value.trim() : '',
+    _pkTaskFacts: () => null,
     ...overrides,
   };
   return new Function(...Object.keys(values), declarations + `\nreturn {
@@ -123,6 +127,49 @@ function event(kind, text, at, extra = {}) {
     recipients: [], ...extra};
 }
 const visibleUpdates = (html) => html.split('<details class="pc-diagnostics">')[0];
+
+function taskRecord(run, taskId, environment, revision = 'a') {
+  return {kind: 'task', _kernel: 'node', _taskLifecycleVerified: true,
+    did: `did:personaos:node/task/${run}`, label: 'The same published task title',
+    task_lifecycle: {schema: 'personaos-public-task-lifecycle/2', kernel_id: 'node',
+      run_id: run, task_id: taskId, environment_id: environment,
+      state: 'running', current_execution: true, continued_from_run: '',
+      amended_from_run: '', resumed_from_run: '', root_run_id: run,
+      revision: `sha256:${revision.repeat(64)}`}};
+}
+
+test('task DOM identifiers follow the selected verified lifecycle even when titles repeat', () => {
+  let activeCalls = [];
+  const ui = renderer(null, {_activeModelCallsForPersona: () => activeCalls});
+  const first = taskRecord('run-first', 'task:first', 'env:first');
+  const next = taskRecord('run-next', 'task:next', 'env:next', 'b');
+  ui.S.order = ['first', 'next'];
+  ui.S.recs.set('first', first);
+  ui.S.recs.set('next', next);
+  const context = {liveWorkspaces: [{run: 'run-first'}]};
+  const currentTask = () => ui.card('alice', 'node', context)
+    .match(/<section class="pc-current pc-current-task"[^>]*>/)?.[0] || '';
+  assert.equal(currentTask(), '<section class="pc-current pc-current-task"'
+    + ' data-task-id="task:first" data-task-run="run-first" data-task-environment="env:first"'
+    + ` data-task-kernel="node" data-task-revision="sha256:${'a'.repeat(64)}">`);
+  // The active run changes before workspace recency catches up.
+  activeCalls = [{_signedPublicCognition: true, run_id: 'run-next', environment_id: 'env:next'}];
+  assert.equal(currentTask(), '<section class="pc-current pc-current-task"'
+    + ' data-task-id="task:next" data-task-run="run-next" data-task-environment="env:next"'
+    + ` data-task-kernel="node" data-task-revision="sha256:${'b'.repeat(64)}">`);
+  next.task_lifecycle.revision = `sha256:${'c'.repeat(64)}`;
+  assert.ok(currentTask().includes(`data-task-revision="sha256:${'c'.repeat(64)}"`));
+  next._taskLifecycleVerified = false;
+  assert.equal(currentTask(), '', 'loss of lifecycle authority removes the task section and every identifier');
+  next._taskLifecycleVerified = true;
+  next.task_lifecycle.current_execution = false;
+  assert.equal(currentTask(), '', 'historical execution cannot retain current-task identifiers');
+  next.task_lifecycle.current_execution = true;
+  activeCalls.push({_signedPublicCognition: true, run_id: 'run-first', environment_id: 'env:first'});
+  assert.equal(currentTask(), '', 'ambiguous active runs have no selected task');
+  activeCalls = [{_signedPublicCognition: true, run_id: 'run-missing'}];
+  assert.equal(currentTask(), '', 'a missing active-run lifecycle cannot borrow the workspace task');
+});
 
 test('a command burst and newer thoughts do not bury a directed message', () => {
   const ui = renderer();

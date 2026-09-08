@@ -7797,7 +7797,7 @@ function renderPersonaCard(pid,kernel='',context={}){
   const scorecardHit=_scorecardForRun(ref.kernel,taskRun,scorecardTaskId,environments.map((env)=>env.sid),
     S.personaDiscoveryByKey.get(personaKey)||null);
   const currentTaskHTML=currentTask
-    ?`<section class="pc-current pc-current-task"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong title="${esc(currentTask)}">${esc(_compactHumanLabel(currentTask,104))}</strong></div></section>`:'';
+    ?`<section class="pc-current pc-current-task" data-task-id="${esc(verifiedCurrentTask.taskId)}" data-task-run="${esc(verifiedCurrentTask.run)}" data-task-environment="${esc(verifiedCurrentTask.environment)}" data-task-kernel="${esc(ref.kernel)}" data-task-revision="${esc(verifiedCurrentTask.revision)}"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong title="${esc(currentTask)}">${esc(_compactHumanLabel(currentTask,104))}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
     +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
     +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
