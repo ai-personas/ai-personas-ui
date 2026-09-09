@@ -93,6 +93,8 @@ All optional; the defaults just work.
   Model names appear when published; an omitted identity does not imply a failed call.
   Latest signed messages stay visible during tool activity. Shared thoughts show
   their authored time; lifecycle and current model activity have separate labels.
+  Expand **Work notes and learning history** for retained details, or **Full dossier**
+  for the run scorecard. Complete activity messages remain on the card.
   Use **show more** to expand the current matching personas and environments.
 - **Environment cards** — shared workspaces with people, activity, and file groups.
   Identical path/content copies appear once with each source available; differing
@@ -118,11 +120,12 @@ Public discovery is gradual. During busy-node observations, published files
 and complete responses have taken several minutes to arrive. Peer watches now
 remain active while their first matching inventory is received and verified;
 record admission still requires current authority. The latest Luna house
-observation has 51 complete text matches, including both ordinary communication
-responses. Its final cards still showed an older running inventory while the
-terminal inventory was being verified. Repeated signature work in that path
-has been removed, with offline checks preserving current authority; a live
-terminal-display improvement is not yet established. The
+observation joins all six complete communication texts to signed native records
+and saved DOM samples. Final signed lifecycle bytes and all five selected card
+states agree on budget exhaustion. The browser audit remains partial because
+its exact selected inventory export preceded admission; supplemental journal
+evidence does not replace that missing admitted export. Peer errors and sampling
+gaps prevent a complete delivery or latency claim. The
 [live review](https://github.com/ai-personas/ai-personas/blob/main/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 

@@ -2815,6 +2815,8 @@ footer .link,#logbtn{border-radius:999px;padding:3px 11px;
    wrap letter-by-letter */
 .pc-authored-state dl>div{grid-template-columns:118px minmax(0,1fr);gap:2px 10px;align-items:start}
 .pc-authored-state dt{line-height:1.35}
+.pcard.pk .pc-authored-state .work-note-inline>span{flex-direction:column;align-items:stretch;min-width:0}
+.pcard.pk .pc-authored-state .work-note-inline>span>b{flex:0 1 auto;min-width:0;white-space:normal;overflow-wrap:anywhere}
 
 /* dossier free text wraps instead of overflowing the card */
 .pk-dossier .pc-current{min-height:0;padding:10px 12px}

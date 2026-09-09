@@ -7364,7 +7364,9 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   // C-OP-16: the member's latest lesson leads -- the newest persona-authored
   // method, by its own authored time, as the persona's claim.
   const latestLessonHTML=_latestLessonHTML(publicCognition?doc.agentic_development:null);
-  return latestLessonHTML+currentHTML+factsHTML+agenticHTML;
+  const historyHTML=currentHTML+agenticHTML;
+  return latestLessonHTML+factsHTML+(historyHTML
+    ?`<details class="pk-dossier" data-disclosure-key="work-history"><summary>Work notes and learning history</summary>${historyHTML}</details>`:'');
 }
 function _personaActivityHTML(acts,personaKey){
   const candidates=[]; const seen=new Map();
@@ -7936,11 +7938,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +pkTypeRow
     +_ownedOutputsHTML(context.artifacts,{label:'Files I declared',scope:'persona-declared files'})
     +_personaWorktreeFilesHTML(context,taskRun)
-    +_runScorecardHTML(scorecardHit?.scorecard,{compact:true,via:scorecardHit?.via||'run'})
     +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
     +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
     +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
     +aboutHTML+capabilityHTML
+    +_runScorecardHTML(scorecardHit?.scorecard,{compact:true,via:scorecardHit?.via||'run'})
     +'</details>'
     +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
     +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kind">verified persona</span></footer>`
