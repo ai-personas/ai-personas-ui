@@ -4072,6 +4072,9 @@ function upsert(r){
       ?r.persona_lifecycle_card:null,
     _taskLifecycleVerified:r.kind==='task'&&r._taskLifecycleVerified===true,
     task_lifecycle:r.kind==='task'&&r.task_lifecycle?r.task_lifecycle:null,
+    _projectTopologyVerified:r.kind==='project'&&r._projectTopologyVerified===true,
+    _projectTopology:r.kind==='project'&&r._projectTopologyVerified===true&&r._projectTopology
+      ?r._projectTopology:null,
     // C-OP-16: kernel-signed member-view siblings and the signed
     // persona↔artifact↔run attribution ride the stored row only when verified.
     _runScorecardVerified:r.kind==='task'&&r._runScorecardVerified===true,
@@ -4433,7 +4436,7 @@ function offlineHistoryHTML(){
     const when=_friendlyInstant(row.storedAt)||'an earlier visit';
     return `<article class="pcard identity-signed offline-history-card" style="--avatar-hue:${hue}" aria-label="offline history for ${esc(row.name)}">`
       +'<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>OFFLINE HISTORY</span><span>NOT LIVE</span></div>'
-      +`<header class="pc-profile"><span class="pc-avatar" aria-label="portrait body is not retained in offline metadata"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${row.avatar_available?'portrait offline':'portrait unavailable'}</small></span></span>`
+      +`<header class="pc-profile"><span class="pc-avatar" role="img" aria-label="portrait body is not retained in offline metadata"><span class="pc-avatar-placeholder" aria-hidden="true"><span class="pc-avatar-silhouette"><i></i></span><small>${row.avatar_available?'portrait offline':'portrait unavailable'}</small></span></span>`
       +'<i class="pc-dot off" aria-hidden="true"></i>'
       +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">historical signatures rechecked</span>`
       +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(row.description||'Self-description still forming')}</strong></span></div>`
@@ -6487,9 +6490,9 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   if(!identityVerified){
     // The deterministic identicon is derived from the id alone; it claims no
     // persona authorship, so it may stand in while the identity proof settles.
-    if(decline) return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
+    if(decline) return `<span class="pc-avatar" role="img" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
-    return `<span class="pc-avatar" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
+    return `<span class="pc-avatar" role="img" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>identity proof pending · portrait withheld</small></span></span>`;
   }
   const signedCard=S.personaDiscoveryByKey.get(ref.key)||null;
@@ -6497,14 +6500,14 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
   if(!descriptor&&decline){
-    return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
+    return `<span class="pc-avatar" role="img" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
   }
   const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
   const avatarLabel=descriptor
     ?'neutral person silhouette shown while persona-authored raster avatar is verified'
     :fallback.accessible;
-  return `<span class="pc-avatar" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
+  return `<span class="pc-avatar" role="img" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="${esc(descriptor?'verifying':fallback.lifecycle)}" aria-label="${esc(avatarLabel)}">`
     +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>${esc(placeholderLabel)}</small></span></span>`;
 }
 async function _decodePersonaAvatarBlob(blob,descriptor,signal=null){
@@ -7916,9 +7919,9 @@ function renderPersonaCard(pid,kernel='',context={}){
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
     :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
-  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}" role="button" tabindex="0" title="open ${esc(pkName)}">`
+  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
-    +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}>${esc(pkName)}</h3>`
+    +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}><button type="button" class="pc-name-action" data-persona-profile aria-label="Open profile for ${esc(pkName)}" aria-controls="detailwrap" aria-haspopup="dialog">${esc(pkName)}</button></h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(pkName)}" aria-label="focus on ${esc(pkName)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +`<figure class="pk-art">${_personaAvatarHTML(personaKey,{identityVerified})}<i class="pc-dot ${dotCls}" aria-hidden="true"></i></figure>`
@@ -13915,14 +13918,15 @@ async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1
   });
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
+function inspectionSourceControl(card){ return card?.classList.contains('pcard')?card.querySelector('[data-persona-profile]')||card:card; }
 function markInspectionSource(source){
-  if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); }
+  if(S._detailSource){ S._detailSource.classList.remove('inspecting'); inspectionSourceControl(S._detailSource).setAttribute('aria-expanded','false'); }
   const card=source?.closest?.('.pcard,.env-card')||null; S._detailSource=card;
   S._detailSourceRef=card?.classList.contains('pcard')
     ?{kind:'persona',key:String(card.dataset.pkey||''),sid:String(card.dataset.pcard||''),kernel:String(card.dataset.pkernel||'')}
     :card?.classList.contains('env-card')
       ?{kind:'environment',sid:String(card.dataset.envsid||''),kernel:String(card.dataset.envkernel||'')}:null;
-  if(card){ card.classList.add('inspecting'); card.setAttribute('aria-expanded','true'); card.setAttribute('aria-controls','detailwrap'); }
+  if(card){ card.classList.add('inspecting'); const control=inspectionSourceControl(card); control.setAttribute('aria-expanded','true'); control.setAttribute('aria-controls','detailwrap'); }
   document.body.classList.add('detail-open');
 }
 // Live telemetry can repaint the card deck while its inspector is open. Keep
@@ -13938,9 +13942,9 @@ function rebindInspectionSource(){
     :(candidate.dataset.envsid===ref.sid&&candidate.dataset.envkernel===ref.kernel));
   if(!card) return;
   const previous=S._detailSource;
-  if(previous&&previous!==card){ previous.classList.remove('inspecting'); previous.setAttribute('aria-expanded','false'); }
-  S._detailSource=card; card.classList.add('inspecting'); card.setAttribute('aria-expanded','true'); card.setAttribute('aria-controls','detailwrap');
-  if(S._lastFocus===previous||!S._lastFocus?.isConnected) S._lastFocus=card;
+  if(previous&&previous!==card){ previous.classList.remove('inspecting'); inspectionSourceControl(previous).setAttribute('aria-expanded','false'); }
+  S._detailSource=card; card.classList.add('inspecting'); const control=inspectionSourceControl(card); control.setAttribute('aria-expanded','true'); control.setAttribute('aria-controls','detailwrap');
+  if(S._lastFocus===previous||!S._lastFocus?.isConnected) S._lastFocus=control;
 }
 function openDetail(id,source){ S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(source||document.activeElement);
   // focus moves into the drawer in renderTop(), AFTER the title (accessible name) is painted.
@@ -14306,14 +14310,11 @@ function wire(){
   setHeaderCollapsed(headerCollapsed); headerToggle?.addEventListener('click',()=>setHeaderCollapsed(!header.classList.contains('collapsed')));
   // the help button (？) → stroked help-circle (keeps its aria-label/title text).
   const hbtn=$('#helpbtn'); if(hbtn) hbtn.innerHTML=icon('help');
-  // keyboard access: Enter/Space activates any focusable [data-pcard]/[data-envrec]/
-  // [data-artid]/[data-gp]/.mcard control (they carry role="button" tabindex="0").
+  // keyboard access: native controls handle their own Enter/Space activation;
+  // the remaining focusable custom controls synthesize one delegated click.
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
-    if(e.target.closest('summary')) return;
-    // the ◎ follow button lives INSIDE the card, so Enter/Space would otherwise walk up to
-    // the .pc-card and open the drawer — short-circuit it so follow is keyboard-reachable.
-    const fb=e.target.closest('[data-follow]'); if(fb){ e.preventDefault(); fb.click(); return; }
-    const t=e.target.closest('[data-pcard],[data-envrec],[data-artid],[data-gp],[data-kernel-core],.mcard'); if(!t) return;
+    if(e.target.closest('button,a[href],input,select,textarea,summary,[contenteditable="true"]')) return;
+    const t=e.target.closest('[data-envrec],[data-artid],[data-gp],[data-kernel-core],.mcard'); if(!t) return;
     e.preventDefault(); t.dispatchEvent(new MouseEvent('click',{bubbles:true})); });
   // coordination-feed filters: ALL · COORD · VERIFY · SHIP · CROSS-ENV
   $('#sysStreamTabs')?.addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b)return;
@@ -14529,7 +14530,7 @@ function wire(){
     S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     document.body.classList.remove('detail-open');
-    if(S._detailSource){ S._detailSource.classList.remove('inspecting'); S._detailSource.setAttribute('aria-expanded','false'); S._detailSource=null; }
+    if(S._detailSource){ S._detailSource.classList.remove('inspecting'); inspectionSourceControl(S._detailSource).setAttribute('aria-expanded','false'); S._detailSource=null; }
     S._detailSourceRef=null;
     if(S._lastFocus){ try{ S._lastFocus.focus(); }catch(e){} S._lastFocus=null; } };
   $('#logbtn').addEventListener('click',()=>{ S._lastFocusLog=document.activeElement;

@@ -611,7 +611,7 @@ b{color:var(--bright)}
 .ix-spine.grow{animation:spinegrow .4s ease-out}   /* animate only genuinely-new rows, not on every poll */
 @keyframes spinegrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 /* keyboard focus — visible ring on the focusable persona/env/chip/mission/node controls */
-.pcard:focus-visible,.env-name:focus-visible,.art-chip:focus-visible,.mcard:focus-visible{
+.pc-name-action:focus-visible,.env-name:focus-visible,.art-chip:focus-visible,.mcard:focus-visible{
   outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px var(--focus-ring)}
 #sysGraph .gnode:focus-visible{outline:none}
 #sysGraph .gnode:focus-visible .gn-c{stroke:var(--int);stroke-width:3}
@@ -2123,6 +2123,8 @@ body{overflow-x:hidden;overflow-y:auto}
   background:linear-gradient(90deg,color-mix(in srgb,var(--envhue,var(--intr)) 14%,rgba(6,13,22,.92)),rgba(6,13,22,.78))}
 .pk-namebar .env-name{cursor:pointer}
 .pk-namebar .env-name:hover,.pk-namebar .env-name:focus-visible{color:var(--bright);text-decoration:underline;text-underline-offset:3px}
+.pc-name-action{display:block;width:100%;padding:0;border:0;border-radius:2px;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-shadow:inherit;text-align:inherit;cursor:pointer}
+.pc-name-action:hover,.pc-name-action:focus-visible{text-decoration:underline;text-underline-offset:3px}
 
 /* ---- art window ---- */
 .pk-art{position:relative;z-index:4;display:grid;place-items:center;margin:9px 12px 0;
