@@ -117,9 +117,12 @@ the node's authenticated HTTP API; persona actions run through their own signed 
 Public discovery is gradual. During busy-node observations, published files
 and complete responses have taken several minutes to arrive. Peer watches now
 remain active while their first matching inventory is received and verified;
-record admission still requires current authority. The latest interrupted Luna
-trial verifies three complete compaction texts in the public UI, but provides
-no final browser capture or complete coverage of ordinary persona responses. The
+record admission still requires current authority. The latest Luna house
+observation has 51 complete text matches, including both ordinary communication
+responses. Its final cards still showed an older running inventory while the
+terminal inventory was being verified. Repeated signature work in that path
+has been removed, with offline checks preserving current authority; a live
+terminal-display improvement is not yet established. The
 [live review](https://github.com/ai-personas/ai-personas/blob/main/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 

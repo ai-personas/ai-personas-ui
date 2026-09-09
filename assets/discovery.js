@@ -228,6 +228,22 @@ async function verifyRecord(doc,keyEntries){
   }
   return {ok:false,entry:null};
 }
+function reusableProviderRecordSignature(doc,registry,boot,base,proof){
+  // This receipt belongs only to the immediately verified envelope/document.
+  // Key eligibility is current; only the unchanged signature fact is reused.
+  if(!proof?.entry||proof.document!==doc||proof.base!==(base||'@origin')
+      ||proof.kernel!==boot?.kernel_id||registry?.schema!=='personaos-keys/1'
+      ||registry.kernelId!==proof.kernel
+      ||currentMasterKey(registry.entries||[]).toLowerCase()!==proof.masterKey
+      ||proof.signatureHex!==doc.signature_hex||proof.recordCanonical!==canon(doc.record)
+      ||proof.canonicalDocument!==canon(doc)) return null;
+  const signed=proof.entry;
+  const entry=recordVerificationEntries(registry.entries||[],doc.signing_key_id)
+    .find((current)=>current.key_id===signed.key_id&&current.role===signed.role
+      &&current.status===signed.status
+      &&String(current.public_key_hex).toLowerCase()===String(signed.public_key_hex||'').toLowerCase());
+  return entry?{ok:true,entry}:null;
+}
 const isAbs=(u)=>/^(?:https?|libp2p):\/\//i.test(String(u||''));
 const isHttp=(u)=>/^https?:\/\//i.test(String(u||''));
 const isHttpRequest=(u)=>{ try{ return /^https?:$/.test(new URL(u,location.href).protocol); }catch(_){ return false; } };
@@ -1747,7 +1763,8 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
     return {ok:false,reason:'provider_authority_invalid'};
   let ok=false; try{ ok=await ed.verifyAsync(hexToBytes(envelope.signature_hex),enc.encode(canon(p)),hexToBytes(pk)); }catch(e){}
   if(!ok) return {ok:false,reason:'provider_signature_invalid'};
-  if(`sha256:${await sha256Hex(enc.encode(canon(doc)))}`!==p.document_hash) return {ok:false,reason:'provider_document_hash_mismatch'};
+  const canonicalDocument=canon(doc);
+  if(`sha256:${await sha256Hex(enc.encode(canonicalDocument))}`!==p.document_hash) return {ok:false,reason:'provider_document_hash_mismatch'};
   const r=doc?.record||{}, policy=doc?.access_policy||{};
   if(r.record_id!==p.record_id||r.visibility_tier!=='public'||doc.host_kernel_id!==p.host_kernel_id
     ||String(doc.base||'')!==String(p.base_url||'')
@@ -1768,9 +1785,10 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
     return {ok:false,reason:'provider_document_key_binding_invalid'};
   candidates=candidates.filter((entry)=>entry.key_id===boundId&&entry.status===boundStatus
     &&String(entry.public_key_hex||'').toLowerCase()===boundKey);
+  const recordCanonical=canon(r),signatureHex=doc.signature_hex;
   const recordMatches=[];
-  for(const entry of candidates){ try{
-    if(await ed.verifyAsync(hexToBytes(doc.signature_hex),enc.encode(canon(r)),
+  for(const candidate of candidates){ const entry={...candidate}; try{
+    if(await ed.verifyAsync(hexToBytes(signatureHex),enc.encode(recordCanonical),
       hexToBytes(entry.public_key_hex))) recordMatches.push(entry);
   }catch(e){} }
   if(recordMatches.length!==1) return {ok:false,reason:'provider_document_signature_invalid'};
@@ -1782,7 +1800,9 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
   if(did.startsWith('did:personaos:')&&did.slice('did:personaos:'.length).split('/')[0]!==p.host_kernel_id) return {ok:false,reason:'provider_did_kernel_mismatch'};
   const access=evaluatePublicRecordAccess(r,policy,doc.links||{});
   if(!access.ok||!access.canDiscover) return {ok:false,reason:access.reason||'provider_access_refused'};
-  return {ok:true,access,documentKey};
+  return {ok:true,access,documentKey,recordSignature:Object.freeze({
+    document:doc,canonicalDocument,recordCanonical,signatureHex,base:base||'@origin',kernel:boot.kernel_id,
+    masterKey:pk.toLowerCase(),entry:Object.freeze({...documentKey})})};
 }
 async function verifyHttpProviderWithKeyRefresh(envelope,doc,boot,base,expectedKey='',
   {signal=null}={}){
@@ -2446,8 +2466,7 @@ async function verifyPublicProjectTopology(topology,signatureHex,record,policy,k
       ||Object.keys(members).length>512
       ||Object.entries(members).some(([personaId,role])=>!personaId||personaId.length>512
         ||typeof role!=='string'||!role||role.length>500)
-      ||eventIds.some((value)=>typeof value!=='string'||!value||value.length>512)
-      ||typeof topology.status!=='string'||!topology.status||topology.status.length>100)
+      ||eventIds.some((value)=>typeof value!=='string'||!value||value.length>512))
     return false;
   try{
     return await ed.verifyAsync(hexToBytes(String(signatureHex||'')),
@@ -2526,7 +2545,9 @@ async function verifyPublicEntityDocument(base,rel,doc){
 async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={}){
   if(!doc?.record) return {ok:false,row:null};
   const registry=S.keyDocs.get(base||'@origin')||{};
-  const signature=await verifyRecord(doc,registry.entries||[]);
+  const proof=meta.providerVerification?.recordSignature;
+  const signature=(proof&&reusableProviderRecordSignature(doc,registry,boot,base,proof))
+    ||await verifyRecord(doc,registry.entries||[]);
   if(!signature.ok) return {ok:false,row:null,reason:'record_signature_invalid'};
   const access=meta.access||evaluatePublicRecordAccess(doc.record,doc.access_policy||{},doc.links||{});
   if(!access.ok||!access.canDiscover) return {ok:false,row:null,reason:access.reason||'record_access_refused'};
@@ -2658,7 +2679,7 @@ async function verifiedRowsFromProviderIndex(providerIndex,base,boot,plane,sourc
         envelope,doc,boot,base,'',{signal});
       if(!authority.ok) return {ok:false,envelope,reason:authority.reason||'FAIL'};
       const out=await verifiedRecordFromDoc(doc,authority.keys,boot,base,plane,recordUrl,
-        {access:authority.access,providerBaseVerified:true,publicEvidenceAttempt:observation,
+        {access:authority.access,providerBaseVerified:true,providerVerification:authority,publicEvidenceAttempt:observation,
           publicEvidenceEnvelope:envelope});
       return out.ok?{ok:true,row:out.row}:{ok:false,envelope,reason:out.reason||'record refused'};
     }));
