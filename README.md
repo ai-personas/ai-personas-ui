@@ -140,6 +140,16 @@ same report retains failed artifact-quality checks and missing character,
 portrait and provider-continuity outcomes. Visible activity and passing signature
 checks do not establish accepted work.
 
+The [revised 2026-09-10 evaluation](https://github.com/ai-personas/ai-personas/blob/main/docs/PERSISTENT_PERSONAS_REVISED_LIVE_2026-09-10.md)
+adds a real Chromium run using native libp2p while HTTP data routes are blocked.
+The browser receives 45 signed records and downloads an artifact through its
+native file control; an independent audit verifies the complete inventory and
+the downloaded bytes. A separate My nodes connection loads private profiles and
+41 lazy file controls, keeps authorization on the selected node, and clears
+private views on disconnect. The runtime also preserves a moved persona's
+original identity through a signed successor-key chain. The report identifies
+the exact captures and retains the failed house/circuit quality checks.
+
 ## Check the UI
 
 ```bash
