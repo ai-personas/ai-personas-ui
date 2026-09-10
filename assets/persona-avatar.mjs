@@ -1,5 +1,6 @@
 import {canonicalJson as canonical} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
+import {residencyDescriptorKey} from './identity-residency.mjs?v=20260910-handoff-v1';
 import {installEd25519HashFallback, sha256Hex}
   from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
 import {normalizedPeerRouteBase, sameRouteOrigin} from './peer-route.mjs';
@@ -129,6 +130,7 @@ export function personaAvatarIdentityPayload(value) {
 export async function verifyPersonaAvatarDescriptor(value, {
   expectedPersonaId = '',
   pinnedPublicKeyHex = '',
+  identityResidency = null,
 } = {}) {
   const descriptor = normalizePersonaAvatar(value);
   if (!descriptor || (expectedPersonaId && descriptor.persona_id !== expectedPersonaId)) {
@@ -136,7 +138,8 @@ export async function verifyPersonaAvatarDescriptor(value, {
   }
   if (pinnedPublicKeyHex
       && (!HEX_64.test(pinnedPublicKeyHex)
-        || descriptor.identity_public_key_hex !== pinnedPublicKeyHex)) return null;
+        || !await residencyDescriptorKey(identityResidency, {personaId: descriptor.persona_id,
+          currentPublicKeyHex: pinnedPublicKeyHex, embeddedPublicKeyHex: descriptor.identity_public_key_hex}))) return null;
   try {
     const ok = await ed.verifyAsync(
       hexToBytes(descriptor.identity_signature_hex),
@@ -329,6 +332,7 @@ async function readExactResponseBytes(response, expectedLength) {
 export async function fetchVerifiedPersonaAvatar(value, {
   expectedPersonaId = '',
   pinnedPublicKeyHex = '',
+  identityResidency = null,
   providerBase = '',
   pageUrl = '',
   fetchImpl = globalThis.fetch,
@@ -336,6 +340,7 @@ export async function fetchVerifiedPersonaAvatar(value, {
   const descriptor = await verifyPersonaAvatarDescriptor(value, {
     expectedPersonaId,
     pinnedPublicKeyHex,
+    identityResidency,
   });
   if (!descriptor) {
     throw avatarVerificationError('avatar identity signature refused', true);

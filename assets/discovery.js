@@ -4,6 +4,7 @@ import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './p
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs?v=20260907-access-revocation-v1';
 import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260908-public-evidence-v1';
+import {verifyIdentityResidency} from './identity-residency.mjs?v=20260910-handoff-v1';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -33,7 +34,7 @@ import {
   providerLookupHints,
   recordVerificationEntries,
   validateProviderInventoryWindow,
-} from './discovery-authority.mjs?v=20260715-provider-window-v1';
+} from './discovery-authority.mjs?v=20260910-handoff-v1';
 import {
   collectBrowserLibp2pBootstraps,
   compactCount,
@@ -70,7 +71,7 @@ import {
   normalizePersonaAvatar,
   personaIdentityKeyPin,
   resolvePersonaAvatarBodyUrl,
-} from './persona-avatar.mjs?v=20260907-signed-json-v1';
+} from './persona-avatar.mjs?v=20260910-handoff-v1';
 import {
   environmentIdentity,
   resolveEnvironmentAuthority,
@@ -95,7 +96,7 @@ import {
   readOfflineHistorySnapshots,
   verifyOfflineHistorySnapshots,
   writeOfflineHistorySnapshot,
-} from './offline-history.mjs?v=20260907-signed-json-v1';
+} from './offline-history.mjs?v=20260910-handoff-v1';
 import {
   entityTelemetryProjection,
   isExactPublicCommunicationRoute,
@@ -1797,7 +1798,11 @@ async function verifyHttpProviderEnvelope(envelope,doc,keys,boot,base,expectedKe
     enc.encode(canon(providerPolicyPayload(policy))),hexToBytes(documentKey.public_key_hex)); }catch(e){ ok=false; }
   if(!ok) return {ok:false,reason:'provider_policy_signature_invalid'};
   const did=String(r.did||'');
-  if(did.startsWith('did:personaos:')&&did.slice('did:personaos:'.length).split('/')[0]!==p.host_kernel_id) return {ok:false,reason:'provider_did_kernel_mismatch'};
+  if(r.identity_residency||(did.startsWith('did:personaos:')&&did.slice('did:personaos:'.length).split('/')[0]!==p.host_kernel_id)){
+    if(r.kind!=='persona'||!await verifyIdentityResidency(r.identity_residency,{originalDid:did,
+      residentKernelId:p.host_kernel_id,residentPublicKeyHex:r.identity_public_key_hex}))
+      return {ok:false,reason:'provider_did_kernel_mismatch'};
+  }
   const access=evaluatePublicRecordAccess(r,policy,doc.links||{});
   if(!access.ok||!access.canDiscover) return {ok:false,reason:access.reason||'provider_access_refused'};
   return {ok:true,access,documentKey,recordSignature:Object.freeze({
@@ -1841,7 +1846,7 @@ const PERSONA_PARTICIPATION_REQUIRED_FIELDS=Object.freeze([
 const PERSONA_PARTICIPATION_ALLOWED_FIELDS=new Set([
   ...PERSONA_PARTICIPATION_REQUIRED_FIELDS,
   'avatar','capabilities_summary','characteristic_identity','display_name_alias',
-  'participation_status','self_publication',
+  'participation_status','self_publication','identity_residency',
 ]);
 // persona-card/5 adds the optional persona-authored `self_publication` object
 // (body/revision/identity_signature_hex …). It rides inside the signed card and
@@ -1948,6 +1953,7 @@ async function verifyPersonaParticipationCard(envelope,record,identity,publicKey
       ||envelope.signing_key_id!==keyId||card.signing_key_id!==keyId
       ||record.identity_signing_key_id!==keyId
       ||String(record.identity_public_key_hex||'')!==publicKeyHex
+      ||canon(card.identity_residency||{})!==canon(record.identity_residency||{})
       ||record.visibility_tier!=='public'
       ||card.visibility!=='public'||card.federation_visibility!=='public'
       ||card.name!==record.label||!_exactPersonaParticipationName(card.name)
@@ -2552,6 +2558,14 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   const access=meta.access||evaluatePublicRecordAccess(doc.record,doc.access_policy||{},doc.links||{});
   if(!access.ok||!access.canDiscover) return {ok:false,row:null,reason:access.reason||'record_access_refused'};
   const k=doc.host_kernel_id||boot?.kernel_id||'', rawBase=doc.base||base||'';
+  if(doc.record.kind==='persona'){
+    const origin=String(doc.record.did||'').replace(/^did:personaos:/,'').split('/')[0];
+    if(doc.record.identity_residency||origin!==k){
+      if(!await verifyIdentityResidency(doc.record.identity_residency,{originalDid:doc.record.did,
+        residentKernelId:k,residentPublicKeyHex:doc.record.identity_public_key_hex}))
+        return {ok:false,row:null,reason:'identity_residency_invalid'};
+    }
+  }
   const rawUrl=recordUrl?join(base,recordUrl):(doc._url||'');
   const surface=projectRecordSurface(doc.record,doc.access_policy||{},doc.links||{},access,
     {base:rawBase,url:rawUrl});
@@ -6599,6 +6613,7 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
           try{
             return await fetchVerifiedPersonaAvatar(descriptor,{
               expectedPersonaId:signedPersona.signedId,pinnedPublicKeyHex:pin,
+              identityResidency:signedCard.identity_residency,
               providerBase,pageUrl:location.href,fetchImpl,
             });
           }catch(error){
@@ -15194,7 +15209,7 @@ async function initP2P(){
     .slice(0,P2P_BOOTSTRAP_LIMITS.maxKnown);
   log('p2p','starting libp2p with WebRTC, WebTransport, WebSockets and shared DHT discovery…');
   try{
-    const mod=await import('./p2p-libp2p.js?v=20260908-webtransport-errors-v1');
+    const mod=await import('./p2p-libp2p.js?v=20260910-handoff-v1');
     P2P=await mod.startP2P({ bootstrapList:list,
       onLog:(t,m)=>{ log('p2p',t+' '+m, t==='peer:connect'||t==='peer:discovery'?true:undefined); updateP2PStatus(); },
       onRecord:onGossipRecord,

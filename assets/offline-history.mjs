@@ -1,12 +1,13 @@
 import {canonicalJson as canon, parseSignedJson} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
+import {verifyIdentityResidency} from './identity-residency.mjs?v=20260910-handoff-v1';
 import {
   evaluatePublicRecordAccess,
   hydrateProviderIndex,
   providerLookupHints,
   recordVerificationEntries,
   validateProviderInventoryWindow,
-} from './discovery-authority.mjs?v=20260715-provider-window-v1';
+} from './discovery-authority.mjs?v=20260910-handoff-v1';
 import {resolveEnvironmentAuthority}
   from './routing-authority.mjs?v=20260729-exact-environment-v3';
 import {installEd25519HashFallback, sha256Hex}
@@ -59,7 +60,7 @@ const PERSONA_CARD_REQUIRED_FIELDS=Object.freeze([
 ]);
 const PERSONA_CARD_ALLOWED_FIELDS=new Set([
   ...PERSONA_CARD_REQUIRED_FIELDS,'avatar','capabilities_summary','characteristic_identity',
-  'display_name_alias','participation_status','self_publication',
+  'display_name_alias','participation_status','self_publication','identity_residency',
 ]);
 // persona-card/5 adds the optional persona-authored `self_publication` object;
 // accept /4 and /5 with envelope/card schema equality. Opaque here.
@@ -195,10 +196,17 @@ export function writeOfflineHistorySnapshot(snapshot){
   return false;
 }
 
-function signedPersonaIdentity(record,kernelId){
+async function signedPersonaIdentity(record,kernelId){
   if(record?.kind!=='persona'||record.visibility_tier!=='public'
       ||typeof record.did!=='string') return null;
-  const did=record.did.normalize('NFC').trim(),prefix=`did:personaos:${kernelId}/persona/`;
+  const did=record.did.normalize('NFC').trim();
+  let prefix=`did:personaos:${kernelId}/persona/`;
+  if(record.identity_residency){
+    const residency=await verifyIdentityResidency(record.identity_residency,{originalDid:did,
+      residentKernelId:kernelId,residentPublicKeyHex:record.identity_public_key_hex});
+    if(!residency) return null;
+    prefix=did.slice(0,did.length-residency.persona_id.length);
+  }
   if(!did.startsWith(prefix)) return null;
   const signedId=did.slice(prefix.length);
   if(!signedId||signedId.length>180||/[\u0000-\u0020/\\]/u.test(signedId)) return null;
@@ -208,7 +216,7 @@ function signedPersonaIdentity(record,kernelId){
 }
 
 async function verifiedPersonaProjection(doc,record,documentKey,registry,kernelId,observedAt){
-  const identity=signedPersonaIdentity(record,kernelId),lifecycle=doc.persona_lifecycle_card;
+  const identity=await signedPersonaIdentity(record,kernelId),lifecycle=doc.persona_lifecycle_card;
   if(!identity||documentKey?.key_id!=='kernel-master'
       ||!exactFields(lifecycle,PERSONA_LIFECYCLE_FIELDS)
       ||lifecycle.schema!=='personaos-persona-lifecycle-card/2'
@@ -261,6 +269,7 @@ async function verifiedPersonaProjection(doc,record,documentKey,registry,kernelI
       ||Array.isArray(card.identity_authority)||!Object.keys(card.identity_authority).length
       ||Date.parse(String(card.expires_at||''))<=observedAt
       ||canon(card.avatar||{})!==canon(record.avatar||{})
+      ||canon(card.identity_residency||{})!==canon(record.identity_residency||{})
       ||!await signed(card,envelope.signature_hex,identityKey)) return null;
   return Object.freeze({id:identity.canonicalId,name:safeText(card.name,80),
     description:safeText(card.description,240),profile_state:'materialized',

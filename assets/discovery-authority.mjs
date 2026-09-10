@@ -274,6 +274,7 @@ export function projectDiscoveryRecord(record, canRead) {
       && Object.hasOwn(record, 'identity_public_key_hex')) {
     out.identity_signing_key_id = record.identity_signing_key_id;
     out.identity_public_key_hex = record.identity_public_key_hex;
+    if (Object.hasOwn(record, 'identity_residency')) out.identity_residency = record.identity_residency;
   }
   return out;
 }

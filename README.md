@@ -164,6 +164,13 @@ repository's `tools/sync-ui-shell.py` then vendors the committed release.
 The shared JSON reader preserves number spellings in existing signatures,
 including measurements such as `14.0`; it does not rewrite authored records.
 
+Same-identity moves retain the persona's original DID. Discovery, fast loading,
+offline history and native peer reads verify the signed residency chain against
+the current host and persona key. Adopted names, profiles and portraits can keep
+their original signatures; the public proof contains no private state and grants
+no historical execution authority. The native repository's handoff integration
+test supplies actual node-signed records to these readers.
+
 ## Deeper details
 
 The full discovery protocol — provider-record verification, gossip/DHT rendezvous, lease

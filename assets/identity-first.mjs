@@ -1,11 +1,12 @@
 import {canonicalJson as canon, parseSignedJson} from './canonical-json.mjs';
 import * as ed from './noble-ed25519.js';
+import {verifyIdentityResidency} from './identity-residency.mjs?v=20260910-handoff-v1';
 import {installEd25519HashFallback, sha256Hex}
   from './live-artifacts.mjs?v=20260720-active-call-capture-v3';
 import {evaluatePublicRecordAccess, validateProviderInventoryWindow}
-  from './discovery-authority.mjs?v=20260715-provider-window-v1';
+  from './discovery-authority.mjs?v=20260910-handoff-v1';
 import {readOfflineHistorySnapshots,verifyOfflineHistorySnapshots}
-  from './offline-history.mjs?v=20260907-signed-json-v1';
+  from './offline-history.mjs?v=20260910-handoff-v1';
 
 // This entry never discovers a route or consults a locator. It can only retry
 // direct provider bases that the full application previously admitted and
@@ -29,7 +30,7 @@ const PERSONA_CARD_REQUIRED_FIELDS=Object.freeze([
 ]);
 const PERSONA_CARD_ALLOWED_FIELDS=new Set([
   ...PERSONA_CARD_REQUIRED_FIELDS,'avatar','capabilities_summary','characteristic_identity',
-  'display_name_alias','participation_status','self_publication',
+  'display_name_alias','participation_status','self_publication','identity_residency',
 ]);
 // persona-card/5 adds the optional persona-authored `self_publication` object.
 // Accept /4 and /5; the member is opaque here and never rendered by this entry.
@@ -169,11 +170,17 @@ function safeText(value,maximum){
   return text&&text.length<=maximum&&!/[\u0000-\u001f\u007f]/u.test(text)?text:'';
 }
 
-function signedPersonaIdentity(record,kernelId){
+async function signedPersonaIdentity(record,kernelId){
   if(record?.kind!=='persona'||record.visibility_tier!=='public'
       ||typeof record.did!=='string') return null;
   const did=record.did.normalize('NFC').trim();
-  const prefix=`did:personaos:${kernelId}/persona/`;
+  let prefix=`did:personaos:${kernelId}/persona/`;
+  if(record.identity_residency){
+    const residency=await verifyIdentityResidency(record.identity_residency,{originalDid:did,
+      residentKernelId:kernelId,residentPublicKeyHex:record.identity_public_key_hex});
+    if(!residency) return null;
+    prefix=did.slice(0,did.length-residency.persona_id.length);
+  }
   if(!did.startsWith(prefix)) return null;
   const signedId=did.slice(prefix.length);
   if(!signedId||signedId.length>180||/[\u0000-\u0020/\\]/u.test(signedId)) return null;
@@ -242,6 +249,7 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=D
       ||!Number.isFinite(Date.parse(String(card.expires_at||'')))
       ||Date.parse(String(card.expires_at||''))<=nowMs
       ||canon(card.avatar||{})!==canon(record.avatar||{})
+      ||canon(card.identity_residency||{})!==canon(record.identity_residency||{})
       ||!await signed(card,envelope.signature_hex,identityKey)) return null;
   for(const field of ['accepts_inbound_from','charter_hash','voice_hash','soul_hash',
     'kernel_provider','kernel_a2a_url']) if(typeof card[field]!=='string') return null;
@@ -254,7 +262,7 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=D
 }
 
 async function verifiedPersona(doc,record,registry,kernelId,{nowMs=Date.now()}={}){
-  const identity=signedPersonaIdentity(record,kernelId);
+  const identity=await signedPersonaIdentity(record,kernelId);
   if(!identity) return null;
   const lifecycle=doc.persona_lifecycle_card;
   const personaId=identity.signedId;
@@ -574,7 +582,7 @@ function publishOfflineHistory(values){
 // Current identity verification, the full live application, and historical
 // cryptography start together. Cached bytes can therefore never delay direct or
 // peer discovery. History stays an inert DOM projection with no reusable route.
-const applicationJob=import('./discovery.js?v=20260908-public-evidence-v1');
+const applicationJob=import('./discovery.js?v=20260910-handoff-v1');
 const currentIdentityJob=identityFirst().catch(()=>false);
 const historicalJob=(async()=>{
   const [providerHistory,identityHistory]=await Promise.all([
