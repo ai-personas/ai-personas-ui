@@ -64,7 +64,7 @@ const PERSONA_CARD_ALLOWED_FIELDS=new Set([
 ]);
 // persona-card/5 adds the optional persona-authored `self_publication` object;
 // accept /4 and /5 with envelope/card schema equality. Opaque here.
-const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/5']);
 const PERSONA_LIFECYCLE_FIELDS=Object.freeze([
   'authority','did','identity_fields','identity_materialization_state',
   'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
@@ -262,8 +262,8 @@ async function verifiedPersonaProjection(doc,record,documentKey,registry,kernelI
       ||card.schema!==envelope.schema||card.persona_id!==identity.signedId
       ||card.signing_key_id!==keyId||card.visibility!=='public'
       ||card.federation_visibility!=='public'||card.name!==record.label
-      ||!safeText(card.name,80)||typeof card.description!=='string'
-      ||card.description.length>240||!Number.isSafeInteger(card.soul_version)
+      ||!(typeof card.name==='string'&&card.name.trim()&&!/\p{Cc}/u.test(card.name)?card.name:'')||typeof card.description!=='string'
+      ||!Number.isSafeInteger(card.soul_version)
       ||!card.rate_limit||typeof card.rate_limit!=='object'||Array.isArray(card.rate_limit)
       ||!card.identity_authority||typeof card.identity_authority!=='object'
       ||Array.isArray(card.identity_authority)||!Object.keys(card.identity_authority).length
@@ -271,8 +271,8 @@ async function verifiedPersonaProjection(doc,record,documentKey,registry,kernelI
       ||canon(card.avatar||{})!==canon(record.avatar||{})
       ||canon(card.identity_residency||{})!==canon(record.identity_residency||{})
       ||!await signed(card,envelope.signature_hex,identityKey)) return null;
-  return Object.freeze({id:identity.canonicalId,name:safeText(card.name,80),
-    description:safeText(card.description,240),profile_state:'materialized',
+  return Object.freeze({id:identity.canonicalId,name:(typeof card.name==='string'&&card.name.trim()&&!/\p{Cc}/u.test(card.name)?card.name:''),
+    description:card.description,profile_state:'materialized',
     avatar_available:Boolean(card.avatar)});
 }
 

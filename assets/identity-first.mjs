@@ -33,8 +33,8 @@ const PERSONA_CARD_ALLOWED_FIELDS=new Set([
   'display_name_alias','participation_status','self_publication','identity_residency',
 ]);
 // persona-card/5 adds the optional persona-authored `self_publication` object.
-// Accept /4 and /5; the member is opaque here and never rendered by this entry.
-const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
+// The current member remains opaque until verified presentation.
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/5']);
 const PERSONA_LIFECYCLE_FIELDS=Object.freeze([
   'authority','did','identity_fields','identity_materialization_state',
   'identity_public_key_hex','identity_signature_hash','identity_signature_verified',
@@ -240,8 +240,8 @@ async function verifiedPersonaCard(envelope,record,identity,identityKey,{nowMs=D
       ||record.identity_signing_key_id!==`persona:${identity.signedId}`
       ||String(record.identity_public_key_hex||'').toLowerCase()!==identityKey
       ||card.visibility!=='public'||card.federation_visibility!=='public'
-      ||card.name!==record.label||!safeText(card.name,80)
-      ||typeof card.description!=='string'||card.description.length>240
+      ||card.name!==record.label||!(typeof card.name==='string'&&card.name.trim()&&!/\p{Cc}/u.test(card.name)?card.name:'')
+      ||typeof card.description!=='string'
       ||!Number.isSafeInteger(card.soul_version)
       ||!card.rate_limit||typeof card.rate_limit!=='object'||Array.isArray(card.rate_limit)
       ||!card.identity_authority||typeof card.identity_authority!=='object'
@@ -277,10 +277,10 @@ async function verifiedPersona(doc,record,registry,kernelId,{nowMs=Date.now()}={
     ?await verifiedPersonaCard(doc.persona_card,record,identity,identityKey,{nowMs}):null;
   if(lifecycleProjection.materialization==='materialized'&&!card) return null;
   const authoredName=!!card&&lifecycleProjection.fields.name.personaAuthored===true;
-  const name=authoredName?safeText(card.name,80):'New persona';
+  const name=authoredName?(typeof card.name==='string'&&card.name.trim()&&!/\p{Cc}/u.test(card.name)?card.name:''):'New persona';
   return {
     kind:'persona',id:identity.canonicalId,name,
-    description:card?safeText(card.description,240):'',
+    description:card?card.description:'',
     pending:lifecycleProjection.materialization==='pending',
     avatarAvailable:Boolean(card?.avatar),
     lifecycle:'ACTIVE',

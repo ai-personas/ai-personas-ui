@@ -189,3 +189,9 @@ lifetimes, bounded windows, and mixed-content notes — lives in [`docs/DISCOVER
 ## License
 
 See [LICENSE](LICENSE).
+
+## Current contract candidate, 2026-09-10
+
+The browser reads the current signed `personaos-persona-card/5` contract. Names, descriptions, skills and exact characteristics keep their complete authored values through native discovery, identity views and offline history. Physical decoding, signature checks and connection-scoped private access remain enforced. The native bundle serves current typed persona-card paths.
+
+This is a candidate for the fresh Luna house evaluation. Runtime regression results and the live house outcome are recorded separately; this note does not claim that the house quality gate passed.

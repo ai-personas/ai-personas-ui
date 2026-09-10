@@ -1617,7 +1617,7 @@ const OPEN_INPUT_RESOLUTION_FIELDS=Object.freeze([
 ].sort());
 const _exactObjectFields=(value,fields)=>!!value&&typeof value==='object'&&!Array.isArray(value)
   &&Object.keys(value).sort().join('\u0000')===fields.join('\u0000');
-const _boundedExactRefs=(value)=>Array.isArray(value)&&value.length<=32
+const _boundedExactRefs=(value)=>Array.isArray(value)
   &&new Set(value).size===value.length&&value.every((item)=>typeof item==='string'
     &&item===item.trim()&&item.length>0&&item.length<=1024);
 function _openInputClaimEnvelope(claim){
@@ -1851,7 +1851,7 @@ const PERSONA_PARTICIPATION_ALLOWED_FIELDS=new Set([
 // persona-card/5 adds the optional persona-authored `self_publication` object
 // (body/revision/identity_signature_hex …). It rides inside the signed card and
 // is treated as opaque; presentation escapes any text before it reaches the DOM.
-const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/4','persona-card/5']);
+const PERSONA_CARD_ACCEPTED_SCHEMAS=new Set(['persona-card/5']);
 const PERSONA_CAPABILITY_REQUIRED_FIELDS=Object.freeze([
   'description','name','skill_hash','skill_id',
 ]);
@@ -1863,31 +1863,29 @@ function _plainPersonaParticipationObject(value){
   return !!value&&typeof value==='object'&&!Array.isArray(value);
 }
 function _exactPersonaParticipationName(value){
-  return typeof value==='string'&&[...value].length<=80&&enc.encode(value).length<=320
-    &&!/\p{Cc}/u.test(value);
+  return typeof value==='string'&&!/\p{Cc}/u.test(value);
 }
 function _exactPersonaParticipationDescription(value){
-  return typeof value==='string'&&[...value].length<=240&&enc.encode(value).length<=960;
+  return typeof value==='string';
 }
-function _exactPersonaCapabilityText(value,maximum,required=true){
+function _exactPersonaCapabilityText(value,required=true){
   return typeof value==='string'&&value===value.trim()&&(!required||!!value)
-    &&enc.encode(value).length<=maximum
     &&!/[\u0000-\u001f\u007f]/u.test(value);
 }
 function _exactPersonaCapabilitiesSummary(value){
   if(value===undefined) return [];
-  if(!Array.isArray(value)||value.length>64) return null;
+  if(!Array.isArray(value)) return null;
   const seen=new Set(),out=[];
   for(const item of value){
     if(!_plainPersonaParticipationObject(item)
         ||PERSONA_CAPABILITY_REQUIRED_FIELDS.some((field)=>!Object.hasOwn(item,field))
         ||Object.keys(item).some((field)=>!PERSONA_CAPABILITY_ALLOWED_FIELDS.has(field))
-        ||!_exactPersonaCapabilityText(item.skill_id,180)
-        ||!_exactPersonaCapabilityText(item.name,240)
-        ||!_exactPersonaCapabilityText(item.description,1600)
-        ||!_exactPersonaCapabilityText(item.skill_hash,180)
+        ||!_exactPersonaCapabilityText(item.skill_id)
+        ||!_exactPersonaCapabilityText(item.name)
+        ||!_exactPersonaCapabilityText(item.description)
+        ||!_exactPersonaCapabilityText(item.skill_hash)
         ||(Object.hasOwn(item,'lineage_parent_skill_id')
-          &&!_exactPersonaCapabilityText(item.lineage_parent_skill_id,180,false))
+          &&!_exactPersonaCapabilityText(item.lineage_parent_skill_id,false))
         ||seen.has(item.skill_id)) return null;
     seen.add(item.skill_id); out.push({...item});
   }
@@ -1897,26 +1895,11 @@ function _exactPersonaCharacteristics(value){
   if(!_plainPersonaParticipationObject(value)
       ||value.schema!=='persona-characteristic-card/1'
       ||!_plainPersonaParticipationObject(value.characteristics)) return null;
-  let entries=0;
-  const bounded=(item,depth=0)=>{
-    if(depth>12||++entries>2048) return false;
-    if(item===null||typeof item==='boolean') return true;
-    if(typeof item==='number') return Number.isFinite(item);
-    if(typeof item==='string') return [...item].length<=16384
-      &&enc.encode(item).length<=65536;
-    if(Array.isArray(item)) return item.length<=256
-      &&item.every((nested)=>bounded(nested,depth+1));
-    if(!_plainPersonaParticipationObject(item)||Object.keys(item).length>256) return false;
-    return Object.entries(item).every(([key,nested])=>typeof key==='string'
-      &&[...key].length<=16384&&enc.encode(key).length<=65536
-      &&bounded(nested,depth+1));
-  };
-  const source=value.characteristics;
   try{
-    if(!bounded(source)||enc.encode(canon(source)).length>65536) return null;
-    return Object.freeze(parseSignedJson(canon(source)));
+    return Object.freeze(parseSignedJson(canon(value.characteristics)));
   }catch(_){ return null; }
 }
+
 function _currentPersonaParticipationExpiry(value,now=Date.now()){
   if(typeof value!=='string') return false;
   const match=PERSONA_PARTICIPATION_EXPIRES_RE.exec(value);
@@ -11114,7 +11097,7 @@ async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRec
   const _liveModelState=S.liveByPersona.get(_personaModelKey)||{};
   const _liveModels=_personaModelHistory(_personaModelKey,_liveModelState.models||[]);
   if(_liveModels.length) html+=kv('Recent model use',_modelSummary(_liveModels));
-  if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description).slice(0,400))}</div>`;
+  if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description))}</div>`;
   if(identityVerified&&(ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
   if(identityVerified&&(ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
   // what this persona CAN DO — its advertised capabilities (filtering the generic
@@ -11201,7 +11184,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   // (the env's own model_events) — what THIS workspace is actually running on.
   const _envLiveModels=(S.liveByEnv.get(_environmentKey(r._kernel,d.environment_id||r.did))||{}).models||[];
   if(_envLiveModels.length) html+=kv('Models in use',_modelSummary(_envLiveModels));
-  if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description).slice(0,300))}</div>`;
+  if(d.description) html+=H('Description')+`<div class="desc2">${esc(String(d.description))}</div>`;
   // Deliverables produced in THIS environment. Artifact records participate only
   // when their independently verified authority names this exact environment.
   const manifestRel=L.artifact_manifest||d.artifact_manifest||'';

@@ -451,7 +451,7 @@ export function verifiedPersonaIdentityPresent(personaDiscoveryByKey, personaKey
     && record._personaLifecycleVerified === true && !!lifecycle
     && /^[0-9a-f]{64}$/.test(identityPin)
     && identityKeyId === `persona:${personaId}`
-    && ['persona-card/4', 'persona-card/5'].includes(envelope?.schema)
+    && envelope?.schema === 'persona-card/5'
     && card?.schema === envelope.schema
     && envelope.persona_id === personaId && card?.persona_id === personaId
     && envelope.signing_key_id === identityKeyId && card.signing_key_id === identityKeyId

@@ -20,8 +20,8 @@ const roleText = (value) => {
 
 export function signedPersonaLabel(record) {
   if (record?.kind !== 'persona' || typeof record.label !== 'string') return '';
-  const label = text(record.label);
-  return label && label.length <= 240 && !/[\u0000-\u001f\u007f]/.test(label) ? label : '';
+  const label = record.label;
+  return label && !/[\u0000-\u001f\u007f]/.test(label) ? label : '';
 }
 
 export function personaAuthoredRole(record) {
