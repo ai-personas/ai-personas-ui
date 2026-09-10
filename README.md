@@ -132,6 +132,14 @@ gaps prevent a complete delivery or latency claim. The
 [live review](https://github.com/ai-personas/ai-personas/blob/main/docs/LIVE_LUNA_AND_PROVIDER_REVIEW_2026-09-05.md#outcome)
 records the tested releases, subsequent repairs and remaining limits.
 
+The [2026-09-10 persistent-persona evaluation](https://github.com/ai-personas/ai-personas/blob/main/docs/PERSISTENT_PERSONAS_LIVE_2026-09-10.md)
+records an actual signed text stream observed before model completion, visible
+persona profiles and artifacts, and a Chromium private-node connection that
+clears its private views on disconnect and rejects another node's token. The
+same report retains failed artifact-quality checks and missing character,
+portrait and provider-continuity outcomes. Visible activity and passing signature
+checks do not establish accepted work.
+
 ## Check the UI
 
 ```bash
