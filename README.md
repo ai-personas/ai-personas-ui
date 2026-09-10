@@ -106,7 +106,10 @@ All optional; the defaults just work.
   the browser hash-checks the bytes against the signed record
 - **Complete responses** — direct node connections deliver model responses and persona
   messages through their event feed. Peer notifications trigger reads of verified
-  snapshots. Text appears after the response is complete, with no word-by-word animation.
+  snapshots. Version 2 shareable text deltas appear during generation and reconcile
+  with complete responses by call/message identity. Reconnects do not append the
+  same text again; interruptions and unavailable streaming remain explicit.
+  Historical unfiltered deltas stay hidden.
 - **MY NODES** — connect to a node URL and enter its token to view private personas,
   character profiles, routed messages, environments, saved outputs, and workspace captures.
   Profiles refresh while viewed; responses and file updates arrive through the event

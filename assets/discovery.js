@@ -9408,21 +9408,21 @@ function renderThinking(t,{allowThinkingFrame=false,kernel='',retainedSnapshot=f
         const provenance=_publicProvisionalProvenance(event,call);
         if(presented.assistant&&presented.firstSequence!==presented.lastSequence)
           provenance.sequence=`${presented.firstSequence}–${presented.lastSequence}`;
-        const trustLabel=presented.assistant?'KERNEL OBSERVED · COMPLETE MESSAGE':'KERNEL OBSERVED · PROVISIONAL';
-        const trustTitle=presented.assistant
+        const trustLabel=presented.assistant&&presented.complete?'KERNEL OBSERVED · COMPLETE MESSAGE':'KERNEL OBSERVED · PROVISIONAL';
+        const trustTitle=presented.assistant&&presented.complete
           ?'verified kernel-signed public snapshot; every advertised assistant chunk is present, but the provider observation remains provisional and is not persona-signed cognition or hidden reasoning'
           :'verified kernel-signed public snapshot; provisional provider event, not persona-signed cognition or hidden reasoning';
         const signedMeta=_activityProvenanceHTML(provenance,{className:'think-provenance',full:true,kernel,
           prepend:_eventTrustHTML({signed:true,_trustLabel:trustLabel,_trustTitle:trustTitle})});
         const sequence=presented.firstSequence===presented.lastSequence
           ?String(presented.firstSequence):`${presented.firstSequence}–${presented.lastSequence}`;
-        const assistantWindow=`${presented.events.length}/${presented.chunkCount} verified chunks · complete message`;
+        const assistantWindow=presented.complete?`${presented.events.length}/${presented.chunkCount} verified chunks · complete message`:(presented.interrupted?'interrupted draft':'streaming draft');
         const callMeta=`<div class="l2"><code>${esc(event.model_id||'model not declared')}</code>`
           +` · sequence ${esc(sequence)}`
           +(presented.assistant?` · ${esc(assistantWindow)}`:'')
           +`</div>${signedMeta}`;
         if(presented.assistant){
-          return `<div class="think llmout copy-host"><span class="amber">complete assistant message</span> ${copyBtn()}`
+          return `<div class="think llmout copy-host"><span class="amber">${presented.complete?'complete assistant message':presented.interrupted?'interrupted draft':'streaming draft'}</span> ${copyBtn()}`
             +`<pre class="ct-pre copy-src" data-provisional-presentation-index="${index}"></pre>${callMeta}</div>`;
         }
         const subject=event.kind==='tool_status'
@@ -9800,13 +9800,28 @@ function _validPublicWorkRef(value,maximum=500){
 }
 function _validPublicCausalDisposition(value){
   if(!value||typeof value!=='object'||Array.isArray(value)
-      ||value.schema!=='personaos-persona-causal-disposition/2'
+      ||!['personaos-persona-causal-disposition/2','personaos-persona-causal-disposition/3'].includes(value.schema)
       ||!_validPublicWorkRef(value.rationale,4000)) return false;
-  if(value.kind==='no_successor')
+  if(value.kind==='end_turn'&&value.schema!=='personaos-persona-causal-disposition/3') return false;
+  if(value.kind==='no_successor'||value.kind==='end_turn')
     return _exactObjectFields(value,['kind','rationale','schema']);
-  if(value.kind!=='immediate_wake') return false;
+  if(!['immediate_wake','wait_for_change'].includes(value.kind)) return false;
+  if(value.kind==='wait_for_change'){
+    if(value.schema!=='personaos-persona-causal-disposition/3'||!Array.isArray(value.resources)||!value.resources.length) return false;
+    const refs=new Set();
+    for(const watch of value.resources){
+      if(!_exactObjectFields(watch,['observed_version','resource_reference'])||!SHA256_CONTENT_RE.test(watch.observed_version||'')) return false;
+      const ref=watch.resource_reference;
+      if(!_exactObjectFields(ref,['arguments','authority_scope_hash','schema','server','tool'])
+          ||ref.schema!=='personaos-resource-read-reference/1'||!SHA256_CONTENT_RE.test(ref.authority_scope_hash||'')
+          ||!_validPublicWorkRef(ref.server,512)||!_validPublicWorkRef(ref.tool,512)
+          ||!ref.arguments||typeof ref.arguments!=='object'||Array.isArray(ref.arguments)) return false;
+      const key=canon(ref); if(refs.has(key)) return false; refs.add(key);
+    }
+  }
   const keys=Object.keys(value), allowed=new Set([
     'schema','kind','wake_kind','payload','model_input_paths','rationale',
+    ...(value.kind==='wait_for_change'?['resources']:[]),
   ]);
   if(keys.some((key)=>!allowed.has(key))
       ||!Object.hasOwn(value,'wake_kind')||!Object.hasOwn(value,'payload')
@@ -9814,7 +9829,7 @@ function _validPublicCausalDisposition(value){
       ||!_validPublicWorkDocument(value.payload)) return false;
   if(!Object.hasOwn(value,'model_input_paths')) return true;
   const paths=value.model_input_paths;
-  return Array.isArray(paths)&&paths.length>0&&paths.length<=8
+  return Array.isArray(paths)&&paths.length>0
     &&paths.every((path)=>_validPublicWorkRef(path,500))
     &&new Set(paths).size===paths.length;
 }
@@ -9871,7 +9886,7 @@ function _validPublicPersonaWorkStateHistory(doc,identity){
 }
 async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
   if(!event||typeof event!=='object'||Array.isArray(event)
-      ||event.schema!=='personaos-provisional-cognition/1'
+      ||!['personaos-provisional-cognition/1','personaos-provisional-cognition/2'].includes(event.schema)
       ||event.authority!=='kernel_observed_provider_event'
       ||event.persona_signed!==false||event.provisional!==true
       ||!_safePublicCognitionAtom(event.kind,128,{required:true})
@@ -9888,7 +9903,7 @@ async function _validPublicProvisionalEvent(event,{call,generatedAt}={}){
         ||(Object.prototype.hasOwnProperty.call(event,'message_id')
           &&!_safePublicCognitionText(event.message_id,180,{required:true}))) return false;
     if(Object.prototype.hasOwnProperty.call(event,'stream_delta')){
-      if(event.stream_delta!==true) return false;
+      if(event.stream_delta!==true||event.schema!=='personaos-provisional-cognition/2') return false;
     }else if(!Number.isSafeInteger(event.chunk_index)||event.chunk_index<0
         ||!Number.isSafeInteger(event.chunk_count)||event.chunk_count<1
         ||event.chunk_index>=event.chunk_count) return false;
@@ -13304,26 +13319,14 @@ function connectedPersonLink(entry,person){
     +esc(_displayPersonaName(person.name,person.persona_id))+'</a>';
 }
 function connectedCallMessages(doc){
-  if(doc?.tier==='public') return publicProvisionalPresentationRows(doc.provisional_outputs)
-    .filter(row=>row.assistant)
-    .map(row=>({text:row.text,at:row.event.at,model:row.event.model_id}))
+  const events=doc?.tier==='public'?doc.provisional_outputs:
+    [...(doc?.recent_calls||[]),...(doc?.active_calls||[])].flatMap(call=>
+      (call.provisional_events||[]).map(event=>({...event,call_id:call.call_id,
+        model_id:call.model_id,persona_id:call.persona_id,call_status:call.ended_at?'completed':'active'})));
+  return publicProvisionalPresentationRows(events).filter(row=>row.assistant)
+    .map(row=>({text:row.text,at:row.event.at,model:row.event.model_id,
+      state:row.complete?'complete':row.interrupted?'interrupted':'streaming'}))
     .sort((a,b)=>String(b.at).localeCompare(String(a.at)));
-  const rows=[];
-  for(const call of [...(doc?.recent_calls||[]),...(doc?.active_calls||[])]){
-    const groups=new Map();
-    for(const event of call.provisional_events||[]){
-      if(event.kind!=='assistant_message'||event.stream_delta===true||typeof event.text!=='string') continue;
-      const key=String(event.message_id||'response');
-      if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(event);
-    }
-    for(const chunks of groups.values()){
-      const count=chunks[0]?.chunk_count;
-      const ordered=[...new Map(chunks.map((item)=>[item.chunk_index,item])).values()].sort((a,b)=>a.chunk_index-b.chunk_index);
-      if(!Number.isInteger(count)||ordered.length!==count||ordered.some((item,i)=>item.chunk_index!==i||item.chunk_count!==count)) continue;
-      rows.push({text:ordered.map((item)=>item.text).join(''),at:ordered.at(-1).at,model:call.model_id});
-    }
-  }
-  return rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
 }
 function connectedMessageRoute(entry,output){
   const name=(pid)=>_displayPersonaName((entry?.status.personas||[])
@@ -13480,7 +13483,7 @@ function connectedCognitionHtml(doc,entry){
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
   let html=H('Assistant text')+(messages.length?messages.map((message)=>
-    `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(_friendlyInstant(message.at))}</div>`
+    `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(message.state)} · ${esc(_friendlyInstant(message.at))}</div>`
     +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(message.text)}</pre></div></div>`).join('')
     :'<div class="l2">No assistant text has been returned. Tool activity appears below.</div>');
   const federated=connectedFederatedCommunications(doc,entry);

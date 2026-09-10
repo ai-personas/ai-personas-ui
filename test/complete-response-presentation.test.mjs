@@ -133,6 +133,19 @@ test('legacy deltas never animate text and status facts remain visible', () => {
     .map(row => row.text), [chunks.join('')]);
 });
 
+test('shareable deltas display once, reconcile complete text, and mark interruption', () => {
+  const deltas=[chunk(0,{schema:'personaos-provisional-cognition/2',stream_delta:true,sequence:2}),
+    chunk(1,{schema:'personaos-provisional-cognition/2',stream_delta:true,sequence:3})];
+  const draft=assistantRows(ui.present([...deltas,deltas[1]]));
+  assert.equal(draft.length,1); assert.equal(draft[0].text,chunks.slice(0,2).join(''));
+  assert.equal(draft[0].complete,false); assert.equal(draft[0].interrupted,false);
+  assert.equal(assistantRows(ui.present(deltas.map(event=>({...event,call_status:'finished'}))))[0].interrupted,true);
+  const complete=chunks.map((_text,index)=>chunk(index,{sequence:index+4}));
+  const final=assistantRows(ui.present([...deltas,...complete]));
+  assert.equal(final.length,1); assert.equal(final[0].text,chunks.join('')); assert.equal(final[0].complete,true);
+  assert.deepEqual(assistantRows(ui.present([...deltas,...complete])),final,'Reconnecting uses the current snapshot without accumulating text');
+});
+
 test('duplicates, missing sequences and conflicting bindings cannot form a complete message', () => {
   const complete = [chunk(0), chunk(1), chunk(2)];
   for (const events of [

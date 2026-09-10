@@ -12,10 +12,10 @@ export const OPERATOR_LIVE_TELEMETRY_SCHEMA='personaos-live-telemetry/1';
 
 /** Present one already verified cognition snapshot. The caller must verify its
  * current-master signature, nested event hashes and exact call projection first.
- * Incomplete indexed messages and legacy deltas carry no visible text. Nothing
+ * Incomplete indexed messages carry no final text. Deltas form a labeled draft. Nothing
  * is accumulated between snapshots, so distinct signed versions cannot blend. */
 export function publicProvisionalPresentationRows(events){
-  const source=Array.isArray(events)?events:[], rows=[], messages=new Map();
+  const source=Array.isArray(events)?events:[], rows=[], messages=new Map(), drafts=new Map(), completeKeys=new Set();
   for(let index=0;index<source.length;index++){
     const event=source[index];
     if(event?.kind!=='assistant_message'){
@@ -25,9 +25,21 @@ export function publicProvisionalPresentationRows(events){
           mode:'status',presentationKey:''}});
       continue;
     }
-    if(Object.hasOwn(event,'stream_delta')||typeof event.call_id!=='string'||!event.call_id
+    if(typeof event.call_id!=='string'||!event.call_id
         ||(Object.hasOwn(event,'message_id')
           &&(typeof event.message_id!=='string'||!event.message_id))) continue;
+    if(event.stream_delta===true){
+      if(event.schema!=='personaos-provisional-cognition/2'||!event.message_id||typeof event.text!=='string'||!event.text
+          ||!Number.isSafeInteger(event.sequence)||event.sequence<1) continue;
+      const key=JSON.stringify(['message',event.call_id,event.message_id]);
+      let draft=drafts.get(key);
+      if(!draft){draft={events:new Map(),invalid:false,index};drafts.set(key,draft);}
+      const previous=draft.events.get(event.sequence);
+      if(previous&&JSON.stringify(previous)!==JSON.stringify(event)) draft.invalid=true;
+      draft.events.set(event.sequence,event); draft.index=index;
+      continue;
+    }
+    if(Object.hasOwn(event,'stream_delta')) continue;
     const messageId=event.message_id||'', firstSequence=event.sequence-event.chunk_index;
     // An absent provider message ID has an exact boundary from its first
     // sequence and indexed chunks. A call ID is required for either binding.
@@ -59,6 +71,7 @@ export function publicProvisionalPresentationRows(events){
     const first=message.first, group=message.events;
     if(message.invalid||group.length!==first.chunk_count) continue;
     const last=group[group.length-1], messageId=first.message_id||'';
+    if(messageId) completeKeys.add(JSON.stringify(['message',first.call_id,messageId]));
     rows.push({index:message.index,row:{
       event:last,events:group,assistant:true,mode:'chunks',complete:true,
       text:group.map(event=>event.text).join(''),firstSequence:first.sequence,
@@ -66,6 +79,16 @@ export function publicProvisionalPresentationRows(events){
       presentationKey:messageId?['message',first.call_id,messageId].join('\u0000')
         :['chunks',first.call_id,'',String(first.sequence),String(first.chunk_count)].join('\u0000'),
     }});
+  }
+  for(const [key,draft] of drafts){
+    if(draft.invalid||completeKeys.has(key)) continue;
+    const group=[...draft.events.values()].sort((a,b)=>a.sequence-b.sequence);
+    const first=group[0],last=group.at(-1);
+    if(group.some(event=>event.model_id!==first.model_id||event.persona_id!==first.persona_id
+        ||event.call_status!==first.call_status)) continue;
+    rows.push({index:draft.index,row:{event:last,events:group,assistant:true,mode:'delta',complete:false,
+      text:group.map(event=>event.text).join(''),firstSequence:first.sequence,lastSequence:last.sequence,
+      interrupted:!['active','running'].includes(last.call_status),presentationKey:['message',last.call_id,last.message_id].join('\u0000')}});
   }
   return rows.sort((left,right)=>left.index-right.index).map(value=>value.row);
 }
