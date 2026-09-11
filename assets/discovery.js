@@ -12953,12 +12953,25 @@ async function connectedProfile(entry,pid,{refresh=false}={}){
   })().finally(()=>entry.profileJobs.delete(pid));
   entry.profileJobs.set(pid,job); return job;
 }
+async function connectedEducation(entry,pid,{refresh=false}={}){
+  const cached=entry.education.get(pid);
+  if(!refresh&&cached&&Date.now()-cached.at<5000) return cached.doc;
+  if(entry.educationJobs.has(pid)) return entry.educationJobs.get(pid);
+  const job=(async()=>{
+    const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/education');
+    if(doc?.schema!=='personaos-persona-education/1'||doc.persona_id!==pid
+        ||entry.closed||!(entry.status.personas||[]).some((person)=>person.persona_id===pid))
+      throw new Error('The education record no longer matches this connection.');
+    entry.education.set(pid,{doc,at:Date.now()}); return doc;
+  })().finally(()=>entry.educationJobs.delete(pid));
+  entry.educationJobs.set(pid,job); return job;
+}
 function disconnectMyNode(base){
   const entry=MY_NODES.get(base); if(!entry) return;
   entry.closed=true; entry.stream?.close(); clearInterval(entry.timer); clearTimeout(entry.paintTimer);
   for(const controller of entry.pending) controller.abort();
-  entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear();
-  entry.profileJobs.clear(); entry.artifacts.clear(); entry.artifactJobs.clear(); entry.keyDocument=null;
+  entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear(); entry.education.clear();
+  entry.profileJobs.clear(); entry.educationJobs.clear(); entry.artifacts.clear(); entry.artifactJobs.clear(); entry.keyDocument=null;
   entry.savedArtifacts.clear(); entry.savedArtifactJobs.clear();
   for(const cancel of entry.viewCleanups||[]) cancel();
   entry.viewCleanups?.clear();
@@ -13176,7 +13189,7 @@ async function refreshConnectedNode(entry){
     if(status.schema!=='personaos-node-status/1'||status.node_id!==entry.status.node_id) return;
     entry.status=status; entry.error='';
     const admittedPeople=new Set((status.personas||[]).map((person)=>person.persona_id));
-    for(const cache of [entry.profiles,entry.cognition])
+    for(const cache of [entry.profiles,entry.education,entry.cognition])
       for(const pid of cache.keys()) if(!admittedPeople.has(pid)) cache.delete(pid);
     const admittedRuns=new Set(status.runs||[]);
     for(const cache of [entry.artifacts,entry.savedArtifacts])
@@ -13184,7 +13197,8 @@ async function refreshConnectedNode(entry){
     const marker=$('#detailbody [data-connected-node]');
     if(marker?.dataset.connectedNode===entry.base){
       if(marker.dataset.privatePersona&&admittedPeople.has(marker.dataset.privatePersona))
-        await connectedProfile(entry,marker.dataset.privatePersona,{refresh:true});
+        await Promise.allSettled([connectedProfile(entry,marker.dataset.privatePersona,{refresh:true}),
+          connectedEducation(entry,marker.dataset.privatePersona,{refresh:true})]);
       if(marker.dataset.connectedEnvironment) refreshConnectedArtifacts(entry);
     }
     // Support older nodes that only send content-free invalidations.
@@ -13202,7 +13216,7 @@ async function refreshConnectedNode(entry){
 async function connectMyNode(base,token){
   const session=new NodeReadSession(), normalized=session.set(base,token);
   const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
-    cognition:new Map(),profiles:new Map(),profileJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
+    cognition:new Map(),profiles:new Map(),profileJobs:new Map(),education:new Map(),educationJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
     savedArtifacts:new Map(),savedArtifactJobs:new Map(),
     viewCleanups:new Set(),closed:false,status:null,live:null,error:''};
   try{
@@ -13473,6 +13487,7 @@ async function connectedPersonaView(base,pid){
   const profile=await connectedProfile(entry,pid).catch((error)=>{
     profileError=String(error.message||'Profile unavailable'); return entry.profiles.get(pid)?.doc||{};
   });
+  const education=await connectedEducation(entry,pid).catch(()=>entry.education.get(pid)?.doc||{});
   if(entry.closed) return operatorView();
   const born=Date.parse(profile.born_at||'');
   let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}"`);
@@ -13483,6 +13498,13 @@ async function connectedPersonaView(base,pid){
   const character=profile.characteristic_identity?.characteristics;
   html+=H('Character')+(_personaCharacteristicsHTML(character,{name:person.name,
     limit:Object.keys(character||{}).length})||'<div class="l2">Character fields have not been shared.</div>');
+  const results=Array.isArray(education.assessments)?education.assessments:[];
+  html+=H('Education')+(results.length?results.map((result)=>{
+    const evidence=result.history?.at?.(-1)?.evidence;
+    return `<div class="grant"><span><b>${esc(result.curriculum_id||'curriculum')}</b><small class="l2">v${esc(result.version||'—')} · assessor ${esc(result.assessor_id||'unavailable')}</small></span>`
+      +`<span class="${result.status==='passed'?'ok':'l2'}">${esc(String(result.status||'unassessed').replace(/_/g,' '))}</span>`
+      +(evidence?`<small class="l2">Evidence recorded</small>`:'')+`</div>`;
+  }).join(''):'<div class="l2">No assessment has been recorded. Enrollment and assessment availability are shown separately from identity verification.</div>');
   const envs=(entry.status.environments||[]).filter((env)=>(env.member_persona_ids||[]).includes(pid));
   html+=H('Environments')+envs.map((env)=>`<p><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
   html+=connectedCognitionHtml(entry.cognition.get(pid),entry)+'</div>';
