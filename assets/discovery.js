@@ -2149,10 +2149,6 @@ async function verifyCurrentMasterSignedDocument(base,doc){
 const PUBLIC_RUN_SCORECARD_SCHEMA='personaos-public-run-scorecard/1';
 const PUBLIC_RUN_SCORECARD_FIELDS=Object.freeze(['counters','environment_id','record_hash','run_id','schema',
   'scorecard_event_id','settled_at','signature_hex','signing_key_id','task_id','unavailable_counters']);
-const PUBLIC_IDENTITY_REQUIREMENT_STATUS_SCHEMA='personaos-public-identity-requirement-status/1';
-const PUBLIC_IDENTITY_REQUIREMENT_STATUS_FIELDS=Object.freeze(['claim_hash','declared_at','declined','persona_id',
-  'reason','refusal_event_id','requirement_id','schema','signature_hex','signing_key_id']);
-const PUBLIC_IDENTITY_REQUIREMENT_REASON_MAX_CHARS=600;
 const _SCORECARD_COUNTER_NAME=/^[a-z][a-z0-9_]{0,63}$/;
 function _exactFieldSet(doc,fields){
   if(!doc||typeof doc!=='object'||Array.isArray(doc)) return false;
@@ -2247,19 +2243,6 @@ async function verifyPublicRunScorecardsForPersona(base,list,record){
   if(record?.kind!=='persona') return [];
   return _verifyAdmittedRunScorecards(base,
     _admitRunScorecardsArray(list,_personaRecordEnvironmentIdentities(record)));
-}
-function publicIdentityRequirementStatusShapeOk(doc,personaId){
-  if(!_exactFieldSet(doc,PUBLIC_IDENTITY_REQUIREMENT_STATUS_FIELDS)) return false;
-  if(doc.schema!==PUBLIC_IDENTITY_REQUIREMENT_STATUS_SCHEMA||doc.signing_key_id!=='kernel-master') return false;
-  if(doc.requirement_id!=='R-ID-1'||doc.declined!==true) return false;
-  if(!_boundedPublicText(doc.persona_id,200)||_shortId(doc.persona_id)!==_shortId(personaId||'')) return false;
-  if(!_boundedPublicText(doc.reason,PUBLIC_IDENTITY_REQUIREMENT_REASON_MAX_CHARS)) return false;
-  if(!_boundedPublicText(doc.declared_at,80)||!_boundedPublicText(doc.refusal_event_id,200)) return false;
-  return /^sha256:[0-9a-f]{64}$/.test(String(doc.claim_hash||''));
-}
-async function verifyPublicIdentityRequirementStatus(base,doc,record,personaId){
-  if(record?.kind!=='persona'||!publicIdentityRequirementStatusShapeOk(doc,personaId)) return false;
-  return verifyCurrentMasterSignedDocument(base,doc);
 }
 const PROVIDER_INVENTORY_FIELDS=Object.freeze([
   'base','document_count','documents','expires_at','generated_at','inventory_generation',
@@ -2578,8 +2561,6 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
   // C-OP-16 siblings: each verified on its own; failure leaves it absent.
   const runScorecardVerified=r.kind==='task'&&doc.run_scorecard!=null
     ?await verifyPublicRunScorecard(base,doc.run_scorecard,r):false;
-  const identityStatusVerified=!!personaId&&doc.identity_requirement_status!=null
-    ?await verifyPublicIdentityRequirementStatus(base,doc.identity_requirement_status,r,personaId):false;
   const runScorecards=Array.isArray(doc.run_scorecards)
     ?(r.kind==='env'?await verifyPublicRunScorecardsForEnvironment(base,doc.run_scorecards,r)
       :r.kind==='persona'?await verifyPublicRunScorecardsForPersona(base,doc.run_scorecards,r):[])
@@ -2610,8 +2591,6 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     run_scorecard:runScorecardVerified?doc.run_scorecard:null,
     _runScorecardsVerified:runScorecards.length>0,
     run_scorecards:runScorecards,
-    _identityRequirementStatusVerified:identityStatusVerified,
-    identity_requirement_status:identityStatusVerified?doc.identity_requirement_status:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -4079,9 +4058,6 @@ function upsert(r){
     _runScorecardsVerified:(r.kind==='env'||r.kind==='persona')&&r._runScorecardsVerified===true,
     run_scorecards:(r.kind==='env'||r.kind==='persona')&&r._runScorecardsVerified===true
       &&Array.isArray(r.run_scorecards)?r.run_scorecards.slice(0,PUBLIC_RUN_SCORECARDS_MAX):[],
-    _identityRequirementStatusVerified:r.kind==='persona'&&r._identityRequirementStatusVerified===true,
-    identity_requirement_status:r.kind==='persona'&&r._identityRequirementStatusVerified===true
-      &&r.identity_requirement_status?r.identity_requirement_status:null,
     declaring_persona_id:r.kind==='artifact'&&typeof r.declaring_persona_id==='string'
       ?r.declaring_persona_id.slice(0,200):'',
     run_id:r.kind==='artifact'&&typeof r.run_id==='string'?r.run_id.slice(0,200):'',
@@ -6478,17 +6454,12 @@ function _personaAvatarFallbackCopy(personaKey,signedCard,state='local'){
 }
 function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const ref=_personaRef(personaKey);
-  // C-OP-16: a stated refusal of the identity requirement is the persona's
-  // own claim; the placeholder says so instead of "pending" forever.
-  const decline=_verifiedIdentityDecline(ref.key);
   // Avatar shape is inspected synchronously only to make signed descriptor
   // changes observable to the keyed stage diff. No image appears until the
   // asynchronous identity, provider, byte, hash, MIME, and dimension gates pass.
   if(!identityVerified){
     // The deterministic identicon is derived from the id alone; it claims no
     // persona authorship, so it may stand in while the identity proof settles.
-    if(decline) return `<span class="pc-avatar" role="img" data-avatar-state="identity-pending" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
-      +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
     return `<span class="pc-avatar" role="img" data-avatar-state="identity-pending" data-avatar-lifecycle="withheld" aria-label="portrait withheld until persona identity proof verifies">`
       +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}<small>identity proof pending · portrait withheld</small></span></span>`;
   }
@@ -6496,10 +6467,6 @@ function _personaAvatarHTML(personaKey,{identityVerified=false}={}){
   const descriptor=normalizePersonaAvatar(signedCard?.avatar);
   const state=descriptor?'pending':(signedCard?.avatar?'failed':'local');
   const fallback=_personaAvatarFallbackCopy(ref.key,signedCard,state);
-  if(!descriptor&&decline){
-    return `<span class="pc-avatar" role="img" data-avatar-key="${esc(_domEntityKey(ref.key))}" data-avatar-revision="${esc(_personaAvatarMountRevision(descriptor,signedCard))}" data-avatar-state="${state}" data-avatar-lifecycle="declined" aria-label="identity declined by the persona; its stated reason is shown">`
-      +`<span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(ref.sid)}${_identityDeclineCaptionHTML(decline)}</span></span>`;
-  }
   const placeholderLabel=descriptor?'verifying persona-authored avatar':fallback.visible;
   const avatarLabel=descriptor
     ?'neutral person silhouette shown while persona-authored raster avatar is verified'
@@ -7577,19 +7544,6 @@ function _pkEnvTools(kernel,envSid){
 function _artifactDeclaringSid(record){
   return _shortId(_artifactDeclarationDisplayProjection(record)?.declaring_persona_id||'');
 }
-// The persona's own stated refusal of the identity requirement (R-ID-1),
-// verified as a kernel-signed sibling; null when none was stated.
-function _verifiedIdentityDecline(personaKey){
-  const row=S.personaDiscoveryByKey.get(personaKey)||null;
-  const status=row?._identityRequirementStatusVerified===true?row.identity_requirement_status:null;
-  return status&&status.declined===true
-    ?{reason:String(status.reason||''),declaredAt:String(status.declared_at||'')}:null;
-}
-function _identityDeclineCaptionHTML(decline){
-  // The persona's OWN statement, rendered as its claim -- never a host verdict.
-  return `<small class="pc-avatar-claim persona-authored-claim-inline" title="${esc(decline.reason)}">`
-    +`identity declined — ${esc(_compactHumanLabel(decline.reason,110))}<em>persona's own statement</em></small>`;
-}
 // The kernel-signed scorecard of one run, found on its verified task record.
 // The kernel-signed scorecard for a member's run: (a) the task record of
 // that run, (b0) the member's own persona record's scorecard for that run,
@@ -7911,15 +7865,11 @@ function renderPersonaCard(pid,kernel='',context={}){
     +pkStat(cogStats.tl,'TOOLS','tools it acquired and can use')
     +pkStat(cogStats.ev,'EVOLUTIONS','times it updated its own knowledge or tactics')
     +`</div>`:'';
-  // C-OP-16: a persona that stated its refusal of the identity requirement is
-  // shown with its own reason, as its claim, instead of an indefinite "pending".
-  const identityDecline=hasSignedName?null:_verifiedIdentityDecline(personaKey);
   const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
-    :identityDecline?icon('check','ico-sm')+` identity declined · stated reason: <q class="persona-authored-claim-inline" title="${esc(identityDecline.reason)}">${esc(_compactHumanLabel(identityDecline.reason,96))}</q>`
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
     :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
-  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityDecline?'declined':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}">`
+  return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}">`
     +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
     +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}><button type="button" class="pc-name-action" data-persona-profile aria-label="Open profile for ${esc(pkName)}" aria-controls="detailwrap" aria-haspopup="dialog">${esc(pkName)}</button></h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
