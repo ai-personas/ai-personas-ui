@@ -52,6 +52,7 @@ test('complete public body reads honor the advertised size without the former pr
   const values={S:state,URL,Blob,AbortController,TextDecoder,Uint8Array,
     location:{href:'https://node.test/'},responseByteLengthWithinLimit,fmtBytes:n=>`${n} B`,
     LIVE_ARTIFACT_LIMITS:{maxBodyCacheBytes:16*1024*1024},isHttp:()=>true,P2P:null,
+    fetchP2PArtifactBytes:async()=>null,
     secureFetchInit:(_url,init)=>init,sha256Hex:async value=>digest(value),
     fetch:async()=>new Response(bytes,{headers:{'Content-Length':String(bytes.length)}}),
     settleBeforeAbort:promise=>promise};

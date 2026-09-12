@@ -11,7 +11,10 @@ const source = readFileSync(resolve(assets, 'discovery.js'), 'utf8');
 const {sameRouteOrigin} = await import(pathToFileURL(resolve(assets, 'peer-route.mjs')));
 const {currentMasterKey} = await import(pathToFileURL(resolve(assets, 'discovery-authority.mjs')));
 const code = source.slice(source.indexOf('function p2pDataRouteForUrl('),
-  source.indexOf('// Large signed inventories'));
+  source.indexOf('// Large signed inventories'))
+  + source.slice(source.indexOf('function _registerP2PDataRoute('), source.indexOf('async function _discoverFromP2P('))
+  + source.slice(source.indexOf('async function readBoundedResponseBytes('), source.indexOf('function _downloadName('))
+  + source.slice(source.indexOf('async function fetchVerifiedLiveBody('), source.indexOf('const fmtBytes='));
 const bytes = new TextEncoder().encode('A public authored artifact\n');
 const hash = 'sha256:' + createHash('sha256').update(bytes).digest('hex');
 const master = 'a'.repeat(64), kernel = 'kernel:' + master.slice(0, 16);
@@ -27,8 +30,15 @@ function fixture({base = '@origin'} = {}) {
     keyDocs: new Map([[base, {kernelId: kernel, entries: [
       {key_id: 'kernel-master', role: 'master', status: 'current', public_key_hex: master},
     ]}]]), providerInventories: new Map([[kernel, {generatedAt: 100, expiresAt: 300}]])};
-  const reads = [];
+  const reads = [], timers = new Map(); let now = 1000, nextTimer = 0;
   const values = {S, location, URL, sameRouteOrigin, currentMasterKey,
+    NETWORK_LIMITS:{cachedKernels:16,cachedRecords:100},opBaseKey:value=>value,
+    Date:{now:()=>now},setTimeout:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms});return id;},
+    clearTimeout:id=>timers.delete(id),
+    responseByteLengthWithinLimit:(size,maximum)=>size<=maximum,fmtBytes:String,
+    isHttp:value=>/^https?:/.test(value),secureFetchInit:(_url,init)=>init,
+    sha256Hex:async value=>createHash('sha256').update(value).digest('hex'),
+    fetch:async()=>new Response(bytes,{headers:{'Content-Length':String(bytes.length)}}),
     _providerInventoryIsCurrent: inventory => inventory?.generatedAt < 200 && inventory?.expiresAt > 200,
     P2P: {fetchPublicBlob: async (record, contentHash, options) => {
       reads.push({record, contentHash, options});
@@ -37,8 +47,9 @@ function fixture({base = '@origin'} = {}) {
     }},
   };
   const api = new Function(...Object.keys(values), code
-    + '\nreturn {read:fetchP2PArtifactBytes, route:p2pDataRouteForUrl};')(...Object.values(values));
-  return {...api, S, provider, reads};
+    + '\nreturn {read:fetchP2PArtifactBytes, route:p2pDataRouteForUrl, register:_registerP2PDataRoute, body:fetchVerifiedLiveBody};')(...Object.values(values));
+  return {...api, S, provider, reads, timers, advance:ms=>{now+=ms;},
+    register:()=>api.register({base:peerBase,kernel,peerId:provider.provider_peer_id,providerRecord:provider})};
 }
 
 test('an HTTP-origin artifact uses its existing same-master peer route without HTTP or credentials', async () => {
@@ -112,8 +123,9 @@ test('unknown origins, credentials, fragments and opaque foreign peers create no
   for (const url of ['http://localhost:18980/artifacts/report.txt',
     'http://user:password@127.0.0.1:18980/artifacts/report.txt',
     'http://127.0.0.1:18980/artifacts/report.txt#other', 'libp2p://otherPeer/artifacts/report.txt'])
-    assert.equal(await f.read(url, hash), null, url);
+    assert.equal(await f.read(url, hash, bytes.length, {waitForRoute:true}), null, url);
   assert.equal(f.reads.length, 0);
+  assert.equal(f.timers.size, 0);
 });
 
 test('cancellation prevents a read through an otherwise valid alias', async () => {
@@ -122,4 +134,67 @@ test('cancellation prevents a read through an otherwise valid alias', async () =
   assert.equal(await f.read('http://127.0.0.1:18980/artifacts/report.txt', hash,
     bytes.length, {signal: controller.signal}), null);
   assert.equal(f.reads.length, 0);
+});
+
+test('an opened artifact waits for verified route admission within the same ten-second allowance', async () => {
+  const f=fixture(), progress=[];
+  f.S.p2pDataRoutes.clear();
+  const pending=f.read('http://127.0.0.1:18980/artifacts/report.txt',hash,bytes.length,
+    {waitForRoute:true,onProgress:event=>progress.push(event)});
+  assert.equal(f.reads.length,0); assert.equal(f.S.artifactRouteWaiters.size,1);
+  assert.equal(progress[0].phase,'resolving');
+  assert.equal([...f.timers.values()][0].ms,10000);
+  f.advance(4000); f.register();
+  assert.deepEqual(await pending,bytes);
+  assert.equal(f.reads[0].options.timeoutMs,6000,'Route admission does not add a second timeout window');
+  assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+});
+
+test('a pending artifact still refuses expired inventory and a different full master key', async () => {
+  const f=fixture(); f.S.p2pDataRoutes.clear();
+  f.S.providerInventories.set(kernel,{generatedAt:100,expiresAt:199});
+  const pending=f.read('http://127.0.0.1:18980/artifacts/report.txt',hash,bytes.length,{waitForRoute:true});
+  f.register(); await Promise.resolve(); assert.equal(f.reads.length,0);
+  f.S.providerInventories.set(kernel,{generatedAt:100,expiresAt:300});
+  f.provider.public_key_hex=master.slice(0,16)+'b'.repeat(48);
+  f.register(); await Promise.resolve(); assert.equal(f.reads.length,0);
+  f.provider.public_key_hex=master; f.register();
+  assert.deepEqual(await pending,bytes); assert.equal(f.reads.length,1);
+  assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+});
+
+test('closing during route admission removes the waiter and prevents any late peer read', async () => {
+  const f=fixture(), controller=new AbortController(); f.S.p2pDataRoutes.clear();
+  const pending=f.read('http://127.0.0.1:18980/artifacts/report.txt',hash,bytes.length,
+    {waitForRoute:true,signal:controller.signal});
+  controller.abort(); assert.equal(await pending,null);
+  assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+  f.register(); await Promise.resolve(); assert.equal(f.reads.length,0);
+});
+
+test('withdrawn authority between route admission and the resumed read cannot start a body transfer', async () => {
+  const f=fixture(); f.S.p2pDataRoutes.clear();
+  const pending=f.read('http://127.0.0.1:18980/artifacts/report.txt',hash,bytes.length,{waitForRoute:true});
+  f.register(); f.S.providerInventories.clear();
+  assert.equal(await pending,null); assert.equal(f.reads.length,0);
+  assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+});
+
+test('an unavailable route releases its listener at the existing deadline', async () => {
+  for(const lateAdmission of [false,true]){
+    const f=fixture(); f.S.p2pDataRoutes.clear();
+    const pending=f.read('http://127.0.0.1:18980/artifacts/report.txt',hash,bytes.length,{waitForRoute:true});
+    f.advance(10000);
+    if(lateAdmission) f.register(); else [...f.timers.values()][0].fn();
+    assert.equal(await pending,null); assert.equal(f.reads.length,0);
+    assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+  }
+});
+
+test('a verified HTTP winner cancels a still-pending peer route without a background body read', async () => {
+  const f=fixture(); f.S.p2pDataRoutes.clear();
+  const result=await f.body('http://127.0.0.1:18980/artifacts/report.txt',hash,{maxBytes:bytes.length});
+  assert.equal(result.ok,true); assert.deepEqual(result.bytes,bytes);
+  assert.equal(f.S.artifactRouteWaiters,undefined); assert.equal(f.timers.size,0);
+  f.register(); await Promise.resolve(); assert.equal(f.reads.length,0);
 });

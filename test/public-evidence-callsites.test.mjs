@@ -59,7 +59,9 @@ test('actual admission predicates and mutations match with observation disabled 
     record_key:'record_key_missing',regression:'persona_lifecycle_regression',incomplete_rows:'incomplete_unique_rows'};
   function run(enabled,kind){
     const f=fixture(),b=bridge(enabled),rows=[f.row],logs=[],effects=[];
-    const S={providerInventories:new Map(),recs:new Map(),cachedIdentityPendingKernels:new Set(['kernel:A'])};
+    let routeNotifications=0;
+    const S={providerInventories:new Map(),recs:new Map(),cachedIdentityPendingKernels:new Set(['kernel:A']),
+      artifactRouteWaiters:new Set([()=>{assert(S.providerInventories.has('kernel:A'));routeNotifications++;}])};
     const a=prepareEvidence(b,f);let boot=f.boot,inventory=f.inventory;
     if(kind==='incomplete') inventory.complete=false;
     if(kind==='invalid') inventory.ok=false;
@@ -80,6 +82,7 @@ test('actual admission predicates and mutations match with observation disabled 
     const state=()=>plain({records:[...S.recs],inventories:[...S.providerInventories],
       pending:[...S.cachedIdentityPendingKernels],fastOriginRefreshPending:S.fastOriginRefreshPending});
     const before=state(),result=fn(f.base,boot,rows,inventory,f.index);
+    assert.equal(routeNotifications,kind==='accepted'?1:0,'Only admitted inventory wakes foreground route readers');
     return {result,logs,effects,...state(),before,
       events:JSON.parse(b.reader.read()).events.filter(e=>e.kind==='inventory_admission'),attempt:a};
   }

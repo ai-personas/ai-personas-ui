@@ -475,9 +475,36 @@ function settleBeforeAbort(request,signal,abortedValue=null){
     request.then(finish,()=>finish(null));
   });
 }
-async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER,{signal=null,onProgress=null}={}){
+function waitForP2PArtifactRoute(target,{signal,timeoutMs,onProgress}){
+  // Waiting is not authority: only the ordinary current-key route check below
+  // can admit a read. Do not retain waiters for unrelated origins or locators.
+  const knownOrigin=/^https?:$/.test(target.protocol)&&[...(S.boots||new Map()).keys()].some(key=>{
+    try{ const base=new URL(key==='@origin'?location.origin:key), root=base.pathname.replace(/\/+$/,'');
+      return sameRouteOrigin(target,base)&&(!root||target.pathname===root||target.pathname.startsWith(root+'/'));
+    }catch(_){ return false; }
+  });
+  if(signal?.aborted||!knownOrigin) return Promise.resolve(null);
+  return new Promise(resolve=>{
+    const waiters=S.artifactRouteWaiters=S.artifactRouteWaiters||new Set();
+    let timer;
+    const finish=value=>{
+      waiters.delete(check);
+      if(!waiters.size&&S.artifactRouteWaiters===waiters) delete S.artifactRouteWaiters;
+      signal?.removeEventListener('abort',abort); clearTimeout(timer); resolve(value);
+    };
+    const check=()=>{ const found=p2pDataRouteForUrl(target.href,{allowVerifiedAlias:true});
+      if(found&&P2P?.fetchPublicBlob) finish(found); };
+    const abort=()=>finish(null);
+    waiters.add(check); signal?.addEventListener('abort',abort,{once:true});
+    timer=setTimeout(abort,Math.max(1,timeoutMs));
+    if(signal?.aborted) abort(); else check();
+    if(waiters.has(check)) onProgress?.({received:0,total:null,phase:'resolving'});
+  });
+}
+async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER,{signal=null,onProgress=null,waitForRoute=false}={}){
   if(signal?.aborted) return null;
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
+  if(target.hash||target.username||target.password) return null;
   // JSON polling has its own sole `since=sha256:...` query contract in
   // p2pDataRouteForUrl. Artifact bodies instead permit only the exact hash query
   // emitted by a signed live-workspace snapshot. Strip it solely for peer path
@@ -488,14 +515,21 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_S
     if(!match) return null;
     queryHash=`sha256:${match[1].toLowerCase()}`; target.search='';
   }
-  const found=p2pDataRouteForUrl(target.href,{allowVerifiedAlias:true});
-  if(!found||found.sinceRevision||!P2P?.fetchPublicBlob) return null;
   const urlKey=target.href;
   const contentHash=String(expectedHash||S.p2pArtifactHashes?.get(urlKey)||'').toLowerCase();
   if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
   if(queryHash&&queryHash!==contentHash) return null;
+  const deadline=Date.now()+10000;
+  let found=p2pDataRouteForUrl(target.href,{allowVerifiedAlias:true});
+  if(waitForRoute&&(!found||!P2P?.fetchPublicBlob)){
+    const admitted=await waitForP2PArtifactRoute(target,{signal,timeoutMs:deadline-Date.now(),onProgress});
+    // Admission wakes this consumer; it is not a lease on an earlier key or
+    // route. Recheck after the await before issuing the actual body request.
+    found=admitted?p2pDataRouteForUrl(target.href,{allowVerifiedAlias:true}):null;
+  }
+  if(signal?.aborted||Date.now()>=deadline||!found||found.sinceRevision||!P2P?.fetchPublicBlob) return null;
   const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
-    {timeoutMs:10000,maxBytes,path:found.path,priority:100,signal,onProgress}).catch(()=>null);
+    {timeoutMs:Math.max(1,deadline-Date.now()),maxBytes,path:found.path,priority:100,signal,onProgress}).catch(()=>null);
   return result?.bytes||null;
 }
 // Large signed inventories are fetched concurrently by the HTTP and P2P
@@ -4043,6 +4077,7 @@ function applyVerifiedProviderInventory(base,boot,rows,inventory,providerIndex=n
   // from this single authority gate so the summary cannot remain on an earlier
   // zero-record snapshot while admitted records are already rendered elsewhere.
   scheduleRealtimeRepaint({records:true});
+  S.artifactRouteWaiters?.forEach(check=>check());
   return result(true,'accepted');
 }
 function upsert(r){
@@ -4254,6 +4289,7 @@ async function discover({refreshGlobal=true,trailing=false}={}){
         if(res.providerIndex) persistFastOriginInventory(res.boot,res.providerIndex);
       }
       S.boots.set(b||'@origin',res.boot);
+      S.artifactRouteWaiters?.forEach(check=>check());
       const sources=peerSourceTags(b);
       const directTransport=S.p2pDataRoutes?.has(opBaseKey(b||location.origin))
         ?'p2p':'http';
@@ -5155,9 +5191,9 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Numb
         (received,total)=>progress({received,total,phase:'receiving',transport:'HTTP'}));
       return {bytes,type:response.headers.get('content-type')||'application/octet-stream'};
     })());
-    if(P2P?.fetchPublicBlob) attempts.push((async()=>{
+    attempts.push((async()=>{
       const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,Math.max(1,maxBytes),
-        {signal:controller.signal,onProgress:event=>progress({...event,transport:'P2P'})});
+        {signal:controller.signal,waitForRoute:true,onProgress:event=>progress({...event,transport:'P2P'})});
       if(!bytes) throw new Error('verified peer body unavailable');
       return {bytes,type:'application/octet-stream'};
     })());
@@ -12229,7 +12265,7 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
       verified=validExpectedHash
         ?await fetchVerifiedLiveBody(sourceUrl,expectedHash,{signal:lifecycle.signal,
           onProgress:({received,total,phase,transport})=>report(phase==='verifying'||phase==='verified'
-            ?'Checking downloaded bytes…':(transport||'Transfer')+' · '+fmtBytes(received)
+            ?'Checking downloaded bytes…':phase==='resolving'?'P2P · waiting for a verified route…':(transport||'Transfer')+' · '+fmtBytes(received)
               +(total!==null&&total!==undefined?' of '+fmtBytes(total):'')
               +(total>0?' · '+Math.floor(received/total*100)+'%':'')
               +(phase==='retrying'?' · reconnecting':phase==='preparing'?' · preparing file':'')),
@@ -14598,6 +14634,7 @@ function _registerP2PDataRoute(hint,rows=[]){
   }
   while(artifacts.size>NETWORK_LIMITS.cachedRecords)
     artifacts.delete(artifacts.keys().next().value);
+  S.artifactRouteWaiters?.forEach(check=>check());
   return true;
 }
 async function _discoverFromP2P(hint,{signal=null}={}){
@@ -14724,6 +14761,7 @@ function _reconcileP2PRouteHint(hint,{signal=null}={}){
       base,resolved.boot,resolved.found,resolved.inventory,resolved.providerIndex);
     if(!accepted) return {accepted:false,count:0};
     S.boots.set(base||'@origin',resolved.boot);
+    S.artifactRouteWaiters?.forEach(check=>check());
     _rememberP2PRouteHint(base);
     updateP2PStatus();
     collectP2PBootstraps(resolved.boot,{dial:true});
