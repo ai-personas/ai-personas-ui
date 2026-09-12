@@ -10684,7 +10684,7 @@ async function personaView(r,{tab='overview',offset=0}={}){
     const activityHtml=()=>{
       if(!currentDoc) return '<p class="l2" role="status">Loading verified public activity…</p>';
       const entry={tier:'public',status:{node_id:kernel,personas:[]}};
-      const rows=connectedActivityItems(currentDoc,entry);
+      const rows=connectedActivityItems(currentDoc,entry,{verifiedPublic:true});
       return '<p class="record-proof">Public document signature verified. Model responses are provisional observations; authored work and messages retain their own authority.</p>'
         +`<p class="l2">Showing ${Math.min(limit,rows.length)} of ${rows.length} shared records.</p>`
         +rows.slice(0,limit).map(row=>`<article class="record-row" data-stage-key="${esc(row.key)}"><b>${esc(row.kind)}</b><small>${esc(row.label)} · ${esc(_friendlyInstant(row.at))}</small>`
@@ -12940,16 +12940,10 @@ function connectedCallMessages(doc){
       (call.provisional_events||[]).map(event=>({...event,call_id:call.call_id,
         model_id:call.model_id,persona_id:call.persona_id,call_status:call.ended_at?'completed':'active'})));
   return publicProvisionalPresentationRows(events).filter(row=>row.assistant)
-    .map(row=>({text:row.text,at:row.event.at,model:row.event.model_id,
+    .map(row=>({key:JSON.stringify(['response',row.presentationKey]),
+      text:row.text,at:row.event.at,model:row.event.model_id,
       state:row.complete?'complete':row.interrupted?'interrupted':'streaming'}))
     .sort((a,b)=>String(b.at).localeCompare(String(a.at)));
-}
-function connectedMessageRoute(entry,output){
-  const name=(pid)=>_displayPersonaName((entry?.status.personas||[])
-    .find((person)=>person.persona_id===pid)?.name,pid);
-  const author=output.author_persona_id?name(output.author_persona_id):'Shared message';
-  const audience=Array.isArray(output.audience_persona_ids)?output.audience_persona_ids:[];
-  return esc(author+(audience.length?' → '+audience.map(name).join(', '):''));
 }
 function connectedFederatedCommunications(doc,entry){
   const kernel=entry?.status?.node_id, owner=doc?.persona_id;
@@ -13076,76 +13070,67 @@ function connectedActionProvenanceHtml(output,entry){
     +fields.filter(([,value])=>value!=='').map(([label,value])=>
       `<div><dt>${esc(label)}</dt><dd><code>${esc(value)}</code></dd></div>`).join('')+'</dl></details>';
 }
-function connectedThinkingHtml(doc,entry){
-  const recent_outputs=connectedActionOutputs(doc,entry);
-  const thinking={...doc,recent_outputs,active_calls:doc.active_calls||[]};
-  const html=renderThinking(thinking,{allowThinkingFrame:false});
-  if(!recent_outputs.length) return html;
-  // Give stage reconciliation the complete hydrated HTML. A mount would reset
-  // refresh scroll, and post-update hydration could be erased on pointer release.
-  const template=document.createElement('template'); template.innerHTML=html;
-  hydrateThinkingOutputText(template.content,thinking);
-  for(const target of template.content.querySelectorAll('[data-thinking-output-index]')){
-    const output=recent_outputs[Number(target.dataset.thinkingOutputIndex)];
-    const action=_actionAuthorityPayload(output.persona_authority), card=target.closest('.think');
-    card.dataset.connectedAction=action.action_id;
-    card.dataset.stageKey=JSON.stringify(['owner-action',entry.status.node_id,
-      action.persona_id,action.action_id,output.persona_authority_hash]);
-    card.insertAdjacentHTML('beforeend',connectedActionProvenanceHtml(output,entry));
-  }
-  return template.innerHTML;
-}
-function connectedActivityItems(doc,entry){
+function connectedActivityItems(doc,entry,{verifiedPublic=false}={}){
   if(!doc) return [];
-  const rows=connectedCallMessages(doc).map((row,index)=>({...row,key:'response:'+index,
+  const current=!entry?.closed&&MY_NODES.get(entry?.base)===entry
+    &&entry.cognition?.get(doc.persona_id)===doc
+    &&typeof entry.status?.node_id==='string'&&!!entry.status.node_id
+    &&(entry.status?.personas||[]).some(person=>person.persona_id===doc.persona_id);
+  const publicRecord=doc.tier==='public'&&doc.schema==='personaos-persona-public-cognition/3'
+    &&entry?.tier==='public'&&(verifiedPublic||current);
+  if(!publicRecord&&(!current||entry.tier!=='operator'||doc.tier!=='operator'
+      ||doc.schema!=='personaos-persona-thinking/3')) return [];
+  const rows=connectedCallMessages(doc).map(row=>({...row,
     label:(row.model||'Model')+' · '+row.state,kind:'Model response'}));
-  for(const row of doc.recent_outputs||[]){
+  const actions=new Set(connectedActionOutputs(doc,entry));
+  const federated=connectedFederatedCommunications(doc,entry);
+  const outgoing=new Set(federated.filter(row=>row.direction==='sent').map(row=>JSON.stringify([
+    row.source_kernel_id,row.authority.authored_by,row.communication_id,row.authority_hash])));
+  for(const row of (doc.recent_outputs||[]).slice().reverse()){
     if(typeof row.text!=='string') continue;
-    rows.push({key:'output:'+String(row.communication_id||row.persona_authority_hash||rows.length),
-      at:row.at,text:_publicPersonaOutputDisplayText(row),kind:row.kind==='PERSONA_COMMUNICATION_AUTHORED'?'Persona message':'Work record',
+    const action=row.kind===PUBLIC_PERSONA_ACTION_OUTPUT_KIND;
+    if(action&&!publicRecord&&!actions.has(row)) continue;
+    if(row.kind==='PERSONA_COMMUNICATION_AUTHORED'&&outgoing.has(JSON.stringify([
+      entry.status?.node_id,row.author_persona_id,row.communication_id,row.communication_hash]))) continue;
+    rows.push({key:'output:'+(row.persona_authority_hash||JSON.stringify([
+      row.kind,row.author_persona_id,row.environment_id,row.communication_id,row.communication_hash,row.at])),
+      at:row.at,text:action?row.text:_publicPersonaOutputDisplayText(row),
+      action:action&&!publicRecord?row:null,
+      kind:action?'Persona action':row.kind==='PERSONA_COMMUNICATION_AUTHORED'?'Persona message':'Work record',
       label:row.author_persona_id?(entry.status.personas||[]).find(person=>person.persona_id===row.author_persona_id)?.name||row.author_persona_id:'Persona-authored',
       audience:row.audience_persona_ids||[]});
   }
-  for(const row of connectedFederatedCommunications(doc,entry)) rows.push({
-    key:'peer:'+row.communication_id+':'+row.direction,at:row.source_event?.timestamp,
-    text:canonicalJson(row.authority?.payload),kind:'Peer correspondence',
+  for(const row of federated) rows.push({
+    key:'peer:'+JSON.stringify([row.source_kernel_id,row.communication_id,row.authority_hash,
+      row.direction,row.recipient_persona_id]),at:row.source_event?.timestamp,
+    text:typeof row.authority?.payload?.message==='string'&&Object.keys(row.authority.payload).length===1
+      ?row.authority.payload.message:canonicalJson(row.authority?.payload),
+    correspondence:row,kind:'Peer correspondence',
     label:row.direction+' · '+row.authority.authored_by+' · '+row.source_kernel_id});
   return rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
 }
-function connectedCompactActivityHtml(doc,entry){
+function connectedCognitionHtml(doc,entry){
   const rows=connectedActivityItems(doc,entry), limit=entry.activityLimit||16;
   if(!doc) return '<p class="l2" role="status">Loading this persona’s response history…</p>';
-  if(!rows.length) return '<p class="l2">No shared response or work text is available.</p>';
+  const active=entry.cognition?.get(doc.persona_id)===doc&&MY_NODES.get(entry.base)===entry&&!entry.closed
+    &&entry.tier==='operator'&&doc.tier==='operator'&&doc.schema==='personaos-persona-thinking/3'
+    &&entry.status?.node_id&&(entry.status.personas||[]).some(person=>person.persona_id===doc.persona_id)
+    ?(doc.active_calls||[]).filter(call=>call.persona_id===doc.persona_id):[];
+  const activeHtml=active.map(call=>`<p class="l2" data-connected-active-call="${esc(call.call_id)}">Active model call · ${esc(call.model_id||'')} · ${esc(call.status||'running')} · ${esc(call.requested_purpose||'')}</p>`).join('');
+  if(!rows.length) return activeHtml+'<p class="l2">No shared response or work text is available.</p>';
   const controls=`data-base="${esc(entry.base)}" data-persona="${esc(doc.persona_id)}"`;
-  return `<p class="l2">Showing ${Math.min(limit,rows.length)} of ${rows.length} records. Open a record for its complete text.</p>`
-    +rows.slice(0,limit).map(row=>`<article class="record-row" data-stage-key="${esc(row.key)}"><b>${esc(row.kind)}</b>`
+  return activeHtml+`<p class="l2">Showing ${Math.min(limit,rows.length)} of ${rows.length} records. Open a record for its complete text and provenance.</p>`
+    +rows.slice(0,limit).map(row=>`<article class="record-row" data-stage-key="${esc(row.key)}"`
+      +(row.action?` data-connected-action="${esc(_actionAuthorityPayload(row.action.persona_authority).action_id)}"`:'')+`><b>${esc(row.kind)}</b>`
       +`<small>${esc(row.label)} · ${esc(_friendlyInstant(row.at))}</small>`
       +(row.audience?.length?`<small>To ${row.audience.map(pid=>esc((entry.status.personas||[]).find(person=>person.persona_id===pid)?.name||pid)).join(', ')}</small>`:'')
-      +(entry.expandedActivity===row.key?`<pre class="record-body">${esc(row.text)}</pre>`:`<p class="record-preview">${esc(row.text.slice(0,280))}${row.text.length>280?'…':''}</p>`)
+      +(entry.expandedActivity===row.key
+        ?row.correspondence?connectedFederatedMessageHtml(row.correspondence,entry)
+          :`<div class="copy-host">${copyBtn()}<pre class="record-body copy-src"${row.action?' data-thinking-output-index="0"':''}>${esc(row.text)}</pre></div>`
+            +(row.action?connectedActionProvenanceHtml(row.action,entry):'')
+        :`<p class="record-preview">${esc(row.text.slice(0,280))}${row.text.length>280?'…':''}</p>`)
       +`<button type="button" data-act="my-activity-expand" ${controls} data-record="${esc(row.key)}">${entry.expandedActivity===row.key?'Close text':'Read complete text'}</button></article>`).join('')
     +(rows.length>limit?`<button type="button" data-act="my-activity-more" ${controls}>Show 16 more records</button>`:'');
-}
-function connectedCognitionHtml(doc,entry,{compact=false}={}){
-  if(compact) return connectedCompactActivityHtml(doc,entry);
-  if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
-  const messages=connectedCallMessages(doc);
-  let html=H('Assistant text')+(messages.length?messages.map((message)=>
-    `<div class="think"><div class="l2">${esc(message.model||'model')} · ${esc(message.state)} · ${esc(_friendlyInstant(message.at))}</div>`
-    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(message.text)}</pre></div></div>`).join('')
-    :'<div class="l2">No assistant text has been returned. Tool activity appears below.</div>');
-  const federated=connectedFederatedCommunications(doc,entry);
-  const outgoing=new Set(federated.filter((row)=>row.direction==='sent').map((row)=>JSON.stringify([
-    row.source_kernel_id,row.authority.authored_by,row.communication_id,row.authority_hash,
-  ])));
-  const authored=(doc.recent_outputs||[]).filter((output)=>output.kind==='PERSONA_COMMUNICATION_AUTHORED'&&typeof output.text==='string'
-    &&!outgoing.has(JSON.stringify([entry?.status?.node_id,output.author_persona_id,output.communication_id,output.communication_hash])));
-  if(authored.length) html+=H('Persona messages')+authored.slice().reverse().map((output)=>
-    `<div class="think"><div class="l2">${connectedMessageRoute(entry,output)} · ${esc(_friendlyInstant(output.at))}</div>`
-    +`<div class="copy-host">${copyBtn()}<pre class="opmsg copy-src">${esc(_publicPersonaOutputDisplayText(output))}</pre></div></div>`).join('');
-  if(federated.length) html+=H('Persona correspondence')+federated.slice().reverse()
-    .map((row)=>connectedFederatedMessageHtml(row,entry)).join('');
-  html+=connectedThinkingHtml(doc,entry);
-  return html;
 }
 function connectedDirectoryHtml(entry,doc){
   const people=doc?.personas||[], matches=filterPersonaDirectory(people,entry.filters||{});
@@ -13241,7 +13226,7 @@ async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){
       +`<div class="record-pages">${offset?`<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="experience" data-offset="${Math.max(0,offset-32)}">Previous records</button>`:''}`
       +(doc.next_offset!==null?`<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="experience" data-offset="${doc.next_offset}">Next records</button>`:'')+'</div>'
       :'<p role="status">Loading and verifying experience…</p>')
-    :connectedCognitionHtml(entry.cognition.get(pid)||doc,entry,{compact:true});
+    :connectedCognitionHtml(entry.cognition.get(pid)||doc,entry);
   let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}" data-persona-tab="${tab}"`);
   html+=kv('State',esc(person.task_execution_state||person.lifecycle_state||''));
   html+='<nav class="persona-tabs" aria-label="Persona details">'+[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']].map(([key,label])=>

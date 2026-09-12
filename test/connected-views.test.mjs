@@ -66,7 +66,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
   };
   const api = new Function(...Object.keys(values), labelHelper + declarations + `\nreturn {
     nodes: MY_NODES, personaView: connectedPersonaView, environmentView: connectedEnvironmentView,
-    refresh: refreshConnectedNode, cognition: connectedCognitionHtml, disconnect: disconnectMyNode,
+    refresh: refreshConnectedNode, cognition: connectedCognitionHtml, items: connectedActivityItems, disconnect: disconnectMyNode,
     connect: connectMyNode, profile: connectedProfile, readBytes: connectedNodeBytes,
     selectDetails: selectConnectedDetails, releaseDetails: releaseConnectedDetails, readRecord: connectedDetailRecord,
     remember: rememberConnectedArtifacts, readArtifacts: readConnectedArtifacts, refreshArtifacts: refreshConnectedArtifacts,
@@ -98,6 +98,16 @@ async function mountedPersona(ui, options={}) {
   return {...view,html:host.innerHTML};
 }
 
+function displayRecord(ui, doc, index=0, entry=ui.entry) {
+  // An owner-read snapshot is current only in this connection. Expand one
+  // selected record; all other bodies remain previews in the real renderer.
+  entry.cognition.set(doc.persona_id,doc);
+  const peer=doc.federated_communications?.[index];
+  entry.expandedActivity=ui.items(doc,entry).find(row=>peer
+    ?row.correspondence===peer:!row.correspondence)?.key||'';
+  return ui.cognition(doc,entry);
+}
+
 test('the connected persona shows its characteristic profile, including zero values', async () => {
   const ui = fixture({fetchImpl: async () => Response.json(profile('Checks every joint.'))});
   const view = await mountedPersona(ui);
@@ -123,12 +133,37 @@ test('reopening a persona refreshes an expired profile rather than retaining its
 test('private messages retain their exact author, audience and complete text', () => {
   const ui = fixture();
   const message = 'Please check the dimensions. '.repeat(50);
-  const html = ui.cognition({persona_id:'alice', recent_outputs: [{
+  const html = displayRecord(ui,{schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice', recent_outputs: [{
     kind:'PERSONA_COMMUNICATION_AUTHORED', at:'2026-09-06T01:00:00Z', text:message,
     environment_id:'room', author_persona_id:'bob', audience_persona_ids:['alice'],
-  }]}, ui.entry);
-  assert.match(html, /Bob → Alice/); assert.ok(html.includes(esc(message)));
+  }]});
+  assert.match(html, /Bob/); assert.match(html, /To Alice/); assert.ok(html.includes(esc(message)));
   ui.disconnect(ui.entry.base);
+});
+
+test('activity keeps bounded previews, one full body and stable selection across new responses',()=>{
+  const ui=fixture(), text='Original complete response. '.repeat(2000);
+  const call=(id,body)=>({call_id:id,model_id:'model:test',persona_id:'alice',ended_at:'2026-09-12T01:00:00Z',
+    provisional_events:[{kind:'assistant_message',message_id:'message:'+id,sequence:1,
+      chunk_index:0,chunk_count:1,at:'2026-09-12T01:00:00Z',text:body}]});
+  const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
+    recent_calls:[call('first',text)]};
+  ui.entry.cognition.set('alice',doc);
+  const key=ui.items(doc,ui.entry)[0].key;
+  const replacement={...doc,recent_calls:[...Array.from({length:24},(_,i)=>call('new:'+i,'Later '+i+' '.repeat(5000))),...doc.recent_calls]};
+  ui.entry.cognition.set('alice',replacement);
+  let html=ui.cognition(replacement,ui.entry);
+  assert.equal((html.match(/class="record-row"/g)||[]).length,16);
+  assert.equal((html.match(/class="record-body/g)||[]).length,0);
+  assert.ok(html.length<16000);assert.match(html,/Show 16 more/);
+  ui.entry.activityLimit=32;ui.entry.expandedActivity=key;
+  html=ui.cognition(replacement,ui.entry);
+  assert.equal((html.match(/class="record-row"/g)||[]).length,25);
+  assert.equal((html.match(/class="record-body/g)||[]).length,1);
+  assert.ok(html.includes(esc(text)));assert.ok(!html.includes(' '.repeat(5000)));
+  assert.doesNotMatch(ui.cognition(doc,ui.entry),/Original complete response|class="record-row"/,
+    'A replaced owner document is not a current view.');
+  ui.disconnect(ui.entry.base);assert.equal(ui.entry.cognition.size,0);
 });
 
 function remoteMessage({direction='received',payload={message:'Exact remote message.'},direct=false}={}){
@@ -158,7 +193,7 @@ test('owner remote correspondence keeps kernel-qualified routes and exact signed
   sent.package=null;
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
     federated_communications:[received,sent]};
-  const html=ui.cognition(doc,ui.entry);
+  const html=displayRecord(ui,doc)+displayRecord(ui,doc,1);
   assert.ok(html.includes(esc(signedJson.canonicalJson(payload))));
   assert.ok(html.includes('900719925474099312345'));
   assert.ok(html.includes('bob · kernel:foreign'));
@@ -178,12 +213,16 @@ test('hosted outgoing correspondence deduplicates only exact signed communicatio
     text:remote.authority.payload.message,environment_id:'room',audience_persona_ids:['bob']};
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
     federated_communications:[remote],recent_outputs:[output,{...output,communication_id:'communication:distinct'}]};
-  const html=ui.cognition(doc,ui.entry);
-  assert.equal((html.match(/<pre class="opmsg copy-src">/g)||[]).length,2);
+  const html=displayRecord(ui,doc);
+  assert.equal(ui.items(doc,ui.entry).length,2);
+  assert.equal(new Set(ui.items(doc,ui.entry).map(row=>row.key)).size,2);
+  assert.equal((html.match(/<pre class="opmsg copy-src">/g)||[]).length,1);
   assert.equal((html.match(/data-federated-communication=/g)||[]).length,1);
   doc.recent_outputs[1].communication_id=remote.communication_id;
   doc.recent_outputs[1].communication_hash='sha256:distinct';
-  assert.equal((ui.cognition(doc,ui.entry).match(/<pre class="opmsg copy-src">/g)||[]).length,2);
+  assert.equal((displayRecord(ui,doc).match(/<pre class="opmsg copy-src">/g)||[]).length,1);
+  assert.equal(ui.items(doc,ui.entry).length,2);
+  assert.equal(new Set(ui.items(doc,ui.entry).map(row=>row.key)).size,2,'Different signed hashes must not share a DOM key.');
   ui.disconnect(ui.entry.base);
 });
 
@@ -191,11 +230,11 @@ test('remote correspondence stays within its operator connection and exact local
   const ui=fixture(), remote=remoteMessage();
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[remote]};
   for(const changed of [{...doc,tier:'public'},{...doc,schema:'personaos-persona-public-cognition/3'},
-    {...doc,persona_id:'bob'}]) assert.ok(!ui.cognition(changed,ui.entry).includes('data-federated-communication'));
+    {...doc,persona_id:'bob'}]) assert.ok(!displayRecord(ui,changed).includes('data-federated-communication'));
   ui.entry.tier='public';
-  assert.ok(!ui.cognition(doc,ui.entry).includes('data-federated-communication'));
+  assert.ok(!displayRecord(ui,doc).includes('data-federated-communication'));
   ui.entry.tier='operator'; ui.entry.closed=true;
-  assert.ok(!ui.cognition(doc,ui.entry).includes('data-federated-communication'));
+  assert.ok(!displayRecord(ui,doc).includes('data-federated-communication'));
   ui.entry.closed=false; ui.disconnect(ui.entry.base);
 });
 
@@ -209,7 +248,7 @@ test('owner direct correspondence retains full bodies and the actual reply envir
   reply.authority.parent_communication_hash=received.authority_hash;
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',
     federated_communications:[received,reply]};
-  const html=ui.cognition(doc,ui.entry);
+  const html=displayRecord(ui,doc)+displayRecord(ui,doc,1);
   assert.equal((html.match(/data-federated-communication=/g)||[]).length,2);
   assert.ok(html.includes(`<pre class="opmsg copy-src">${esc(text)}</pre>`));
   assert.ok(html.includes(`<pre class="opmsg copy-src">${esc(signedJson.canonicalJson(payload))}</pre>`));
@@ -219,7 +258,7 @@ test('owner direct correspondence retains full bodies and the actual reply envir
   assert.ok(html.includes(esc(signedJson.canonicalJson(reply))));
   // The exact parent link remains useful even when the older message is absent.
   doc.federated_communications=[reply];
-  assert.ok(ui.cognition(doc,ui.entry).includes('Reply to communication:one · sha256:one'));
+  assert.ok(displayRecord(ui,doc).includes('Reply to communication:one · sha256:one'));
   ui.disconnect(ui.entry.base);
 });
 
@@ -227,9 +266,9 @@ test('direct source-only messages distinguish initial authorship from an exact-p
   const ui=fixture(), row=remoteMessage({direct:true,direction:'sent'});
   row.package=null; row.package_hash=''; row.recipient_kernel_id='';
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
-  assert.match(ui.cognition(doc,ui.entry),/Authored reply/);
+  assert.match(displayRecord(ui,doc),/Authored reply/);
   row.authority.parent_communication_id=''; row.authority.parent_communication_hash='';
-  const html=ui.cognition(doc,ui.entry);
+  const html=displayRecord(ui,doc);
   assert.match(html,/Authored message/);
   assert.doesNotMatch(html,/Authored reply|Reply to/);
   assert.ok(html.includes('Alice · alice · kernel:test → bob · kernel not recorded'));
@@ -241,12 +280,12 @@ test('direct source-only messages distinguish initial authorship from an exact-p
 for(const direct of [false,true]) test(`${direct?'direct':'member'} history requires the current connection and admitted local owner`,()=>{
   const ui=fixture(), row=remoteMessage({direct});
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
-  assert.match(ui.cognition(doc,ui.entry),/data-federated-communication/);
+  assert.match(displayRecord(ui,doc),/data-federated-communication/);
   ui.nodes.set(ui.entry.base,{...ui.entry});
-  assert.doesNotMatch(ui.cognition(doc,ui.entry),/data-federated-communication|Exact remote message/);
+  assert.doesNotMatch(displayRecord(ui,doc),/data-federated-communication|Exact remote message/);
   ui.nodes.set(ui.entry.base,ui.entry);
   ui.entry.status.personas=ui.entry.status.personas.filter(person=>person.persona_id!=='alice');
-  assert.doesNotMatch(ui.cognition(doc,ui.entry),/data-federated-communication|Exact remote message/);
+  assert.doesNotMatch(displayRecord(ui,doc),/data-federated-communication|Exact remote message/);
   ui.disconnect(ui.entry.base);
 });
 
@@ -254,7 +293,7 @@ for(const direction of ['received','sent']) test(`direct ${direction} history re
   const ui=fixture();
   const makeDoc=row=>({schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]});
   const fresh=()=>remoteMessage({direct:true,direction});
-  assert.match(ui.cognition(makeDoc(fresh()),ui.entry),/data-federated-communication/);
+  assert.match(displayRecord(ui,makeDoc(fresh())),/data-federated-communication/);
   const changes=[
     ['wrong local kernel',row=>{
       if(direction==='received') row.recipient_kernel_id=row.package.recipient_kernel_id='kernel:other';
@@ -291,12 +330,12 @@ for(const direction of ['received','sent']) test(`direct ${direction} history re
   ];
   for(const [label,change] of changes){
     const row=fresh(); change(row);
-    assert.doesNotMatch(ui.cognition(makeDoc(row),ui.entry),/data-federated-communication|Exact remote message|A substituted body/,label);
+    assert.doesNotMatch(displayRecord(ui,makeDoc(row)),/data-federated-communication|Exact remote message|A substituted body/,label);
   }
   for(const change of [{tier:'public'},{schema:'personaos-persona-public-cognition/3'},{persona_id:'bob'},{persona_id:'someone-else'}])
-    assert.doesNotMatch(ui.cognition({...makeDoc(fresh()),...change},ui.entry),/data-federated-communication|Exact remote message/);
+    assert.doesNotMatch(displayRecord(ui,{...makeDoc(fresh()),...change}),/data-federated-communication|Exact remote message/);
   ui.entry.tier='public';
-  assert.doesNotMatch(ui.cognition(makeDoc(fresh()),ui.entry),/data-federated-communication|Exact remote message/);
+  assert.doesNotMatch(displayRecord(ui,makeDoc(fresh())),/data-federated-communication|Exact remote message/);
   ui.entry.tier='operator'; ui.disconnect(ui.entry.base);
 });
 
@@ -304,7 +343,7 @@ test('legacy admitted member broadcasts keep an empty signed audience',()=>{
   const ui=fixture(), row=remoteMessage();
   row.authority.addressed_to=[];
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
-  const html=ui.cognition(doc,ui.entry);
+  const html=displayRecord(ui,doc);
   assert.match(html,/data-federated-communication/);
   assert.ok(html.includes(esc(row.authority.payload.message)));
   ui.disconnect(ui.entry.base);
@@ -315,12 +354,12 @@ test('direct correspondence also renders exact endpoints on the same connected k
   row.recipient_kernel_id=row.package.recipient_kernel_id=ui.entry.status.node_id;
   row.authority.parent_communication_id=''; row.authority.parent_communication_hash='';
   const doc={schema:'personaos-persona-thinking/3',tier:'operator',persona_id:'alice',federated_communications:[row]};
-  const sent=ui.cognition(doc,ui.entry);
-  assert.match(sent,/Persona correspondence/);
+  const sent=displayRecord(ui,doc);
+  assert.match(sent,/Peer correspondence/);
   assert.doesNotMatch(sent,/Remote persona messages/);
   assert.ok(sent.includes('Alice · alice · kernel:test → Bob · bob · kernel:test'));
   row.direction='received'; doc.persona_id='bob';
-  const received=ui.cognition(doc,ui.entry);
+  const received=displayRecord(ui,doc);
   assert.match(received,/data-federated-communication/);
   assert.ok(received.includes('Alice · alice · kernel:test → Bob · bob · kernel:test'));
   ui.disconnect(ui.entry.base);
@@ -510,7 +549,7 @@ test('an operator connection reads and streams a complete message beyond four Mi
   streamBody.enqueue(new TextEncoder().encode('event: persona_cognition\ndata: '+JSON.stringify(document)+'\n\n'));
   try {
     await until(()=>entry.cognition.get('alice')?.recent_outputs[0].text === text);
-    assert.ok(ui.cognition(entry.cognition.get('alice'), entry).includes(esc(text)));
+    assert.ok(displayRecord(ui,entry.cognition.get('alice'),0,entry).includes(esc(text)));
     assert.ok(requests.every(({url, options}) => url.startsWith(entry.base+'/')
       && options.headers.Authorization === 'Bearer private-token'));
   } finally {

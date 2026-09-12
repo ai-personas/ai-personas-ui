@@ -32,7 +32,7 @@ const declarations = [
   section('function _provisionalPresentationRows(', 'function _renderPersonaWorkState('),
   section('function renderThinking(', 'function renderThinkingRedacted('),
   section('function _publicCognitionRows(', 'function ingestPersonaCognitionReads('),
-  section('function connectedCallMessages(', 'function connectedMessageRoute('),
+  section('function connectedCallMessages(', 'function connectedFederatedCommunications('),
 ].join('\n');
 const base = 'https://node.test', secret = new Uint8Array(32).fill(7);
 const publicKey = Buffer.from(await ed.getPublicKeyAsync(secret)).toString('hex');
