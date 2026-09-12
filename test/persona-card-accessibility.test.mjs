@@ -193,7 +193,7 @@ test('drawer state and focus follow the native profile control after a live repa
     $:selector => {
       const node = {'#detailwrap':drawer, '#detailbody':detailBody, '#detail-title':title}[selector];
       assert(node, selector); return node;
-    }, runViewCleanups() {}};
+    }, runViewCleanups() {}, replaceStageHTML(node, html) { assert.equal(html, ''); node.replaceChildren(); }};
   const handlers = new Function(...Object.keys(values),
     section('function inspectionSourceControl(', 'function openDetail(')
     + section('  const closeDetail=()=>{', "  $('#logbtn').addEventListener")

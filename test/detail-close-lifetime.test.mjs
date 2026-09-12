@@ -12,7 +12,7 @@ const code = source.slice(start, end) + '\nreturn closeDetail;';
 
 test('closing details cancels before releasing rendered bodies, title and navigation closures', () => {
   const events = [], nodes = new Map();
-  const makeNode = selector => ({dataset: {connectedNode: 'private-node'},
+  const makeNode = selector => ({dataset: {connectedNode: 'private-node', h: 'retained preview'},
     children: ['retained preview'], classList: {remove: name => events.push(selector + ':hide:' + name)},
     replaceChildren() { this.children = []; events.push(selector + ':unmount'); },
   });
@@ -22,6 +22,10 @@ test('closing details cancels before releasing rendered bodies, title and naviga
   const values = {S: state, $: selector => nodes.get(selector),
     document: {body: {classList: {remove: name => events.push('body:' + name)}}},
     runViewCleanups(options) { assert.deepEqual(options, {releaseConnections: true}); events.push('cancel'); },
+    replaceStageHTML(node, html) {
+      assert.equal(node, nodes.get('#detailbody')); assert.equal(html, '');
+      node.replaceChildren(); node.dataset.h = html;
+    },
     inspectionSourceControl() { throw new Error('No source in this fixture'); },
   };
   const close = new Function(...Object.keys(values), code)(...Object.values(values));
@@ -29,6 +33,7 @@ test('closing details cancels before releasing rendered bodies, title and naviga
   assert.deepEqual(events.slice(0, 3), ['cancel', '#detailbody:unmount', '#detail-title:unmount']);
   assert.deepEqual(state.views, []);
   assert.deepEqual(nodes.get('#detailbody').children, []);
+  assert.equal(nodes.get('#detailbody').dataset.h, '');
   assert.deepEqual(nodes.get('#detail-title').children, []);
   assert.equal(nodes.get('#detail-title').dataset.connectedNode, undefined);
   assert.equal(state._renderGen, 2);

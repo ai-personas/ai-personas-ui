@@ -110,7 +110,8 @@ All optional; the defaults just work.
   origins and expired or mismatched authorities never create a peer route.
   If peer discovery is still starting, an opened preview visibly waits for route
   admission within the same transfer deadline. Closing it cancels that wait and
-  clears its rendered body, title and retained navigation views.
+  clears its rendered body, cached HTML, queued pointer repaint, title and retained
+  navigation views. Releasing a pointer after closing cannot restore old content.
 - **Complete responses** — direct node connections deliver model responses and persona
   messages through their selected Activity view's event feed. Idle cards do not
   fetch every persona's full history. Peer notifications trigger reads of verified
