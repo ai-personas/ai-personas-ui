@@ -384,9 +384,9 @@ function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   b.classList.toggle('on',MY_NODES.size>0);
   b.innerHTML='<span class="opbtn-label">MY NODES</span>'; }
 const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
-function p2pDataRouteForUrl(value){
+function p2pDataRouteForUrl(value,{allowVerifiedAlias=false}={}){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
-  if(target.hash) return null;
+  if(target.hash||target.username||target.password) return null;
   let sinceRevision='';
   let page=null;
   if(target.search){
@@ -399,7 +399,38 @@ function p2pDataRouteForUrl(value){
           ||Object.entries(page).some(([key,value])=>String(value)!==target.searchParams.get(key))) return null;
     }else return null;
   }
-  for(const [rawBase,route] of (S.p2pDataRoutes||new Map())){
+  const routes=[...(S.p2pDataRoutes||new Map())];
+  if(allowVerifiedAlias&&/^https?:$/.test(target.protocol)){
+    // A node-served shell may verify files at its HTTP/LAN origin while the
+    // same node publishes only a peer address. Bind that delivery alias to an
+    // already verified peer using the complete current master key, not the
+    // shortened kernel id or a locator announcement. No alias is cached: key
+    // changes, inventory expiry and route retirement take effect on each read.
+    const aliases=[];
+    let longestRoot=-1;
+    for(const [key,boot] of (S.boots||new Map())){
+      let base; try{ base=new URL(key==='@origin'?location.origin:key); }catch(_){ continue; }
+      const root=base.pathname.replace(/\/+$/,'');
+      if(!sameRouteOrigin(target,base)||base.username||base.password||base.search||base.hash
+          ||(root&&target.pathname!==root&&!target.pathname.startsWith(root+'/'))) continue;
+      if(root.length<longestRoot) continue;
+      if(root.length>longestRoot){ aliases.length=0; longestRoot=root.length; }
+      const registry=S.keyDocs?.get(key), kernel=String(boot?.kernel_id||'');
+      const master=currentMasterKey(registry?.entries||[]).toLowerCase();
+      if(!master||registry?.kernelId!==kernel
+          ||!_providerInventoryIsCurrent(S.providerInventories?.get(kernel))) continue;
+      for(const [,route] of routes){ const provider=route?.providerRecord;
+        if(route.kernel===kernel&&provider?.host_kernel_id===kernel
+            &&provider.provider_peer_id===route.peerId
+            &&String(provider.public_key_hex||'').toLowerCase()===master)
+          aliases.push([base.href,route]);
+      }
+    }
+    // A known mounted origin owns its path even when its authority expires;
+    // do not reinterpret that path through a less specific node's alias.
+    routes.push(...aliases);
+  }
+  for(const [rawBase,route] of routes){
     let base; try{ base=new URL(rawBase,location.href); }catch(_){ continue; }
     if(!sameRouteOrigin(target,base)) continue;
     const root=base.pathname.replace(/\/+$/,'');
@@ -457,7 +488,7 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_S
     if(!match) return null;
     queryHash=`sha256:${match[1].toLowerCase()}`; target.search='';
   }
-  const found=p2pDataRouteForUrl(target.href);
+  const found=p2pDataRouteForUrl(target.href,{allowVerifiedAlias:true});
   if(!found||found.sinceRevision||!P2P?.fetchPublicBlob) return null;
   const urlKey=target.href;
   const contentHash=String(expectedHash||S.p2pArtifactHashes?.get(urlKey)||'').toLowerCase();
