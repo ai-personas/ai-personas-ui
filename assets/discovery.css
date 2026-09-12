@@ -2945,7 +2945,7 @@ footer .link,#logbtn{border-radius:999px;padding:3px 11px;
 .pk .pk-species{font:400 13px/1.5 var(--sans);min-height:0;margin-block:8px}
 .pk .pc-current-label,.pk .pc-section-head,.pk .env-kicker{font:550 11px/1.4 var(--sans);letter-spacing:.025em;text-transform:none}
 .pk .pc-current,.pk .pc-environments,.pk .pc-activity{margin-top:8px;padding-top:8px;padding-bottom:8px}
-.pk .pc-doing strong{font-weight:550;font-size:13px;line-height:1.45}
+.pk .pc-doing strong{font-weight:550;font-size:13px;line-height:1.45;flex-shrink:0;max-width:55%;overflow-wrap:normal}
 .pc-brief p{font:400 13px/1.5 var(--sans);margin:5px 0 0;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .pk .pk-statrow{padding:6px 0}.pk .pk-stat b{font-size:15px}.pk .pk-stat small{font-size:10px;letter-spacing:0;font-weight:500}
 .pk .pk-setline,.env-card-footer{font:400 11px/1.4 var(--sans);letter-spacing:0;text-transform:none;padding-block:10px}
