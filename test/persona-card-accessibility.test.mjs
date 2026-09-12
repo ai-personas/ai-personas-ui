@@ -88,7 +88,8 @@ function interactions() {
     renderInteractionStream() {}, openDetail:(id, origin) => opened.push({id, origin}), log() {},
   };
   new Function(...Object.keys(values),
-    section('  // keyboard access:', '  // coordination-feed filters:')
+    section('function publicFileViewFromControl(', 'function inspectionSourceControl(')
+    + section('  // keyboard access:', '  // coordination-feed filters:')
     + section("  $('#sysEnvs').addEventListener('click'", '  // constellation node click')
   )(...Object.values(values));
   for (const element of [card, profile, follow, artifact, customArtifact, summary, input, textarea].filter(Boolean))

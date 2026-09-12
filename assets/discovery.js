@@ -7032,6 +7032,24 @@ function _ownedOutputsHTML(artifacts,{label='Owned outputs',scope='persona workt
     +(authored.length?`<div class="owned-output-history">authored role claims · ${esc(authored.join(' · '))}</div>`:'')
     +(rows.length>selected.length?`<div class="owned-output-history">${rows.length-selected.length} earlier signed record${rows.length-selected.length===1?'':'s'} retained separately</div>`:'')+`</section>`;
 }
+function _liveWorkspaceRows(){
+  const rows=[], artifactMetadataIndex=_signedArtifactWorkspaceIndex();
+  for(const state of S.liveArtifacts.values()){
+    const snap=state?.snapshot||{};
+    for(const ws of (snap.workspaces||[])){
+      const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=environmentIdentity(ws.environment_id);
+      const files=[...state.files.values()].filter(file=>String(file.workspace_id||'')===workspaceId)
+        .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
+      rows.push({base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,
+        environmentId,workspaceId,personaId,fileCount:files.length,files,
+        authored:[...new Set(files.flatMap(file=>authoredArtifactLabels(file)))].slice(0,8),state:ws.state||'live',artifactMetadataIndex,
+        captureBoundary:snap.capture_boundary||null,captureIncomplete:snap.truncated===true,ended:state.ended===true,
+        terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
+        generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0});
+    }
+  }
+  return rows;
+}
 function _liveWorkspaceRevisionOrder(row){
   const signedTime=Date.parse(String(row?.generatedAt||''));
   // Run ids are monotonic ULIDs minted when the causal run begins. Prefer that
@@ -8219,6 +8237,7 @@ function _restoreDisclosures(host){
   }
 }
 function refreshSystemView(){
+  S.publicEnvironmentView?.refresh();
   const host=$('#sysEnvs'); if(!host) return;
   if(host.dataset.disclosureWatch!=='1'){
     host.dataset.disclosureWatch='1';
@@ -8414,24 +8433,11 @@ function refreshSystemView(){
   // One synchronous render shares one index. These workspace rows are local
   // to this render, so later admissions, withdrawals and record replacements
   // build a fresh index instead of retaining an earlier authority decision.
-  const artifactMetadataIndex=_signedArtifactWorkspaceIndex();
-  for(const state of S.liveArtifacts.values()){
-    const snap=state?.snapshot||{};
-    for(const ws of (snap.workspaces||[])){
-      const workspaceId=String(ws.workspace_id||''), personaId=_shortId(ws.persona_id||''), environmentId=environmentIdentity(ws.environment_id);
-      const workspaceFiles=[...state.files.values()].filter((f)=>String(f.workspace_id||'')===workspaceId)
-        .sort((a,b)=>String(a.path||'').localeCompare(String(b.path||'')));
-      const fileCount=workspaceFiles.length;
-      const authored=[...new Set(workspaceFiles.flatMap((file)=>authoredArtifactLabels(file)))].slice(0,8);
-      const row={base:state.base,kernel:String(snap.node_id||kernelForBase(state.base)||''),run:state.run,environmentId,workspaceId,personaId,fileCount,files:workspaceFiles,authored,state:ws.state||'live',artifactMetadataIndex,
-        captureBoundary:snap.capture_boundary||null,captureIncomplete:snap.truncated===true,ended:state.ended===true,
-        terminalState:String(state.terminalState||''),terminalStatus:String(state.terminalStatus||''),
-        generatedAt:String(snap.generated_at||''),revision:String(state.revision||''),receivedAt:Number(state.receivedAt)||0};
-      if(personaId){ const pk=_personaKey(snap.node_id||kernelForBase(state.base),personaId);
-        (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
-      if(environmentId){ const ek=envKey(snap.node_id||kernelForBase(state.base),environmentId);
-        (liveWorkspacesByEnv.get(ek)||liveWorkspacesByEnv.set(ek,[]).get(ek)).push(row); }
-    }
+  for(const row of _liveWorkspaceRows()){
+    if(row.personaId){ const pk=_personaKey(row.kernel,row.personaId);
+      (liveWorkspacesByPersona.get(pk)||liveWorkspacesByPersona.set(pk,[]).get(pk)).push(row); }
+    if(row.environmentId){ const ek=envKey(row.kernel,row.environmentId);
+      (liveWorkspacesByEnv.get(ek)||liveWorkspacesByEnv.set(ek,[]).get(ek)).push(row); }
   }
   // A manifest-only generation can have one verified bundle card but no
   // per-file cards. Resolve its manifest only from the latest run's exact route
@@ -10626,6 +10632,7 @@ function ingestPersonaCognitionReads(cognitionReads){
   else if(cognitionHydrated) scheduleRealtimeRepaint();
 }
 function refreshLiveSection(){
+  S.publicEnvironmentView?.refresh();
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
   const retained=_retainedVerifiedEntityFeed(
@@ -10778,7 +10785,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const manifest=manifestRel?await dfetch(contentBase,manifestRel):null;
   const manifestFiles=manifestArtifacts(manifest);
   const _sid=_envSid(r)||_envSidFromValue(d.environment_id);
-  const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'
+  const myArts=S.order.map((id)=>S.recs.get(id)).filter((x)=>x&&x.kind==='artifact'&&x._kernel===r._kernel
     &&(()=>{ const authority=environmentAuthorityOfRecord(x);
       return authority.status==='resolved'&&authority.environmentId===_sid; })());
   const myBundles=myArts.filter((a)=>a._links&&a._links.bundle);
@@ -10800,6 +10807,9 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   if(signedFiles.length){
     html+=_ownedOutputsHTML(myArts,{label:'Latest signed workspace files',scope:'shared workspace'});
   }
+  // Signed live snapshots can arrive before the full artifact inventory and
+  // after this drawer's first paint. Update only this selected file list.
+  html+='<div data-environment-live-files></div>';
   if(manifestOnlyFiles.length){
     html+=`<details class="artifact-index"><summary><span>Browse ${manifestOnlyFiles.length} additional manifest filename${manifestOnlyFiles.length===1?'':'s'}</span>${icon('chevron','ico-sm')}</summary>`
       +`<div class="artifact-index-body">${renderArtifactTree(manifestOnlyFiles,manifestRunId)}</div>`
@@ -10858,7 +10868,20 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
   if(L.bundle && !myBundles.length) nav+=`<div class="row"><a href="#" data-act="bundle" data-url="${esc(L.bundle)}">Artifact bundle →</a></div>`;
   if(nav) html+=H('Related')+nav;
-  return {title:`<span class="kind k-env">ENV</span> ${esc(workspaceName)}`, html};
+  const mount=(root,lifecycle)=>{
+    const host=root.querySelector('[data-environment-live-files]'); let revision='';
+    const selected={refresh:()=>{
+      if(!lifecycle.isCurrent()||!host) return;
+      const rows=_liveWorkspaceRows().filter(row=>row.kernel===r._kernel&&row.environmentId===_sid);
+      const next=JSON.stringify(rows.map(row=>[row.run,row.workspaceId,row.revision,row.ended]));
+      if(next===revision) return; revision=next;
+      updateStageHTML(host,_liveWorkspacesHTML(rows,{label:'Files across personal worktrees',scope:'environment worktree'}));
+    }};
+    S.publicEnvironmentView=selected;
+    lifecycle.onCleanup(()=>{ if(S.publicEnvironmentView===selected) S.publicEnvironmentView=null; });
+    selected.refresh();
+  };
+  return {title:`<span class="kind k-env">ENV</span> ${esc(workspaceName)}`, html,mount};
 }
 // ---------- deliverable-bundle artifact TREE ----------
 // Bundle-export artifacts carry their opaque package-relative path in `title`;
@@ -13663,6 +13686,31 @@ async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1
   });
 }
 function pushView(fn){ S.views.push(fn); renderTop(); }
+function publicFileViewFromControl(target){
+  const live=target.closest('[data-live-current-file]');
+  if(live){ const data={...live.dataset};
+    return {control:live,view:()=>liveFileView(data.liveFileBase||'',data.liveFileRun,
+      data.liveFileWorkspace,data.liveFilePath)};
+  }
+  const current=target.closest('[data-current-artifact-path]'); if(!current) return null;
+  const data={...current.dataset}, size=data.currentArtifactSize;
+  const companions=current.closest('.artifact-file-groups,.owned-outputs')||current.parentElement;
+  const companionFiles=[...(companions?.querySelectorAll('[data-current-artifact-path]')||[])]
+    .filter(candidate=>candidate!==current).map(candidate=>({
+      path:candidate.dataset.currentArtifactTitle||'',bodyPath:candidate.dataset.currentArtifactPath||'',
+      mediaKind:candidate.dataset.currentArtifactKind||'',contentHash:candidate.dataset.currentArtifactHash||'',
+      size:candidate.dataset.currentArtifactSize!==''&&Number.isFinite(Number(candidate.dataset.currentArtifactSize))
+        ?Number(candidate.dataset.currentArtifactSize):null,
+      authoredLabels:artifactSemanticsFromAttr(candidate.dataset.currentArtifactSemantics),
+      declaration:artifactDeclarationFromAttr(candidate.dataset.currentArtifactDeclaration),
+    }));
+  const options={contentHash:data.currentArtifactHash||null,
+    size:size!==''&&Number.isFinite(Number(size))?Number(size):null,
+    authoredLabels:artifactSemanticsFromAttr(data.currentArtifactSemantics),
+    artifactDeclaration:artifactDeclarationFromAttr(data.currentArtifactDeclaration),companionFiles};
+  return {control:current,view:()=>fileView(data.currentArtifactBase||'',data.currentArtifactPath,
+    data.currentArtifactTitle,data.currentArtifactKind,options)};
+}
 function inspectionSourceControl(card){ return card?.classList.contains('pcard')?card.querySelector('[data-persona-profile]')||card:card; }
 function markInspectionSource(source){
   if(S._detailSource){ S._detailSource.classList.remove('inspecting'); inspectionSourceControl(S._detailSource).setAttribute('aria-expanded','false'); }
@@ -14095,33 +14143,9 @@ function wire(){
     if(disclosure&&!e.target.closest('[data-live-current-file],[data-current-artifact-path],[data-artid],[data-envrec],[data-live-output-run]')){
       e.stopPropagation(); return;
     }
-    const liveFile=e.target.closest('[data-live-current-file]'); if(liveFile){ e.preventDefault(); e.stopPropagation();
-      S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(liveFile);
-      S.views=[()=>liveFileView(liveFile.dataset.liveFileBase||'',liveFile.dataset.liveFileRun,
-        liveFile.dataset.liveFileWorkspace,liveFile.dataset.liveFilePath)];
-      $('#detailwrap').classList.add('open'); renderTop(); return; }
-    const currentFile=e.target.closest('[data-current-artifact-path]'); if(currentFile){ e.preventDefault(); e.stopPropagation();
-      const size=currentFile.dataset.currentArtifactSize;
-      const companionScope=currentFile.closest('.artifact-file-groups,.owned-outputs')||currentFile.parentElement;
-      const companionFiles=[...(companionScope?.querySelectorAll('[data-current-artifact-path]')||[])]
-        .filter((candidate)=>candidate!==currentFile)
-        .map((candidate)=>({
-          path:candidate.dataset.currentArtifactTitle||'',
-          bodyPath:candidate.dataset.currentArtifactPath||'',
-          mediaKind:candidate.dataset.currentArtifactKind||'',
-          contentHash:candidate.dataset.currentArtifactHash||'',
-          size:candidate.dataset.currentArtifactSize!==''&&Number.isFinite(Number(candidate.dataset.currentArtifactSize))
-            ?Number(candidate.dataset.currentArtifactSize):null,
-          authoredLabels:artifactSemanticsFromAttr(candidate.dataset.currentArtifactSemantics),
-          declaration:artifactDeclarationFromAttr(candidate.dataset.currentArtifactDeclaration),
-        }));
-      const options={contentHash:currentFile.dataset.currentArtifactHash||null,
-        size:size!==''&&Number.isFinite(Number(size))?Number(size):null,
-        authoredLabels:artifactSemanticsFromAttr(currentFile.dataset.currentArtifactSemantics),
-        artifactDeclaration:artifactDeclarationFromAttr(currentFile.dataset.currentArtifactDeclaration),companionFiles};
-      S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(currentFile);
-      S.views=[()=>fileView(currentFile.dataset.currentArtifactBase||'',currentFile.dataset.currentArtifactPath,
-        currentFile.dataset.currentArtifactTitle,currentFile.dataset.currentArtifactKind,options)];
+    const file=publicFileViewFromControl(e.target); if(file){ e.preventDefault(); e.stopPropagation();
+      S._topIsOp=false; S._lastFocus=document.activeElement; markInspectionSource(file.control);
+      S.views=[file.view];
       $('#detailwrap').classList.add('open'); renderTop(); return; }
     const liveOutput=e.target.closest('[data-live-output-run]'); if(liveOutput){ e.stopPropagation();
       S._lastFocus=document.activeElement; S.views=[()=>operatorRunView(liveOutput.dataset.liveOutputBase||'',liveOutput.dataset.liveOutputRun)];
@@ -14217,6 +14241,9 @@ function wire(){
     finally{ button.disabled=false; }
   });
   $('#detailbody').addEventListener('click',(e)=>{
+    const file=publicFileViewFromControl(e.target); if(file){
+      e.preventDefault(); e.stopPropagation(); pushView(file.view); return;
+    }
     // click a collapsed model-output to expand it in place (no nav). Guard against the
     // copy button living inside the same block so copying doesn't also expand.
     const clamped=e.target.closest('.opmsg.clamp');

@@ -32,7 +32,7 @@ const declarations = [
   section('function _personaCharacteristicValue(', 'const _personaMonogram='),
   section('function _boundedLatestUnique(', 'function _artifactPresentationKey('),
   section('const _ARTIFACT_DECLARATION_DISPLAY_SCHEMA=', 'function artifactDeclarationAttr('),
-  section('function _liveWorkspaceRevisionOrder(', 'function _firstAuthoredMethodText('),
+  section('function _liveWorkspaceRows(', 'function _firstAuthoredMethodText('),
   section('function _personaAuthoredWorkHTML(', '// ==== Collectible card gallery'),
   section('function _artifactDeclaringSid(', '// The kernel-signed scorecard'),
   // Include the complete card, so description assertions cover the face binding.
