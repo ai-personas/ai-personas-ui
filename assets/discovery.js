@@ -14350,6 +14350,11 @@ function wire(){
     // against the now-hidden drawer forever.
     S._renderGen=(S._renderGen||0)+1;
     runViewCleanups({releaseConnections:true});
+    // Cancellation releases active resources; also release detached view
+    // closures and hidden rendered bodies, including inline text and SVG.
+    S.views=[];
+    $('#detailbody').replaceChildren();
+    const title=$('#detail-title'); title.replaceChildren(); delete title.dataset.connectedNode;
     S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     document.body.classList.remove('detail-open');

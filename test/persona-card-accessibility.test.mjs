@@ -186,10 +186,14 @@ test('drawer state and focus follow the native profile control after a live repa
     return {outer, profile};
   };
   const first = card(), replacement = card(), body = element(), drawer = element(['open']);
+  const detailBody = {replaceChildren() {}}, title = {dataset:{}, replaceChildren() {}};
   let cards = [first.outer];
   const S = {_lastFocus:first.profile};
   const values = {S, document:{body, querySelectorAll:() => cards},
-    $:selector => {assert.equal(selector, '#detailwrap'); return drawer;}, runViewCleanups() {}};
+    $:selector => {
+      const node = {'#detailwrap':drawer, '#detailbody':detailBody, '#detail-title':title}[selector];
+      assert(node, selector); return node;
+    }, runViewCleanups() {}};
   const handlers = new Function(...Object.keys(values),
     section('function inspectionSourceControl(', 'function openDetail(')
     + section('  const closeDetail=()=>{', "  $('#logbtn').addEventListener")
