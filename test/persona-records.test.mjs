@@ -113,8 +113,9 @@ test('signed JSON numeric tokens remain intact and byte tampering is refused', a
 test('experience shows retained observations without assigning competence or leaking source text', async () => {
   const doc = signRecord({schema: 'personaos-persona-experience/1', persona_id: 'learner', visibility: 'public_environment_metadata',
     summary: {recorded_turns: 0}, records: [], total_records: 0, next_offset: null,
-    source_generation: digest([]), limits: 'Retained observations, not competence.'}, nodeKey, 'kernel:test', 'kernel-master');
+    source_generation: digest([]), offset: 0, limit: 32, limits: 'Retained observations, not competence.'}, nodeKey, 'kernel:test', 'kernel-master');
   assert.equal((await verifyPersonaExperience(doc, options)).ok, true);
+  assert.equal((await verifyPersonaExperience(doc, {...options, offset: 32})).ok, false, 'a valid signature does not authorize another page');
   assert.match(experienceHtml(doc), /not a claim that no work occurred/);
   doc.summary.recorded_turns = -1;
   assert.equal((await verifyPersonaExperience(resign(doc), options)).ok, false);

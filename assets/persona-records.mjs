@@ -104,8 +104,13 @@ export async function verifyPersonaExperience(record, options = {}) {
   if (!outer.ok) return outer;
   if (!object(record.summary) || Object.values(record.summary).some(value => !Number.isSafeInteger(value) || value < 0)
       || !Array.isArray(record.records) || !Number.isSafeInteger(record.total_records) || record.total_records < record.records.length
+      || !Number.isSafeInteger(record.offset) || record.offset < 0 || record.offset !== (options.offset ?? 0)
+      || !Number.isSafeInteger(record.limit) || record.limit < 1 || record.limit > 256 || record.limit !== (options.limit ?? 32)
+      || record.records.length > record.limit
+      || record.records.length !== Math.min(record.limit, Math.max(0, record.total_records - record.offset))
       || !hashPattern.test(record.source_generation || '')
-      || (record.next_offset !== null && (!Number.isSafeInteger(record.next_offset) || record.next_offset < 1))) return failure('experience_shape_invalid');
+      || record.next_offset !== (record.offset + record.records.length < record.total_records
+        ? record.offset + record.records.length : null)) return failure('experience_shape_invalid');
   return outer;
 }
 

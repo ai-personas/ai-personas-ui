@@ -10722,7 +10722,7 @@ async function personaView(r,{tab='overview',offset=0}={}){
         else{
           await keysFor(base,{kernel_id:kernel},{signal:lifecycle.signal});
           lifecycle.assertCurrent();
-          const context={nodeId:kernel,personaId:_signedPersonaEndpointId(personaKey)||pid,keyEntries:S.keyDocs.get(base||'@origin')?.entries||[]};
+          const context={nodeId:kernel,personaId:_signedPersonaEndpointId(personaKey)||pid,keyEntries:S.keyDocs.get(base||'@origin')?.entries||[],offset,limit:32};
           proof=tab==='education'?await verifyPersonaEducation(doc,context):await verifyPersonaExperience(doc,context);
         }
         lifecycle.assertCurrent();
@@ -12596,7 +12596,7 @@ async function connectedDetailRecord(entry,kind,pid='',{refresh=false,offset=0}=
     if(entry.closed||signal?.aborted||pid&&!(entry.status.personas||[]).some(person=>person.persona_id===pid))
       throw new DOMException('Persona view changed.','AbortError');
     const context={keyEntries:['education','experience','directory'].includes(kind)?await connectedArtifactKeys(entry):[],nodeId:entry.status.node_id,
-      personaId:pid,privateRead:entry.tier==='operator'};
+      personaId:pid,privateRead:entry.tier==='operator',offset,limit:32};
     let verified;
     if(kind==='education') verified=await verifyPersonaEducation(doc,context);
     else if(kind==='experience') verified=await verifyPersonaExperience(doc,context);
