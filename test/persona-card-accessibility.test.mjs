@@ -33,7 +33,7 @@ test('the persona has one native named profile control without an interactive ca
     assert.equal(buttons[0][2], esc(name), 'The existing displayed name remains the button text');
     assert.match(html, /<h3 class="pc-name"[^>]*><button /);
     assert.match(html, /<button class="pc-follow"[^>]*data-follow=/);
-    assert.match(html, /<details class="pk-dossier"><summary>/);
+    assert.doesNotMatch(html, /<details class="pk-dossier"><summary>/, 'Large dossiers load only in the opened profile');
   }
 });
 
@@ -144,19 +144,15 @@ for (const key of ['Enter', ' ']) {
 }
 
 test('each avatar state is a named image with decorative children hidden', () => {
-  for (const [identityVerified, descriptor, declined, label] of [
-    [false, null, false, 'portrait withheld until persona identity proof verifies'],
-    [false, null, true, 'identity declined by the persona; its stated reason is shown'],
-    [true, null, false, 'avatar pending · not persona-authored; neutral person silhouette shown'],
-    [true, null, true, 'identity declined by the persona; its stated reason is shown'],
-    [true, {valid:true}, false, 'neutral person silhouette shown while persona-authored raster avatar is verified'],
+  for (const [identityVerified, descriptor, label] of [
+    [false, null, 'portrait withheld until persona identity proof verifies'],
+    [true, null, 'avatar pending · not persona-authored; neutral person silhouette shown'],
+    [true, {valid:true}, 'neutral person silhouette shown while persona-authored raster avatar is verified'],
   ]) {
     const values = {S:{personaDiscoveryByKey:new Map([['node:alice', {avatar:descriptor}]])}, esc,
       _personaRef:() => ({key:'node:alice', sid:'alice'}),
-      _verifiedIdentityDecline:() => declined ? {reason:'An authored refusal'} : null,
       normalizePersonaAvatar:value => value, _domEntityKey:value => value,
       _personaAvatarMountRevision:() => '', identiconSVG:() => '<svg aria-hidden="true"></svg>',
-      _identityDeclineCaptionHTML:() => '<small>identity declined</small>',
       _personaAvatarFallbackCopy:() => ({visible:'avatar pending · not persona-authored',
         accessible:'avatar pending · not persona-authored; neutral person silhouette shown', lifecycle:'pending'}),
     };

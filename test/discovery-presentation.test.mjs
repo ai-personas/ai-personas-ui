@@ -223,7 +223,7 @@ test('the persona face uses its verified character and renders structured self-d
   const face = html.split('<details class="pk-dossier">')[0];
   assert.ok(face.includes('Curious, precise and patient'));
   assert.ok(!html.includes('Neutral persona'));
-  assert.ok(html.includes('OCEAN') && html.includes('N: 0') && html.includes('Arousal: 0'));
+  assert.ok(!html.includes('OCEAN'), 'Detailed trait values belong to the opened character view');
   profile.persona_card = {card: {self_publication: {body: {description: 'I check every joint.'}}}};
   const published = renderer(observation).card('alice', 'node');
   assert.ok(published.split('<details class="pk-dossier">')[0].includes('I check every joint.'));

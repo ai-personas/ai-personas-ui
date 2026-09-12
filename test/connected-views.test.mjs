@@ -16,13 +16,14 @@ const formats = await import(pathToFileURL(resolve(assetRoot, 'artifact-types.mj
 const network = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
 const signedJson = await import(pathToFileURL(resolve(assetRoot, 'canonical-json.mjs')));
 const telemetry = await import(pathToFileURL(resolve(assetRoot, 'public-telemetry.mjs')));
+const personaRecords = await import(pathToFileURL(resolve(assetRoot, 'persona-records.mjs')));
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
 const statement = start => section(start, ';\n') + ';';
 const esc = value => String(value ?? '').replace(/[&<>"']/g,
   char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
 
 function fixture({fetchImpl = async () => { throw new Error('Unexpected request'); },
-  renderer = async () => {}, query = () => null, streamFactory = connection.fetchEventSource,
+  renderer = async () => {}, query = () => null, streamFactory = () => ({addEventListener() {},close() {}}),
   repaint = async () => {}} = {}) {
   const privateSection = section('// Explicit connections are isolated', 'async function operatorView(');
   const declarations = [
@@ -38,13 +39,15 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')
     + section('function _liveFileSharedState(', 'function _liveCurrentFileActionHTML(')
     + section('function _personaCharacteristicValue(', 'const _personaMonogram=') + privateSection;
-  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, ...signedJson, ...telemetry, esc,
+  const labelHelper=section('function _compactHumanLabel(', 'function _environmentNameFor(');
+  const values = {...human, ...connection, ...artifacts, ...signatures, ...formats, ...network, ...signedJson, ...telemetry, ...personaRecords, esc,
     fetchEventSource: streamFactory,
     AbortController, setTimeout, clearTimeout, setInterval, clearInterval, URL,
     fetch: fetchImpl, join: (base, path) => /^https?:\/\//.test(path) ? path
       : base.replace(/\/$/, '') + '/' + path.replace(/^\//, ''),
     DEFAULT_JSON_MAX_BYTES: 4 * 1024 * 1024,
-    $: query, updateOpBadge() {}, renderTop: repaint, discover: async () => {},
+    $: query, updateOpBadge() {}, renderTop: repaint, discover: async () => {}, document:{hidden:false},
+    updateStageHTML:(host,html)=>{host.innerHTML=html;}, replaceStageHTML:(host,html)=>{host.innerHTML=html;},
     S: new Proxy({}, {get(_target, key) { throw new Error(`Private view touched public store: ${String(key)}`); }}),
     pickRenderer: (kind, path, responseMedia, contentMedia) => formats.selectArtifactRenderer(kind, {path, responseMedia, contentMedia}),
     declaredArtifactMedia: file => file.mime_type || '',
@@ -61,10 +64,11 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     H: title => `<h3>${esc(title)}</h3>`, kv: (key, value) => `${esc(key)}: ${value}`,
     fmtBytes: size => `${size} B`, operatorView: () => ({title: 'Connections', html: ''}),
   };
-  const api = new Function(...Object.keys(values), declarations + `\nreturn {
+  const api = new Function(...Object.keys(values), labelHelper + declarations + `\nreturn {
     nodes: MY_NODES, personaView: connectedPersonaView, environmentView: connectedEnvironmentView,
     refresh: refreshConnectedNode, cognition: connectedCognitionHtml, disconnect: disconnectMyNode,
     connect: connectMyNode, profile: connectedProfile, readBytes: connectedNodeBytes,
+    selectDetails: selectConnectedDetails, releaseDetails: releaseConnectedDetails, readRecord: connectedDetailRecord,
     remember: rememberConnectedArtifacts, readArtifacts: readConnectedArtifacts, refreshArtifacts: refreshConnectedArtifacts,
     rememberSaved: rememberConnectedSavedArtifacts, readSaved: readConnectedSavedArtifacts,
     files: connectedEnvironmentFiles, select: connectedFileSelection, body: connectedFileBytes,
@@ -72,7 +76,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
   };`)(...Object.values(values));
   const entry = {base: 'https://node.test/private', tier: 'operator',
     session: new connection.NodeReadSession(), pending: new Set(), cognition: new Map(),
-    profiles: new Map(), profileJobs: new Map(), artifacts: new Map(), artifactJobs: new Map(),
+    details: new Map(), detailJobs: new Map(), selection:new Set(), filters:{}, artifacts: new Map(), artifactJobs: new Map(),
     savedArtifacts: new Map(), savedArtifactJobs: new Map(),
     viewCleanups: new Set(), closed: false, status: {schema: 'personaos-node-status/1', node_id: 'kernel:test', runs: [],
       personas: [{persona_id:'alice', name:'Alice'}, {persona_id:'bob', name:'Bob'}],
@@ -88,9 +92,15 @@ const profile = description => ({schema:'personaos-persona-profile/1', persona_i
       traits:['patient','curious'], OCEAN:{O:0.8,N:0}, VAD:{valence:0.2,arousal:0},
     }}});
 
+async function mountedPersona(ui, options={}) {
+  const view=await ui.personaView(ui.entry.base,'alice',options), host={innerHTML:''};
+  await view.mount({querySelector:()=>host},{assertCurrent(){},isCurrent:()=>true});
+  return {...view,html:host.innerHTML};
+}
+
 test('the connected persona shows its characteristic profile, including zero values', async () => {
   const ui = fixture({fetchImpl: async () => Response.json(profile('Checks every joint.'))});
-  const view = await ui.personaView(ui.entry.base, 'alice');
+  const view = await mountedPersona(ui);
   assert.match(view.html, /Checks every joint/);
   assert.match(view.html, /patient.*curious/);
   assert.match(view.html, /OCEAN/); assert.match(view.html, /N: 0/);
@@ -101,11 +111,11 @@ test('the connected persona shows its characteristic profile, including zero val
 test('reopening a persona refreshes an expired profile rather than retaining its first description', async () => {
   let description = 'First description';
   const ui = fixture({fetchImpl: async () => Response.json(profile(description))});
-  assert.match((await ui.personaView(ui.entry.base, 'alice')).html, /First description/);
+  assert.match((await mountedPersona(ui)).html, /First description/);
   description = 'Evolved description';
   // The document cache records when the profile was fetched, not a lifetime pin.
-  const cached = ui.entry.profiles.get('alice'); cached.at = 0;
-  const view = await ui.personaView(ui.entry.base, 'alice');
+  const cached = ui.entry.details.get(JSON.stringify(['profile','alice',0])); cached.at = 0;
+  const view = await mountedPersona(ui);
   assert.match(view.html, /Evolved description/); assert.doesNotMatch(view.html, /First description/);
   ui.disconnect(ui.entry.base);
 });
@@ -366,7 +376,7 @@ test(`a ${refusal} operator refusal clears only that node in the ${view} view`, 
   withCleanup(t, ui);
   const entry = ui.entry, pending = new AbortController();
   entry.pending.add(pending);
-  entry.profiles.set('alice', {doc:profile('Private history')});
+  entry.details.set('profile:alice', {doc:profile('Private history')});
   entry.cognition.set('alice', {recent_outputs:[{text:'Private message'}]});
   entry.artifacts.set('run-a', {private:true}); entry.savedArtifacts.set('run-a', {private:true});
   entry.keyDocument = {private:true}; entry.live = {private:true};
@@ -374,7 +384,7 @@ test(`a ${refusal} operator refusal clears only that node in the ${view} view`, 
   entry.stream = {close() { streamClosed = true; }};
   entry.viewCleanups.add(() => { viewCancelled = true; });
   const publicEntry = {...entry, base:'https://public.test', tier:'public', session:new connection.NodeReadSession(),
-    pending:new Set(), profiles:new Map(), cognition:new Map(), profileJobs:new Map(),
+    pending:new Set(), details:new Map(), cognition:new Map(), detailJobs:new Map(), detailScope:null,detailController:null,
     artifacts:new Map(), artifactJobs:new Map(), savedArtifacts:new Map(), savedArtifactJobs:new Map(),
     viewCleanups:new Set(), stream:null, status:{node_id:'kernel:public'}};
   const otherEntry = {...publicEntry, base:'https://other.test', tier:'operator', session:new connection.NodeReadSession()};
@@ -384,7 +394,7 @@ test(`a ${refusal} operator refusal clears only that node in the ${view} view`, 
   await ui.refresh(entry);
   assert.equal(ui.nodes.has(entry.base), false); assert.equal(entry.closed, true);
   assert.equal(entry.status, null); assert.equal(entry.live, null); assert.equal(entry.keyDocument, null);
-  for (const cache of [entry.profiles, entry.cognition, entry.artifacts, entry.savedArtifacts]) assert.equal(cache.size, 0);
+  for (const cache of [entry.details, entry.cognition, entry.artifacts, entry.savedArtifacts]) assert.equal(cache.size, 0);
   assert.deepEqual(entry.session.entries(), []); assert.equal(pending.signal.aborted, true);
   assert.equal(streamClosed, true); assert.equal(viewCancelled, true); assert.equal(paints.length, 1);
   assert.equal((await ui.personaView(entry.base, 'alice')).title, 'Connections');
@@ -476,7 +486,7 @@ test('an operator connection reads and streams a complete message beyond four Mi
   const fetchImpl = async (url, options) => {
     requests.push({url, options});
     if (url.endsWith('/status')) return Response.json(status, {headers:{'X-PersonaOS-Read-Tier':'operator'}});
-    if (url.endsWith('/discovery/events')) return new Response(new ReadableStream({start(controller) { streamBody=controller; }}),
+    if (url.includes('/discovery/events?')) return new Response(new ReadableStream({start(controller) { streamBody=controller; }}),
       {headers:{'Content-Type':'text/event-stream'}});
     return Response.json(document);
   };
@@ -484,10 +494,12 @@ test('an operator connection reads and streams a complete message beyond four Mi
     stream = connection.fetchEventSource(url, {...options, fetchImpl}); return stream;
   }});
   withCleanup(t, ui); status = {...ui.entry.status, personas:[{persona_id:'alice', name:'Alice'}]};
-  await ui.refresh(ui.entry);
+  ui.selectDetails(ui.entry,'persona','alice','activity');
+  await ui.readRecord(ui.entry,'thinking','alice');
   assert.ok(ui.entry.cognition.get('alice')?.recent_outputs[0].text === text,
     'the complete large message must survive the operator JSON read');
   const entry = await ui.connect(ui.entry.base, 'private-token');
+  ui.selectDetails(entry,'persona','alice','activity');
   const until = async predicate => {
     const deadline = Date.now()+5000;
     while (!predicate() && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,5));
@@ -551,6 +563,7 @@ async function file({run='run-a', workspace='ws-a', path='report.md', text='A co
 }
 function prepare(ui, issuer, runs=['run-a']) {
   ui.entry.status.node_id=issuer.node; ui.entry.status.runs=runs;
+  ui.selectDetails(ui.entry,'environment','room');
   ui.entry.artifactsRequested=true;
 }
 const withCleanup = (t, ui) => t.after(() => {
@@ -768,6 +781,7 @@ test('an idle private node supplies saved output without a live snapshot or publ
     return new Response(saved.bytes,{headers:{'Content-Type':'text/markdown'}});
   },renderer:async(_host,ctx)=>{ctx.assertCurrent();rendered.push(ctx);}});
   withCleanup(t,ui); ui.entry.status.runs=['run-a'];
+  ui.selectDetails(ui.entry,'environment','room');
   await ui.refreshArtifacts(ui.entry);
   assert.equal(ui.entry.artifactError,''); assert.equal(ui.entry.artifacts.size,0);
   assert.equal(ui.entry.savedArtifacts.size,1); assert.equal(ui.entry.keyDocument,undefined);

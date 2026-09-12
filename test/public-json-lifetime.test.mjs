@@ -23,7 +23,8 @@ function reader({peer = true, operator = false} = {}) {
     body.then(resolve);
   });
   const values = {tokenFor: () => operator ? 'operator' : '', DEFAULT_JSON_MAX_BYTES: 4000000,
-    AbortSignal: {timeout(milliseconds) {
+    AbortController,
+    AbortSignal: {any: AbortSignal.any, timeout(milliseconds) {
       const controller = new AbortController(); timers.push({milliseconds, controller});
       return controller.signal;
     }},
@@ -73,6 +74,19 @@ test('anonymous HTTP reads keep their whole-request deadline', async () => {
   assert.equal(state.timers.length, 1);
   state.timers[0].controller.abort(new DOMException('deadline', 'TimeoutError'));
   assert.equal(await pending, null);
+});
+
+test('closing the last viewer aborts its queued peer transfer and a reopen starts a new read', async () => {
+  const state = reader(), controller = new AbortController();
+  const first = state.fetchPublic('libp2p://peer/personas/alice/thinking', {signal:controller.signal});
+  controller.abort();
+  assert.equal(await first, null);
+  assert.equal(state.reads[0].signal.aborted, true);
+  const reopened = state.fetchPublic('libp2p://peer/personas/alice/thinking');
+  assert.equal(state.reads.length, 2);
+  assert.equal(state.reads[1].signal.aborted, false);
+  state.release({fresh:true});
+  assert.deepEqual(await reopened, {fresh:true});
 });
 
 test('operator reads keep their authenticated path', async () => {

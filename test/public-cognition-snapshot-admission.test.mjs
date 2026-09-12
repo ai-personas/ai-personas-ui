@@ -30,11 +30,10 @@ const declarations = [
   section('function _freshPublicGeneratedAt(', 'function _safeEntityMap('),
   section('async function verifyCurrentMasterSignedDocument(', '// ---- C-OP-16'),
   section('const PUBLIC_PERSONA_COGNITION_FIELDS=', 'function _currentInventoryPersona('),
-  section('async function verifyPublicPersonaCognition(', 'async function refreshThinking('),
+  section('async function verifyPublicPersonaCognition(', 'function _cognitionPreview('),
   section('function _removeRecordStoreKey(', 'function _providerInventoryIsCurrent('),
-  section('async function refreshThinking(', '// LIVE persona activity:'),
   section('function _cognitionPreview(', 'function _publicProvenanceAtom('),
-  section('function ingestPersonaCognitionReads(', 'async function streamPersonaCognition('),
+  section('function ingestPersonaCognitionReads(', 'function refreshLiveSection('),
 ].join('\n');
 const base = 'https://node.test', kernel = 'kernel:fixture', pid = 'persona:alice';
 const personaKey = `${kernel}/alice`, secret = new Uint8Array(32).fill(7);
@@ -135,7 +134,7 @@ function fixture() {
   };
   api = new Function(...Object.keys(values), declarations + `\nreturn {
     remember:_rememberVerifiedPublicCognition, ingest:ingestPersonaCognitionReads,
-    drawer:refreshThinking, remove:_removeRecordStoreKey,
+    remove:_removeRecordStoreKey,
     verify:doc => verifyPublicPersonaCognition('${base}', doc,
       {personaId:'${pid}', kernel:'${kernel}'}),
   };`)(...Object.values(values));
@@ -163,18 +162,6 @@ test('an older signed partial cannot replace a completed snapshot or reset feed 
   assert.deepEqual(f.S.interactions, interactions);
   assert.equal(f.indexed.length, 1, 'Rejected snapshots cannot reset active call projections');
   assert.equal(f.paints(), paints);
-});
-
-test('a delayed drawer GET renders the newer SSE snapshot admitted while it was loading', async () => {
-  const f = fixture(), complete = await signed(document()), partial = await signed(document(1, {at:earlier}));
-  const reading = f.drawer();
-  assert.equal(f.requests.length, 1);
-  await f.receive(complete);
-  f.requests[0].resolve(partial);
-  await reading;
-  assert.equal(f.retained().doc, complete);
-  assert.equal(f.rendered.at(-1), complete);
-  assert.equal(f.target.innerHTML, JSON.stringify([chunks.join('')]));
 });
 
 test('equal-time exact repeats are idempotent; conflicting signed documents have no ordering', async () => {

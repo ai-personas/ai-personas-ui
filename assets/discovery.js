@@ -5,6 +5,9 @@ import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs?v=20260907-access-revocation-v1';
 import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260908-public-evidence-v1';
 import {verifyIdentityResidency} from './identity-residency.mjs?v=20260910-handoff-v1';
+import {verifyNodePersonaProjection, verifyPersonaEducation, verifyPersonaExperience,
+  filterPersonaDirectory, educationHtml, experienceHtml, validEnvironmentImageReference} from './persona-records.mjs?v=20260911-learning-v1';
+import {VerifiedImageMounts} from './verified-image-mounts.mjs';
 import {
   artifactSemanticLabels,
   boundedLineDiff,
@@ -287,7 +290,7 @@ function secureFetchInit(u,init={}){
   return {...init,cache:init.cache||'no-store',credentials:'omit',redirect:'error',
     referrerPolicy:'no-referrer',headers:{...(init.headers||{}),...authHeaders(u)}};
 }
-async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER){
+async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER,onProgress=null){
   const declared=Number(response.headers.get('content-length'));
   if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
     throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
@@ -298,12 +301,14 @@ async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGE
     return new Uint8Array(bytes);
   }
   const reader=response.body.getReader(), chunks=[]; let total=0;
+  onProgress?.(0,Number.isFinite(declared)&&declared>0?declared:null);
   try{
     for(;;){ const {done,value}=await reader.read(); if(done) break;
       total+=value.byteLength;
       if(!responseByteLengthWithinLimit(total,maxBytes)){
         await reader.cancel(); throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`); }
       chunks.push(value);
+      onProgress?.(total,Number.isFinite(declared)&&declared>0?declared:null);
     }
   }finally{ try{ reader.releaseLock(); }catch(e){} }
   const out=new Uint8Array(total); let offset=0;
@@ -383,12 +388,16 @@ function p2pDataRouteForUrl(value){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
   if(target.hash) return null;
   let sinceRevision='';
+  let page=null;
   if(target.search){
     const keys=[...target.searchParams.keys()];
     const values=target.searchParams.getAll('since');
-    if(keys.length!==1||keys[0]!=='since'||values.length!==1
-        ||!/^sha256:[0-9a-f]{64}$/.test(values[0])) return null;
-    sinceRevision=values[0];
+    if(keys.length===1&&keys[0]==='since'&&values.length===1&&/^sha256:[0-9a-f]{64}$/.test(values[0])) sinceRevision=values[0];
+    else if(keys.length===2&&[...keys].sort().join(',')==='limit,offset'){
+      page={offset:Number(target.searchParams.get('offset')),limit:Number(target.searchParams.get('limit'))};
+      if(!Number.isSafeInteger(page.offset)||page.offset<0||!Number.isSafeInteger(page.limit)||page.limit<1||page.limit>256
+          ||Object.entries(page).some(([key,value])=>String(value)!==target.searchParams.get(key))) return null;
+    }else return null;
   }
   for(const [rawBase,route] of (S.p2pDataRoutes||new Map())){
     let base; try{ base=new URL(rawBase,location.href); }catch(_){ continue; }
@@ -398,7 +407,8 @@ function p2pDataRouteForUrl(value){
     let path=target.pathname.slice(root.length).replace(/^\/+/, '');
     try{ path=decodeURIComponent(path); }catch(_){ continue; }
     if(!path) continue;
-    return {route,path,sinceRevision,url:target.href};
+    if(page&&!/^personas\/[A-Za-z0-9:_.@+-]{1,180}\/experience$/.test(path)) return null;
+    return {route,path,sinceRevision,page,url:target.href};
   }
   return null;
 }
@@ -410,6 +420,7 @@ async function fetchP2PJson(value,init={}){
     timeoutMs:Math.min(12000,Number(init.timeoutMs)||8000),
     maxBytes:init.maxBytes||DEFAULT_JSON_MAX_BYTES,
     sinceRevision:found.sinceRevision,
+    page:found.page,
     priority:init.priority,
     signal:init.signal,
   }).catch(()=>null);
@@ -433,7 +444,7 @@ function settleBeforeAbort(request,signal,abortedValue=null){
     request.then(finish,()=>finish(null));
   });
 }
-async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER,{signal=null}={}){
+async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_SAFE_INTEGER,{signal=null,onProgress=null}={}){
   if(signal?.aborted) return null;
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
   // JSON polling has its own sole `since=sha256:...` query contract in
@@ -453,7 +464,7 @@ async function fetchP2PArtifactBytes(value,expectedHash='',maxBytes=Number.MAX_S
   if(!/^sha256:[0-9a-f]{64}$/.test(contentHash)) return null;
   if(queryHash&&queryHash!==contentHash) return null;
   const result=await P2P.fetchPublicBlob(found.route.providerRecord,contentHash,
-    {timeoutMs:10000,maxBytes,path:found.path,priority:100,signal}).catch(()=>null);
+    {timeoutMs:10000,maxBytes,path:found.path,priority:100,signal,onProgress}).catch(()=>null);
   return result?.bytes||null;
 }
 // Large signed inventories are fetched concurrently by the HTTP and P2P
@@ -563,7 +574,8 @@ async function fetchResponsivePublicJson(u,init={}){
   const key=`${String(u)}\u0000${maxBytes}\u0000${peerOnly?'peer':'any'}\u0000${verifiedDirectFallback?'direct-fallback':'strict'}`;
   let job=responsivePublicJsonJobs.get(key);
   if(!job){
-    const transportSignal=AbortSignal.timeout(15000);
+    const controller=new AbortController();
+    const transportSignal=AbortSignal.any([AbortSignal.timeout(15000),controller.signal]);
     // This shared job is deliberately anonymous and GET-only. Do not inherit
     // caller headers or consult token state again after it starts.
     const transportInit={signal:transportSignal,maxBytes,timeoutMs:12000,priority:init.priority};
@@ -595,7 +607,7 @@ async function fetchResponsivePublicJson(u,init={}){
         // A queued/chunked peer read has its own deadline for each request.
         // The direct HTTP deadline must not discard it while another signed
         // transfer occupies the peer queue or this download is making progress.
-        const peerRead=fetchP2PJson(u,{...transportInit,signal:null});
+        const peerRead=fetchP2PJson(u,{...transportInit,signal:controller.signal});
         if(!verifiedDirectFallback) return peerRead;
         // Dynamic signed documents must not disappear behind a slow peer read.
         // Race the peer transport with the same current-master-verified
@@ -608,17 +620,22 @@ async function fetchResponsivePublicJson(u,init={}){
       const direct=await directDocument();
       if(direct!==null&&direct!==undefined) return direct;
       if(transportSignal.aborted) return null;
-      return fetchP2PJson(u,{...transportInit,signal:null});
+      return fetchP2PJson(u,{...transportInit,signal:controller.signal});
     })();
-    job=request.finally(()=>{
+    job={controller,readers:new Set(),promise:request.finally(()=>{
       if(responsivePublicJsonJobs.get(key)===job) responsivePublicJsonJobs.delete(key);
-    });
+    })};
     responsivePublicJsonJobs.set(key,job);
   }
-  // A drawer refresh and the background cognition stream can ask for the same
-  // public document. Each caller may stop waiting independently; its deadline
-  // must not cancel the shared anonymous transport needed by the other view.
-  return settleBeforeAbort(job,callerSignal,null);
+  // A shared read lives only while it has a consumer. Closing the last view
+  // cancels queued chunks too; closing one of two viewers keeps the other alive.
+  const consumer=Symbol(); job.readers.add(consumer);
+  try{ return await settleBeforeAbort(job.promise,callerSignal,null); }
+  finally{
+    job.readers.delete(consumer);
+    if(!job.readers.size){ job.controller.abort();
+      if(responsivePublicJsonJobs.get(key)===job) responsivePublicJsonJobs.delete(key); }
+  }
 }
 const planesOf=(t)=>['federation','public'].includes(t)?['internet','intranet']:['intranet'];
 
@@ -670,8 +687,7 @@ const S={ recs:new Map(), order:[], kernels:new Set(), events:[], emitted:0, rId
   activeModelCallCount:0,
   // Kernel-signed live snapshots/events remain separate from signed discovery
   // records. File bytes are also checked against each signed advertised sha256.
-  liveArtifacts:new Map(), liveArtifactPolls:new Map(), liveArtifactBodyCache:new Map(),
-  verifiedArtifactBodies:new Map(), verifiedArtifactBodyJobs:new Map(), verifiedArtifactBodyBytes:0,
+  liveArtifacts:new Map(), liveArtifactPolls:new Map(),
   liveArtifactRequestGeneration:new Map(), liveArtifactAbort:new Map(), liveArtifactEnded:new Map(),
   liveArtifactPublicProbes:new Map(),
   terminalCallTombstones:new Map(),
@@ -2565,6 +2581,11 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     ?(r.kind==='env'?await verifyPublicRunScorecardsForEnvironment(base,doc.run_scorecards,r)
       :r.kind==='persona'?await verifyPublicRunScorecardsForPersona(base,doc.run_scorecards,r):[])
     :[];
+  const envIdentity=doc.environment_identity;
+  const environmentIdentityVerified=r.kind==='env'&&access.canRead&&envIdentity?.node_id===k
+    &&envIdentity?.schema==='personaos-environment-identity-projection/1'&&envIdentity.visibility==='public'
+    &&_shortId(envIdentity.environment_id)===_envSid(r)
+    &&await verifyCurrentMasterSignedDocument(base,envIdentity);
   const row={...r,_kernel:k,_url:url,_access:projectedPolicy,_links:links,
     _base:b,_plane:plane,_effective_level:access.level,_readAuthorized:access.canRead,
     // Keep the reached provider route separate from the read-gated content
@@ -2591,6 +2612,7 @@ async function verifiedRecordFromDoc(doc,keys,boot,base,plane,recordUrl,meta={})
     run_scorecard:runScorecardVerified?doc.run_scorecard:null,
     _runScorecardsVerified:runScorecards.length>0,
     run_scorecards:runScorecards,
+    _environmentIdentity:environmentIdentityVerified?envIdentity:null,
     _gossipHint:{schema:'personaos-provider-hint/1',record:gossipRecord},
     _doc:{record:r,signature_hex:doc.signature_hex,signing_key_id:doc.signing_key_id,
           signing_key_status:signature.entry.status,public_key_hex:signature.entry.public_key_hex,
@@ -4555,56 +4577,13 @@ function scheduleRealtimeRepaint({records=false}={}){
 // A telemetry frame is also a concrete signal that a persona's signed public
 // cognition snapshot may have advanced. Coalesce bursts so provider deltas paint
 // quickly without turning one SSE burst into an unbounded fetch fan-out.
-let _sseCognitionTimer=0, _sseCognitionBusy=false, _sseCognitionPending=false;
-let _sseCognitionFullPending=false;
-const _sseCognitionPendingPersonaKeys=new Set(), _sseCognitionPendingBases=new Set();
 function scheduleSseCognitionRefresh(scope=null){
-  if(scope?.preservePending!==true){
-    // The collectible-card lazy cognition cache follows the scoped
-    // cognition_invalidate signal so stat rows / model badges refresh with the
-    // deck repaint; unscoped telemetry ticks are left to the cache TTL.
-    for(const key of Array.isArray(scope?.personaKeys)?scope.personaKeys.filter(Boolean):[])
-      _pkCognitionInvalidate(key);
-    const personaKeys=Array.isArray(scope?.personaKeys)?scope.personaKeys.filter(Boolean):[];
-    const hasBase=Object.prototype.hasOwnProperty.call(scope||{},'base')
-      &&typeof scope.base==='string';
-    const base=hasBase?scope.base.replace(/\/$/,''):'';
-    if(personaKeys.length&&hasBase){
-      for(const key of personaKeys) _sseCognitionPendingPersonaKeys.add(String(key));
-      _sseCognitionPendingBases.add(base);
-    }else _sseCognitionFullPending=true;
-    _sseCognitionPending=true;
-  }
-  if(_sseCognitionBusy||_sseCognitionTimer) return;
-  _sseCognitionTimer=setTimeout(async()=>{
-    _sseCognitionTimer=0;
-    if(!_sseCognitionPending) return;
-    const full=_sseCognitionFullPending;
-    const pendingPersonaKeys=new Set(_sseCognitionPendingPersonaKeys);
-    const pendingBases=new Set(_sseCognitionPendingBases);
-    _sseCognitionPending=false; _sseCognitionFullPending=false;
-    _sseCognitionPendingPersonaKeys.clear(); _sseCognitionPendingBases.clear();
-    _sseCognitionBusy=true;
-    try{
-      const jobs=[streamPersonaCognition(full?{force:true}:{personaKeys:[...pendingPersonaKeys],
-        bases:[...pendingBases],force:true})];
-      const drawerKey=S.drawerThinkPid
-        ?_personaRef(S.drawerThinkPid,S.drawerLiveKernel||'').key:'';
-      if(S.drawerThinkPid&&(full||pendingPersonaKeys.has(drawerKey))) jobs.push(refreshThinking());
-      const settled=await Promise.allSettled(jobs);
-      if(settled[0]?.status==='fulfilled'&&settled[0].value===false){
-        if(full) _sseCognitionFullPending=true;
-        else{
-          for(const key of pendingPersonaKeys) _sseCognitionPendingPersonaKeys.add(key);
-          for(const pendingBase of pendingBases) _sseCognitionPendingBases.add(pendingBase);
-        }
-        _sseCognitionPending=true;
-      }
-    }
-    finally{
-      _sseCognitionBusy=false;
-      if(_sseCognitionPending) scheduleSseCognitionRefresh({preservePending:true});
-    }
+  const view=S.publicPersonaView;
+  if(!view||document.hidden||view.timer) return;
+  if(scope?.personaKeys?.length&&!scope.personaKeys.includes(view.key)) return;
+  view.timer=setTimeout(()=>{
+    view.timer=null;
+    if(S.publicPersonaView===view) view.refresh();
   },250);
 }
 // A verified SSE frame has already updated the per-entity indices. Coalesce a
@@ -4707,7 +4686,9 @@ function connectDiscoveryStream(base,boot){
   const peerRoute=S.p2pDataRoutes?.get(opBaseKey(base));
   if(peerRoute&&!tokenFor(join(base,'status'))){ _ensurePeerDiscoveryStream(base,boot,peerRoute); return; }
   if(!boot?.discovery_stream_url||typeof fetch==='undefined') return;
-  const url=new URL(join(base,boot.discovery_stream_url),location.href).href;
+  const streamUrl=new URL(join(base,boot.discovery_stream_url),location.href);
+  streamUrl.searchParams.set('cognition','none');
+  const url=streamUrl.href;
   if(S.streams.has(url)) return;
   const es=fetchEventSource(url,{requestInit:()=>secureFetchInit(url),
     maxFrameBytes:Number.MAX_SAFE_INTEGER});
@@ -5123,7 +5104,7 @@ async function fetchBlob(u,{signal=null}={}){
   const type='application/octet-stream', b=new Blob([bytes],{type});
   return {blob:b,size:b.size,type};
 }
-async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Number.MAX_SAFE_INTEGER}={}){
+async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Number.MAX_SAFE_INTEGER,onProgress=null}={}){
   const cancelled={ok:false,checkOutcome:'cancelled',error:'artifact view cancelled'};
   if(signal?.aborted) return cancelled;
   const expected=String(expectedHash||'').replace(/^sha256:/,'').toLowerCase();
@@ -5131,60 +5112,38 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Numb
     return {ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
   let absoluteUrl; try{ absoluteUrl=new URL(url,location.href).href; }
   catch(_){ return {ok:false,checkOutcome:'failed',error:'invalid artifact URL'}; }
-  const cacheKey=`${expected}\u0000${absoluteUrl}`;
-  const cached=S.verifiedArtifactBodies.get(cacheKey);
-  if(cached){
-    if(cached.size>maxBytes) return {ok:false,checkOutcome:'failed',error:'File exceeds its advertised size'};
-    // Refresh insertion order so the byte-bound cache behaves as an LRU. The
-    // hash was checked before insertion; a reused entry never skips the
-    // advertised-hash binding because the digest is part of the cache key.
-    S.verifiedArtifactBodies.delete(cacheKey); S.verifiedArtifactBodies.set(cacheKey,cached);
-    return {...cached,blob:new Blob([cached.bytes],{type:cached.type})};
-  }
-  const pending=S.verifiedArtifactBodyJobs.get(cacheKey);
-  if(pending) return settleBeforeAbort(pending,signal,cancelled);
-  let job;
-  const request=(async()=>{ try{
-    const controller=new AbortController();
+  const controller=new AbortController(), abort=()=>controller.abort();
+  signal?.addEventListener('abort',abort,{once:true});
+  const progress=(event)=>{ if(!controller.signal.aborted&&!signal?.aborted) onProgress?.(event); };
+  try{
     const attempts=[];
     if(isHttp(absoluteUrl)) attempts.push((async()=>{
-      const r=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
-      if(!r.ok) throw new Error(`body HTTP ${r.status}`);
-      const bytes=await readBoundedResponseBytes(r,Math.max(1,maxBytes));
-      return {bytes,type:r.headers.get('content-type')||'application/octet-stream'};
+      const response=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
+      if(!response.ok) throw new Error(`body HTTP ${response.status}`);
+      const bytes=await readBoundedResponseBytes(response,Math.max(1,maxBytes),
+        (received,total)=>progress({received,total,phase:'receiving',transport:'HTTP'}));
+      return {bytes,type:response.headers.get('content-type')||'application/octet-stream'};
     })());
-    // The blob reader validates its own exact hash query. JSON route matching
-    // accepts only `since`, so using it here would reject every live-file URL.
     if(P2P?.fetchPublicBlob) attempts.push((async()=>{
-      const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,
-        Math.max(1,maxBytes));
+      const bytes=await fetchP2PArtifactBytes(absoluteUrl,`sha256:${expected}`,Math.max(1,maxBytes),
+        {signal:controller.signal,onProgress:event=>progress({...event,transport:'P2P'})});
       if(!bytes) throw new Error('verified peer body unavailable');
       return {bytes,type:'application/octet-stream'};
     })());
-    let loaded;
-    try{ loaded=await Promise.any(attempts); }
-    finally{ controller.abort(); }
-    const {bytes,type}=loaded,actual=await sha256Hex(bytes);
+    const {bytes,type}=await Promise.any(attempts);
+    if(signal?.aborted) return cancelled;
+    progress({received:bytes.length,total:bytes.length,phase:'verifying'});
+    const actual=await sha256Hex(bytes);
+    if(signal?.aborted) return cancelled;
     if(actual!==expected) return {ok:false,checkOutcome:'failed',error:'SHA-256 mismatch',actual,expected};
-    const verified={ok:true,actual,bytes,type,size:bytes.byteLength};
-    S.verifiedArtifactBodies.set(cacheKey,verified);
-    S.verifiedArtifactBodyBytes+=bytes.byteLength;
-    const maxCacheBytes=LIVE_ARTIFACT_LIMITS.maxBodyCacheBytes;
-    while(S.verifiedArtifactBodies.size>16||S.verifiedArtifactBodyBytes>maxCacheBytes){
-      const oldestKey=S.verifiedArtifactBodies.keys().next().value;
-      if(oldestKey===undefined) break;
-      const oldest=S.verifiedArtifactBodies.get(oldestKey);
-      S.verifiedArtifactBodies.delete(oldestKey);
-      S.verifiedArtifactBodyBytes=Math.max(0,S.verifiedArtifactBodyBytes-Number(oldest?.size||0));
-    }
-    return {...verified,blob:new Blob([bytes],{type})};
-  }catch(e){ const error=String(e&&e.message||e);
-    return {ok:false,checkOutcome:/\bexceeds\b/i.test(error)?'failed':'unavailable',error}; }
-  })();
-  job=request.finally(()=>{ if(S.verifiedArtifactBodyJobs.get(cacheKey)===job)
-    S.verifiedArtifactBodyJobs.delete(cacheKey); });
-  S.verifiedArtifactBodyJobs.set(cacheKey,job);
-  return settleBeforeAbort(job,signal,cancelled);
+    // The caller owns these bytes. No off-screen global body/text cache keeps
+    // previews alive after their renderer and download button are released.
+    return {ok:true,actual,bytes,type,size:bytes.byteLength,blob:new Blob([bytes],{type})};
+  }catch(error){
+    if(signal?.aborted) return cancelled;
+    const message=String(error?.message||error);
+    return {ok:false,checkOutcome:/exceeds/i.test(message)?'failed':'unavailable',error:message};
+  }finally{ controller.abort(); signal?.removeEventListener('abort',abort); }
 }
 const fmtBytes=(n)=>{ if(n==null||isNaN(n))return '—'; if(n<1024)return n+' B';
   if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
@@ -6043,8 +6002,8 @@ function _personaCharacteristicsHTML(characteristics,{name='',limit=8,compact=fa
   const rows=_personaCharacteristicRows(characteristics,{name,limit});
   if(!rows.length) return '';
   if(compact) return rows.map((row,index)=>index===0
-    ?`<p><b>${esc(row.label)}</b> · ${esc(row.value)}</p>`
-    :`<div class="pc-working-style"><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('');
+    ?`<p><b>${esc(row.label)}</b> · ${esc(_compactHumanLabel(row.value,160))}</p>`
+    :`<div class="pc-working-style"><b>${esc(row.label)}</b><span>${esc(_compactHumanLabel(row.value,160))}</span></div>`).join('');
   return `<div class="persona-about-view">${rows.map((row)=>
     `<div><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('')}</div>`;
 }
@@ -7333,7 +7292,7 @@ function _personaAuthoredWorkHTML(personaKey,kernel='',mechanical=null){
   return latestLessonHTML+factsHTML+(historyHTML
     ?`<details class="pk-dossier" data-disclosure-key="work-history"><summary>Work notes and learning history</summary>${historyHTML}</details>`:'');
 }
-function _personaActivityHTML(acts,personaKey){
+function _personaActivityHTML(acts,personaKey,{compact=false}={}){
   const candidates=[]; const seen=new Map();
   for(const e of [...(acts||[])].reverse()){
     const endpoints=_eventEndpoints(e).map((endpoint)=>`${endpoint.kind}:${endpoint.id}`).sort().join(',');
@@ -7355,6 +7314,15 @@ function _personaActivityHTML(acts,personaKey){
   // commands or cognition. Admission and signatures are checked upstream.
   const updates=new Set(_latestPersonaUpdates(candidates.map(({event})=>event)));
   const authoredRows=candidates.filter(({event})=>updates.has(event));
+  if(compact){
+    const row=authoredRows.find(({event})=>event.kind===PUBLIC_PERSONA_COMMUNICATION_OUTPUT_KIND)
+      ||authoredRows[0]||candidates.find(({event})=>event?._providerComplete===true&&event?._exactText);
+    if(!row) return '';
+    const event=row.event, text=String(event._exactText||event._msg||'');
+    const author=event.actor_kind==='persona'?_nameFor(_eventPersonaKey(event,event.actor_id)):'Work update';
+    return `<section class="pc-activity pc-brief"><div class="pc-section-head"><span>${esc(author)} · latest shared update</span>${_activityTrustBadgeHTML(event)}</div>`
+      +`<p>${esc(text.slice(0,220))}${text.length>220?'…':''}</p>${_eventTimeHTML(event)}</section>`;
+  }
   if(!candidates.length) return `<section class="pc-activity pc-message-stream"><div class="pc-section-head"><span>Persona updates</span><small>none available</small></div><div class="pc-activity-empty">No public work updates are available in this view.</div></section>`;
   const renderRows=(selected)=>selected.map(({event:e,count})=>{ const cls=_ixClass(e.kind,e), kernel=_eventKernel(e);
       const actorKey=e.actor_kind==='persona'?_eventPersonaKey(e,e.actor_id):'';
@@ -7432,76 +7400,6 @@ function identiconSVG(id,{className='pk-identicon',title=''}={}){
   if(!cells.length) cells.push([2,1],[1,2],[2,2],[3,2],[2,3]);
   const rects=cells.map(([x,y])=>`<rect x="${3+x*10}" y="${3+y*10}" width="10" height="10" rx="1.5"/>`).join('');
   return `<svg class="${esc(className)}" viewBox="0 0 56 56" role="img" aria-label="${esc(title||'deterministic identicon derived from the identifier')}" style="--pk-idhue:${hue}"><rect class="pk-id-bg" x="0" y="0" width="56" height="56" rx="10"/><g class="pk-id-fg">${rects}</g></svg>`;
-}
-// Lazy, cached, presentation-only read of the persona's public cognition
-// document (personas/<id>/thinking). It enriches the collectible face with
-// stat counters (EP/FR/TL/EV) and the current model id.
-// 403/404 (message tier not public) and malformed bodies degrade to
-// "no stat row"; nothing here feeds a verification decision, and every string
-// is HTML-escaped at render time.
-const _pkCog={cache:new Map(),inflight:new Set()};
-const PK_COG_TTL_MS=60000, PK_COG_NEG_TTL_MS=120000;
-function _pkCognitionInvalidate(personaKey){
-  if(personaKey===undefined){ _pkCog.cache.clear(); return; }
-  _pkCog.cache.delete(String(personaKey||''));
-}
-function _pkCount(value){ return Number.isSafeInteger(value)&&value>=0&&value<=1e9?value:null; }
-function _pkCognitionProjection(doc){
-  if(!doc||typeof doc!=='object'||Array.isArray(doc)
-      ||!String(doc.schema||'').startsWith('personaos-persona-public-cognition/')) return null;
-  const calls=[...(Array.isArray(doc.active_calls)?doc.active_calls:[]),
-    ...(Array.isArray(doc.recent_calls)?doc.recent_calls:[])].slice(0,32);
-  const model=String(calls.find((call)=>call&&typeof call==='object'
-    &&typeof call.model_id==='string'&&call.model_id)?.model_id||'').slice(0,80);
-  const development=doc.agentic_development;
-  const tools=development&&typeof development==='object'&&!Array.isArray(development)
-    &&Array.isArray(development.acquired_tools)?development.acquired_tools.length:null;
-  const workState=doc.current_work_state&&typeof doc.current_work_state==='object'
-    &&!Array.isArray(doc.current_work_state)?doc.current_work_state:null;
-  const envIds=new Set();
-  for(const call of calls){ const eid=String(call?.environment_id||'').trim();
-    if(eid&&envIds.size<64) envIds.add(eid); }
-  const workEnv=String(workState?.environment_id||'').trim();
-  if(workEnv) envIds.add(workEnv);
-  return {model,ep:_pkCount(doc.brain_episode_count),fr:_pkCount(doc.brain_fragment_count),
-    tl:_pkCount(tools),ev:_pkCount(doc.brain_evolution_application_count),
-    envCount:envIds.size};
-}
-function _pkBaseForKernel(kernel){
-  const want=String(kernel||'');
-  for(const key of (S.boots?S.boots.keys():[])){
-    const base=key==='@origin'?'':key;
-    const kid=String(kernelForBase(base)||(S.boots.get(key)||{}).kernel_id||'');
-    if(kid&&kid===want) return {found:true,base};
-  }
-  return {found:false,base:''};
-}
-function _pkCognitionStats(personaKey){
-  const key=String(personaKey||''); if(!key) return null;
-  const cached=_pkCog.cache.get(key), now=Date.now();
-  if(cached&&now-cached.at<(cached.stats?PK_COG_TTL_MS:PK_COG_NEG_TTL_MS)) return cached.stats;
-  // The strictly verified cognition store outranks the tolerant lazy fetch.
-  const verified=S.verifiedPublicCognitionByPersona?.get(key)?.doc;
-  if(verified){ const stats=_pkCognitionProjection(verified);
-    if(stats){ _pkCog.cache.set(key,{at:now,stats}); return stats; } }
-  if(_pkCog.inflight.has(key)) return cached?.stats||null;
-  const ref=_personaRef(key);
-  const route=_pkBaseForKernel(ref.kernel);
-  if(!route.found) return cached?.stats||null;
-  _pkCog.inflight.add(key);
-  (async()=>{
-    try{
-      const endpoint=join(route.base,`personas/${encodeURIComponent(ref.sid)}/thinking`);
-      const doc=await fetchResponsivePublicJson(endpoint,
-        {maxBytes:Number.MAX_SAFE_INTEGER,
-          priority:PUBLIC_COGNITION_READ_PRIORITY});
-      const stats=doc&&String(doc.persona_id||'')===ref.sid?_pkCognitionProjection(doc):null;
-      _pkCog.cache.set(key,{at:Date.now(),stats:stats||null});
-      if(stats) scheduleRealtimeRepaint();
-    }catch(_error){ _pkCog.cache.set(key,{at:Date.now(),stats:null}); }
-    finally{ _pkCog.inflight.delete(key); }
-  })();
-  return cached?.stats||null;
 }
 // Use an exact run when supplied, otherwise the newest verified lifecycle in
 // the environment. Retained exports can still point at an earlier run.
@@ -7644,9 +7542,6 @@ function renderPersonaCard(pid,kernel='',context={}){
   const identityProofState=identityObservation?.identityProofState||'refused';
   const state=lifecycle?.lifecycleState||(identityVerified?s.lifecycle_state:'OBSERVED');
   const identityPending=lifecycle?.materializationState==='pending';
-  const namePending=lifecycle?.identityFields?.name?.state==='pending'
-    ||s.identity_name_pending===true;
-  const characteristicsPending=lifecycle?.identityFields?.characteristics?.state==='pending';
   // dual-state hero: STATE B = model req/resp (the richest signal); STATE A =
   // recent kernel.interactions naming this persona (so the hero stays alive on a
   // node that streams coordination but no model_events). Both are real telemetry.
@@ -7720,19 +7615,6 @@ function renderPersonaCard(pid,kernel='',context={}){
   // strips payload, so only the verb is available (no capability name / error).
   const toolAct=[...acts].reverse().find((a)=>a?._observedState!==true
     &&TOOL_KINDS.has(a.kind)&&(Date.now()-a._t)<90000);
-  // The substrate refuses reputation_score / experience_tasks / mode_proficiencies /
-  // tactic_count / lesson_count on the public summary — those chips could never
-  // render and are deleted. brain_fragment_count is public (also in /thinking).
-  const hasOp=Object.keys((typeof opTokens==='function'?opTokens():{})).length>0;
-  // pc-stats footer: assemble the spans first so a model-only persona (s={}, no summary)
-  // doesn't render an EMPTY pc-stats div whose border-top draws a stray separator bar.
-  // neutral .tag chips with leading stroked glyphs (replaces the colour-emoji prefixes);
-  // .tag is additive — the existing pc-stats span styling still applies until shared CSS lands.
-  const statHTML=(namePending?`<span class="tag" title="${esc(s.identity_name_pending_reason||'persona-authored name pending')}">${icon('warn','ico-sm')} name pending</span>`:'')
-    +(characteristicsPending?`<span class="tag" title="persona-authored characteristics pending">${icon('warn','ico-sm')} traits pending</span>`:'')
-    +(s.brain_fragment_count!=null?`<span class="tag" title="brain fragments">${icon('lesson','ico-sm')} ${esc(s.brain_fragment_count)}</span>`:'')
-    +(hasOp&&s.brain_compile_count!=null?`<span class="tag" title="brain compiles (operator)">${icon('mode','ico-sm')} ${esc(s.brain_compile_count)}</span>`:'')
-    +(rt.task_execution_state?`<span class="tag runtime-tag" title="live task participation status">${icon('task','ico-sm')} ${esc(_humanTaskExecutionState(rt.task_execution_state))}</span>`:'');
   // The pulsing dot and WORKING NOW show an active model call. RUNNING shows
   // the task's lifecycle between calls; RECENT UPDATE shows public activity.
   const dotCls=running?'run':(terminalFailure||mechanicalRun.key==='cancelled'
@@ -7748,32 +7630,6 @@ function renderPersonaCard(pid,kernel='',context={}){
       :(recent?'<span class="pc-recent">RECENT UPDATE</span>':'<span class="pc-idle">NO RUN STATE</span>');
   const lifecycleState=(state||'ACTIVE').toUpperCase();
   const lifecycleBadge=lifecycleState==='ACTIVE'?'':`<span class="pc-life off">${esc(lifecycleState.toLowerCase())}</span>`;
-  const authoredCapabilities=identityVerified&&Array.isArray(
-    signedIdentity?._personaCapabilitiesSummary)
-    ?signedIdentity._personaCapabilitiesSummary:[];
-  const authoredCapabilityNames=new Map(authoredCapabilities.map((item)=>[
-    String(item?.skill_id||''),String(item?.name||''),
-  ]));
-  const capabilityHTML=authoredCapabilities.length
-    ?`<section class="pc-capabilities"><span class="pc-current-label">What I can contribute</span><div>`
-      +authoredCapabilities.slice(0,2).map((capability)=>{
-        const parent=String(capability.lineage_parent_skill_id||'');
-        const parentName=authoredCapabilityNames.get(parent)||'';
-        return `<div class="pc-cap-item" title="${esc(capability.description)}">`
-          +`<strong>${esc(capability.name)}</strong><span>${esc(capability.description)}</span>`
-          +(parentName?`<small>Derived from ${esc(parentName)}</small>`:'')+`</div>`;
-      }).join('')
-      +(authoredCapabilities.length>2
-        ?`<span class="pc-cap-more">+${authoredCapabilities.length-2} more in profile</span>`:'')
-      +`</div></section>`:'';
-  const characteristicHTML=_personaCharacteristicsHTML(characteristics,{name,limit:4,compact:true});
-  const aboutHTML=characteristicHTML||signedDescription
-    ?`<section class="pc-about"><div class="pc-section-head"><span>About me</span><small>${icon('check','ico-sm')} self-described</small></div>`
-      +(characteristicHTML||`<p>${esc(signedDescription)}</p>` )+'</section>':'';
-  const identityLine=role!==_ROLE_NOT_DECLARED?role
-    :(characteristicHeadline?.value||'Self-description still forming');
-  const identityLineLabel=role!==_ROLE_NOT_DECLARED?'Self-described role'
-    :(characteristicHeadline?.label||'Self-description');
   const identityLineTitle=authoredRole!==_ROLE_NOT_DECLARED
     ?'Explicit persona-authored role in the verified profile'
     :characteristicHeadline
@@ -7817,17 +7673,12 @@ function renderPersonaCard(pid,kernel='',context={}){
       source:mechanicalRun.source,face_label:focusLabel,active_call_face:running,model_failure_face:!!terminalFailure}});
   // C-OP-16: the member's own scorecard -- by its exact run first, then by
   // its task's newest settle (labelled), bounded to its environments.
-  const scorecardTaskId=String(verifiedCurrentTask?.taskId
-    ||(taskRun?(S.recs.get(_pkTaskFacts(ref.kernel,'',taskRun)?.recordId)?.task_lifecycle?.task_id||''):'')||'');
-  const scorecardHit=_scorecardForRun(ref.kernel,taskRun,scorecardTaskId,environments.map((env)=>env.sid),
-    S.personaDiscoveryByKey.get(personaKey)||null);
   const currentTaskHTML=currentTask
     ?`<section class="pc-current pc-current-task" data-task-id="${esc(verifiedCurrentTask.taskId)}" data-task-run="${esc(verifiedCurrentTask.run)}" data-task-environment="${esc(verifiedCurrentTask.environment)}" data-task-kernel="${esc(ref.kernel)}" data-task-revision="${esc(verifiedCurrentTask.revision)}"><span class="pc-current-label">Task I'm working on</span><div class="pc-doing"><strong title="${esc(currentTask)}">${esc(_compactHumanLabel(currentTask,104))}</strong></div></section>`:'';
   const environmentHTML=environments.length?`<section class="pc-environments"><span class="pc-current-label">Working in</span><div>`
-    +environments.slice(0,4).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(env.name)}</span></button>`).join('')
-    +(environments.length>4?`<span class="pc-env-more">+${environments.length-4}</span>`:'')+`</div></section>`
+    +environments.slice(0,2).map((env)=>`<button type="button" class="pc-env-chip${env.current?' current':''}" data-envrec="${esc(env.sid)}" data-envkernel="${esc(env.kernel||ref.kernel)}" title="open ${esc(env.name)}">${icon('box','ico-sm')}<span>${esc(_compactHumanLabel(env.name,54))}</span></button>`).join('')
+    +(environments.length>2?`<span class="pc-env-more">+${environments.length-2}</span>`:'')+`</div></section>`
     :`<section class="pc-environments independent"><span class="pc-current-label">Workspace</span><div><span class="pc-env-none">No shared workspace observed</span></div></section>`;
-  const authoredWorkHTML=_personaAuthoredWorkHTML(personaKey,ref.kernel,mechanicalRun);
   // ---- collectible face bindings ----
   // Verified signed card body (retained on the record only after the exact
   // participation-card signature verified) supplies alias + self_publication.
@@ -7847,53 +7698,24 @@ function renderPersonaCard(pid,kernel='',context={}){
     ||'Self-description not shared yet';
   const speciesTitle=selfPubBody?'persona self-publication (signed card)'
     :signedDescription?'signed card description':identityLineTitle;
-  // The activity line uses the same observation as the status badge.
-  // Authored notes remain in the separately labelled work-state section.
-  const cogStats=_pkCognitionStats(personaKey);
-  const envBadgeCount=Array.isArray(s.active_environment_ids)
-    ?s.active_environment_ids.length
-    :(environments.length||cogStats?.envCount||0);
-  const pkTypeRow=`<div class="pk-typerow">`
-    +(cogStats?.model?`<span class="pk-type model" title="model in the public cognition doc">${icon('mode','ico-sm')}<span>${esc(cogStats.model)}</span></span>`:'')
-    +`<span class="pk-type envs" title="environment memberships">${icon('box','ico-sm')}<span>${envBadgeCount} env${envBadgeCount===1?'':'s'}</span></span>`
-    +`</div>`;
-  const pkStat=(value,label,title)=>value!=null
-    ?`<span class="pk-stat" title="${esc(title)}"><b>${esc(value)}</b><small>${esc(label)}</small></span>`:'';
-  const pkStatRow=cogStats?`<div class="pk-statrow" aria-label="verified cognition counters">`
-    +pkStat(cogStats.ep,'EPISODES','thinking episodes retained in this persona\'s verified memory')
-    +pkStat(cogStats.fr,'FRAGMENTS','memory fragments kept from its work')
-    +pkStat(cogStats.tl,'TOOLS','tools it acquired and can use')
-    +pkStat(cogStats.ev,'EVOLUTIONS','times it updated its own knowledge or tactics')
-    +`</div>`:'';
+  const hasWorkObservation=running||terminalFailure||hasModels||actFresh
+    ||['running','quiescent','resource-paused','cancelled'].includes(mechanicalRun.key);
   const proofHTML=hasSignedName?icon('check','ico-sm')+' self-chosen name verified'
     :identityPending?icon('check','ico-sm')+' profile verified · name pending'
     :hasSignedIdentity?icon('check','ico-sm')+' participation verified · name unavailable'
     :icon('warn','ico-sm')+` profile proof ${identityProofState}`;
   return `<article class="pcard pk ${_coordRoleClass(role)}${hasSignedIdentity?' identity-signed':' identity-unpublished'}${identityPending||!identityVerified?' identity-pending':''}${running?' running':terminalFailure?' failed':recent?' live':''}${grew&&!running?' flashcard':''}" style="--avatar-hue:${hue}" data-pcard="${esc(sid)}" data-pkey="${esc(_domEntityKey(personaKey))}" data-pkernel="${esc(ref.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""}${mechanicalObservation?` data-public-mechanical-selection="${esc(mechanicalObservation)}"`:""} data-identity-state="${hasSignedName?'named':identityPending?'materializing':hasSignedIdentity?'name-pending':identityProofState}">`
-    +`<div class="pc-card-shine" aria-hidden="true"></div><div class="pc-card-edition"><span>${hasSignedIdentity?icon('check','ico-sm')+' VERIFIED PROFILE':identityPending?icon('warn','ico-sm')+' PROFILE BEING CREATED':icon('warn','ico-sm')+` PROFILE PROOF ${identityProofState.toUpperCase()}`}</span><span>PERSONA</span></div>`
     +`<header class="pk-namebar"><h3 class="pc-name"${nameRole.exactName&&nameRole.exactName!==pkName?` title="Exact signed identity: ${esc(nameRole.exactName)}"`:hasSignedName?'':` title="This persona hasn't chosen its name yet — its id is ${esc(sid)}"`}><button type="button" class="pc-name-action" data-persona-profile aria-label="Open profile for ${esc(pkName)}" aria-controls="detailwrap" aria-haspopup="dialog">${esc(pkName)}</button></h3>`
     +`<div class="pc-badges">${statusBadge}${lifecycleBadge}</div>`
     +`<button class="pc-follow" data-follow="${esc(_domEntityKey(personaKey))}" title="focus on ${esc(pkName)}" aria-label="focus on ${esc(pkName)}" aria-pressed="false">${icon('target','ico-sm')}</button></header>`
     +`<figure class="pk-art">${_personaAvatarHTML(personaKey,{identityVerified})}<i class="pc-dot ${dotCls}" aria-hidden="true"></i></figure>`
-    +`<span class="pc-name-proof">${proofHTML}</span>`
     +`<p class="pk-species" title="${esc(speciesTitle)}">${esc(speciesLine)}</p>`
-    +`<section class="pc-current pk-doing-face"><span class="pc-current-label">${esc(focusLabel)}${running?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${doingHTML}</div></section>`
-    // The consumable story lives on the face: the exact task, the rooms the
-    // persona works in, its newest signed thinking/update, and the files it
-    // published. The dossier keeps identity detail and the long activity tail.
-    +currentTaskHTML+environmentHTML+authoredWorkHTML
-    +_personaActivityHTML(acts,personaKey)
-    +pkTypeRow
-    +_ownedOutputsHTML(context.artifacts,{label:'Files I declared',scope:'persona-declared files'})
-    +_personaWorktreeFilesHTML(context,taskRun)
-    +`<details class="pk-dossier"><summary>Full dossier · verified work log</summary>`
-    +`<span class="pc-role-line" title="${esc(identityLineTitle)}"><small>${esc(identityLineLabel)}</small><strong>${esc(identityLine)}</strong></span>`
-    +(pkStatRow?`<div class="pc-stats dossier-stats">${pkStatRow}</div>`:'')
-    +aboutHTML+capabilityHTML
-    +_runScorecardHTML(scorecardHit?.scorecard,{compact:true,via:scorecardHit?.via||'run'})
-    +'</details>'
-    +(statHTML?`<div class="pc-stats">${statHTML}</div>`:'')
-    +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pk-set-no" aria-hidden="true"></span><span class="pk-set-kind">verified persona</span></footer>`
+    +(hasWorkObservation?`<section class="pc-current pk-doing-face"><span class="pc-current-label">${esc(focusLabel)}${running?' <i class="pk-pulse" aria-hidden="true" title="model call running"></i>':''}</span><div class="pc-doing">${doingHTML}</div></section>`:'')
+    // The face is a bounded overview. Complete records belong to the opened
+    // profile, never hidden multi-page histories in every overview card.
+    +currentTaskHTML+environmentHTML
+    +_personaActivityHTML(acts,personaKey,{compact:true})
+    +`<footer class="pk-setline" title="host node ${esc(String(ref.kernel||'').replace(/^kernel:/,''))} · persona id ${esc(sid)}"><span class="pc-name-proof">${proofHTML}</span><span class="pk-set-kind">Open profile →</span></footer>`
     +'</article>';
 }
 
@@ -8530,6 +8352,9 @@ function refreshSystemView(){
   // used as the workspace's human-facing name.
   for(const b of envBlocks){
     b.name=_environmentNameFor(b.sid,b.kernel);
+    b.identity=S.recs.get(b.recId)?._environmentIdentity||null;
+    // An unsigned export cannot override the signed workspace name.
+    b.exportTitle=b.identity?.persona_authored?b.identity.title:'';
   }
   // Redacted environment feeds may intentionally omit their roster. Associate a
   // persona with a shared environment only when live model or interaction
@@ -8644,7 +8469,7 @@ function refreshSystemView(){
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
-  const envOutputContext=(b)=>{
+  const envOutputContext=(b,{compact=false}={})=>{
     const arts=envArtifacts(b);
     const declaredProjection=_artifactRevisionProjection(arts);
     const routedManifestEntries=b.artifactManifestRouteVerified===true?envManifestFiles(b):[];
@@ -8680,9 +8505,9 @@ function refreshSystemView(){
     // files. Keep both evidence lanes visible and put the newest published
     // generation first when its monotonic run id outranks the live capture.
     const publishedOutranksLive=!!newestDeclaredRun&&(!newestLiveRun||newestDeclaredRun>newestLiveRun);
-    const liveEnvOutputs=_liveWorkspacesHTML(liveEnvRows,{label:publishedOutranksLive
+    const liveEnvOutputs=compact?'':_liveWorkspacesHTML(liveEnvRows,{label:publishedOutranksLive
       ?'Earlier captured worktrees':'Files across personal worktrees',scope:'environment worktree'});
-    const manifestOutputs=!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
+    const manifestOutputs=!compact&&!declaredCurrentRows.length&&currentManifestFiles.length&&manifestRunId
       ?`<section class="owned-outputs env-owned-outputs current-artifacts"><div class="owned-outputs-head"><span>Shared outputs</span><small>${currentManifestFiles.length} manifest filename${currentManifestFiles.length===1?'':'s'} · verified route · body unverified</small></div>`
         +_artifactExactFormatCountsHTML(currentManifestFiles,(file)=>String(file?.title||''))
         +_artifactGroupedListHTML(currentManifestFiles,{pathOf:(file)=>String(file?.title||''),
@@ -8691,7 +8516,7 @@ function refreshSystemView(){
         +`<div class="artifact-preview-note">The manifest route and run come from a verified record, but the fetched manifest bytes are not independently signed or hash-bound. Filenames remain visible; preview stays unavailable until signed file cards or a signed live snapshot supplies authoritative hashes.</div>`
         +(routedManifestEntries.length>currentManifestFiles.length?`<div class="owned-output-history">${routedManifestEntries.length-currentManifestFiles.length} manifest entries not shown after bounded, unique-path projection</div>`:'')
         +`<div class="artifact-revision-history"><b>Revision history</b><span>No earlier verified file-card generation is published for this manifest-only workspace.</span></div></section>`:'';
-    const declaredEnvOutputs=declaredCurrentRows.length
+    const declaredEnvOutputs=compact?'':declaredCurrentRows.length
       ?_ownedOutputsHTML(arts,{label:publishedOutranksLive?'Current published outputs':'Published shared outputs',scope:'environment worktree'})
       :manifestOutputs;
     const artRow=declaredEnvOutputs+liveEnvOutputs;
@@ -8701,12 +8526,22 @@ function refreshSystemView(){
       ||_sentenceStart(rawStatus||'Available');
     const statusOk=(b.status==='active' && !departed);
     const countFromLive=liveFileCount>0&&(!publishedOutranksLive||!metaFiles);
-    return {artRow,departed,statusTxt,statusOk,
+    const image=b.identity?.image;
+    let imageSource=null;
+    if(validEnvironmentImageReference(image)){
+      const published=arts.find(row=>_signedArtifactWorkspaceBinding(row)?.contentHash===image.content_ref.slice(7));
+      if(published&&published._links?.content) imageSource={url:join(published._providerBase||published._base||'',published._links.content),
+        hash:image.content_ref,size:image.byte_length,alt:image.alt};
+      if(!imageSource) for(const row of liveEnvRows){
+        const file=(row.files||[]).find(file=>file.sha256===image.content_ref.slice(7)&&file.size_bytes===image.byte_length);
+        if(file){imageSource={url:join(row.base||'',file.body_url),hash:image.content_ref,size:image.byte_length,alt:image.alt};break;}
+      }
+    }
+    return {artRow,departed,statusTxt,statusOk,imageSource,
       metaFiles:countFromLive?liveFileCount:metaFiles,
       currentFileBytes:countFromLive?liveProjection.totalBytes:null};
   };
-  const environmentCardHTML=(b)=>{ const output=envOutputContext(b), liveRow=renderEnvLaneLive(b);
-    const network=_environmentCommunicationGraphHTML(b);
+  const environmentCardHTML=(b)=>{ const output=envOutputContext(b,{compact:true});
     const membershipRow=b.members.length?'':'<div class="env-card-empty">Participants not observed yet</div>';
     const type=String(b.type||'workspace').replace(/_/g,' ');
     // Environment-authored title (export environment_identity.title) leads the
@@ -8741,9 +8576,10 @@ function refreshSystemView(){
     return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""} data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div>`
       +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
-      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${b.exportTitle?`environment-authored title · verified record label: ${esc(b.name)}`:`open ${esc(envName)}`}">${esc(envName)}</h3>`
+      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${esc(envName)}">${esc(_compactHumanLabel(envName,72))}</h3>`
       +`<div class="pc-badges"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span>${acceptChip}</div></header>`
-      +`<figure class="pk-art env">${identiconSVG(b.sid,{className:'pk-identicon env',title:`workspace identicon for ${envName}`})}</figure>`
+      +(output.imageSource?`<figure class="pk-art env environment-image" data-verified-image="${esc(JSON.stringify(output.imageSource))}"></figure>`
+        :`<figure class="pk-art env">${identiconSVG(b.sid,{className:'pk-identicon env',title:`workspace identicon for ${envName}`})}</figure>`)
       +`<span class="env-kicker">SHARED WORKSPACE · ${esc(type)} · ${b.live?'UPDATES LIVE':'VERIFIED IDENTITY'}</span>`
       +`<section class="pk-having"><span class="pc-current-label">In this workspace</span><div class="pk-having-row">`
       +`<span class="pk-have members" title="participants"><span class="pk-minis">${memberMinis}</span><b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
@@ -8751,17 +8587,7 @@ function refreshSystemView(){
       +`<span class="pk-have files" title="current file versions${liveBytes!=null?' · identical worktree copies counted once':''}"><b>${fileCount}</b><small>file${fileCount===1?'':'s'}${liveBytes!=null?` · ${fmtBytes(liveBytes)}`:''}</small></span>`
       +`</div></section>`
       +`<section class="pc-current pk-doing-face env"><span class="pc-current-label">Doing now${envActiveCalls?' <i class="pk-pulse" aria-hidden="true" title="model calls running"></i>':''}</span><div class="pc-doing"><strong>${esc(_sentenceStart(envDoing))}</strong></div></section>`
-      +`<section class="env-card-stats" aria-label="workspace facts">`
-      +`<span>${icon('persona_new','ico-sm')}<b>${b.members.length}</b><small>${output.departed?'contributors':'people'}</small></span>`
-      +`<span>${icon('dot','ico-sm')}<b>${network.activeCount}</b><small>working</small></span>`
-      +`<span>${icon('arrow','ico-sm')}<b>${network.eventCount}</b><small>updates · 5m</small></span>`
-      +`<span>${icon('box','ico-sm')}<b>${output.metaFiles||0}</b><small>files</small></span>`
-      +`</section>${membershipRow}`
-      // The workspace's produced files ARE the point of the card: surface the
-      // published/live output sections; the dossier keeps the social graph
-      // and the run lane detail.
-      +output.artRow
-      +`<details class="pk-dossier"><summary>Workspace activity · people</summary>${network.html}${liveRow}</details>`
+      +membershipRow
       +`<div class="env-card-footer"><span>${b.live?'People and files update live':'Workspace profile verified'}</span><span>Open for full history</span></div></article>`;
   };
   // (3) Preserve every exact environment identity. Shared titles, rosters,
@@ -8869,6 +8695,7 @@ function refreshSystemView(){
   _restoreDisclosures(host);
   rebindInspectionSource();
   _hydratePersonaAvatars();
+  _hydrateEnvironmentImages(host);
   _applyFollow();
   // Focused graph selection is independent of card pagination: running/recent
   // personas remain visible even if their card is outside the current window.
@@ -8890,6 +8717,11 @@ function refreshSystemView(){
   renderInteractionStream();
   updateVitalsCounters();
   if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
+}
+let _environmentImageMounts=null;
+function _hydrateEnvironmentImages(root){
+  if(!_environmentImageMounts) _environmentImageMounts=new VerifiedImageMounts(fetchVerifiedLiveBody);
+  _environmentImageMounts.sync(root);
 }
 // per-env accent hue (stable, from the design palette) for the lane border/badge
 const _ENV_HUES=['#19c39a','#3aa0ff','#a779e6','#f0a73a','#ff5fa2'];
@@ -10414,71 +10246,6 @@ async function verifyPublicPersonaCognition(base,doc,{personaId,kernel}={}){
       ||doc.evolution_timeline.some((event)=>!_validPublicPersonaEvolution(event)))return false;
   return true;
 }
-async function refreshThinking(){
-  if(!S.drawerThinkPid) return;
-  const el=$('#thinksec'); if(!el) return;
-  const want=S.drawerThinkPid, wantBase=S.drawerLiveBase||'', wantKernel=S.drawerLiveKernel||'';
-  const personaKey=_personaKey(wantKernel,want);
-  const retained=S.verifiedPublicCognitionByPersona?.get(personaKey);
-  let retainedRendered=false;
-  // This exact object reached the store only after whole-document verification.
-  // Repaint it immediately while a fresh peer fetch is in flight; freshness is
-  // liveness metadata, not a reason to erase already admitted signed history.
-  if(retained&&retained.kernel===wantKernel&&retained.personaId===want){
-    retainedRendered=true;
-    const current=$('#thinksec');
-    if(current&&S.drawerThinkPid===want&&S.drawerLiveBase===wantBase&&S.drawerLiveKernel===wantKernel){
-      const observed=_friendlyInstant(retained.doc?.generated_at);
-      current.innerHTML=(observed
-        ?`<div class="privacy-note">Retained verified public activity · snapshot ${esc(observed)} · refreshing…</div>`:'')
-        +renderThinking(retained.doc,{kernel:wantKernel,retainedSnapshot:true});
-      hydrateThinkingOutputText(current,retained.doc);
-    }
-  }
-  if(!wantBase){
-    if(!retainedRendered)
-      el.innerHTML='<div class="privacy-note">No current-master-verified node route is available for public activity.</div>';
-    return;
-  }
-  const endpoint=join(wantBase,`personas/${encodeURIComponent(want)}/thinking`);
-  const hasOperator=!!tokenFor(endpoint);
-  const t=await fetchResponsivePublicJson(endpoint,{
-    maxBytes:Number.MAX_SAFE_INTEGER,
-    priority:PUBLIC_COGNITION_READ_PRIORITY,
-    peerOnly:true,
-    verifiedDirectFallback:true,
-  });
-  if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
-  const el2=$('#thinksec'); if(!el2) return;
-  const operatorAccepted=hasOperator&&t?.tier==='operator'
-    &&t?.schema==='personaos-persona-thinking/3'&&String(t.persona_id||'')===want;
-  const publicAccepted=!hasOperator&&await verifyPublicPersonaCognition(wantBase,t,
-    {personaId:want,kernel:wantKernel});
-  if(operatorAccepted||publicAccepted){
-    let displayDoc=t;
-    if(publicAccepted){
-      const admission=_rememberVerifiedPublicCognition(personaKey,t,
-        {base:wantBase,kernel:wantKernel,personaId:want});
-      // GET and SSE verification can finish independently. Render the retained
-      // newer document when this drawer read loses the signed timestamp race.
-      if(!admission.doc) return;
-      displayDoc=admission.doc;
-      // The drawer and the card consume the same kernel-qualified cognition
-      // projection. Repaint the card when this asynchronous fetch hydrates it.
-      if(admission.modelHistoryChanged) scheduleRealtimeRepaint();
-    }
-    el2.innerHTML=renderThinking(displayDoc,{allowThinkingFrame:operatorAccepted,kernel:wantKernel});
-    hydrateThinkingOutputText(el2,displayDoc); return; }
-  const doc=S.drawerLiveFeed?await fetchEntityFeed(wantBase,S.drawerLiveFeed):null;
-  if(S.drawerThinkPid!==want||S.drawerLiveBase!==wantBase||S.drawerLiveKernel!==wantKernel) return;
-  const el3=$('#thinksec'); if(el3&&!retainedRendered) el3.innerHTML=hasOperator?renderThinkingRedacted(doc)
-    :'<div class="privacy-note">No verified signed public cognition is available. Private cognition is not exposed.</div>';
-}
-// LIVE persona activity: poll active personas and merge the exact validated
-// kernel-signed snapshot into the live feed. Persona-signed final output and
-// provisional kernel observations keep separate trust labels. With a token this
-// accepts the operator tier; a private node's anonymous 404 remains a quiet no-op.
-const _cognitionInFlight=new Set();
 function _cognitionPreview(value){
   for(const line of String(value||'').split('\n')){
     const text=line.trim(); if(text) return text.slice(0,150);
@@ -10858,102 +10625,6 @@ function ingestPersonaCognitionReads(cognitionReads){
   // row. Paint that state now instead of waiting for another telemetry tick.
   else if(cognitionHydrated) scheduleRealtimeRepaint();
 }
-async function streamPersonaCognition(options={}){
-  try{
-    const scopedPersonaKeys=new Set(
-      (Array.isArray(options?.personaKeys)?options.personaKeys:[])
-        .map((value)=>String(value||'')).filter(Boolean));
-    const scopedBases=new Set(
-      (Array.isArray(options?.bases)?options.bases:[])
-        .map((value)=>String(value||'').replace(/\/$/,'')));
-    const urgent=options?.force===true||scopedPersonaKeys.size>0||scopedBases.size>0;
-    S.cogBaseFor=S.cogBaseFor||new Map();   // kernel-qualified persona key -> API base
-    // The bases that actually serve the personaos API are the ones that streamed LIVE telemetry
-    // (the cards render from those) — NOT necessarily a discovery record's _base (which may be an
-    // IPFS/alias host that doesn't serve the API). Probe telemetry bases first, then record bases.
-    const baseCandidates=[
-      ...[...(S.liveTel?S.liveTel.keys():[])].map((k)=>({base:k==='@origin'?'':k,
-        active:(S.activeModelCallsByBase?.get(k)||[]).length>0,focused:!!S.kernelFocus&&baseIsFocused(k==='@origin'?'':k)})),
-      ...[...(S.order||[])].map((id)=>S.recs.get(id)).filter((r)=>r&&r.kind==='persona'&&kernelIsFocused(r._kernel)).map((r)=>({base:nodeBaseForRecord(r)})),
-    ];
-    const apiBases=selectMonitoringBases(baseCandidates,{limit:NETWORK_LIMITS.monitoredBases,hardLimit:64}).bases;
-    // Visible, running and recent personas outrank the rest. This selector scans
-    // the bounded cache once and retains only the cognition polling window.
-    function* cognitionCandidates(){
-      for(const personaKey of (S.visiblePersonaIds||[])){ const ref=_personaRef(personaKey);
-        if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
-          yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),selected:true,
-            base:S.liveByPersona.get(personaKey)?.base||''}; }
-      for(const [personaKey,d] of (S.liveByPersona||new Map())) if(kernelIsFocused(d?.kernel)){
-        const ref=_personaRef(personaKey); if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
-          yield {...ref,endpointId:_signedPersonaEndpointId(personaKey),
-            base:d?.base||'',running:_runningNow(personaKey),live:!!(d.models||[]).length}; }
-      for(const id of (S.order||[])){ const r=S.recs.get(id);
-        if(r&&r.kind==='persona'&&kernelIsFocused(r._kernel)){ const ref=_personaRef(r.did||r.id||'',r._kernel);
-          if(!scopedPersonaKeys.size||scopedPersonaKeys.has(ref.key))
-            yield {...ref,endpointId:_signedPersonaEndpointId(ref.key),base:nodeBaseForRecord(r)}; } }
-    }
-    const list=selectPriorityWindow(cognitionCandidates(),{limit:NETWORK_LIMITS.cognitionPersonas,
-      keyOf:(row)=>row.key,priorityOf:(row)=>(row.selected?1e9:0)+(row.running?1e8:0)+(row.live?1e7:0),
-      searchTextOf:(row)=>`${row.sid} ${row.kernel} ${_nameFor(row.key)}`}).items
-      .filter((row)=>row.key&&row.sid);
-    S.interactions=S.interactions||[]; S.ixKeys=S.ixKeys||new Set();
-    // Each independently verified persona read paints when it completes. A
-    // slow peer must neither hold another persona's response nor block that
-    // persona's next refresh. One in-flight read per exact persona prevents
-    // overlapping polls from fetching or applying its documents out of order.
-    await Promise.allSettled(list.map(async(candidate)=>{
-      const {key:personaKey,kernel,endpointId}=candidate;
-      if(_cognitionInFlight.has(personaKey)) return;
-      _cognitionInFlight.add(personaKey);
-      try{
-        // A connected full-document feed owns updates after its first verified
-        // document. Retain GET fallback during startup, reconnection and cache loss.
-        if(S.cognitionByPersona?.has(personaKey)&&[...S.streams.values()].some((stream)=>
-            stream.readyState===1&&stream._cognitionDocuments===true
-            &&stream._cognitionPersonaKeys?.has(personaKey))) return null;
-        if(!urgent&&Number(S.publicCognitionFetchAfter?.get(personaKey)||0)>Date.now()) return null;
-        // Never probe another kernel for a colliding short id. A sticky route is
-        // retained only while it still resolves to this persona's owning kernel.
-        const routes=[S.cogBaseFor.get(personaKey),candidate.base,
-          ...apiBases.filter((base)=>kernelForBase(base)===kernel),
-          ...[...(S.globalKernels?.get(kernel)?.bases||[])]];
-        const order=[...new Set(routes.filter((b)=>b!==undefined)
-          .map((b)=>String(b==='@origin'?'':b).replace(/\/$/,'')))]
-          .filter((base)=>(!scopedBases.size||scopedBases.has(base))
-            &&(kernelForBase(base)===kernel || (!!base&&base===candidate.base)));
-        let t=null, usedBase='';
-        for(const base of order){
-          // Node routes are identity-bound: a PersonaOS-born identity is exactly
-          // `persona:<ULID>`, while an initial founder may be the bare id. The
-          // canonical `sid` remains only the browser join key.
-          const endpoint=join(base,`personas/${encodeURIComponent(endpointId)}/thinking`);
-          const hasOperator=!!tokenFor(endpoint);
-          const r=await fetchResponsivePublicJson(endpoint,{
-            maxBytes:Number.MAX_SAFE_INTEGER,
-            priority:PUBLIC_COGNITION_READ_PRIORITY,
-            peerOnly:true,
-            verifiedDirectFallback:true,
-          });
-          const accepted=hasOperator
-            ?r?.schema==='personaos-persona-thinking/3'&&r.tier==='operator'
-              &&String(r.persona_id||'')===endpointId
-            :await verifyPublicPersonaCognition(base,r,{personaId:endpointId,kernel});
-          if(accepted){
-            t=r; usedBase=base; S.cogBaseFor.set(personaKey,base);
-            if(PUBLIC_COGNITION_SCHEMAS.has(r?.schema)){
-              S.publicCognitionFetchAfter.set(personaKey,Date.now()+12000);
-              while(S.publicCognitionFetchAfter.size>NETWORK_LIMITS.cognitionPersonas*4)
-                S.publicCognitionFetchAfter.delete(S.publicCognitionFetchAfter.keys().next().value);
-            }
-            break; }
-        }
-        if(t) ingestPersonaCognitionReads([{candidate,t,usedBase}]);
-      }finally{ _cognitionInFlight.delete(personaKey); }
-    }));
-  }catch(e){}
-  return true;
-}
 function refreshLiveSection(){
   if(!S.drawerLiveKind||!S.drawerLiveId) return;
   const el=$('#livesec'); if(!el) return;
@@ -10983,135 +10654,101 @@ function refreshLiveSection(){
   }
   fallback();
 }
-async function personaView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v);
+async function personaView(r,{tab='overview',offset=0}={}){
+  const base=nodeBaseForRecord(r), pid=personaIdFromDid(r.did), kernel=r._kernel||'';
   S.curBase=base;
-  // PersonaCard public projection (02_PERSONA): bind the SERVED profile doc
-  // (links.profile → personas/<id>.json). PER-04: the public card shows
-  // reputation_score [0,1] — never raw operator fitness (that lives only in
-  // the token-gated operator console). /status is a fallback for liveness.
-  const prof=(L.profile?await dfetch(contentBase,L.profile):null)||{};
-  const ns=base?(await fetchNodeStatusWithLive(base)||{}):{};
-  // The provider/document-signed outer record owns the observation key. A profile
-  // may enrich it only after nested identity verification; it cannot redirect the
-  // drawer to a different persona while that proof is pending or refused.
-  const pid=personaIdFromDid(r.did)||prof.persona_id;
-  const personaKey=_personaKey(r._kernel,pid||r.did);
-  const identityObservation=providerVerifiedPersonaObservation(personaKey);
-  const identityVerified=identityObservation?.identityVerified===true;
-  const identityProofState=identityObservation?.identityProofState||'refused';
-  const lifecycle=identityObservation?.lifecycle||null;
-  const statusPersona=((ns.personas||[]).find((p)=>p.persona_id===pid||(pid&&(p.persona_id||'').endsWith(pid)))||{});
-  const ps=prof.persona_id?{...prof,...statusPersona}:statusPersona;
-  const rawDisplayName=_personaAuthoredNameForObservation(identityObservation);
-  const drawerNameRole=_personaNameRolePresentation(rawDisplayName,pid||r.did);
-  const displayName=drawerNameRole.name;
-  const explicitRole=identityVerified
-    ?r._personaAuthoredRole||_ROLE_NOT_DECLARED:_ROLE_NOT_DECLARED;
-  const role=explicitRole;
-  const state=lifecycle?.lifecycleState||(identityVerified?ps.lifecycle_state:'observed');
-  const rep=ps.reputation_score!=null?Number(ps.reputation_score).toFixed(2):'—';
-  // de-dup scalars the live grid already renders as tiles (state / tasks / reputation)
-  // and the title already shows (name): keep only rows the grid does NOT carry.
-  const personaIdentity=String(pid||r.did||'');
-  const drawerCharacteristics=identityVerified&&r._personaCharacteristics
-    ?r._personaCharacteristics:null;
-  const drawerHeadline=_personaCharacteristicHeadline(drawerCharacteristics,displayName);
-  const lifecycleLabel=_sentenceStart(String(state||'observed').toLowerCase().replace(/_/g,' '));
-  const identityDetails=(lifecycle?kv('Profile creation',`<span class="${lifecycle.materializationState==='pending'?'amber':'ok'}">${esc(lifecycle.materializationState)}</span>`):'')
-    +(lifecycle?kv('Profile fields',['name','characteristics','avatar'].map((field)=>{
-      const value=lifecycle.identityFields[field];
-      return `<span class="cap ${value.state==='pending'?'amber':'ok'}">${esc(field)} ${esc(value.state)}</span>`;
-    }).join(' ')):'')
-    +(identityVerified&&ps.identity_name_state?kv('Name proof',ps.identity_name_pending
-      ?`<span class="amber">pending</span> <span class="l2">${esc(ps.identity_name_pending_reason||'')}</span>`
-      :`<span class="ok">${esc(ps.identity_name_state)}</span>`):'')
-    +(ps.brain_fragment_count!=null?kv('Private-state counters',`fragments ${esc(ps.brain_fragment_count)} · contexts ${esc(ps.brain_context_count??0)} · compiles ${esc(ps.brain_compile_count??0)}`):'')
-    +((ps.last_active_spec_fragment_ids||[]).length?kv('Active spec fragments',esc((ps.last_active_spec_fragment_ids||[]).join(', '))):'')
-    +(identityVerified?kv('Soul version',S0(ps.soul_version)):'')
-    +verificationIdentityDetails('persona id',personaIdentity);
-  let html=(!identityVerified
-      ?`<div class="viewerr">${icon('warn','ico-sm')} This public persona profile is still being verified. Name, self-description and portrait stay hidden until that finishes.</div>`:'')
-    +kv('Lifecycle',esc(lifecycleLabel))
-    +(role!==_ROLE_NOT_DECLARED?kv('Role',`<span class="cap">${esc(role)}</span>`):'')
-    +(role===_ROLE_NOT_DECLARED&&drawerHeadline
-      ?kv(drawerHeadline.label,`<span class="cap">${esc(drawerHeadline.value)}</span>`):'')
-    +(drawerCharacteristics?H(`About ${displayName}`)
-      +_personaCharacteristicsHTML(drawerCharacteristics,{name:displayName,limit:12}):'')
-    +(identityVerified?kv('Archetype',S0(ps.archetype)):'')
-    +(identityVerified?kv('Disposition',S0(ps.primary_disposition)):'')
-    +(identityVerified&&ps.born_specialist?kv('Origin','<span class="amber">Born as a specialist for this work</span>'):'')
-    +(identityDetails?`<details class="profile-technical"><summary>Profile verification details</summary><div>${identityDetails}</div></details>`:'');
-  // MODEL-PER-ROLE: the distinct models this persona resolved (EnvironmentModelRegistry
-  // picks one per role/purpose) — surfaced right under identity when it has live model calls.
-  const _personaModelKey=_personaKey(r._kernel,pid||r.did);
-  const _liveModelState=S.liveByPersona.get(_personaModelKey)||{};
-  const _liveModels=_personaModelHistory(_personaModelKey,_liveModelState.models||[]);
-  if(_liveModels.length) html+=kv('Recent model use',_modelSummary(_liveModels));
-  if(identityVerified&&ps.description) html+=H('Description')+`<div class="desc2">${esc(String(ps.description))}</div>`;
-  if(identityVerified&&(ps.advertised_interests||[]).length) html+=H('Interests')+chipsOf(ps.advertised_interests);
-  if(identityVerified&&(ps.domain_curatorships||[]).length) html+=H('Domain curatorships')+chipsOf(ps.domain_curatorships);
-  // what this persona CAN DO — its advertised capabilities (filtering the generic
-  // project_workspace marker, same as the env lanes do).
-  const authoredCapabilities=identityVerified&&Array.isArray(r._personaCapabilitiesSummary)
-    ?r._personaCapabilitiesSummary:[];
-  if(authoredCapabilities.length) html+=H('What I can contribute')
-    +authoredCapabilitiesHTML(authoredCapabilities);
-  // Keep the exact run binding for artifact navigation. Run lifecycle and
-  // persona-authored notes are rendered by their independently verified live
-  // surfaces; the drawer does not synthesize a mission plan from run status.
-  const _personaEnv=envRecordForAuthority(r);
-  const _prun=runOf(r)||(_personaEnv.recordId?runForEnv(S.recs.get(_personaEnv.recordId)):null);
-  // LIVE per-persona activity — what this persona is doing right now + its
-  // evolving internal state, streamed in place on every telemetry tick. Prefers
-  // the persona's OWN feed document (links.telemetry → telemetry/personas/<slug>.json).
-  S.drawerLiveKind='persona'; S.drawerLiveId=pid||r.did; S.drawerLiveKernel=r._kernel||kernelForBase(base); S.drawerLiveBase=base;
-  S.drawerLiveFeed=(base&&L.telemetry&&!String(L.telemetry).includes('live/latest'))?L.telemetry:'';
-  const retainedPersonaTelemetry=_retainedVerifiedEntityFeed(
-    'persona',S.drawerLiveId,S.drawerLiveKernel);
-  html+=H('● Current work status')+`<div id="livesec" class="livesec">${retainedPersonaTelemetry
-    ?renderPersonaFeedDoc(retainedPersonaTelemetry,personaKey)
-    :renderPersonaLive(pid||r.did,ps,S.drawerLiveKernel)}</div>`;
-  if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
-  // C-OP-16: the run's kernel-signed scorecard beside the member's work status.
-  const _personaEnvIds=_personaEnv.authority?.status==='resolved'&&_personaEnv.authority.environmentId
-    ?[_personaEnv.authority.environmentId]:[];
-  const _personaTaskId=String(S.recs.get(_pkTaskFacts(S.drawerLiveKernel,_personaEnvIds[0]||'',_prun)?.recordId)?.task_lifecycle?.task_id||'');
-  const _personaScorecardHit=_scorecardForRun(S.drawerLiveKernel,_prun,_personaTaskId,_personaEnvIds,r);
-  html+=H(_personaScorecardHit?.via==='task'?"Scorecard of this task's latest settle"
-    :_personaScorecardHit?.via==='latest'?"Latest settled scorecard in this member's environments":'Run scorecard')
-    +(_personaScorecardHit?_runScorecardHTML(_personaScorecardHit.scorecard,{via:_personaScorecardHit.via})
-    :'<div class="privacy-note">No kernel-signed scorecard for this run yet — the run has not reached its settle point, or no environment or task record carries one.</div>');
-  // Public activity combines persona-signed final output with explicitly
-  // provisional kernel observations; the private thinking frame remains
-  // available only with operator authority. Both refresh on the live cadence.
-  S.drawerThinkPid=base?_signedPersonaEndpointId(personaKey):null;
-  const thinkingEndpoint=base?join(base,`personas/${encodeURIComponent(S.drawerThinkPid)}/thinking`):'';
-  const operatorThinking=!!thinkingEndpoint&&!!tokenFor(thinkingEndpoint);
-  html+=H(operatorThinking?'Private thinking':'Shared thoughts and work updates')
-    +`<div id="thinksec" class="livesec">${base
-      ?`<div class="fv-loading">${operatorThinking?'resolving cognition…':'resolving verified public activity…'}</div>`
-      :'<div class="privacy-note">No current-master-verified node route is available for public activity.</div>'}</div>`;
-  if(base) setTimeout(refreshThinking,0);
-  html+=trustPanel(r);
-  // Related navigation obeys the same exact authority result. Profile/status
-  // environment fields are unsigned transport observations and cannot select a
-  // destination; ambiguous candidates remain visible as pressure instead.
-  const eid=_personaEnv.recordId;
-  const bid=S.order.find((id)=>{ const x=S.recs.get(id);
-    return x&&x._kernel===r._kernel&&x.kind==='artifact'&&x._links&&x._links.bundle
-      &&((_personaEnv.authority.status==='resolved'
-          &&envSidOfRecord(x)===_personaEnv.authority.environmentId)
-        ||(_prun&&runOf(x)===_prun)); });
-  let nav='';
-  if(eid) nav+=`<div class="row">${recLink(eid,'Workspace (env) →')}</div>`;
-  else if(['ambiguous','conflict'].includes(_personaEnv.authority.status))
-    nav+=`<div class="row"><span class="amber">Environment routing unresolved</span><span class="l2">${esc(_personaEnv.authority.candidates.length)} verified candidates · no selection</span></div>`;
-  else if(ps.environment_id||prof.environment_id)
-    nav+=`<div class="row"><span class="l2">Environment observation withheld from navigation — no verified routing reference</span></div>`;
-  if(bid) nav+=`<div class="row">${recLink(bid,'Artifact bundle →')}</div>`;
-  if(nav) html+=H('Related')+nav;
-  if(L.profile) html+=H('Source')+`<div class="row"><a href="${esc(safeUrl(join(contentBase,L.profile)))}" target="_blank" rel="noopener">signed persona card →</a></div>`;
-  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(displayName)}`, html};
+  if(!['overview','education','experience','activity'].includes(tab)||!Number.isSafeInteger(offset)||offset<0) tab='overview',offset=0;
+  const personaKey=_personaKey(kernel,pid||r.did), observation=providerVerifiedPersonaObservation(personaKey);
+  const verified=observation?.identityVerified===true;
+  const name=_personaNameRolePresentation(_personaAuthoredNameForObservation(observation),pid||r.did).name;
+  const characteristics=verified?r._personaCharacteristics:null, environment=envRecordForAuthority(r);
+  const button=(key,label,page=0)=>`<button type="button" data-public-persona-tab="${key}" data-offset="${page}" aria-pressed="${tab===key}">${esc(label)}</button>`;
+  let html=(!verified?'<p class="viewerr">Identity verification is pending. Authored profile fields remain hidden.</p>':'')
+    +kv('State',esc(observation?.lifecycle?.lifecycleState||'observed'))
+    +'<nav class="persona-tabs" aria-label="Persona details">'
+    +[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']]
+      .map(([key,label])=>button(key,label)).join('')+'</nav><div data-public-persona-pane>';
+  if(tab==='overview'){
+    html+=(verified&&r.description?`<p class="desc2">${esc(r.description)}</p>`:'')
+      +(_personaCharacteristicsHTML(characteristics,{name,limit:Object.keys(characteristics||{}).length})
+        ||'<p class="l2">No verified character fields are shared.</p>');
+    if(verified&&r._personaCapabilitiesSummary?.length) html+=H('What I can contribute')+authoredCapabilitiesHTML(r._personaCapabilitiesSummary);
+    if(environment.recordId) html+=H('Workspace')+recLink(environment.recordId,'Open environment →');
+    html+='<details class="profile-technical"><summary>Identity and verification</summary>'
+      +verificationIdentityDetails('persona id',pid||r.did)+trustPanel(r)+'</details>';
+  }else html+=`<p class="l2" role="status">${base?'Loading and verifying '+(tab==='activity'?'shared responses':tab)+'…':'No verified node route is available.'}</p>`;
+  html+='</div>';
+  const mount=async(root,lifecycle)=>{
+    const host=root.querySelector('[data-public-persona-pane]');
+    let currentDoc=null, limit=16, expanded='', reading=false;
+    const activityHtml=()=>{
+      if(!currentDoc) return '<p class="l2" role="status">Loading verified public activity…</p>';
+      const entry={tier:'public',status:{node_id:kernel,personas:[]}};
+      const rows=connectedActivityItems(currentDoc,entry);
+      return '<p class="record-proof">Public document signature verified. Model responses are provisional observations; authored work and messages retain their own authority.</p>'
+        +`<p class="l2">Showing ${Math.min(limit,rows.length)} of ${rows.length} shared records.</p>`
+        +rows.slice(0,limit).map(row=>`<article class="record-row" data-stage-key="${esc(row.key)}"><b>${esc(row.kind)}</b><small>${esc(row.label)} · ${esc(_friendlyInstant(row.at))}</small>`
+          +`<${expanded===row.key?'pre':'p'} class="record-body">${esc(expanded===row.key?row.text:row.text.slice(0,280))}${expanded!==row.key&&row.text.length>280?'…':''}</${expanded===row.key?'pre':'p'}>`
+          +`<button type="button" data-public-activity-record="${esc(row.key)}">${expanded===row.key?'Close text':'Read complete text'}</button></article>`).join('')
+        +(rows.length>limit?'<button type="button" data-public-activity-more>Show 16 more records</button>':'');
+    };
+    const navigate=event=>{
+      const target=event.target.closest('[data-public-persona-tab],[data-public-activity-record],[data-public-activity-more]');
+      if(!target||!lifecycle.isCurrent()) return;
+      event.preventDefault();
+      if(target.hasAttribute('data-public-persona-tab')){
+        S.views[S.views.length-1]=()=>personaView(r,{tab:target.dataset.publicPersonaTab,offset:Number(target.dataset.offset||0)});
+        renderTop(); return;
+      }
+      if(target.hasAttribute('data-public-activity-more')) limit+=16;
+      else expanded=expanded===target.dataset.publicActivityRecord?'':target.dataset.publicActivityRecord;
+      updateStageHTML(host,activityHtml());
+    };
+    root.addEventListener('click',navigate);
+    lifecycle.onCleanup(()=>{ root.removeEventListener('click',navigate); currentDoc=null; });
+    if(tab==='overview'||!base||!pid) return;
+    const read=async()=>{
+      if(reading||document.hidden||!lifecycle.isCurrent()) return;
+      reading=true;
+      try{
+        const endpoint=join(base,'personas/'+encodeURIComponent(_signedPersonaEndpointId(personaKey)||pid)+'/'
+          +(tab==='activity'?'thinking':tab))+(tab==='experience'?'?offset='+offset+'&limit=32':'');
+        const doc=await fetchResponsivePublicJson(endpoint,{signal:lifecycle.signal,
+          maxBytes:tab==='activity'?32*1024*1024:DEFAULT_JSON_MAX_BYTES,
+          priority:PUBLIC_COGNITION_READ_PRIORITY,verifiedDirectFallback:true});
+        lifecycle.assertCurrent();
+        let proof;
+        if(tab==='activity') proof={ok:await verifyPublicPersonaCognition(base,doc,{personaId:_signedPersonaEndpointId(personaKey)||pid,kernel})};
+        else{
+          await keysFor(base,{kernel_id:kernel},{signal:lifecycle.signal});
+          lifecycle.assertCurrent();
+          const context={nodeId:kernel,personaId:_signedPersonaEndpointId(personaKey)||pid,keyEntries:S.keyDocs.get(base||'@origin')?.entries||[]};
+          proof=tab==='education'?await verifyPersonaEducation(doc,context):await verifyPersonaExperience(doc,context);
+        }
+        lifecycle.assertCurrent();
+        if(!proof.ok) throw new Error('No verified public '+(tab==='activity'?'activity':tab)+' is available. Private records are not exposed.');
+        if(tab==='activity'&&currentDoc){
+          const order=_comparePublicCognitionGeneratedAt(doc.generated_at,currentDoc.generated_at);
+          if(order<0) return;
+          if(order===0&&canonicalJson(doc)!==canonicalJson(currentDoc))
+            throw new Error('Conflicting signed responses at the same time. Reopen after the node publishes a newer snapshot.');
+        }
+        currentDoc=doc;
+        updateStageHTML(host,tab==='activity'?activityHtml():tab==='education'?educationHtml(doc):experienceHtml(doc)
+          +'<div class="record-pages">'+(offset?button('experience','Previous records',Math.max(0,offset-32)):'')
+          +(doc.next_offset!==null?button('experience','Next records',doc.next_offset):'')+'</div>');
+      }catch(error){ if(lifecycle.isCurrent()) host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`; }
+      finally{ reading=false; }
+    };
+    const selectedView={key:personaKey,base,refresh:read,timer:null};
+    if(tab==='activity') S.publicPersonaView=selectedView;
+    const timer=setInterval(read,5000); lifecycle.onCleanup(()=>{
+      clearInterval(timer); clearTimeout(selectedView.timer);
+      if(S.publicPersonaView===selectedView) S.publicPersonaView=null;
+    });
+    await read();
+  };
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(name)}`,html,mount};
 }
 async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(r),L=r._links||{}, S0=(v)=>esc((v===''||v==null)?'—':v); S.curBase=base;
   // EnvironmentInstance export (05_ENVIRONMENT): bind the SERVED env doc
@@ -12537,6 +12174,11 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
       report(validExpectedHash?'fetching artifact bytes…':'checking advertised SHA-256…');
       verified=validExpectedHash
         ?await fetchVerifiedLiveBody(sourceUrl,expectedHash,{signal:lifecycle.signal,
+          onProgress:({received,total,phase,transport})=>report(phase==='verifying'||phase==='verified'
+            ?'Checking downloaded bytes…':(transport||'Transfer')+' · '+fmtBytes(received)
+              +(total!==null&&total!==undefined?' of '+fmtBytes(total):'')
+              +(total>0?' · '+Math.floor(received/total*100)+'%':'')
+              +(phase==='retrying'?' · reconnecting':phase==='preparing'?' · preparing file':'')),
           maxBytes:Number.isSafeInteger(opts.size)?opts.size:Number.MAX_SAFE_INTEGER})
         :{ok:false,checkOutcome:'failed',error:'invalid advertised SHA-256'};
       lifecycle.assertCurrent();
@@ -12552,20 +12194,6 @@ function fileView(base,path,title,kind,opts){ S.curBase=base; opts=opts||{};
         pick=pickRenderer(kind,title,verified.type,detectedMedia);
         isBinary=BINARY_RENDERERS.has(pick.id); rendererId=forcedPlain?'plain':pick.id;
         if(!isBinary||forcedPlain) text=new TextDecoder().decode(verified.bytes);
-        const cache=opts.liveFile?S.liveArtifactBodyCache.get(opts.liveFile.bodyKey):null;
-        if(opts.liveFile&&text!=null){
-          let nextCache=cache;
-          if(!cache||cache.hash!==opts.liveFile.sha256){
-            nextCache={hash:opts.liveFile.sha256,text,
-              previousHash:cache?.hash||'',previousText:cache?.text??null};
-            lifecycle.assertCurrent();
-            S.liveArtifactBodyCache.set(opts.liveFile.bodyKey,nextCache);
-            while(S.liveArtifactBodyCache.size>24)
-              S.liveArtifactBodyCache.delete(S.liveArtifactBodyCache.keys().next().value);
-          }
-          if(nextCache?.previousText!=null&&nextCache.previousHash!==nextCache.hash)
-            liveDiff=_lineDiffHTML(nextCache.previousText,nextCache.text);
-        }
       }
     }else if(!isBinary){
       report('fetching text bytes…');
@@ -12906,7 +12534,7 @@ async function workEvidenceView(r){
 // Explicit connections are isolated from S's public discovery/history stores.
 const MY_NODES=new Map();
 async function connectedNodeBytes(entry,path,{requireOperator=false,
-  maxBytes=entry.tier==='operator'?Number.MAX_SAFE_INTEGER:DEFAULT_JSON_MAX_BYTES,signal=null}={}){
+  maxBytes=DEFAULT_JSON_MAX_BYTES,signal=null,onProgress=null}={}){
   if(entry.closed||signal?.aborted) throw new DOMException('Node read cancelled.','AbortError');
   const url=new URL(join(entry.base,path));
   const root=new URL(entry.base), rootPath=root.pathname.replace(/\/$/,'');
@@ -12931,7 +12559,7 @@ async function connectedNodeBytes(entry,path,{requireOperator=false,
       revokeConnectedNode(entry);
       throw new Error('The node did not accept that token.');
     }
-    const bytes=await readBoundedResponseBytes(response,maxBytes);
+    const bytes=await readBoundedResponseBytes(response,maxBytes,onProgress);
     if(entry.closed||controller.signal.aborted) throw new DOMException('Node read cancelled.','AbortError');
     return {bytes,type:response.headers.get('Content-Type')||''};
   }finally{ clearTimeout(timeout); signal?.removeEventListener('abort',abort); entry.pending.delete(controller); }
@@ -12940,38 +12568,58 @@ async function connectedNodeJson(entry,path,options={}){
   const {bytes}=await connectedNodeBytes(entry,path,options);
   return parseSignedJson(new TextDecoder().decode(bytes));
 }
-async function connectedProfile(entry,pid,{refresh=false}={}){
-  const cached=entry.profiles.get(pid);
-  if(!refresh&&cached&&Date.now()-cached.at<5000) return cached.doc;
-  if(entry.profileJobs.has(pid)) return entry.profileJobs.get(pid);
-  const job=(async()=>{
-    const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/profile');
-    if(doc?.schema!=='personaos-persona-profile/1'||doc.persona_id!==pid
-        ||entry.closed||!(entry.status.personas||[]).some((person)=>person.persona_id===pid))
-      throw new Error('The persona profile no longer matches this connection.');
-    entry.profiles.set(pid,{doc,at:Date.now()}); return doc;
-  })().finally(()=>entry.profileJobs.delete(pid));
-  entry.profileJobs.set(pid,job); return job;
+function releaseConnectedDetails(entry){
+  entry.detailController?.abort(); entry.detailController=null; entry.detailScope=null;
+  entry.details?.clear(); entry.detailJobs?.clear(); entry.cognition.clear();
+  entry.expandedActivity=''; entry.activityLimit=16;
+  entry.artifacts.clear(); entry.savedArtifacts.clear(); entry.artifactsRequested=false;
+  entry.artifactJobs.clear(); entry.savedArtifactJobs.clear(); entry.artifactsLoading=false;
 }
-async function connectedEducation(entry,pid,{refresh=false}={}){
-  const cached=entry.education.get(pid);
-  if(!refresh&&cached&&Date.now()-cached.at<5000) return cached.doc;
-  if(entry.educationJobs.has(pid)) return entry.educationJobs.get(pid);
-  const job=(async()=>{
-    const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/education');
-    if(doc?.schema!=='personaos-persona-education/1'||doc.persona_id!==pid
-        ||entry.closed||!(entry.status.personas||[]).some((person)=>person.persona_id===pid))
-      throw new Error('The education record no longer matches this connection.');
-    entry.education.set(pid,{doc,at:Date.now()}); return doc;
-  })().finally(()=>entry.educationJobs.delete(pid));
-  entry.educationJobs.set(pid,job); return job;
+function selectConnectedDetails(entry,kind,id='',tab='overview',offset=0){
+  const key=JSON.stringify([kind,id,tab,offset]);
+  if(entry.detailScope?.key!==key){
+    releaseConnectedDetails(entry); entry.detailController=new AbortController();
+    entry.detailScope={key,kind,id,tab,offset};
+  }
+  watchConnectedStream(entry,kind==='persona'&&tab==='activity'?id:'',kind==='environment'||kind==='file');
+  return entry.detailScope;
 }
+async function connectedDetailRecord(entry,kind,pid='',{refresh=false,offset=0}={}){
+  const key=JSON.stringify([kind,pid,offset]), cached=entry.details.get(key);
+  if(!refresh&&cached&&Date.now()-cached.at<5000) return cached.doc;
+  if(entry.detailJobs.has(key)) return entry.detailJobs.get(key);
+  const signal=entry.detailController?.signal;
+  const job=(async()=>{
+    const path=kind==='directory'?'personas':'personas/'+encodeURIComponent(pid)+'/'+kind
+      +(kind==='experience'?'?offset='+offset+'&limit=32':'');
+    const doc=await connectedNodeJson(entry,path,{signal,maxBytes:kind==='thinking'?32*1024*1024:DEFAULT_JSON_MAX_BYTES});
+    if(entry.closed||signal?.aborted||pid&&!(entry.status.personas||[]).some(person=>person.persona_id===pid))
+      throw new DOMException('Persona view changed.','AbortError');
+    const context={keyEntries:['education','experience','directory'].includes(kind)?await connectedArtifactKeys(entry):[],nodeId:entry.status.node_id,
+      personaId:pid,privateRead:entry.tier==='operator'};
+    let verified;
+    if(kind==='education') verified=await verifyPersonaEducation(doc,context);
+    else if(kind==='experience') verified=await verifyPersonaExperience(doc,context);
+    else if(kind==='directory'){
+      verified=await verifyNodePersonaProjection(doc,{...context,schema:'personaos-persona-directory/1'});
+      if(doc?.ranked!==false||!Array.isArray(doc?.personas)) verified={ok:false};
+    }else if(kind==='thinking') verified={ok:await rememberConnectedCognition(entry,doc,pid)};
+    else verified={ok:doc?.schema==='personaos-persona-profile/1'&&doc.persona_id===pid};
+    if(!verified.ok){ entry.details.delete(key); throw new Error('The record signature or identity binding could not be verified. No new result is displayed.'); }
+    if(entry.closed||signal?.aborted) throw new DOMException('Persona view changed.','AbortError');
+    entry.details.set(key,{doc,at:Date.now()}); return doc;
+  })().finally(()=>{ if(entry.detailJobs.get(key)===job) entry.detailJobs.delete(key); });
+  entry.detailJobs.set(key,job); return job;
+}
+function connectedProfile(entry,pid,options={}){ return connectedDetailRecord(entry,'profile',pid,options); }
+function connectedEducation(entry,pid,options={}){ return connectedDetailRecord(entry,'education',pid,options); }
+function connectedCachedDetail(entry,kind,pid='',offset=0){ return entry.details.get(JSON.stringify([kind,pid,offset]))?.doc; }
 function disconnectMyNode(base){
   const entry=MY_NODES.get(base); if(!entry) return;
   entry.closed=true; entry.stream?.close(); clearInterval(entry.timer); clearTimeout(entry.paintTimer);
   for(const controller of entry.pending) controller.abort();
-  entry.session.delete(base); entry.cognition.clear(); entry.profiles.clear(); entry.education.clear();
-  entry.profileJobs.clear(); entry.educationJobs.clear(); entry.artifacts.clear(); entry.artifactJobs.clear(); entry.keyDocument=null;
+  entry.session.delete(base); releaseConnectedDetails(entry);
+  entry.artifactJobs.clear(); entry.keyDocument=null;
   entry.savedArtifacts.clear(); entry.savedArtifactJobs.clear();
   for(const cancel of entry.viewCleanups||[]) cancel();
   entry.viewCleanups?.clear();
@@ -13017,15 +12665,16 @@ async function connectedArtifactKeys(entry){
   })().finally(()=>{ entry.keyJob=null; });
   return entry.keyJob;
 }
-async function rememberConnectedArtifacts(entry,document,{event=false,startedRevision=null}={}){
+async function rememberConnectedArtifacts(entry,document,{event=false,startedRevision=null,scope=entry.detailScope}={}){
   const run=String(document?.run||'');
-  if(entry.closed||!(entry.status.runs||[]).includes(run)) return false;
+  const current=()=>!entry.closed&&scope===entry.detailScope&&(entry.status.runs||[]).includes(run);
+  if(!current()) return false;
   const context={keyEntries:await connectedArtifactKeys(entry),expectedNodeId:entry.status.node_id,
     expectedRun:run,requirePublic:entry.tier!=='operator'};
   const verified=event?await verifyLiveArtifactEvent(document,context)
     :await verifyLiveArtifactSnapshot(document,{...context,expectedSinceRevision:startedRevision});
   if(!verified.ok) throw new Error('The node’s workspace signature or revision could not be verified.');
-  if(entry.closed||!(entry.status.runs||[]).includes(run)) return false;
+  if(!current()) return false;
   const previous=entry.artifacts.get(run);
   if(event&&verified.kind==='run_ended'){
     const ended=endLiveArtifactState(previous,document,verified);
@@ -13046,20 +12695,23 @@ async function rememberConnectedArtifacts(entry,document,{event=false,startedRev
   entry.artifacts.set(run,state); paintConnectedNode(entry); return true;
 }
 async function readConnectedArtifacts(entry,run){
-  if(entry.closed) return;
+  if(entry.closed||entry.detailScope?.kind!=='environment') return;
   if(entry.artifactJobs.has(run)) return entry.artifactJobs.get(run);
+  const scope=entry.detailScope, signal=entry.detailController.signal;
   const startedRevision=entry.artifacts.get(run)?.revision||null;
   const job=(async()=>{
     const path='runs/'+encodeURIComponent(run)+'/live-artifacts'
       +(startedRevision?'?since='+encodeURIComponent(startedRevision):'');
-    const doc=await connectedNodeJson(entry,path,{maxBytes:Number.MAX_SAFE_INTEGER});
+    const doc=await connectedNodeJson(entry,path,{maxBytes:Number.MAX_SAFE_INTEGER,signal});
     if(doc?.run!==run) throw new Error('The workspace response belongs to a different run.');
-    return rememberConnectedArtifacts(entry,doc,{startedRevision});
-  })().finally(()=>entry.artifactJobs.delete(run));
+    if(signal.aborted||entry.detailScope!==scope) return false;
+    return rememberConnectedArtifacts(entry,doc,{startedRevision,scope});
+  })().finally(()=>{ if(entry.artifactJobs.get(run)===job) entry.artifactJobs.delete(run); });
   entry.artifactJobs.set(run,job); return job;
 }
-async function rememberConnectedSavedArtifacts(entry,run,document){
+async function rememberConnectedSavedArtifacts(entry,run,document,{scope=entry.detailScope}={}){
   const admitted=()=>!entry.closed&&entry.tier==='operator'&&(entry.status.runs||[]).includes(run)
+    &&scope===entry.detailScope
     &&document?.node_id===entry.status.node_id
     &&(entry.status.environments||[]).some((env)=>env.environment_id===document?.environment_id);
   if(!admitted()||document?.schema!=='personaos-run-artifacts/1'||document.run!==run||!Array.isArray(document.metadata))
@@ -13093,29 +12745,32 @@ async function rememberConnectedSavedArtifacts(entry,run,document){
   paintConnectedNode(entry); return true;
 }
 async function readConnectedSavedArtifacts(entry,run){
-  if(entry.closed||entry.tier!=='operator') return;
+  if(entry.closed||entry.tier!=='operator'||entry.detailScope?.kind!=='environment') return;
   if(entry.savedArtifactJobs.has(run)) return entry.savedArtifactJobs.get(run);
+  const scope=entry.detailScope,signal=entry.detailController.signal;
   const job=(async()=>{
     const document=await connectedNodeJson(entry,'runs/'+encodeURIComponent(run)+'/artifacts',
-      {maxBytes:Number.MAX_SAFE_INTEGER});
-    return rememberConnectedSavedArtifacts(entry,run,document);
-  })().finally(()=>entry.savedArtifactJobs.delete(run));
+      {maxBytes:Number.MAX_SAFE_INTEGER,signal});
+    if(signal.aborted||entry.detailScope!==scope) return false;
+    return rememberConnectedSavedArtifacts(entry,run,document,{scope});
+  })().finally(()=>{ if(entry.savedArtifactJobs.get(run)===job) entry.savedArtifactJobs.delete(run); });
   entry.savedArtifactJobs.set(run,job); return job;
 }
 async function refreshConnectedArtifacts(entry){
-  if(entry.closed||entry.artifactsLoading) return;
+  if(entry.closed||entry.artifactsLoading||document.hidden||entry.detailScope?.kind!=='environment') return;
+  const scope=entry.detailScope;
   entry.artifactsRequested=true; entry.artifactsLoading=true; entry.artifactError='';
   try{
     for(const run of entry.status.runs||[]){
-      if(entry.closed) break;
+      if(entry.closed||entry.detailScope!==scope) break;
       const reads=await Promise.allSettled([
         entry.artifacts.get(run)?.finalized?null:readConnectedArtifacts(entry,run),
         readConnectedSavedArtifacts(entry,run),
       ]);
-      for(const read of reads) if(read.status==='rejected'&&read.reason?.status!==404&&!entry.closed)
+      for(const read of reads) if(read.status==='rejected'&&read.reason?.status!==404&&!entry.closed&&entry.detailScope===scope)
         entry.artifactError='Some environment files could not be refreshed.';
     }
-  }finally{ entry.artifactsLoading=false; paintConnectedNode(entry); }
+  }finally{ if(entry.detailScope===scope){ entry.artifactsLoading=false; paintConnectedNode(entry); } }
 }
 function connectedFileVersion(state){ return state?state.revision+'|'+(state.endedAt||''):''; }
 function connectedEnvironmentFiles(entry,eid){
@@ -13165,16 +12820,17 @@ function assertConnectedFileCurrent(entry,selection,signal){
   if(current.route!==selection.route||current.file.size_bytes!==selection.file.size_bytes)
     throw new Error('The file record changed while it was being read.');
 }
-async function connectedFileBytes(entry,selection,signal){
+async function connectedFileBytes(entry,selection,signal,onProgress=null){
   assertConnectedFileCurrent(entry,selection,signal);
-  const loaded=await connectedNodeBytes(entry,selection.route,{signal,maxBytes:Math.max(1,selection.file.size_bytes)});
+  const loaded=await connectedNodeBytes(entry,selection.route,{signal,maxBytes:Math.max(1,selection.file.size_bytes),onProgress});
   assertConnectedFileCurrent(entry,selection,signal);
   if(loaded.bytes.length!==selection.file.size_bytes||await sha256Hex(loaded.bytes)!==selection.file.sha256)
     throw new Error('The downloaded bytes do not match the file record.');
   assertConnectedFileCurrent(entry,selection,signal); return loaded;
 }
 async function rememberConnectedCognition(entry,doc,pid){
-  if(entry.closed||doc?.persona_id!==pid) return false;
+  if(entry.closed||doc?.persona_id!==pid||entry.detailScope?.kind!=='persona'
+      ||entry.detailScope.id!==pid||entry.detailScope.tab!=='activity') return false;
   const accepted=entry.tier==='operator'
     ?doc.schema==='personaos-persona-thinking/3'&&doc.tier==='operator'
     :await verifyPublicPersonaCognition(entry.base,doc,{personaId:pid,kernel:entry.status.node_id});
@@ -13182,84 +12838,68 @@ async function rememberConnectedCognition(entry,doc,pid){
   entry.cognition.set(pid,doc); return true;
 }
 async function refreshConnectedNode(entry){
-  if(entry.closed||entry.refreshing) return;
+  if(entry.closed||entry.refreshing||document.hidden) return;
   entry.refreshing=true;
   try{
     const status=await connectedNodeJson(entry,'status',{requireOperator:entry.tier==='operator'});
     if(status.schema!=='personaos-node-status/1'||status.node_id!==entry.status.node_id) return;
     entry.status=status; entry.error='';
     const admittedPeople=new Set((status.personas||[]).map((person)=>person.persona_id));
-    for(const cache of [entry.profiles,entry.education,entry.cognition])
-      for(const pid of cache.keys()) if(!admittedPeople.has(pid)) cache.delete(pid);
+    if(entry.detailScope?.kind==='persona'&&!admittedPeople.has(entry.detailScope.id)) releaseConnectedDetails(entry);
     const admittedRuns=new Set(status.runs||[]);
     for(const cache of [entry.artifacts,entry.savedArtifacts])
       for(const run of cache.keys()) if(!admittedRuns.has(run)) cache.delete(run);
     const marker=$('#detailbody [data-connected-node]');
     if(marker?.dataset.connectedNode===entry.base){
-      if(marker.dataset.privatePersona&&admittedPeople.has(marker.dataset.privatePersona))
-        await Promise.allSettled([connectedProfile(entry,marker.dataset.privatePersona,{refresh:true}),
-          connectedEducation(entry,marker.dataset.privatePersona,{refresh:true})]);
       if(marker.dataset.connectedEnvironment) refreshConnectedArtifacts(entry);
-    }
-    // Support older nodes that only send content-free invalidations.
-    const people=status.personas||[];
-    for(const person of people){
-      const pid=String(person.persona_id||'');
-      if(entry.stream?._cognitionDocuments&&entry.cognition.has(pid)) continue;
-      const doc=await connectedNodeJson(entry,'personas/'+encodeURIComponent(pid)+'/thinking',
-        {maxBytes:Number.MAX_SAFE_INTEGER});
-      await rememberConnectedCognition(entry,doc,pid);
     }
   }catch(e){ if(!entry.closed) entry.error=String(e?.message||'Node unavailable'); }
   finally{ entry.refreshing=false; paintConnectedNode(entry); }
 }
-async function connectMyNode(base,token){
-  const session=new NodeReadSession(), normalized=session.set(base,token);
-  const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
-    cognition:new Map(),profiles:new Map(),profileJobs:new Map(),education:new Map(),educationJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
-    savedArtifacts:new Map(),savedArtifactJobs:new Map(),
-    viewCleanups:new Set(),closed:false,status:null,live:null,error:''};
-  try{
-    entry.status=await connectedNodeJson(entry,'status',{requireOperator:!!token});
-    if(entry.status?.schema!=='personaos-node-status/1')
-      throw new Error('Enter this node’s token to view its personas and environments.');
-  }catch(e){ session.delete(normalized); throw e; }
-  disconnectMyNode(normalized); MY_NODES.set(normalized,entry);
-  const url=join(normalized,'discovery/events');
-  entry.stream=fetchEventSource(url,{
-    requestInit:()=>({headers:token?{Authorization:'Bearer '+token}:{}}),
-    maxFrameBytes:Number.MAX_SAFE_INTEGER,
+function watchConnectedStream(entry,pid='',artifacts=false){
+  if(entry.closed) return;
+  const scope=JSON.stringify([pid,artifacts]);
+  if(entry.stream&&entry.streamScope===scope) return;
+  entry.stream?.close(); entry.streamScope=scope;
+  const url=join(entry.base,'discovery/events?cognition='+(pid?'selected&persona_id='+encodeURIComponent(pid):'none')
+    +'&artifacts='+(artifacts?'all':'none'));
+  const stream=fetchEventSource(url,{
+    requestInit:()=>{ const token=entry.session.tokenFor(url); return {headers:token?{Authorization:'Bearer '+token}:{}}; },
+    maxFrameBytes:32*1024*1024,
   });
-  entry.stream.addEventListener('hello',(event)=>{
-    try{ entry.stream._cognitionDocuments=parseSignedJson(event.data).cognition_documents===true; }catch(_){}
+  entry.stream=stream;
+  const current=()=>!entry.closed&&entry.stream===stream;
+  stream.addEventListener('hello',(event)=>{
+    if(!current()) return;
+    try{ stream._cognitionDocuments=parseSignedJson(event.data).cognition_documents===true; }catch(_){}
     refreshConnectedNode(entry);
   });
-  entry.stream.addEventListener('persona_cognition',async(event)=>{
-    if(entry.closed) return;
+  stream.addEventListener('persona_cognition',async(event)=>{
+    if(!current()||!pid) return;
     try{
-      const doc=parseSignedJson(event.data), pid=String(doc.persona_id||'');
-      if(!(entry.status.personas||[]).some((person)=>person.persona_id===pid)
-          ||!await rememberConnectedCognition(entry,doc,pid)) return;
+      const doc=parseSignedJson(event.data);
+      if(doc.persona_id!==pid||!(entry.status.personas||[]).some(person=>person.persona_id===pid)
+          ||!await rememberConnectedCognition(entry,doc,pid)||!current()) return;
       entry.error=''; paintConnectedNode(entry);
     }catch(_){}
   });
-  entry.stream.addEventListener('telemetry_update',(event)=>{
-    if(entry.closed) return;
+  stream.addEventListener('telemetry_update',(event)=>{
+    if(!current()) return;
     try{
       const live=parseSignedJson(event.data).telemetry;
       if(live&&live.schema==='personaos-live-telemetry/1') entry.live=live;
       paintConnectedNode(entry);
     }catch(_){}
   });
-  entry.stream.addEventListener('live_artifact_update',(event)=>{
+  stream.addEventListener('live_artifact_update',(event)=>{
     // Keep revision checks in arrival order even when signature verification awaits.
     entry.artifactEvents=(entry.artifactEvents||Promise.resolve()).then(async()=>{
-      if(entry.closed) return;
+      if(!current()||!artifacts) return;
       try{ await rememberConnectedArtifacts(entry,parseSignedJson(event.data),{event:true}); }
       catch(_){ if(!entry.closed){ entry.artifactError='A workspace update could not be verified.'; paintConnectedNode(entry); } }
     });
   });
-  entry.stream.onerror=(event)=>{ if(!entry.closed){
+  stream.onerror=(event)=>{ if(current()){
     if(entry.tier==='operator'&&(event?.error?.status===401||event?.error?.status===403)){
       revokeConnectedNode(entry); return;
     }
@@ -13268,6 +12908,20 @@ async function connectMyNode(base,token){
     // do not discard the already admitted view.
     refreshConnectedNode(entry);
   } };
+}
+async function connectMyNode(base,token){
+  const session=new NodeReadSession(), normalized=session.set(base,token);
+  const entry={base:normalized,session,tier:token?'operator':'public',pending:new Set(),
+    cognition:new Map(),details:new Map(),detailJobs:new Map(),artifacts:new Map(),artifactJobs:new Map(),
+    savedArtifacts:new Map(),savedArtifactJobs:new Map(),selection:new Set(),filters:{},
+    viewCleanups:new Set(),closed:false,status:null,live:null,error:''};
+  try{
+    entry.status=await connectedNodeJson(entry,'status',{requireOperator:!!token});
+    if(entry.status?.schema!=='personaos-node-status/1')
+      throw new Error('Enter this node’s token to view its personas and environments.');
+  }catch(e){ session.delete(normalized); throw e; }
+  disconnectMyNode(normalized); MY_NODES.set(normalized,entry);
+  watchConnectedStream(entry);
   entry.timer=setInterval(()=>refreshConnectedNode(entry),5000);
   if(entry.tier==='public') discover().catch(()=>{});
   updateOpBadge(); refreshConnectedNode(entry); return entry;
@@ -13441,7 +13095,38 @@ function connectedThinkingHtml(doc,entry){
   }
   return template.innerHTML;
 }
-function connectedCognitionHtml(doc,entry){
+function connectedActivityItems(doc,entry){
+  if(!doc) return [];
+  const rows=connectedCallMessages(doc).map((row,index)=>({...row,key:'response:'+index,
+    label:(row.model||'Model')+' · '+row.state,kind:'Model response'}));
+  for(const row of doc.recent_outputs||[]){
+    if(typeof row.text!=='string') continue;
+    rows.push({key:'output:'+String(row.communication_id||row.persona_authority_hash||rows.length),
+      at:row.at,text:_publicPersonaOutputDisplayText(row),kind:row.kind==='PERSONA_COMMUNICATION_AUTHORED'?'Persona message':'Work record',
+      label:row.author_persona_id?(entry.status.personas||[]).find(person=>person.persona_id===row.author_persona_id)?.name||row.author_persona_id:'Persona-authored',
+      audience:row.audience_persona_ids||[]});
+  }
+  for(const row of connectedFederatedCommunications(doc,entry)) rows.push({
+    key:'peer:'+row.communication_id+':'+row.direction,at:row.source_event?.timestamp,
+    text:canonicalJson(row.authority?.payload),kind:'Peer correspondence',
+    label:row.direction+' · '+row.authority.authored_by+' · '+row.source_kernel_id});
+  return rows.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+}
+function connectedCompactActivityHtml(doc,entry){
+  const rows=connectedActivityItems(doc,entry), limit=entry.activityLimit||16;
+  if(!doc) return '<p class="l2" role="status">Loading this persona’s response history…</p>';
+  if(!rows.length) return '<p class="l2">No shared response or work text is available.</p>';
+  const controls=`data-base="${esc(entry.base)}" data-persona="${esc(doc.persona_id)}"`;
+  return `<p class="l2">Showing ${Math.min(limit,rows.length)} of ${rows.length} records. Open a record for its complete text.</p>`
+    +rows.slice(0,limit).map(row=>`<article class="record-row" data-stage-key="${esc(row.key)}"><b>${esc(row.kind)}</b>`
+      +`<small>${esc(row.label)} · ${esc(_friendlyInstant(row.at))}</small>`
+      +(row.audience?.length?`<small>To ${row.audience.map(pid=>esc((entry.status.personas||[]).find(person=>person.persona_id===pid)?.name||pid)).join(', ')}</small>`:'')
+      +(entry.expandedActivity===row.key?`<pre class="record-body">${esc(row.text)}</pre>`:`<p class="record-preview">${esc(row.text.slice(0,280))}${row.text.length>280?'…':''}</p>`)
+      +`<button type="button" data-act="my-activity-expand" ${controls} data-record="${esc(row.key)}">${entry.expandedActivity===row.key?'Close text':'Read complete text'}</button></article>`).join('')
+    +(rows.length>limit?`<button type="button" data-act="my-activity-more" ${controls}>Show 16 more records</button>`:'');
+}
+function connectedCognitionHtml(doc,entry,{compact=false}={}){
+  if(compact) return connectedCompactActivityHtml(doc,entry);
   if(!doc) return '<div class="l2">Waiting for the node’s current response history.</div>';
   const messages=connectedCallMessages(doc);
   let html=H('Assistant text')+(messages.length?messages.map((message)=>
@@ -13462,58 +13147,120 @@ function connectedCognitionHtml(doc,entry){
   html+=connectedThinkingHtml(doc,entry);
   return html;
 }
+function connectedDirectoryHtml(entry,doc){
+  const people=doc?.personas||[], matches=filterPersonaDirectory(people,entry.filters||{});
+  const limit=entry.directoryLimit||32, selected=entry.selection||new Set();
+  const escapedOptions=(values,selectedValue)=>'<option value="">Any</option>'+[...new Set(values)].filter(Boolean).sort().map(value=>
+    `<option value="${esc(value)}"${value===selectedValue?' selected':''}>${esc(value)}</option>`).join('');
+  const assessments=people.flatMap(person=>person.education?.latest_assessments||[]);
+  const fields=[['curriculum','Course',assessments.map(row=>row.curriculum_id)],['version','Version',assessments.map(row=>row.version)],
+    ['result','Result',assessments.map(row=>row.status)],['characterKey','Character field',people.flatMap(person=>Object.keys(person.profile?.characteristic_identity?.characteristics||{}))]];
+  let html='<p class="record-proof">Node signature verified · complete, unranked directory. Assessment details verify assessor signatures when opened.</p>'
+    +'<form class="persona-filters" data-persona-filters><label>Name or exact ID<input name="text" type="search" value="'+esc(entry.filters?.text||'')+'"></label>'
+    +'<label>Availability<select name="availability">'+escapedOptions(['available','unavailable'],entry.filters?.availability)+'</select></label>'
+    +fields.map(([name,label,values])=>`<label>${label}<select name="${name}">${escapedOptions(values,entry.filters?.[name])}</select></label>`).join('')
+    +`<label>Exact character value (JSON)<input name="characterValue" placeholder='e.g. "patient" or 0.8' value="${esc(entry.filters?.characterValue||'')}"></label></form>`;
+  html+=`<div class="directory-selection"><span>${selected.size} selected · browser selection only</span>`
+    +`<button type="button" data-act="my-copy-selection" data-base="${esc(entry.base)}"${selected.size?'':' disabled'}>Copy --persona arguments</button>`
+    +`<span role="status" data-selection-copy-status></span></div>`;
+  if([...selected].some(pid=>!people.some(person=>person.persona_id===pid&&person.selection_available)))
+    html+='<p class="viewerr">The selection contains an unavailable identity. The node will refuse it, not substitute another persona.</p>';
+  html+=`<p class="l2">Showing ${Math.min(limit,matches.length)} of ${matches.length} matching personas · ${people.length} in this directory</p>`
+    +matches.slice(0,limit).map(person=>{
+      const profile=person.profile||{}, latest=person.education?.latest_assessments||[];
+      const character=profile.characteristic_identity?.characteristics||{};
+      return `<article class="directory-person" data-stage-key="${esc(person.persona_id)}"><label><input type="checkbox" data-select-persona="${esc(person.persona_id)}"`
+        +(selected.has(person.persona_id)?' checked':'')+(!person.selection_available&&!selected.has(person.persona_id)?' disabled':'')+`> Select</label>`
+        +`<h4>${connectedPersonLink(entry,{...person,name:profile.name})}</h4><small>${esc(person.persona_id)}</small>`
+        +`<p>${person.selection_available?'Available for explicit selection':'Unavailable'} · ${esc(person.status?.task_execution_state||person.status?.lifecycle_state||'')}</p>`
+        +(person.selection_unavailable_reason?`<p class="l2">${esc(person.selection_unavailable_reason)}</p>`:'')
+        +(_personaCharacteristicsHTML(character,{name:profile.name,limit:3,compact:true})||'<p class="l2">Character not shared</p>')
+        +`<p>${latest.length?latest.map(row=>`${esc(row.curriculum_id)} v${esc(row.version)}: ${esc(String(row.status).replaceAll('_',' '))}`).join('<br>'):'Unassessed'}</p>`
+        +`<p class="l2">${person.education?.enrollments?.length||0} enrollment records · ${person.experience?.recorded_turns??0} retained work turns · ${person.experience?.failed_action_receipts??0} failed action receipts</p></article>`;
+    }).join('');
+  if(matches.length>limit) html+=`<button type="button" data-act="my-directory-more" data-base="${esc(entry.base)}">Show 32 more personas</button>`;
+  return html;
+}
 async function connectedNodeView(base){
   const entry=MY_NODES.get(base);
   if(!entry) return operatorView();
+  selectConnectedDetails(entry,'directory');
   const status=entry.status, people=status.personas||[], envs=status.environments||[];
   let html=connectedNodeMarker(entry)+`<div class="desc2">${entry.tier==='operator'?'Private node access':'Public node access'} · connected in this tab</div>`;
-  html+=H(`Personas (${people.length})`)+people.map((person)=>
+  html+=H(`Personas (${people.length})`)+'<div data-connected-directory>'+(connectedCachedDetail(entry,'directory')
+    ?connectedDirectoryHtml(entry,connectedCachedDetail(entry,'directory')):people.map((person)=>
     `<div class="persona-runtime-row" data-stage-key="${esc(JSON.stringify(['person',person.persona_id]))}"><b>${connectedPersonLink(entry,person)}</b>`
     +`<div class="l2">${esc(person.task_execution_state||person.lifecycle_state||'')}`
     +` · ${esc(person.llm_execution_state||'idle')}</div>`
-    +(connectedCallMessages(entry.cognition.get(person.persona_id))[0]?.text
-      ?`<div class="desc2">${esc(connectedCallMessages(entry.cognition.get(person.persona_id))[0].text.slice(0,300))}</div>`:'')+'</div>').join('');
+    +'</div>').join('')+'<p class="l2" role="status">Loading signed comparison records…</p>')+'</div>';
   html+=H(`Environments (${envs.length})`)+envs.map((env)=>
     `<div class="grant" data-stage-key="${esc(JSON.stringify(['environment',env.environment_id]))}"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
     +`<small class="l2">${esc(env.status)} · ${(env.member_persona_ids||[]).length} members</small></span></div>`).join('');
   html+=`<p><button type="button" data-act="my-disconnect" data-base="${esc(base)}">Disconnect</button></p></div>`;
-  return {title:`<span class="kind k-env">MY NODE</span> ${esc(base)}`,html};
+  const mount=async(root,lifecycle)=>{
+    const host=root.querySelector('[data-connected-directory]');
+    const onInput=event=>{
+      if(event.target.matches('[data-select-persona]')){
+        const pid=event.target.dataset.selectPersona;
+        if(event.target.checked) entry.selection.add(pid); else entry.selection.delete(pid);
+      }else if(event.target.closest('[data-persona-filters]')){
+        entry.filters[event.target.name]=event.target.value; entry.directoryLimit=32;
+      }else return;
+      const doc=connectedCachedDetail(entry,'directory'); if(doc) updateStageHTML(host,connectedDirectoryHtml(entry,doc));
+    };
+    host.addEventListener('input',onInput); lifecycle.onCleanup(()=>host.removeEventListener('input',onInput));
+    try{
+      const doc=await connectedDetailRecord(entry,'directory'); lifecycle.assertCurrent();
+      updateStageHTML(host,connectedDirectoryHtml(entry,doc));
+    }catch(error){ if(lifecycle.isCurrent()) host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`; }
+  };
+  return {title:`<span class="kind k-env">MY NODE</span> ${esc(base)}`,html,mount,preserveOnRefresh:true};
 }
-async function connectedPersonaView(base,pid){
+function connectedPersonaOverview(entry,person,profile){
+  if(!profile) return '<p class="l2" role="status">Loading character profile…</p>';
+  let html=profile.description?`<div class="desc2">${esc(profile.description)}</div>`:'';
+  const born=Date.parse(profile.born_at||'');
+  if(Number.isFinite(born)) html+=kv('Age',esc(friendlyDuration(Math.max(0,Date.now()-born))));
+  const character=profile.characteristic_identity?.characteristics;
+  html+=H('Character')+(_personaCharacteristicsHTML(character,{name:person.name,
+    limit:Object.keys(character||{}).length})||'<p class="l2">Character fields have not been shared.</p>');
+  html+=H('Environments')+(entry.status.environments||[]).filter(env=>(env.member_persona_ids||[]).includes(person.persona_id))
+    .map(env=>`<p><a href="#" data-act="my-environment" data-base="${esc(entry.base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
+  return html;
+}
+async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){
   const entry=MY_NODES.get(base); if(!entry) return operatorView();
   const person=(entry.status.personas||[]).find((row)=>row.persona_id===pid);
   if(!person) return connectedNodeView(base);
-  let profileError='';
-  const profile=await connectedProfile(entry,pid).catch((error)=>{
-    profileError=String(error.message||'Profile unavailable'); return entry.profiles.get(pid)?.doc||{};
-  });
-  const education=await connectedEducation(entry,pid).catch(()=>entry.education.get(pid)?.doc||{});
-  if(entry.closed) return operatorView();
-  const born=Date.parse(profile.born_at||'');
-  let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}"`);
-  if(profileError) html+=`<div class="l2" role="status">${esc(profileError)}</div>`;
-  if(profile.description) html+=`<div class="desc2">${esc(profile.description)}</div>`;
-  if(Number.isFinite(born)) html+=kv('Age',esc(friendlyDuration(Math.max(0,Date.now()-born))));
+  if(!['overview','education','experience','activity'].includes(tab)||!Number.isSafeInteger(offset)||offset<0) tab='overview',offset=0;
+  selectConnectedDetails(entry,'persona',pid,tab,offset);
+  const kind=tab==='overview'?'profile':tab==='activity'?'thinking':tab;
+  const body=doc=>tab==='overview'?connectedPersonaOverview(entry,person,doc)
+    :tab==='education'?(doc?educationHtml(doc):'<p role="status">Loading and verifying education…</p>')
+    :tab==='experience'?(doc?experienceHtml(doc)
+      +`<div class="record-pages">${offset?`<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="experience" data-offset="${Math.max(0,offset-32)}">Previous records</button>`:''}`
+      +(doc.next_offset!==null?`<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="experience" data-offset="${doc.next_offset}">Next records</button>`:'')+'</div>'
+      :'<p role="status">Loading and verifying experience…</p>')
+    :connectedCognitionHtml(entry.cognition.get(pid)||doc,entry,{compact:true});
+  let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}" data-persona-tab="${tab}"`);
   html+=kv('State',esc(person.task_execution_state||person.lifecycle_state||''));
-  const character=profile.characteristic_identity?.characteristics;
-  html+=H('Character')+(_personaCharacteristicsHTML(character,{name:person.name,
-    limit:Object.keys(character||{}).length})||'<div class="l2">Character fields have not been shared.</div>');
-  const results=Array.isArray(education.assessments)?education.assessments:[];
-  html+=H('Education')+(results.length?results.map((result)=>{
-    const evidence=result.history?.at?.(-1)?.evidence;
-    return `<div class="grant"><span><b>${esc(result.curriculum_id||'curriculum')}</b><small class="l2">v${esc(result.version||'—')} · assessor ${esc(result.assessor_id||'unavailable')}</small></span>`
-      +`<span class="${result.status==='passed'?'ok':'l2'}">${esc(String(result.status||'unassessed').replace(/_/g,' '))}</span>`
-      +(evidence?`<small class="l2">Evidence recorded</small>`:'')+`</div>`;
-  }).join(''):'<div class="l2">No assessment has been recorded. Enrollment and assessment availability are shown separately from identity verification.</div>');
-  const envs=(entry.status.environments||[]).filter((env)=>(env.member_persona_ids||[]).includes(pid));
-  html+=H('Environments')+envs.map((env)=>`<p><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
-  html+=connectedCognitionHtml(entry.cognition.get(pid),entry)+'</div>';
-  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(_displayPersonaName(person.name,pid))}`,html};
+  html+='<nav class="persona-tabs" aria-label="Persona details">'+[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']].map(([key,label])=>
+    `<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="${key}" aria-pressed="${tab===key}">${label}</button>`).join('')+'</nav>';
+  html+='<div data-persona-pane>'+body(connectedCachedDetail(entry,kind,pid,offset))+'</div></div>';
+  const mount=async(root,lifecycle)=>{
+    const host=root.querySelector('[data-persona-pane]');
+    try{
+      const doc=await connectedDetailRecord(entry,kind,pid,{offset}); lifecycle.assertCurrent();
+      updateStageHTML(host,body(doc));
+    }catch(error){ if(lifecycle.isCurrent()) host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`; }
+  };
+  return {title:`<span class="kind k-persona">PERSONA</span> ${esc(_displayPersonaName(person.name,pid))}`,html,mount,preserveOnRefresh:true};
 }
 async function connectedEnvironmentView(base,eid){
   const entry=MY_NODES.get(base); if(!entry) return operatorView();
   const env=(entry.status.environments||[]).find((row)=>row.environment_id===eid);
   if(!env) return connectedNodeView(base);
+  selectConnectedDetails(entry,'environment',eid);
   const people=(entry.status.personas||[]).filter((person)=>(env.member_persona_ids||[]).includes(person.persona_id));
   if(!entry.artifactsRequested) refreshConnectedArtifacts(entry);
   let html=connectedNodeMarker(entry,`data-connected-environment="${esc(eid)}"`)+`<div class="desc2">${esc(env.description||'')}</div>`;
@@ -13521,6 +13268,19 @@ async function connectedEnvironmentView(base,eid){
   html+=H(`Members (${people.length})`)+people.map((person)=>`<p>${connectedPersonLink(entry,person)}</p>`).join('');
   const groups=_groupLiveWorkspaceFiles(connectedEnvironmentFiles(entry,eid).map((row)=>({...row,
     kernel:entry.status.node_id,environmentId:eid,files:[row.file]}))).files;
+  const imageRef=env.environment_identity?.image;
+  const imageRow=validEnvironmentImageReference(imageRef)?groups.map(group=>group.row).find(row=>
+    row.file.path===imageRef.artifact_ref&&row.file.sha256===imageRef.content_ref.slice(7)
+      &&row.file.size_bytes===imageRef.byte_length):null;
+  let imageSelection=null;
+  if(imageRow){
+    try{
+      imageSelection=connectedFileSelection(entry,imageRow.run,eid,imageRow.file.workspace_id,imageRow.file.path,
+        {source:imageRow.source,artifactId:imageRow.file.artifact_id});
+      const source={url:join(base,imageSelection.route),hash:imageRef.content_ref,size:imageRef.byte_length,alt:imageRef.alt};
+      html+=`<figure class="environment-image" data-verified-image="${esc(JSON.stringify(source))}"></figure>`;
+    }catch(_){}
+  }
   html+=H(`Workspace files (${groups.length})`);
   if([...entry.artifacts.values()].some((state)=>state.snapshot?.truncated
       &&state.snapshot.workspaces?.some((workspace)=>workspace.environment_id===eid)))
@@ -13547,10 +13307,26 @@ async function connectedEnvironmentView(base,eid){
     if(group.copies.length>1) html+=`<details data-connected-copy-key="${esc(fileKey)}" data-disclosure-key="${esc(fileKey)}"><summary>${group.copies.length} ${group.copies.every(({row})=>row.source==='live')?'worktree copies':'copies'} · identical bytes</summary>`
       +group.copies.map(({file,row})=>`<p>${esc(copyLabel(row))} · ${fileLink(file,row)}</p>`).join('')+'</details>';
   }
-  return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(env.name||eid)}`,html:html+'</div>'};
+  const mount=imageSelection?async(root,lifecycle)=>{
+    entry.viewCleanups.add(lifecycle.cancel);
+    const images=new VerifiedImageMounts(async(url,hash,options)=>{
+      lifecycle.assertCurrent();
+      if(url!==join(base,imageSelection.route)||hash!==imageRef.content_ref) throw new Error('Image binding changed.');
+      const loaded=await connectedFileBytes(entry,imageSelection,AbortSignal.any([lifecycle.signal,options.signal]),
+        (received,total)=>options.onProgress?.({received,total}));
+      lifecycle.assertCurrent();
+      return {ok:true,size:loaded.bytes.length,blob:new Blob([loaded.bytes],{type:imageRef.mime_type})};
+    });
+    lifecycle.onCleanup(()=>{images.dispose();entry.viewCleanups.delete(lifecycle.cancel);});
+    images.sync(root);
+  }:null;
+  return {title:`<span class="kind k-env">ENVIRONMENT</span> ${esc(_compactHumanLabel(env.name||eid,90))}`,html:html+'</div>',mount};
 }
 function connectedFileView(base,run,eid,workspaceId,path,{raw=false,source='live',artifactId=''}={}){
   const entry=MY_NODES.get(base); if(!entry) return operatorView();
+  // Preserve the environment's verified file index while the selected preview
+  // owns its bytes and renderer lifecycle.
+  if(!entry.detailScope) selectConnectedDetails(entry,'environment',eid);
   let selection;
   try{ selection=connectedFileSelection(entry,run,eid,workspaceId,path,{source,artifactId}); }
   catch(error){ return {title:'File unavailable',html:`<div class="viewerr">${esc(error.message)}</div>`}; }
@@ -13573,7 +13349,10 @@ function connectedFileView(base,run,eid,workspaceId,path,{raw=false,source='live
       S.views[S.views.length-1]=()=>connectedFileView(base,run,eid,workspaceId,path,{raw:!raw,source,artifactId}); renderTop();
     });
     let loaded;
-    try{ loaded=await connectedFileBytes(entry,selection,lifecycle.signal); }
+    try{ loaded=await connectedFileBytes(entry,selection,lifecycle.signal,(received,total)=>{
+      if(!lifecycle.isCurrent()) return;
+      integrity.textContent=`Receiving file · ${fmtBytes(received)}${total?' of '+fmtBytes(total):''} · verification follows download`;
+    }); }
     catch(error){
       lifecycle.assertCurrent(); host.innerHTML='';
       integrity.textContent=String(error.message||'The file could not be verified.'); return;
@@ -13843,11 +13622,14 @@ function createViewLifecycle(generation){
   };
   return lifecycle;
 }
-function runViewCleanups(){
+function runViewCleanups({releaseConnections=false}={}){
   const lifecycle=S.activeViewLifecycle; S.activeViewLifecycle=null;
   lifecycle?.cancel?.();
   const legacy=S.viewCleanups||[]; S.viewCleanups=[];
   for(const fn of legacy){ try{ fn(); }catch(_){} }
+  if(releaseConnections) for(const entry of MY_NODES.values()){
+    releaseConnectedDetails(entry); watchConnectedStream(entry);
+  }
 }
 function onViewCleanup(fn){
   if(S.activeViewLifecycle) S.activeViewLifecycle.onCleanup(fn);
@@ -13869,10 +13651,13 @@ async function renderTop({refresh=false}={}){ const top=S.views[S.views.length-1
   const title=$('#detail-title'); title.innerHTML=v.title;
   // Background connection updates retain the same controls and scroll position.
   // File mounts own separate resources and replace their body when its revision changes.
-  if(refresh&&typeof v.mount!=='function') updateStageHTML(body,v.html);
+  if(refresh&&(typeof v.mount!=='function'||v.preserveOnRefresh)) updateStageHTML(body,v.html);
   else { replaceStageHTML(body,v.html); body.scrollTop=0; }
   _reconcilePublicEvidenceControls();
   const connected=body.querySelector('[data-connected-node]')?.dataset.connectedNode;
+  for(const entry of MY_NODES.values()) if(entry.base!==connected&&entry.detailScope){
+    releaseConnectedDetails(entry); watchConnectedStream(entry);
+  }
   if(connected) title.dataset.connectedNode=connected;
   else delete title.dataset.connectedNode;
   $('#detailback').hidden=S.views.length<=1;
@@ -14466,6 +14251,26 @@ function wire(){
       const sc=$('#detailbody').scrollTop; renderTop().then(()=>{ $('#detailbody').scrollTop=sc; }); return; }
     if(act==='my-node'){ pushView(()=>connectedNodeView(a.dataset.base)); return; }
     if(act==='my-persona'){ pushView(()=>connectedPersonaView(a.dataset.base,a.dataset.persona)); return; }
+    if(act==='my-persona-tab'){
+      S.views[S.views.length-1]=()=>connectedPersonaView(a.dataset.base,a.dataset.persona,
+        {tab:a.dataset.tab,offset:Number(a.dataset.offset||0)}); renderTop(); return;
+    }
+    if(act==='my-activity-expand'||act==='my-activity-more'){
+      const entry=MY_NODES.get(a.dataset.base); if(!entry) return;
+      if(act==='my-activity-more') entry.activityLimit=(entry.activityLimit||16)+16;
+      else entry.expandedActivity=entry.expandedActivity===a.dataset.record?'':a.dataset.record;
+      renderTop({refresh:true}); return;
+    }
+    if(act==='my-directory-more'){
+      const entry=MY_NODES.get(a.dataset.base); if(entry){ entry.directoryLimit=(entry.directoryLimit||32)+32; renderTop({refresh:true}); } return;
+    }
+    if(act==='my-copy-selection'){
+      const entry=MY_NODES.get(a.dataset.base); if(!entry) return;
+      const args=[...entry.selection].map(pid=>"--persona '"+pid.replaceAll("'","'\\''")+"'").join(' ');
+      navigator.clipboard.writeText(args).then(()=>{
+        const status=$('#detailbody [data-selection-copy-status]'); if(status) status.textContent='Copied. Run from the CLI; the browser has not started a task.';
+      }).catch(()=>{ const status=$('#detailbody [data-selection-copy-status]'); if(status) status.textContent=args; }); return;
+    }
     if(act==='my-environment'){ pushView(()=>connectedEnvironmentView(a.dataset.base,a.dataset.environment)); return; }
     if(act==='my-file'){ pushView(()=>connectedFileView(a.dataset.base,a.dataset.run,a.dataset.environment,a.dataset.workspace,a.dataset.path,
       {source:a.dataset.source||'live',artifactId:a.dataset.artifact||''})); return; }
@@ -14501,7 +14306,7 @@ function wire(){
     // Clear the drawer-live keys too, or the 5s loop keeps fetching feed/thinking
     // against the now-hidden drawer forever.
     S._renderGen=(S._renderGen||0)+1;
-    runViewCleanups();
+    runViewCleanups({releaseConnections:true});
     S.drawerLiveKind=S.drawerLiveId=S.drawerLiveFeed=S.drawerThinkPid=null; S.drawerLiveKernel=''; S.drawerLiveBase=''; S.openLiveFile=null;
     $('#detailwrap').classList.remove('open'); S._topIsOp=false;
     document.body.classList.remove('detail-open');
@@ -15243,8 +15048,8 @@ async function initP2P(){
   }, 15000);
   // per-entity drawer feed + node run state + the living network: re-fetch on the
   // node's live cadence so the stage, constellation and feed stream without SSE.
-  setInterval(()=>{ try{ refreshLiveSection(); refreshThinking(); prefetchNodeStatuses();
-    refreshSystemView(); streamPersonaCognition(); }catch(e){} }, 5000);
+  setInterval(()=>{ if(document.hidden) return; try{ refreshLiveSection(); prefetchNodeStatuses();
+    refreshSystemView(); }catch(e){} }, 5000);
   // Exact live workspace snapshots: SSE is primary; this 3s poll is the bounded
   // fallback for proxies/browsers that buffer or block EventSource.
   setInterval(()=>{ pollLiveArtifacts().catch(()=>{}); },3000);
@@ -15256,5 +15061,4 @@ async function initP2P(){
   prefetchNodeStatuses();
   renderMissions();
   refreshVisibleOpenInputs().catch(()=>{});
-  streamPersonaCognition();
 })().catch((e)=>{ $('#status').textContent='discovery error: '+e.message; console.error(e); });

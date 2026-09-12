@@ -56,7 +56,7 @@ const declarations = [
   section('const IPFS_RENDEZVOUS_CID=', 'function recordStoreKey('),
   section('function recordStoreKey(', 'function upsert('),
   section('async function resolveKernelBases(', '// ---------- empty state:'),
-  section('const MY_NODES=', 'async function connectedProfile('),
+  section('const MY_NODES=', 'function connectedProfile('),
   section('function disconnectMyNode(', 'function paintConnectedNode('),
   section('async function rememberConnectedCognition(', 'function connectedNodeMarker('),
   section('async function operatorView(){', 'async function operatorNodeView('),
@@ -296,7 +296,8 @@ for (const port of [8765, 43433]) test(`the printed HTTP origin on ${port} survi
   assert.equal(boots(), before + 4, 'The actual 15-second discovery schedule remains active');
   const eventBefore = boots(); await ui.focus(node);
   assert.equal(boots(), eventBefore + 1, 'The actual focus event still re-resolves this node');
-  assert.ok(ui.metrics.statuses >= 13 && ui.metrics.cognition >= 13);
+  assert.ok(ui.metrics.statuses >= 13);
+  assert.equal(ui.metrics.cognition, 0, 'The grid never polls complete persona histories');
   assert.equal(ui.metrics.peerStarts, 1);
   assert.match((await ui.operatorView()).html, new RegExp(base.replaceAll('.', '\\.')));
   ui.clean();
@@ -333,7 +334,7 @@ test('current-node access and manual public/private addresses do not depend on p
       const connectedReads = ui.http.slice(first).filter(row => row.url.startsWith(base + '/'));
       assert.ok(connectedReads.some(row => row.url === base + '/status'));
       for (const row of connectedReads) assert.equal(row.init.headers.Authorization || '', token ? 'Bearer ' + token : '');
-      assert.equal(entry.stream.url, base + '/discovery/events');
+      assert.equal(entry.stream.url, base + '/discovery/events?cognition=none&artifacts=none');
       assert.equal(entry.stream.options.requestInit().headers.Authorization || '', token ? 'Bearer ' + token : '');
       assert.equal(ui.peerList().includes(base), !token, 'Private connections stay out of public discovery');
       const publicReads = ui.http.slice(first).filter(row => !row.url.startsWith(base + '/'));

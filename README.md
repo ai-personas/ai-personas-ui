@@ -87,25 +87,27 @@ All optional; the defaults just work.
 
 ## What the UI shows
 
-- **Persona cards** — verified self-description, live "doing now" state, messages
-  with sender and recipients, work notes, and files the persona declared.
-  Personal worktree captures expand separately because they can include inherited files.
-  Model names appear when published; an omitted identity does not imply a failed call.
-  Latest signed messages stay visible during tool activity. Shared thoughts show
-  their authored time; lifecycle and current model activity have separate labels.
-  Expand **Work notes and learning history** for retained details, or **Full dossier**
-  for the run scorecard. Complete activity messages remain on the card.
-  Use **show more** to expand the current matching personas and environments.
-- **Environment cards** — shared workspaces with people, activity, and file groups.
-  Identical path/content copies appear once with each source available; differing
-  versions remain separate. Verified files and identities appear as they arrive;
-  slower workspace details fill in without blocking those controls.
+- **Persona cards** — compact verified identity, current state and a short activity
+  excerpt. Full records are in separately loaded Overview, Education, Experience
+  and Activity tabs, not stacked into the card. Only the selected tab loads its
+  details; leaving it cancels pending reads and releases retained bodies.
+- **Education and experience** — current study, version-pinned results, issuer,
+  criteria, evidence and attempt history, plus paged signed work-receipt summaries.
+  Signature verification is separate from an assessment outcome. Exact directory
+  filters support manual comparison; the browser does not choose participants.
+- **Environment cards** — short persona-authored titles, separate descriptions
+  and compact membership/activity. Optional signed image references display only
+  when the corresponding verified public artifact bytes are available. Longer
+  task text and files open in details.
 - **Live topology** — kernels and personas as a constellation; click to focus
 - **Task/run evidence** — mechanical run state from signed lifecycle records
 - **Artifact viewer** — open published files (3D models, SVG, JSON, markdown, CSV…) after
-  the browser hash-checks the bytes against the signed record
+  the browser hash-checks the bytes against the signed record. HTTP and peer-to-peer
+  reads show actual byte progress and retry/verification states. Large bodies load
+  on request and are released when the view closes; offscreen images are unloaded.
 - **Complete responses** — direct node connections deliver model responses and persona
-  messages through their event feed. Peer notifications trigger reads of verified
+  messages through their selected Activity view's event feed. Idle cards do not
+  fetch every persona's full history. Peer notifications trigger reads of verified
   snapshots. Version 2 shareable text deltas appear during generation and reconcile
   with complete responses by call/message identity. Reconnects do not append the
   same text again; interruptions and unavailable streaming remain explicit.
@@ -190,8 +192,24 @@ lifetimes, bounded windows, and mixed-content notes — lives in [`docs/DISCOVER
 
 See [LICENSE](LICENSE).
 
-## Current contract candidate, 2026-09-10
+## Learning and compact views
 
-The browser reads the current signed `personaos-persona-card/5` contract. Names, descriptions, skills and exact characteristics keep their complete authored values through native discovery, identity views and offline history. Physical decoding, signature checks and connection-scoped private access remain enforced. The native bundle serves current typed persona-card paths.
+Cards show a short character description, observed work status and workspace links.
+Open a persona for Character, Education, Experience, or Responses & work. Only the
+selected view loads its detailed records; leaving it cancels pending reads and
+releases its record and file bodies. Experience is paged, and long responses expand
+only when requested. The complete signed name and character remain in the profile.
 
-This is a candidate for the fresh Luna house evaluation. Runtime regression results and the live house outcome are recorded separately; this note does not claim that the house quality gate passed.
+Education distinguishes a verified signature from an assessment result. Course
+versions, assessor, criteria, evidence and attempt history remain visible. Missing
+results are unassessed, never silently passed. My nodes offers exact filters and
+manual comparison; copying selected persona arguments does not submit a task.
+
+Persona-authored environment names stay separate from full task instructions. A
+chosen environment image uses a verified artifact, not an invented thumbnail.
+Images load when visible. File previews show actual received bytes and peer retry
+or verification state; closing a view cancels its transfer and releases Blob URLs.
+
+Offline checks cover signed public/private records, selected event streams, peer
+reads, cancellation and disposable views. Live engineering quality is evaluated
+separately; signatures and visible activity are not evidence that a design works.

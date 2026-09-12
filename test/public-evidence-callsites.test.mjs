@@ -320,7 +320,7 @@ test('actual environment no-task fallback is not presented as a selected signed 
   const values={_publicEvidence:b.producer,envOutputContext:()=>({statusTxt:'Available',metaFiles:0,artRow:''}),
     renderEnvLaneLive:empty,_environmentCommunicationGraphHTML:()=>({activeCount:0,eventCount:0,html:''}),
     _pkTaskFacts:()=>null,_retainedVerifiedEntityFeed:()=>null,telemetryActiveCalls:()=>[],_environmentRunBudget:()=>null,
-    _runBudgetLabel:empty,_sentenceStart:x=>x,_pkEnvTools:()=>[],_envHue:()=>0,identiconSVG:empty,icon:empty,esc};
+    _runBudgetLabel:empty,_sentenceStart:x=>x,_compactHumanLabel:x=>x,_pkEnvTools:()=>[],_envHue:()=>0,identiconSVG:empty,icon:empty,esc};
   const parts=[['  const environmentCardHTML=(b)=>{','  // (3) Preserve every exact environment identity.']];
   const render=compile(source,parts,['environmentCardHTML'],values).environmentCardHTML;
   const env={kernel:'kernel:A',sid:'env:A',members:[],name:'Workspace',type:'workspace',live:true};

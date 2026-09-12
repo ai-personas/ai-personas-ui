@@ -9,6 +9,7 @@ import {assetRoot, disabledPublicEvidenceDependencies} from './public-evidence.m
 
 const source = readFileSync(resolve(assetRoot, 'discovery.js'), 'utf8');
 const human = await import(pathToFileURL(resolve(assetRoot, 'human-content.mjs')));
+const personaRecords = await import(pathToFileURL(resolve(assetRoot, 'persona-records.mjs')));
 const {environmentIdentity} = await import(pathToFileURL(resolve(assetRoot, 'routing-authority.mjs')));
 const {publicTaskLifecycleProjection} = await import(pathToFileURL(resolve(assetRoot, 'network-view.mjs')));
 const section = (start, end) => {
@@ -33,13 +34,13 @@ const declarations = [
   section('const _ARTIFACT_DECLARATION_DISPLAY_SCHEMA=', 'function artifactDeclarationAttr('),
   section('function _liveWorkspaceRevisionOrder(', 'function _firstAuthoredMethodText('),
   section('function _personaAuthoredWorkHTML(', '// ==== Collectible card gallery'),
-  section('function _artifactDeclaringSid(', '// The persona\'s own stated refusal'),
+  section('function _artifactDeclaringSid(', '// The kernel-signed scorecard'),
   // Include the complete card, so description assertions cover the face binding.
   section('// Personal worktrees may contain', '// ==== end collectible card gallery helpers'),
   section('function renderPersonaCard(', '\nfunction '),
   section('function _verifiedPublicTaskForRun(', 'function _withVerifiedTaskRun('),
   section('function _disclosureKey(', 'function refreshSystemView('),
-  section('  const envOutputContext=(b)=>{', '  const environmentCardHTML='),
+  section('  const envOutputContext=', '  const environmentCardHTML='),
 ].join('\n');
 
 function renderer(observation = null, overrides = {}) {
@@ -48,7 +49,7 @@ function renderer(observation = null, overrides = {}) {
   const liveWorkspacesByEnv = new Map();
   const empty = () => '';
   const values = {
-    ...human, ...disabledPublicEvidenceDependencies(), S, esc, icon: empty, _shortId: short, _nameFor: nameFor,
+    ...human, ...personaRecords, ...disabledPublicEvidenceDependencies(), S, esc, icon: empty, _shortId: short, _nameFor: nameFor,
     _personaKey: (kernel, pid) => `${kernel}:${short(pid)}`,
     kernelForBase: () => 'node', _eventEntityLabel: (kind, id) => id,
     _ixClass: () => 'activity', _ixGlyph: empty,
