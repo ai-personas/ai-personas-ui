@@ -10,7 +10,8 @@ const root = process.env.UI_LAYOUT_ROOT || fileURLToPath(new URL('../', import.m
 const assets = process.env.UI_PRESENTATION_ASSETS || path.join(root, 'assets');
 const {renderer} = await import(pathToFileURL(path.join(root, 'test/helpers/discovery-presentation.mjs')));
 const {chromium} = await import(process.env.UI_BROWSER_MODULE || 'playwright');
-const css = await fs.readFile(path.join(assets, 'discovery.css'), 'utf8');
+const css = await fs.readFile(path.join(assets, 'discovery.css'), 'utf8')
+  + '\n' + await fs.readFile(path.join(assets, 'workspace.css'), 'utf8');
 const browser = await chromium.launch({headless:true,
   ...(process.env.UI_BROWSER_EXECUTABLE ? {executablePath:process.env.UI_BROWSER_EXECUTABLE} : {}),
   args:['--no-sandbox']});

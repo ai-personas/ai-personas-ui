@@ -36,7 +36,7 @@ function stageSelection() {
       ${section('  const envWindow=selectPriorityWindow(envCandidates,', '  envBlocks.length=0;')}
       return envWindow;
     }
-    function personaSelection(personaCandidates) {
+    function personaSelection(filteredPersonas) {
       ${section("  const deckKey='@persona-deck', deckLimit=", '  S.visiblePersonaIds.clear();')}
       return personaWindow;
     }
