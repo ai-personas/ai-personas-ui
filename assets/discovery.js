@@ -3,10 +3,10 @@ import {createPublicEvidence} from './public-evidence.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
 import * as ed from './noble-ed25519.js';
 import {NodeReadSession, fetchEventSource} from './node-connection.mjs?v=20260907-access-revocation-v1';
-import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260908-public-evidence-v1';
+import {updateStageHTML,replaceStageHTML} from './stage-dom.mjs?v=20260913-record-evidence-v1';
 import {verifyIdentityResidency} from './identity-residency.mjs?v=20260910-handoff-v1';
 import {verifyNodePersonaProjection, verifyPersonaEducation, verifyPersonaExperience,
-  filterPersonaDirectory, educationHtml, experienceHtml, validEnvironmentImageReference} from './persona-records.mjs?v=20260911-learning-v1';
+  filterPersonaDirectory, educationHtml, experienceHtml, mountRecordEvidence, validEnvironmentImageReference} from './persona-records.mjs?v=20260913-record-evidence-v1';
 import {VerifiedImageMounts} from './verified-image-mounts.mjs';
 import {
   artifactSemanticLabels,
@@ -10755,6 +10755,8 @@ async function personaView(r,{tab='overview',offset=0}={}){
   const mount=async(root,lifecycle)=>{
     const host=root.querySelector('[data-public-persona-pane]');
     let currentDoc=null, limit=16, expanded='', reading=false;
+    const evidence=['education','experience'].includes(tab)?mountRecordEvidence(host):null;
+    if(evidence) lifecycle.onCleanup(()=>evidence.dispose());
     const activityHtml=()=>{
       if(!currentDoc) return '<p class="l2" role="status">Loading verified public activity…</p>';
       const entry={tier:'public',status:{node_id:kernel,personas:[]}};
@@ -10811,7 +10813,11 @@ async function personaView(r,{tab='overview',offset=0}={}){
         updateStageHTML(host,tab==='activity'?activityHtml():tab==='education'?educationHtml(doc):experienceHtml(doc)
           +'<div class="record-pages">'+(offset?button('experience','Previous records',Math.max(0,offset-32)):'')
           +(doc.next_offset!==null?button('experience','Next records',doc.next_offset):'')+'</div>');
-      }catch(error){ if(lifecycle.isCurrent()) host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`; }
+        evidence?.update(doc);
+      }catch(error){ if(lifecycle.isCurrent()){
+        currentDoc=null;evidence?.update(null);
+        host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`;
+      } }
       finally{ reading=false; }
     };
     const selectedView={key:personaKey,base,refresh:read,timer:null};
@@ -13324,10 +13330,16 @@ async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){
   html+='<div data-persona-pane>'+body(connectedCachedDetail(entry,kind,pid,offset))+'</div></div>';
   const mount=async(root,lifecycle)=>{
     const host=root.querySelector('[data-persona-pane]');
+    const evidence=['education','experience'].includes(tab)?mountRecordEvidence(host):null;
+    if(evidence) lifecycle.onCleanup(()=>evidence.dispose());
+    evidence?.update(connectedCachedDetail(entry,kind,pid,offset));
     try{
       const doc=await connectedDetailRecord(entry,kind,pid,{offset}); lifecycle.assertCurrent();
       updateStageHTML(host,body(doc));
-    }catch(error){ if(lifecycle.isCurrent()) host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`; }
+      evidence?.update(doc);
+    }catch(error){ if(lifecycle.isCurrent()){
+      evidence?.update(null);host.innerHTML=`<p class="viewerr" role="status">${esc(error.message)}</p>`;
+    } }
   };
   return {title:`<span class="kind k-persona">PERSONA</span> ${esc(_displayPersonaName(person.name,pid))}`,html,mount,preserveOnRefresh:true};
 }

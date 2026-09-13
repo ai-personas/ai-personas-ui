@@ -33,13 +33,16 @@ function updateNode(current, next, holdOrder) {
   // descriptor, signing key or provider changes its key and replaces the mount.
   if (current.matches('.pc-avatar[data-avatar-key]')
       && current.getAttribute('data-avatar-revision')) return;
+  // A mounted component owns its children until its exact local identity changes.
+  const ownsChildren=current.hasAttribute('data-stage-owned')
+    && current.getAttribute('data-stage-owned')===next.getAttribute('data-stage-owned');
   const viewerAttribute = (name) => current.localName === 'details' && name === 'open';
   for (const {name} of [...current.attributes])
     if (!viewerAttribute(name) && !next.hasAttribute(name)) current.removeAttribute(name);
   for (const {name, value, namespaceURI} of next.attributes)
     if (!viewerAttribute(name) && current.getAttribute(name) !== value)
       current.setAttributeNS(namespaceURI, name, value);
-  updateChildren(current, next, holdOrder);
+  if (!ownsChildren) updateChildren(current, next, holdOrder);
 }
 
 function updateChildren(parent, next, holdOrder) {

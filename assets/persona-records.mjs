@@ -141,7 +141,95 @@ export function filterPersonaDirectory(people, {text = '', availability = '', cu
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const words = value => String(value || '').replaceAll('_', ' ');
-const evidenceHtml = evidence => `<pre class="record-evidence">${escape(typeof evidence === 'string' ? evidence : canonicalJson(evidence))}</pre>`;
+const evidenceKey = parts => escape(canonicalJson(parts));
+const evidenceSlot = () => '<div data-record-evidence-body data-stage-owned="record-evidence"></div>';
+
+// The selected view retains its verified document, not a second serialized copy
+// in HTML, hidden DOM or data attributes. Its lifecycle must dispose this mount.
+export function mountRecordEvidence(host) {
+  let currentDoc=null, disposed=false;
+  const displayed=new Map(), pageSize=16000;
+  const paint=(disclosure,state)=>{
+    const body=disclosure.querySelector('[data-record-evidence-body]');
+    if(!body) return;
+    let end=Math.min(state.start+pageSize,state.text.length);
+    // A page boundary must not turn an exact Unicode character into two replacements.
+    if(end<state.text.length&&/[\uD800-\uDBFF]/.test(state.text[end-1])
+        &&/[\uDC00-\uDFFF]/.test(state.text[end])) end--;
+    state.end=end;
+    let pre=body.querySelector('pre');
+    if(!pre){pre=host.ownerDocument.createElement('pre');pre.className='record-evidence';body.replaceChildren(pre);}
+    const text=state.text.slice(state.start,end);
+    if(pre.textContent!==text) pre.textContent=text;
+    let pages=body.querySelector('[data-record-evidence-pages]');
+    if(state.text.length<=pageSize){pages?.remove();return;}
+    if(!pages){
+      pages=host.ownerDocument.createElement('div');pages.className='record-pages';
+      pages.setAttribute('data-record-evidence-pages','');
+      pages.innerHTML='<button type="button" data-record-evidence-page="previous">Previous part</button>'
+        +'<span role="status"></span><button type="button" data-record-evidence-page="next">Next part</button>';
+      body.appendChild(pages);
+    }
+    pages.querySelector('[role="status"]').textContent='Part '+(state.previous.length+1)
+      +(end<state.text.length?' · more evidence available':' · end of evidence');
+    pages.querySelector('[data-record-evidence-page="previous"]').disabled=!state.previous.length;
+    pages.querySelector('[data-record-evidence-page="next"]').disabled=end===state.text.length;
+  };
+  const render = disclosure => {
+    const body=disclosure.querySelector('[data-record-evidence-body]');
+    if(!body) return;
+    if(!currentDoc||!disclosure.open){
+      displayed.delete(disclosure);if(body.childNodes.length) body.replaceChildren();return;
+    }
+    let key;
+    try{ key=JSON.parse(disclosure.dataset.disclosureKey); }
+    catch(_){displayed.delete(disclosure);body.replaceChildren();return;}
+    let value;
+    if(Array.isArray(key)&&key[0]==='criterion'&&key.length===3){
+      const attempt=currentDoc.assessments?.find(row=>row.assessment_id===key[1]);
+      value=attempt?.criteria?.find(row=>row.criterion===key[2])?.evidence;
+    }else if(Array.isArray(key)&&key[0]==='facts'&&key.length===2){
+      const matches=currentDoc.records?.filter(row=>row.source_record_hash===key[1])||[];
+      if(matches.length===1) value=matches[0].facts;
+    }
+    const text=value===undefined?'Exact evidence is unavailable for this record.'
+      :typeof value==='string'?value:canonicalJson(value);
+    const prior=displayed.get(disclosure), state=prior?.text===text?prior:{text,start:0,previous:[]};
+    displayed.set(disclosure,state);paint(disclosure,state);
+  };
+  const toggled=event=>{
+    const disclosure=event.target;
+    if(!disposed&&host.contains(disclosure)&&disclosure.matches?.('details[data-record-evidence]')) render(disclosure);
+  };
+  const clicked=event=>{
+    const button=event.target.closest?.('[data-record-evidence-page]');
+    if(disposed||!currentDoc||!button||!host.contains(button)) return;
+    const disclosure=button.closest('details[data-record-evidence]'),state=displayed.get(disclosure);
+    if(!state||!disclosure.open) return;
+    event.preventDefault();
+    if(button.dataset.recordEvidencePage==='next'&&state.end<state.text.length){
+      state.previous.push(state.start);state.start=state.end;
+    }else if(button.dataset.recordEvidencePage==='previous'&&state.previous.length) state.start=state.previous.pop();
+    else return;
+    paint(disclosure,state);
+  };
+  host.addEventListener('toggle',toggled,true);
+  host.addEventListener('click',clicked);
+  return {
+    update(doc){
+      if(disposed) return;
+      currentDoc=doc;
+      for(const disclosure of displayed.keys()) if(!host.contains(disclosure)) displayed.delete(disclosure);
+      host.querySelectorAll('details[data-record-evidence]').forEach(render);
+    },
+    dispose(){
+      if(disposed) return;
+      disposed=true;currentDoc=null;displayed.clear();
+      host.removeEventListener('toggle',toggled,true);host.removeEventListener('click',clicked);
+      host.querySelectorAll('[data-record-evidence-body]').forEach(body=>body.replaceChildren());
+    },
+  };
+}
 
 export function educationHtml(doc) {
   const courses = new Map(doc.curricula.map(course => [course.record_id, course]));
@@ -163,10 +251,13 @@ export function educationHtml(doc) {
       + `<p class="l2">Assessor ${escape(row.assessment_capability.id)} · v${escape(row.assessment_capability.version)}</p>`;
     if (result?.reason) html += `<p>${escape(result.reason)}</p>`;
     if (result?.correction_reason) html += `<p>Issuer correction: ${escape(result.correction_reason)}</p>`;
-    html += (row.criteria || []).map(criterion => `<details class="record-criterion" data-disclosure-key="${escape(row.assessment_id + ':' + criterion.criterion)}">`
+    html += (row.criteria || []).map(criterion => {
+      const key=evidenceKey(['criterion',row.assessment_id,criterion.criterion]);
+      return `<details class="record-criterion" data-disclosure-key="${key}" data-record-evidence="">`
       + `<summary>${escape(criterion.criterion)} · ${escape(words(criterion.status))}</summary>`
       + `<p>${escape(course?.rubric.find(item => item.criterion === criterion.criterion)?.description || '')}</p>`
-      + evidenceHtml(criterion.evidence) + '</details>').join('');
+      + evidenceSlot() + '</details>';
+    }).join('');
     html += `<details data-disclosure-key="${escape(row.assessment_id)}"><summary>Evidence binding and ${row.history.length} signed record${row.history.length === 1 ? '' : 's'}</summary>`
       + `<dl><dt>Submission</dt><dd><code>${escape(row.submission_hash)}</code></dd><dt>Rubric</dt><dd><code>${escape(row.rubric_hash)}</code></dd>`
       + `<dt>Package</dt><dd><code>${escape(row.package_hash)}</code></dd></dl>`
@@ -187,9 +278,12 @@ export function experienceHtml(doc) {
       `<div><dt>${label}</dt><dd>${escape(doc.summary[key] ?? 'not recorded')}</dd></div>`).join('') + '</dl>'
     + `<p class="l2">${escape(doc.limits)}</p>`
     + (doc.omitted_unverified_records ? `<p role="status">${doc.omitted_unverified_records} unverifiable records excluded.</p>` : '')
-    + '<h3>Recorded work</h3>' + (doc.records.length ? doc.records.map(row =>
-      `<div class="record-row"><b>${escape(words(row.source_kind))}</b><span>${escape(row.recorded_at)}</span>`
+    + '<h3>Recorded work</h3>' + (doc.records.length ? doc.records.map(row => {
+      const key=evidenceKey(['facts',row.source_record_hash]);
+      return `<div class="record-row" data-stage-key="${key}"><b>${escape(words(row.source_kind))}</b><span>${escape(row.recorded_at)}</span>`
       + `<small>Task ${escape(row.task_id)} · environment ${escape(row.environment_id)}</small>`
-      + `<details><summary>Measured facts</summary>${evidenceHtml(row.facts)}<code>${escape(row.source_record_hash)}</code></details></div>`).join('')
+      + `<details data-disclosure-key="${key}" data-record-evidence=""><summary>Measured facts</summary>`
+      + evidenceSlot()+`<code>${escape(row.source_record_hash)}</code></details></div>`;
+    }).join('')
       : '<p class="l2">No visible signed work records. This is not a claim that no work occurred.</p>');
 }

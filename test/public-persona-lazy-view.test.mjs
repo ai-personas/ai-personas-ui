@@ -10,7 +10,7 @@ const section=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.inde
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const esc=value=>String(value??'').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 function fixture(){
-  const requests=[], timers=new Map(), listeners=new Map(), cleanups=[];
+  const requests=[], timers=new Map(), listeners=new Map(), cleanups=[], evidenceMounts=[];
   const state={views:[],keyDocs:new Map()}, host={innerHTML:''}, controller=new AbortController();
   const document={hidden:false}; let timerId=0,current=true;
   const lifecycle={signal:controller.signal,isCurrent:()=>current,assertCurrent(){if(!current) throw new Error('closed');},
@@ -32,12 +32,16 @@ function fixture(){
     keysFor:async()=>{},verifyPublicPersonaCognition:async(_base,doc)=>doc?.valid===true,
     verifyPersonaEducation:async doc=>({ok:doc?.valid===true}),verifyPersonaExperience:async doc=>({ok:doc?.valid===true}),
     educationHtml:doc=>'<p>'+esc(doc.title)+'</p>',experienceHtml:doc=>'<p>'+esc(doc.title)+'</p>',canonicalJson:JSON.stringify,
+    mountRecordEvidence:node=>{
+      assert.equal(node,host);const mount={doc:null,disposed:false,update(doc){this.doc=doc;},dispose(){this.disposed=true;this.doc=null;}};
+      evidenceMounts.push(mount);return mount;
+    },
     _comparePublicCognitionGeneratedAt:(a,b)=>Date.parse(a)-Date.parse(b),
   };
   const api=new Function(...Object.keys(values),section('async function personaView(', 'async function envView(')
     +section('function scheduleSseCognitionRefresh(', '// A verified SSE frame')+'\nreturn {view:personaView,invalidate:scheduleSseCognitionRefresh};')(...Object.values(values));
   const record={did:'alice',_kernel:'kernel:test',description:'Checks measured work.',_personaCharacteristics:{traits:['curious']}};
-  return {...api,record,state,requests,timers,listeners,host,root,lifecycle,document};
+  return {...api,record,state,requests,timers,listeners,host,root,lifecycle,document,evidenceMounts};
 }
 test('the character drawer opens and mounts without a profile, status or history request',async()=>{
   const f=fixture(), view=await f.view(f.record);
@@ -54,8 +58,10 @@ test('education and paged experience fetch only their chosen record after render
     assert.equal(f.requests[0].url,'https://node.test/personas/alice/'+tab+(tab==='experience'?'?offset=32&limit=32':''));
     f.requests[0].resolve({valid:true,title:'Verified selected record',next_offset:64});await mounted;
     assert.match(f.host.innerHTML,/Verified selected record/);
+    assert.equal(f.evidenceMounts.length,1);assert.equal(f.evidenceMounts[0].doc.title,'Verified selected record');
     if(tab==='experience') assert.match(f.host.innerHTML,/Next records/);
     f.lifecycle.cancel();assert.equal(f.timers.size,0);
+    assert.equal(f.evidenceMounts[0].disposed,true);assert.equal(f.evidenceMounts[0].doc,null);
   }
 });
 test('full responses enter the DOM only when opened and selected-view state is released',async()=>{

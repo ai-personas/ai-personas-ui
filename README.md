@@ -93,6 +93,10 @@ All optional; the defaults just work.
   details; leaving it cancels pending reads and releases retained bodies.
 - **Education and experience** — current study, version-pinned results, issuer,
   criteria, evidence and attempt history, plus paged signed work-receipt summaries.
+  Raw criterion evidence and measured facts enter the page only when expanded.
+  Large bodies have Previous/Next part controls; collapsing releases the rendered
+  text and its paging state. The complete signed document remains available only
+  while that detail view is selected. This does not change a result or its evidence.
   Signature verification is separate from an assessment outcome. Exact directory
   filters support manual comparison; the browser does not choose participants.
 - **Environment cards** — short persona-authored titles, separate descriptions
@@ -170,11 +174,15 @@ square, portrait and landscape bitmaps in compact cards on desktop and mobile:
 
 ```bash
 node test/bitmap-card-layout.browser.mjs
+node test/record-evidence-lifetime.browser.mjs
 ```
 
 `UI_BROWSER_MODULE` and `UI_BROWSER_EXECUTABLE` can select an existing driver
 and browser installation. The test uses generated bitmaps and no network; it
 does not create persona identities or change their images.
+The evidence regression serves only local fixture modules. It checks bounded
+text pages, exact Unicode reconstruction, refresh/reordering and cleanup with
+synthetic records, not live delivery speed or browser garbage-collection timing.
 
 For a discovery bug report, `window.__personaOSPublicEvidence.enable()` enables
 optional observation of already received public inventories, admission decisions,

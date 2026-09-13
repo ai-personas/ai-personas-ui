@@ -52,7 +52,8 @@ test('education verifies the node projection, original signatures, pinned assess
   assert.equal((await verifyPersonaEducation(doc, options)).ok, true);
   const html = educationHtml(doc);
   assert.match(html, /Node signature verified/); assert.match(html, /assessor signatures checked separately/);
-  assert.match(html, /fresh-checks/); assert.match(html, /Changed inputs measured/);
+  assert.match(html, /fresh-checks/); assert.doesNotMatch(html, /Changed inputs measured/);
+  assert.match(html, /data-record-evidence=/);
   assert.match(html, /independent/); assert.match(html, /latest attempt/);
   assert.match(html, /not an overall ability score/);
 });
