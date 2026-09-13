@@ -6409,9 +6409,9 @@ const _PERSONA_AVATAR_RETRY_MAX_MS=30000;
 const _PERSONA_AVATAR_PERSISTENT_CACHE='personaos-verified-persona-avatars-v1';
 const _personaAvatarAssets=new Map();
 const _personaAvatarJobs=new Map();
-const _personaAvatarJobControllers=new Set();
 const _personaAvatarFetchQueue=[];
 const _personaAvatarMountUrls=new Map();
+const _personaAvatarMountTimers=new Map();
 const _personaAvatarFailures=new Set();
 let _personaAvatarCacheBytes=0;
 let _personaAvatarActiveFetches=0;
@@ -6580,16 +6580,34 @@ function _rememberPersonaAvatarAsset(key,asset){
   }
   return asset;
 }
+function _clearPersonaAvatarMountTimer(mount,expectedTimer=null){
+  const timer=_personaAvatarMountTimers.get(mount);
+  if(timer===undefined||(expectedTimer!==null&&timer!==expectedTimer)) return;
+  globalThis.clearTimeout(timer); _personaAvatarMountTimers.delete(mount);
+}
+function _setPersonaAvatarMountTimer(mount,callback,delay){
+  _clearPersonaAvatarMountTimer(mount);
+  const timer=globalThis.setTimeout(()=>{
+    if(_personaAvatarMountTimers.get(mount)!==timer) return;
+    _personaAvatarMountTimers.delete(mount); callback();
+  },delay);
+  _personaAvatarMountTimers.set(mount,timer); return timer;
+}
 function _releasePersonaAvatarMountUrl(mount){
+  _clearPersonaAvatarMountTimer(mount);
   const url=_personaAvatarMountUrls.get(mount);
   if(!url) return;
   _personaAvatarMountUrls.delete(mount); URL.revokeObjectURL(url);
 }
 function _releaseDisconnectedPersonaAvatarMountUrls(){
-  for(const mount of _personaAvatarMountUrls.keys())
+  for(const mount of new Set([..._personaAvatarMountUrls.keys(),..._personaAvatarMountTimers.keys()]))
     if(!mount.isConnected) _releasePersonaAvatarMountUrl(mount);
+  for(const job of _personaAvatarJobs.values()){
+    for(const mount of job.mounts) if(!mount.isConnected) job.mounts.delete(mount);
+    if(!job.mounts.size) job.controller.abort();
+  }
 }
-async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
+async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor,mount){
   const ref=_personaRef(personaKey);
   const signedPersona=signedPersonaIdentity(signedCard);
   if(!signedPersona||signedPersona.canonicalId!==ref.sid)
@@ -6609,8 +6627,9 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
   if(_personaAvatarFailures.has(cacheKey)) throw new Error('avatar previously refused');
   let job=_personaAvatarJobs.get(cacheKey);
   if(!job){
-    const controller=new AbortController(); _personaAvatarJobControllers.add(controller);
-    job=_queuePersonaAvatarFetch(async()=>{
+    const controller=new AbortController();
+    job={controller,mounts:new Set(),promise:null};
+    job.promise=_queuePersonaAvatarFetch(async()=>{
       const aborted=new Promise((_,reject)=>{
         if(controller.signal.aborted){ reject(_personaAvatarBodyTransientError()); return; }
         controller.signal.addEventListener('abort',
@@ -6690,12 +6709,13 @@ async function _loadPersonaAvatarAsset(personaKey,signedCard,descriptor){
       throw error;
     })
       .finally(()=>{
-        _personaAvatarJobControllers.delete(controller);
+        job.mounts.clear();
         if(_personaAvatarJobs.get(cacheKey)===job) _personaAvatarJobs.delete(cacheKey);
       });
     _personaAvatarJobs.set(cacheKey,job);
   }
-  return job;
+  job.mounts.add(mount);
+  return job.promise;
 }
 function _neutralPersonaAvatar(mount,state='failed'){
   _releasePersonaAvatarMountUrl(mount);
@@ -6727,7 +6747,7 @@ function _schedulePersonaAvatarRetry(mount,revision){
   const label=mount.querySelector('.pc-avatar-placeholder small');
   if(label) label.textContent='verifying persona-authored avatar';
   mount.setAttribute('aria-label','neutral person silhouette shown while persona-authored raster avatar transport retries');
-  globalThis.setTimeout(()=>{
+  _setPersonaAvatarMountTimer(mount,()=>{
     if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision
         ||mount.dataset.avatarState!=='waiting'
         ||mount.dataset.avatarRetryAttempt!==String(nextAttempt)) return;
@@ -6746,7 +6766,7 @@ async function _hydratePersonaAvatarMount(mount){
   }
   mount.dataset.avatarState='loading';
   try{
-    const asset=await _loadPersonaAvatarAsset(personaKey,signedCard,descriptor);
+    const asset=await _loadPersonaAvatarAsset(personaKey,signedCard,descriptor,mount);
     if(!_personaAvatarPageActive||!mount.isConnected||mount.dataset.avatarRevision!==revision) return;
     const img=document.createElement('img'); img.alt=''; img.setAttribute('aria-hidden','true');
     img.decoding='async'; img.draggable=false; img.width=asset.width; img.height=asset.height;
@@ -6754,19 +6774,19 @@ async function _hydratePersonaAvatarMount(mount){
     try{ objectUrl=URL.createObjectURL(asset.blob); }
     catch(_){ throw _personaAvatarBodyTransientError(); }
     _releasePersonaAvatarMountUrl(mount); _personaAvatarMountUrls.set(mount,objectUrl);
-    const displayTimeout=globalThis.setTimeout(()=>{
+    const displayTimeout=_setPersonaAvatarMountTimer(mount,()=>{
       if(mount.isConnected&&mount.contains(img)&&mount.dataset.avatarRevision===revision
           &&mount.dataset.avatarState==='loading') _schedulePersonaAvatarRetry(mount,revision);
     },_PERSONA_AVATAR_MOUNT_TIMEOUT_MS);
     img.addEventListener('load',()=>{
-      globalThis.clearTimeout(displayTimeout);
+      _clearPersonaAvatarMountTimer(mount,displayTimeout);
       if(!mount.isConnected||!mount.contains(img)||mount.dataset.avatarRevision!==revision) return;
       mount.dataset.avatarState='ready'; mount.dataset.avatarLifecycle='materialized';
       delete mount.dataset.avatarRetryAttempt;
       mount.setAttribute('aria-label','verified persona-authored raster avatar');
     },{once:true});
     img.addEventListener('error',()=>{
-      globalThis.clearTimeout(displayTimeout);
+      _clearPersonaAvatarMountTimer(mount,displayTimeout);
       if(mount.isConnected&&mount.contains(img)&&mount.dataset.avatarRevision===revision)
         _schedulePersonaAvatarRetry(mount,revision);
     },{once:true});
@@ -6786,10 +6806,11 @@ function _hydratePersonaAvatars(){
 }
 window.addEventListener('pagehide',()=>{
   _personaAvatarPageActive=false;
-  for(const controller of _personaAvatarJobControllers) controller.abort();
+  for(const job of _personaAvatarJobs.values()) job.controller.abort();
   for(const entry of _personaAvatarFetchQueue.splice(0))
     entry.reject(_personaAvatarBodyTransientError());
   for(const mount of _personaAvatarMountUrls.keys()) _releasePersonaAvatarMountUrl(mount);
+  for(const mount of _personaAvatarMountTimers.keys()) _clearPersonaAvatarMountTimer(mount);
   _personaAvatarAssets.clear(); _personaAvatarCacheBytes=0;
 });
 window.addEventListener('pageshow',()=>{
@@ -6802,7 +6823,7 @@ window.addEventListener('pageshow',()=>{
 if(typeof MutationObserver==='function'){
   let cleanupQueued=false;
   new MutationObserver(()=>{
-    if(cleanupQueued||!_personaAvatarMountUrls.size) return;
+    if(cleanupQueued||!(_personaAvatarMountUrls.size||_personaAvatarMountTimers.size||_personaAvatarJobs.size)) return;
     cleanupQueued=true; queueMicrotask(()=>{ cleanupQueued=false; _releaseDisconnectedPersonaAvatarMountUrls(); });
   }).observe(document.documentElement,{childList:true,subtree:true});
 }

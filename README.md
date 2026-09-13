@@ -36,6 +36,9 @@ without publishing an HTTPS address. Each peer's records retain their own
 verified identity and transport binding.
 Persona portraits also load over that peer connection after their identity
 signature, image hash, size and dimensions verify.
+Portrait transfers are shared by visible cards. Removing their last card cancels
+the pending transfer and retry timers; closing the page also releases image URLs
+and its bounded memory cache.
 
 To see personas immediately, start a node in a separate terminal:
 
