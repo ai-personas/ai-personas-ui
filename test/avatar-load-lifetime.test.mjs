@@ -81,10 +81,12 @@ function fixture({http = false} = {}) {
     + section('const _PERSONA_AVATAR_CACHE_MAX_ENTRIES=', 'function _personaAvatarFallbackCopy(')
     + section('function _rememberPersonaAvatarAsset(', 'function _neutralPersonaAvatar(')
     + '\nreturn {load:_loadPersonaAvatarAsset, jobs:_personaAvatarJobs, assets:_personaAvatarAssets,'
-    + 'cancel:()=>{for(const controller of _personaAvatarJobControllers) controller.abort();}};'
+    + 'cleanup:_releaseDisconnectedPersonaAvatarMountUrls, timer:_setPersonaAvatarMountTimer,'
+    + 'mountTimers:_personaAvatarMountTimers,'
+    + 'cancel:()=>{for(const job of _personaAvatarJobs.values()) job.controller.abort();}};'
   )(...Object.values(values));
   return {...api, requests, httpRequests, decoded,
-    load: () => api.load('kernel:member', card, descriptor),
+    load: (mount={isConnected:true}) => api.load('kernel:member', card, descriptor, mount),
     advance(ms) {
       now += ms;
       for (const [id, timer] of [...timers]) if (timer.at <= now) {
@@ -130,6 +132,24 @@ test('page cancellation reaches the peer transfer and cannot cache its late resu
   assert.equal(f.requests[0].cancelled, true);
   f.requests[0].resolve({bytes}); await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.assets.size, 0); assert.deepEqual(f.decoded, []);
+});
+
+test('detaching the last card cancels its shared transfer and releases retry timers', async () => {
+  const f = fixture();
+  const firstMount = {isConnected:true}, secondMount = {isConnected:true};
+  const first = f.load(firstMount), second = f.load(secondMount);
+  first.catch(() => {}); second.catch(() => {});
+  let retries = 0;
+  f.timer(firstMount, () => { retries++; }, 30000);
+  await until(() => f.requests.length === 1);
+  firstMount.isConnected = false; f.cleanup();
+  assert.equal(f.requests[0].cancelled, false, 'the other visible card still owns the transfer');
+  assert.equal(f.mountTimers.size, 0);
+  secondMount.isConnected = false; f.cleanup();
+  await assert.rejects(first, error => error.avatarBodyTransient === true);
+  await assert.rejects(second, error => error.avatarBodyTransient === true);
+  assert.equal(f.requests[0].cancelled, true); assert.equal(f.jobs.size, 0);
+  f.advance(30001); assert.equal(retries, 0); assert.equal(f.assets.size, 0);
 });
 
 test('a verified HTTP winner cancels its redundant peer transfer', async () => {
