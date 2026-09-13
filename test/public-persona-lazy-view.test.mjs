@@ -43,8 +43,8 @@ function fixture(){
   const record={did:'alice',_kernel:'kernel:test',description:'Checks measured work.',_personaCharacteristics:{traits:['curious']}};
   return {...api,record,state,requests,timers,listeners,host,root,lifecycle,document,evidenceMounts};
 }
-test('the character drawer opens and mounts without a profile, status or history request',async()=>{
-  const f=fixture(), view=await f.view(f.record);
+test('the profile tab opens and mounts without a profile, status or history request',async()=>{
+  const f=fixture(), view=await f.view(f.record,{tab:'overview'});
   assert.match(view.html,/Curious and careful/);assert.equal(f.requests.length,0);
   await view.mount(f.root,f.lifecycle);
   assert.equal(f.requests.length,0);assert.equal(f.timers.size,0);
@@ -90,4 +90,16 @@ test('invalidation refreshes only the open persona, coalesces bursts, and hidden
   [...f.timers.values()].at(-1)();assert.equal(f.requests.length,2);
   f.requests[1].resolve({valid:true,generated_at:'2026-09-12T00:00:01Z',rows:[]});await tick();
   f.document.hidden=true;await [...f.timers.values()][0]();assert.equal(f.requests.length,2);f.lifecycle.cancel();
+});
+
+test('opening a persona starts with shared work and reads it only after the drawer mounts',async()=>{
+  const f=fixture(), view=await f.view(f.record);
+  assert.match(view.html,/data-public-persona-tab="activity"[^>]*aria-pressed="true"/);
+  assert.equal(f.requests.length,0);
+  const mounted=view.mount(f.root,f.lifecycle);
+  assert.equal(f.requests.length,1);
+  assert.equal(f.requests[0].url,'https://node.test/personas/alice/thinking');
+  f.requests[0].resolve({valid:true,generated_at:'2026-09-12T00:00:00Z',rows:[]});
+  await mounted;
+  f.lifecycle.cancel();assert.equal(f.timers.size,0);
 });

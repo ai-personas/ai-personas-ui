@@ -1,3 +1,4 @@
+import {personaActivity, matchesActivity, browseLimit, browseMoreHTML} from './workspace-state.mjs';
 import {canonicalJson, canonicalMember, parseSignedJson} from './canonical-json.mjs';
 import {createPublicEvidence} from './public-evidence.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
@@ -402,7 +403,7 @@ async function secureDownloadFromButton(btn){
 }
 function updateOpBadge(){ const b=$('#opbtn'); if(!b) return;
   b.classList.toggle('on',MY_NODES.size>0);
-  b.innerHTML='<span class="opbtn-label">MY NODES</span>'; }
+  b.innerHTML=icon('plus','ico-sm')+'<span class="opbtn-label">Connect a node</span>'; }
 const DEFAULT_JSON_MAX_BYTES=4*1024*1024;
 function p2pDataRouteForUrl(value,{allowVerifiedAlias=false}={}){
   let target; try{ target=new URL(value,location.href); }catch(_){ return null; }
@@ -3753,12 +3754,13 @@ function renderGlobalKernels(){
   const el=$('#globalKernels'); if(!el) return;
   const g=S.globalKernels||new Map();
   const allBtn=$('#networkAll'); if(allBtn){ allBtn.classList.toggle('on',!S.kernelFocus); allBtn.setAttribute('aria-pressed',String(!S.kernelFocus)); }
-  const scope=$('#networkScope'), overflow=$('#networkOverflow');
+  const scope=$('#networkScope'), overflow=$('#networkOverflow'), more=$('#moreNodes');
   const knownTotal=Math.max(g.size,Number(S.globalTotal)||0,S.kernels?.size||0);
   if(!g.size){
-    el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>';
+    replaceStageHTML(el,'<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>');
     if(scope) scope.textContent='0 nodes · awaiting signed peer announcements';
     if(overflow) overflow.hidden=true;
+    if(more) replaceStageHTML(more,'');
     return;
   }
   const now=Date.now();
@@ -3774,8 +3776,9 @@ function renderGlobalKernels(){
   const query=String(S.q||'').trim();
   if(query){ const matches=entries.filter(({kid,info})=>`${kid} ${[...info.bases].join(' ')}`.toLowerCase().includes(query));
     if(matches.length) entries=[...matches,...entries.filter((row)=>!matches.includes(row))]; }
-  const visible=entries.slice(0,NETWORK_LIMITS.kernelChips);
-  el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
+  const nodeLimit=browseLimit(el.dataset,query,NETWORK_LIMITS.kernelChips);
+  const visible=entries.slice(0,nodeLimit);
+  const nodeHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
     const context=_kernelDisplayContext(kid);
@@ -3787,10 +3790,12 @@ function renderGlobalKernels(){
       +`<span class="dot ${liveRoute?'live':''}"></span>${esc(context.label)}`
       +(active?` <span class="n k">${active} THINKING</span>`:via)+`</button>`;
   }).join('');
+  updateStageHTML(el,nodeHTML);
   if(scope) scope.textContent=S.kernelFocus
     ?`focused node · ${compactCount(Number(g.get(S.kernelFocus)?.meta?.recordCount)||0)} public records`
     :`${compactCount(knownTotal)} discovered · ${visible.length} activity-prioritized`;
   const omitted=Math.max(0,knownTotal-visible.length);
+  if(more) updateStageHTML(more,browseMoreHTML('nodes',visible.length,entries.length,NETWORK_LIMITS.kernelChips));
   if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
 // A bare hosted URL joins the shared public Kademlia plane through the shipped,
@@ -4457,21 +4462,16 @@ function emptyStateHTML(){
     `<div class="grant"><span class="${h.ok?'ok':'no'}">${h.ok?'●':'○'} ${esc(base)}</span>`
     +`<span class="l2">${h.ok?`reachable · ${h.records} public record(s)`:'unreachable'}</span></div>`).join('')
     ||'<div class="l2">no peers attempted yet</div>';
-  const httpsPage=location.protocol==='https:';
   return `<div class="empty-card">
-    <h3>${icon('warn')} No live AI Personas discovered yet</h3>
-    <div class="desc2">This page ships <b>no data</b> — every persona, message and number you see is
-	    discovered at runtime from live nodes. Signed discovery records are Ed25519-verified in your browser;
-	    unverified operator-status execution frames are separately labelled unsigned transport telemetry. Nothing is showing because
-	    no reachable node is currently publishing public records.</div>
-	    ${S.globalAnnouncements?.size?`<div class="desc2"><b>${S.globalAnnouncements.size}</b> signed node announcement(s) were found through a configured resolver, but none produced browser-reachable public records yet.</div>`:''}
-    <h4>Peers tried</h4>${rows}
-    <h4>Get live data</h4>
-    <div class="desc2">
-    1 · Run <code>ai-personas</code> and open the UI link it prints.<br>
-    ${httpsPage?'2 · For a local HTTP node, open its own UI link. This hosted HTTPS page needs an HTTPS node URL.':'2 · Published nodes appear here as the network discovers them.'}<br>
-    3 · Open <b>MY NODES</b> to connect to a node URL. Enter its token to view private personas and environments.
-    </div>
+    <span class="empty-icon" aria-hidden="true">◎</span>
+    <h3>Your network is waiting to connect</h3>
+    <p class="desc2">No reachable node has published personas or workspaces yet. Connect a node to explore its people, current work, and files. Discovery will keep looking in the background.</p>
+    <button type="button" class="primary-button" data-connect-node>Connect a node</button>
+    <details><summary>Connection details and local setup</summary>
+      <p class="desc2">Start your node with <code>./start-node.sh</code> from the AI Personas checkout, then use the UI address it prints. You can also connect directly using a node URL. An HTTPS page needs an HTTPS node URL.</p>
+      ${S.globalAnnouncements?.size?`<p class="desc2">${S.globalAnnouncements.size} node announcements found; their public records are not reachable yet.</p>`:''}
+      ${rows}
+    </details>
   </div>`;
 }
 
@@ -8598,8 +8598,11 @@ function refreshSystemView(){
       +(rt.task_execution_state==='paused_participant'?5e6:0)+Math.min(9999,(S.ixCountBySid?.get(ref.key)||0)); };
   const _personaSearch=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
     const d=S.liveByPersona.get(ref.key)||{}, s=d.summary||{}, rt=runtimeForPersona(ref.key)||{};
-    const identityVerified=providerVerifiedPersonaObservation(ref.key)?.identityVerified===true;
-    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${identityVerified?s.name||'':''} ${identityVerified?s.role||'':''} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
+    const observation=providerVerifiedPersonaObservation(ref.key);
+    const identityVerified=observation?.identityVerified===true;
+    const profile=identityVerified?observation.record:null;
+    const card=profile?.persona_card?.card;
+    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${identityVerified?s.name||'':''} ${identityVerified?s.role||'':''} ${profile?.description||''} ${card?.display_name_alias?.display_name||''} ${_personaCharacteristicValue(card?.self_publication?.body)} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
@@ -8710,7 +8713,7 @@ function refreshSystemView(){
     return `<article class="env-card pk record-signed" data-envsid="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}"${taskObservation?` data-public-task-selection="${esc(taskObservation)}"`:""} data-verification="signed-record" style="--envhue:${_envHue(b.sid)}" aria-label="environment ${esc(envName)}">`
       +`<div class="env-card-foil" aria-hidden="true"></div>`
       +`<div class="pc-card-edition"><span>${icon('check','ico-sm')} SIGNED WORKSPACE</span><span>ENVIRONMENT</span></div>`
-      +`<header class="pk-namebar env"><h3 class="pc-name env-name" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" role="button" tabindex="0" title="${esc(envName)}">${esc(_compactHumanLabel(envName,72))}</h3>`
+      +`<header class="pk-namebar env"><h3 class="pc-name env-name"><button type="button" class="workspace-name-action" data-envrec="${esc(b.sid)}" data-envkernel="${esc(b.kernel)}" aria-haspopup="dialog" aria-controls="detailwrap" title="${esc(envName)}">${esc(_compactHumanLabel(envName,72))}</button></h3>`
       +`<div class="pc-badges"><span class="env-state ${output.statusOk?'ok':''}">${esc(output.statusTxt)}</span>${acceptChip}</div></header>`
       +(output.imageSource?`<figure class="pk-art env environment-image" data-verified-image="${esc(JSON.stringify(output.imageSource))}"></figure>`
         :`<figure class="pk-art env">${identiconSVG(b.sid,{className:'pk-identicon env',title:`workspace identicon for ${envName}`})}</figure>`)
@@ -8770,15 +8773,23 @@ function refreshSystemView(){
     const ref=_personaRef(personaKey);
     if(kernelIsFocused(ref.kernel)) ensurePersona(personaKey);
   }
+  const activityForContext=(context)=>{
+    const d=S.liveByPersona.get(context.key)||{};
+    const running=_activeModelCallsForPersona(context.key).some(call=>call?._signedPublicCognition===true)
+      ||(!d.stale&&_runningNow(context.key));
+    return personaActivity({running,failed:!d.stale&&!!d.terminalFailure});
+  };
   const personaCandidates=[...personaContexts.values()].filter((context)=>!query
     ||_personaSearch(context.key).toLowerCase().includes(query)
     ||context.environments.some((env)=>`${env.name} ${env.status}`.toLowerCase().includes(query))
     ||(artByPersona.get(context.key)||[]).some((a)=>`${a.label||''} ${a.description||''} ${authoredArtifactLabelText(a)}`.toLowerCase().includes(query))
     ||(liveWorkspacesByPersona.get(context.key)||[]).some((row)=>(row.authored||[]).join(' ').toLowerCase().includes(query)));
+  const activityFilter=host.dataset.activityFilter||'all';
+  const filteredPersonas=personaCandidates.filter(context=>matchesActivity(activityForContext(context),activityFilter));
   const deckKey='@persona-deck', deckLimit=progressiveGroupLimit(deckKey,S.personaWindows,{
-    initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:personaCandidates.length,
+    initial:NETWORK_LIMITS.personaInitial,step:NETWORK_LIMITS.personaStep,max:filteredPersonas.length,
   });
-  const personaWindow=selectPriorityWindow(personaCandidates,{
+  const personaWindow=selectPriorityWindow(filteredPersonas,{
     limit:deckLimit,keyOf:(context)=>context.key,priorityOf:(context)=>_personaPriority(context.key),
   });
   S.visiblePersonaIds.clear(); personaWindow.items.forEach((context)=>S.visiblePersonaIds.add(context.key));
@@ -8789,12 +8800,12 @@ function refreshSystemView(){
   const hiddenPersonas=Math.max(0,personaWindow.matched-personaWindow.returned);
   const morePersonas=hiddenPersonas?`<div class="persona-window-note"><span>showing ${personaWindow.returned} of ${personaWindow.matched} matching personas</span>`
     +`<button type="button" class="window-more" data-more-personas="${encodeURIComponent(deckKey)}" data-total="${personaWindow.matched}">show ${Math.min(NETWORK_LIMITS.personaStep,hiddenPersonas)} more</button></div>`:'';
-  const personaSection=personaCards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONA DECK</span>`
-    +`<h2>People doing the work</h2></div><p>Meet each persona, see what they are doing and read the updates they chose to share.</p></header>`
+  const personaSection=personaCards?`<section class="persona-section"><header class="stage-section-head"><div><span class="section-kicker">PERSONAS</span>`
+    +`<h2>Meet the personas</h2></div><p>Profiles, current activity, and shared updates.</p></header>`
     +`<div class="persona-deck">${personaCards}</div>${morePersonas}</section>`:'';
   const environmentCards=envBlocks.map(environmentCardHTML).join('');
   const environmentSection=environmentCards?`<section class="environment-section"><header class="stage-section-head compact"><div><span class="section-kicker">ENVIRONMENT INDEX</span>`
-    +`<h2>Shared workspaces</h2></div><p>See who is working together, what changed recently and which files they produced.</p></header>`
+    +`<h2>Shared workspaces</h2></div><p>Shared environments and the work taking shape inside.</p></header>`
     +`<div class="environment-grid">${environmentCards}</div></section>`:'';
   S.artsColdLoaded=true;
   const hiddenEnvs=Math.max(0,envCandidates.length-envBlocks.length,
@@ -8850,7 +8861,14 @@ function refreshSystemView(){
   renderCoordGraph(graphWindow.items,personRows.length);
   renderInteractionStream();
   updateVitalsCounters();
-  if(S.q) _applyFilter();   // re-apply the active filter after the 5s stage/feed rebuild
+  host.dataset.discoveryReady='true';
+  host.dataset.personaTotal=String(personaContexts.size);
+  host.dataset.personaMatched=String(filteredPersonas.length);
+  host.dataset.workingTotal=String([...personaContexts.values()].filter(context=>activityForContext(context)==='working').length);
+  host.dataset.environmentTotal=String(S.observedEnvironmentCount||0);
+  host.dataset.environmentMatched=String(envCandidates.length);
+  document.dispatchEvent(new CustomEvent('workspace:updated'));
+  if(S.q) _applyFilter();
 }
 let _environmentImageMounts=null;
 function _hydrateEnvironmentImages(root){
@@ -10789,7 +10807,7 @@ function refreshLiveSection(){
   }
   fallback();
 }
-async function personaView(r,{tab='overview',offset=0}={}){
+async function personaView(r,{tab='activity',offset=0}={}){
   const base=nodeBaseForRecord(r), pid=personaIdFromDid(r.did), kernel=r._kernel||'';
   S.curBase=base;
   if(!['overview','education','experience','activity'].includes(tab)||!Number.isSafeInteger(offset)||offset<0) tab='overview',offset=0;
@@ -10801,7 +10819,7 @@ async function personaView(r,{tab='overview',offset=0}={}){
   let html=(!verified?'<p class="viewerr">Identity verification is pending. Authored profile fields remain hidden.</p>':'')
     +kv('State',esc(observation?.lifecycle?.lifecycleState||'observed'))
     +'<nav class="persona-tabs" aria-label="Persona details">'
-    +[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']]
+    +[['activity','Responses & work'],['overview','Profile'],['education','Education'],['experience','Experience']]
       .map(([key,label])=>button(key,label)).join('')+'</nav><div data-public-persona-pane>';
   if(tab==='overview'){
     html+=(verified&&r.description?`<p class="desc2">${esc(r.description)}</p>`:'')
@@ -10904,10 +10922,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const environmentReference=String(d.environment_id||r.did||r.label||'');
   const workspaceName=_environmentNameFor(environmentReference,r._kernel);
   let html=kv('Workspace',`<b>${esc(workspaceName)}</b>`)
-    +kv('Type',`<span class="cap">${esc(d.env_type||'—')}</span>`)
-    +kv('Env rules',S0(d.rule_count))
-    +kv('Lineage events',S0(ld.event_count))
-    +verificationIdentityDetails('environment id',environmentReference);
+    +(d.env_type?kv('Type',esc(d.env_type)):'');
   // MODEL-PER-ROLE: the distinct models in use across this environment's personas
   // (the env's own model_events) — what THIS workspace is actually running on.
   const _envLiveModels=(S.liveByEnv.get(_environmentKey(r._kernel,d.environment_id||r.did))||{}).models||[];
@@ -10937,7 +10952,7 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   const manifestOnlyFiles=manifestCanSupplement
     ?manifestFiles.filter((file)=>!signedPaths.has(_artifactDisplayPath(file)))
     :[];
-  if(signedFiles.length||manifestOnlyFiles.length) html+=H('Workspace files');
+  html+=H('Workspace files');
   if(signedFiles.length){
     html+=_ownedOutputsHTML(myArts,{label:'Latest signed workspace files',scope:'shared workspace'});
   }
@@ -10985,18 +11000,20 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
   // C-OP-16: the environment is the durable carrier of its runs' scorecards
   // (one per task, newest settle first), each independently kernel-signed.
   if(r._runScorecardsVerified===true&&Array.isArray(r.run_scorecards)&&r.run_scorecards.length){
-    html+=H(`Run scorecards (${r.run_scorecards.length})`)
+    html+=`<details class="workspace-scorecards"><summary>Run measurements (${r.run_scorecards.length} scorecards)</summary>`
       +`<div class="env-scorecards">`+r.run_scorecards.map((card)=>{
         const settled=_friendlyInstant(card.settled_at)||String(card.settled_at||'');
         return `<div class="env-scorecard"><div class="env-scorecard-head" title="${esc(`task ${card.task_id} · run ${card.run_id}`)}">`
           +`<span>task ${esc(_shortId(card.task_id).slice(0,12))}</span><span>run ${esc(_shortId(card.run_id).slice(0,16))}</span><span>settled ${esc(settled)}</span></div>`
-          +_runScorecardHTML(card,{via:'run'})+`</div>`; }).join('')+`</div>`;
+          +_runScorecardHTML(card,{via:'run'})+`</div>`; }).join('')+`</div></details>`;
   }
   html+=H('● Live · inside this environment')+`<div id="livesec" class="livesec">${retainedEnvironmentTelemetry
     ?renderEnvFeedDoc(retainedEnvironmentTelemetry)
     :renderEnvLive(envId,S.drawerLiveKernel)}</div>`;
   if(S.drawerLiveFeed) setTimeout(refreshLiveSection,0);
-  html+=trustPanel(r);
+  html+='<details class="workspace-metadata"><summary>Workspace metadata and verification</summary>'
+    +kv('Environment rules',S0(d.rule_count))+kv('Lineage events',S0(ld.event_count))
+    +verificationIdentityDetails('environment id',environmentReference)+trustPanel(r)+'</details>';
   const did=kernelRec(r._kernel,'domain'), pid=kernelRec(r._kernel,'project'); let nav='';
   if(did) nav+=`<div class="row">${recLink(did,'Domain →')}</div>`;
   if(pid) nav+=`<div class="row">${recLink(pid,'Project →')}</div>`;
@@ -11009,7 +11026,8 @@ async function envView(r){ const contentBase=r._base||'',base=nodeBaseForRecord(
       const rows=_liveWorkspaceRows().filter(row=>row.kernel===r._kernel&&row.environmentId===_sid);
       const next=JSON.stringify(rows.map(row=>[row.run,row.workspaceId,row.revision,row.ended]));
       if(next===revision) return; revision=next;
-      updateStageHTML(host,_liveWorkspacesHTML(rows,{label:'Files across personal worktrees',scope:'environment worktree'}));
+      updateStageHTML(host,_liveWorkspacesHTML(rows,{label:'Files across personal worktrees',scope:'environment worktree'})
+        ||(!signedFiles.length&&!manifestOnlyFiles.length?'<p class="workspace-files-empty">No published files are available from this workspace yet. New files will appear here automatically.</p>':''));
     }};
     S.publicEnvironmentView=selected;
     lifecycle.onCleanup(()=>{ if(S.publicEnvironmentView===selected) S.publicEnvironmentView=null; });
@@ -13387,7 +13405,7 @@ async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){
     :connectedCognitionHtml(entry.cognition.get(pid)||doc,entry);
   let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}" data-persona-tab="${tab}"`);
   html+=kv('State',esc(_humanTaskExecutionState(person.task_execution_state||person.lifecycle_state||'')));
-  html+='<nav class="persona-tabs" aria-label="Persona details">'+[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']].map(([key,label])=>
+  html+='<nav class="persona-tabs" aria-label="Persona details">'+[['activity','Responses & work'],['overview','Profile'],['education','Education'],['experience','Experience']].map(([key,label])=>
     `<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="${key}" aria-pressed="${tab===key}">${label}</button>`).join('')+'</nav>';
   html+='<div data-persona-pane>'+body(connectedCachedDetail(entry,kind,pid,offset))+'</div></div>';
   const mount=async(root,lifecycle)=>{
@@ -14105,7 +14123,8 @@ function renderOpenInputs(){
     ?`${openCount} request${openCount===1?'':'s'} waiting for evidence`
     :'No open requests; signed history retained';
   if(!host.dataset.initialized){ host.open=openCount>0; host.dataset.initialized='1'; }
-  const html=filtered.slice(0,48).map(({directory,item})=>{
+  const limit=browseLimit(host.dataset,JSON.stringify([query,S.kernelFocus||'']),48);
+  const html=(filtered.slice(0,limit).map(({directory,item})=>{
     const request=item.request||{}, kernel=directory.kernelId;
     const author=_openInputPersonaName(kernel,request.author_persona_id,item.author_display_name);
     const at=Date.parse(String(request.created_at||''));
@@ -14114,7 +14133,7 @@ function renderOpenInputs(){
     const audience=request.visibility==='environment'
       ?'environment audience · publicly visible from this node'
       :'public audience';
-    return `<article class="input-request-card${item.status==='open'?'':' is-closed'}">`
+    return `<article class="input-request-card${item.status==='open'?'':' is-closed'}" data-stage-key="${esc(JSON.stringify([kernel,request.request_id]))}">`
       +`<header><div><span class="input-request-kicker">${esc(author)} is asking</span><h3>${esc(request.title)}</h3></div><span class="input-request-state">${esc(item.status)}</span></header>`
       +`<p class="input-request-question">${esc(request.question)}</p>`
       +`<p class="input-request-why"><b>Why it matters now</b><br>${esc(request.why_needed)}</p>`
@@ -14122,8 +14141,8 @@ function renderOpenInputs(){
       +_openInputCandidateRows(item,kernel)
       +`<details class="verification-identity"><summary>Requested response and acceptance contract</summary><div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(`Response schema\n${responseSchema}\n\nAcceptance criteria\n${criteria}`)}</pre></div></details>`
       +`<p class="input-request-readonly">All records exposed by this public node are public. Human response submission is temporarily disabled in this browser surface; signed personas may inspect and contribute through their authenticated action surface.</p></article>`;
-  }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`;
-  if(cardsHost.dataset.h!==html){ cardsHost.dataset.h=html; cardsHost.innerHTML=html; }
+  }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`)+browseMoreHTML('requests',Math.min(limit,filtered.length),filtered.length,48);
+  updateStageHTML(cardsHost,html);
 }
 async function refreshVisibleOpenInputs(){
   const candidates=[];
@@ -14141,18 +14160,18 @@ function renderMissions(){
   const box=$('#missions'), wrap=$('#missionCards'), count=$('#missionCount'), headline=$('#missionHeadline'),
     eyebrow=$('#missionEyebrow'); if(!box||!wrap) return;
   const cards=missionCardList();
+  box.dataset.total=String(cards.length);
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
-  const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
+  const limit=browseLimit(box.dataset,JSON.stringify([S.q||'',S.kernelFocus||'']),24);
+  const window=selectPriorityWindow(cards,{query:S.q||'',limit,keyOf:(c)=>c.key,
     priorityOf:(c)=>missionCardIsObservedCurrent(c)?1:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its task text.
   // Keep the compact run summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
   const active=window.items.find((c)=>missionCardIsObservedCurrent(c))||window.items[0]||null;
-  const matching=window.items.length===cards.length
-    ?`${cards.length} task/run record${cards.length===1?'':'s'}`
-    :`${window.items.length} matching · ${cards.length} total`;
+  const matching=`${window.returned} shown · ${window.matched} matching · ${cards.length} total`;
   if(count) count.textContent=active
     ?`${matching} · ${active.state}`
       +(active.nodeAvailability==='offline'?' · offline'
@@ -14161,20 +14180,20 @@ function renderMissions(){
   const cached=!missionCardIsObservedCurrent(active)
     &&['offline','unobserved'].includes(active?.nodeAvailability);
   if(headline) headline.textContent=missionCardIsObservedCurrent(active)
-    ?active.task:cached?'Cached signed task/run evidence':active?'Mechanical task/run evidence':'No matching task or run';
+    ?active.task:cached?'Previously observed work':active?'Published tasks and runs':'No matching task or run';
   if(eyebrow) eyebrow.textContent=missionCardIsObservedCurrent(active)
     ?(S.kernelFocus?'CURRENT MECHANICAL RUN':'CURRENT NETWORK RUNS')
     :cached?'CACHED TASK/RUN EVIDENCE':'TASK AND RUN EVIDENCE';
-  if(!box.dataset.initialized){ box.open=false; box.dataset.initialized='1'; }
+  if(!box.dataset.initialized){ box.open=document.body.dataset.view==='work'; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
-  const html=window.items.length?window.items.map((c)=>{
+  const html=(window.items.length?window.items.map((c)=>{
     return `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
       +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.mechanical?.label||humanizeMachineKey(c.state))}</span>`
       +`<h2 class="mtask" title="${esc(c.title||c.task)}">${esc(c.task)}</h2><div class="mmeta">`
       +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`;
   }).join('')
-    :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`;
-  if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
+    :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`)+browseMoreHTML('tasks',window.returned,window.matched,24);
+  updateStageHTML(wrap,html);
 }
 
 /* ---------- wiring ---------- */
@@ -14193,13 +14212,23 @@ function _loadedRecordMatchesSearch(query){
 }
 function _applyFilter(){
   const q=(S.q||'').trim();
-  document.querySelectorAll('.pcard').forEach((el)=>{ el.style.display=(!q||_elementFilterText(el).includes(q))?'':'none'; });
-  document.querySelectorAll('.env-card').forEach((lane)=>{
-    const hay=_elementFilterText(lane);
-    lane.style.display=(!q||hay.includes(q))?'':'none'; });
   document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||_elementFilterText(li).includes(q))?'':'none'; });
 }
 function wire(){
+  document.addEventListener('click',(event)=>{
+    const button=event.target.closest('[data-more-records]'); if(!button) return;
+    const key=button.dataset.moreRecords, limit=Number(button.dataset.nextLimit);
+    const views={tasks:['#missions',renderMissions],requests:['#openInputs',renderOpenInputs],nodes:['#globalKernels',renderGlobalKernels]};
+    const entry=views[key]; if(!entry||!Number.isSafeInteger(limit)||limit<1) return;
+    const previous=Number($(entry[0]).dataset.limit)||0;
+    $(entry[0]).dataset.limit=String(limit); entry[1]();
+    if(button.isConnected===false){
+      const hosts={tasks:['#missionCards','.mcard'],requests:['#openInputCards','.input-request-card'],nodes:['#globalKernels','[data-kernel]']};
+      const [selector,itemSelector]=hosts[key], items=$(selector).querySelectorAll(itemSelector);
+      const next=items[Math.min(previous,items.length-1)];
+      if(next){ if(key==='requests') next.tabIndex=-1; next.focus(); }
+    }
+  });
   // Design-system nav family: promote the static index.html nav controls additively
   // (KEEP every id + the .link/.con-toggle classes the JS/CSS read) — the back control
   // becomes a ghost nav-back button, close/unfollow/collapse join the .ghost-btn family,
@@ -14243,7 +14272,7 @@ function wire(){
   let headerCollapsed=false; try{ headerCollapsed=localStorage.getItem('personaos_header_collapsed')==='1'; }catch(e){}
   setHeaderCollapsed(headerCollapsed); headerToggle?.addEventListener('click',()=>setHeaderCollapsed(!header.classList.contains('collapsed')));
   // the help button (？) → stroked help-circle (keeps its aria-label/title text).
-  const hbtn=$('#helpbtn'); if(hbtn) hbtn.innerHTML=icon('help');
+  const hbtn=$('#helpbtn'); if(hbtn) hbtn.title='About this workspace';
   // keyboard access: native controls handle their own Enter/Space activation;
   // the remaining focusable custom controls synthesize one delegated click.
   document.addEventListener('keydown',(e)=>{ if(e.key!=='Enter'&&e.key!==' ') return;
@@ -14328,11 +14357,14 @@ function wire(){
     e.currentTarget.setAttribute('aria-expanded',String(!$('#constellation').classList.contains('collapsed'))); });
   // Search is part of the bounded selector, not just a DOM hide pass: it can
   // surface a loaded persona/environment that was outside the current window.
+  document.addEventListener('workspace:filter',()=>refreshSystemView());
+  // The shell can restore a bookmarked query before discovery finishes loading.
+  S.q=$('#q').value.toLowerCase().slice(0,256);
   let searchTimer=null;
   $('#q').addEventListener('input',(e)=>{ S.q=e.target.value.toLowerCase().slice(0,256); _applyFilter();
     clearTimeout(searchTimer); searchTimer=setTimeout(()=>{ S.environmentWindow=NETWORK_LIMITS.environmentInitial;
       const loadedMatch=_loadedRecordMatchesSearch(S.q);
-      renderGlobalKernels(); refreshSystemView(); renderInteractionStream(); renderOpenInputs();
+      renderGlobalKernels(); refreshSystemView(); renderInteractionStream(); renderMissions(); renderOpenInputs();
       // A resolver-backed global search must reach beyond the sampled first page.
       // Do not re-fetch and re-verify a large provider inventory when the signed
       // record is already cached locally: the bounded stage selector can surface

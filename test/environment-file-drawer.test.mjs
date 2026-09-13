@@ -37,7 +37,8 @@ test('late files stay bound to the open exact workspace and disappear on withdra
   const selected=state.publicEnvironmentView;
   selected.refresh();assert.equal(host.innerHTML,'ours:a');assert.equal(paints,2);
   selected.refresh();assert.equal(paints,2,'unchanged metadata does not rebuild controls');
-  rows=[];selected.refresh();assert.equal(host.innerHTML,'');assert.equal(paints,3);
+  rows=[];selected.refresh();assert.match(host.innerHTML,/No published files are available/);
+  assert.doesNotMatch(host.innerHTML,/ours:a|foreign|elsewhere/);assert.equal(paints,3);
   current=false;cleanups.forEach(fn=>fn());assert.equal(state.publicEnvironmentView,null);
   rows=[{kernel:'node',environmentId:'room',workspaceId:'late',revision:'z'}];
   selected.refresh();assert.equal(paints,3,'closed views cannot repaint');
