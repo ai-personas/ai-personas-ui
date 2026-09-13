@@ -34,7 +34,8 @@ test('closed experience disclosures keep only their record identity, not seriali
 });
 
 const source=readFileSync(resolve(assets,'discovery.js'),'utf8');
-const privateView=source.slice(source.indexOf('async function connectedPersonaView('),source.indexOf('async function connectedEnvironmentView('));
+const privateView=source.slice(source.indexOf('function _humanTaskExecutionState('),source.indexOf('// per-persona "is fresh" detector'))
+  +source.slice(source.indexOf('async function connectedPersonaView('),source.indexOf('async function connectedEnvironmentView('));
 for(const tab of ['education','experience']) for(const late of [false,true])
   test(`the connected ${tab} view ${late?'rejects late evidence after closing':'owns and disposes its evidence mount'}`,async()=>{
     const cached={label:'cached',next_offset:null},fresh={label:'new',next_offset:null};

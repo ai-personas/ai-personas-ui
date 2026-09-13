@@ -206,7 +206,7 @@ function fixture(page = 'https://127.0.0.1:45133/') {
     TextEncoder, TextDecoder, Uint8Array, AbortController, DOMException, queueMicrotask,
     Date:time.Date, setTimeout:time.setTimeout, setInterval:time.setInterval,
     clearTimeout:time.clear, clearInterval:time.clear,
-    AbortSignal:{timeout(ms) {const controller = new AbortController(); time.setTimeout(() => controller.abort(), ms); return controller.signal;}},
+    AbortSignal:{any:signals=>AbortSignal.any(signals),timeout(ms) {const controller = new AbortController(); time.setTimeout(() => controller.abort(), ms); return controller.signal;}},
     __moduleUrl:new URL('assets/discovery.js', location.origin + '/').href,
     fetch, esc, H:title => `<h3>${esc(title)}</h3>`, icon:() => '',
     $:selector => dom.get(selector) || null, document:{},

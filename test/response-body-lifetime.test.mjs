@@ -79,3 +79,28 @@ test('the arrayBuffer fallback still enforces the observed byte limit',async()=>
   assert.deepEqual(await read(response,2),new Uint8Array([1,2]));
   await assert.rejects(read(response,1),/body exceeds 1 B/);
 });
+
+test('native consumption preserves exact bytes and progress without a second accumulated body',async()=>{
+  const state=body({declared:4,chunks:[new Uint8Array([1,2]),new Uint8Array([3,4])],closed:true});
+  const progress=[];let aborted=false;
+  assert.deepEqual(await read(state.response,4,(...values)=>progress.push(values),()=>{aborted=true;}),
+    new Uint8Array([1,2,3,4]));
+  assert.deepEqual(progress,[[0,4],[2,4],[4,4]]);
+  assert.equal(aborted,false);assert.deepEqual(state.events,[]);
+});
+
+for(const reason of ['overflow','progress'])test(`native consumption aborts both branches on ${reason}`,async()=>{
+  let source,aborts=0;
+  const stream=new ReadableStream({start(controller){source=controller;controller.enqueue(new Uint8Array(5));}});
+  const response=new Response(stream),original=new Error('progress unavailable');
+  const progress=bytes=>{if(reason==='progress'&&bytes)throw original;};
+  let timer;
+  try{
+    await assert.rejects(Promise.race([
+      read(response,reason==='overflow'?4:8,progress,()=>{aborts++;source.error(new DOMException('Cancelled','AbortError'));}),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('read did not settle')),500);}),
+    ]),reason==='overflow'?/body exceeds 4 B/:error=>error===original);
+    assert.equal(aborts,1);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }finally{clearTimeout(timer);}
+});

@@ -141,6 +141,13 @@ export function filterPersonaDirectory(people, {text = '', availability = '', cu
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const words = value => String(value || '').replaceAll('_', ' ');
+const recordDate = new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'});
+const instant = value => {
+  const at = Date.parse(value || '');
+  return Number.isFinite(at)
+    ? `<time datetime="${escape(value)}" title="${escape(value)}">${escape(recordDate.format(at))}</time>`
+    : escape(value || 'Time unavailable');
+};
 const evidenceKey = parts => escape(canonicalJson(parts));
 const evidenceSlot = () => '<div data-record-evidence-body data-stage-owned="record-evidence"></div>';
 
@@ -236,7 +243,7 @@ export function educationHtml(doc) {
   let html = '<p class="record-proof">Node signature verified · assessor signatures checked separately. These are course results, not an overall ability score.</p>';
   html += '<h3>Current study</h3>' + (doc.enrollments.length ? doc.enrollments.map(row =>
     `<div class="record-row"><b>${escape(courses.get(row.package_hash)?.title || row.curriculum_id)}</b>`
-    + `<span>Version ${escape(row.version)} · enrolled ${escape(row.issued_at)}</span>`
+    + `<span>Version ${escape(row.version)} · enrolled ${instant(row.issued_at)}</span>`
     + `<small>Environment ${escape(row.environment_id)} · enrollment recorded, not proof of current activity</small></div>`).join('')
     : '<p class="l2">No shared enrollment records.</p>');
   html += '<h3>Assessment history</h3>';
@@ -261,7 +268,7 @@ export function educationHtml(doc) {
     html += `<details data-disclosure-key="${escape(row.assessment_id)}"><summary>Evidence binding and ${row.history.length} signed record${row.history.length === 1 ? '' : 's'}</summary>`
       + `<dl><dt>Submission</dt><dd><code>${escape(row.submission_hash)}</code></dd><dt>Rubric</dt><dd><code>${escape(row.rubric_hash)}</code></dd>`
       + `<dt>Package</dt><dd><code>${escape(row.package_hash)}</code></dd></dl>`
-      + row.history.map(record => `<p>${escape(record.issued_at)} · ${escape(record.issuer_id)} · ${escape(words(record.status))}</p>`
+      + row.history.map(record => `<p>${instant(record.issued_at)} · ${escape(record.issuer_id)} · ${escape(words(record.status))}</p>`
         + (record.correction_reason ? `<p>${escape(record.correction_reason)}</p>` : '')).join('')
       + '<p class="l2">The browser checked each result signature against the node-verified package assessor. Original learner, enrollment and sealed-request identity bindings were verified by the node.</p></details></section>';
   }
@@ -280,7 +287,7 @@ export function experienceHtml(doc) {
     + (doc.omitted_unverified_records ? `<p role="status">${doc.omitted_unverified_records} unverifiable records excluded.</p>` : '')
     + '<h3>Recorded work</h3>' + (doc.records.length ? doc.records.map(row => {
       const key=evidenceKey(['facts',row.source_record_hash]);
-      return `<div class="record-row" data-stage-key="${key}"><b>${escape(words(row.source_kind))}</b><span>${escape(row.recorded_at)}</span>`
+      return `<div class="record-row" data-stage-key="${key}"><b>${escape(words(row.source_kind))}</b><span>${instant(row.recorded_at)}</span>`
       + `<small>Task ${escape(row.task_id)} · environment ${escape(row.environment_id)}</small>`
       + `<details data-disclosure-key="${key}" data-record-evidence=""><summary>Measured facts</summary>`
       + evidenceSlot()+`<code>${escape(row.source_record_hash)}</code></details></div>`;

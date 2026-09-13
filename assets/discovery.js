@@ -290,8 +290,8 @@ function secureFetchInit(u,init={}){
   return {...init,cache:init.cache||'no-store',credentials:'omit',redirect:'error',
     referrerPolicy:'no-referrer',headers:{...(init.headers||{}),...authHeaders(u)}};
 }
-async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER,onProgress=null){
-  let reader;
+async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER,onProgress=null,cancelRead=null){
+  let reader,completion=null;
   try{
     const declared=Number(response.headers.get('content-length'));
     if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
@@ -302,20 +302,33 @@ async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGE
         throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
       return new Uint8Array(bytes);
     }
-    reader=response.body.getReader();
-    const chunks=[]; let total=0;
     onProgress?.(0,Number.isFinite(declared)&&declared>0?declared:null);
+    // Native consumption completes the browser's request lifecycle reliably.
+    // Observe its clone for byte limits and progress without retaining a second
+    // copy. Only use this route when we can abort BOTH branches on failure.
+    if(typeof cancelRead==='function'&&typeof response.clone==='function'){
+      reader=response.clone().body.getReader();
+      completion=response.arrayBuffer();
+      completion.catch(()=>{});
+    }else reader=response.body.getReader();
+    const chunks=completion?null:[]; let total=0;
     for(;;){ const {done,value}=await reader.read(); if(done) break;
       total+=value.byteLength;
       if(!responseByteLengthWithinLimit(total,maxBytes))
         throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
-      chunks.push(value);
+      chunks?.push(value);
       onProgress?.(total,Number.isFinite(declared)&&declared>0?declared:null);
+    }
+    if(completion){
+      const out=new Uint8Array(await completion);
+      if(out.byteLength!==total) throw new Error('body observations disagree');
+      return out;
     }
     const out=new Uint8Array(total); let offset=0;
     for(const chunk of chunks){ out.set(chunk,offset); offset+=chunk.byteLength; }
     return out;
   }catch(error){
+    try{ cancelRead?.(); }catch(e){}
     // Release an unwanted body even when headers or progress reporting fail.
     // Underlying cleanup must not replace the read error or delay its display.
     try{ (reader?reader.cancel():response.body?.cancel())?.catch(()=>{}); }catch(e){}
@@ -609,13 +622,15 @@ async function fetchJson(u,init={}){
   // (a stuck stage guard used to freeze card faces on their loading shells).
   const transportSignal=init.signal||AbortSignal.timeout(20000);
   if(String(u).startsWith('libp2p:')) return null;
-  const httpInit={...init,signal:transportSignal};
+  const readController=new AbortController();
+  const httpInit={...init,signal:AbortSignal.any([transportSignal,readController.signal])};
   // Numeric peer queue priorities are not HTTP's high/low/auto fetch hint.
   if(typeof httpInit.priority==='number') delete httpInit.priority;
   try{ const r=await fetch(u,secureFetchInit(u,httpInit)); if(r.ok){
-    const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES);
+    const bytes=await readBoundedResponseBytes(r,init.maxBytes||DEFAULT_JSON_MAX_BYTES,null,()=>readController.abort());
     return parseSignedJson(new TextDecoder().decode(bytes)); }
   }catch(e){}
+  readController.abort();
   if(transportSignal.aborted) return null;
   // The peer route was already tried first above. Do not pay the same failed
   // transport timeout twice before the next live refresh.
@@ -654,14 +669,16 @@ async function fetchResponsivePublicJson(u,init={}){
     const request=(async()=>{
       const directDocument=async()=>{
         if(!isHttpRequest(u)) return null;
+        const directController=new AbortController();
         try{
-          const r=await fetch(u,{signal:transportSignal,cache:'no-store',credentials:'omit',
+          const r=await fetch(u,{signal:AbortSignal.any([transportSignal,directController.signal]),cache:'no-store',credentials:'omit',
             redirect:'error',referrerPolicy:'no-referrer'});
           if(r.ok){
-            const bytes=await readBoundedResponseBytes(r,maxBytes);
+            const bytes=await readBoundedResponseBytes(r,maxBytes,null,()=>directController.abort());
             return parseSignedJson(new TextDecoder().decode(bytes));
           }
         }catch(_){}
+        directController.abort();
         return null;
       };
       const firstUsable=(reads)=>new Promise((resolve)=>{
@@ -5192,10 +5209,12 @@ async function fetchVerifiedLiveBody(url,expectedHash,{signal=null,maxBytes=Numb
   try{
     const attempts=[];
     if(isHttp(absoluteUrl)) attempts.push((async()=>{
-      const response=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{signal:controller.signal,priority:'high'}));
+      const httpController=new AbortController();
+      const response=await fetch(absoluteUrl,secureFetchInit(absoluteUrl,{
+        signal:AbortSignal.any([controller.signal,httpController.signal]),priority:'high'}));
       if(!response.ok) throw new Error(`body HTTP ${response.status}`);
       const bytes=await readBoundedResponseBytes(response,Math.max(1,maxBytes),
-        (received,total)=>progress({received,total,phase:'receiving',transport:'HTTP'}));
+        (received,total)=>progress({received,total,phase:'receiving',transport:'HTTP'}),()=>httpController.abort());
       return {bytes,type:response.headers.get('content-type')||'application/octet-stream'};
     })());
     attempts.push((async()=>{
@@ -6359,11 +6378,17 @@ function _humanTaskExecutionState(value){
     paused_participant:'Participation paused',run_participant:'Participating',
     not_participating:'Not participating',completed_participant:'Participation ended',
     failed_participant:'Participation failed',
-    running_llm:'Working on the task',
+    running_llm:'Working on the task',idle:'Ready',unmarked:'State unavailable',
+    running:'Working',queued:'Waiting to start',stopping:'Finishing',stopped:'Stopped',
   })[String(value||'')]||String(value||'').replace(/_/g,' ');
 }
 function _sentenceStart(value){ const text=String(value||'').trim();
   return text?text[0].toUpperCase()+text.slice(1):''; }
+function _humanModelExecutionState(value){
+  return ({running:'Thinking',idle:'Ready to think',queued:'Waiting to think',
+    stopping:'Finishing this thought',stopped:'Thinking stopped'})[String(value||'')]
+    ||_sentenceStart(_humanTaskExecutionState(value||'unmarked'));
+}
 // per-persona "is fresh" detector for realtime streaming: did its model-event
 // count grow since the last render? (drives the slide-in animation + node pulse)
 function _personaGrew(personaKey,count){
@@ -12662,9 +12687,10 @@ async function connectedNodeBytes(entry,path,{requireOperator=false,
       revokeConnectedNode(entry);
       throw new Error('The node did not accept that token.');
     }
-    const bytes=await readBoundedResponseBytes(response,maxBytes,onProgress);
+    const bytes=await readBoundedResponseBytes(response,maxBytes,onProgress,()=>controller.abort());
     if(entry.closed||controller.signal.aborted) throw new DOMException('Node read cancelled.','AbortError');
     return {bytes,type:response.headers.get('Content-Type')||''};
+  }catch(error){ controller.abort(); throw error;
   }finally{ clearTimeout(timeout); signal?.removeEventListener('abort',abort); entry.pending.delete(controller); }
 }
 async function connectedNodeJson(entry,path,options={}){
@@ -13260,7 +13286,7 @@ function connectedDirectoryHtml(entry,doc){
       return `<article class="directory-person" data-stage-key="${esc(person.persona_id)}"><label><input type="checkbox" data-select-persona="${esc(person.persona_id)}"`
         +(selected.has(person.persona_id)?' checked':'')+(!person.selection_available&&!selected.has(person.persona_id)?' disabled':'')+`> Select</label>`
         +`<h4>${connectedPersonLink(entry,{...person,name:profile.name})}</h4><small>${esc(person.persona_id)}</small>`
-        +`<p>${person.selection_available?'Available for explicit selection':'Unavailable'} · ${esc(person.status?.task_execution_state||person.status?.lifecycle_state||'')}</p>`
+        +`<p>${person.selection_available?'Available for explicit selection':'Unavailable'} · ${esc(_humanTaskExecutionState(person.status?.task_execution_state||person.status?.lifecycle_state||''))}</p>`
         +(person.selection_unavailable_reason?`<p class="l2">${esc(person.selection_unavailable_reason)}</p>`:'')
         +(_personaCharacteristicsHTML(character,{name:profile.name,limit:3,compact:true})||'<p class="l2">Character not shared</p>')
         +`<p>${latest.length?latest.map(row=>`${esc(row.curriculum_id)} v${esc(row.version)}: ${esc(String(row.status).replaceAll('_',' '))}`).join('<br>'):'Unassessed'}</p>`
@@ -13278,8 +13304,8 @@ async function connectedNodeView(base){
   html+=H(`Personas (${people.length})`)+'<div data-connected-directory>'+(connectedCachedDetail(entry,'directory')
     ?connectedDirectoryHtml(entry,connectedCachedDetail(entry,'directory')):people.map((person)=>
     `<div class="persona-runtime-row" data-stage-key="${esc(JSON.stringify(['person',person.persona_id]))}"><b>${connectedPersonLink(entry,person)}</b>`
-    +`<div class="l2">${esc(person.task_execution_state||person.lifecycle_state||'')}`
-    +` · ${esc(person.llm_execution_state||'idle')}</div>`
+    +`<div class="l2">${esc(_humanTaskExecutionState(person.task_execution_state||person.lifecycle_state||''))}`
+    +` · ${esc(_humanModelExecutionState(person.llm_execution_state))}</div>`
     +'</div>').join('')+'<p class="l2" role="status">Loading signed comparison records…</p>')+'</div>';
   html+=H(`Environments (${envs.length})`)+envs.map((env)=>
     `<div class="grant" data-stage-key="${esc(JSON.stringify(['environment',env.environment_id]))}"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
@@ -13331,7 +13357,7 @@ async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){
       :'<p role="status">Loading and verifying experience…</p>')
     :connectedCognitionHtml(entry.cognition.get(pid)||doc,entry);
   let html=connectedNodeMarker(entry,`data-private-persona="${esc(pid)}" data-persona-tab="${tab}"`);
-  html+=kv('State',esc(person.task_execution_state||person.lifecycle_state||''));
+  html+=kv('State',esc(_humanTaskExecutionState(person.task_execution_state||person.lifecycle_state||'')));
   html+='<nav class="persona-tabs" aria-label="Persona details">'+[['overview','Character'],['education','Education'],['experience','Experience'],['activity','Responses & work']].map(([key,label])=>
     `<button type="button" data-act="my-persona-tab" data-base="${esc(base)}" data-persona="${esc(pid)}" data-tab="${key}" aria-pressed="${tab===key}">${label}</button>`).join('')+'</nav>';
   html+='<div data-persona-pane>'+body(connectedCachedDetail(entry,kind,pid,offset))+'</div></div>';
@@ -13540,7 +13566,7 @@ async function operatorNodeView(b){
     const call=(st.active_model_calls||[]).find((c)=>_shortId(c.persona_id)===_shortId(p.persona_id));
     const taskState=p.task_execution_state||'unmarked', llmState=p.llm_execution_state||'unmarked';
     return `<div class="persona-runtime-row"><div><b>${esc(_displayPersonaName(p.name,p.persona_id))}</b>`
-      +`<span class="runtime-pills"><span class="runtime-pill ${taskState==='running_llm'?'hot':''}">${esc(taskState.replace(/_/g,' '))}</span><span class="runtime-pill">LLM ${esc(llmState.replace(/_/g,' '))}</span></span></div>`
+      +`<span class="runtime-pills"><span class="runtime-pill ${taskState==='running_llm'?'hot':''}">${esc(_humanTaskExecutionState(taskState))}</span><span class="runtime-pill">${esc(_humanModelExecutionState(llmState))}</span></span></div>`
       +(call?`<div class="runtime-call"><span class="livedot2"></span>${esc(PURPOSE_LABEL[call.requested_purpose]||call.requested_purpose||'model call')} · <code>${esc(call.model_id||'—')}</code>${call.role?` · ${esc(call.role)}`:''}</div>`
         :`<div class="l2">${esc(p.lifecycle_state||'')} · ${esc(p.experience_tasks??0)} task(s)</div>`)+`</div>`;
   }).join('');

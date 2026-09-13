@@ -35,6 +35,7 @@ function fixture({fetchImpl = async () => { throw new Error('Unexpected request'
     + section('function _actionAuthorityPayload(', 'async function _validPublicPersonaActionAuthority(')
     + section('function validatedKeysDocument(', 'function admitKeysDocument(')
     + section('async function readBoundedResponseBytes(', 'function _downloadName(')
+    + section('function _humanTaskExecutionState(', '// per-persona "is fresh" detector')
     + section('const BINARY_RENDERERS=', 'function pickRenderer(')
     + section('function _groupLiveWorkspaceFiles(', 'function _liveWorkspaceCurrentFileCount(')
     + section('function _liveFileSharedState(', 'function _liveCurrentFileActionHTML(')

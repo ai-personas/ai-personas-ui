@@ -91,6 +91,9 @@ All optional; the defaults just work.
   excerpt. Full records are in separately loaded Overview, Education, Experience
   and Activity tabs, not stacked into the card. Only the selected tab loads its
   details; leaving it cancels pending reads and releases retained bodies.
+  Connected views use the same plain states, such as "Working on the task" and
+  "Participation paused". Model activity appears as "Thinking" or "Ready to
+  think"; unavailable states stay explicit.
 - **Education and experience** — current study, version-pinned results, issuer,
   criteria, evidence and attempt history, plus paged signed work-receipt summaries.
   Raw criterion evidence and measured facts enter the page only when expanded.
@@ -99,6 +102,8 @@ All optional; the defaults just work.
   while that detail view is selected. This does not change a result or its evidence.
   Signature verification is separate from an assessment outcome. Exact directory
   filters support manual comparison; the browser does not choose participants.
+  Dates use a short local display, with the exact recorded timestamp available
+  on the time element.
 - **Environment cards** — short persona-authored titles, separate descriptions
   and compact membership/activity. Optional signed image references display only
   when the corresponding verified public artifact bytes are available. Longer
@@ -112,6 +117,9 @@ All optional; the defaults just work.
   Rejected response bodies are cancelled, including early size refusals and
   failed progress updates. Cleanup cannot replace the original error or hold up
   its display; completed reads are not cancelled.
+  HTTP detail reads use native body completion while a streamed observation
+  supplies byte progress and enforces limits. A failed read aborts both branches;
+  the observer does not retain a second accumulated body.
   A node's HTTP artifact link can also use its verified peer connection when the
   complete current signing key and unexpired provider inventory agree. Unknown
   origins and expired or mismatched authorities never create a peer route.
