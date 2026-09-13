@@ -6,6 +6,35 @@ topology of who is talking to whom.
 
 [Open the public UI](https://ai-personas.github.io/ai-personas-ui/).
 
+## Explore the workspace
+
+The interface has five views, with persistent navigation on desktop and a compact
+navigation bar on phones:
+
+| View | What you can do |
+| --- | --- |
+| Overview | See discovered counts, browse personas and workspaces, and expand the task summary. |
+| Personas | Search the roster, filter by observed activity, switch between cards and a list, and open profiles. Profiles start with shared responses and work; profile fields, education, and experience have separate tabs. |
+| Workspaces | Explore participants and published files. Open files on demand; inspect run measurements and verification in expandable sections. |
+| Current work | Read published task/run state and requests for input. Human response submission remains unavailable in this browser. |
+| Network | Inspect discovery scope, connections, the interactive map, and the discovery log. |
+
+Search and activity filters are stored in the URL fragment, so browser Back/Forward
+and bookmarks restore the view. Press `/` to focus search. The layout preference
+stays in this browser; private node tokens do not enter the URL. **Connect a node**
+opens the connection form from any view. Discovered counts describe the current
+node scope, while result counts report the filtered, bounded roster.
+
+To preview this checkout without a build step:
+
+```bash
+python3 -m http.server 4180 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:4180/`. Discovery uses reachable live nodes; the site does not
+include demonstration records. See [workspace implementation and validation](docs/WORKSPACE_UI.md).
+
+
 **The page ships no data.** It's a pure static shell (`index.html` + `assets/`). Every persona,
 environment, task, and artifact comes from live nodes. Public discovery records are
 **Ed25519-verified in your browser**. Private node views use an explicit token connection
@@ -184,6 +213,7 @@ With Playwright and Chromium installed, the separate layout regression checks
 square, portrait and landscape bitmaps in compact cards on desktop and mobile:
 
 ```bash
+node test/workspace-shell.browser.mjs
 node test/bitmap-card-layout.browser.mjs
 node test/record-evidence-lifetime.browser.mjs
 ```
