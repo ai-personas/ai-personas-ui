@@ -291,29 +291,36 @@ function secureFetchInit(u,init={}){
     referrerPolicy:'no-referrer',headers:{...(init.headers||{}),...authHeaders(u)}};
 }
 async function readBoundedResponseBytes(response,maxBytes=Number.MAX_SAFE_INTEGER,onProgress=null){
-  const declared=Number(response.headers.get('content-length'));
-  if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
-    throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
-  if(!response.body||typeof response.body.getReader!=='function'){
-    const bytes=await response.arrayBuffer();
-    if(!responseByteLengthWithinLimit(bytes.byteLength,maxBytes))
-      throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
-    return new Uint8Array(bytes);
-  }
-  const reader=response.body.getReader(), chunks=[]; let total=0;
-  onProgress?.(0,Number.isFinite(declared)&&declared>0?declared:null);
+  let reader;
   try{
+    const declared=Number(response.headers.get('content-length'));
+    if(Number.isFinite(declared)&&!responseByteLengthWithinLimit(declared,maxBytes))
+      throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+    if(!response.body||typeof response.body.getReader!=='function'){
+      const bytes=await response.arrayBuffer();
+      if(!responseByteLengthWithinLimit(bytes.byteLength,maxBytes))
+        throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
+      return new Uint8Array(bytes);
+    }
+    reader=response.body.getReader();
+    const chunks=[]; let total=0;
+    onProgress?.(0,Number.isFinite(declared)&&declared>0?declared:null);
     for(;;){ const {done,value}=await reader.read(); if(done) break;
       total+=value.byteLength;
-      if(!responseByteLengthWithinLimit(total,maxBytes)){
-        await reader.cancel(); throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`); }
+      if(!responseByteLengthWithinLimit(total,maxBytes))
+        throw new Error(`body exceeds ${fmtBytes(maxBytes)} client limit`);
       chunks.push(value);
       onProgress?.(total,Number.isFinite(declared)&&declared>0?declared:null);
     }
-  }finally{ try{ reader.releaseLock(); }catch(e){} }
-  const out=new Uint8Array(total); let offset=0;
-  for(const chunk of chunks){ out.set(chunk,offset); offset+=chunk.byteLength; }
-  return out;
+    const out=new Uint8Array(total); let offset=0;
+    for(const chunk of chunks){ out.set(chunk,offset); offset+=chunk.byteLength; }
+    return out;
+  }catch(error){
+    // Release an unwanted body even when headers or progress reporting fail.
+    // Underlying cleanup must not replace the read error or delay its display.
+    try{ (reader?reader.cancel():response.body?.cancel())?.catch(()=>{}); }catch(e){}
+    throw error;
+  }finally{ try{ reader?.releaseLock(); }catch(e){} }
 }
 function _downloadName(name){
   const leaf=String(name||'artifact.bin').split(/[\\/]/).pop()

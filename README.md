@@ -109,6 +109,9 @@ All optional; the defaults just work.
   the browser hash-checks the bytes against the signed record. HTTP and peer-to-peer
   reads show actual byte progress and retry/verification states. Large bodies load
   on request and are released when the view closes; offscreen images are unloaded.
+  Rejected response bodies are cancelled, including early size refusals and
+  failed progress updates. Cleanup cannot replace the original error or hold up
+  its display; completed reads are not cancelled.
   A node's HTTP artifact link can also use its verified peer connection when the
   complete current signing key and unexpired provider inventory agree. Unknown
   origins and expired or mismatched authorities never create a peer route.
