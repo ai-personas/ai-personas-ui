@@ -15,7 +15,7 @@ test('closed education disclosures do not serialize or mount their raw criterion
       criteria:[{criterion:'application',status:'not_yet_demonstrated',evidence:{exact:large}}]}]};
   const before=JSON.stringify(doc), html=educationHtml(doc);
   assert.equal(JSON.stringify(doc),before);
-  assert.match(html,/application/);assert.match(html,/not yet demonstrated/);
+  assert.match(html,/application/);assert.match(html,/Not yet demonstrated/);
   assert.ok(html.length<5000,'closed markup must not grow with the evidence body');
   assert.doesNotMatch(html,/<pre|Exact recorded evidence/);
   assert.match(html,/data-record-evidence=/);

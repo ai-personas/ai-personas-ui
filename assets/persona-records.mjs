@@ -140,7 +140,7 @@ export function filterPersonaDirectory(people, {text = '', availability = '', cu
 }
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-const words = value => String(value || '').replaceAll('_', ' ');
+const words = value => ({byte_review:'Review of the exact submitted work',not_yet_demonstrated:'Not yet demonstrated',assessment_unavailable:'Independent assessment unavailable',passed:'Passed'})[value] || String(value || '').replaceAll('_', ' ');
 const recordDate = new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'});
 const instant = value => {
   const at = Date.parse(value || '');
@@ -244,7 +244,8 @@ export function educationHtml(doc) {
   html += '<h3>Current study</h3>' + (doc.enrollments.length ? doc.enrollments.map(row =>
     `<div class="record-row"><b>${escape(courses.get(row.package_hash)?.title || row.curriculum_id)}</b>`
     + `<span>Version ${escape(row.version)} · enrolled ${instant(row.issued_at)}</span>`
-    + `<small>Environment ${escape(row.environment_id)} · enrollment recorded, not proof of current activity</small></div>`).join('')
+    + `<small>Enrollment recorded; current activity is shown separately.</small>`
+    + `<details><summary>Enrollment details</summary><code>${escape(row.environment_id)}</code></details></div>`).join('')
     : '<p class="l2">No shared enrollment records.</p>');
   html += '<h3>Assessment history</h3>';
   if (!doc.assessments.length) return html + '<p class="l2">Unassessed. No result has been recorded.</p>';
@@ -255,18 +256,18 @@ export function educationHtml(doc) {
     html += `<section class="record-attempt" data-stage-key="${escape(row.assessment_id)}">`
       + `<h4>${escape(course?.title || row.curriculum_id)} <small>v${escape(row.version)}</small></h4>`
       + `<p><b>${escape(words(row.status))}</b> · ${latestByCourse.get(row.package_hash) === row.assessment_id ? 'latest attempt' : 'earlier attempt'}</p>`
-      + `<p class="l2">Assessor ${escape(row.assessment_capability.id)} · v${escape(row.assessment_capability.version)}</p>`;
+      + `<p class="l2">Independent assessor · v${escape(row.assessment_capability.version)}</p>`;
     if (result?.reason) html += `<p>${escape(result.reason)}</p>`;
     if (result?.correction_reason) html += `<p>Issuer correction: ${escape(result.correction_reason)}</p>`;
     html += (row.criteria || []).map(criterion => {
       const key=evidenceKey(['criterion',row.assessment_id,criterion.criterion]);
       return `<details class="record-criterion" data-disclosure-key="${key}" data-record-evidence="">`
-      + `<summary>${escape(criterion.criterion)} · ${escape(words(criterion.status))}</summary>`
+      + `<summary>${escape(words(criterion.criterion))} · ${escape(words(criterion.status))}</summary>`
       + `<p>${escape(course?.rubric.find(item => item.criterion === criterion.criterion)?.description || '')}</p>`
       + evidenceSlot() + '</details>';
     }).join('');
     html += `<details data-disclosure-key="${escape(row.assessment_id)}"><summary>Evidence binding and ${row.history.length} signed record${row.history.length === 1 ? '' : 's'}</summary>`
-      + `<dl><dt>Submission</dt><dd><code>${escape(row.submission_hash)}</code></dd><dt>Rubric</dt><dd><code>${escape(row.rubric_hash)}</code></dd>`
+      + `<dl><dt>Assessor</dt><dd><code>${escape(row.assessment_capability.id)}</code></dd><dt>Submission</dt><dd><code>${escape(row.submission_hash)}</code></dd><dt>Rubric</dt><dd><code>${escape(row.rubric_hash)}</code></dd>`
       + `<dt>Package</dt><dd><code>${escape(row.package_hash)}</code></dd></dl>`
       + row.history.map(record => `<p>${instant(record.issued_at)} · ${escape(record.issuer_id)} · ${escape(words(record.status))}</p>`
         + (record.correction_reason ? `<p>${escape(record.correction_reason)}</p>` : '')).join('')

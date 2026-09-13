@@ -91,6 +91,7 @@ const profile = description => ({schema:'personaos-persona-profile/1', persona_i
   description, born_at:'2026-09-01T00:00:00Z', characteristic_identity: {
     schema:'persona-characteristic-card/1', characteristics: {
       traits:['patient','curious'], OCEAN:{O:0.8,N:0}, VAD:{valence:0.2,arousal:0},
+      presentation:{description:'I map uncertain details before revising a design.'},
     }}});
 
 async function mountedPersona(ui, options={}) {
@@ -114,8 +115,12 @@ test('the connected persona shows its characteristic profile, including zero val
   const view = await mountedPersona(ui);
   assert.match(view.html, /Checks every joint/);
   assert.match(view.html, /patient.*curious/);
-  assert.match(view.html, /OCEAN/); assert.match(view.html, /N: 0/);
-  assert.match(view.html, /VAD/); assert.match(view.html, /Arousal: 0/);
+  assert.ok(view.html.indexOf('I map uncertain details') < view.html.indexOf('patient'));
+  const details = view.html.match(/<details><summary>Character details<\/summary>([\s\S]*?)<\/details>/)?.[1];
+  assert.ok(details);
+  assert.match(details, /OCEAN/); assert.match(details, /&quot;N&quot;: 0/);
+  assert.match(details, /VAD/); assert.match(details, /&quot;arousal&quot;: 0/);
+  assert.doesNotMatch(view.html.replace(details, ''), /OCEAN|&quot;arousal&quot;/);
   ui.disconnect(ui.entry.base);
 });
 

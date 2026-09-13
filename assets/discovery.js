@@ -6074,14 +6074,21 @@ function _personaCharacteristicRows(characteristics,{name='',limit=8}={}){
   if(!characteristics||typeof characteristics!=='object'||Array.isArray(characteristics)) return [];
   const exactName=String(name||'').trim(), rows=[];
   const entries=Object.entries(characteristics);
-  const presentationOrder=['role','description','traits'];
+  const presentationOrder=['presentation','description','role','traits'];
   const ordered=[
     ...presentationOrder.flatMap((field)=>entries.filter(([key])=>key.toLowerCase()===field)),
     ...entries.filter(([key])=>!presentationOrder.includes(key.toLowerCase())),
   ];
   for(const [key,value] of ordered){
     if(isTechnicalKey(key)) continue;
-    const text=_personaCharacteristicValue(value);
+    const narrative=(item)=>{
+      if(typeof item==='string') return item.trim();
+      if(Array.isArray(item)) return item.map(narrative).filter(Boolean).join(' · ');
+      if(item&&typeof item==='object') return Object.entries(item)
+        .filter(([field])=>!isTechnicalKey(field)).map(([,body])=>narrative(body)).filter(Boolean).join(' · ');
+      return '';
+    };
+    const text=narrative(value).slice(0,900);
     if(!text||text===exactName) continue;
     rows.push({label:humanizeMachineKey(key),value:text});
     if(rows.length>=limit) break;
@@ -6093,12 +6100,13 @@ function _personaCharacteristicHeadline(characteristics,name=''){
 }
 function _personaCharacteristicsHTML(characteristics,{name='',limit=8,compact=false}={}){
   const rows=_personaCharacteristicRows(characteristics,{name,limit});
-  if(!rows.length) return '';
+  if(!rows.length&&compact) return '';
   if(compact) return rows.map((row,index)=>index===0
     ?`<p><b>${esc(row.label)}</b> · ${esc(_compactHumanLabel(row.value,160))}</p>`
     :`<div class="pc-working-style"><b>${esc(row.label)}</b><span>${esc(_compactHumanLabel(row.value,160))}</span></div>`).join('');
   return `<div class="persona-about-view">${rows.map((row)=>
-    `<div><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('')}</div>`;
+    `<div><b>${esc(row.label)}</b><span>${esc(row.value)}</span></div>`).join('')}</div>`
+    +`<details><summary>Character details</summary><pre>${esc(JSON.stringify(characteristics||{},null,2))}</pre></details>`;
 }
 const _personaMonogram=(value,sid='')=>{ const name=_personaDisplayNameCandidate(value,sid);
   if(name){ const parts=_personaNameRolePresentation(name,sid).name.split(/\s+/).filter(Boolean); return ((parts[0]?.[0]||'')+(parts.length>1?(parts.at(-1)?.[0]||''):(parts[0]?.[1]||''))).toUpperCase(); }
@@ -13306,10 +13314,10 @@ function connectedDirectoryHtml(entry,doc){
       const character=profile.characteristic_identity?.characteristics||{};
       return `<article class="directory-person" data-stage-key="${esc(person.persona_id)}"><label><input type="checkbox" data-select-persona="${esc(person.persona_id)}"`
         +(selected.has(person.persona_id)?' checked':'')+(!person.selection_available&&!selected.has(person.persona_id)?' disabled':'')+`> Select</label>`
-        +`<h4>${connectedPersonLink(entry,{...person,name:profile.name})}</h4><small>${esc(person.persona_id)}</small>`
+        +`<h4>${connectedPersonLink(entry,{...person,name:profile.name})}</h4><details><summary>Identity details</summary><small>${esc(person.persona_id)}</small></details>`
         +`<p>${person.selection_available?'Available for explicit selection':'Unavailable'} · ${esc(_humanTaskExecutionState(person.status?.task_execution_state||person.status?.lifecycle_state||''))}</p>`
         +(person.selection_unavailable_reason?`<p class="l2">${esc(person.selection_unavailable_reason)}</p>`:'')
-        +(_personaCharacteristicsHTML(character,{name:profile.name,limit:3,compact:true})||'<p class="l2">Character not shared</p>')
+        +(_personaCharacteristicsHTML(character,{name:profile.name,limit:2,compact:true})||(profile.description?`<p>${esc(_compactHumanLabel(profile.description,160))}</p>`:'<p class="l2">Character not shared</p>'))
         +`<p>${latest.length?latest.map(row=>`${esc(row.curriculum_id)} v${esc(row.version)}: ${esc(String(row.status).replaceAll('_',' '))}`).join('<br>'):'Unassessed'}</p>`
         +`<p class="l2">${person.education?.enrollments?.length||0} enrollment records · ${person.experience?.recorded_turns??0} retained work turns · ${person.experience?.failed_action_receipts??0} failed action receipts</p></article>`;
     }).join('');
@@ -13329,8 +13337,8 @@ async function connectedNodeView(base){
     +` · ${esc(_humanModelExecutionState(person.llm_execution_state))}</div>`
     +'</div>').join('')+'<p class="l2" role="status">Loading signed comparison records…</p>')+'</div>';
   html+=H(`Environments (${envs.length})`)+envs.map((env)=>
-    `<div class="grant" data-stage-key="${esc(JSON.stringify(['environment',env.environment_id]))}"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a>`
-    +`<small class="l2">${esc(env.status)} · ${(env.member_persona_ids||[]).length} members</small></span></div>`).join('');
+    `<div class="grant" data-stage-key="${esc(JSON.stringify(['environment',env.environment_id]))}"><span><a href="#" data-act="my-environment" data-base="${esc(base)}" data-environment="${esc(env.environment_id)}">${esc(_compactHumanLabel(env.name||'Unnamed workspace',80))}</a>`
+    +`<small class="l2">${esc(String(env.status||'status unavailable').replaceAll('_',' '))} · ${(env.member_persona_ids||[]).length} members</small></span></div>`).join('');
   html+=`<p><button type="button" data-act="my-disconnect" data-base="${esc(base)}">Disconnect</button></p></div>`;
   const mount=async(root,lifecycle)=>{
     const host=root.querySelector('[data-connected-directory]');
@@ -13360,7 +13368,7 @@ function connectedPersonaOverview(entry,person,profile){
   html+=H('Character')+(_personaCharacteristicsHTML(character,{name:person.name,
     limit:Object.keys(character||{}).length})||'<p class="l2">Character fields have not been shared.</p>');
   html+=H('Environments')+(entry.status.environments||[]).filter(env=>(env.member_persona_ids||[]).includes(person.persona_id))
-    .map(env=>`<p><a href="#" data-act="my-environment" data-base="${esc(entry.base)}" data-environment="${esc(env.environment_id)}">${esc(env.name||env.environment_id)}</a></p>`).join('');
+    .map(env=>`<p><a href="#" data-act="my-environment" data-base="${esc(entry.base)}" data-environment="${esc(env.environment_id)}">${esc(_compactHumanLabel(env.name||'Unnamed workspace',80))}</a></p>`).join('');
   return html;
 }
 async function connectedPersonaView(base,pid,{tab='overview',offset=0}={}){

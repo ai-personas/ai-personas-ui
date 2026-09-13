@@ -254,3 +254,11 @@ or verification state; closing a view cancels its transfer and releases Blob URL
 Offline checks cover signed public/private records, selected event streams, peer
 reads, cancellation and disposable views. Live engineering quality is evaluated
 separately; signatures and visible activity are not evidence that a design works.
+
+Persona views lead with authored presentation and descriptions. Numerical trait
+maps and exact identifiers are available in expandable details. Workspace links
+use short readable titles, and criterion labels explain the work being checked.
+The initial view renders before its large history arrives. Detailed evidence is
+mounted only while open; closing a view releases its owned polling, evidence,
+transfers and object URLs. Shared transfers continue while another consumer needs
+them and cancel when their final consumer closes.

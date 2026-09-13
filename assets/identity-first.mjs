@@ -432,10 +432,10 @@ function personaCard(row,kernelId,index,{offline=false,storedAt=''}={}){
     +`<span class="pc-avatar" data-avatar-state="identity-first" aria-label="${offline?'portrait body is not retained in offline history':'portrait loads with the full persona view'}"><span class="pc-avatar-placeholder" aria-hidden="true">${identiconSVG(row.id)}<small>${offline?(row.avatar_available?'portrait offline':'portrait unavailable'):'portrait loading'}</small></span></span>`
     +'<i class="pc-dot off" aria-hidden="true"></i>'
     +`<div class="pc-identity"><h3 class="pc-name">${esc(row.name)}</h3><span class="pc-name-proof">${offline?'historical signatures rechecked':'✓ signed identity verified'}</span>`
-    +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(row.description||'Self-description still forming')}</strong></span></div>`
+    +`<span class="pc-role-line"><small>${row.description?'Self-description':'Profile state'}</small><strong>${esc(compact(row.description||'Self-description still forming'))}</strong></span></div>`
     +`<div class="pc-badges"><span class="pc-idle">${offline?'OFFLINE':esc(row.lifecycle)}</span></div></header>`
     +`<section class="pc-current"><span class="pc-current-label">${offline?'Cached signed observation':'Loading current work'}</span><div class="pc-doing"><span class="pc-rest">●</span><strong>${offline?`Signed identity lease was valid at ${esc(when)}; current activity is unknown.`:'Verified persona found; joining live work now'}</strong></div></section>`
-    +`<div class="pc-stats"><span class="tag" title="${offline?'historical node identity':'current signed node identity'}">${esc(kernelId)}</span></div></article>`;
+    +`<details class="pc-stats"><summary>Identity details</summary><span class="tag" title="${offline?'historical node identity':'current signed node identity'}">${esc(kernelId)}</span></details></article>`;
 }
 
 function environmentCard(row,kernelId,{offline=false,storedAt=''}={}){
@@ -446,7 +446,7 @@ function environmentCard(row,kernelId,{offline=false,storedAt=''}={}){
     +'<div class="env-card-foil" aria-hidden="true"></div><header class="env-card-profile">'
     +`<div class="env-card-avatar"><span class="env-card-glyph">□</span><strong>${esc(initials)}</strong></div>`
     +`<div class="env-identity"><span class="env-kicker">${offline?'OFFLINE WORKSPACE HISTORY':'SHARED WORKSPACE'}</span><span class="env-name">${esc(compact(row.name))}</span>`
-    +`<span class="env-card-id">${esc(kernelId)}</span></div><span class="env-state ${offline?'':'ok'}">${offline?'offline':'verified'}</span></header>`
+    +`<details><summary>Identity details</summary><span class="env-card-id">${esc(kernelId)}</span></details></div><span class="env-state ${offline?'':'ok'}">${offline?'offline':'verified'}</span></header>`
     +`<div class="env-card-empty">${offline?`Signed workspace evidence was valid at ${esc(when)}. Current people, work, and files are unknown.`:'Loading people, current work, and files…'}</div></article>`;
 }
 
