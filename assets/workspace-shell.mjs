@@ -119,7 +119,6 @@ document.addEventListener('keydown', event => {
     || event.target.closest('input,textarea,select,[contenteditable="true"]')
     || $('.drawer-wrap.open,.logmodal.open')) return;
   event.preventDefault();
-  if (route.view === 'network') navigate('personas');
   query.focus();
 });
 let scheduled = false;

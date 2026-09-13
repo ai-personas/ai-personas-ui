@@ -270,3 +270,6 @@ body .drawer .current-artifact-copy b {font:500 13px/1.6 var(--sans);white-space
 body .drawer .current-artifact-preview {font:500 10px/1.5 var(--sans);text-transform:none;letter-spacing:0;color:var(--accent)}
 body .drawer .artifact-extension-badge {font:500 10px/1.4 var(--mono);color:var(--dim);border-color:var(--line2)}
 @media(max-width:600px) {body .drawer .current-artifact-file {grid-template-columns:36px minmax(0,1fr)}body .drawer .current-artifact-preview {grid-column:2}}
+.browse-more {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 0;font-size:11px;color:var(--mut)}
+#moreNodes .browse-more {padding:0;gap:8px}
+#moreNodes .window-more {min-height:32px;padding:6px 9px}

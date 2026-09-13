@@ -1,4 +1,4 @@
-import {personaActivity, matchesActivity} from './workspace-state.mjs';
+import {personaActivity, matchesActivity, browseLimit, browseMoreHTML} from './workspace-state.mjs';
 import {canonicalJson, canonicalMember, parseSignedJson} from './canonical-json.mjs';
 import {createPublicEvidence} from './public-evidence.mjs';
 import { normalizedPeerRouteBase, providerRouteBase, sameRouteOrigin } from './peer-route.mjs';
@@ -3754,12 +3754,13 @@ function renderGlobalKernels(){
   const el=$('#globalKernels'); if(!el) return;
   const g=S.globalKernels||new Map();
   const allBtn=$('#networkAll'); if(allBtn){ allBtn.classList.toggle('on',!S.kernelFocus); allBtn.setAttribute('aria-pressed',String(!S.kernelFocus)); }
-  const scope=$('#networkScope'), overflow=$('#networkOverflow');
+  const scope=$('#networkScope'), overflow=$('#networkOverflow'), more=$('#moreNodes');
   const knownTotal=Math.max(g.size,Number(S.globalTotal)||0,S.kernels?.size||0);
   if(!g.size){
-    el.innerHTML='<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>';
+    replaceStageHTML(el,'<span class="loading-inline"><span class="dot"></span><span class="dim">no kernels discovered yet</span></span>');
     if(scope) scope.textContent='0 nodes · awaiting signed peer announcements';
     if(overflow) overflow.hidden=true;
+    if(more) replaceStageHTML(more,'');
     return;
   }
   const now=Date.now();
@@ -3775,8 +3776,9 @@ function renderGlobalKernels(){
   const query=String(S.q||'').trim();
   if(query){ const matches=entries.filter(({kid,info})=>`${kid} ${[...info.bases].join(' ')}`.toLowerCase().includes(query));
     if(matches.length) entries=[...matches,...entries.filter((row)=>!matches.includes(row))]; }
-  const visible=entries.slice(0,NETWORK_LIMITS.kernelChips);
-  el.innerHTML=visible.map(({kid,info,fresh,reachable,active})=>{
+  const nodeLimit=browseLimit(el.dataset,query,NETWORK_LIMITS.kernelChips);
+  const visible=entries.slice(0,nodeLimit);
+  const nodeHTML=visible.map(({kid,info,fresh,reachable,active})=>{
     const via=[...info.via].map((v)=>`<span class="n ${v==='p2p'?'i':v==='gossip'||v==='unreachable'?'m':'k'}">${v.toUpperCase()}</span>`).join('')
       +(info.via.has('resolver')&&!reachable?'<span class="n m">NO ROUTE</span>':'');
     const context=_kernelDisplayContext(kid);
@@ -3788,10 +3790,12 @@ function renderGlobalKernels(){
       +`<span class="dot ${liveRoute?'live':''}"></span>${esc(context.label)}`
       +(active?` <span class="n k">${active} THINKING</span>`:via)+`</button>`;
   }).join('');
+  updateStageHTML(el,nodeHTML);
   if(scope) scope.textContent=S.kernelFocus
     ?`focused node · ${compactCount(Number(g.get(S.kernelFocus)?.meta?.recordCount)||0)} public records`
     :`${compactCount(knownTotal)} discovered · ${visible.length} activity-prioritized`;
   const omitted=Math.max(0,knownTotal-visible.length);
+  if(more) updateStageHTML(more,browseMoreHTML('nodes',visible.length,entries.length,NETWORK_LIMITS.kernelChips));
   if(overflow){ overflow.hidden=omitted===0; overflow.textContent=omitted?`+${compactCount(omitted)} aggregated · search or select a node`:''; }
 }
 // A bare hosted URL joins the shared public Kademlia plane through the shipped,
@@ -8565,8 +8569,11 @@ function refreshSystemView(){
       +(rt.task_execution_state==='paused_participant'?5e6:0)+Math.min(9999,(S.ixCountBySid?.get(ref.key)||0)); };
   const _personaSearch=(value,kernel='')=>{ const ref=_personaRef(value,kernel);
     const d=S.liveByPersona.get(ref.key)||{}, s=d.summary||{}, rt=runtimeForPersona(ref.key)||{};
-    const identityVerified=providerVerifiedPersonaObservation(ref.key)?.identityVerified===true;
-    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${identityVerified?s.name||'':''} ${identityVerified?s.role||'':''} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
+    const observation=providerVerifiedPersonaObservation(ref.key);
+    const identityVerified=observation?.identityVerified===true;
+    const profile=identityVerified?observation.record:null;
+    const card=profile?.persona_card?.card;
+    return `${ref.sid} ${ref.kernel} ${_nameFor(ref.key)} ${identityVerified?s.name||'':''} ${identityVerified?s.role||'':''} ${profile?.description||''} ${card?.display_name_alias?.display_name||''} ${_personaCharacteristicValue(card?.self_publication?.body)} ${s.lifecycle_state||''} ${rt.task_execution_state||''}`; };
   // first-seen deliverable ids → mint-flash a chip the moment it ships (not on every poll,
   // and not the whole set on cold load); mirrors the ixColdLoaded pattern.
   S.seenArts=S.seenArts||new Set();
@@ -14087,7 +14094,8 @@ function renderOpenInputs(){
     ?`${openCount} request${openCount===1?'':'s'} waiting for evidence`
     :'No open requests; signed history retained';
   if(!host.dataset.initialized){ host.open=openCount>0; host.dataset.initialized='1'; }
-  const html=filtered.slice(0,48).map(({directory,item})=>{
+  const limit=browseLimit(host.dataset,JSON.stringify([query,S.kernelFocus||'']),48);
+  const html=(filtered.slice(0,limit).map(({directory,item})=>{
     const request=item.request||{}, kernel=directory.kernelId;
     const author=_openInputPersonaName(kernel,request.author_persona_id,item.author_display_name);
     const at=Date.parse(String(request.created_at||''));
@@ -14096,7 +14104,7 @@ function renderOpenInputs(){
     const audience=request.visibility==='environment'
       ?'environment audience · publicly visible from this node'
       :'public audience';
-    return `<article class="input-request-card${item.status==='open'?'':' is-closed'}">`
+    return `<article class="input-request-card${item.status==='open'?'':' is-closed'}" data-stage-key="${esc(JSON.stringify([kernel,request.request_id]))}">`
       +`<header><div><span class="input-request-kicker">${esc(author)} is asking</span><h3>${esc(request.title)}</h3></div><span class="input-request-state">${esc(item.status)}</span></header>`
       +`<p class="input-request-question">${esc(request.question)}</p>`
       +`<p class="input-request-why"><b>Why it matters now</b><br>${esc(request.why_needed)}</p>`
@@ -14104,8 +14112,8 @@ function renderOpenInputs(){
       +_openInputCandidateRows(item,kernel)
       +`<details class="verification-identity"><summary>Requested response and acceptance contract</summary><div class="copy-host">${copyBtn()}<pre class="ct-pre copy-src">${esc(`Response schema\n${responseSchema}\n\nAcceptance criteria\n${criteria}`)}</pre></div></details>`
       +`<p class="input-request-readonly">All records exposed by this public node are public. Human response submission is temporarily disabled in this browser surface; signed personas may inspect and contribute through their authenticated action surface.</p></article>`;
-  }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`;
-  if(cardsHost.dataset.h!==html){ cardsHost.dataset.h=html; cardsHost.innerHTML=html; }
+  }).join('')||`<div class="mission-no-match">No open input request matches this network filter.</div>`)+browseMoreHTML('requests',Math.min(limit,filtered.length),filtered.length,48);
+  updateStageHTML(cardsHost,html);
 }
 async function refreshVisibleOpenInputs(){
   const candidates=[];
@@ -14126,16 +14134,15 @@ function renderMissions(){
   box.dataset.total=String(cards.length);
   box.hidden=!cards.length;
   if(!cards.length){ if(wrap.dataset.h){ wrap.dataset.h=''; wrap.replaceChildren(); } return; }
-  const window=selectPriorityWindow(cards,{query:S.q||'',limit:24,keyOf:(c)=>c.key,
+  const limit=browseLimit(box.dataset,JSON.stringify([S.q||'',S.kernelFocus||'']),24);
+  const window=selectPriorityWindow(cards,{query:S.q||'',limit,keyOf:(c)=>c.key,
     priorityOf:(c)=>missionCardIsObservedCurrent(c)?1:0,
     searchTextOf:(c)=>`${c.task} ${c.state} ${c.kernel||''} ${(c.meta||[]).join(' ')}`});
   // A network-wide search can match a persona without matching its task text.
   // Keep the compact run summary useful in that case and render an explicit
   // empty filtered view instead of dereferencing an empty priority window.
   const active=window.items.find((c)=>missionCardIsObservedCurrent(c))||window.items[0]||null;
-  const matching=window.items.length===cards.length
-    ?`${cards.length} task/run record${cards.length===1?'':'s'}`
-    :`${window.items.length} matching · ${cards.length} total`;
+  const matching=`${window.returned} shown · ${window.matched} matching · ${cards.length} total`;
   if(count) count.textContent=active
     ?`${matching} · ${active.state}`
       +(active.nodeAvailability==='offline'?' · offline'
@@ -14150,14 +14157,14 @@ function renderMissions(){
     :cached?'CACHED TASK/RUN EVIDENCE':'TASK AND RUN EVIDENCE';
   if(!box.dataset.initialized){ box.open=document.body.dataset.view==='work'; box.dataset.initialized='1'; }
   const stateClass=(value)=>String(value||'unknown').replace(/[^A-Za-z0-9_-]/g,'-').slice(0,80)||'unknown';
-  const html=window.items.length?window.items.map((c)=>{
+  const html=(window.items.length?window.items.map((c)=>{
     return `<article class="mcard" role="button" tabindex="0"${c.recId?` data-mrec="${esc(c.recId)}"`:''}${c.run?` data-mrun="${esc(c.run)}" data-mbase="${esc(c.base||'')}"`:''}>`
       +`<div class="mission-state-dot ms-${stateClass(c.state)}"></div><div class="mission-copy"><span class="mstate ms-${stateClass(c.state)}">${esc(c.mechanical?.label||humanizeMachineKey(c.state))}</span>`
       +`<h2 class="mtask" title="${esc(c.title||c.task)}">${esc(c.task)}</h2><div class="mmeta">`
       +c.meta.filter(Boolean).map((m)=>`<span>${esc(m)}</span>`).join('')+`</div></div><span class="mission-open">${icon('chevron')}</span></article>`;
   }).join('')
-    :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`;
-  if(wrap.dataset.h!==html){ wrap.dataset.h=html; wrap.innerHTML=html; }
+    :`<div class="mission-no-match">No task or run evidence matches this network filter.</div>`)+browseMoreHTML('tasks',window.returned,window.matched,24);
+  updateStageHTML(wrap,html);
 }
 
 /* ---------- wiring ---------- */
@@ -14179,6 +14186,20 @@ function _applyFilter(){
   document.querySelectorAll('#sysStream .ix').forEach((li)=>{ li.style.display=(!q||_elementFilterText(li).includes(q))?'':'none'; });
 }
 function wire(){
+  document.addEventListener('click',(event)=>{
+    const button=event.target.closest('[data-more-records]'); if(!button) return;
+    const key=button.dataset.moreRecords, limit=Number(button.dataset.nextLimit);
+    const views={tasks:['#missions',renderMissions],requests:['#openInputs',renderOpenInputs],nodes:['#globalKernels',renderGlobalKernels]};
+    const entry=views[key]; if(!entry||!Number.isSafeInteger(limit)||limit<1) return;
+    const previous=Number($(entry[0]).dataset.limit)||0;
+    $(entry[0]).dataset.limit=String(limit); entry[1]();
+    if(button.isConnected===false){
+      const hosts={tasks:['#missionCards','.mcard'],requests:['#openInputCards','.input-request-card'],nodes:['#globalKernels','[data-kernel]']};
+      const [selector,itemSelector]=hosts[key], items=$(selector).querySelectorAll(itemSelector);
+      const next=items[Math.min(previous,items.length-1)];
+      if(next){ if(key==='requests') next.tabIndex=-1; next.focus(); }
+    }
+  });
   // Design-system nav family: promote the static index.html nav controls additively
   // (KEEP every id + the .link/.con-toggle classes the JS/CSS read) — the back control
   // becomes a ghost nav-back button, close/unfollow/collapse join the .ghost-btn family,

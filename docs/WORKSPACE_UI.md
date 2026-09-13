@@ -15,13 +15,18 @@ roster cards, task lists, file lists, and detail presentation.
 ## Interaction behavior
 
 - Five hash routes: `#overview`, `#personas`, `#workspaces`, `#work`, `#network`.
-- Search is shared across views and stored as an encoded `q` fragment parameter.
+- Search is visible and shared across all five views and stored as an encoded `q` fragment parameter.
   Node routing parameters in the URL query string remain intact.
 - Persona activity filtering occurs before bounded pagination, so a working
   persona beyond the first page can still be found. An active call, a failed
   work step, and an absence of an active call remain distinct observations.
 - Layout selection is remembered locally. Changes to live records preserve
   surviving DOM controls, focus, and verified portrait mounts.
+- Task records, input requests, and known nodes can be expanded beyond their initial
+  windows. Live refresh preserves the expanded limit; changing the search or scope
+  resets the window. The last expansion moves keyboard focus to the added records.
+- Persona search includes verified descriptions, aliases, and authored introductions.
+  Those fields remain excluded when their identity proof is unavailable.
 - Tasks are collapsed on the overview and open on Current work. Searching also
   refreshes the task list. Missing results have an explicit reset action.
 - Persona details initially show shared responses and work. Profile, education,
@@ -49,7 +54,7 @@ binary when they are outside the usual module resolution or browser cache.
 
 The shell browser test uses local renderer fixtures and blocks discovery. It checks
 navigation, bookmark state, browser Back, live-refresh focus preservation, search
-reset, layout selection, empty work, connection actions, and 25 view/viewport
+reset, layout selection, empty work, connection actions, keyboard expansion through the last task page, and 25 view/viewport
 combinations from 320 to 1440 pixels. The bitmap check loads both stylesheets and
 verifies that square, portrait, and landscape images remain uncropped. The record
 lifetime test covers paging and resource cleanup separately.
@@ -60,3 +65,5 @@ and focus restoration. Axe-core found no WCAG 2 A/AA or WCAG 2.1 AA violations i
 the five live views and connection dialog after corrections. These observations
 cover the reachable public node and records at the time of the run; they do not
 establish availability of every federated node or private connection.
+
+See [the completion audit](WORKSPACE_UI_AUDIT.md) for the acceptance scope and final validation.

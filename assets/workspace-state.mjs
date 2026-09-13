@@ -25,3 +25,20 @@ export function personaActivity({running = false, failed = false} = {}) {
 export function matchesActivity(state, filter) {
   return filter === 'all' || (filter === 'quiet' ? state !== 'working' : state === filter);
 }
+
+// Each browsing surface retains its expansion during live refreshes and resets
+// on a different search or node scope. The caller still selects admitted records.
+export function browseLimit(state, selection, initial) {
+  if (state.selection !== selection) {
+    state.selection = selection;
+    state.limit = String(initial);
+  }
+  const value = Number(state.limit);
+  return Number.isSafeInteger(value) && value >= initial ? value : initial;
+}
+export function browseMoreHTML(kind, shown, total, step) {
+  const label = {tasks:'task records',requests:'requests',nodes:'nodes'}[kind];
+  if (!label || total <= shown) return '';
+  return `<div class="browse-more"><span>Showing ${shown} of ${total} ${label}</span>`
+    +`<button type="button" class="window-more" data-stage-key="more-${kind}" data-more-records="${kind}" data-next-limit="${Math.min(total,shown+step)}">Show ${Math.min(step,total-shown)} more ${label}</button></div>`;
+}
