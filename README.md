@@ -165,6 +165,17 @@ the exact captures and retains the failed house/circuit quality checks.
 node --test test/*.test.mjs
 ```
 
+With Playwright and Chromium installed, the separate layout regression checks
+square, portrait and landscape bitmaps in compact cards on desktop and mobile:
+
+```bash
+node test/bitmap-card-layout.browser.mjs
+```
+
+`UI_BROWSER_MODULE` and `UI_BROWSER_EXECUTABLE` can select an existing driver
+and browser installation. The test uses generated bitmaps and no network; it
+does not create persona identities or change their images.
+
 For a discovery bug report, `window.__personaOSPublicEvidence.enable()` enables
 optional observation of already received public inventories, admission decisions,
 and selected task/file controls. `read()` returns a canonical JSON string;
@@ -214,7 +225,8 @@ manual comparison; copying selected persona arguments does not submit a task.
 
 Persona-authored environment names stay separate from full task instructions. A
 chosen environment image uses a verified artifact, not an invented thumbnail.
-Images load when visible. File previews show actual received bytes and peer retry
+Images load when visible and fit whole inside the compact frame without cropping
+their selected content. File previews show actual received bytes and peer retry
 or verification state; closing a view cancels its transfer and releases Blob URLs.
 
 Offline checks cover signed public/private records, selected event streams, peer
