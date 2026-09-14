@@ -8,9 +8,13 @@ import { createServer } from 'node:net';
 import assert from 'node:assert/strict';
 
 const root=await mkdtemp(join(tmpdir(),'personas-browser-'));
+const release=process.env.PERSONAS_RELEASE;
+const binary=resolve(release?join(release,'bin/personas'):'../ai-personas/target/debug/personas');
+const assets=resolve(release?join(release,'ui'):'dist');
+const fixture=resolve(release?join(release,'integtest/provider_fixture.py'):'../ai-personas/integtest/provider_fixture.py');
 const server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;await new Promise(r=>server.close(r));
-const config=join(root,'providers.json');await writeFile(config,JSON.stringify({fixture:['python3',resolve('../ai-personas/integtest/provider_fixture.py')]}));
-const child=spawn(resolve('../ai-personas/target/debug/personas'),['serve','--root',join(root,'node'),'--listen',`127.0.0.1:${port}`,'--providers',config,'--ui',resolve('dist')],{stdio:['ignore','pipe','pipe']});
+const config=join(root,'providers.json');await writeFile(config,JSON.stringify({fixture:['python3',fixture]}));
+const child=spawn(binary,['serve','--root',join(root,'node'),'--listen',`127.0.0.1:${port}`,'--providers',config,'--ui',assets],{stdio:['ignore','pipe','pipe']});
 let logs='';child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);
 let browser; let page;
 try {
@@ -38,5 +42,5 @@ try {
   let artifactStarted;const startedPromise=new Promise(r=>artifactStarted=r);await page.route('**/api/artifacts/*',async route=>{artifactStarted();await delay(1500);try{await route.continue();}catch{}});
   await page.getByRole('button',{name:'Browser behavior, fresh evidence',exact:true}).click();await page.getByRole('button',{name:/Open artifact/}).click();await startedPromise;await expect(page.getByRole('button',{name:'Cancel loading'})).toBeVisible();await page.getByRole('button',{name:'Cancel loading'}).click();await expect(page.getByRole('alert')).toContainText('Loading cancelled');await page.getByRole('button',{name:'Close ✕',exact:true}).last().click();await page.getByRole('button',{name:'Close ✕',exact:true}).click();
   await page.screenshot({path:join(root,'work-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:join(root,'work-mobile.png'),fullPage:true});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'Mobile view overflows');assert.deepEqual(errors,[]);
-  const result={status:'passed',tested:['browser creation flow','visible command streaming','job survives view close','responsive navigation during execution','lazy artifact loading','slow-load cancellation','15 repeated navigation and artifact cycles','heap and file descriptor release','mobile layout'],heapDelta:metric(after,'JSHeapUsedSize')-metric(before,'JSHeapUsedSize'),fdBefore,fdAfter:(await readdir(`/proc/${child.pid}/fd`)).length,root};await writeFile(join(root,'browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
+  const result={status:'passed',binary,assets,runtimeRevision:(await api('/release')).runtime_revision,tested:['browser creation flow','visible command streaming','job survives view close','responsive navigation during execution','lazy artifact loading','slow-load cancellation','15 repeated navigation and artifact cycles','heap and file descriptor release','mobile layout'],heapDelta:metric(after,'JSHeapUsedSize')-metric(before,'JSHeapUsedSize'),fdBefore,fdAfter:(await readdir(`/proc/${child.pid}/fd`)).length,root};await writeFile(join(root,'browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } catch(e){await page?.screenshot({path:join(root,'failure.png'),fullPage:true});console.error('Evidence retained at',root);console.error(logs);throw e;} finally {await browser?.close();child.kill('SIGTERM');}
