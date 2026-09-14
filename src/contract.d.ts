@@ -457,6 +457,13 @@ export interface ModelRequest {
   run: Record;
   work: Record;
   environment: Record;
+  models: Model[];
+  protocol: string;
+  operation_schema: unknown;
+  /**
+   * Earlier actions precede selected context and newly delivered facts in model input.
+   */
+  history: Action[];
   selected_learning: Record[];
   selected_records: Record[];
   inputs: Inbox;
@@ -464,10 +471,6 @@ export interface ModelRequest {
   context_bytes: number;
   messages: Record[];
   tools: Record[];
-  models: Model[];
-  history: Action[];
-  protocol: string;
-  operation_schema: unknown;
   [k: string]: unknown;
 }
 export interface NetworkInfo {

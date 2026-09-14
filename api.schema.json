@@ -2004,6 +2004,23 @@
           "environment": {
             "$ref": "#/$defs/Record"
           },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Model"
+            }
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "operation_schema": true,
+          "history": {
+            "description": "Earlier actions precede selected context and newly delivered facts in model input.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Action"
+            }
+          },
           "selected_learning": {
             "type": "array",
             "items": {
@@ -2041,23 +2058,7 @@
             "items": {
               "$ref": "#/$defs/Record"
             }
-          },
-          "models": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Model"
-            }
-          },
-          "history": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Action"
-            }
-          },
-          "protocol": {
-            "type": "string"
-          },
-          "operation_schema": true
+          }
         },
         "required": [
           "node",
@@ -2065,17 +2066,17 @@
           "run",
           "work",
           "environment",
+          "models",
+          "protocol",
+          "operation_schema",
+          "history",
           "selected_learning",
           "selected_records",
           "inputs",
           "images",
           "context_bytes",
           "messages",
-          "tools",
-          "models",
-          "history",
-          "protocol",
-          "operation_schema"
+          "tools"
         ]
       },
       "NetworkInfo": {
