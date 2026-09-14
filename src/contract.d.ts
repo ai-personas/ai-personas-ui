@@ -101,7 +101,7 @@ export interface Decision {
   [k: string]: unknown;
 }
 export interface DecisionAction {
-  args: string;
+  args: unknown;
   kind: string;
   [k: string]: unknown;
 }

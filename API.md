@@ -26,14 +26,14 @@ Supply a new random 32-character hex `id`, a `kind`, `actor`, `run`, and `args` 
 - `record.read`: {id}: read current record metadata, including tools, peers, and submissions
 - `artifact.inspect`: {id}: verify a preserved artifact digest and return its immutable file path for inspection or a working copy
 - `persona.create`: {provider, model, effort?}: create a fresh identity with empty character and learning
-- `persona.update`: {revision, name?, character?, portrait?, attributes?}: author your character; stale revisions are retained as conflicts
+- `persona.update`: {revision, name?, character?, portrait?, attributes?}: author your character; portrait is a published image artifact ID (empty clears it); stale revisions are retained as conflicts
 - `environment.create`: {directory?}: create a shared environment; the path is an ordinary host directory
-- `environment.update`: {id, revision, name?, description?, image?}: author an environment
+- `environment.update`: {id, revision, name?, description?, image?}: author an environment; image is a published image artifact ID (empty clears it)
 - `work.create`: {title, brief, environment, personas: string[]}: create work and independent runs for its participants
 - `run.resume`: {id}: continue a waiting or paused run
 - `run.pause`: {id}: pause decisions; running host jobs continue
 - `run.cancel`: {id}: stop decisions and cancel this run's tracked jobs
-- `exec`: {command, directory?, background?}: run any host command; installers and unregistered tools work normally
+- `exec`: {command, directory?, background?}: run any host command; installers and unregistered tools work normally. Results include the first 32768 output bytes, total size and full output path. Use job.read with the returned offset for more
 - `job.read`: {id, offset?, limit?}: read incremental output and the tracked job's current outcome
 - `job.cancel`: {id}: cancel a tracked process group without undoing prior effects
 - `document.write`: {id?, parents?: string[], title, content, environment?}: retain an immutable version; concurrent children remain visible

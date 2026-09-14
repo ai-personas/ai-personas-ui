@@ -15,7 +15,7 @@
     ],
     [
       "persona.update",
-      "{revision, name?, character?, portrait?, attributes?}: author your character; stale revisions are retained as conflicts"
+      "{revision, name?, character?, portrait?, attributes?}: author your character; portrait is a published image artifact ID (empty clears it); stale revisions are retained as conflicts"
     ],
     [
       "environment.create",
@@ -23,7 +23,7 @@
     ],
     [
       "environment.update",
-      "{id, revision, name?, description?, image?}: author an environment"
+      "{id, revision, name?, description?, image?}: author an environment; image is a published image artifact ID (empty clears it)"
     ],
     [
       "work.create",
@@ -43,7 +43,7 @@
     ],
     [
       "exec",
-      "{command, directory?, background?}: run any host command; installers and unregistered tools work normally"
+      "{command, directory?, background?}: run any host command; installers and unregistered tools work normally. Results include the first 32768 output bytes, total size and full output path. Use job.read with the returned offset for more"
     ],
     [
       "job.read",
@@ -247,9 +247,7 @@
       },
       "DecisionAction": {
         "properties": {
-          "args": {
-            "type": "string"
-          },
+          "args": true,
           "kind": {
             "type": "string"
           }

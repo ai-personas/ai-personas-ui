@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
-import { blob } from './api';
+import { blob, request, data } from './api';
+import type { Detail } from './api';
 
 export default function Viewer({ id, close }: { id: string; close: () => void }) {
-  const [url, setURL] = useState(''); const [text, setText] = useState(''); const [kind, setKind] = useState(''); const [error, setError] = useState(''); const [progress, setProgress] = useState([0, 0]); const [cancel, setCancel] = useState<AbortController>();
+  const [shared, setShared] = useState(''); const [url, setURL] = useState(''); const [text, setText] = useState(''); const [kind, setKind] = useState(''); const [error, setError] = useState(''); const [progress, setProgress] = useState([0, 0]); const [cancel, setCancel] = useState<AbortController>();
   useEffect(() => {
     const controller = new AbortController(); setCancel(controller); let objectURL = ''; let disposed = false;
     blob(id, controller.signal, (a, b) => setProgress([a, b])).then(async value => {
@@ -13,6 +14,6 @@ export default function Viewer({ id, close }: { id: string; close: () => void })
   }, [id]);
   return <div class="overlay" role="dialog" aria-modal="true" aria-label="Artifact viewer"><section class="viewer"><header><h2>Artifact</h2><button class="quiet" onClick={close}>Close ✕</button></header>
     {!url && !error && <div class="loading"><progress value={progress[0]} max={progress[1] || undefined} /><p>{(progress[0] / 1024).toFixed(0)} KB received</p><button onClick={() => cancel?.abort()}>Cancel loading</button></div>}
-    {error && <p role="alert">{error}</p>}{url && <><div class="artifact-content">{kind.startsWith('image/') ? <img src={url} alt="Persona-authored artifact" /> : text ? <pre>{text}</pre> : <p>This file is ready to download and open in its native application.</p>}</div><a class="button" href={url} download={id}>Download original</a></>}
+    {error && <p role="alert">{error}</p>}{url && <><div class="artifact-content">{kind.startsWith('image/') ? <img src={url} alt="Persona-authored artifact" /> : text ? <pre>{text}</pre> : <p>This file is ready to download and open in its native application.</p>}</div><div class="button-row"><a class="button" href={url} download={id}>Download original</a><button class="secondary" onClick={async()=>{try{const [record,node]=await Promise.all([request<Detail>('/records/'+id),request<any>('/network')]);const d=data(record.record);const descriptor=JSON.stringify({peer:node.id,address:node.addresses[0],artifact:id,digest:d.digest,size:d.size,name:d.name});setShared(descriptor);await navigator.clipboard.writeText(descriptor);}catch(e){setError((e as Error).message)}}}>Copy sharing details</button></div>{shared&&<details open><summary>Artifact sharing details</summary><pre>{shared}</pre></details>}</>}
   </section></div>;
 }
