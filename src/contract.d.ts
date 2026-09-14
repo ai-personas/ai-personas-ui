@@ -325,8 +325,8 @@ export type Outcome = "succeeded" | "failed" | "unknown";
 export interface ApiTypes {
   command: Command;
   records: Page;
-  inputs: Page2;
-  actions: Page3;
+  inputs: Inbox;
+  actions: Page2;
   operation: Operation;
   action: Action;
   event: Event;
@@ -371,12 +371,12 @@ export interface Record {
   [k: string]: unknown;
 }
 /**
- * Cursor pages are bounded transport, not a persona memory policy.
+ * Delivered input identities and the exact cursor the persona may acknowledge.
  */
-export interface Page2 {
+export interface Inbox {
   items: Input[];
   next?: number | null;
-  sequence: number;
+  through: number;
   [k: string]: unknown;
 }
 export interface Input {
@@ -392,7 +392,7 @@ export interface Input {
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
  */
-export interface Page3 {
+export interface Page2 {
   items: Action[];
   next?: number | null;
   sequence: number;
@@ -447,7 +447,7 @@ export interface ModelRequest {
   environment: Record;
   selected_learning: Record[];
   selected_records: Record[];
-  inputs: Page2;
+  inputs: Inbox;
   images: ImageInput[];
   context_bytes: number;
   messages: Record[];

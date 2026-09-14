@@ -12,10 +12,10 @@
         "$ref": "#/$defs/Page"
       },
       "inputs": {
-        "$ref": "#/$defs/Page2"
+        "$ref": "#/$defs/Inbox"
       },
       "actions": {
-        "$ref": "#/$defs/Page3"
+        "$ref": "#/$defs/Page2"
       },
       "operation": {
         "$ref": "#/$defs/Operation"
@@ -842,7 +842,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals.",
+            "description": "Acknowledge delivered inputs using inputs.through after retaining or acting on them. Never discards originals.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1747,8 +1747,8 @@
           "data"
         ]
       },
-      "Page2": {
-        "description": "Cursor pages are bounded transport, not a persona memory policy.",
+      "Inbox": {
+        "description": "Delivered input identities and the exact cursor the persona may acknowledge.",
         "type": "object",
         "properties": {
           "items": {
@@ -1765,7 +1765,7 @@
             "format": "uint64",
             "minimum": 0
           },
-          "sequence": {
+          "through": {
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -1773,7 +1773,7 @@
         },
         "required": [
           "items",
-          "sequence"
+          "through"
         ]
       },
       "Input": {
@@ -1813,7 +1813,7 @@
           "created"
         ]
       },
-      "Page3": {
+      "Page2": {
         "description": "Cursor pages are bounded transport, not a persona memory policy.",
         "type": "object",
         "properties": {
@@ -1986,7 +1986,7 @@
             }
           },
           "inputs": {
-            "$ref": "#/$defs/Page2"
+            "$ref": "#/$defs/Inbox"
           },
           "images": {
             "type": "array",
@@ -2359,7 +2359,7 @@
     ],
     [
       "input.acknowledge",
-      "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals."
+      "Acknowledge delivered inputs using inputs.through after retaining or acting on them. Never discards originals."
     ],
     [
       "model.choose",
@@ -3237,7 +3237,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals.",
+        "description": "Acknowledge delivered inputs using inputs.through after retaining or acting on them. Never discards originals.",
         "type": "object",
         "properties": {
           "kind": {

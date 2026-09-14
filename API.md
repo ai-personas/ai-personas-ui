@@ -229,7 +229,7 @@ Replace active action history through an action ID with your own account and sel
 
 ### `input.acknowledge`
 
-Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals.
+Acknowledge delivered inputs using inputs.through after retaining or acting on them. Never discards originals.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
