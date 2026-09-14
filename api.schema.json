@@ -1,0 +1,615 @@
+{
+  "contract": "design-first/1",
+  "operations": [
+    [
+      "record.read",
+      "{id}: read current record metadata, including tools, peers, and submissions"
+    ],
+    [
+      "artifact.inspect",
+      "{id}: verify a preserved artifact digest and return its immutable file path for inspection or a working copy"
+    ],
+    [
+      "persona.create",
+      "{provider, model, effort?}: create a fresh identity with empty character and learning"
+    ],
+    [
+      "persona.update",
+      "{revision, name?, character?, portrait?, attributes?}: author your character; stale revisions are retained as conflicts"
+    ],
+    [
+      "environment.create",
+      "{directory?}: create a shared environment; the path is an ordinary host directory"
+    ],
+    [
+      "environment.update",
+      "{id, revision, name?, description?, image?}: author an environment"
+    ],
+    [
+      "work.create",
+      "{title, brief, environment, personas: string[]}: create work and independent runs for its participants"
+    ],
+    [
+      "run.resume",
+      "{id}: continue a waiting or paused run"
+    ],
+    [
+      "run.pause",
+      "{id}: pause decisions; running host jobs continue"
+    ],
+    [
+      "run.cancel",
+      "{id}: stop decisions and cancel this run's tracked jobs"
+    ],
+    [
+      "exec",
+      "{command, directory?, background?}: run any host command; installers and unregistered tools work normally"
+    ],
+    [
+      "job.read",
+      "{id, offset?, limit?}: read incremental output and the tracked job's current outcome"
+    ],
+    [
+      "job.cancel",
+      "{id}: cancel a tracked process group without undoing prior effects"
+    ],
+    [
+      "document.write",
+      "{id?, parents?: string[], title, content, environment?}: retain an immutable version; concurrent children remain visible"
+    ],
+    [
+      "document.read",
+      "{version}: read a retained document version"
+    ],
+    [
+      "context.select",
+      "{versions: string[]}: choose retained document versions to include in subsequent model requests"
+    ],
+    [
+      "context.compact",
+      "{summary, through, versions: string[]}: replace active history through an action ID with your own account, preserving originals"
+    ],
+    [
+      "model.choose",
+      "{provider, model, effort?}: choose an advertised model for subsequent decisions"
+    ],
+    [
+      "tool.register",
+      "{name, command, description, acquisition}: record an owned tool or skill and its acquisition provenance; registration never gates execution"
+    ],
+    [
+      "message.send",
+      "{to, text, environment?}: deliver a durable message to a persona or environment"
+    ],
+    [
+      "artifact.publish",
+      "{path, name?, media_type?}: preserve exact file bytes and SHA-256 digest"
+    ],
+    [
+      "submit",
+      "{summary, artifacts: string[], documents: string[]}: submit immutable artifact and document versions"
+    ],
+    [
+      "review.start",
+      "{submission, persona, instructions}: assess a submitted version using a different persona and the ordinary engine"
+    ],
+    [
+      "assess",
+      "{verdict: accepted|rejected|incomplete, findings, checks: string[]}: preserve the reviewer's checks and verdict"
+    ],
+    [
+      "wait",
+      "{reason}: wait for user input or a message"
+    ],
+    [
+      "peer.connect",
+      "{address}: connect and trust this libp2p peer identity for application exchanges"
+    ],
+    [
+      "transfer.start",
+      "{peer, artifact, digest, size, name}: fetch immutable bytes from a trusted peer with progress and integrity checks"
+    ],
+    [
+      "transfer.cancel",
+      "{id}: cancel a transfer and discard the incomplete file"
+    ],
+    [
+      "peer.message",
+      "{peer, to, text}: send a durable, deduplicated message over libp2p"
+    ],
+    [
+      "continuity.export",
+      "{}: pause this persona's decisions and export its records and referenced artifacts"
+    ],
+    [
+      "continuity.import",
+      "{artifact}: import a verified continuity bundle as a paused identity, preserving conflicts"
+    ],
+    [
+      "action.resolve",
+      "{id, outcome, evidence}: append explicit evidence for an uncertain action; never re-execute it"
+    ]
+  ],
+  "routes": [
+    [
+      "GET",
+      "/api/snapshot",
+      "Compact current records; document bodies and artifact bytes are omitted"
+    ],
+    [
+      "GET",
+      "/api/records/{id}",
+      "Entity, preserved revisions, related records, and recorded actions"
+    ],
+    [
+      "GET",
+      "/api/actions/{id}",
+      "Action identity and current result, including job reconciliation"
+    ],
+    [
+      "GET",
+      "/api/actions/{id}/output?offset=0&limit=32768",
+      "Incremental tracked command output with a byte cursor"
+    ],
+    [
+      "POST",
+      "/api/operations",
+      "Execute an Operation; repeating an identical identity returns its recorded result"
+    ],
+    [
+      "GET",
+      "/api/events?after=0",
+      "Server-sent durable change notifications; disconnect releases the observer"
+    ],
+    [
+      "GET",
+      "/api/artifacts/{id}",
+      "Stream verified immutable artifact bytes; client cancellation releases the file"
+    ],
+    [
+      "GET",
+      "/api/calls/{id}/{part}",
+      "Load request.json, response.json, thread.json, provider.jsonl, provider.json or provider.stderr on demand"
+    ],
+    [
+      "GET",
+      "/api/models",
+      "Discover provider-advertised models and capabilities"
+    ],
+    [
+      "GET",
+      "/api/network",
+      "Current peer identity, addresses and connected peers"
+    ],
+    [
+      "GET",
+      "/api/contract",
+      "Generated machine contract"
+    ],
+    [
+      "GET",
+      "/api/release",
+      "Installed runtime revision and matching release manifest"
+    ]
+  ],
+  "types": {
+    "$defs": {
+      "Action": {
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request": {
+            "$ref": "#/$defs/Operation"
+          },
+          "result": true,
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
+          "state",
+          "created",
+          "result"
+        ],
+        "type": "object"
+      },
+      "Decision": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/$defs/DecisionAction"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "DecisionAction": {
+        "properties": {
+          "args": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "type": "object"
+      },
+      "Detail": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/$defs/Action"
+            },
+            "type": "array"
+          },
+          "record": {
+            "$ref": "#/$defs/Record"
+          },
+          "related": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "revisions": {
+            "items": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "revisions",
+          "related",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "data": true,
+          "entity": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "kind",
+          "entity",
+          "time",
+          "data"
+        ],
+        "type": "object"
+      },
+      "Model": {
+        "properties": {
+          "capabilities": true,
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "id",
+          "name",
+          "capabilities"
+        ],
+        "type": "object"
+      },
+      "ModelRequest": {
+        "properties": {
+          "document_catalog": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "environment": {
+            "$ref": "#/$defs/Record"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/$defs/Action"
+            },
+            "type": "array"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/$defs/Model"
+            },
+            "type": "array"
+          },
+          "persona": {
+            "$ref": "#/$defs/Record"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/$defs/Record"
+          },
+          "selected_learning": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "work": {
+            "$ref": "#/$defs/Record"
+          }
+        },
+        "required": [
+          "persona",
+          "run",
+          "work",
+          "environment",
+          "selected_learning",
+          "document_catalog",
+          "messages",
+          "tools",
+          "models",
+          "history",
+          "protocol"
+        ],
+        "type": "object"
+      },
+      "ModelResponse": {
+        "properties": {
+          "actual_model": {
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/$defs/Decision"
+          },
+          "usage": {
+            "$ref": "#/$defs/Usage"
+          }
+        },
+        "required": [
+          "decision",
+          "actual_model",
+          "usage"
+        ],
+        "type": "object"
+      },
+      "NetworkInfo": {
+        "properties": {
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "peers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "addresses",
+          "peers"
+        ],
+        "type": "object"
+      },
+      "Operation": {
+        "properties": {
+          "actor": {
+            "default": "",
+            "type": "string"
+          },
+          "args": {
+            "default": null
+          },
+          "id": {
+            "description": "Client-generated random 32-character hex identity, reusable only for this exact request.",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "run": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "Record": {
+        "description": "Persistent entities retain arbitrary persona-authored fields in `data`.",
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "data": true,
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "scope",
+          "revision",
+          "created",
+          "updated",
+          "data"
+        ],
+        "type": "object"
+      },
+      "Snapshot": {
+        "properties": {
+          "contract": {
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/$defs/Record"
+            },
+            "type": "array"
+          },
+          "sequence": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contract",
+          "sequence",
+          "records"
+        ],
+        "type": "object"
+      },
+      "Usage": {
+        "properties": {
+          "cached": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "input": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "output": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "known",
+          "input",
+          "cached",
+          "output"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "action": {
+        "$ref": "#/$defs/Action"
+      },
+      "detail": {
+        "$ref": "#/$defs/Detail"
+      },
+      "event": {
+        "$ref": "#/$defs/Event"
+      },
+      "model": {
+        "$ref": "#/$defs/Model"
+      },
+      "network": {
+        "$ref": "#/$defs/NetworkInfo"
+      },
+      "operation": {
+        "$ref": "#/$defs/Operation"
+      },
+      "request": {
+        "$ref": "#/$defs/ModelRequest"
+      },
+      "response": {
+        "$ref": "#/$defs/ModelResponse"
+      },
+      "snapshot": {
+        "$ref": "#/$defs/Snapshot"
+      }
+    },
+    "required": [
+      "snapshot",
+      "detail",
+      "operation",
+      "action",
+      "event",
+      "model",
+      "request",
+      "response",
+      "network"
+    ],
+    "title": "ApiTypes",
+    "type": "object"
+  }
+}

@@ -1,0 +1,12 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { compile } from 'json-schema-to-typescript';
+const runtime = new URL('../../ai-personas/', import.meta.url).pathname.replace('/ai-personas-ui/ai-personas/', '/ai-personas/');
+const binary = process.env.PERSONAS_BIN || new URL('../../ai-personas/target/debug/personas', import.meta.url).pathname.replace('/ai-personas-ui/ai-personas/', '/ai-personas/');
+const schemaPath = new URL('../api.schema.json', import.meta.url).pathname;
+execFileSync(binary, ['contract','--out',schemaPath]);
+const contract=JSON.parse(readFileSync(schemaPath,'utf8'));
+writeFileSync(new URL('../src/contract.d.ts',import.meta.url), await compile(contract.types,'ApiTypes',{bannerComment:'/* Generated from the Rust runtime contract. Run npm run contract. */'}));
+const md = '# Generated HTTP contract\n\nContract: `'+contract.contract+'`\n\nAll `/api` routes require the node bearer token. Commands run directly on the host.\n\n| Method | Path | Behavior |\n|---|---|---|\n'+contract.routes.map(([m,p,d])=>'| '+m+' | `'+p+'` | '+d+' |').join('\n')+'\n\n## Operations\n\nSupply a new random 32-character hex `id`, a `kind`, `actor`, `run`, and `args` to `POST /api/operations`. A repeated identical identity returns its recorded result; a changed request is rejected.\n\n'+contract.operations.map(([k,d])=>'- `'+k+'`: '+d).join('\n')+'\n';
+writeFileSync(new URL('../API.md',import.meta.url),md);
+writeFileSync(new URL('../../ai-personas-design/technical/API.md',import.meta.url),md);
