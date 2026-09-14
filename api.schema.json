@@ -797,7 +797,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule.",
+            "description": "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2355,7 +2355,7 @@
     ],
     [
       "context.compact",
-      "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule."
+      "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule."
     ],
     [
       "input.acknowledge",
@@ -3192,7 +3192,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule.",
+        "description": "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.",
         "type": "object",
         "properties": {
           "kind": {

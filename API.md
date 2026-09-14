@@ -218,7 +218,7 @@ Choose exact retained records and action results for future context. Replaces se
 
 ### `context.compact`
 
-Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule.
+Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
