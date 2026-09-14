@@ -357,7 +357,7 @@ Owner or operator cancels an outstanding request with a reason.
 
 ### `wait`
 
-Wait for missing input, findings or pending job results. Work ownership continues.
+Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -379,7 +379,7 @@ Connect and trust a libp2p peer for application exchanges.
 
 ### `transfer.start`
 
-Fetch exact bytes from a trusted peer with progress and integrity validation.
+Start fetching exact bytes from a trusted peer with progress and integrity validation. The returned transfer record may still be running. When called for a work run, its completed, failed, cancelled or interrupted record is delivered as input and wakes waiting work. Completed records identify the verified received_artifact.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -409,7 +409,7 @@ Send a durable deduplicated message over libp2p.
 
 ### `continuity.export`
 
-Pause this persona and export its records, inbox, selected context and referenced files.
+Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.
 
 No arguments.
 

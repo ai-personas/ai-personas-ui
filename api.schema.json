@@ -1324,7 +1324,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Wait for missing input, findings or pending job results. Work ownership continues.",
+            "description": "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1397,7 +1397,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Fetch exact bytes from a trusted peer with progress and integrity validation.",
+            "description": "Start fetching exact bytes from a trusted peer with progress and integrity validation. The returned transfer record may still be running. When called for a work run, its completed, failed, cancelled or interrupted record is delivered as input and wakes waiting work. Completed records identify the verified received_artifact.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1504,7 +1504,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Pause this persona and export its records, inbox, selected context and referenced files.",
+            "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2442,7 +2442,7 @@
     ],
     [
       "wait",
-      "Wait for missing input, findings or pending job results. Work ownership continues."
+      "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues."
     ],
     [
       "network.read",
@@ -2454,7 +2454,7 @@
     ],
     [
       "transfer.start",
-      "Fetch exact bytes from a trusted peer with progress and integrity validation."
+      "Start fetching exact bytes from a trusted peer with progress and integrity validation. The returned transfer record may still be running. When called for a work run, its completed, failed, cancelled or interrupted record is delivered as input and wakes waiting work. Completed records identify the verified received_artifact."
     ],
     [
       "transfer.cancel",
@@ -2466,7 +2466,7 @@
     ],
     [
       "continuity.export",
-      "Pause this persona and export its records, inbox, selected context and referenced files."
+      "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded."
     ],
     [
       "continuity.import",
@@ -3754,7 +3754,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Wait for missing input, findings or pending job results. Work ownership continues.",
+        "description": "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3827,7 +3827,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Fetch exact bytes from a trusted peer with progress and integrity validation.",
+        "description": "Start fetching exact bytes from a trusted peer with progress and integrity validation. The returned transfer record may still be running. When called for a work run, its completed, failed, cancelled or interrupted record is delivered as input and wakes waiting work. Completed records identify the verified received_artifact.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3934,7 +3934,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Pause this persona and export its records, inbox, selected context and referenced files.",
+        "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.",
         "type": "object",
         "properties": {
           "kind": {
