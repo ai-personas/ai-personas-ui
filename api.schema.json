@@ -1,15 +1,21 @@
 {
-  "contract": "design-first/1",
+  "contract": "ai-personas/1",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "ApiTypes",
     "type": "object",
     "properties": {
-      "snapshot": {
-        "$ref": "#/$defs/Snapshot"
+      "command": {
+        "$ref": "#/$defs/Command"
       },
-      "detail": {
-        "$ref": "#/$defs/Detail"
+      "records": {
+        "$ref": "#/$defs/Page"
+      },
+      "inputs": {
+        "$ref": "#/$defs/Page2"
+      },
+      "actions": {
+        "$ref": "#/$defs/Page3"
       },
       "operation": {
         "$ref": "#/$defs/Operation"
@@ -34,8 +40,10 @@
       }
     },
     "required": [
-      "snapshot",
-      "detail",
+      "command",
+      "records",
+      "inputs",
+      "actions",
       "operation",
       "action",
       "event",
@@ -45,28 +53,1662 @@
       "network"
     ],
     "$defs": {
-      "Snapshot": {
+      "Command": {
+        "oneOf": [
+          {
+            "description": "Read a complete record by identity.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "record.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Discover a bounded page of record summaries. Use the returned cursor for the next page.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "record.list"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "scope": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "owner": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "query": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Retrieve a page of retained actions for your identity, including compacted history.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "history.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "after": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "run": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Verify preserved bytes and return the immutable path. Copy before editing.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "artifact.inspect"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Select a published PNG, JPEG, or WebP for visual input on subsequent model calls. No visual inspection is claimed before a capable model receives it.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "image.observe"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "artifact": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "artifact",
+                  "purpose"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Create a fresh identity with unauthored character.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.create"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Author character, dispositions, affect and imagery. Explain changes and their evidence. Character shapes preferences, never factual accuracy or compliance with user instructions. Stale revisions preserve conflicts.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.update"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "character": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "portrait": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ocean": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Ocean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "vad": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Vad"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "attributes": true,
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "evidence": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "revision"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Create an ordinary shared host directory.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "environment.create"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Author the environment name, description and published image reference.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "environment.update"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Create work and queue participant decisions. Participants own continued work after submissions.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.create"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "brief": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "personas": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "title",
+                  "brief",
+                  "environment",
+                  "personas"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Queue a run for continued decisions. A busy identity retains this request.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "run.resume"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Pause decisions; tracked host jobs continue.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "run.pause"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel decisions and tracked jobs without undoing prior effects.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "run.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exec"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "directory": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "background": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "command"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read incremental output and job outcome.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "job.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel a tracked process group.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "job.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "document.write"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parents": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "title",
+                  "content"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read an immutable version.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "document.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "version"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "context.select"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "records",
+                  "actions"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "context.compact"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "through": {
+                    "type": "string"
+                  },
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "summary",
+                  "through",
+                  "records",
+                  "actions"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "input.acknowledge"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "through": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "through"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Choose an advertised provider and model for subsequent decisions.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "model.choose"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Retain an owned tool or skill and acquisition provenance. Registration never gates host execution.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "tool.register"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "acquisition": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "command",
+                  "description",
+                  "acquisition"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "message.send"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "work": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "to",
+                  "text"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preserve exact file bytes and digest.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "artifact.publish"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "media_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "path"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "submit"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "summary",
+                  "artifacts",
+                  "documents"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "review.start"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "submission": {
+                    "type": "string"
+                  },
+                  "persona": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "submission",
+                  "persona",
+                  "instructions"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "assess"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "verdict": {
+                    "$ref": "#/$defs/Verdict"
+                  },
+                  "findings": {
+                    "type": "string"
+                  },
+                  "checks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-fA-F0-9]{32}$"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "verdict",
+                  "findings",
+                  "checks"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "request.create"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "evidence_required": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "purpose",
+                  "instructions",
+                  "evidence_required",
+                  "artifacts"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "request.respond"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "request",
+                  "text",
+                  "artifacts"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Owner records how a request was satisfied, with evidence.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "request.resolve"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string"
+                  },
+                  "conclusion": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "request",
+                  "conclusion",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Owner or operator cancels an outstanding request with a reason.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "request.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "request",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Wait for missing input, findings or pending job results. Work ownership continues.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "wait"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read this node’s current peer identity, addresses and live connections.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "network.read"
+              },
+              "args": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Connect and trust a libp2p peer for application exchanges.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "peer.connect"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "address"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Fetch exact bytes from a trusted peer with progress and integrity validation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "transfer.start"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "peer": {
+                    "type": "string"
+                  },
+                  "artifact": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "peer",
+                  "artifact",
+                  "digest",
+                  "size",
+                  "name"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel transfer and discard incomplete bytes.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "transfer.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Send a durable deduplicated message over libp2p.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "peer.message"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "peer": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "peer",
+                  "to",
+                  "text"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Pause this persona and export its records, inbox, selected context and referenced files.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "continuity.export"
+              },
+              "args": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Import a verified bundle as a paused identity, preserving conflicts.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "continuity.import"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "artifact": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "artifact"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Explicitly route future inputs for this paused identity to a trusted destination peer after import. This is not distributed exclusivity.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "continuity.handoff"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "peer": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "peer"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Append evidence about an uncertain action without re-executing it. Unknown outcomes remain uncertain.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "action.resolve"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "$ref": "#/$defs/Outcome"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "outcome",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Ocean": {
         "type": "object",
         "properties": {
-          "contract": {
-            "type": "string"
+          "openness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "conscientiousness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "extraversion": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "agreeableness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "neuroticism": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Vad": {
+        "type": "object",
+        "properties": {
+          "valence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "arousal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "dominance": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "rejected",
+          "incomplete"
+        ]
+      },
+      "Outcome": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "failed",
+          "unknown"
+        ]
+      },
+      "Page": {
+        "description": "Cursor pages are bounded transport, not a persona memory policy.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Record"
+            }
+          },
+          "next": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
           },
           "sequence": {
             "type": "integer",
             "format": "uint64",
             "minimum": 0
-          },
-          "records": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Record"
-            }
           }
         },
         "required": [
-          "contract",
-          "sequence",
-          "records"
+          "items",
+          "sequence"
         ]
       },
       "Record": {
@@ -105,34 +1747,99 @@
           "data"
         ]
       },
-      "Detail": {
+      "Page2": {
+        "description": "Cursor pages are bounded transport, not a persona memory policy.",
         "type": "object",
         "properties": {
-          "record": {
-            "$ref": "#/$defs/Record"
-          },
-          "revisions": {
-            "type": "array",
-            "items": true
-          },
-          "related": {
+          "items": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/Record"
+              "$ref": "#/$defs/Input"
             }
           },
-          "actions": {
+          "next": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "sequence"
+        ]
+      },
+      "Input": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "run": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "key",
+          "persona",
+          "run",
+          "kind",
+          "entity",
+          "created"
+        ]
+      },
+      "Page3": {
+        "description": "Cursor pages are bounded transport, not a persona memory policy.",
+        "type": "object",
+        "properties": {
+          "items": {
             "type": "array",
             "items": {
               "$ref": "#/$defs/Action"
             }
+          },
+          "next": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         },
         "required": [
-          "record",
-          "revisions",
-          "related",
-          "actions"
+          "items",
+          "sequence"
         ]
       },
       "Action": {
@@ -188,6 +1895,11 @@
           },
           "args": {
             "default": null
+          },
+          "source": {
+            "description": "Assigned by the application: api or the originating model call identity.",
+            "type": "string",
+            "default": ""
           }
         },
         "required": [
@@ -246,6 +1958,9 @@
       "ModelRequest": {
         "type": "object",
         "properties": {
+          "node": {
+            "$ref": "#/$defs/NetworkInfo"
+          },
           "persona": {
             "$ref": "#/$defs/Record"
           },
@@ -264,11 +1979,25 @@
               "$ref": "#/$defs/Record"
             }
           },
-          "document_catalog": {
+          "selected_records": {
             "type": "array",
             "items": {
               "$ref": "#/$defs/Record"
             }
+          },
+          "inputs": {
+            "$ref": "#/$defs/Page2"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ImageInput"
+            }
+          },
+          "context_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
           "messages": {
             "type": "array",
@@ -296,20 +2025,82 @@
           },
           "protocol": {
             "type": "string"
-          }
+          },
+          "operation_schema": true
         },
         "required": [
+          "node",
           "persona",
           "run",
           "work",
           "environment",
           "selected_learning",
-          "document_catalog",
+          "selected_records",
+          "inputs",
+          "images",
+          "context_bytes",
           "messages",
           "tools",
           "models",
           "history",
-          "protocol"
+          "protocol",
+          "operation_schema"
+        ]
+      },
+      "NetworkInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "addresses",
+          "peers"
+        ]
+      },
+      "ImageInput": {
+        "type": "object",
+        "properties": {
+          "observation": {
+            "type": "string"
+          },
+          "artifact": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation",
+          "artifact",
+          "digest",
+          "media_type",
+          "path",
+          "purpose"
         ]
       },
       "ModelResponse": {
@@ -390,224 +2181,1902 @@
           "cached",
           "output"
         ]
-      },
-      "NetworkInfo": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "addresses": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "peers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "addresses",
-          "peers"
-        ]
       }
     }
   },
   "routes": [
     [
       "GET",
-      "/api/snapshot",
-      "Compact current records; document bodies and artifact bytes are omitted"
+      "/api/records?kind=&scope=&owner=&query=&after=0&limit=40",
+      "Bounded summaries, indexed text search, stable cursor and event watermark"
     ],
     [
       "GET",
       "/api/records/{id}",
-      "Entity, preserved revisions, related records, and recorded actions"
+      "Load one complete record; work activity and version assessments are separate facts"
+    ],
+    [
+      "GET",
+      "/api/records/{id}/revisions?after=0&limit=20",
+      "Load a bounded page of preserved versions on demand"
+    ],
+    [
+      "GET",
+      "/api/actions?owner=&scope=&after=0&limit=20",
+      "Load actions for a persona or run with a cursor"
     ],
     [
       "GET",
       "/api/actions/{id}",
-      "Action identity and current result, including job reconciliation"
+      "Recorded action outcome, including tracked job reconciliation"
     ],
     [
       "GET",
       "/api/actions/{id}/output?offset=0&limit=32768",
-      "Incremental tracked command output with a byte cursor"
+      "Incremental tracked command output"
+    ],
+    [
+      "GET",
+      "/api/actions/{id}/output.bin",
+      "Stream original command output bytes, with byte ranges"
     ],
     [
       "POST",
       "/api/operations",
-      "Execute an Operation; repeating an identical identity returns its recorded result"
+      "Execute the typed Command in an Operation envelope; identical retries reuse results"
     ],
     [
       "GET",
       "/api/events?after=0",
-      "Server-sent durable change notifications; disconnect releases the observer"
+      "Resumable lightweight change events; closing a view releases its observer"
     ],
     [
       "GET",
       "/api/artifacts/{id}",
-      "Stream verified immutable artifact bytes; client cancellation releases the file"
+      "Stream immutable files with byte ranges and browser-managed downloads"
+    ],
+    [
+      "POST",
+      "/api/uploads?id=&name=&media_type=&size=&digest=",
+      "Stream a file with expected SHA-256 and size; retries preserve the upload identity"
+    ],
+    [
+      "POST",
+      "/api/session",
+      "Authorize browser file loading using a session cookie; other operations still require bearer authentication"
     ],
     [
       "GET",
       "/api/calls/{id}/{part}",
-      "Load request.json, response.json, thread.json, provider.jsonl, provider.json or provider.stderr on demand"
+      "Load preserved provider input, request, response or usage on demand"
     ],
     [
       "GET",
       "/api/models",
-      "Discover provider-advertised models and capabilities"
+      "Provider-advertised models and capabilities"
     ],
     [
       "GET",
       "/api/network",
-      "Current peer identity, addresses and connected peers"
+      "Current node and connected peers"
+    ],
+    [
+      "GET",
+      "/api/curricula",
+      "Optional ordinary starter environment briefs"
     ],
     [
       "GET",
       "/api/contract",
-      "Generated machine contract"
+      "Generated operation, type and route contract"
     ],
     [
       "GET",
       "/api/release",
-      "Installed runtime revision and matching release manifest"
+      "Matching runtime, design and UI revisions"
     ]
   ],
   "operations": [
     [
       "record.read",
-      "{id}: read current record metadata, including tools, peers, and submissions"
+      "Read a complete record by identity."
+    ],
+    [
+      "record.list",
+      "Discover a bounded page of record summaries. Use the returned cursor for the next page."
+    ],
+    [
+      "history.read",
+      "Retrieve a page of retained actions for your identity, including compacted history."
     ],
     [
       "artifact.inspect",
-      "{id}: verify a preserved artifact digest and return its immutable file path for inspection or a working copy"
+      "Verify preserved bytes and return the immutable path. Copy before editing."
+    ],
+    [
+      "image.observe",
+      "Select a published PNG, JPEG, or WebP for visual input on subsequent model calls. No visual inspection is claimed before a capable model receives it."
     ],
     [
       "persona.create",
-      "{provider, model, effort?}: create a fresh identity with empty character and learning"
+      "Create a fresh identity with unauthored character."
     ],
     [
       "persona.update",
-      "{revision, name?, character?, portrait?, attributes?}: author your character; portrait is a published image artifact ID (empty clears it); stale revisions are retained as conflicts"
+      "Author character, dispositions, affect and imagery. Explain changes and their evidence. Character shapes preferences, never factual accuracy or compliance with user instructions. Stale revisions preserve conflicts."
     ],
     [
       "environment.create",
-      "{directory?}: create a shared environment; the path is an ordinary host directory"
+      "Create an ordinary shared host directory."
     ],
     [
       "environment.update",
-      "{id, revision, name?, description?, image?}: author an environment; image is a published image artifact ID (empty clears it)"
+      "Author the environment name, description and published image reference."
     ],
     [
       "work.create",
-      "{title, brief, environment, personas: string[]}: create work and independent runs for its participants"
+      "Create work and queue participant decisions. Participants own continued work after submissions."
     ],
     [
       "run.resume",
-      "{id}: continue a waiting or paused run"
+      "Queue a run for continued decisions. A busy identity retains this request."
     ],
     [
       "run.pause",
-      "{id}: pause decisions; running host jobs continue"
+      "Pause decisions; tracked host jobs continue."
     ],
     [
       "run.cancel",
-      "{id}: stop decisions and cancel this run's tracked jobs"
+      "Cancel decisions and tracked jobs without undoing prior effects."
     ],
     [
       "exec",
-      "{command, directory?, background?}: run any host command; installers and unregistered tools work normally. Results include the first 32768 output bytes, total size and full output path. Use job.read with the returned offset for more"
+      "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read."
     ],
     [
       "job.read",
-      "{id, offset?, limit?}: read incremental output and the tracked job's current outcome"
+      "Read incremental output and job outcome."
     ],
     [
       "job.cancel",
-      "{id}: cancel a tracked process group without undoing prior effects"
+      "Cancel a tracked process group."
     ],
     [
       "document.write",
-      "{id?, parents?: string[], title, content, environment?}: retain an immutable version. Returned record.id is the version; data.document is its logical grouping. To append, set id to that grouping and parents to prior version IDs. Concurrent children remain visible"
+      "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved."
     ],
     [
       "document.read",
-      "{version}: read a retained document version"
+      "Read an immutable version."
     ],
     [
       "context.select",
-      "{versions: string[]}: choose retained document versions to include in subsequent model requests"
+      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs."
     ],
     [
       "context.compact",
-      "{summary, through, versions: string[]}: replace active history through an action ID with your own account, preserving originals"
+      "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule."
+    ],
+    [
+      "input.acknowledge",
+      "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals."
     ],
     [
       "model.choose",
-      "{provider, model, effort?}: choose an advertised model for subsequent decisions"
+      "Choose an advertised provider and model for subsequent decisions."
     ],
     [
       "tool.register",
-      "{name, command, description, acquisition}: record an owned tool or skill and its acquisition provenance; registration never gates execution"
+      "Retain an owned tool or skill and acquisition provenance. Registration never gates host execution."
     ],
     [
       "message.send",
-      "{to, text, environment?}: deliver a durable message to a persona or environment"
+      "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present."
     ],
     [
       "artifact.publish",
-      "{path, name?, media_type?}: preserve exact file bytes and SHA-256 digest"
+      "Preserve exact file bytes and digest."
     ],
     [
       "submit",
-      "{summary, artifacts: string[], documents: string[]}: submit immutable artifact record IDs and document version record IDs (not data.document grouping IDs)"
+      "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs."
     ],
     [
       "review.start",
-      "{submission, persona, instructions}: assess a submitted version using a different persona and the ordinary engine"
+      "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine."
     ],
     [
       "assess",
-      "{verdict: accepted|rejected|incomplete, findings, checks: string[]}: checks contains only bare completed exec action IDs from this reviewer run; put explanatory prose in findings. Preserve the reviewer's checks and verdict"
+      "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings."
+    ],
+    [
+      "request.create",
+      "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies."
+    ],
+    [
+      "request.respond",
+      "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries."
+    ],
+    [
+      "request.resolve",
+      "Owner records how a request was satisfied, with evidence."
+    ],
+    [
+      "request.cancel",
+      "Owner or operator cancels an outstanding request with a reason."
     ],
     [
       "wait",
-      "{reason}: wait for user input, a message, or pending host results"
+      "Wait for missing input, findings or pending job results. Work ownership continues."
+    ],
+    [
+      "network.read",
+      "Read this node’s current peer identity, addresses and live connections."
     ],
     [
       "peer.connect",
-      "{address}: connect and trust this libp2p peer identity for application exchanges"
+      "Connect and trust a libp2p peer for application exchanges."
     ],
     [
       "transfer.start",
-      "{peer, artifact, digest, size, name}: fetch immutable bytes from a trusted peer with progress and integrity checks"
+      "Fetch exact bytes from a trusted peer with progress and integrity validation."
     ],
     [
       "transfer.cancel",
-      "{id}: cancel a transfer and discard the incomplete file"
+      "Cancel transfer and discard incomplete bytes."
     ],
     [
       "peer.message",
-      "{peer, to, text}: send a durable, deduplicated message over libp2p"
+      "Send a durable deduplicated message over libp2p."
     ],
     [
       "continuity.export",
-      "{}: pause this persona's decisions and export its records and referenced artifacts"
+      "Pause this persona and export its records, inbox, selected context and referenced files."
     ],
     [
       "continuity.import",
-      "{artifact}: import a verified continuity bundle as a paused identity, preserving conflicts"
+      "Import a verified bundle as a paused identity, preserving conflicts."
+    ],
+    [
+      "continuity.handoff",
+      "Explicitly route future inputs for this paused identity to a trusted destination peer after import. This is not distributed exclusivity."
     ],
     [
       "action.resolve",
-      "{id, outcome, evidence}: append explicit evidence for an uncertain action; never re-execute it"
+      "Append evidence about an uncertain action without re-executing it. Unknown outcomes remain uncertain."
     ]
-  ]
+  ],
+  "command": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Command",
+    "oneOf": [
+      {
+        "description": "Read a complete record by identity.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "record.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Discover a bounded page of record summaries. Use the returned cursor for the next page.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "record.list"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Retrieve a page of retained actions for your identity, including compacted history.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "history.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "after": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "run": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Verify preserved bytes and return the immutable path. Copy before editing.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "artifact.inspect"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Select a published PNG, JPEG, or WebP for visual input on subsequent model calls. No visual inspection is claimed before a capable model receives it.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "image.observe"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "artifact": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "artifact",
+              "purpose"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Create a fresh identity with unauthored character.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.create"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "model"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Author character, dispositions, affect and imagery. Explain changes and their evidence. Character shapes preferences, never factual accuracy or compliance with user instructions. Stale revisions preserve conflicts.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.update"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "character": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "portrait": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ocean": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ocean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vad": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Vad"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attributes": true,
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evidence": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "revision"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Create an ordinary shared host directory.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "environment.create"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Author the environment name, description and published image reference.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "environment.update"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Create work and queue participant decisions. Participants own continued work after submissions.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.create"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "brief": {
+                "type": "string"
+              },
+              "environment": {
+                "type": "string"
+              },
+              "personas": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "brief",
+              "environment",
+              "personas"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Queue a run for continued decisions. A busy identity retains this request.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "run.resume"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Pause decisions; tracked host jobs continue.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "run.pause"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel decisions and tracked jobs without undoing prior effects.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "run.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "exec"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "directory": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "background": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "command"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read incremental output and job outcome.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "job.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "offset": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel a tracked process group.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "job.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "document.write"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "parents": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "title": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "environment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "content"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read an immutable version.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "document.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context.select"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "records",
+              "actions"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Replace active action history through an action ID with your own account and selection. Originals remain retrievable. No imposed schedule.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context.compact"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "through": {
+                "type": "string"
+              },
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "summary",
+              "through",
+              "records",
+              "actions"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Acknowledge delivered inputs through the supplied inbox cursor after retaining or acting on them. Never discards originals.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "input.acknowledge"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "through": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "through"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Choose an advertised provider and model for subsequent decisions.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "model.choose"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "model"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Retain an owned tool or skill and acquisition provenance. Registration never gates host execution.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "tool.register"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "acquisition": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "command",
+              "description",
+              "acquisition"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "message.send"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "string"
+              },
+              "work": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "environment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "to",
+              "text"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preserve exact file bytes and digest.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "artifact.publish"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "media_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "submit"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "documents": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "summary",
+              "artifacts",
+              "documents"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "review.start"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "submission": {
+                "type": "string"
+              },
+              "persona": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "submission",
+              "persona",
+              "instructions"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "assess"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "$ref": "#/$defs/Verdict"
+              },
+              "findings": {
+                "type": "string"
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{32}$"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "verdict",
+              "findings",
+              "checks"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "request.create"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "purpose": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "evidence_required": {
+                "type": "string"
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "purpose",
+              "instructions",
+              "evidence_required",
+              "artifacts"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "request.respond"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "request",
+              "text",
+              "artifacts"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Owner records how a request was satisfied, with evidence.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "request.resolve"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "string"
+              },
+              "conclusion": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "request",
+              "conclusion",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Owner or operator cancels an outstanding request with a reason.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "request.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "request",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Wait for missing input, findings or pending job results. Work ownership continues.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "wait"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read this node’s current peer identity, addresses and live connections.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "network.read"
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Connect and trust a libp2p peer for application exchanges.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "peer.connect"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "address"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Fetch exact bytes from a trusted peer with progress and integrity validation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "transfer.start"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "peer": {
+                "type": "string"
+              },
+              "artifact": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "peer",
+              "artifact",
+              "digest",
+              "size",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel transfer and discard incomplete bytes.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "transfer.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Send a durable deduplicated message over libp2p.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "peer.message"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "peer": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "peer",
+              "to",
+              "text"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Pause this persona and export its records, inbox, selected context and referenced files.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "continuity.export"
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Import a verified bundle as a paused identity, preserving conflicts.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "continuity.import"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "artifact": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "artifact"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Explicitly route future inputs for this paused identity to a trusted destination peer after import. This is not distributed exclusivity.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "continuity.handoff"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "peer": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "peer"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Append evidence about an uncertain action without re-executing it. Unknown outcomes remain uncertain.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "action.resolve"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "outcome": {
+                "$ref": "#/$defs/Outcome"
+              },
+              "evidence": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "outcome",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      }
+    ],
+    "$defs": {
+      "Ocean": {
+        "type": "object",
+        "properties": {
+          "openness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "conscientiousness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "extraversion": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "agreeableness": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "neuroticism": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Vad": {
+        "type": "object",
+        "properties": {
+          "valence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "arousal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "dominance": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "minimum": -1,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "rejected",
+          "incomplete"
+        ]
+      },
+      "Outcome": {
+        "type": "string",
+        "enum": [
+          "succeeded",
+          "failed",
+          "unknown"
+        ]
+      }
+    }
+  }
 }

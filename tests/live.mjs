@@ -13,9 +13,17 @@ async function get(path) {
   assert(response.ok, path);
   return response.json();
 }
-const snapshot = await get('/snapshot');
-const personas = snapshot.records.filter(r => r.kind === 'persona' && r.data.portrait);
-const environments = snapshot.records.filter(r => r.kind === 'environment' && r.data.image);
+async function records(kind) {
+  const values = []; let after = 0;
+  do {
+    const page = await get(`/records?kind=${kind}&after=${after}&limit=100`);
+    values.push(...page.items); after = page.next;
+  } while (after !== null);
+  return values;
+}
+const personas = (await records('persona')).filter(r => r.data.portrait).slice(0, 24);
+const environments = (await records('environment')).filter(r => r.data.image).slice(0, 24);
+const activeRuns = (await records('run')).filter(r => r.data.status === 'running' || r.data.status === 'queued');
 assert(personas.length >= 2, 'Requires completed authored persona imagery');
 assert(environments.length > 0, 'Requires an authored environment image');
 const browser = await chromium.launch({ headless: true });
@@ -30,14 +38,14 @@ try {
   await page.screenshot({ path: join(out, 'live-work.png'), fullPage: true });
   await page.getByRole('button', { name: 'Personas', exact: true }).click();
   for (const persona of personas) {
-    const img = page.getByRole('img', { name: persona.data.name + ', authored portrait', exact: true });
+    const img = page.getByRole('img', { name: persona.data.name + ', authored image', exact: true });
     await expect(img).toBeVisible();
     assert(await img.evaluate(image => image.complete && image.naturalWidth > 0));
   }
   await page.screenshot({ path: join(out, 'live-personas.png'), fullPage: true });
   await page.getByRole('button', { name: 'Environments', exact: true }).click();
   for (const environment of environments) {
-    await expect(page.getByRole('img', { name: environment.data.name + ', authored portrait', exact: true })).toBeVisible();
+    await expect(page.getByRole('img', { name: environment.data.name + ', authored image', exact: true })).toBeVisible();
   }
   await page.screenshot({ path: join(out, 'live-environments.png'), fullPage: true });
   const start = performance.now();
@@ -58,13 +66,17 @@ try {
     release: await get('/release'),
     personas: personas.map(p => ({ id: p.id, name: p.data.name, portrait: p.data.portrait })),
     environments: environments.map(e => ({ id: e.id, name: e.data.name, image: e.data.image })),
-    workingRunsAtStart: snapshot.records.filter(r => r.kind === 'run' && r.data.status === 'running').map(r => r.id),
+    workingRunsAtStart: activeRuns.map(r => r.id),
     navigationMs,
     pageErrors: errors,
     note: 'Read-only browser observation of the installed live model campaign. Screenshots and visible authored images are actual node data.'
   };
   await writeFile(join(out, 'live-browser.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ status: report.status, navigationMs, portraits: personas.length, environments: environments.length, out }));
+} catch (error) {
+  await page.screenshot({ path: join(out, 'failure.png'), fullPage: true }).catch(() => {});
+  await writeFile(join(out, 'failure.json'), JSON.stringify({ error: String(error), pageErrors: errors }, null, 2));
+  throw error;
 } finally {
   await browser.close();
 }
