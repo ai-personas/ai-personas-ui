@@ -1,120 +1,120 @@
 /* Generated from the Rust runtime contract. Run npm run contract. */
 
 export interface ApiTypes {
-  action: Action;
+  snapshot: Snapshot;
   detail: Detail;
+  operation: Operation;
+  action: Action;
   event: Event;
   model: Model;
-  network: NetworkInfo;
-  operation: Operation;
   request: ModelRequest;
   response: ModelResponse;
-  snapshot: Snapshot;
+  network: NetworkInfo;
   [k: string]: unknown;
 }
-export interface Action {
-  created: string;
-  error?: string | null;
-  finished?: string | null;
-  request: Operation;
-  result: unknown;
-  state: string;
-  [k: string]: unknown;
-}
-export interface Operation {
-  actor?: string;
-  args?: {
-    [k: string]: unknown;
-  };
-  /**
-   * Client-generated random 32-character hex identity, reusable only for this exact request.
-   */
-  id: string;
-  kind: string;
-  run?: string;
-  [k: string]: unknown;
-}
-export interface Detail {
-  actions: Action[];
-  record: Record;
-  related: Record[];
-  revisions: unknown[];
+export interface Snapshot {
+  contract: string;
+  sequence: number;
+  records: Record[];
   [k: string]: unknown;
 }
 /**
  * Persistent entities retain arbitrary persona-authored fields in `data`.
  */
 export interface Record {
-  created: string;
-  data: unknown;
   id: string;
   kind: string;
-  revision: number;
   scope: string;
+  revision: number;
+  created: string;
   updated: string;
+  data: unknown;
+  [k: string]: unknown;
+}
+export interface Detail {
+  record: Record;
+  revisions: unknown[];
+  related: Record[];
+  actions: Action[];
+  [k: string]: unknown;
+}
+export interface Action {
+  request: Operation;
+  state: string;
+  created: string;
+  finished?: string | null;
+  result: unknown;
+  error?: string | null;
+  [k: string]: unknown;
+}
+export interface Operation {
+  /**
+   * Client-generated random 32-character hex identity, reusable only for this exact request.
+   */
+  id: string;
+  kind: string;
+  actor?: string;
+  run?: string;
+  args?: {
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 }
 export interface Event {
-  data: unknown;
-  entity: string;
-  kind: string;
   sequence: number;
+  kind: string;
+  entity: string;
   time: string;
+  data: unknown;
   [k: string]: unknown;
 }
 export interface Model {
-  capabilities: unknown;
+  provider: string;
   id: string;
   name: string;
-  provider: string;
-  [k: string]: unknown;
-}
-export interface NetworkInfo {
-  addresses: string[];
-  id: string;
-  peers: string[];
+  capabilities: unknown;
   [k: string]: unknown;
 }
 export interface ModelRequest {
-  document_catalog: Record[];
-  environment: Record;
-  history: Action[];
-  messages: Record[];
-  models: Model[];
   persona: Record;
-  protocol: string;
   run: Record;
-  selected_learning: Record[];
-  tools: Record[];
   work: Record;
+  environment: Record;
+  selected_learning: Record[];
+  document_catalog: Record[];
+  messages: Record[];
+  tools: Record[];
+  models: Model[];
+  history: Action[];
+  protocol: string;
   [k: string]: unknown;
 }
 export interface ModelResponse {
-  actual_model: string;
   decision: Decision;
+  actual_model: string;
   usage: Usage;
   [k: string]: unknown;
 }
 export interface Decision {
-  actions: DecisionAction[];
   summary: string;
+  actions: DecisionAction[];
   [k: string]: unknown;
 }
 export interface DecisionAction {
-  args: unknown;
   kind: string;
+  args: unknown;
   [k: string]: unknown;
 }
 export interface Usage {
-  cached: number;
-  input: number;
   known: boolean;
+  input: number;
+  cached: number;
   output: number;
   [k: string]: unknown;
 }
-export interface Snapshot {
-  contract: string;
-  records: Record[];
-  sequence: number;
+export interface NetworkInfo {
+  id: string;
+  addresses: string[];
+  peers: string[];
   [k: string]: unknown;
 }
