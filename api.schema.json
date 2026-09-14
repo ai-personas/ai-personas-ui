@@ -535,7 +535,7 @@
     ],
     [
       "document.write",
-      "{id?, parents?: string[], title, content, environment?}: retain an immutable version; concurrent children remain visible"
+      "{id?, parents?: string[], title, content, environment?}: retain an immutable version. Returned record.id is the version; data.document is its logical grouping. To append, set id to that grouping and parents to prior version IDs. Concurrent children remain visible"
     ],
     [
       "document.read",
@@ -567,7 +567,7 @@
     ],
     [
       "submit",
-      "{summary, artifacts: string[], documents: string[]}: submit immutable artifact and document versions"
+      "{summary, artifacts: string[], documents: string[]}: submit immutable artifact record IDs and document version record IDs (not data.document grouping IDs)"
     ],
     [
       "review.start",
@@ -575,7 +575,7 @@
     ],
     [
       "assess",
-      "{verdict: accepted|rejected|incomplete, findings, checks: string[]}: preserve the reviewer's checks and verdict"
+      "{verdict: accepted|rejected|incomplete, findings, checks: string[]}: checks contains only bare completed exec action IDs from this reviewer run; put explanatory prose in findings. Preserve the reviewer's checks and verdict"
     ],
     [
       "wait",

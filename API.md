@@ -36,7 +36,7 @@ Supply a new random 32-character hex `id`, a `kind`, `actor`, `run`, and `args` 
 - `exec`: {command, directory?, background?}: run any host command; installers and unregistered tools work normally. Results include the first 32768 output bytes, total size and full output path. Use job.read with the returned offset for more
 - `job.read`: {id, offset?, limit?}: read incremental output and the tracked job's current outcome
 - `job.cancel`: {id}: cancel a tracked process group without undoing prior effects
-- `document.write`: {id?, parents?: string[], title, content, environment?}: retain an immutable version; concurrent children remain visible
+- `document.write`: {id?, parents?: string[], title, content, environment?}: retain an immutable version. Returned record.id is the version; data.document is its logical grouping. To append, set id to that grouping and parents to prior version IDs. Concurrent children remain visible
 - `document.read`: {version}: read a retained document version
 - `context.select`: {versions: string[]}: choose retained document versions to include in subsequent model requests
 - `context.compact`: {summary, through, versions: string[]}: replace active history through an action ID with your own account, preserving originals
@@ -44,9 +44,9 @@ Supply a new random 32-character hex `id`, a `kind`, `actor`, `run`, and `args` 
 - `tool.register`: {name, command, description, acquisition}: record an owned tool or skill and its acquisition provenance; registration never gates execution
 - `message.send`: {to, text, environment?}: deliver a durable message to a persona or environment
 - `artifact.publish`: {path, name?, media_type?}: preserve exact file bytes and SHA-256 digest
-- `submit`: {summary, artifacts: string[], documents: string[]}: submit immutable artifact and document versions
+- `submit`: {summary, artifacts: string[], documents: string[]}: submit immutable artifact record IDs and document version record IDs (not data.document grouping IDs)
 - `review.start`: {submission, persona, instructions}: assess a submitted version using a different persona and the ordinary engine
-- `assess`: {verdict: accepted|rejected|incomplete, findings, checks: string[]}: preserve the reviewer's checks and verdict
+- `assess`: {verdict: accepted|rejected|incomplete, findings, checks: string[]}: checks contains only bare completed exec action IDs from this reviewer run; put explanatory prose in findings. Preserve the reviewer's checks and verdict
 - `wait`: {reason}: wait for user input or a message
 - `peer.connect`: {address}: connect and trust this libp2p peer identity for application exchanges
 - `transfer.start`: {peer, artifact, digest, size, name}: fetch immutable bytes from a trusted peer with progress and integrity checks
