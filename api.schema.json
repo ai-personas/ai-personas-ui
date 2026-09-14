@@ -56,12 +56,39 @@
       "Command": {
         "oneOf": [
           {
-            "description": "Read a complete record by identity.",
+            "description": "Read a complete record by identity. For an action receipt use action.read.",
             "type": "object",
             "properties": {
               "kind": {
                 "type": "string",
                 "const": "record.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read a preserved action and its result. Nested history lookups are represented by action references; the exact archived receipt also remains available at GET /api/actions/{id}.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "action.read"
               },
               "args": {
                 "type": "object",
@@ -150,7 +177,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Retrieve a page of retained actions for your identity, including compacted history.",
+            "description": "Retrieve a page of retained actions for your identity, including compacted history. Earlier retrieval results are referenced by action ID, preventing recursive copies; use action.read for one result.",
             "type": "object",
             "properties": {
               "kind": {
@@ -316,10 +343,12 @@
                     ]
                   },
                   "portrait": {
+                    "description": "Artifact ID returned by artifact.publish for your existing portrait file. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.",
                     "type": [
                       "string",
                       "null"
-                    ]
+                    ],
+                    "pattern": "^([a-fA-F0-9]{32})?$"
                   },
                   "ocean": {
                     "anyOf": [
@@ -429,10 +458,12 @@
                     ]
                   },
                   "image": {
+                    "description": "Artifact ID returned by artifact.publish for the existing environment image. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.",
                     "type": [
                       "string",
                       "null"
-                    ]
+                    ],
+                    "pattern": "^([a-fA-F0-9]{32})?$"
                   }
                 },
                 "additionalProperties": false,
@@ -572,7 +603,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+            "description": "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2279,7 +2310,11 @@
   "operations": [
     [
       "record.read",
-      "Read a complete record by identity."
+      "Read a complete record by identity. For an action receipt use action.read."
+    ],
+    [
+      "action.read",
+      "Read a preserved action and its result. Nested history lookups are represented by action references; the exact archived receipt also remains available at GET /api/actions/{id}."
     ],
     [
       "record.list",
@@ -2287,7 +2322,7 @@
     ],
     [
       "history.read",
-      "Retrieve a page of retained actions for your identity, including compacted history."
+      "Retrieve a page of retained actions for your identity, including compacted history. Earlier retrieval results are referenced by action ID, preventing recursive copies; use action.read for one result."
     ],
     [
       "artifact.inspect",
@@ -2331,7 +2366,7 @@
     ],
     [
       "exec",
-      "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read."
+      "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read."
     ],
     [
       "job.read",
@@ -2451,12 +2486,39 @@
     "title": "Command",
     "oneOf": [
       {
-        "description": "Read a complete record by identity.",
+        "description": "Read a complete record by identity. For an action receipt use action.read.",
         "type": "object",
         "properties": {
           "kind": {
             "type": "string",
             "const": "record.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read a preserved action and its result. Nested history lookups are represented by action references; the exact archived receipt also remains available at GET /api/actions/{id}.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "action.read"
           },
           "args": {
             "type": "object",
@@ -2545,7 +2607,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Retrieve a page of retained actions for your identity, including compacted history.",
+        "description": "Retrieve a page of retained actions for your identity, including compacted history. Earlier retrieval results are referenced by action ID, preventing recursive copies; use action.read for one result.",
         "type": "object",
         "properties": {
           "kind": {
@@ -2711,10 +2773,12 @@
                 ]
               },
               "portrait": {
+                "description": "Artifact ID returned by artifact.publish for your existing portrait file. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.",
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "pattern": "^([a-fA-F0-9]{32})?$"
               },
               "ocean": {
                 "anyOf": [
@@ -2824,10 +2888,12 @@
                 ]
               },
               "image": {
+                "description": "Artifact ID returned by artifact.publish for the existing environment image. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.",
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "pattern": "^([a-fA-F0-9]{32})?$"
               }
             },
             "additionalProperties": false,
@@ -2967,7 +3033,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+        "description": "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
         "type": "object",
         "properties": {
           "kind": {

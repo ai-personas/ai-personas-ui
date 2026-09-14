@@ -8,6 +8,12 @@ export type Command =
       };
     }
   | {
+      kind: "action.read";
+      args: {
+        id: string;
+      };
+    }
+  | {
       kind: "record.list";
       args: {
         kind?: string | null;
@@ -54,6 +60,9 @@ export type Command =
         revision: number;
         name?: string | null;
         character?: string | null;
+        /**
+         * Artifact ID returned by artifact.publish for your existing portrait file. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.
+         */
         portrait?: string | null;
         ocean?: Ocean | null;
         vad?: Vad | null;
@@ -75,6 +84,9 @@ export type Command =
         revision: number;
         name?: string | null;
         description?: string | null;
+        /**
+         * Artifact ID returned by artifact.publish for the existing environment image. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs.
+         */
         image?: string | null;
       };
     }

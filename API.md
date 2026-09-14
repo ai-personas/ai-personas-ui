@@ -31,7 +31,15 @@ Send an Operation with random 32-character hex `id`, `kind`, `actor`, `run` and 
 
 ### `record.read`
 
-Read a complete record by identity.
+Read a complete record by identity. For an action receipt use action.read.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+
+### `action.read`
+
+Read a preserved action and its result. Nested history lookups are represented by action references; the exact archived receipt also remains available at GET /api/actions/{id}.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -53,7 +61,7 @@ Discover a bounded page of record summaries. Use the returned cursor for the nex
 
 ### `history.read`
 
-Retrieve a page of retained actions for your identity, including compacted history.
+Retrieve a page of retained actions for your identity, including compacted history. Earlier retrieval results are referenced by action ID, preventing recursive copies; use action.read for one result.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -97,7 +105,7 @@ Author character, dispositions, affect and imagery. Explain changes and their ev
 | `revision` | integer | Required |  |
 | `name` | string or null | Optional |  |
 | `character` | string or null | Optional |  |
-| `portrait` | string or null | Optional |  |
+| `portrait` | string or null | Optional | Artifact ID returned by artifact.publish for your existing portrait file. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs. |
 | `ocean` | Ocean or null | Optional |  |
 | `vad` | Vad or null | Optional |  |
 | `attributes` | JSON value | Optional |  |
@@ -122,7 +130,7 @@ Author the environment name, description and published image reference.
 | `revision` | integer | Required |  |
 | `name` | string or null | Optional |  |
 | `description` | string or null | Optional |  |
-| `image` | string or null | Optional |  |
+| `image` | string or null | Optional | Artifact ID returned by artifact.publish for the existing environment image. Omit until published; an empty string clears it. Image descriptions and filesystem paths are not artifact IDs. |
 
 ### `work.create`
 
@@ -161,7 +169,7 @@ Cancel decisions and tracked jobs without undoing prior effects.
 
 ### `exec`
 
-Run any host command, installer or tool. Registration is optional. Foreground jobs return before the next decision; background jobs return asynchronously. Full output remains available through job.read.
+Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

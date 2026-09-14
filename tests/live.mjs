@@ -38,14 +38,20 @@ try {
   await page.screenshot({ path: join(out, 'live-work.png'), fullPage: true });
   await page.getByRole('button', { name: 'Personas', exact: true }).click();
   for (const persona of personas) {
-    const img = page.getByRole('img', { name: persona.data.name + ', authored image', exact: true });
+    const img = page.getByRole('img', { name: persona.data.name + ', authored image', exact: true })
+      .and(page.locator(`img[src="/api/artifacts/${persona.data.portrait}"]`)).first();
+    await img.scrollIntoViewIfNeeded();
     await expect(img).toBeVisible();
-    assert(await img.evaluate(image => image.complete && image.naturalWidth > 0));
+    await expect.poll(() => img.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
   }
   await page.screenshot({ path: join(out, 'live-personas.png'), fullPage: true });
   await page.getByRole('button', { name: 'Environments', exact: true }).click();
   for (const environment of environments) {
-    await expect(page.getByRole('img', { name: environment.data.name + ', authored image', exact: true })).toBeVisible();
+    const img = page.getByRole('img', { name: environment.data.name + ', authored image', exact: true })
+      .and(page.locator(`img[src="/api/artifacts/${environment.data.image}"]`)).first();
+    await img.scrollIntoViewIfNeeded();
+    await expect(img).toBeVisible();
+    await expect.poll(() => img.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
   }
   await page.screenshot({ path: join(out, 'live-environments.png'), fullPage: true });
   const start = performance.now();
