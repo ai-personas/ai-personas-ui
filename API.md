@@ -47,7 +47,7 @@ Supply a new random 32-character hex `id`, a `kind`, `actor`, `run`, and `args` 
 - `submit`: {summary, artifacts: string[], documents: string[]}: submit immutable artifact record IDs and document version record IDs (not data.document grouping IDs)
 - `review.start`: {submission, persona, instructions}: assess a submitted version using a different persona and the ordinary engine
 - `assess`: {verdict: accepted|rejected|incomplete, findings, checks: string[]}: checks contains only bare completed exec action IDs from this reviewer run; put explanatory prose in findings. Preserve the reviewer's checks and verdict
-- `wait`: {reason}: wait for user input or a message
+- `wait`: {reason}: wait for user input, a message, or pending host results
 - `peer.connect`: {address}: connect and trust this libp2p peer identity for application exchanges
 - `transfer.start`: {peer, artifact, digest, size, name}: fetch immutable bytes from a trusted peer with progress and integrity checks
 - `transfer.cancel`: {id}: cancel a transfer and discard the incomplete file

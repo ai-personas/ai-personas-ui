@@ -579,7 +579,7 @@
     ],
     [
       "wait",
-      "{reason}: wait for user input or a message"
+      "{reason}: wait for user input, a message, or pending host results"
     ],
     [
       "peer.connect",
