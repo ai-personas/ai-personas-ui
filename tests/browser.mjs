@@ -45,7 +45,7 @@ try{
   proxy=spawn('python3',[join(runtime,'integtest/slow_peer.py'),remotePort],{stdio:['ignore','pipe','ignore']});
   const proxyPort=await new Promise((resolve,reject)=>{proxy.stdout.once('data',d=>resolve(String(d).trim()));proxy.once('error',reject);});
   await app.op('peer.connect',{address:`/ip4/127.0.0.1/tcp/${proxyPort}/p2p/${remoteNetwork.id}`});
-  await peer.op('peer.connect',{address:`/ip4/127.0.0.1/tcp/${await freePort()}/p2p/${network.id}`}); // Retain trust; the established relay connection carries traffic.
+  await peer.op('peer.connect',{address:`/ip4/127.0.0.1/tcp/${await freePort()}/p2p/${network.id}`});
   let transfer;
   browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1360,height:900}});const page=await context.newPage();observedPage=page;
   await page.addInitScript(()=>{const values=new Set();const create=URL.createObjectURL.bind(URL),revoke=URL.revokeObjectURL.bind(URL);URL.createObjectURL=value=>{const url=create(value);values.add(url);return url;};URL.revokeObjectURL=url=>{values.delete(url);revoke(url);};Object.defineProperty(window,'livePreviewURLs',{get:()=>values.size});});
@@ -53,7 +53,7 @@ try{
   await page.goto(app.url);await page.getByLabel('Node token').fill(app.token);await page.getByRole('button',{name:'Connect to node',exact:true}).click();
   await page.getByRole('button',{name:'Active browser verification',exact:true}).waitFor();
   await page.getByRole('button',{name:'Provide a factual test response',exact:true}).click();await page.getByLabel('Your response').fill('Synthetic observer reply; this is not physical measurement evidence.');
-  await page.getByLabel('Attach evidence').setInputFiles(small);await page.getByText('File attached',{exact:false}).waitFor();await page.getByRole('button',{name:'Send response',exact:true}).click();await page.getByRole('status').getByText('Response delivered to the owner.').waitFor();
+  await page.getByLabel('Attach evidence').setInputFiles(small);await page.getByText('File attached',{exact:false}).waitFor();await page.getByRole('button',{name:'Send response',exact:true}).click();await page.getByRole('dialog',{name:'Record details',exact:true}).getByRole('status').getByText('Response delivered to the owner; disposition is not established.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Close details',exact:true}).click();
   const replies=await app.get('/records?kind=response&scope='+request.id);assert.equal(replies.items.length,1);assert.equal((await app.get('/records/'+request.id)).data.status,'answered');
   // Exercise UI creation using a deterministic provider; these are not live model claims.
@@ -65,8 +65,9 @@ try{
   await page.getByRole('button',{name:'Work',exact:true}).click();
   const cdp=await context.newCDPSession(page);
   const gc=async()=>{await cdp.send('HeapProfiler.collectGarbage');await delay(80);return (await cdp.send('Runtime.getHeapUsage')).usedSize;};
-  // Warm the actual lazy modules before measuring retained heap.
-  async function view(){await page.getByRole('button',{name:'Active browser verification',exact:true}).click();await page.getByRole('button',{name:'Submissions',exact:true}).click();await page.getByRole('button',{name:/Submitted version/}).first().click();await page.getByRole('button',{name:/Open attachment/}).first().click();await page.getByText('A freshly created artifact for bounded browser viewing.',{exact:false}).waitFor();await page.getByRole('button',{name:'Close viewer',exact:true}).click();await page.getByRole('button',{name:/Open attachment/}).last().click();await page.locator('.artifact-image').waitFor();await page.waitForFunction(()=>document.querySelector('.artifact-image')?.naturalWidth===128);await page.getByRole('button',{name:'Close viewer',exact:true}).click();await page.getByRole('button',{name:'Close details',exact:true}).click();}
+  // The workspace is the new work entry point; legacy exact-record tabs remain reachable.
+  // Preserve the original real-file, load, timing and resource assertions.
+  async function view(){await page.getByRole('button',{name:'Active browser verification',exact:true}).click();await page.getByRole('button',{name:'Record & activity ↗',exact:true}).click();await page.getByRole('button',{name:'Submissions',exact:true}).click();await page.getByRole('button',{name:/Submitted version/}).first().click();await page.getByRole('button',{name:/Open attachment/}).first().click();await page.getByText('A freshly created artifact for bounded browser viewing.',{exact:false}).waitFor();await page.getByRole('button',{name:'Close viewer',exact:true}).click();await page.getByRole('button',{name:/Open attachment/}).last().click();await page.locator('.artifact-image').waitFor();await page.waitForFunction(()=>document.querySelector('.artifact-image')?.naturalWidth===128);await page.getByRole('button',{name:'Close viewer',exact:true}).click();await page.getByRole('button',{name:'Close details',exact:true}).click();await page.getByRole('button',{name:'← All work',exact:true}).click();}
   await view();const baseline=await gc();const baselineDOM=await cdp.send('Memory.getDOMCounters');const timings=[];const firstPages=[];
   for(let cycle=0;cycle<cycles;cycle++){
     const before=performance.now();await page.getByRole('button',{name:'Learning',exact:true}).click();await page.getByRole('heading',{name:'Learning',exact:true}).waitFor();await page.evaluate(()=>new Promise(requestAnimationFrame));timings.push(performance.now()-before);
@@ -81,7 +82,7 @@ try{
   for(let i=0;i<100;i++){if((await app.get('/records/'+transfer.id)).data.status==='cancelled')break;await delay(100);}
   assert.equal((await app.get('/records/'+transfer.id)).data.status,'cancelled');
   writeFileSync(join(evidence,'desktop-measurements.json'),JSON.stringify({cycles,timings,firstPages,baseline,retained,baselineDOM,dom,pageErrors:errors},null,2));
-  await page.setViewportSize({width:390,height:844});for(const name of ['Work','Personas','Environments','Learning','Network']){await page.getByRole('button',{name,exact:true}).click();await delay(120);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow on '+name);}
+  await page.setViewportSize({width:390,height:844});for(const name of ['Work','Personas','Environments','Learning','Tools','Network']){await page.getByRole('button',{name,exact:true}).click();await delay(120);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow on '+name);}
   await page.screenshot({path:join(evidence,'mobile-network.png'),fullPage:true});
   await page.getByRole('button',{name:'Work',exact:true}).click();await delay(500);const openRequests=[...active.values()];assert.equal(await page.evaluate(()=>window.livePreviewURLs),0,'preview URLs were retained');assert.equal(openRequests.filter(x=>x.includes('/api/events')).length,1);assert(!openRequests.some(x=>/\/api\/(artifacts|calls)\//.test(x)),'viewer resources remain active');
   const percentile=(xs,p)=>[...xs].sort((a,b)=>a-b)[Math.ceil(xs.length*p)-1];
