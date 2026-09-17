@@ -1,0 +1,39 @@
+name: Standalone design references
+on:
+  push:
+    branches: ['rewrite/design-first']
+    paths: ['design/**', 'tests/browser_design.py', 'tests/browser_reference.py', 'tests/design-state.test.cjs', 'tests/reference-screens.test.cjs', '.github/workflows/design-reference.yml']
+  pull_request:
+    branches: ['rewrite/design-first']
+permissions:
+  contents: read
+jobs:
+  references:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check preview state and routes
+        run: |
+          for file in design/*.js; do node --check "$file"; done
+          node --test tests/design-state.test.cjs tests/reference-screens.test.cjs
+      - name: Check browser interactions
+        run: |
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+          python3 tests/browser_design.py
+          python3 tests/browser_reference.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: standalone-reference-evidence
+          path: .qa/
+          include-hidden-files: true
