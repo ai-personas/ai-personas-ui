@@ -1,0 +1,100 @@
+{
+  "date": "2026-09-17",
+  "basis_design_commit": "899c63e8adf3442b40ad0d07b2303c003849a910",
+  "scope": "New authored visual-design fixture only; canonical Rust architecture and generated v1 API unchanged.",
+  "javascript_syntax": "passed",
+  "state_tests": {
+    "command": "node --test tests/design-state.test.cjs",
+    "tests": 17,
+    "passed": 17,
+    "failed": 0,
+    "node": "v22.16.0"
+  },
+  "browser": {
+    "status": "passed",
+    "tests": 12,
+    "failures": 0,
+    "errors": 0,
+    "chromium": "144.0.7559.96",
+    "widths_checked": [
+      266,
+      320,
+      390,
+      700,
+      768,
+      1024,
+      1440
+    ],
+    "method": "Exact fixture HTML/CSS/JS injected into an empty document; no navigation/network transport tested.",
+    "scope": "Authored design fixture only. Not Preact integration, Rust mechanics, live personas, engineering validation or proof of leak freedom."
+  },
+  "browser_complete_consecutive_passes": 2,
+  "document_validation": "Full existing repository documentation suite not run locally; unchanged baseline could not be cloned in this environment. Workflow retains those checks and adds the state suite.",
+  "not_run": [
+    "Rust builds or runtime tests",
+    "Sibling Preact build or integration tests",
+    "Live provider/persona calls",
+    "Engineering tools or simulations",
+    "External effects or authority grants",
+    "HTTP serving or file-origin policy tests",
+    "Complete accessibility audit",
+    "Complete memory-leak audit"
+  ],
+  "source_files": {
+    ".github/workflows/design-docs.yml": {
+      "sha256": "a3eaca8d490c7702fe9b3609415b3cddac28ff08ab81993d288de8b7fa54f1cc",
+      "git_blob": "57d5c5811bf75cf6bc96bd1d7970e0bdf16619c4",
+      "bytes": 1404
+    },
+    "design/CHANGELOG.md": {
+      "sha256": "164d7240550e57f83cb478ca8060527a0285d6ead16b58153849f639287d9bde",
+      "git_blob": "3e0201560fea7d51b20031edcb2a91c95c1f0c35",
+      "bytes": 1476
+    },
+    "design/README.md": {
+      "sha256": "d7cddc7351067fcbe102998997b7ba336ad1424c3e4725092c4fb00f679d13a2",
+      "git_blob": "c660c64c44483dd4ef54cc556509768702abda81",
+      "bytes": 4962
+    },
+    "design/app.js": {
+      "sha256": "c4ad85fcec8df56e2ef8cf5974d8158233d8f99cd8599e8164362039863f07f3",
+      "git_blob": "6c45fe53cc05e651e66565da72337cbced6f76b4",
+      "bytes": 38815
+    },
+    "design/index.html": {
+      "sha256": "932ef87af2d679665959076d4d5bd1129c66e9590c0d66bd757e61e36771be6d",
+      "git_blob": "6b815dcd9e87aaaf873193f43ddd74afe392afec",
+      "bytes": 947
+    },
+    "design/source-images.json": {
+      "sha256": "44dba3470cea16d99cfd78059e2647eef87d8a5f5a2322a275f242c261ce40ac",
+      "git_blob": "eb17c40a91984a1d35cc90379de239c6156b2607",
+      "bytes": 1551
+    },
+    "design/state.js": {
+      "sha256": "e3d6eeb3aa88135c993e40acf154da40763cb4f45640596916b113f4fe638313",
+      "git_blob": "8d0969eed85a2883bd694c6258371b3fc35eef74",
+      "bytes": 13904
+    },
+    "design/styles.css": {
+      "sha256": "1d6000a2bef262d4df857128b2f27afb122526f2cf82fd886e475c9a3e8e7b82",
+      "git_blob": "640ba5238d8e38ec7fd0f67b101c19c0ad175f36",
+      "bytes": 26090
+    },
+    "technical/UI.md": {
+      "sha256": "914626d4a22e0e8f65f6a651ed77a7acaee3accd52c02301205a15d4e0cfef93",
+      "git_blob": "3ddefa66a07a6070593b5f9983166214271390e5",
+      "bytes": 16997
+    },
+    "tests/browser_design.py": {
+      "sha256": "572d88a63cdba3cb502ff86907da38e2d920166e88160c99cf825b0478a02966",
+      "git_blob": "bd176d22dfee4551034271044a37c547201c28e5",
+      "bytes": 13124
+    },
+    "tests/design-state.test.cjs": {
+      "sha256": "5745959958b708455cd5978c0d66c81a8214863ededc88fd8eec66b23646bb44",
+      "git_blob": "236277ebb2c926cd4db0a15efc4831e482bc297c",
+      "bytes": 5993
+    }
+  }
+}

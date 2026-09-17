@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Review all seven supplied AI Personas screen designs in isolated, interactive local viewports.">
+  <title>Screen references · AI Personas</title>
+  <link rel="stylesheet" href="references.css">
+  <script src="reference-screens.js" defer></script>
+  <script src="references.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#review">Skip to preview</a>
+  <header class="masthead">
+    <a class="brand" href="index.html#/work"><span class="mark" aria-hidden="true">ap</span>AI Personas</a>
+    <span class="preview-label">Design review · No live providers</span>
+  </header>
+  <main class="review-shell">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">Seven supplied references</p>
+      <h1 id="page-title">A continuing workspace.</h1>
+      <p>Review the application shell and evolving-work replay at their intended widths.</p>
+      <nav id="screen-list" aria-label="Reference screens"></nav>
+      <p class="hint">These are live renders of the local fixture, not the original PNGs. Each selection starts an isolated preview; switching screens discards that preview’s local edits.</p>
+      <a class="source-link" href="source-images.json">Original image fingerprints</a>
+    </section>
+    <section id="review" class="review" tabindex="-1" aria-labelledby="screen-title">
+      <header class="review-heading">
+        <div><p class="eyebrow" id="screen-number"></p><h2 id="screen-title">Work · desktop</h2></div>
+        <a id="open-preview" class="button" href="index.html#/work" target="_blank" rel="noopener">Open full-size view <span aria-hidden="true">↗</span><span class="sr-only"> (new tab)</span></a>
+      </header>
+      <p id="screen-note" class="screen-note"></p>
+      <div class="viewport-meta"><span id="dimensions"></span><span id="load-status" role="status" aria-live="polite">Loading preview…</span></div>
+      <div id="stage" class="stage" aria-busy="true"><div id="viewport" class="viewport"></div></div>
+      <p class="caption">The frame scales to fit this page. Open the full-size view for unscaled interaction. Screenshot canvas height and browser viewport height are not the same thing; full-page captures include content below the fold.</p>
+    </section>
+  </main>
+  <footer>Authored fixtures only. No Rust integration, model calls, generated portraits, engineering simulations or external actions.</footer>
+  <noscript><p>JavaScript is required for the viewport reviewer. <a href="index.html#/work">Open the design fixture</a> or read <a href="README.md">the design guide</a>.</p></noscript>
+</body>
+</html>

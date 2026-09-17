@@ -1,0 +1,31 @@
+{
+  "source_repository": "ai-personas/ai-personas-design",
+  "source_commit": "9b1fd0a82ee4c5c6eb6f87aac4f2f9495f14d41d",
+  "destination_repository": "ai-personas/ai-personas-ui",
+  "branch": "rewrite/design-first",
+  "original_file_sha256": {
+    "design/verification.json": "a57119bcab270ad9e1ecbce407c98b38a1db1f53160b198ebef04ba19559abc7",
+    "design/references.html": "3360d11ecd9d5d82c50bf92c48a35b04390ecc6d51c823eef5555a42923dc242",
+    "design/state.js": "e3d6eeb3aa88135c993e40acf154da40763cb4f45640596916b113f4fe638313",
+    "design/reference-screens.js": "ac4bd99547e2a48afd51d7e3c3a98ef56d95506eae77d69a48efeeaea0dfaac3",
+    "design/navigation.js": "9152914d4b5ab69dffc081bcb909a65972fc4d1c999655c36249f58153fea855",
+    "design/CHANGELOG.md": "874ef0462b9d1bc848c43c77ff8b9896d65a97d1e79fdb89a3ae3b658d28c275",
+    "design/references.js": "f60bde4871531e007ab76678fa2c80da7a8a7bad24771a122392ea8a2fdc6367",
+    "design/references.css": "a50342c4c1e06bac7ba8e1511fee7fe2e3bfb3ba4d7a5bafe8d17e5f5d00bda2",
+    "design/index.html": "c7b7d56094e5a2d75dc723e8ba550c8d3326db09f4306b8552c3749f766885ae",
+    "design/app.js": "c4ad85fcec8df56e2ef8cf5974d8158233d8f99cd8599e8164362039863f07f3",
+    "design/styles.css": "1d6000a2bef262d4df857128b2f27afb122526f2cf82fd886e475c9a3e8e7b82",
+    "design/source-images.json": "44dba3470cea16d99cfd78059e2647eef87d8a5f5a2322a275f242c261ce40ac",
+    "design/README.md": "016df2bff4ce6c5432d52ac828a95198b7870b3d74e8723797a9098094455204",
+    "tests/browser_design.py": "8a242f207943074e408235cc24a81363870d307f5b8b0ff125b6258ceb782003",
+    "tests/browser_reference.py": "1025632de4b405bd6d90692d19a814a6e4765a34cf3ffce8533f4a257640de39",
+    "tests/design-state.test.cjs": "5745959958b708455cd5978c0d66c81a8214863ededc88fd8eec66b23646bb44",
+    "tests/reference-screens.test.cjs": "74b1c0216e46365641bd2d551f661ebae5a60755b79054170ae030e3e79e03fb"
+  },
+  "adjusted_documents": [
+    "design/README.md"
+  ],
+  "added_module_boundary": "design/package.json",
+  "production_ui_source_changed": false,
+  "runtime_source_copied": false
+}

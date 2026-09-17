@@ -40,3 +40,12 @@ process. The existing `test:browser` and `test:live` have separate runtime/model
 prerequisites and must be rerun with the matching Rust node; fixture success is
 not evidence that those campaigns passed. CI uploads fixture screenshots and
 results, not engineering acceptance evidence.
+
+
+## Standalone design references
+
+The screen fixture now lives in [design/](design/README.md), with
+[relocation provenance](docs/PREVIEW-MIGRATION.md). It is separate from
+the production Preact application. Rust implementation belongs to
+`ai-personas/ai-personas`; normative documentation belongs to
+`ai-personas/ai-personas-design`, all on `rewrite/design-first`.
