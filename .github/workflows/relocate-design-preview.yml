@@ -1,0 +1,139 @@
+name: Relocate existing design preview
+on:
+  push:
+    branches: ['rewrite/design-first']
+    paths: ['.github/workflows/relocate-design-preview.yml']
+permissions:
+  contents: write
+jobs:
+  relocate:
+    if: github.repository == 'ai-personas/ai-personas-ui' && github.ref == 'refs/heads/rewrite/design-first'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ai-personas/ai-personas-design
+          ref: 9b1fd0a82ee4c5c6eb6f87aac4f2f9495f14d41d
+          path: .migration-design
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve public source and relocate exact preview files
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, subprocess, zipfile
+          from pathlib import Path
+          source = Path('.migration-design')
+          revision = '9b1fd0a82ee4c5c6eb6f87aac4f2f9495f14d41d'
+          actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+          if actual != revision:
+              raise SystemExit('Source revision mismatch')
+          paths = subprocess.check_output(['git', '-C', str(source), 'ls-files', '-z']).decode().split('\0')
+          with zipfile.ZipFile(Path(os.environ['RUNNER_TEMP']) / 'public-design-source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in filter(None, paths):
+                  p = source / name
+                  if p.is_symlink() or not p.is_file():
+                      raise SystemExit('Unexpected source type: ' + name)
+                  archive.write(p, name)
+          tests = ['browser_design.py', 'browser_reference.py', 'design-state.test.cjs', 'reference-screens.test.cjs']
+          destinations = [Path('design')] + [Path('tests') / name for name in tests] + [Path('docs/PREVIEW-MIGRATION.md'), Path('.github/workflows/design-reference.yml')]
+          if any(p.exists() for p in destinations):
+              raise SystemExit('Refusing to overwrite an existing destination')
+          shutil.copytree(source / 'design', 'design')
+          Path('tests').mkdir(exist_ok=True)
+          for name in tests:
+              shutil.copy2(source / 'tests' / name, Path('tests') / name)
+          copied = ['design/' + p.name for p in (source / 'design').iterdir()] + ['tests/' + name for name in tests]
+          hashes = {}
+          for name in copied:
+              before = (source / name).read_bytes()
+              after = Path(name).read_bytes()
+              if before != after:
+                  raise SystemExit('Copy differs: ' + name)
+              hashes[name] = hashlib.sha256(after).hexdigest()
+          readme = Path('design/README.md')
+          text = readme.read_text()
+          base = 'https://github.com/ai-personas/ai-personas-design/blob/rewrite/design-first/'
+          text = text.replace('(../technical/UI.md)', '(' + base + 'technical/UI.md)')
+          text = text.replace('(../technical/SPEC.md)', '(' + base + 'technical/SPEC.md)')
+          text = text.replace('(../STATUS.md)', '(' + base + 'STATUS.md)')
+          old = 'The existing repository documentation checks remain applicable:\n\n```sh\npython3 -m unittest discover -s tests -v\npython3 scripts/check_docs.py\n```'
+          text = text.replace(old, 'Design-document validation tooling belongs to `ai-personas/ai-personas`, under `tools/design_docs`; it is not part of this UI fixture. See the design repository\'s repository-boundary documentation.')
+          readme.write_text('> Relocated from `ai-personas-design@' + revision + '`; this fixture now belongs to the UI repository. Component code and fixture tests were copied byte-for-byte. Production Preact source is unchanged.\n\n' + text)
+          Path('docs').mkdir(exist_ok=True)
+          Path('docs/PREVIEW-MIGRATION.md').write_text('# Existing preview relocation\n\nThe standalone `design/` preview and its four test files were copied from\n`ai-personas/ai-personas-design@' + revision + '` to the UI repository.\nOnly documentation links and repository ownership changed; this is not a\nredesign, production integration, or Rust implementation. The original\nsource and failed/passing evidence remain in their original Git history.\n\n`design/migration.json` records the SHA-256 of every original copied file\nbefore README link adjustments. The existing production `src/`, generated\nAPI, and package files were not modified. The one-use relocation workflow\nremoves itself before its normal, non-force push.\n\nRun the relocated checks from the UI root:\n\n```sh\nnode --test tests/design-state.test.cjs tests/reference-screens.test.cjs\npython3 tests/browser_design.py\npython3 tests/browser_reference.py\n```\n\nBrowser checks require the Python Playwright package and Chromium. These\nchecks exercise illustrative fixtures, never real personas or engineering.\n')
+          Path('design/migration.json').write_text(json.dumps({'source_repository': 'ai-personas/ai-personas-design', 'source_commit': revision, 'destination_repository': 'ai-personas/ai-personas-ui', 'branch': 'rewrite/design-first', 'original_file_sha256': hashes, 'adjusted_documents': ['design/README.md'], 'production_ui_source_changed': False, 'runtime_source_copied': False}, indent=2) + '\n')
+          root = Path('README.md')
+          root.write_text(root.read_text() + '\n\n## Standalone design references\n\nThe previously separate screen fixture now lives in [design/](design/README.md),\nwith [relocation provenance](docs/PREVIEW-MIGRATION.md). It is separate from\nthe production Preact application. Runtime implementation belongs to\n`ai-personas/ai-personas`; normative documentation belongs to\n`ai-personas/ai-personas-design`, all on `rewrite/design-first`.\n')
+          Path('.github/workflows/design-reference.yml').write_text('''name: Standalone design references
+          on:
+            push:
+              branches: ['rewrite/design-first']
+              paths: ['design/**', 'tests/browser_design.py', 'tests/browser_reference.py', 'tests/design-state.test.cjs', 'tests/reference-screens.test.cjs', '.github/workflows/design-reference.yml']
+            pull_request:
+              branches: ['rewrite/design-first']
+          permissions:
+            contents: read
+          jobs:
+            references:
+              runs-on: ubuntu-latest
+              timeout-minutes: 15
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    persist-credentials: false
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: '22'
+                - uses: actions/setup-python@v5
+                  with:
+                    python-version: '3.12'
+                - name: Check preview state and routes
+                  run: |
+                    for file in design/*.js; do node --check "$file"; done
+                    node --test tests/design-state.test.cjs tests/reference-screens.test.cjs
+                - name: Check browser interactions
+                  run: |
+                    python3 -m pip install playwright==1.57.0
+                    python3 -m playwright install --with-deps chromium
+                    python3 tests/browser_design.py
+                    python3 tests/browser_reference.py
+                - uses: actions/upload-artifact@v4
+                  if: always()
+                  with:
+                    name: standalone-reference-evidence
+                    path: .qa/
+                    include-hidden-files: true
+          ''')
+          PY
+      - name: Check relocated code and behavior
+        run: |
+          for file in design/*.js; do node --check "$file"; done
+          node --test tests/design-state.test.cjs tests/reference-screens.test.cjs
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+          python3 tests/browser_design.py
+          python3 tests/browser_reference.py
+      - name: Commit relocation without changing production UI
+        run: |
+          git diff --exit-code -- src package.json package-lock.json API.md api.schema.json
+          git rm .github/workflows/relocate-design-preview.yml
+          git add README.md design docs/PREVIEW-MIGRATION.md tests/browser_design.py tests/browser_reference.py tests/design-state.test.cjs tests/reference-screens.test.cjs .github/workflows/design-reference.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Move existing screen fixture and browser tests out of design docs'
+          git push origin HEAD:refs/heads/rewrite/design-first
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: preview-relocation-evidence
+          path: |
+            ${{ runner.temp }}/public-design-source.zip
+            .qa/
+          include-hidden-files: true
