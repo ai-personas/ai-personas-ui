@@ -1,0 +1,32 @@
+name: Rust-branch workspace UI
+on:
+  push:
+    branches: [rewrite/design-first, ui/rust-v1.2-workspace]
+  pull_request:
+    branches: [rewrite/design-first]
+permissions:
+  contents: read
+concurrency:
+  group: workspace-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:workspace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-ui-fixture-evidence
+          path: .qa/
+          include-hidden-files: true

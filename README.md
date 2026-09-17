@@ -1,11 +1,42 @@
-# AI Personas UI
+# AI Personas UI — Rust design-first
 
-An entirely new Preact interface for the Rust design-first runtime. Navigation centers on Work, Personas, Environments, Learning, and Network. There are no invented persona names or portraits.
+Preact UI for the Rust `rewrite/design-first` runtime, with the v1.2 design's
+individual perspectives, collective commitments, consent/birth records and
+version-bound evidence views. It does not select professions or prescribe a
+workflow. No production fixtures or simulated personas are included.
 
-Run `npm ci`, then `npm run contract` with the sibling runtime built, and `npm run build`. Development uses `npm run dev` and proxies API requests to port 19000. Supply the node token in the connection screen. The installed distribution is served by `personas serve --ui path/to/dist`.
+```sh
+npm ci
+npm run build
+npm test
+npx playwright install chromium
+npm run test:workspace
+```
 
-The contract generator reads the runtime's generated JSON schema; it also writes the technical API reference into the matching design repository. Browser tests use public application operations and new temporary data.
+Serve `dist/` using the matching Rust node's `--ui` option. Enter that node's token
+in the connection screen; it stays in tab memory. Runtime actions and file reads
+use the existing authenticated HTTP API. Development: `npm run dev`.
 
-`npm run test:browser` verifies fresh public-interface behavior with 10,000 records, 100,000 events, 20 tracked jobs, file upload, lazy text/image viewers and a delayed 64 MB libp2p transfer. It measures 100 navigation/viewer cycles, retained heap, released resources and 390 px layout. Set `PERSONAS_RELEASE=/path/to/installed/release` to test installed assets. Fixtures are mechanism evidence only.
+## Backend compatibility
 
-`node tests/live.mjs URL NODE_DIRECTORY OUTPUT_DIRECTORY` records a read-only browser check against an installed live campaign, verifies authored images and responsive navigation, and captures desktop/mobile evidence.
+The checked-in generated contract remains `ai-personas/1`. Workspaces use its
+paged record API and keep existing create/message/request/run/review/upload
+operations. New coordination records have explicit read-only presentation
+adapters; absent backend state is displayed as not reported, never a pass.
+Scope-bound acceptance, grants, protected budgets, consent, bounded births and
+release sealing still need the Rust v2 authoring contract before their controls
+can be enabled. This is a frontend update, not a backend implementation.
+
+See [the implementation and verification boundary](docs/RUST-V1.2-UI.md) and
+[the generated HTTP contract](API.md). Regenerate types only from the matching
+Rust binary:
+
+```sh
+PERSONAS_BIN=../ai-personas/target/release/personas npm run contract
+```
+
+`npm run test:workspace` uses a synthetic HTTP fixture, with no models or Rust
+process. The existing `test:browser` and `test:live` have separate runtime/model
+prerequisites and must be rerun with the matching Rust node; fixture success is
+not evidence that those campaigns passed. CI uploads fixture screenshots and
+results, not engineering acceptance evidence.
