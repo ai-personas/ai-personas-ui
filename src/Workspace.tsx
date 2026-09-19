@@ -1,3 +1,5 @@
+import { WorkControls, AllowanceSummary, CurrentMandate, WorkState } from './Operator';
+import type { Act } from './main';
 import type { ComponentChildren } from 'preact';
 import { useRef, useState } from 'preact/hooks';
 import { data, label, type Entity } from './api';
@@ -68,10 +70,10 @@ function RecordCard({ record: r, open, artifact }: { record: Entity } & Links) {
     </>}
     {r.kind === 'artifact' && <button class="secondary" onClick={() => artifact(r.id)}>Inspect file and digest</button>}
     {r.kind === 'request' && <><NamedField name="Evidence required" value={d.evidence_required}/><p class="record-caveat">A response does not resolve the question until its owner records a disposition.</p></>}
-    {r.kind === 'feedback' && <><NamedField name="Disposition" value={d.disposition}/><References ids={d.repair_refs} caption="Repair evidence" open={open}/><p class="record-caveat">Acknowledgement is not disposition or verified repair.</p></>}
+    {['work_feedback', 'feedback'].includes(r.kind) && <><NamedField name="Disposition" value={d.disposition}/><References ids={d.repair_refs} caption="Repair evidence" open={open}/><p class="record-caveat">Acknowledgement is not disposition or verified repair.</p></>}
     {r.kind === 'iteration' && <><Reference id={d.baseline} caption="Exact baseline" open={open}/><NamedField name="Remaining allowance" value={d.allowance_summary}/><NamedField name="Stop condition" value={d.stop_condition}/><p class="record-caveat">Provisional inputs permit exploration, not unconditional final claims.</p></>}
     {r.kind === 'budget' && <><NamedField name="Allowance" value={d.allowance_summary}/><NamedField name="Protected closeout" value={d.closeout_summary}/><p class="record-caveat">Call, token, currency and population limits are separate. No balance is inferred from activity.</p></>}
-    {r.kind === 'release' && <><Reference id={d.submission} caption="Sealed submission" open={open}/><NamedField name="Seal / conflict" value={d.seal_status}/><p class="record-caveat">A release refers to an exact historical state, never automatically to the latest files.</p></>}
+    {['work_release', 'release'].includes(r.kind) && <><Reference id={d.submission} caption="Sealed submission" open={open}/><NamedField name="Seal / conflict" value={d.seal_status}/><p class="record-caveat">A release refers to an exact historical state, never automatically to the latest files.</p></>}
     {r.kind === 'fragment' && <><NamedField name="Applies when" value={d.applicability}/><NamedField name="Limitations / contrary evidence" value={d.limitations}/><References ids={d.sources} caption="Experience / source" open={open}/><p class="record-caveat">Retained learning is an authored interpretation; later usefulness needs evidence.</p></>}
     <button class="text-button" onClick={() => open(r.id)}>Inspect exact record ↗</button>
   </article>;
@@ -118,7 +120,7 @@ function Roster({ work, open }: { work: Entity; open: Open }) {
     {ids.length > size && <div class="record-pagination"><button class="secondary" disabled={!page} onClick={() => setPage(page - 1)}>Previous participants</button><button class="secondary" disabled={(page + 1) * size >= ids.length} onClick={() => setPage(page + 1)}>Next participants</button></div>}
   </section>;
 }
-export default function Workspace({ id, open, artifact, back }: { id: string; back: () => void } & Links) {
+export default function Workspace({ id, open, artifact, back, act }: { id: string; back: () => void; act: Act } & Links) {
   const { value: work, error, loading } = useResource<Entity>('/records/' + id, e => e.entity === id || e.data?.scope === id || e.data?.work === id);
   const [tab, setTab] = useState<WorkTab>('Overview');
   const tabs = useRef<HTMLDivElement>(null);
@@ -132,11 +134,12 @@ export default function Workspace({ id, open, artifact, back }: { id: string; ba
     <div class="workspace-trail"><button class="text-button" onClick={back}>← All work</button><span>Workspace / {id.slice(0, 8)}</span><button class="text-button" onClick={() => open(id)}>Record & activity ↗</button></div>
     <header class="workspace-heading"><div><p class="eyebrow">ONE NEED. DIFFERENT PERSPECTIVES.</p><h1>{label(work)}</h1><p class="workspace-subtitle">Individual priorities. Negotiated commitments. Inspectable evidence.</p></div><span class="revision-tag">Work revision {work.revision}</span></header>
     {(loading || error) && <p class="notice" role={error ? 'alert' : 'status'}>{error ? `Refresh failed: ${error}. Displayed data may be stale.` : 'Refreshing work state. Displayed values are not a new confirmation.'}</p>}
+    <WorkControls work={work} act={act} open={open}/>
     <div class="status-axes" aria-label="Independent work status">
       <div><span>Activity</span><strong>{summary.activity}</strong><small>Execution is not accomplishment</small></div>
       <div><span>Versions</span><strong>{summary.submissions === undefined ? 'Not reported' : `${summary.submissions} submitted`}</strong><small>Preserved history, not current acceptance</small></div>
-      <div><span>Required-outcome coverage</span><strong>{summary.coverage}</strong><small>Needs a server-bound coverage assessment</small></div>
-      <div><span>Principal acceptance</span><strong>{summary.acceptance}</strong><small>Never inferred from reviewer counts</small></div>
+      <div><span>Required-outcome coverage</span><strong>{summary.coverage}</strong><small>Runtime projection of adopted outcomes</small></div>
+      <div><span>Principal acceptance</span><strong>{summary.acceptance}</strong><small>Exact release and current applicability</small></div>
     </div>
     <div class="workspace-tabs" role="tablist" aria-label="Workspace sections" ref={tabs} onKeyDown={e => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
@@ -149,10 +152,11 @@ export default function Workspace({ id, open, artifact, back }: { id: string; ba
       {tab === 'Overview' && <>
         <section class="workspace-section mandate"><span class="field-label">Recorded request · scope is not silently expanded</span><h2>The need</h2><p class="record-prose">{text(d.brief, 'Read the exact record for the retained request.')}</p>
           <p class="record-caveat">The interface does not assign professions, rank personalities, choose a team strategy, or declare a design safe.</p></section>
-        <div class="workspace-columns">{section('Continuation responsibility', 'continuation', 'No accepted continuation is visible. Addressing personas does not establish that someone accepted this responsibility.')}
-          {section('Resources & protected closeout', 'budget', 'No scoped allowance or protected closeout balance is reported. Missing data is not unlimited funding.')}</div>
+        {fields(d.mandate).id && <CurrentMandate id={text(fields(d.mandate).id)} open={open}/>}
+        <div class="workspace-columns"><WorkState value={d.core} open={open}/>
+          {d.resource_root ? <section class="workspace-section"><h2>Funding and finishing capacity</h2><AllowanceSummary id={text(d.resource_root)}/></section> : <section class="workspace-section"><h2>Funding</h2><p>No allowance is bound. Use Funding above to authorize one.</p></section>}</div>
         {section('Current collective commitments', 'commitment', 'No explicit commitments are visible. Open persona activity to inspect what has actually happened.', 'Accepted responsibilities and dependencies, not an automatically ranked task list.')}
-        {section('Needs attention', 'request,feedback', 'No requests or consequential feedback are visible on this page. This is not proof that the work has no blockers.', 'Answers, acknowledgements, dispositions and verified repairs are different states.')}
+        {section('Needs attention', 'request,work_feedback,feedback', 'No requests or consequential feedback are visible on this page. This is not proof that the work has no blockers.', 'Answers, acknowledgements, dispositions and verified repairs are different states.')}
         {section('Persona activity', 'run', 'No participation runs have been recorded.', 'Open a run to inspect actions or use the supported pause, resume and cancel controls.')}
       </>}
       {tab === 'Perspectives' && <>
@@ -162,13 +166,13 @@ export default function Workspace({ id, open, artifact, back }: { id: string; ba
       </>}
       {tab === 'Work & outcomes' && <>
         <p class="notice">A complete checklist can still omit part of the original need. Adopted-outcome coverage and scope review must be assessed separately.</p>
-        {section('Adopted outcomes', 'outcome', 'No adopted outcome records are available. Required scope and unowned obligations cannot be inferred from a brief.')}
+        {fields(d.mandate).id && <CurrentMandate id={text(fields(d.mandate).id)} open={open}/>}<WorkState value={d.core} open={open}/>
         {section('Responsibilities & dependencies', 'commitment', 'No accepted responsibilities are recorded here.')}
         <div class="workspace-columns">{section('Conditional assumptions', 'assumption', 'No explicit assumption records are available.')}{section('Interfaces & bounded iterations', 'iteration,interface', 'No agreed provisional interfaces or iteration baseline are available.')}</div>
       </>}
       {tab === 'People & agreements' && <>
         <Roster work={work} open={open}/>
-        {section('Membership & consent', 'membership', 'The baseline roster alone does not prove an invitation was accepted.')}
+        {section('Membership & consent', 'invitation,membership', 'The baseline roster alone does not prove an invitation was accepted.')}
         {section('Births & contributions', 'birth,birth_link,birth_proposal', 'No birth provenance is available. The UI will not infer birth, lineage or expertise from a new name.')}
         {section('Working agreements & dissent', 'agreement,working_agreement', 'No exact endorsed agreements are available. Similar messages are not consensus.')}
       </>}
@@ -176,7 +180,7 @@ export default function Workspace({ id, open, artifact, back }: { id: string; ba
         <p class="notice">A successful command, intact digest, historical verdict and current technical validation are separate facts. Native editing and simulations require actual tool evidence.</p>
         {section('Submitted versions & native files', 'submission', 'No immutable submission is recorded. Files are opened through their exact artifact references.')}
         {section('Assessments & applicability', 'finding,assessment', 'No assessment is visible. Reviewer availability and funding are not inferred.', 'Missing current-scope bindings remain unverifiable; an old accepted verdict is never a green work status.')}
-        {section('Release seals & conflicts', 'release', 'No atomic release seal is reported. The UI cannot finalize or accept work using the v1 contract.')}
+        {section('Release seals & conflicts', 'work_release,release', 'No atomic release seal is reported. Inspect the exact release and its current applicability.')}
       </>}
       {tab === 'Decisions & learning' && <>
         {section('Decisions, changes & handoffs', 'decision,work_entry', 'No attributed work decisions are available. Open activity for original action receipts.')}
@@ -184,6 +188,6 @@ export default function Workspace({ id, open, artifact, back }: { id: string; ba
         {section('Authored documents', 'document', 'No work-scoped documents are visible.', 'Documents remain documents; they are not automatically classified as learned skills.')}
       </>}
     </section>
-    <aside class="contract-boundary"><strong>Rust integration boundary</strong><p>Existing record reads and v1 actions remain available. Mandate adoption, consent, birth admission, funding, protected closeout and release sealing need the corresponding Rust authoring and authority contracts. This UI does not simulate them or send invented operations. Empty views mean “not reported,” not “passed.”</p></aside>
+    <aside class="contract-boundary"><p>Scope, funding, participation, and evidence come from your node. Selecting participants offers an invitation; each persona chooses whether to join and accept responsibility.</p></aside>
   </div>;
 }

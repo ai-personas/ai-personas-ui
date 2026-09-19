@@ -10,7 +10,8 @@
     "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:browser": "node tests/browser.mjs",
-    "test:live": "node tests/live.mjs"
+    "test:live": "node tests/live.mjs",
+    "test:operator": "node tests/operator.browser.mjs"
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",

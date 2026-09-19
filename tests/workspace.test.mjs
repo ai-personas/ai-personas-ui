@@ -56,3 +56,15 @@ test('old events without scope invalidate conservatively', () => assert.equal(ma
 test('work activity refreshes on dependent record changes', () => assert.equal(matchesRecords({ kind: 'finding', data: { scope: id(2) } }, 'work'), true));
 test('unrelated event kinds do not refresh the current list', () => assert.equal(matchesRecords({ kind: 'call' }, 'fragment'), false));
 test('owner-specific lists do not refresh for known other owners', () => assert.equal(matchesRecords({ kind: 'fragment', data: { owner: id(4) } }, 'fragment', '', id(3)), false));
+
+// Completion display follows the runtime projection, never local review counts.
+test('work status uses exact runtime outcome evidence and release applicability', () => {
+  const work = { data: { core: { binding: 'adopted', coverage: { outcomes: [
+    { required: true, evidence: 'current' }, { required: true, evidence: 'conditional' },
+    { required: false, evidence: 'user_accepted' },
+  ] }, acceptance: { disposition: 'accepted', applicability: 'stale' } } } };
+  assert.equal(workFacts(work).coverage, '1/2 required outcomes have current evidence');
+  assert.equal(workFacts(work).acceptance, 'accepted · stale release');
+  work.data.core.acceptance.applicability = 'unknown';
+  assert.equal(workFacts(work).acceptance, 'Not established');
+});

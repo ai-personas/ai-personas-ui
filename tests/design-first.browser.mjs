@@ -88,7 +88,7 @@ try {
       await expect(work.locator('.work-row')).toContainText('Active fixture');
       await work.getByRole('button', { name: 'Needs input', exact: true }).click();
       await expect(work.locator('.work-row')).toHaveCount(1);
-      await work.getByRole('button', { name: 'All work', exact: true }).click();
+      await work.getByRole('button', { name: 'Current work', exact: true }).click();
       await expect(work.locator('.work-row')).toHaveCount(2);
       await work.getByRole('button', { name: 'Next page', exact: true }).click();
       await expect(work.locator('.work-row')).toContainText('Historical fixture');

@@ -13,6 +13,7 @@ const Detail = lazy(() => import('./Detail'));
 const Viewer = lazy(() => import('./Viewer'));
 const Create = lazy(() => import('./Create'));
 const Workspace = lazy(() => import('./Workspace'));
+const Funding = lazy(() => import('./Operator').then(m => ({ default: m.Funding })));
 
 export function Status({ value }: { value: string }) { return <span class={'status tone-' + stateTone(value)}>{value.replaceAll('_', ' ') || 'Not recorded'}</span>; }
 export function Facts({ r }: { r: Entity }) {
@@ -96,13 +97,13 @@ function App() {
     <aside class="sidebar"><a class="brand" href="#" onClick={e => { e.preventDefault(); navigate('Work'); }}><span class="brand-mark">ap</span><span>AI Personas<small>Continuing collaborators</small></span></a>
       <nav aria-label="Main navigation">{PAGES.map(name => <button key={name} aria-label={name} aria-current={page === name ? 'page' : undefined} class={page === name ? 'active' : ''} onClick={() => navigate(name)}><Icon name={name}/><span>{name}</span></button>)}</nav>
       <div class="sidebar-note"><span class="eyebrow">INDIVIDUAL PERSPECTIVES.<br/>SHARED PURPOSE.</span><p>People set the boundaries. Personas choose their approaches. Evidence makes the work inspectable.</p></div>
-      <div class="advanced-navigation"><span class="field-label">Advanced</span><button aria-current={page === 'Network' ? 'page' : undefined} class={page === 'Network' ? 'active' : ''} onClick={() => navigate('Network')}><Icon name="Network"/>Network</button></div>
+      <div class="advanced-navigation"><button aria-current={page === 'Funding' ? 'page' : undefined} onClick={() => navigate('Funding')}>Funding</button><span class="field-label">Advanced</span><button aria-current={page === 'Network' ? 'page' : undefined} class={page === 'Network' ? 'active' : ''} onClick={() => navigate('Network')}><Icon name="Network"/>Network</button></div>
       <div class="connection-state"><span role="status"><span class={'live-dot ' + (connection === 'Connected' ? '' : 'offline')} aria-hidden="true"/>{connection}</span><button class="quiet" onClick={disconnect}>Disconnect view</button></div>
     </aside>
     <main id="main-content" class="main" tabIndex={-1} ref={content}>
       <div class="app-topbar"><span>Workspace <span aria-hidden="true">/</span> <strong>{page}</strong>{work && ' / Detail'}</span><span class="runtime-label"><Icon name="Shield"/>Runtime records</span></div>
       <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection.startsWith('Reconnecting') ? connection : `${connection}. Displayed records may be stale.`}</p>}{error && <p role="alert">{error}</p>}
-        {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact}/></Suspense> : <>
+        {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact} act={act}/></Suspense> : page === 'Funding' ? <Suspense fallback={<p>Loading funding…</p>}><Funding act={act}/></Suspense> : <>
           <header class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>{page}</h1><p>{meta.description}</p></div>{meta.create && <button onClick={start}>+ {meta.create}</button>}</header>
           {page === 'Work' && <Requests open={setSelected}/>}
           {page === 'Environments' && <Starters choose={b => { setBrief(b); setCreate('Work'); }}/>}

@@ -56,6 +56,1827 @@
       "Command": {
         "oneOf": [
           {
+            "description": "Inspect the recorded execution profile and disabled deployment extensions.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "deployment.read"
+              },
+              "args": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Issue current authority with exact actor, work, effects, expiry and conserved operation ceilings.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "grant.issue"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "draft": {
+                    "$ref": "#/$defs/GrantDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Revoke this grant and all descendants; initiate stopping admitted affected jobs.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "grant.revoke"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Install immutable measurable ceilings and documented model pricing on a local resource root.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.bounds.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "bounds": {
+                    "$ref": "#/$defs/Bounds"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "bounds"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Move unspent token/cost capacity between production and closeout without increasing either root ceiling.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.bounds.reallocate"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "closeout_tokens": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "closeout_cost_units": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "closeout_tokens",
+                  "closeout_cost_units",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Set named readers, export permission and optional access expiry. Source restrictions propagate to derivatives; erasure is an explicit disposition.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "information.policy"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "readers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "allow_export": {
+                    "type": "boolean"
+                  },
+                  "expires": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "subject",
+                  "revision",
+                  "readers",
+                  "allow_export",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Withdraw a source and its tracked derivatives from future use while preserving minimal accountability.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "information.withdraw"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "subject",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Erase the named payload, its record/action copies and identified call archives. Derivatives become unavailable and need their own retention disposition; outside copies and backups remain outside this operation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "information.erase"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "subject",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Explicitly discard this run's active context and history window after a source disposition. The archive and obligations remain.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "context.discard"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Offer an exact preview and currently permitted seeds for bounded orientation. This does not grant membership or responsibility.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "invitation.offer"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "preview": {
+                    "type": "string"
+                  },
+                  "seed": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  },
+                  "orientation_calls": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "to",
+                  "preview",
+                  "seed",
+                  "orientation_calls"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Accept or decline your exact invitation; commitment acceptance remains a separate operation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "invitation.respond"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "accept": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "accept",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Retire an identity, pause activity and retain explicit responsibility gaps until accepted handoff or authorized disposition.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.retire"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator funds local activation of imported identity history. This does not claim exclusive cross-host activation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.activate"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "root": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "root",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Mark an owned capability available using an actual successful execution of its exact descriptor in this environment.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "capability.acquire"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "check": {
+                    "type": "string"
+                  },
+                  "limitations": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "check",
+                  "limitations"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Withdraw a capability without erasing its earlier evidence or granting a replacement.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "capability.retire"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator configures one exact idempotent HTTP destination and credential reference. No credential value is disclosed to personas.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "effect.destination.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "config": {
+                    "$ref": "#/$defs/Destination"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "config"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "effect.destination.revoke"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Dispatch one bounded JSON request under a current grant. Unknown effects are never automatically retried.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "effect.dispatch"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "destination": {
+                    "type": "string"
+                  },
+                  "body": true
+                },
+                "additionalProperties": false,
+                "required": [
+                  "destination",
+                  "body"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator reconciles uncertainty using a preserved receipt naming the exact destination and idempotency key.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "effect.reconcile"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "$ref": "#/$defs/VersionRef"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "action",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preserve completed owned job output as an immutable artifact; no arbitrary host path is opened.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "artifact.capture"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "job": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "media_type": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "job",
+                  "name",
+                  "media_type"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator creates a finite shared allowance. Call and birth ceilings are conserved; this grants no host, external or financial permissions.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.root.create"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "limits": {
+                    "$ref": "#/$defs/Limits"
+                  },
+                  "closeout_calls": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "limits",
+                  "closeout_calls",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.bind"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "root": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "root",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator assigns protected capacity to a current accepted responsibility. Membership, a review request and an unaccepted offer are insufficient.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.closeout.assign"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "run": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "commitment": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "run",
+                  "revision",
+                  "commitment",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator moves unspent capacity between production and closeout inside the unchanged total ceiling. Reservations and unknown exposure cannot be refunded.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.reallocate"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "closeout_calls": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "closeout_calls",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator closes inference and birth authority and pauses affected decisions. Existing effects and late receipts remain; host-job stopping uses run.cancel/job.cancel.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.revoke"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator records observed usage for an uncertain attempt without refunding the call or altering the original provider receipt.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.usage.resolve"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "charge": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "usage": {
+                    "$ref": "#/$defs/Usage"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "charge",
+                  "revision",
+                  "usage",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read remaining production/closeout allowance, births, reservations and unknown usage without a model call. Only actors bound to this root can inspect it.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.summary"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Adopt a new immutable mandate using operator authority. Preserves the original brief and all earlier criteria; does not grant execution, spending or replication rights.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.mandate.adopt"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "mandate": {
+                    "$ref": "#/$defs/Mandate"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "mandate"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator amends the title and adopts an exact new mandate. Original instructions, prior criteria and historical evidence remain inspectable; stale decisions must observe the new scope.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.amend"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "mandate": {
+                    "$ref": "#/$defs/Mandate"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "title",
+                  "mandate"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator cancels participation and outstanding responsibilities, and archives the work. History, charges, late receipts and unresolved effects remain. Erasing selected information payloads is a separate operation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.archive"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Author owned retained learning with explicit applicability, limitations and exact provenance. Receiving material is not first-hand experience or measured learning.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "fragment.write"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "draft": {
+                    "$ref": "#/$defs/FragmentDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Create an immutable correction to an owned fragment. Earlier content remains inspectable and old active selections require explicit reselection.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "fragment.revise"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/FragmentDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "perspective.write"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "revision": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/PerspectiveDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Append an attributed observation, improvement hypothesis, decision summary or conditional assumption to the unranked work board.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.entry.append"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/EntryDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Dispose a proposal or assumption at an exact revision. Authorization for exploration is not confirmation; confirming an assumption requires operator authority and evidence.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.entry.dispose"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "disposition": {
+                    "$ref": "#/$defs/EntryDisposition"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "disposition",
+                  "reason",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Propose exact working terms to named participants. Agreements never mint authority, budgets or another person's consent.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "agreement.propose"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "terms": {
+                    "type": "string"
+                  },
+                  "parties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "supersedes": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/VersionRef"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "terms",
+                  "parties"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Endorse or decline an exact agreement version as yourself; earlier endorsements cannot be inherited by revised terms.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "agreement.endorse"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "agreement": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "accept": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "agreement",
+                  "accept",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Offer a responsibility against the adopted mandate. An offer, team membership and accepted ownership are different facts.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "commitment.offer"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/CommitmentDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Accept or decline your exact offered responsibility. Nobody can accept on another persona's behalf.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "commitment.respond"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "accept": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "accept",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Update an accepted responsibility. Final prerequisites need current qualifying closure; closure needs exact outcome evidence or a current explicit release.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "commitment.update"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "status": {
+                    "$ref": "#/$defs/CommitmentStatus"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "status",
+                  "note",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Offer a handoff while retaining current ownership until the successor explicitly responds to this revision.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "commitment.handoff.offer"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "to",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Accept or decline an exact handoff as the named successor. Neither lease expiry nor a parent's statement substitutes for this consent.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "commitment.handoff.respond"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "accept": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "accept",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preserve actionable feedback on an exact work version. A known blocking finding survives message delivery, acknowledgement and compaction.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "feedback.open"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "commitment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "blocking": {
+                    "type": "boolean"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "subject",
+                  "blocking",
+                  "message"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Propose a repair, dispute or escalation; only the finding author/principal can confirm repair. Deferral/waiver needs operator authority and remains historical.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "feedback.dispose"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "disposition": {
+                    "$ref": "#/$defs/FeedbackDisposition"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "disposition",
+                  "reason",
+                  "evidence"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Atomically adopt an exact submission/input/assumption vector under the mandate's narrow assembly delegation. Adoption is not validation or acceptance.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "assembly.adopt"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "submission": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "inputs": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  },
+                  "assumptions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "submission",
+                  "inputs",
+                  "assumptions"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "evidence.bind"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/EvidenceDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator seals a current exact release, with explicit conditions or partial limitations. This is not outside professional certification or authorization for physical effects.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "release.commit"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "draft": {
+                    "$ref": "#/$defs/ReleaseDraft"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read authoritative independent activity, ownership, adopted-outcome coverage, candidate, evidence, acceptance and outside-validation facts.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "work.summary"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Read a complete record by identity. For an action receipt use action.read.",
             "type": "object",
             "properties": {
@@ -299,6 +2120,28 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "resource_root": {
+                    "description": "Operator's explicit funding for a founder. Descendants inherit the caller's root and reserve initialization; they cannot choose a new allowance.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "need": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "seed": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
                   }
                 },
                 "additionalProperties": false,
@@ -400,7 +2243,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Create an ordinary shared host directory.",
+            "description": "Create a managed environment directory. Custom host paths require the explicit unrestricted test profile.",
             "type": "object",
             "properties": {
               "kind": {
@@ -480,7 +2323,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Create work and queue participant decisions. Participants own continued work after submissions.",
+            "description": "Create funded work and invite participants to bounded orientation. Restricted nodes require explicit membership consent before contribution; commitment consent remains separate.",
             "type": "object",
             "properties": {
               "kind": {
@@ -504,6 +2347,24 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "mandate": {
+                    "description": "Optional operator-authored initial scope, adopted atomically before invitations can run.",
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Mandate"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resource_root": {
+                    "description": "Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -603,7 +2464,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+            "description": "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work.",
             "type": "object",
             "properties": {
               "kind": {
@@ -626,6 +2487,16 @@
                     "type": [
                       "boolean",
                       "null"
+                    ]
+                  },
+                  "capability": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/VersionRef"
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   }
                 },
@@ -712,7 +2583,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved.",
+            "description": "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1060,7 +2931,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs.",
+            "description": "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1324,7 +3195,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues.",
+            "description": "End this decision and wait for new input. Optionally name an owned action request or transfer record in this run to observe its outcome without a lost wake. A transfer launch receipt is not transfer completion. Already completed synchronous results are in history; they need no wait. Retained outcomes do not repeatedly trigger inference. Work ownership and unmet obligations continue.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1336,6 +3207,16 @@
                 "properties": {
                   "reason": {
                     "type": "string"
+                  },
+                  "condition": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/WaitCondition"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -1523,7 +3404,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Import a verified bundle as a paused identity, preserving conflicts.",
+            "description": "Operator imports a verified bundle as paused history, preserving conflicts. Imports do not create local resource authority and cannot replace funded persona birth.",
             "type": "object",
             "properties": {
               "kind": {
@@ -1591,7 +3472,7 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "$ref": "#/$defs/Outcome"
+                    "$ref": "#/$defs/Outcome2"
                   },
                   "evidence": {
                     "type": "string"
@@ -1611,6 +3492,812 @@
             ],
             "additionalProperties": false
           }
+        ]
+      },
+      "GrantDraft": {
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "work": {
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operation names. No wildcard or implied permission.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires": {
+            "type": "string"
+          },
+          "max_operations": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutionLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destination": {
+            "description": "Exact configured external destination identity, if external effects are allowed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command_digest": {
+            "description": "Optional SHA-256 of the exact shell command; descendants cannot remove it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body_digest": {
+            "description": "Exact serialized JSON request digest for mediated external effects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "actor",
+          "work",
+          "operations",
+          "expires",
+          "max_operations",
+          "reason"
+        ]
+      },
+      "VersionRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision"
+        ]
+      },
+      "ExecutionLimits": {
+        "type": "object",
+        "properties": {
+          "wall_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cpu_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "wall_ms",
+          "cpu_seconds",
+          "memory_bytes",
+          "output_bytes"
+        ]
+      },
+      "Bounds": {
+        "type": "object",
+        "properties": {
+          "expires": {
+            "type": "string"
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "closeout_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cost_units": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "closeout_cost_units": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string"
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Price"
+            }
+          },
+          "remote_calls": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "retained_payload_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cpu_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "effect_operations": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "concurrent_memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "births_per_window": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "birth_window_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expires",
+          "tokens",
+          "closeout_tokens",
+          "cost_units",
+          "closeout_cost_units",
+          "currency",
+          "prices",
+          "remote_calls",
+          "retained_payload_bytes",
+          "cpu_seconds",
+          "effect_operations",
+          "concurrent_memory_bytes",
+          "births_per_window",
+          "birth_window_seconds",
+          "reason"
+        ]
+      },
+      "Price": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "input_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model",
+          "input_units_per_million",
+          "output_units_per_million",
+          "evidence"
+        ]
+      },
+      "Destination": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "api_key_env": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_supported": {
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_response_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "trust_loopback_http": {
+            "type": "boolean",
+            "default": false
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "idempotency_supported",
+          "timeout_ms",
+          "max_request_bytes",
+          "max_response_bytes",
+          "reason",
+          "evidence"
+        ]
+      },
+      "Limits": {
+        "type": "object",
+        "properties": {
+          "calls": {
+            "description": "Total admitted inference attempts, including initialization and closeout.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "births": {
+            "description": "Total identities created under this root, including funded founders.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_depth": {
+            "description": "Founder depth is zero; descendants cannot exceed this depth.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "concurrent_calls": {
+            "description": "Concurrent locally pending provider decisions, not provider-side jobs.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "calls",
+          "births",
+          "max_depth",
+          "concurrent_calls"
+        ]
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "known": {
+            "type": "boolean"
+          },
+          "input": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cached": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "known",
+          "input",
+          "cached",
+          "output"
+        ]
+      },
+      "Mandate": {
+        "type": "object",
+        "properties": {
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Outcome"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "preferences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "unresolved_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "completion_agreement": {
+            "type": "string"
+          },
+          "assembly_editors": {
+            "description": "Narrow delegation for adopting a candidate assembly/proposal, not grants\nto spend money, create personas, edit user constraints or run host code.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "non_contributor_review": {
+            "type": "boolean"
+          },
+          "scope_coverage_review_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outcomes",
+          "completion_agreement",
+          "non_contributor_review",
+          "scope_coverage_review_required"
+        ]
+      },
+      "Outcome": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "description": "An authored key within this mandate, not a runtime profession or record ID.",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "conditional_allowed": {
+            "type": "boolean"
+          },
+          "outside_validation_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "description",
+          "criterion",
+          "required",
+          "evidence",
+          "conditional_allowed",
+          "outside_validation_required"
+        ]
+      },
+      "EvidenceRequirement": {
+        "type": "string",
+        "enum": [
+          "reviewed",
+          "user_judgment"
+        ]
+      },
+      "FragmentDraft": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "applicability": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "counterevidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content",
+          "applicability",
+          "limitations"
+        ]
+      },
+      "PerspectiveDraft": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/PerspectiveKind"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "content",
+          "limitations"
+        ]
+      },
+      "PerspectiveKind": {
+        "type": "string",
+        "enum": [
+          "agenda",
+          "relationship"
+        ]
+      },
+      "EntryDraft": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/EntryKind"
+          },
+          "text": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "affected_outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "expected_result": {
+            "type": "string",
+            "default": ""
+          },
+          "possible_regressions": {
+            "type": "string",
+            "default": ""
+          },
+          "check": {
+            "type": "string",
+            "default": ""
+          },
+          "reconsider_if": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "text"
+        ]
+      },
+      "EntryKind": {
+        "type": "string",
+        "enum": [
+          "observation",
+          "opportunity",
+          "decision",
+          "assumption"
+        ]
+      },
+      "EntryDisposition": {
+        "type": "string",
+        "enum": [
+          "exploring",
+          "adopted",
+          "rejected",
+          "deferred",
+          "superseded",
+          "authorized_for_exploration",
+          "confirmed_by_evidence",
+          "contradicted",
+          "withdrawn"
+        ]
+      },
+      "CommitmentDraft": {
+        "type": "object",
+        "properties": {
+          "offered_to": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "continuation": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Dependency"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "offered_to",
+          "continuation",
+          "description",
+          "criterion"
+        ]
+      },
+      "Dependency": {
+        "type": "object",
+        "properties": {
+          "commitment": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/$defs/DependencyMode"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitations": {
+            "description": "Required for provisional input; permission to explore is not final truth.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "commitment",
+          "mode",
+          "limitations"
+        ]
+      },
+      "DependencyMode": {
+        "type": "string",
+        "enum": [
+          "final_acceptance",
+          "version_ready"
+        ]
+      },
+      "CommitmentStatus": {
+        "type": "string",
+        "enum": [
+          "working",
+          "blocked",
+          "submitted",
+          "closed",
+          "cancelled"
+        ]
+      },
+      "FeedbackDisposition": {
+        "type": "string",
+        "enum": [
+          "repair_proposed",
+          "disputed",
+          "escalated",
+          "resolved",
+          "deferred",
+          "waived"
+        ]
+      },
+      "EvidenceDraft": {
+        "type": "object",
+        "properties": {
+          "assembly": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "finding": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conditional": {
+            "type": "boolean"
+          },
+          "scope_coverage_review": {
+            "type": "boolean"
+          },
+          "limitations": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "assembly",
+          "finding",
+          "outcomes",
+          "conditional",
+          "scope_coverage_review",
+          "limitations"
+        ]
+      },
+      "ReleaseDraft": {
+        "type": "object",
+        "properties": {
+          "assembly": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "user_judgment_outcomes": {
+            "description": "Only outcomes whose adopted criterion is explicitly user_judgment.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "disposition": {
+            "$ref": "#/$defs/ReleaseDisposition"
+          },
+          "limitations": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "assembly",
+          "disposition",
+          "limitations"
+        ]
+      },
+      "ReleaseDisposition": {
+        "type": "string",
+        "enum": [
+          "delivered",
+          "delivered_with_conditions",
+          "partial_delivered"
         ]
       },
       "Ocean": {
@@ -1705,7 +4392,45 @@
           "incomplete"
         ]
       },
-      "Outcome": {
+      "WaitCondition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "action"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "transfer"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          }
+        ]
+      },
+      "Outcome2": {
         "type": "string",
         "enum": [
           "succeeded",
@@ -1933,6 +4658,7 @@
             "default": ""
           }
         },
+        "additionalProperties": false,
         "required": [
           "id",
           "kind"
@@ -2184,35 +4910,6 @@
           "kind",
           "args"
         ]
-      },
-      "Usage": {
-        "type": "object",
-        "properties": {
-          "known": {
-            "type": "boolean"
-          },
-          "input": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "cached": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "output": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "known",
-          "input",
-          "cached",
-          "output"
-        ]
       }
     }
   },
@@ -2294,6 +4991,16 @@
     ],
     [
       "GET",
+      "/api/resources/{id}",
+      "Current allowance, usage, reservations and uncertain exposure; no model call"
+    ],
+    [
+      "GET",
+      "/api/deployment",
+      "Recorded execution profile and setup capabilities"
+    ],
+    [
+      "GET",
       "/api/curricula",
       "Optional ordinary starter environment briefs"
     ],
@@ -2309,6 +5016,198 @@
     ]
   ],
   "operations": [
+    [
+      "deployment.read",
+      "Inspect the recorded execution profile and disabled deployment extensions."
+    ],
+    [
+      "grant.issue",
+      "Issue current authority with exact actor, work, effects, expiry and conserved operation ceilings."
+    ],
+    [
+      "grant.revoke",
+      "Revoke this grant and all descendants; initiate stopping admitted affected jobs."
+    ],
+    [
+      "resource.bounds.configure",
+      "Install immutable measurable ceilings and documented model pricing on a local resource root."
+    ],
+    [
+      "resource.bounds.reallocate",
+      "Move unspent token/cost capacity between production and closeout without increasing either root ceiling."
+    ],
+    [
+      "information.policy",
+      "Set named readers, export permission and optional access expiry. Source restrictions propagate to derivatives; erasure is an explicit disposition."
+    ],
+    [
+      "information.withdraw",
+      "Withdraw a source and its tracked derivatives from future use while preserving minimal accountability."
+    ],
+    [
+      "information.erase",
+      "Erase the named payload, its record/action copies and identified call archives. Derivatives become unavailable and need their own retention disposition; outside copies and backups remain outside this operation."
+    ],
+    [
+      "context.discard",
+      "Explicitly discard this run's active context and history window after a source disposition. The archive and obligations remain."
+    ],
+    [
+      "invitation.offer",
+      "Offer an exact preview and currently permitted seeds for bounded orientation. This does not grant membership or responsibility."
+    ],
+    [
+      "invitation.respond",
+      "Accept or decline your exact invitation; commitment acceptance remains a separate operation."
+    ],
+    [
+      "persona.retire",
+      "Retire an identity, pause activity and retain explicit responsibility gaps until accepted handoff or authorized disposition."
+    ],
+    [
+      "persona.activate",
+      "Operator funds local activation of imported identity history. This does not claim exclusive cross-host activation."
+    ],
+    [
+      "capability.acquire",
+      "Mark an owned capability available using an actual successful execution of its exact descriptor in this environment."
+    ],
+    [
+      "capability.retire",
+      "Withdraw a capability without erasing its earlier evidence or granting a replacement."
+    ],
+    [
+      "effect.destination.configure",
+      "Operator configures one exact idempotent HTTP destination and credential reference. No credential value is disclosed to personas."
+    ],
+    [
+      "effect.destination.revoke",
+      ""
+    ],
+    [
+      "effect.dispatch",
+      "Dispatch one bounded JSON request under a current grant. Unknown effects are never automatically retried."
+    ],
+    [
+      "effect.reconcile",
+      "Operator reconciles uncertainty using a preserved receipt naming the exact destination and idempotency key."
+    ],
+    [
+      "artifact.capture",
+      "Preserve completed owned job output as an immutable artifact; no arbitrary host path is opened."
+    ],
+    [
+      "resource.root.create",
+      "Operator creates a finite shared allowance. Call and birth ceilings are conserved; this grants no host, external or financial permissions."
+    ],
+    [
+      "resource.bind",
+      "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure."
+    ],
+    [
+      "resource.closeout.assign",
+      "Operator assigns protected capacity to a current accepted responsibility. Membership, a review request and an unaccepted offer are insufficient."
+    ],
+    [
+      "resource.reallocate",
+      "Operator moves unspent capacity between production and closeout inside the unchanged total ceiling. Reservations and unknown exposure cannot be refunded."
+    ],
+    [
+      "resource.revoke",
+      "Operator closes inference and birth authority and pauses affected decisions. Existing effects and late receipts remain; host-job stopping uses run.cancel/job.cancel."
+    ],
+    [
+      "resource.usage.resolve",
+      "Operator records observed usage for an uncertain attempt without refunding the call or altering the original provider receipt."
+    ],
+    [
+      "resource.summary",
+      "Read remaining production/closeout allowance, births, reservations and unknown usage without a model call. Only actors bound to this root can inspect it."
+    ],
+    [
+      "work.mandate.adopt",
+      "Adopt a new immutable mandate using operator authority. Preserves the original brief and all earlier criteria; does not grant execution, spending or replication rights."
+    ],
+    [
+      "work.amend",
+      "Operator amends the title and adopts an exact new mandate. Original instructions, prior criteria and historical evidence remain inspectable; stale decisions must observe the new scope."
+    ],
+    [
+      "work.archive",
+      "Operator cancels participation and outstanding responsibilities, and archives the work. History, charges, late receipts and unresolved effects remain. Erasing selected information payloads is a separate operation."
+    ],
+    [
+      "fragment.write",
+      "Author owned retained learning with explicit applicability, limitations and exact provenance. Receiving material is not first-hand experience or measured learning."
+    ],
+    [
+      "fragment.revise",
+      "Create an immutable correction to an owned fragment. Earlier content remains inspectable and old active selections require explicit reselection."
+    ],
+    [
+      "perspective.write",
+      "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created."
+    ],
+    [
+      "work.entry.append",
+      "Append an attributed observation, improvement hypothesis, decision summary or conditional assumption to the unranked work board."
+    ],
+    [
+      "work.entry.dispose",
+      "Dispose a proposal or assumption at an exact revision. Authorization for exploration is not confirmation; confirming an assumption requires operator authority and evidence."
+    ],
+    [
+      "agreement.propose",
+      "Propose exact working terms to named participants. Agreements never mint authority, budgets or another person's consent."
+    ],
+    [
+      "agreement.endorse",
+      "Endorse or decline an exact agreement version as yourself; earlier endorsements cannot be inherited by revised terms."
+    ],
+    [
+      "commitment.offer",
+      "Offer a responsibility against the adopted mandate. An offer, team membership and accepted ownership are different facts."
+    ],
+    [
+      "commitment.respond",
+      "Accept or decline your exact offered responsibility. Nobody can accept on another persona's behalf."
+    ],
+    [
+      "commitment.update",
+      "Update an accepted responsibility. Final prerequisites need current qualifying closure; closure needs exact outcome evidence or a current explicit release."
+    ],
+    [
+      "commitment.handoff.offer",
+      "Offer a handoff while retaining current ownership until the successor explicitly responds to this revision."
+    ],
+    [
+      "commitment.handoff.respond",
+      "Accept or decline an exact handoff as the named successor. Neither lease expiry nor a parent's statement substitutes for this consent."
+    ],
+    [
+      "feedback.open",
+      "Preserve actionable feedback on an exact work version. A known blocking finding survives message delivery, acknowledgement and compaction."
+    ],
+    [
+      "feedback.dispose",
+      "Propose a repair, dispute or escalation; only the finding author/principal can confirm repair. Deferral/waiver needs operator authority and remains historical."
+    ],
+    [
+      "assembly.adopt",
+      "Atomically adopt an exact submission/input/assumption vector under the mandate's narrow assembly delegation. Adoption is not validation or acceptance."
+    ],
+    [
+      "evidence.bind",
+      "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass."
+    ],
+    [
+      "release.commit",
+      "Operator seals a current exact release, with explicit conditions or partial limitations. This is not outside professional certification or authorization for physical effects."
+    ],
+    [
+      "work.summary",
+      "Read authoritative independent activity, ownership, adopted-outcome coverage, candidate, evidence, acceptance and outside-validation facts."
+    ],
     [
       "record.read",
       "Read a complete record by identity. For an action receipt use action.read."
@@ -2343,7 +5242,7 @@
     ],
     [
       "environment.create",
-      "Create an ordinary shared host directory."
+      "Create a managed environment directory. Custom host paths require the explicit unrestricted test profile."
     ],
     [
       "environment.update",
@@ -2351,7 +5250,7 @@
     ],
     [
       "work.create",
-      "Create work and queue participant decisions. Participants own continued work after submissions."
+      "Create funded work and invite participants to bounded orientation. Restricted nodes require explicit membership consent before contribution; commitment consent remains separate."
     ],
     [
       "run.resume",
@@ -2367,7 +5266,7 @@
     ],
     [
       "exec",
-      "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read."
+      "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work."
     ],
     [
       "job.read",
@@ -2379,7 +5278,7 @@
     ],
     [
       "document.write",
-      "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved."
+      "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved."
     ],
     [
       "document.read",
@@ -2415,7 +5314,7 @@
     ],
     [
       "submit",
-      "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs."
+      "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance."
     ],
     [
       "review.start",
@@ -2443,7 +5342,7 @@
     ],
     [
       "wait",
-      "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues."
+      "End this decision and wait for new input. Optionally name an owned action request or transfer record in this run to observe its outcome without a lost wake. A transfer launch receipt is not transfer completion. Already completed synchronous results are in history; they need no wait. Retained outcomes do not repeatedly trigger inference. Work ownership and unmet obligations continue."
     ],
     [
       "network.read",
@@ -2471,7 +5370,7 @@
     ],
     [
       "continuity.import",
-      "Import a verified bundle as a paused identity, preserving conflicts."
+      "Operator imports a verified bundle as paused history, preserving conflicts. Imports do not create local resource authority and cannot replace funded persona birth."
     ],
     [
       "continuity.handoff",
@@ -2486,6 +5385,1827 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "Command",
     "oneOf": [
+      {
+        "description": "Inspect the recorded execution profile and disabled deployment extensions.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "deployment.read"
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Issue current authority with exact actor, work, effects, expiry and conserved operation ceilings.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "grant.issue"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "draft": {
+                "$ref": "#/$defs/GrantDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Revoke this grant and all descendants; initiate stopping admitted affected jobs.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "grant.revoke"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Install immutable measurable ceilings and documented model pricing on a local resource root.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.bounds.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "bounds": {
+                "$ref": "#/$defs/Bounds"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "bounds"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Move unspent token/cost capacity between production and closeout without increasing either root ceiling.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.bounds.reallocate"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "closeout_tokens": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "closeout_cost_units": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "closeout_tokens",
+              "closeout_cost_units",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Set named readers, export permission and optional access expiry. Source restrictions propagate to derivatives; erasure is an explicit disposition.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "information.policy"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "readers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "allow_export": {
+                "type": "boolean"
+              },
+              "expires": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "subject",
+              "revision",
+              "readers",
+              "allow_export",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Withdraw a source and its tracked derivatives from future use while preserving minimal accountability.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "information.withdraw"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "subject",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Erase the named payload, its record/action copies and identified call archives. Derivatives become unavailable and need their own retention disposition; outside copies and backups remain outside this operation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "information.erase"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "subject",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Explicitly discard this run's active context and history window after a source disposition. The archive and obligations remain.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context.discard"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Offer an exact preview and currently permitted seeds for bounded orientation. This does not grant membership or responsibility.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "invitation.offer"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "preview": {
+                "type": "string"
+              },
+              "seed": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              },
+              "orientation_calls": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "to",
+              "preview",
+              "seed",
+              "orientation_calls"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Accept or decline your exact invitation; commitment acceptance remains a separate operation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "invitation.respond"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "accept": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "accept",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Retire an identity, pause activity and retain explicit responsibility gaps until accepted handoff or authorized disposition.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.retire"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator funds local activation of imported identity history. This does not claim exclusive cross-host activation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.activate"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "root": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "root",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Mark an owned capability available using an actual successful execution of its exact descriptor in this environment.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "capability.acquire"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "check": {
+                "type": "string"
+              },
+              "limitations": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "check",
+              "limitations"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Withdraw a capability without erasing its earlier evidence or granting a replacement.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "capability.retire"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator configures one exact idempotent HTTP destination and credential reference. No credential value is disclosed to personas.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "effect.destination.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/Destination"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "config"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "effect.destination.revoke"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Dispatch one bounded JSON request under a current grant. Unknown effects are never automatically retried.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "effect.dispatch"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "destination": {
+                "type": "string"
+              },
+              "body": true
+            },
+            "additionalProperties": false,
+            "required": [
+              "destination",
+              "body"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator reconciles uncertainty using a preserved receipt naming the exact destination and idempotency key.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "effect.reconcile"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/VersionRef"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preserve completed owned job output as an immutable artifact; no arbitrary host path is opened.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "artifact.capture"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "job": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "media_type": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "job",
+              "name",
+              "media_type"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator creates a finite shared allowance. Call and birth ceilings are conserved; this grants no host, external or financial permissions.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.root.create"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "limits": {
+                "$ref": "#/$defs/Limits"
+              },
+              "closeout_calls": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "limits",
+              "closeout_calls",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.bind"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "root": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "root",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator assigns protected capacity to a current accepted responsibility. Membership, a review request and an unaccepted offer are insufficient.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.closeout.assign"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "run": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "commitment": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "run",
+              "revision",
+              "commitment",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator moves unspent capacity between production and closeout inside the unchanged total ceiling. Reservations and unknown exposure cannot be refunded.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.reallocate"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "closeout_calls": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "closeout_calls",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator closes inference and birth authority and pauses affected decisions. Existing effects and late receipts remain; host-job stopping uses run.cancel/job.cancel.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.revoke"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator records observed usage for an uncertain attempt without refunding the call or altering the original provider receipt.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.usage.resolve"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "charge": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "usage": {
+                "$ref": "#/$defs/Usage"
+              },
+              "evidence": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "charge",
+              "revision",
+              "usage",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read remaining production/closeout allowance, births, reservations and unknown usage without a model call. Only actors bound to this root can inspect it.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.summary"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Adopt a new immutable mandate using operator authority. Preserves the original brief and all earlier criteria; does not grant execution, spending or replication rights.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.mandate.adopt"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "mandate": {
+                "$ref": "#/$defs/Mandate"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "mandate"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator amends the title and adopts an exact new mandate. Original instructions, prior criteria and historical evidence remain inspectable; stale decisions must observe the new scope.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.amend"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "title": {
+                "type": "string"
+              },
+              "mandate": {
+                "$ref": "#/$defs/Mandate"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "title",
+              "mandate"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator cancels participation and outstanding responsibilities, and archives the work. History, charges, late receipts and unresolved effects remain. Erasing selected information payloads is a separate operation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.archive"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Author owned retained learning with explicit applicability, limitations and exact provenance. Receiving material is not first-hand experience or measured learning.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fragment.write"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "draft": {
+                "$ref": "#/$defs/FragmentDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Create an immutable correction to an owned fragment. Earlier content remains inspectable and old active selections require explicit reselection.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fragment.revise"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "draft": {
+                "$ref": "#/$defs/FragmentDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "perspective.write"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "draft": {
+                "$ref": "#/$defs/PerspectiveDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Append an attributed observation, improvement hypothesis, decision summary or conditional assumption to the unranked work board.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.entry.append"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "draft": {
+                "$ref": "#/$defs/EntryDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Dispose a proposal or assumption at an exact revision. Authorization for exploration is not confirmation; confirming an assumption requires operator authority and evidence.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.entry.dispose"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "disposition": {
+                "$ref": "#/$defs/EntryDisposition"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "disposition",
+              "reason",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Propose exact working terms to named participants. Agreements never mint authority, budgets or another person's consent.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "agreement.propose"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "terms": {
+                "type": "string"
+              },
+              "parties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "supersedes": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "terms",
+              "parties"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Endorse or decline an exact agreement version as yourself; earlier endorsements cannot be inherited by revised terms.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "agreement.endorse"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "agreement": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "accept": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "agreement",
+              "accept",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Offer a responsibility against the adopted mandate. An offer, team membership and accepted ownership are different facts.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "commitment.offer"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "draft": {
+                "$ref": "#/$defs/CommitmentDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Accept or decline your exact offered responsibility. Nobody can accept on another persona's behalf.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "commitment.respond"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "accept": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "accept",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Update an accepted responsibility. Final prerequisites need current qualifying closure; closure needs exact outcome evidence or a current explicit release.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "commitment.update"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "status": {
+                "$ref": "#/$defs/CommitmentStatus"
+              },
+              "note": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "status",
+              "note",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Offer a handoff while retaining current ownership until the successor explicitly responds to this revision.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "commitment.handoff.offer"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "to": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "to",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Accept or decline an exact handoff as the named successor. Neither lease expiry nor a parent's statement substitutes for this consent.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "commitment.handoff.respond"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "accept": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "accept",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preserve actionable feedback on an exact work version. A known blocking finding survives message delivery, acknowledgement and compaction.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "feedback.open"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "subject": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "commitment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blocking": {
+                "type": "boolean"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "subject",
+              "blocking",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Propose a repair, dispute or escalation; only the finding author/principal can confirm repair. Deferral/waiver needs operator authority and remains historical.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "feedback.dispose"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "disposition": {
+                "$ref": "#/$defs/FeedbackDisposition"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "disposition",
+              "reason",
+              "evidence"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Atomically adopt an exact submission/input/assumption vector under the mandate's narrow assembly delegation. Adoption is not validation or acceptance.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "assembly.adopt"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "submission": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              },
+              "assumptions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "submission",
+              "inputs",
+              "assumptions"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "evidence.bind"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "draft": {
+                "$ref": "#/$defs/EvidenceDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator seals a current exact release, with explicit conditions or partial limitations. This is not outside professional certification or authorization for physical effects.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "release.commit"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "draft": {
+                "$ref": "#/$defs/ReleaseDraft"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read authoritative independent activity, ownership, adopted-outcome coverage, candidate, evidence, acceptance and outside-validation facts.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work.summary"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
       {
         "description": "Read a complete record by identity. For an action receipt use action.read.",
         "type": "object",
@@ -2730,6 +7450,28 @@
                   "string",
                   "null"
                 ]
+              },
+              "resource_root": {
+                "description": "Operator's explicit funding for a founder. Descendants inherit the caller's root and reserve initialization; they cannot choose a new allowance.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "need": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "seed": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
               }
             },
             "additionalProperties": false,
@@ -2831,7 +7573,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Create an ordinary shared host directory.",
+        "description": "Create a managed environment directory. Custom host paths require the explicit unrestricted test profile.",
         "type": "object",
         "properties": {
           "kind": {
@@ -2911,7 +7653,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Create work and queue participant decisions. Participants own continued work after submissions.",
+        "description": "Create funded work and invite participants to bounded orientation. Restricted nodes require explicit membership consent before contribution; commitment consent remains separate.",
         "type": "object",
         "properties": {
           "kind": {
@@ -2935,6 +7677,24 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "mandate": {
+                "description": "Optional operator-authored initial scope, adopted atomically before invitations can run.",
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Mandate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "resource_root": {
+                "description": "Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -3034,7 +7794,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Run any host command, installer or tool in a fresh /bin/sh -c process. Invoke another installed interpreter explicitly when its syntax is needed; shell state does not persist between commands. Registration is optional. Foreground jobs complete before the next decision; background jobs return asynchronously. Full output remains available through job.read.",
+        "description": "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3057,6 +7817,16 @@
                 "type": [
                   "boolean",
                   "null"
+                ]
+              },
+              "capability": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               }
             },
@@ -3143,7 +7913,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Retain an immutable document version. id is the logical grouping; parents are prior version record IDs. Concurrent children are preserved.",
+        "description": "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3491,7 +8261,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve an exact submitted version. This does not end work ownership or declare acceptance. artifacts and documents are immutable record IDs.",
+        "description": "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3755,7 +8525,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Wait for missing input, findings, host job results or peer transfer outcomes. Work ownership continues.",
+        "description": "End this decision and wait for new input. Optionally name an owned action request or transfer record in this run to observe its outcome without a lost wake. A transfer launch receipt is not transfer completion. Already completed synchronous results are in history; they need no wait. Retained outcomes do not repeatedly trigger inference. Work ownership and unmet obligations continue.",
         "type": "object",
         "properties": {
           "kind": {
@@ -3767,6 +8537,16 @@
             "properties": {
               "reason": {
                 "type": "string"
+              },
+              "condition": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/WaitCondition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "additionalProperties": false,
@@ -3954,7 +8734,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Import a verified bundle as a paused identity, preserving conflicts.",
+        "description": "Operator imports a verified bundle as paused history, preserving conflicts. Imports do not create local resource authority and cannot replace funded persona birth.",
         "type": "object",
         "properties": {
           "kind": {
@@ -4022,7 +8802,7 @@
                 "type": "string"
               },
               "outcome": {
-                "$ref": "#/$defs/Outcome"
+                "$ref": "#/$defs/Outcome2"
               },
               "evidence": {
                 "type": "string"
@@ -4044,6 +8824,812 @@
       }
     ],
     "$defs": {
+      "GrantDraft": {
+        "type": "object",
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "work": {
+            "type": "string"
+          },
+          "operations": {
+            "description": "Exact operation names. No wildcard or implied permission.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires": {
+            "type": "string"
+          },
+          "max_operations": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutionLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destination": {
+            "description": "Exact configured external destination identity, if external effects are allowed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command_digest": {
+            "description": "Optional SHA-256 of the exact shell command; descendants cannot remove it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "body_digest": {
+            "description": "Exact serialized JSON request digest for mediated external effects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "actor",
+          "work",
+          "operations",
+          "expires",
+          "max_operations",
+          "reason"
+        ]
+      },
+      "VersionRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "revision"
+        ]
+      },
+      "ExecutionLimits": {
+        "type": "object",
+        "properties": {
+          "wall_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cpu_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "wall_ms",
+          "cpu_seconds",
+          "memory_bytes",
+          "output_bytes"
+        ]
+      },
+      "Bounds": {
+        "type": "object",
+        "properties": {
+          "expires": {
+            "type": "string"
+          },
+          "tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "closeout_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cost_units": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "closeout_cost_units": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "currency": {
+            "type": "string"
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Price"
+            }
+          },
+          "remote_calls": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "retained_payload_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cpu_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "effect_operations": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "concurrent_memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "births_per_window": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "birth_window_seconds": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expires",
+          "tokens",
+          "closeout_tokens",
+          "cost_units",
+          "closeout_cost_units",
+          "currency",
+          "prices",
+          "remote_calls",
+          "retained_payload_bytes",
+          "cpu_seconds",
+          "effect_operations",
+          "concurrent_memory_bytes",
+          "births_per_window",
+          "birth_window_seconds",
+          "reason"
+        ]
+      },
+      "Price": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "input_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model",
+          "input_units_per_million",
+          "output_units_per_million",
+          "evidence"
+        ]
+      },
+      "Destination": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "api_key_env": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idempotency_supported": {
+            "type": "boolean"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_response_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "trust_loopback_http": {
+            "type": "boolean",
+            "default": false
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "idempotency_supported",
+          "timeout_ms",
+          "max_request_bytes",
+          "max_response_bytes",
+          "reason",
+          "evidence"
+        ]
+      },
+      "Limits": {
+        "type": "object",
+        "properties": {
+          "calls": {
+            "description": "Total admitted inference attempts, including initialization and closeout.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "births": {
+            "description": "Total identities created under this root, including funded founders.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_depth": {
+            "description": "Founder depth is zero; descendants cannot exceed this depth.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "concurrent_calls": {
+            "description": "Concurrent locally pending provider decisions, not provider-side jobs.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "calls",
+          "births",
+          "max_depth",
+          "concurrent_calls"
+        ]
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "known": {
+            "type": "boolean"
+          },
+          "input": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "cached": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "known",
+          "input",
+          "cached",
+          "output"
+        ]
+      },
+      "Mandate": {
+        "type": "object",
+        "properties": {
+          "clarifications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Outcome"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "preferences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "unresolved_inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "completion_agreement": {
+            "type": "string"
+          },
+          "assembly_editors": {
+            "description": "Narrow delegation for adopting a candidate assembly/proposal, not grants\nto spend money, create personas, edit user constraints or run host code.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "non_contributor_review": {
+            "type": "boolean"
+          },
+          "scope_coverage_review_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outcomes",
+          "completion_agreement",
+          "non_contributor_review",
+          "scope_coverage_review_required"
+        ]
+      },
+      "Outcome": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "description": "An authored key within this mandate, not a runtime profession or record ID.",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "conditional_allowed": {
+            "type": "boolean"
+          },
+          "outside_validation_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "description",
+          "criterion",
+          "required",
+          "evidence",
+          "conditional_allowed",
+          "outside_validation_required"
+        ]
+      },
+      "EvidenceRequirement": {
+        "type": "string",
+        "enum": [
+          "reviewed",
+          "user_judgment"
+        ]
+      },
+      "FragmentDraft": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "applicability": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "counterevidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content",
+          "applicability",
+          "limitations"
+        ]
+      },
+      "PerspectiveDraft": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/PerspectiveKind"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "limitations": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "content",
+          "limitations"
+        ]
+      },
+      "PerspectiveKind": {
+        "type": "string",
+        "enum": [
+          "agenda",
+          "relationship"
+        ]
+      },
+      "EntryDraft": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/EntryKind"
+          },
+          "text": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "affected_outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "expected_result": {
+            "type": "string",
+            "default": ""
+          },
+          "possible_regressions": {
+            "type": "string",
+            "default": ""
+          },
+          "check": {
+            "type": "string",
+            "default": ""
+          },
+          "reconsider_if": {
+            "type": "string",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "text"
+        ]
+      },
+      "EntryKind": {
+        "type": "string",
+        "enum": [
+          "observation",
+          "opportunity",
+          "decision",
+          "assumption"
+        ]
+      },
+      "EntryDisposition": {
+        "type": "string",
+        "enum": [
+          "exploring",
+          "adopted",
+          "rejected",
+          "deferred",
+          "superseded",
+          "authorized_for_exploration",
+          "confirmed_by_evidence",
+          "contradicted",
+          "withdrawn"
+        ]
+      },
+      "CommitmentDraft": {
+        "type": "object",
+        "properties": {
+          "offered_to": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "continuation": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Dependency"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "offered_to",
+          "continuation",
+          "description",
+          "criterion"
+        ]
+      },
+      "Dependency": {
+        "type": "object",
+        "properties": {
+          "commitment": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/$defs/DependencyMode"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitations": {
+            "description": "Required for provisional input; permission to explore is not final truth.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "commitment",
+          "mode",
+          "limitations"
+        ]
+      },
+      "DependencyMode": {
+        "type": "string",
+        "enum": [
+          "final_acceptance",
+          "version_ready"
+        ]
+      },
+      "CommitmentStatus": {
+        "type": "string",
+        "enum": [
+          "working",
+          "blocked",
+          "submitted",
+          "closed",
+          "cancelled"
+        ]
+      },
+      "FeedbackDisposition": {
+        "type": "string",
+        "enum": [
+          "repair_proposed",
+          "disputed",
+          "escalated",
+          "resolved",
+          "deferred",
+          "waived"
+        ]
+      },
+      "EvidenceDraft": {
+        "type": "object",
+        "properties": {
+          "assembly": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "finding": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conditional": {
+            "type": "boolean"
+          },
+          "scope_coverage_review": {
+            "type": "boolean"
+          },
+          "limitations": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "assembly",
+          "finding",
+          "outcomes",
+          "conditional",
+          "scope_coverage_review",
+          "limitations"
+        ]
+      },
+      "ReleaseDraft": {
+        "type": "object",
+        "properties": {
+          "assembly": {
+            "$ref": "#/$defs/VersionRef"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
+          },
+          "user_judgment_outcomes": {
+            "description": "Only outcomes whose adopted criterion is explicitly user_judgment.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "disposition": {
+            "$ref": "#/$defs/ReleaseDisposition"
+          },
+          "limitations": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "assembly",
+          "disposition",
+          "limitations"
+        ]
+      },
+      "ReleaseDisposition": {
+        "type": "string",
+        "enum": [
+          "delivered",
+          "delivered_with_conditions",
+          "partial_delivered"
+        ]
+      },
       "Ocean": {
         "type": "object",
         "properties": {
@@ -4136,7 +9722,45 @@
           "incomplete"
         ]
       },
-      "Outcome": {
+      "WaitCondition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "action"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "transfer"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          }
+        ]
+      },
+      "Outcome2": {
         "type": "string",
         "enum": [
           "succeeded",

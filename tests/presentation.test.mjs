@@ -17,10 +17,16 @@ test('every destination explains its empty state without inserting fixture recor
   assert.equal(VIEW_META.Tools.create, undefined);
 });
 test('work filters never claim accepted or completed work', () => {
-  assert.deepEqual(WORK_FILTERS.map(x => x.value), ['all', 'active', 'needs-input']);
+  assert.deepEqual(WORK_FILTERS.map(x => x.value), ['all', 'active', 'needs-input', 'archived']);
   assert.equal(matchesWorkFilter({ assessments: { accepted: 4 }, submissions: 4 }, 'active'), false);
   assert.equal(matchesWorkFilter({ status: 'accepted' }, 'active'), false);
   assert.equal(matchesWorkFilter({ activity: { completed: 2 } }, 'active'), false);
+});
+test('archived work is retained separately from current work and activity', () => {
+  const archived = { status: 'archived', activity: { running: 1 }, pending_requests: 1 };
+  for (const filter of ['all', 'active', 'needs-input']) assert.equal(matchesWorkFilter(archived, filter), false);
+  assert.equal(matchesWorkFilter(archived, 'archived'), true);
+  assert.equal(matchesWorkFilter({ status: 'waiting' }, 'archived'), false);
 });
 test('active requires an explicit positive running count', () => {
   assert.equal(matchesWorkFilter({ activity: { running: 1, paused: 2 } }, 'active'), true);

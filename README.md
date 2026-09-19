@@ -1,51 +1,65 @@
-# AI Personas UI — Rust design-first
+# AI Personas UI
 
-Preact UI for the Rust `rewrite/design-first` runtime, with the v1.2 design's
-individual perspectives, collective commitments, consent/birth records and
-version-bound evidence views. It does not select professions or prescribe a
-workflow. No production fixtures or simulated personas are included.
+A browser workspace for persistent AI collaborators: tasks, funding, messages,
+requests, and evidence you can inspect. You set the purpose and boundaries;
+personas choose their methods and collaborators.
+
+## Start the node and UI
+
+From the matching [Rust runtime checkout](https://github.com/ai-personas/ai-personas/tree/rewrite/design-first), run:
+
+```sh
+./start
+```
+
+The same command works in a built release. Open **http://127.0.0.1:19000** and
+enter the node's token. See the runtime's
+[setup guide](https://github.com/ai-personas/ai-personas/blob/rewrite/design-first/docs/SETUP.md)
+for prerequisites and inference configuration.
+
+## In the workspace
+
+- **Funding:** authorize finite calls, tokens, cost, and persona creation. Prices
+  are explicit inputs; an allowance does not transfer money or grant execution rights.
+- **Work:** create a funded task, amend its scope, message participants, inspect
+  missing owners and evidence, or archive it. Original instructions remain in history.
+- **Personas and requests:** send messages, inspect decisions, pause or resume
+  participation, and answer requests with observations or attachments.
+- **Retention:** erase selected document, artifact, message, fragment, or perspective
+  payloads separately. Archiving retains accounting, history, and actual effect outcomes.
+
+The production Preact application uses the authenticated Rust API. Its token stays
+in tab memory. Invitations, accepted responsibilities, historical reviews, and
+current acceptance remain distinct.
+
+## Develop
+
+Use Node.js 22+ and the matching Rust binary:
 
 ```sh
 npm ci
+PERSONAS_BIN=../ai-personas/target/debug/personas npm run contract
 npm run build
 npm test
 npx playwright install chromium
 npm run test:workspace
+PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
 ```
 
-Serve `dist/` using the matching Rust node's `--ui` option. Enter that node's token
-in the connection screen; it stays in tab memory. Runtime actions and file reads
-use the existing authenticated HTTP API. Development: `npm run dev`.
+`test:workspace` uses synthetic HTTP records. `test:operator` starts a real,
+restricted Rust node and a synthetic HTTP inference provider, then exercises the
+production UI. It makes no paid model calls and writes evidence to a temporary
+directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. These checks do not
+establish live model quality or engineering acceptance. The older `test:browser`
+and `test:live` campaigns have separate runtime and model prerequisites.
 
-## Backend compatibility
+For hot reload, `npm run dev` proxies API requests to the node on port 19000.
+For a source launch using this checkout, run
+`PERSONAS_UI_DIR=../ai-personas-ui ./start` from the runtime repository.
 
-The checked-in generated contract remains `ai-personas/1`. Workspaces use its
-paged record API and keep existing create/message/request/run/review/upload
-operations. New coordination records have explicit read-only presentation
-adapters; absent backend state is displayed as not reported, never a pass.
-Scope-bound acceptance, grants, protected budgets, consent, bounded births and
-release sealing still need the Rust v2 authoring contract before their controls
-can be enabled. This is a frontend update, not a backend implementation.
+[API.md](API.md), [api.schema.json](api.schema.json), and
+[src/contract.d.ts](src/contract.d.ts) are generated from Rust. Normative requirements
+belong in the [design handbook](https://github.com/ai-personas/ai-personas-design/tree/rewrite/design-first).
+The standalone [design preview](design/README.md) is separate from the production application.
 
-See [the implementation and verification boundary](docs/RUST-V1.2-UI.md) and
-[the generated HTTP contract](API.md). Regenerate types only from the matching
-Rust binary:
-
-```sh
-PERSONAS_BIN=../ai-personas/target/release/personas npm run contract
-```
-
-`npm run test:workspace` uses a synthetic HTTP fixture, with no models or Rust
-process. The existing `test:browser` and `test:live` have separate runtime/model
-prerequisites and must be rerun with the matching Rust node; fixture success is
-not evidence that those campaigns passed. CI uploads fixture screenshots and
-results, not engineering acceptance evidence.
-
-
-## Standalone design references
-
-The screen fixture now lives in [design/](design/README.md), with
-[relocation provenance](docs/PREVIEW-MIGRATION.md). It is separate from
-the production Preact application. Rust implementation belongs to
-`ai-personas/ai-personas`; normative documentation belongs to
-`ai-personas/ai-personas-design`, all on `rewrite/design-first`.
+Licensed under [Apache-2.0](LICENSE).

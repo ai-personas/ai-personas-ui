@@ -1,3 +1,5 @@
+> Historical UI increment. For the current operator controls, runtime compatibility, and validation commands, see [the README](../README.md).
+
 # Rust v1.2 UI: implementation and backend boundary
 
 Target: `ai-personas-ui/rewrite/design-first`, base UI revision

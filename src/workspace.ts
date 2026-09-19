@@ -30,14 +30,17 @@ export function activityText(value: unknown): string {
   return entries.map(([state, n]) => `${n} ${state.replaceAll('_', ' ')}`).join(' · ') || 'No activity reported';
 }
 export function workFacts(work: Entity) {
-  const d = fields(work.data);
+  const d = fields(work.data), core = fields(d.core), coverage = fields(core.coverage), acceptance = fields(core.acceptance);
+  const outcomes = Array.isArray(coverage.outcomes) ? coverage.outcomes.map(fields).filter(o => o.required === true) : undefined;
+  const evidenced = outcomes?.filter(o => ['current', 'user_accepted'].includes(text(o.evidence))).length;
   return {
     activity: activityText(d.activity),
     submissions: count(d.submissions),
     pendingRequests: count(d.pending_requests),
-    // Neither activity, historical verdict counts nor a page of records establishes these.
-    coverage: 'Not established',
-    acceptance: 'Not established',
+    // Only the runtime's current projection establishes these, never a page of reviews.
+    coverage: core.binding === 'adopted' && outcomes ? `${evidenced}/${outcomes.length} required outcomes have current evidence` : 'Not established',
+    acceptance: core.binding === 'adopted' && ['current', 'stale'].includes(text(acceptance.applicability)) && text(acceptance.disposition)
+      ? `${text(acceptance.disposition).replaceAll('_', ' ')} · ${acceptance.applicability} release` : 'Not established',
   };
 }
 export function assessmentFacts(record: Entity) {

@@ -1,15 +1,17 @@
 /** Presentation vocabulary only. No operations, sample records, or authority decisions. */
 export const PAGES = ['Work', 'Personas', 'Environments', 'Learning', 'Tools'] as const;
-export type View = typeof PAGES[number] | 'Network';
-export type WorkFilter = 'all' | 'active' | 'needs-input';
+export type View = typeof PAGES[number] | 'Network' | 'Funding';
+export type WorkFilter = 'all' | 'active' | 'needs-input' | 'archived';
 export const WORK_FILTERS: readonly { value: WorkFilter; label: string }[] = [
-  { value: 'all', label: 'All work' },
+  { value: 'all', label: 'Current work' },
   { value: 'active', label: 'Active' },
   { value: 'needs-input', label: 'Needs input' },
+  { value: 'archived', label: 'Archived' },
 ];
 export const VIEW_META: Record<View, {
   kind: string; description: string; emptyTitle: string; emptyBody: string; create?: string;
 }> = {
+  Funding: { kind: 'resource_root', description: 'Finite shared allowances and retained usage.', emptyTitle: 'Fund your work.', emptyBody: 'Create an allowance before starting personas and tasks.' },
   Work: {
     kind: 'work', description: 'Different perspectives. Accepted responsibilities. Evidence you can inspect.',
     emptyTitle: 'Start with a need, not a workflow.',
@@ -48,9 +50,11 @@ export const VIEW_META: Record<View, {
 
 /** Filter only the currently loaded page, never historical review counts or inferred completion. */
 export function matchesWorkFilter(data: unknown, filter: WorkFilter): boolean {
-  if (filter === 'all') return true;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return filter === 'all';
   const d = data as Record<string, unknown>;
+  if (filter === 'archived') return d.status === 'archived';
+  if (d.status === 'archived') return false;
+  if (filter === 'all') return true;
   const positive = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n > 0;
   if (filter === 'needs-input') return positive(d.pending_requests);
   const activity = d.activity;

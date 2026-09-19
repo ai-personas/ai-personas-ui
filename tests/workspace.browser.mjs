@@ -61,7 +61,7 @@ try {
     await step(`${viewport.width}: work opens in workspace`, async () => { await page.getByRole('button', { name: 'Open workspace ↗', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible(); });
     await step(`${viewport.width}: no invented acceptance or balance`, async () => {
       await expect(page.getByLabel('Independent work status')).toContainText('Not established');
-      await expect(page.getByLabel('Resources & protected closeout')).toContainText('No scoped allowance');
+      await expect(page.getByText('No allowance is bound.', { exact: false })).toBeVisible();
     });
     for (const tab of ['Overview', 'Perspectives', 'Work & outcomes', 'People & agreements', 'Artifacts & evidence', 'Decisions & learning']) {
       await step(`${viewport.width}: ${tab}`, async () => {
@@ -118,7 +118,7 @@ try {
     await step(`${viewport.width}: tools and legacy create`, async () => {
       await page.getByRole('button', { name: 'Tools', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Tools', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Personas', exact: true }).click(); await page.getByRole('button', { name: '+ New persona', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('neutral identity'); await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('authors its own character'); await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: no invented writes, token storage or page errors`, async () => {
       expect(writes).toEqual([]); expect(await page.evaluate(() => sessionStorage.getItem('personas-token'))).toBe(null); expect(errors).toEqual([]);

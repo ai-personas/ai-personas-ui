@@ -1,3 +1,4 @@
+import { ErasePayload, AllowanceSummary } from './Operator';
 import type { ComponentChildren } from 'preact';
 import { lazy, Suspense } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -31,7 +32,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {r.kind === 'submission' && <><Attachments ids={d.artifacts} artifact={artifact}/>{recordIDs(d.documents).map(ref => <button key={ref} class="record-link" onClick={() => open(ref)}>Open retained document {ref.slice(0, 8)}</button>)}
         <button class="secondary" onClick={() => setReview(!review)}>Request independent review</button>
         {review && <form onSubmit={async e => { e.preventDefault(); if (reviewBusy) return; setReviewBusy(true); try { await actSafe('review.start', { submission: id, persona: reviewers[0], instructions: String(new FormData(e.currentTarget).get('instructions')) }); setReview(false); } catch { /* actSafe displays the retained failure. */ } finally { setReviewBusy(false); } }}>
-          <p class="notice">The v1 runtime checks reviewer identity and recorded commands. It does not provide v1.2 funded review, isolation, scope applicability or release sealing.</p>
+          <p class="notice">The reviewer needs accepted participation, responsibility, and funding. The node checks the exact evidence and current scope.</p>
           <Suspense fallback={<p>Loading personas…</p>}><Pick kind="persona" value={reviewers} onChange={setReviewers}/></Suspense><label>Reviewer instructions<textarea name="instructions" required rows={4}/></label><button disabled={!reviewers.length || reviewBusy}>{reviewBusy ? 'Requesting…' : 'Start review'}</button></form>}
         <Records key={'finding' + id} kind="finding" scope={r.scope} filter={x => data(x).submission === id} open={open}/></>}
       {['finding', 'assessment'].includes(r.kind) && <><p>Historical verdict: <Status value={assessmentFacts(r).verdict}/></p><p>Reported applicability: <Status value={assessmentFacts(r).applicability}/></p><p class="notice">{assessmentFacts(r).note}</p>
@@ -40,6 +41,8 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {r.kind === 'call' && <><p>{text(d.actual_model, 'Actual model not recorded')} · {text(d.status)}</p><p>{d.usage?.known ? `${d.usage.input} input · ${d.usage.cached} cached · ${d.usage.output} output tokens` : 'Usage unknown'}</p><p class="micro">Recorded usage is not a currency budget or a host-wide spend measure.</p><p>{d.context_bytes?.toLocaleString()} context bytes · {d.images?.length || 0} selected image inputs</p>
         <p class="notice">Provider archives may contain confidential task material or provider-internal data. They are diagnostics, not a public persona thought stream.</p>
         <Expand title="Protected provider diagnostics">{() => <>{['request.json', 'input.json', 'response.json', 'provider.jsonl'].map(part => <a key={part} class="record-link" href={'/api/calls/' + id + '/' + part} target="_blank" rel="noreferrer">Inspect {part}</a>)}</>}</Expand></>}
+      {r.kind === 'resource_root' && <AllowanceSummary id={id}/>}
+      {['document', 'artifact', 'fragment', 'perspective', 'message'].includes(r.kind) && <ErasePayload record={r} act={actSafe}/>}
       {r.kind === 'artifact' && <button onClick={() => artifact(id)}>Open artifact viewer</button>}
       {tabs.length > 0 && <><nav class="tabs" aria-label="Detail sections">{tabs.map(t => <button key={t} class={current === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav>
         {current === 'Actions' || current === 'History' ? <Actions key={current + id} owner={r.kind === 'persona' ? id : ''} run={r.kind === 'run' ? id : ''} act={actSafe}/>
