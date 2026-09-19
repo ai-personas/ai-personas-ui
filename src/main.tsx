@@ -101,7 +101,7 @@ function App() {
     </aside>
     <main id="main-content" class="main" tabIndex={-1} ref={content}>
       <div class="app-topbar"><span>Workspace <span aria-hidden="true">/</span> <strong>{page}</strong>{work && ' / Detail'}</span><span class="runtime-label"><Icon name="Shield"/>Runtime records</span></div>
-      <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection}. Displayed records may be stale.</p>}{error && <p role="alert">{error}</p>}
+      <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection.startsWith('Reconnecting') ? connection : `${connection}. Displayed records may be stale.`}</p>}{error && <p role="alert">{error}</p>}
         {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact}/></Suspense> : <>
           <header class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>{page}</h1><p>{meta.description}</p></div>{meta.create && <button onClick={start}>+ {meta.create}</button>}</header>
           {page === 'Work' && <Requests open={setSelected}/>}
