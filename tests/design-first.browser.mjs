@@ -28,6 +28,10 @@ try {
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }, { width: 320, height: 720 }]) {
     const page = await browser.newPage({ viewport, reducedMotion: 'reduce' }); activePage = page;
     const errors = [], writes = []; let failRequests = true, failWork = false;
+    // Isolate manual retry from the stream's legitimate initial resnapshot.
+    // Release after the retry assertion, rather than racing an automatic recovery.
+    let releaseWatermark;
+    const watermarkGate = new Promise(resolve => { releaseWatermark = resolve; });
     page.on('pageerror', e => errors.push(e.message));
     await page.route('**/api/**', async route => {
       const req = route.request(), u = new URL(req.url());
@@ -37,6 +41,7 @@ try {
       if (req.method() !== 'GET') { writes.push(req.postData()); return route.fulfill({ status: 400, json: { error: 'No fixture operation allowed' } }); }
       if (u.pathname === '/api/records') {
         const q = u.searchParams, kinds = (q.get('kind') || '').split(',');
+        if (q.get('kind') === 'work' && q.get('limit') === '1') await watermarkGate;
         if ((kinds.includes('request') && failRequests) || (kinds.includes('work') && failWork)) return route.fulfill({ status: 503, json: { error: 'Synthetic read failure' } });
         const found = records.filter(r => (!q.get('kind') || kinds.includes(r.kind)) && (!q.get('status') || r.data.status === q.get('status')) && (!q.get('query') || JSON.stringify(r.data).toLowerCase().includes(q.get('query').toLowerCase())));
         const after = Number(q.get('after') || 0), size = Math.min(Number(q.get('limit') || 24), kinds.includes('work') ? 2 : kinds.includes('request') ? 4 : 24);
@@ -73,6 +78,7 @@ try {
       await expect(inbox.getByRole('button', { name: /Question 5/ })).toBeVisible();
       await inbox.getByRole('button', { name: 'Previous requests', exact: true }).click();
       await expect(inbox).toContainText('4 open requests on this page');
+      releaseWatermark();
     });
     const work = page.getByRole('region', { name: 'Work records', exact: true });
     await step(`${viewport.width}: page-scoped work filters use recorded facts`, async () => {
