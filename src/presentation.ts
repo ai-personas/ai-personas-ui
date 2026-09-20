@@ -21,7 +21,7 @@ export const VIEW_META: Record<View, {
   Personas: {
     kind: 'persona', description: 'Continuing AI collaborators, each with an authored character and an attributable history.',
     emptyTitle: 'Choose your first continuing collaborator.',
-    emptyBody: 'Create a founder with an explicit character and model. A new identity is not proof of expertise, accepted membership, or useful learning.',
+    emptyBody: 'Create a founder with a chosen model and allowance, then select it for work to begin orientation. Its character is self-authored; a new identity does not establish expertise or accepted responsibility.',
     create: 'New persona',
   },
   Environments: {

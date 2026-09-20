@@ -36,6 +36,13 @@ into the browser. Explicit HTTP provider configurations are also supported.
   receipts distinguish delivery, model inclusion, and acknowledgment, and show
   current blockers with links to activity and funding. Activity cards show the
   latest decision, its time, and any failure; counters update as calls settle.
+  Live activity shows public progress messages, action receipts, and tool output
+  as they arrive. Pausing the view leaves the work running.
+- **Identity:** inspect a persona’s stable ID, authored character, lifecycle,
+  creation provenance, and membership milestones. Names and character can be
+  chosen during funded orientation; creation alone starts no model call. Use
+  **Request introduction** in existing work, or ask participants to name an
+  environment. Portraits appear only when a real image artifact exists.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 
@@ -66,6 +73,7 @@ npx playwright install chromium
 npm run test:workspace
 npm run test:forms
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
+PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:activity
 ```
 
 `test:workspace` uses synthetic HTTP records. `test:forms` checks the production
@@ -74,7 +82,9 @@ activity, model refresh, draft retention, and explicit subscription accounting.
 Its provider and records are synthetic. `test:operator` starts a real,
 restricted Rust node and a synthetic HTTP inference provider, then exercises the
 production UI. It makes no paid model calls and writes evidence to a temporary
-directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. These checks do not
+directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. `test:activity` checks
+streaming, names, identity, draft retention, and tool output on a disposable
+node with synthetic inference and one harmless local shell command. These checks do not
 establish live model quality or engineering acceptance. The older `test:browser`
 and `test:live` campaigns have separate runtime and model prerequisites.
 

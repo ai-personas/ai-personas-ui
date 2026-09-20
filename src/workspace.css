@@ -5,3 +5,29 @@
 @media(max-width:1100px){.status-axes{grid-template-columns:repeat(2,minmax(0,1fr))}.status-axes>div:nth-child(2){border-right:0}.status-axes>div:nth-child(-n+2){border-bottom:1px solid var(--line)}.workspace-columns{grid-template-columns:minmax(0,1fr);gap:0}}
 @media(max-width:800px){.sidebar{padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.sidebar .brand{grid-column:1/-1;margin:0 0 5px}.sidebar>nav{grid-column:1/-1}.advanced-navigation{grid-column:1/-1;margin:0;display:flex;align-items:center;gap:7px}.advanced-navigation>span{font-size:.62rem}.advanced-navigation>button{font-size:.75rem;padding:6px}.connection-state{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.67rem;min-width:0;margin-top:0;line-height:1.6;justify-content:flex-start}.connection-state>.quiet{margin-left:auto;font-size:.7rem;padding:4px}.live-dot{flex-shrink:0}.compact-records>.card{grid-template-columns:42px minmax(0,1fr);padding:16px;gap:12px}.compact-records .card-open{grid-column:2;justify-self:start;font-size:.83rem}.compact-records .card-top small{font-size:.65rem}.workspace-heading{display:block}.revision-tag{display:inline-block;margin-top:10px}.workspace-trail{gap:8px;margin-bottom:18px}.workspace-trail>span{display:none}.workspace-section{padding:16px}.workspace-tabs{margin:20px 0 16px}.workspace-tabs>button{font-size:.8rem}.status-axes>div{padding:13px}.status-axes strong{font-size:.83rem}.record-pagination{align-items:flex-start;flex-wrap:wrap}.record-pagination>div{margin-left:auto}.state-badge{max-width:125px;font-size:.68rem}.work-record{padding:13px}.workspace-heading h1{font-size:1.85rem}.workspace-subtitle{font-size:.88rem}.modal-root{padding:12px}.modal-root .viewer,.modal-root .create-panel{max-height:calc(100dvh - 24px)}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+.identity-profile { padding: 1rem; border: 1px solid var(--line, #d9dfdd); border-radius: 14px; background: var(--paper, #fff); }
+.identity-profile header, .activity-heading, .activity-action-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.identity-profile h3, .activity-heading h4 { margin: 0; }
+.identity-id { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: .75rem; }
+.identity-id code { font-size: .78rem; overflow-wrap: anywhere; }
+.identity-milestones, .identity-traits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.identity-milestones dt, .identity-traits dt { font-size: .78rem; color: var(--muted, #5d6966); text-transform: capitalize; }
+.identity-milestones dd, .identity-traits dd { margin: .2rem 0 0; font-size: .85rem; }
+.identity-profile details { margin-top: .85rem; }
+.identity-profile summary { cursor: pointer; }
+.live-activity { border-top: 1px solid var(--line, #d9dfdd); margin-top: .9rem; padding-top: .9rem; }
+.activity-heading h4 { font-size: .9rem; }
+.activity-actions { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .6rem; max-height: 36rem; overflow-y: auto; overscroll-behavior: contain; }
+.activity-action { padding: .75rem; border-left: 2px solid var(--line, #d9dfdd); background: var(--paper, #fff); min-width: 0; }
+.activity-action-heading strong { font-size: .85rem; overflow-wrap: anywhere; }
+.activity-action[data-state="running"] { border-color: var(--accent, #337969); }
+.activity-action[data-state="failed"], .activity-action[data-state="uncertain"] { border-color: #a65b32; }
+.activity-action pre, .tool-output .output { max-height: 15rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; }
+.activity-action > .text-button { margin-top: .45rem; }
+.progress-message { padding: .6rem .75rem; border-radius: 8px; background: var(--subtle, #f2f5f3); margin-top: .6rem; }
+.progress-message p { margin-bottom: 0; }
+.progress-messages { max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; }
+.tool-output { margin-top: .5rem; }
+.tool-output small { display: block; font-size: .72rem; color: var(--muted, #5d6966); }
+.introduction-request { border-top: 1px solid var(--line, #d9dfdd); padding-top: .8rem; margin-top: .8rem; }
+@media (max-width: 480px) { .identity-milestones, .identity-traits { grid-template-columns: 1fr; } }

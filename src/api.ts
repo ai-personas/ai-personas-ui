@@ -61,6 +61,7 @@ export function operate(kind: Command['kind'], args: unknown, actor = '', run = 
 export function label(r?: Entity): string {
   if (!r) return 'Unloaded record'; const d = data(r);
   const authored = [d.name, d.title, d.purpose].find(v => typeof v === 'string' && v.trim());
+  if (!authored && ['persona', 'environment'].includes(r.kind)) return `Unnamed ${r.kind} · ${r.id.slice(0, 8)}`;
   return authored || ({ persona: 'Unnamed persona', environment: 'Unnamed environment', work: 'Untitled work',
     submission: 'Submitted version', finding: 'Assessment', request: 'Needs your input', run: 'Persona activity' } as Record<string, string>)[r.kind] || r.kind;
 }

@@ -22,6 +22,8 @@ Default loopback listeners allow the same-origin local operator workspace withou
 | GET | `/api/models` | Provider-advertised models and capabilities |
 | GET | `/api/network` | Current node and connected peers |
 | GET | `/api/resources/{id}` | Current allowance, usage, reservations and uncertain exposure; no model call |
+| GET | `/api/runs/{id}/activity` | Operator view of the latest twelve action receipts in chronological order, with bounded fields; inspect full receipts separately |
+| GET | `/api/calls/{id}/progress` | SSE snapshots of bounded public assistant messages and provisional summary, followed by the durable call disposition. No private reasoning or partial commands; reconnect reads the retained snapshot; closing releases the observer |
 | GET | `/api/personas/{id}/messages?after=0&limit=24` | Operator correspondence view: sent and received messages, including retained broadcasts; bounded cursor page |
 | GET | `/api/messages/{id}/delivery?after=0&limit=24` | Operator delivery receipts: inbox delivery, recorded request inclusion and acknowledgment are distinct; current participation and funding explain blockers without inference |
 | GET | `/api/deployment` | Recorded execution profile and setup capabilities |

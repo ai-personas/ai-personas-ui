@@ -45,6 +45,8 @@ try {
       if (u.pathname === '/api/session') return route.fulfill({ json: {} });
       if (u.pathname === '/api/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': fixture keepalive\n\n' });
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-peer', peers: [], addresses: [] } });
+      if (/^\/api\/runs\/[^/]+\/activity$/.test(u.pathname)) return route.fulfill({ json: [] });
+      if (u.pathname === '/api/inference') return route.fulfill({ json: { models: [], providers: [], checked: null } });
       if (u.pathname === '/api/models' || u.pathname === '/api/curricula') return route.fulfill({ json: [] });
       if (u.pathname === '/api/operations') { const body = req.postDataJSON(); writes.push(body); return route.fulfill({ json: { request: body, state: 'succeeded', result: {} } }); }
       if (u.pathname === '/api/records') {
@@ -118,7 +120,7 @@ try {
     await step(`${viewport.width}: tools and legacy create`, async () => {
       await page.getByRole('button', { name: 'Tools', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Tools', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Personas', exact: true }).click(); await page.getByRole('button', { name: '+ New persona', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('authors its own character'); await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('No model call starts from creation alone'); await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: no invented writes, token storage or page errors`, async () => {
       expect(writes).toEqual([]); expect(await page.evaluate(() => sessionStorage.getItem('personas-token'))).toBe(null); expect(errors).toEqual([]);

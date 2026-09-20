@@ -29,6 +29,10 @@ function NamedField({ name, value }: { name: string; value: unknown }) {
   if (!text(value) && !strings(value).length) return null;
   return <div class="record-field"><span class="field-label">{name}</span><TextValue value={value}/></div>;
 }
+function ActivityPersona({ id, open }: { id: string; open: Open }) {
+  const { value } = useResource<Entity>('/records/' + id, e => e.entity === id);
+  return <button class="reference-link activity-persona" onClick={() => open(id)}>{value ? label(value) : `Persona ${id.slice(0, 8)}`} <span aria-hidden="true">↗</span></button>;
+}
 function RecordCard({ record: r, open, artifact }: { record: Entity } & Links) {
   const d = fields(r.data), state = text(d.status) || text(d.disposition);
   const assessment = r.kind === 'finding' || r.kind === 'assessment';
@@ -40,7 +44,7 @@ function RecordCard({ record: r, open, artifact }: { record: Entity } & Links) {
     <header><div><span class="field-label">{r.kind.replaceAll('_', ' ')} · revision {r.revision}</span>
       <h3><button class="record-title" onClick={() => open(r.id)}>{label(r)}</button></h3></div>
       {state && !assessment && <Badge value={state}/>}</header>
-    <Reference id={author} caption={isPerspective ? 'Perspective authored by' : 'Recorded by / owner'} open={open}/>
+    {r.kind === 'run' && isRecordID(author) ? <ActivityPersona id={author} open={open}/> : <Reference id={author} caption={isPerspective ? 'Perspective authored by' : 'Recorded by / owner'} open={open}/>}
     {body && r.kind !== 'run' && <p class="record-prose record-excerpt">{body}</p>}
     {r.kind === 'run' && <RunProgress run={r} open={open}/>}
     {isPerspective && <><NamedField name="Proposed attention" value={d.priorities}/><NamedField name="Expected contribution" value={d.contribution}/><NamedField name="Concerns" value={d.concerns}/><p class="record-caveat">An individual perspective, not an assignment or a collective decision.</p></>}

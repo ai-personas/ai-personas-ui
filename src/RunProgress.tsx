@@ -1,5 +1,6 @@
 import { data, type Entity } from './api';
 import { fields, isRecordID, text } from './workspace';
+import LiveActivity from './LiveActivity';
 
 /** Only the node's operator projection supplies the latest decision. */
 export function RunProgress({ run, open }: { run: Entity; open: (id: string) => void }) {
@@ -14,5 +15,6 @@ export function RunProgress({ run, open }: { run: Entity; open: (id: string) => 
       {text(latest.error) && <p role="alert">{text(latest.error)}</p>}
       <button class="text-button" onClick={() => open(text(call.id))}>Inspect latest decision</button>
     </div>}
+    <LiveActivity run={run.id} call={isRecordID(call.id) ? call.id : undefined}/>
   </div>;
 }

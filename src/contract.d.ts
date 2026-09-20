@@ -791,6 +791,8 @@ export interface ApiTypes {
   model: Model;
   inference: InferenceCatalog;
   message_delivery: Page3;
+  call_progress: CallProgress;
+  action_activity: ActionActivity[];
   request: ModelRequest;
   response: ModelResponse;
   network: NetworkInfo;
@@ -1119,6 +1121,35 @@ export interface MessageDelivery {
   included_call?: string | null;
   participation?: Record | null;
   funding_root?: string | null;
+  [k: string]: unknown;
+}
+/**
+ * Public assistant text is provisional until the entire decision is accepted.
+ * This projection excludes private reasoning, raw envelopes and partial actions.
+ */
+export interface CallProgress {
+  messages: ProgressMessage[];
+  truncated: boolean;
+  status: string;
+  done: boolean;
+  [k: string]: unknown;
+}
+export interface ProgressMessage {
+  index: number;
+  kind: string;
+  text: string;
+  [k: string]: unknown;
+}
+/**
+ * Bounded recent action receipts for the operator's live activity view.
+ */
+export interface ActionActivity {
+  id: string;
+  kind: string;
+  state: string;
+  created: string;
+  finished?: string | null;
+  error?: string | null;
   [k: string]: unknown;
 }
 export interface ModelRequest {

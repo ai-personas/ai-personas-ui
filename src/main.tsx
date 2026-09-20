@@ -19,6 +19,7 @@ const Funding = lazy(() => import('./Operator').then(m => ({ default: m.Funding 
 export function Status({ value }: { value: string }) { return <span class={'status tone-' + stateTone(value)}>{value.replaceAll('_', ' ') || 'Not recorded'}</span>; }
 export function Facts({ r }: { r: Entity }) {
   const d = data(r);
+  if (r.kind === 'persona') return <Status value={text(d.lifecycle, 'Lifecycle not recorded')}/>;
   if (r.kind !== 'work') return text(d.status) ? <Status value={d.status}/> : null;
   const f = workFacts(r);
   return <div class="facts"><span>{f.activity}</span><span>{f.submissions === undefined ? 'Submission count not reported' : `${f.submissions} preserved submissions`} · acceptance not established</span>
@@ -178,7 +179,7 @@ function List({ view, open, openWork, artifact, act, start, navigate }: {
     {view === 'Work' ? <div class="work-collection" aria-busy={busy}>{rows.length > 0 && <div class="work-table-heading" aria-hidden="true"><span>Work & original need</span><span>Activity</span><span>Participants</span><span>Evidence</span></div>}{rows.map(r => <WorkRow key={r.id} r={r} open={openWork}/>)}</div>
       : <div class={view === 'Personas' ? 'cards persona-cards' : 'cards compact-records'} aria-busy={busy}>{rows.map(r => { const d = data(r); return <article class="card" key={r.id}>
         <div class="card-top">{['persona', 'environment'].includes(r.kind) ? <Portrait id={d.portrait || d.image} name={label(r)}/> : <span class="record-symbol"><Icon name={view}/></span>}<small>{r.kind === 'persona' ? 'AI collaborator' : r.kind}</small></div>
-        <div class="card-content"><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.character) || text(d.description) || text(d.brief) || text(d.summary) || text(d.note) || 'Inspect the exact record for details.'}</p><Facts r={r}/>
+        <div class="card-content"><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.character) || text(d.description) || text(d.brief) || text(d.summary) || text(d.note) || (r.kind === 'persona' ? 'Identity created. Self-authored character is awaiting funded orientation.' : r.kind === 'environment' ? 'Shared place created. Participants can author its name and description when work begins.' : 'Inspect the exact record for details.')}</p><Facts r={r}/>
           {r.kind === 'persona' && <><p class="record-caveat">Authored character, not a claim of demonstrated expertise.</p><details class="model-disclosure"><summary>Model details</summary><p class="micro">Current model: {text(d.provider, 'not recorded')} / {text(d.model, 'not recorded')}</p></details></>}
           {r.kind === 'document' && <p class="micro">Authored document · not automatically learned knowledge</p>}
           {r.kind === 'fragment' && <p class="micro">Retained interpretation · later usefulness needs evidence</p>}

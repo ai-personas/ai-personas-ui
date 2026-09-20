@@ -36,6 +36,15 @@
       "message_delivery": {
         "$ref": "#/$defs/Page3"
       },
+      "call_progress": {
+        "$ref": "#/$defs/CallProgress"
+      },
+      "action_activity": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ActionActivity"
+        }
+      },
       "request": {
         "$ref": "#/$defs/ModelRequest"
       },
@@ -57,6 +66,8 @@
       "model",
       "inference",
       "message_delivery",
+      "call_progress",
+      "action_activity",
       "request",
       "response",
       "network"
@@ -4895,6 +4906,90 @@
           "acknowledged"
         ]
       },
+      "CallProgress": {
+        "description": "Public assistant text is provisional until the entire decision is accepted.\nThis projection excludes private reasoning, raw envelopes and partial actions.",
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ProgressMessage"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messages",
+          "truncated",
+          "status",
+          "done"
+        ]
+      },
+      "ProgressMessage": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "kind",
+          "text"
+        ]
+      },
+      "ActionActivity": {
+        "description": "Bounded recent action receipts for the operator's live activity view.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "created": {
+            "type": "string"
+          },
+          "finished": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "created"
+        ]
+      },
       "ModelRequest": {
         "type": "object",
         "properties": {
@@ -5176,6 +5271,16 @@
       "GET",
       "/api/resources/{id}",
       "Current allowance, usage, reservations and uncertain exposure; no model call"
+    ],
+    [
+      "GET",
+      "/api/runs/{id}/activity",
+      "Operator view of the latest twelve action receipts in chronological order, with bounded fields; inspect full receipts separately"
+    ],
+    [
+      "GET",
+      "/api/calls/{id}/progress",
+      "SSE snapshots of bounded public assistant messages and provisional summary, followed by the durable call disposition. No private reasoning or partial commands; reconnect reads the retained snapshot; closing releases the observer"
     ],
     [
       "GET",

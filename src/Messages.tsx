@@ -37,8 +37,8 @@ export function MessageReceipt({ id, open }: { id: string; open: Open }) {
   </section>;
 }
 
-export function MessageComposer({ to, work, environment, act, open }: {
-  to: string; work?: string; environment?: string; act: Act; open: Open;
+export function MessageComposer({ to, work, environment, act, open, initialText = '' }: {
+  to: string; work?: string; environment?: string; act: Act; open: Open; initialText?: string;
 }) {
   const [busy, setBusy] = useState(false), [sent, setSent] = useState(''), [error, setError] = useState('');
   return <div><form onSubmit={async e => {
@@ -50,21 +50,24 @@ export function MessageComposer({ to, work, environment, act, open }: {
       const action = await act('message.send', { to, text: body, ...(work ? { work } : {}), ...(environment ? { environment } : {}) });
       setSent((action.result as Entity).id); form.reset();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }}><label>{work ? 'Message for this task' : 'Message'}<textarea name="text" required rows={3}/></label>
+  }}><label>{work ? 'Message for this task' : 'Message'}<textarea name="text" required rows={3} defaultValue={initialText}/></label>
     <p class="micro">{work ? 'Delivered only to participants in this work.' : 'General correspondence uses an existing participation when available. It does not start a new task.'}</p>
     {error && <p role="alert">{error}</p>}<button disabled={busy}>{busy ? 'Sending…' : work ? 'Send to participants' : 'Send message'}</button>
   </form>{sent && <><p role="status">Message saved.</p><button class="text-button" onClick={() => open(sent)}>Open saved message</button><MessageReceipt id={sent} open={open}/></>}</div>;
 }
 
-export function PersonaActivity({ persona, funding, open }: { persona: string; funding?: string; open: Open }) {
+export function PersonaActivity({ persona, funding, open, act }: { persona: string; funding?: string; open: Open; act: Act }) {
   const [cursors, setCursors] = useState([0]);
+  const [introduction, setIntroduction] = useState('');
   const { value, error, loading } = useRecords('run', '', persona, '', cursors.at(-1));
   return <section class="persona-activity" aria-label="Current persona activity" aria-busy={loading}><h3>Current activity</h3>
     {error && <p role="alert">Activity unavailable: {error}</p>}
     {!value && !error && <p role="status">Loading participation…</p>}
-    {value?.items.length === 0 && <p>No participation on this page. A saved message does not create a funded task or imply a model is running.</p>}
+    {value?.items.length === 0 && <p>No participation on this page. Select this persona when creating funded work to start its bounded orientation. It can choose its name and character there; names and portraits are optional.</p>}
     {value?.items.map(run => <article key={run.id}><p><Status value={text(data(run).status)}/></p><RunProgress run={run} open={open}/>
-      <div class="button-row"><button class="text-button" onClick={() => open(run.id)}>Inspect activity {run.id.slice(0,8)}</button><button class="text-button" onClick={() => open(run.scope)}>Open related work</button></div></article>)}
+      <div class="button-row"><button class="text-button" onClick={() => open(run.id)}>Inspect activity {run.id.slice(0,8)}</button><button class="text-button" onClick={() => open(run.scope)}>Open related work</button>
+        {!['cancelled'].includes(text(data(run).status)) && data(run).historical !== true && <button class="text-button" onClick={() => setIntroduction(introduction === run.id ? '' : run.id)}>Request introduction</button>}
+      </div>{introduction === run.id && <div class="introduction-request"><p>Send one request in this work. A response uses the current allowance and may choose to author a profile; it does not grant new funding or resume paused work.</p><MessageComposer to={persona} work={run.scope} act={act} open={open} initialText="Please introduce yourself by choosing an optional display name and a concise, honest character in your persona profile. Describe your preferences and intentions without inventing human experience or credentials. Preserve any existing identity you want to keep. Continue to respect the current work and its allowance."/></div>}</article>)}
     {funding && <button class="secondary" onClick={() => open(funding)}>Manage funding</button>}
     <Pagination previous={cursors.length > 1} next={value?.next} onPrevious={() => setCursors(cursors.slice(0,-1))} onNext={() => value?.next != null && setCursors([...cursors,value.next])}/>
   </section>;
