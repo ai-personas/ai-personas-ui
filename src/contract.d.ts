@@ -778,6 +778,7 @@ export interface ApiTypes {
   action: Action;
   event: Event;
   model: Model;
+  inference: InferenceCatalog;
   request: ModelRequest;
   response: ModelResponse;
   network: NetworkInfo;
@@ -1066,6 +1067,22 @@ export interface Model {
   id: string;
   name: string;
   capabilities: unknown;
+  [k: string]: unknown;
+}
+export interface InferenceCatalog {
+  models: Model[];
+  providers: ProviderStatus[];
+  checked: string;
+  [k: string]: unknown;
+}
+export interface ProviderStatus {
+  provider: string;
+  available: boolean;
+  models: number;
+  /**
+   * Access-safe setup guidance; never raw provider output or credentials.
+   */
+  message: string;
   [k: string]: unknown;
 }
 export interface ModelRequest {

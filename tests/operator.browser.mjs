@@ -118,7 +118,6 @@ try {
     await form.getByLabel('Input price per million tokens').fill('0');
     await form.getByLabel('Output price per million tokens').fill('0');
     await form.getByLabel('Price source and date').fill('Local synthetic provider: no charge; test only');
-    await form.getByText('Token and execution limits', { exact: true }).click();
     await form.getByLabel('Total tokens', { exact: true }).fill('10000000');
     await form.getByRole('button', { name: 'Create allowance', exact: true }).click();
     await expect(form).toHaveCount(0);
@@ -128,20 +127,20 @@ try {
   });
   await step('create funded founder and environment through UI', async () => {
     await page.getByRole('button', { name: 'Personas', exact: true }).click();
-    await page.getByRole('button', { name: '+ New persona', exact: true }).click();
+    await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(allowance.id);
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     persona = (await get('/records?kind=persona')).items[0]; assert.equal(persona.data.resource_root, allowance.id);
     await page.getByRole('button', { name: 'Environments', exact: true }).click();
-    await page.getByRole('button', { name: '+ New environment', exact: true }).click();
+    await page.locator('.page-heading').getByRole('button', { name: '+ New environment', exact: true }).click();
     await page.getByRole('dialog', { name: 'Create', exact: true }).getByRole('button', { name: 'Create', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toHaveCount(0);
     environment = (await get('/records?kind=environment')).items[0];
   });
   await step('create task with atomic scope and persona-owned invitation response', async () => {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
-    await page.getByRole('button', { name: '+ New work', exact: true }).click();
+    await page.locator('.page-heading').getByRole('button', { name: '+ New work', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     await form.getByLabel('Short title').fill('Operator browser task');
     await form.getByLabel('Your instructions').fill('Original synthetic request remains intact.');
@@ -163,17 +162,26 @@ try {
     await form.getByLabel('Title', { exact: true }).fill('Amended browser task');
     await form.getByLabel('Clarifications and updated instructions').fill('A second explicit requirement.');
     await form.getByLabel('Expected result').fill('Amended synthetic outcome');
+    await form.getByLabel('Evidence', { exact: true }).selectOption('reviewed');
+    await form.getByRole('button', { name: 'Add outcome', exact: true }).click();
+    await expect(form.getByLabel('Expected result')).toHaveCount(2);
+    await expect(form.getByLabel('Expected result').first()).toHaveValue('Amended synthetic outcome');
+    await expect(form.getByLabel('Evidence', { exact: true }).first()).toHaveValue('reviewed');
+    await form.getByRole('button', { name: 'Remove outcome', exact: true }).last().click();
+    await expect(form.getByLabel('Clarifications and updated instructions')).toHaveValue('A second explicit requirement.');
     await form.getByRole('button', { name: 'Adopt amendment', exact: true }).click(); await expect(form).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Amended browser task', exact: true })).toBeVisible();
     const current = await get('/records/' + work.id);
     assert.equal(current.data.brief, 'Original synthetic request remains intact.');
     const mandate = await get('/records/' + current.data.mandate.id);
     assert.equal(mandate.data.mandate.outcomes[0].description, 'Amended synthetic outcome');
+    assert.equal(mandate.data.mandate.outcomes[0].evidence, 'reviewed');
     assert.equal((await op('work.amend', { work: work.id, revision: work.revision, title: 'Stale', mandate: mandate.data.mandate }, '', '', false)).state, 'failed');
   });
   await step('an open amendment cannot silently overwrite a concurrent scope change', async () => {
     await page.getByRole('button', { name: 'Amend task', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Amend task', exact: true });
+    await expect(form.getByLabel('Evidence', { exact: true })).toHaveValue('reviewed');
     await form.getByLabel('Expected result').fill('Unsaved draft must not win');
     const current = await get('/records/' + work.id), mandate = await get('/records/' + current.data.mandate.id);
     await op('work.amend', { work: work.id, revision: current.revision, title: current.data.title, mandate: mandate.data.mandate });

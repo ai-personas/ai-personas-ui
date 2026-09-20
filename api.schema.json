@@ -30,6 +30,9 @@
       "model": {
         "$ref": "#/$defs/Model"
       },
+      "inference": {
+        "$ref": "#/$defs/InferenceCatalog"
+      },
       "request": {
         "$ref": "#/$defs/ModelRequest"
       },
@@ -49,6 +52,7 @@
       "action",
       "event",
       "model",
+      "inference",
       "request",
       "response",
       "network"
@@ -4713,6 +4717,57 @@
           "capabilities"
         ]
       },
+      "InferenceCatalog": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Model"
+            }
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ProviderStatus"
+            }
+          },
+          "checked": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "models",
+          "providers",
+          "checked"
+        ]
+      },
+      "ProviderStatus": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "message": {
+            "description": "Access-safe setup guidance; never raw provider output or credentials.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "available",
+          "models",
+          "message"
+        ]
+      },
       "ModelRequest": {
         "type": "object",
         "properties": {
@@ -4999,6 +5054,11 @@
       "GET",
       "/api/deployment",
       "Recorded execution profile and setup capabilities"
+    ],
+    [
+      "GET",
+      "/api/inference?refresh=false",
+      "Cached available models and access-safe provider setup status; explicit refresh performs discovery, never inference"
     ],
     [
       "GET",

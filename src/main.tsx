@@ -1,11 +1,12 @@
 import { render } from 'preact';
-import { lazy, Suspense } from 'preact/compat';
+import { lazy, memo, Suspense } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { connect, data, label, operate, request, token, watch, fileURL, HttpError, type Entity, type Command } from './api';
-import { useDebounced, useRecords, useResource } from './hooks';
+import { useRecords, useResource } from './hooks';
 import { text, isRecordID, recordIDs, workFacts, stateTone } from './workspace';
 import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, type View, type WorkFilter } from './presentation';
 import Icon from './Icon';
+import SearchInput from './SearchInput';
 import './style.css';
 import './workspace.css';
 import './design-system.css';
@@ -140,7 +141,7 @@ function App() {
 function ReadFailure({ title, error, retry, loading }: { title: string; error: string; retry: () => void; loading: boolean }) {
   return <div class="read-failure" role="alert"><div><strong>{title}</strong><p>{error}. Previously displayed records may be stale.</p></div><button class="secondary" disabled={loading} onClick={retry}>Retry</button></div>;
 }
-function WorkRow({ r, open }: { r: Entity; open: (id: string) => void }) {
+const WorkRow = memo(function WorkRow({ r, open }: { r: Entity; open: (id: string) => void }) {
   const d = data(r), f = workFacts(r);
   const people = Array.isArray(d.personas) ? recordIDs(d.personas).length : undefined;
   return <article class="work-row">
@@ -151,21 +152,21 @@ function WorkRow({ r, open }: { r: Entity; open: (id: string) => void }) {
     <div class="work-fact"><span class="field-label">Evidence</span><strong>{f.submissions === undefined ? 'Versions not reported' : `${f.submissions} preserved ${f.submissions === 1 ? 'submission' : 'submissions'}`}</strong><small>Acceptance not established</small></div>
     <button class="text-button work-open" onClick={() => open(r.id)}>Open workspace ↗</button>
   </article>;
-}
+});
 function List({ view, open, openWork, artifact, act, start, navigate }: {
   view: View; open: (id: string) => void; openWork: (id: string) => void; artifact: (id: string) => void; act: Act; start: () => void; navigate: (view: View) => void;
 }) {
   const [failure, setFailure] = useState(''), [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
   const [filter, setFilter] = useState<WorkFilter>('all');
   const search = useRef<HTMLInputElement>(null), meta = VIEW_META[view];
-  const settled = useDebounced(query), cursor = cursors.at(-1)!;
+  const settled = query, cursor = cursors.at(-1)!;
   const { value: page, error, loading, retry } = useRecords(meta.kind, '', '', settled, cursor);
   const busy = loading || settled !== query;
   const rows = (page?.items || []).filter(r => view !== 'Work' || matchesWorkFilter(r.data, filter));
   const clear = () => { setQuery(''); setFilter('all'); setCursors([0]); search.current?.focus(); };
   return <section class="browse-section" aria-label={`${view} records`}>
     <div class="browse-toolbar">{view === 'Work' ? <div class="browse-filters" role="group" aria-label="Filter work on this page">{WORK_FILTERS.map(item => <button key={item.value} class="filter-button" aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}</div> : <h2 class="browse-title">{view === 'Personas' ? 'Continuing individuals' : 'Recorded collection'}</h2>}
-      <div class="search-field"><Icon name="Search"/><input ref={search} type="search" aria-label="Search records" placeholder={`Search ${view.toLowerCase()}…`} value={query} onInput={e => { setCursors([0]); setQuery(e.currentTarget.value); }}/>{query && <button class="clear-search" aria-label="Clear search" onClick={() => { setQuery(''); setCursors([0]); search.current?.focus(); }}>×</button>}</div>
+      <div class="search-field"><Icon name="Search"/><SearchInput inputRef={search} label="Search records" placeholder={`Search ${view.toLowerCase()}…`} value={query} onSearch={q => { setCursors([0]); setQuery(q); }}/></div>
     </div>
     <div class="browse-caption"><span role="status">{busy ? (page ? 'Refreshing records…' : 'Loading records…') : page ? `${rows.length} shown · ${page.items.length} loaded on page ${cursors.length}` : 'Records unavailable'}</span>{view === 'Work' && <span>Filters apply to this page, not all work.</span>}</div>
     {error && <ReadFailure title={`Could not load ${view.toLowerCase()}`} error={error} retry={retry} loading={loading}/>}{failure && <p role="alert">{failure}</p>}

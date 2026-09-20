@@ -23,6 +23,7 @@ Default loopback listeners allow the same-origin local operator workspace withou
 | GET | `/api/network` | Current node and connected peers |
 | GET | `/api/resources/{id}` | Current allowance, usage, reservations and uncertain exposure; no model call |
 | GET | `/api/deployment` | Recorded execution profile and setup capabilities |
+| GET | `/api/inference?refresh=false` | Cached available models and access-safe provider setup status; explicit refresh performs discovery, never inference |
 | GET | `/api/curricula` | Optional ordinary starter environment briefs |
 | GET | `/api/contract` | Generated operation, type and route contract |
 | GET | `/api/release` | Matching runtime, design and UI revisions |

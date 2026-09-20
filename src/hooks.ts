@@ -2,11 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { changes, request, type Entity, type Page } from './api';
 import { matchesRecords } from './workspace';
 
-export function useDebounced<T>(value: T, delay = 250): T {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => { const timer = setTimeout(() => setSettled(value), delay); return () => clearTimeout(timer); }, [value, delay]);
-  return settled;
-}
 export function useResource<T>(path: string, relevant: (event: any) => boolean = () => true) {
   const relevance = useRef(relevant); relevance.current = relevant;
   const [attempt, setAttempt] = useState(0);
@@ -34,7 +29,7 @@ export function useResource<T>(path: string, relevant: (event: any) => boolean =
     const onChange = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (!detail || relevance.current(detail)) {
-        setState(s => ({ ...s, loading: true }));
+        setState(s => s.loading ? s : { ...s, loading: true });
         if (!timer) timer = setTimeout(() => { timer = undefined; void load(); }, 180);
       }
     };

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { data, label, request, type Entity, type Model } from './api';
 import { useRecords, useResource } from './hooks';
 import { Pagination, type Act } from './main';
 import Dialog from './Dialog';
 import './operator.css';
+import { modelKey, ModelStatus, useModels } from './Models';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -33,31 +34,65 @@ function NumberField({ name, title, value, min = 0 }: { name: string; title: str
   return <label>{title}<input name={name} type="number" min={min} step="1" required defaultValue={value}/></label>;
 }
 function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; initial?: Entity }) {
-  const [root, setRoot] = useState(initial), [models, setModels] = useState<Model[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  useEffect(() => { const c = new AbortController(); request<Model[]>('/models', { signal: c.signal }).then(setModels).catch(e => !c.signal.aborted && setError(e.message)); return () => c.abort(); }, []);
+  const [root, setRoot] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const errorNotice = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
+  const modelState = useModels(), models = modelState.models;
+  const [selected, setSelected] = useState(''), [included, setIncluded] = useState(false);
+  useEffect(() => { if (!selected && models.length) setSelected(modelKey(models[0])); }, [models, selected]);
+  const model = models.find(m => modelKey(m) === selected);
+  const subscription = !!model?.capabilities && (model!.capabilities as any).billing === 'chatgpt_subscription';
+  const noTokenCharge = subscription && included;
   const d = root ? data(root) : {};
-  return <Dialog label="Create funding allowance" close={close}><form class="operator-form" onSubmit={async e => {
+  const [expires] = useState(() => {
+    const date = new Date(Date.now() + 7 * 86400000);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  });
+  return <Dialog label="Create funding allowance" close={close}><form class="operator-form allowance-form" onInvalidCapture={e => {
+    const details = (e.target as HTMLElement).closest('details'); if (details) details.open = true;
+  }} onSubmit={async e => {
     e.preventDefault(); if (busy) return; const f = new FormData(e.currentTarget); setBusy(true); setError('');
     try {
-      const model = models[Number(f.get('model'))]; if (!model) throw new Error('Configure an inference provider before creating its funding policy.');
-      const reason = String(f.get('reason'));
-      let retained = root;
-      if (!retained) {
-        const a = await act('resource.root.create', { limits: { calls: integer(f, 'calls'), births: integer(f, 'births'), max_depth: integer(f, 'max_depth'), concurrent_calls: integer(f, 'concurrent_calls') }, closeout_calls: integer(f, 'closeout_calls'), reason });
-        retained = a.result as Entity; setRoot(retained);
-      }
-      await act('resource.bounds.configure', { root: retained.id, revision: retained.revision, bounds: {
+      if (!model) throw new Error('Choose an available model before creating its funding policy.');
+      const reason = String(f.get('reason')).trim();
+      const bounds = {
         expires: new Date(String(f.get('expires'))).toISOString(), tokens: integer(f, 'tokens'), closeout_tokens: integer(f, 'closeout_tokens'),
-        cost_units: units(f, 'cost'), closeout_cost_units: units(f, 'closeout_cost'), currency: String(f.get('currency')),
-        prices: [{ provider: model.provider, model: model.id, input_units_per_million: units(f, 'input_price'), output_units_per_million: units(f, 'output_price'), evidence: String(f.get('price_evidence')) }],
+        cost_units: noTokenCharge ? 0 : units(f, 'cost'), closeout_cost_units: noTokenCharge ? 0 : units(f, 'closeout_cost'), currency: String(f.get('currency')),
+        prices: [{ provider: model.provider, model: model.id, input_units_per_million: noTokenCharge ? 0 : units(f, 'input_price'), output_units_per_million: noTokenCharge ? 0 : units(f, 'output_price'),
+          evidence: noTokenCharge ? `Operator chose included Codex subscription usage with zero marginal token charge on ${new Date().toISOString().slice(0, 10)}. Plan limits still apply.` : String(f.get('price_evidence')).trim() }],
         remote_calls: integer(f, 'remote_calls'), retained_payload_bytes: integer(f, 'retained_payload_bytes'), cpu_seconds: integer(f, 'cpu_seconds'),
         effect_operations: integer(f, 'effect_operations'), concurrent_memory_bytes: integer(f, 'concurrent_memory_bytes'), births_per_window: integer(f, 'births_per_window'), birth_window_seconds: integer(f, 'birth_window_seconds'), reason,
-      } }); close();
+      };
+      if (!reason) throw new Error('Enter a purpose for this allowance.');
+      if (Date.parse(bounds.expires) <= Date.now()) throw new Error('Choose an expiry in the future.');
+      if (bounds.closeout_tokens > bounds.tokens || bounds.closeout_cost_units > bounds.cost_units) throw new Error('The finishing reserve must fit within the total allowance.');
+      let retained = root;
+      if (!retained) {
+        const limits = { calls: integer(f, 'calls'), births: integer(f, 'births'), max_depth: integer(f, 'max_depth'), concurrent_calls: integer(f, 'concurrent_calls') };
+        const closeout_calls = integer(f, 'closeout_calls');
+        if (closeout_calls >= limits.calls) throw new Error('Reserve fewer finishing calls than the total, leaving calls for production.');
+        const a = await act('resource.root.create', { limits, closeout_calls, reason });
+        retained = a.result as Entity; setRoot(retained);
+      }
+      await act('resource.bounds.configure', { root: retained.id, revision: retained.revision, bounds }); close();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }}><header><h2>{root ? 'Configure allowance limits' : 'Create funding allowance'}</h2><button type="button" class="quiet" onClick={close}>Close form</button></header>
-    <p>Authorize a finite amount of model activity. Your provider bills actual usage; this does not transfer money.</p>
-    {error && <p role="alert">{error}</p>}{root && <p role="status">Allowance retained. Complete its limits before using it.</p>}
-    <label>Purpose<input name="reason" required defaultValue={d.reason || ''}/></label>
+  }}><header><div><p class="eyebrow">FUNDING</p><h2>{root ? 'Configure allowance limits' : 'Create funding allowance'}</h2></div><button type="button" class="quiet" onClick={close}>Close form</button></header>
+    <div class="form-body"><p class="form-intro">Set a shared allowance for personas and tasks. These are spending and usage limits; creating an allowance does not transfer money.</p>
+    {error && <p ref={errorNotice} role="alert">{error}</p>}{root && <p role="status">Allowance retained. Complete its limits before using it.</p>}
+    <label>Purpose<input name="reason" required defaultValue={d.reason || ''} placeholder="For example, research for my next project"/></label>
+    <fieldset><legend>Model and cost policy</legend>
+      <label>Price policy for model<select name="model" required value={selected} disabled={modelState.loading || !models.length} onChange={e => { setSelected(e.currentTarget.value); setIncluded(false); }}>
+        {!model && <option value={selected}>{selected ? 'Selected model unavailable — choose another' : 'Choose an available model'}</option>}
+        {models.map(m => <option value={modelKey(m)} key={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select></label>
+      <ModelStatus {...modelState}/>
+      {subscription && <label class="check"><input type="checkbox" checked={included} onChange={e => setIncluded(e.currentTarget.checked)}/>Use included subscription usage, with no per-token charge</label>}
+      {noTokenCharge && <p class="provider-notice">Your Codex ChatGPT plan limits still apply. This records your choice of zero marginal token cost; calls and tokens remain limited. It does not purchase credits.</p>}
+      <div hidden={noTokenCharge}><div class="operator-grid"><label>Currency<input name="currency" required defaultValue="USD"/></label><label>Total budget<input type="number" name="cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="10"/></label>
+        <label>Budget reserved for finishing<input type="number" name="closeout_cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="2"/></label>
+        <label>Input price per million tokens<input type="number" name="input_price" min="0" step="0.000001" required disabled={noTokenCharge}/></label>
+        <label>Output price per million tokens<input type="number" name="output_price" min="0" step="0.000001" required disabled={noTokenCharge}/></label></div>
+      <label>Price source and date<input name="price_evidence" required disabled={noTokenCharge} placeholder="Provider price page or local cost policy"/></label></div>
+    </fieldset>
     <fieldset disabled={!!root}><legend>Calls and personas</legend><div class="operator-grid">
       <NumberField name="calls" title="Total model calls" value={d.limits?.calls ?? 100} min={1}/>
       <NumberField name="closeout_calls" title="Calls reserved for review and finishing" value={d.closeout_calls ?? 20}/>
@@ -65,20 +100,16 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
       <NumberField name="max_depth" title="Maximum descendant depth" value={d.limits?.max_depth ?? 1}/>
       <NumberField name="concurrent_calls" title="Concurrent calls" value={d.limits?.concurrent_calls ?? 2} min={1}/>
     </div></fieldset>
-    <label>Price policy for model<select name="model" required>{models.map((m, i) => <option value={i} key={m.provider + m.id}>{m.provider} / {m.name || m.id}</option>)}</select></label>
-    {!models.length && <p class="notice">No models are configured. Supply an HTTP provider configuration when starting the node; see the README setup instructions.</p>}
-    <div class="operator-grid"><label>Currency<input name="currency" required defaultValue="USD"/></label><label>Total budget<input type="number" name="cost" min="0" step="0.000001" required defaultValue="10"/></label>
-      <label>Budget reserved for finishing<input type="number" name="closeout_cost" min="0" step="0.000001" required defaultValue="2"/></label>
-      <label>Input price per million tokens<input type="number" name="input_price" min="0" step="0.000001" required/></label>
-      <label>Output price per million tokens<input type="number" name="output_price" min="0" step="0.000001" required/></label></div>
-    <label>Price source and date<input name="price_evidence" required placeholder="Provider price page or local model cost policy"/></label>
-    <label>Allowance expires<input type="datetime-local" name="expires" required defaultValue={new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16)}/></label>
-    <details><summary>Token and execution limits</summary><p>Review these finite limits before creating the allowance. A funding policy grants no permission for host or external effects.</p><div class="operator-grid">
-      <NumberField name="tokens" title="Total tokens" value={1_000_000}/><NumberField name="closeout_tokens" title="Tokens reserved for finishing" value={200_000}/>
+    <fieldset><legend>Tokens and expiry</legend><div class="operator-grid">
+      <NumberField name="tokens" title="Total tokens" value={5_000_000}/><NumberField name="closeout_tokens" title="Tokens reserved for finishing" value={1_000_000}/>
+    </div>{subscription && <p class="micro">Codex reserves a full model context window for output before each call, plus input. Measured usage settles the reservation; interrupted calls remain accounted for.</p>}
+      <label>Allowance expires<input type="datetime-local" name="expires" required defaultValue={expires}/></label>
+    </fieldset>
+    <details><summary>Execution and growth limits</summary><p class="micro">Funding grants no permission for host or external effects.</p><div class="operator-grid">
       <NumberField name="remote_calls" title="Maximum remote calls" value={100} min={1}/><NumberField name="retained_payload_bytes" title="Retained payload bytes" value={268435456}/>
       <NumberField name="cpu_seconds" title="Execution CPU seconds" value={600}/><NumberField name="concurrent_memory_bytes" title="Concurrent execution memory bytes" value={268435456}/>
       <NumberField name="effect_operations" title="External effect operations" value={0}/><NumberField name="births_per_window" title="New personas per rate window" value={4} min={1}/><NumberField name="birth_window_seconds" title="Rate window seconds" value={3600} min={1}/>
-    </div></details><button disabled={busy || !models.length}>{busy ? 'Saving…' : root ? 'Save limits' : 'Create allowance'}</button>
+    </div></details></div><footer class="form-actions"><p class="micro">Limits are shared by every task and persona using this allowance.</p><button disabled={busy || !model || modelState.loading}>{busy ? 'Saving…' : root ? 'Save limits' : 'Create allowance'}</button></footer>
   </form></Dialog>;
 }
 
@@ -127,31 +158,44 @@ export function WorkState({ value, open }: { value: any; open: (id: string) => v
     </>}
   </section>;
 }
+function editedMandate(mandate: any, form: FormData) {
+  const lines = (name: string) => String(form.get(name) || '').split('\n').map(s => s.trim()).filter(Boolean);
+  return { ...mandate,
+    ...Object.fromEntries(['clarifications', 'constraints', 'preferences', 'unresolved_inputs'].map(key => [key, lines(key)])),
+    completion_agreement: String(form.get('completion_agreement') || ''),
+    non_contributor_review: form.has('non_contributor_review'), scope_coverage_review_required: form.has('scope_coverage_review_required'),
+    outcomes: mandate.outcomes.map((o: any) => ({ ...o,
+      ...Object.fromEntries(['description', 'criterion', 'evidence'].map(key => [key, String(form.get(`outcome.${o.key}.${key}`) || '')])),
+      ...Object.fromEntries(['required', 'conditional_allowed', 'outside_validation_required'].map(key => [key, form.has(`outcome.${o.key}.${key}`)])),
+    })),
+  };
+}
 function Amend({ work, act, close }: { work: Entity; act: Act; close: () => void }) {
   // Keep the edited mandate and its revision from the same opening snapshot.
   // An event refresh must not silently bless an old form with a newer revision.
   const [base] = useState(work);
+  const form = useRef<HTMLFormElement>(null);
   const [mandate, setMandate] = useState<any>(), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   useEffect(() => { const c = new AbortController(), ref = data(base).mandate?.id;
     if (ref) request<Entity>('/records/' + ref, { signal: c.signal }).then(r => setMandate(data(r).mandate)).catch(e => !c.signal.aborted && setError(e.message));
     else setMandate(initialMandate(data(base).brief || '', 'Meets the request and stated constraints'));
     return () => c.abort();
   }, [base.id]);
-  return <Dialog label="Amend task" close={close}><form class="operator-form" onSubmit={async e => { e.preventDefault(); if (busy || !mandate) return; const f = new FormData(e.currentTarget); setBusy(true); setError('');
-    try { await act('work.amend', { work: base.id, revision: base.revision, title: String(f.get('title')), mandate: { ...mandate, ...Object.fromEntries(['clarifications', 'constraints', 'preferences', 'unresolved_inputs'].map(k => [k, (mandate[k] || []).map((x: string) => x.trim()).filter(Boolean)])) } }); close(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  return <Dialog label="Amend task" close={close}><form class="operator-form" ref={form} onSubmit={async e => { e.preventDefault(); if (busy || !mandate) return; const f = new FormData(e.currentTarget); setBusy(true); setError('');
+    try { await act('work.amend', { work: base.id, revision: base.revision, title: String(f.get('title')), mandate: editedMandate(mandate, f) }); close(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }}><header><h2>Amend task</h2><button type="button" class="quiet" onClick={close}>Close form</button></header><p>Adopt a new scope. The original request and earlier decisions remain in history.</p>
     {error && <p role="alert">{error}</p>}{work.revision !== base.revision && <p role="alert">This task changed while you were editing. Close and reopen the form to review the current scope.</p>}<label>Title<input name="title" required defaultValue={data(base).title}/></label>
-    {mandate && <><label>Clarifications and updated instructions<textarea rows={4} value={mandate.clarifications.join('\n')} onInput={e => setMandate({ ...mandate, clarifications: e.currentTarget.value.split('\n') })}/></label>
+    {mandate && <><label>Clarifications and updated instructions<textarea rows={4} name="clarifications" defaultValue={mandate.clarifications.join('\n')}/></label>
       {mandate.outcomes.map((o: any, index: number) => <fieldset key={o.key}><legend>Outcome {index + 1}</legend>
-        <label>Expected result<textarea required value={o.description} onInput={e => setMandate({ ...mandate, outcomes: mandate.outcomes.map((x: any, i: number) => i === index ? { ...x, description: e.currentTarget.value } : x) })}/></label>
-        <label>Acceptance criterion<input required value={o.criterion} onInput={e => setMandate({ ...mandate, outcomes: mandate.outcomes.map((x: any, i: number) => i === index ? { ...x, criterion: e.currentTarget.value } : x) })}/></label>
-        <label>Evidence<select value={o.evidence} onChange={e => setMandate({ ...mandate, outcomes: mandate.outcomes.map((x: any, i: number) => i === index ? { ...x, evidence: e.currentTarget.value } : x) })}><option value="user_judgment">User judgment</option><option value="reviewed">Reviewed evidence</option></select></label>
-        {(['required', 'conditional_allowed', 'outside_validation_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" checked={o[key]} onChange={e => setMandate({ ...mandate, outcomes: mandate.outcomes.map((x: any, i: number) => i === index ? { ...x, [key]: e.currentTarget.checked } : x) })}/>{key.replaceAll('_', ' ')}</label>)}
-        <button type="button" class="quiet" disabled={mandate.outcomes.length <= 1} onClick={() => setMandate({ ...mandate, outcomes: mandate.outcomes.filter((_: any, i: number) => i !== index) })}>Remove outcome</button>
-      </fieldset>)}<button type="button" class="secondary" onClick={() => setMandate({ ...mandate, outcomes: [...mandate.outcomes, { ...initialMandate('', '').outcomes[0], key: crypto.randomUUID() }] })}>Add outcome</button>
-      {(['constraints', 'preferences', 'unresolved_inputs'] as const).map(key => <label key={key}>{key.replaceAll('_', ' ')}<textarea value={mandate[key].join('\n')} onInput={e => setMandate({ ...mandate, [key]: e.currentTarget.value.split('\n') })}/></label>)}
-      <label>Completion agreement<input required value={mandate.completion_agreement} onInput={e => setMandate({ ...mandate, completion_agreement: e.currentTarget.value })}/></label>
-      {(['non_contributor_review', 'scope_coverage_review_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" checked={mandate[key]} onChange={e => setMandate({ ...mandate, [key]: e.currentTarget.checked })}/>{key.replaceAll('_', ' ')}</label>)}
+        <label>Expected result<textarea required name={`outcome.${o.key}.description`} defaultValue={o.description}/></label>
+        <label>Acceptance criterion<input required name={`outcome.${o.key}.criterion`} defaultValue={o.criterion}/></label>
+        <label>Evidence<select aria-label="Evidence" name={`outcome.${o.key}.evidence`} defaultValue={o.evidence}><option value="user_judgment">User judgment</option><option value="reviewed">Reviewed evidence</option></select></label>
+        {(['required', 'conditional_allowed', 'outside_validation_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" name={`outcome.${o.key}.${key}`} defaultChecked={o[key]}/>{key.replaceAll('_', ' ')}</label>)}
+        <button type="button" class="quiet" disabled={mandate.outcomes.length <= 1} onClick={() => { const current = editedMandate(mandate, new FormData(form.current!)); setMandate({ ...current, outcomes: current.outcomes.filter((_: any, i: number) => i !== index) }); }}>Remove outcome</button>
+      </fieldset>)}<button type="button" class="secondary" onClick={() => { const current = editedMandate(mandate, new FormData(form.current!)); setMandate({ ...current, outcomes: [...current.outcomes, { ...initialMandate('', '').outcomes[0], key: crypto.randomUUID() }] }); }}>Add outcome</button>
+      {(['constraints', 'preferences', 'unresolved_inputs'] as const).map(key => <label key={key}>{key.replaceAll('_', ' ')}<textarea name={key} defaultValue={mandate[key].join('\n')}/></label>)}
+      <label>Completion agreement<input required name="completion_agreement" defaultValue={mandate.completion_agreement}/></label>
+      {(['non_contributor_review', 'scope_coverage_review_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" name={key} defaultChecked={mandate[key]}/>{key.replaceAll('_', ' ')}</label>)}
     </>}<button disabled={busy || !mandate || work.revision !== base.revision}>{busy ? 'Saving…' : 'Adopt amendment'}</button></form></Dialog>;
 }
 

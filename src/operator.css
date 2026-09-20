@@ -1,14 +1,31 @@
 .operator-controls { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--border, #d8dfda); border-radius: 12px; }
 .operator-controls .button-row { display: flex; flex-wrap: wrap; gap: .6rem; }
-.operator-form { width: min(720px, 92vw); padding: 1.5rem; max-height: 88vh; overflow: auto; }
+.operator-form { width: min(760px, 100%); min-width: 0; padding: 1.5rem; max-height: calc(100dvh - 40px); overflow: auto; overscroll-behavior: contain; background: var(--paper, #fff); color: var(--ink, #263e34); border: 1px solid var(--line, #dbe3d6); border-radius: 16px; box-shadow: 0 24px 80px #10251c33; }
 .operator-form header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .operator-form label, .operator-controls form label, .retention-control label { display: grid; gap: .35rem; margin: .8rem 0; }
 .operator-form .check, .retention-control .check { display: flex; gap: .5rem; align-items: center; }
 .operator-form input:not([type=checkbox]), .operator-form select, .operator-form textarea { width: 100%; box-sizing: border-box; }
 .operator-form fieldset { margin: 1rem 0; padding: 1rem; border: 1px solid #d8dfda; border-radius: 8px; }
 .operator-form details { margin: 1rem 0; }
-.operator-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem 1rem; }
+.operator-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem 1rem; align-items: end; }
+.operator-grid > * { min-width: 0; }
+.operator-form fieldset { min-width: 0; border-color: var(--line, #dbe3d6); }
+.operator-form legend { padding: 0 .4rem; font-weight: 650; }
+.operator-form small { display: block; line-height: 1.5; }
+.allowance-form { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.allowance-form > header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.allowance-form > header h2 { margin: 0; }
+.allowance-form > header .eyebrow { margin-bottom: .35rem; }
+.allowance-form .form-body { padding: .25rem 1.5rem 1rem; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.allowance-form .form-intro { margin: 1rem 0; color: var(--muted); }
+.form-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid var(--line); background: var(--paper); flex: 0 0 auto; }
+.form-actions p { margin: 0; max-width: 36ch; }
+.form-actions button { flex-shrink: 0; }
+.model-status { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin: .5rem 0 1rem; }
+.model-status p { margin: 0; }
+.model-status button { flex-shrink: 0; }
+.provider-notice { padding: .75rem 1rem; background: var(--tint); border-radius: 8px; font-size: .85rem; }
 .operator-card { padding: 1.25rem; border: 1px solid #d8dfda; border-radius: 12px; margin: 1rem 0; }
 .operator-card pre, .operator-controls pre { max-width: 100%; overflow: auto; }
 .retention-control { margin: 1.5rem 0; border-top: 1px solid #d8dfda; padding-top: .75rem; }
-@media (max-width: 540px) { .operator-form { width: 100%; padding: 1rem; } .operator-grid { grid-template-columns: 1fr; } }
+@media (max-width: 540px) { .operator-form { width: 100%; padding: 1rem; max-height: calc(100dvh - 24px); } .operator-grid { grid-template-columns: 1fr; } .allowance-form { padding: 0; } .allowance-form > header, .allowance-form .form-body, .form-actions { padding: 1rem; } .form-actions { align-items: stretch; flex-direction: column; gap: .5rem; } .form-actions p { max-width: none; } .model-status { flex-wrap: wrap; gap: .25rem; } }

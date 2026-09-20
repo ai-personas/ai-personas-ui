@@ -19,6 +19,11 @@ works in a built release. See the runtime's
 [setup guide](https://github.com/ai-personas/ai-personas/blob/rewrite/design-first/docs/SETUP.md)
 for supported hosts and inference configuration.
 
+If Codex CLI is installed and signed in on the node host, the default startup
+uses that login and lists its visible models. Funding and persona forms show
+connection status and a **Refresh models** control. No OAuth token is copied
+into the browser. Explicit HTTP provider configurations are also supported.
+
 ## In the workspace
 
 - **Funding:** authorize finite calls, tokens, cost, and persona creation. Prices
@@ -46,10 +51,14 @@ npm run build
 npm test
 npx playwright install chromium
 npm run test:workspace
+npm run test:forms
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
 ```
 
-`test:workspace` uses synthetic HTTP records. `test:operator` starts a real,
+`test:workspace` uses synthetic HTTP records. `test:forms` checks the production
+bundle at desktop/mobile sizes, including typing under CPU throttling and SSE
+activity, model refresh, draft retention, and explicit subscription accounting.
+Its provider and records are synthetic. `test:operator` starts a real,
 restricted Rust node and a synthetic HTTP inference provider, then exercises the
 production UI. It makes no paid model calls and writes evidence to a temporary
 directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. These checks do not

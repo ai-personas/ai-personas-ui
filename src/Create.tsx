@@ -1,27 +1,32 @@
 import { useEffect, useState } from 'preact/hooks';
-import { data, label, request, type Model } from './api';
-import { useDebounced, useRecords, useResource } from './hooks';
+import { data, label } from './api';
+import { useRecords, useResource } from './hooks';
 import { FundingChoice, initialMandate } from './Operator';
 import { Pagination, type Act } from './main';
 import Dialog from './Dialog';
+import SearchInput from './SearchInput';
+import { modelKey, ModelStatus, useModels } from './Models';
 export function Pick({ kind, multiple, value, onChange }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void }) {
   const [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
-  const settled = useDebounced(query);
+  const settled = query;
   const { value: page, error } = useRecords(kind, '', '', settled, cursors.at(-1));
-  return <fieldset><legend>{kind === 'persona' ? 'Choose personas' : 'Choose an environment'}</legend><input type="search" aria-label={'Find ' + kind} value={query} onInput={e => { setQuery(e.currentTarget.value); setCursors([0]); }} placeholder="Search…"/>
+  return <fieldset><legend>{kind === 'persona' ? 'Choose personas' : 'Choose an environment'}</legend><div class="search-field"><SearchInput label={'Find ' + kind} value={query} onSearch={q => { setQuery(q); setCursors([0]); }} placeholder="Search…"/></div>
     {error && <p role="alert">{error}</p>}{page?.items.map(r => <label key={r.id} class="check"><input type={multiple ? 'checkbox' : 'radio'} checked={value.includes(r.id)} onChange={() => onChange(multiple ? value.includes(r.id) ? value.filter(id => id !== r.id) : [...value, r.id] : [r.id])}/>{label(r)}{kind === 'persona' && <small>{data(r).model}</small>}</label>)}
     <Pagination previous={cursors.length > 1} next={page?.next} onPrevious={() => setCursors(cursors.slice(0, -1))} onNext={() => { if (page?.next != null) setCursors([...cursors, page.next]); }}/></fieldset>;
 }
 export default function Create({ kind, brief, close, act }: { kind: string; brief: string; close: () => void; act: Act }) {
   const [root, setRoot] = useState('');
   const { value: deployment } = useResource<{ funding_required: boolean }>('/deployment', () => false);
-  const [models, setModels] = useState<Model[]>([]), [people, setPeople] = useState<string[]>([]), [env, setEnv] = useState<string[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  useEffect(() => { if (kind !== 'Personas') return; const c = new AbortController(); request<Model[]>('/models', { signal: c.signal }).then(setModels).catch(e => { if (!c.signal.aborted) setError(e.message); }); return () => c.abort(); }, [kind]);
+  const modelState = useModels(kind === 'Personas'), models = modelState.models;
+  const [selectedModel, setSelectedModel] = useState('');
+  useEffect(() => { if (!selectedModel && models.length) setSelectedModel(modelKey(models[0])); }, [models, selectedModel]);
+  const availableModel = models.find(m => modelKey(m) === selectedModel);
+  const [people, setPeople] = useState<string[]>([]), [env, setEnv] = useState<string[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function save(form: HTMLFormElement) {
     if (busy) return; setBusy(true); setError('');
     try {
       const f = new FormData(form);
-      if (kind === 'Personas') { const model = models[Number(f.get('model'))]; if (!model) throw new Error('Choose an available model.'); await act('persona.create', { provider: model.provider, model: model.id, ...(root ? { resource_root: root } : {}) }); }
+      if (kind === 'Personas') { const model = models.find(m => modelKey(m) === f.get('model')); if (!model) throw new Error('Choose an available model.'); await act('persona.create', { provider: model.provider, model: model.id, ...(root ? { resource_root: root } : {}) }); }
       else if (kind === 'Environments') await act('environment.create', {});
       else if (kind === 'Network') {
         const descriptor = String(f.get('descriptor')).trim();
@@ -38,11 +43,11 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <Dialog label="Create" close={close}><form class="create-panel" onSubmit={e => { e.preventDefault(); void save(e.currentTarget); }}><header><h2>{kind === 'Network' ? 'Connect or receive' : 'Create ' + kind.toLowerCase()}</h2><button type="button" class="quiet" onClick={close}>Close form</button></header>{error && <p role="alert">{error}</p>}
-    {kind === 'Personas' ? <><label>Starting model<select name="model" required>{models.map((m, i) => <option key={m.provider + m.id} value={i}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label><p>A founder receives a bounded initialization allowance and authors its own character. Creating it does not assign it a task.</p>{!models.length && <p class="notice">No models are configured. Follow the provider setup in the README, restart the node, then return here.</p>}</>
+    {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)} disabled={modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label><p>A founder receives a bounded initialization allowance and authors its own character. Creating it does not assign it a task.</p><ModelStatus {...modelState}/></>
       : kind === 'Environments' ? <p>The personas will author this environment’s name, details and image.</p>
       : kind === 'Network' ? <><label>Peer address<input name="address" placeholder="/ip4/…/tcp/…/p2p/…"/></label><label>Or shared artifact details<textarea name="descriptor" rows={5}/></label><p>Both nodes must trust one another to exchange artifacts. Receiving bytes does not grant execution authority.</p></>
       : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
     {['Personas', 'Work'].includes(kind) && <FundingChoice value={root} onChange={setRoot} required={deployment?.funding_required !== false}/>}
-    <button disabled={busy || kind === 'Personas' && !models.length}>{busy ? 'Saving…' : 'Create'}</button>
+    <button disabled={busy || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
   </form></Dialog>;
 }

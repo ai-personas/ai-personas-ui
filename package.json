@@ -11,7 +11,8 @@
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:browser": "node tests/browser.mjs",
     "test:live": "node tests/live.mjs",
-    "test:operator": "node tests/operator.browser.mjs"
+    "test:operator": "node tests/operator.browser.mjs",
+    "test:forms": "node tests/forms.browser.mjs"
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",
