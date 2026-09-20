@@ -27,11 +27,14 @@ into the browser. Explicit HTTP provider configurations are also supported.
 ## In the workspace
 
 - **Funding:** authorize finite calls, tokens, cost, and persona creation. Prices
-  are explicit inputs; an allowance does not transfer money or grant execution rights.
+  are explicit inputs. Edit an existing allowance to change its limits, expiry,
+  and model prices without resetting spending or reservations.
 - **Work:** create a funded task, amend its scope, message participants, inspect
   missing owners and evidence, or archive it. Original instructions remain in history.
 - **Personas and requests:** send messages, inspect decisions, pause or resume
-  participation, and answer requests with observations or attachments.
+  participation, and answer requests with observations or attachments. Message
+  receipts distinguish delivery, model inclusion, and acknowledgment, and show
+  current blockers with links to activity and funding.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 
@@ -39,6 +42,11 @@ The production Preact application uses the Rust API at the same address. Local
 access needs no browser secret; nonlocal nodes and explicit token mode still
 authenticate. Invitations, accepted responsibilities, historical reviews, and
 current acceptance remain distinct.
+
+When production capacity runs out, use **Work → Funding → Edit allowance**.
+Finishing reserves remain separate. Saving a shared allowance can let waiting
+participants continue; paused and cancelled work stays stopped. An allowance
+does not transfer money or grant execution rights.
 
 ## Develop
 

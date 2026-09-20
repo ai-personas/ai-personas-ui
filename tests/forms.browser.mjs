@@ -27,12 +27,19 @@ const server = createServer(async (req, res) => {
     const kind = u.searchParams.get('kind');
     return json({ items: kind === 'resource_root' ? roots : kind === 'work' ? Array.from({ length: 24 }, (_, i) => record(i + 100, 'work', { title: 'Fixture work ' + i, brief: 'Retained context '.repeat(100), personas: [], status: 'active' })) : [], sequence, next: null });
   }
-  if (u.pathname.startsWith('/api/resources/')) return json({ calls: { production_remaining: 80, closeout_remaining: 20, uncertain: 0 } });
+  if (u.pathname.startsWith('/api/resources/')) {
+    const root = roots.find(r => r.id === u.pathname.split('/').at(-1));
+    return json({ status: 'active', limits: root?.data.limits, exposure: { bounds: root?.data.bounds }, calls: { production_remaining: 80, closeout_remaining: 20, uncertain: 0 } });
+  }
+  if (u.pathname.startsWith('/api/records/')) return json(roots.find(r => r.id === u.pathname.split('/').at(-1)));
   if (u.pathname === '/api/operations') {
     let body = ''; for await (const chunk of req) body += chunk;
     const op = JSON.parse(body); writes.push(op);
-    const root = record(roots.length + 1, 'resource_root', { status: 'active', reason: op.args.reason, limits: op.args.limits, bounds_configured: true });
+    const root = op.kind === 'resource.root.create'
+      ? record(roots.length + 1, 'resource_root', { status: 'active', reason: op.args.reason, limits: op.args.limits, closeout_calls: op.args.closeout_calls, bounds_configured: true })
+      : roots.find(r => r.id === op.args.root);
     if (op.kind === 'resource.root.create') roots.push(root);
+    else if (root) { root.revision++; root.data.bounds = op.args.bounds; if (op.kind === 'resource.root.amend') { root.data.limits = op.args.limits; root.data.closeout_calls = op.args.closeout_calls; } }
     return json({ request: op, state: 'succeeded', result: root });
   }
   if (u.pathname.startsWith('/api/')) return json({ items: [], next: null, sequence });
@@ -116,6 +123,43 @@ try {
       await form.getByRole('button', { name: 'Refresh models' }).click(); await expect(form).toContainText('2 available models');
       await page.keyboard.press('Escape'); await expect(form).toHaveCount(0); await expect(page.getByRole('button', { name: 'New allowance' })).toBeFocused();
       assert.deepEqual(errors, []);
+    });
+    await step(`${viewport.width}: editing funding preserves drafts while adding an explicitly priced model`, async () => {
+      await expect(page.getByRole('button', { name: 'Edit allowance', exact: true })).toHaveCount(roots.length);
+      await page.getByRole('button', { name: 'Edit allowance', exact: true }).last().click();
+      const editor = page.getByRole('dialog', { name: 'Edit funding allowance' });
+      await expect(editor).toContainText('2 available models');
+      await expect(editor.getByRole('button', { name: 'Save funding changes' })).toBeInViewport();
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      const cdp = await page.context().newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.evaluate(() => { window.frames = []; });
+      const input = editor.getByLabel('Reason for funding change'), text = 'A deliberate allowance edit with responsive typing and preserved accounting. '.repeat(2);
+      const discoveryReads = reads.filter(path => path.startsWith('/api/inference')).length;
+      const timer = setInterval(emit, 20);
+      try { await input.pressSequentially(text, { delay: 10 }); } finally { clearInterval(timer); }
+      await expect(input).toHaveValue(text);
+      await page.waitForTimeout(100);
+      const timing = await page.evaluate(() => { const samples = window.frames.sort((a,b) => a-b); return { count: samples.length, p95: samples[Math.floor(samples.length * .95)] }; });
+      console.log(JSON.stringify({ viewport: viewport.width, form: 'edit', cpuSlowdown: 4, timing }));
+      assert(timing.count >= text.length && timing.p95 < 100);
+      assert.equal(reads.filter(path => path.startsWith('/api/inference')).length, discoveryReads);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+      await editor.getByLabel('Total model calls', { exact: true }).fill('125');
+      await editor.getByLabel('Input price per million tokens — alpha', { exact: true }).fill('0.5');
+      await editor.getByLabel('Add price policy for model').selectOption(JSON.stringify(['codex', 'beta']));
+      await editor.getByLabel('Use included subscription usage for this model', { exact: true }).check();
+      await editor.getByRole('button', { name: 'Add model policy', exact: true }).click();
+      await expect(editor.getByLabel('Input price per million tokens — alpha', { exact: true })).toHaveValue('0.5');
+      await expect(input).toHaveValue(text);
+      await editor.getByLabel('Total budget (USD)', { exact: true }).fill('1');
+      await editor.getByRole('button', { name: 'Save funding changes' }).click(); await expect(editor).toHaveCount(0);
+      const amendment = writes.at(-1); assert.equal(amendment.kind, 'resource.root.amend');
+      assert.equal(amendment.args.limits.calls, 125);
+      assert.equal(amendment.args.bounds.prices[0].input_units_per_million, 500000);
+      assert.equal(amendment.args.bounds.prices[1].model, 'beta');
+      assert.equal(amendment.args.bounds.prices[1].input_units_per_million, 0);
+      assert.match(amendment.args.bounds.prices[1].evidence, /Operator chose included/);
+      assert.equal(amendment.args.reason, text.trim()); assert.deepEqual(errors, []);
     });
     await page.close();
   }

@@ -22,6 +22,8 @@ Default loopback listeners allow the same-origin local operator workspace withou
 | GET | `/api/models` | Provider-advertised models and capabilities |
 | GET | `/api/network` | Current node and connected peers |
 | GET | `/api/resources/{id}` | Current allowance, usage, reservations and uncertain exposure; no model call |
+| GET | `/api/personas/{id}/messages?after=0&limit=24` | Operator correspondence view: sent and received messages, including retained broadcasts; bounded cursor page |
+| GET | `/api/messages/{id}/delivery?after=0&limit=24` | Operator delivery receipts: inbox delivery, recorded request inclusion and acknowledgment are distinct; current participation and funding explain blockers without inference |
 | GET | `/api/deployment` | Recorded execution profile and setup capabilities |
 | GET | `/api/inference?refresh=false` | Cached available models and access-safe provider setup status; explicit refresh performs discovery, never inference |
 | GET | `/api/curricula` | Optional ordinary starter environment briefs |
@@ -239,6 +241,19 @@ Operator creates a finite shared allowance. Call and birth ceilings are conserve
 |---|---|---|---|
 | `limits` | Limits | Required |  |
 | `closeout_calls` | integer | Required |  |
+| `reason` | string | Required |  |
+
+### `resource.root.amend`
+
+Operator amends an active configured allowance at its exact revision. Retains the same root, all spending, reservations, uncertainty and prior versions; cannot change accounting currency or remove recorded exposure. Changes may notify waiting participants, but never resume paused or cancelled work.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `root` | string | Required |  |
+| `revision` | integer | Required |  |
+| `limits` | Limits | Required |  |
+| `closeout_calls` | integer | Required |  |
+| `bounds` | Bounds | Required |  |
 | `reason` | string | Required |  |
 
 ### `resource.bind`
@@ -826,7 +841,7 @@ Ask a human or external connection for facts, a decision, physical work or evide
 
 ### `request.respond`
 
-Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries.
+Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

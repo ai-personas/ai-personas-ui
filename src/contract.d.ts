@@ -169,6 +169,17 @@ export type Command =
       };
     }
   | {
+      kind: "resource.root.amend";
+      args: {
+        root: string;
+        revision: number;
+        limits: Limits;
+        closeout_calls: number;
+        bounds: Bounds;
+        reason: string;
+      };
+    }
+  | {
       kind: "resource.bind";
       args: {
         work: string;
@@ -779,6 +790,7 @@ export interface ApiTypes {
   event: Event;
   model: Model;
   inference: InferenceCatalog;
+  message_delivery: Page3;
   request: ModelRequest;
   response: ModelResponse;
   network: NetworkInfo;
@@ -1083,6 +1095,30 @@ export interface ProviderStatus {
    * Access-safe setup guidance; never raw provider output or credentials.
    */
   message: string;
+  [k: string]: unknown;
+}
+/**
+ * Cursor pages are bounded transport, not a persona memory policy.
+ */
+export interface Page3 {
+  items: MessageDelivery[];
+  next?: number | null;
+  sequence: number;
+  [k: string]: unknown;
+}
+/**
+ * Operator-visible receipts, not a claim of understanding or a promised reply.
+ */
+export interface MessageDelivery {
+  persona: string;
+  delivered: boolean;
+  acknowledged: boolean;
+  /**
+   * Exact saved call whose admitted request included this inbox item.
+   */
+  included_call?: string | null;
+  participation?: Record | null;
+  funding_root?: string | null;
   [k: string]: unknown;
 }
 export interface ModelRequest {

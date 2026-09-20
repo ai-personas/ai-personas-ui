@@ -33,6 +33,9 @@
       "inference": {
         "$ref": "#/$defs/InferenceCatalog"
       },
+      "message_delivery": {
+        "$ref": "#/$defs/Page3"
+      },
       "request": {
         "$ref": "#/$defs/ModelRequest"
       },
@@ -53,6 +56,7 @@
       "event",
       "model",
       "inference",
+      "message_delivery",
       "request",
       "response",
       "network"
@@ -820,6 +824,57 @@
                 "required": [
                   "limits",
                   "closeout_calls",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator amends an active configured allowance at its exact revision. Retains the same root, all spending, reservations, uncertainty and prior versions; cannot change accounting currency or remove recorded exposure. Changes may notify waiting participants, but never resume paused or cancelled work.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.root.amend"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limits": {
+                    "$ref": "#/$defs/Limits"
+                  },
+                  "closeout_calls": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "bounds": {
+                    "$ref": "#/$defs/Bounds"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "limits",
+                  "closeout_calls",
+                  "bounds",
                   "reason"
                 ]
               }
@@ -3093,7 +3148,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries.",
+            "description": "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4768,6 +4823,78 @@
           "message"
         ]
       },
+      "Page3": {
+        "description": "Cursor pages are bounded transport, not a persona memory policy.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/MessageDelivery"
+            }
+          },
+          "next": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "sequence"
+        ]
+      },
+      "MessageDelivery": {
+        "description": "Operator-visible receipts, not a claim of understanding or a promised reply.",
+        "type": "object",
+        "properties": {
+          "persona": {
+            "type": "string"
+          },
+          "delivered": {
+            "type": "boolean"
+          },
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "included_call": {
+            "description": "Exact saved call whose admitted request included this inbox item.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "participation": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Record"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "funding_root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "persona",
+          "delivered",
+          "acknowledged"
+        ]
+      },
       "ModelRequest": {
         "type": "object",
         "properties": {
@@ -5052,6 +5179,16 @@
     ],
     [
       "GET",
+      "/api/personas/{id}/messages?after=0&limit=24",
+      "Operator correspondence view: sent and received messages, including retained broadcasts; bounded cursor page"
+    ],
+    [
+      "GET",
+      "/api/messages/{id}/delivery?after=0&limit=24",
+      "Operator delivery receipts: inbox delivery, recorded request inclusion and acknowledgment are distinct; current participation and funding explain blockers without inference"
+    ],
+    [
+      "GET",
       "/api/deployment",
       "Recorded execution profile and setup capabilities"
     ],
@@ -5160,6 +5297,10 @@
     [
       "resource.root.create",
       "Operator creates a finite shared allowance. Call and birth ceilings are conserved; this grants no host, external or financial permissions."
+    ],
+    [
+      "resource.root.amend",
+      "Operator amends an active configured allowance at its exact revision. Retains the same root, all spending, reservations, uncertainty and prior versions; cannot change accounting currency or remove recorded exposure. Changes may notify waiting participants, but never resume paused or cancelled work."
     ],
     [
       "resource.bind",
@@ -5391,7 +5532,7 @@
     ],
     [
       "request.respond",
-      "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries."
+      "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries."
     ],
     [
       "request.resolve",
@@ -6206,6 +6347,57 @@
             "required": [
               "limits",
               "closeout_calls",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator amends an active configured allowance at its exact revision. Retains the same root, all spending, reservations, uncertainty and prior versions; cannot change accounting currency or remove recorded exposure. Changes may notify waiting participants, but never resume paused or cancelled work.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.root.amend"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limits": {
+                "$ref": "#/$defs/Limits"
+              },
+              "closeout_calls": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "bounds": {
+                "$ref": "#/$defs/Bounds"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "limits",
+              "closeout_calls",
+              "bounds",
               "reason"
             ]
           }
@@ -8479,7 +8671,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Append a response and uploaded artifact references. Wakes the owner without implying success. Reuse the operation identity for retries.",
+        "description": "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.",
         "type": "object",
         "properties": {
           "kind": {

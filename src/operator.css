@@ -29,3 +29,7 @@
 .operator-card pre, .operator-controls pre { max-width: 100%; overflow: auto; }
 .retention-control { margin: 1.5rem 0; border-top: 1px solid #d8dfda; padding-top: .75rem; }
 @media (max-width: 540px) { .operator-form { width: 100%; padding: 1rem; max-height: calc(100dvh - 24px); } .operator-grid { grid-template-columns: 1fr; } .allowance-form { padding: 0; } .allowance-form > header, .allowance-form .form-body, .form-actions { padding: 1rem; } .form-actions { align-items: stretch; flex-direction: column; gap: .5rem; } .form-actions p { max-width: none; } .model-status { flex-wrap: wrap; gap: .25rem; } }
+.message-receipt, .persona-activity { border-top: 1px solid var(--line, #dedbd4); padding-top: 1rem; margin-top: 1rem; }
+.delivery-recipient, .correspondence-message, .persona-activity article { padding: .9rem 0; border-bottom: 1px solid var(--line, #dedbd4); }
+.receipt-stages { padding-left: 1.25rem; display: grid; gap: .4rem; }
+.message-receipt .notice, .persona-activity .notice { overflow-wrap: anywhere; }

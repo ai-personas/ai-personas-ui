@@ -5,6 +5,8 @@ import { Pagination, type Act } from './main';
 import Dialog from './Dialog';
 import './operator.css';
 import { modelKey, ModelStatus, useModels } from './Models';
+import { EditAllowance } from './FundingEditor';
+import { MessageComposer } from './Messages';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -113,10 +115,15 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
   </form></Dialog>;
 }
 
-export function AllowanceSummary({ id }: { id: string }) {
-  const { value, error } = useResource<any>('/resources/' + id);
+export function AllowanceSummary({ id, act }: { id: string; act?: Act }) {
+  const { value, error } = useResource<any>('/resources/' + id, e => e.entity === id || ['resource_root', 'resource_charge', 'budget_charge'].includes(e.data?.kind));
   return <section aria-label="Allowance usage">{error && <p role="alert">{error}</p>}{value ? <>
     <div class="operator-grid"><p><strong>{value.calls.production_remaining}</strong> production calls remaining</p><p><strong>{value.calls.closeout_remaining}</strong> finishing calls remaining</p><p><strong>{value.calls.uncertain}</strong> calls with uncertain usage</p></div>
+    <p class="micro">{value.calls.consumed ?? 0} consumed · {value.calls.reserved ?? 0} running reservations · {value.calls.initialization_reserved ?? 0} reserved for persona initialization. Total call limit: {value.limits?.calls ?? 'not reported'}.</p>
+    {value.calls.production_remaining === 0 && <p class="notice">Production calls are exhausted. A persona's unused initialization reservation can fund its first call; further decisions need more production capacity. Finishing calls remain protected until explicitly reassigned.</p>}
+    {value.exposure?.bounds && <p class="micro">{value.exposure.accounted?.tokens?.toLocaleString() ?? 'Unknown'} accounted tokens of {value.exposure.bounds.tokens?.toLocaleString()} · expires {value.exposure.bounds.expires}. All tasks and personas sharing this allowance draw from these limits.</p>}
+    {value.exposure?.accounting_status === 'unavailable' && <p role="alert">Accounting is incomplete. Inspect retained charge evidence before changing limits.</p>}
+    {act && value.status === 'active' && value.exposure?.bounds && <EditAllowance id={id} act={act}/>}
     <details><summary>Limits, reservations, and measured usage</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>
   </> : !error && <p role="status">Loading allowance…</p>}</section>;
 }
@@ -125,7 +132,7 @@ export function Funding({ act }: { act: Act }) {
   const { value: page, error } = useRecords('resource_root', '', '', '', cursor.at(-1));
   return <section><header class="page-heading"><div><h1>Funding</h1><p>Shared allowances for founders, tasks, review, and finishing.</p></div><button onClick={() => setCreate(true)}>New allowance</button></header>
     {error && <p role="alert">{error}</p>}{page?.items.length === 0 && <p>No funding allowances yet. Create one before starting personas and tasks on a restricted node.</p>}
-    {page?.items.map(r => <article key={r.id} class="operator-card"><h2>{data(r).reason || 'Funding allowance'}</h2><p>{data(r).status} · {r.id.slice(0, 8)}</p><AllowanceSummary id={r.id}/>{!data(r).bounds_configured && <button onClick={() => setConfigure(r)}>Configure limits</button>}</article>)}
+    {page?.items.map(r => <article key={r.id} class="operator-card"><h2>{data(r).reason || 'Funding allowance'}</h2><p>{data(r).status} · {r.id.slice(0, 8)}</p><AllowanceSummary id={r.id} act={act}/>{!data(r).bounds_configured && <button onClick={() => setConfigure(r)}>Configure limits</button>}</article>)}
     <Pagination previous={cursor.length > 1} next={page?.next} onPrevious={() => setCursor(cursor.slice(0, -1))} onNext={() => page?.next != null && setCursor([...cursor, page.next])}/>
     {(create || configure) && <AllowanceForm initial={configure} act={act} close={() => { setCreate(false); setConfigure(undefined); }}/>}</section>;
 }
@@ -207,8 +214,8 @@ export function WorkControls({ work, act, open }: { work: Entity; act: Act; open
     {archived && <p role="status">Archived. Participation was cancelled; historical results, spending, and late effects remain inspectable. Open a document, artifact, or message to erase a selected payload.</p>}
   </div>{error && <p role="alert">{error}</p>}
     {mode === 'amend' && <Amend work={work} act={act} close={() => setMode('')}/>}
-    {mode === 'fund' && (d.resource_root ? <AllowanceSummary id={d.resource_root}/> : <form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await act('resource.bind', { work: work.id, revision: work.revision, root, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><FundingChoice value={root} onChange={setRoot}/><label>Funding reason<input name="reason" required/></label><button disabled={busy}>Fund task</button></form>)}
-    {mode === 'message' && <form onSubmit={async e => { e.preventDefault(); const form = e.currentTarget; setBusy(true); setError(''); try { await act('message.send', { to: d.environment, environment: d.environment, work: work.id, text: String(new FormData(form).get('message')) }); form.reset(); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><label>Message for this task<textarea name="message" required rows={3}/></label><button disabled={busy}>Send to participants</button></form>}
+    {mode === 'fund' && (d.resource_root ? <AllowanceSummary id={d.resource_root} act={act}/> : <form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await act('resource.bind', { work: work.id, revision: work.revision, root, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><FundingChoice value={root} onChange={setRoot}/><label>Funding reason<input name="reason" required/></label><button disabled={busy}>Fund task</button></form>)}
+    {mode === 'message' && <MessageComposer to={d.environment} environment={d.environment} work={work.id} act={act} open={open}/>}
     {mode === 'archive' && <Dialog label="Archive task" close={() => setMode('')}><form class="operator-form" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await act('work.archive', { work: work.id, revision: work.revision, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><h2>Archive {label(work)}</h2><p>This cancels task participation and outstanding responsibilities, requests stopping of tracked jobs, and removes the task from the current list. Completed effects and accounting remain recorded.</p><label>Reason<textarea name="reason" required/></label>{error && <p role="alert">{error}</p>}<button disabled={busy}>Cancel participation and archive</button><button type="button" class="quiet" onClick={() => setMode('')}>Keep task</button></form></Dialog>}
     {d.resource_root && <button class="text-button" onClick={() => open(d.resource_root)}>Inspect funding record</button>}
   </section>;
