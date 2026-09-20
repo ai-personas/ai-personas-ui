@@ -13,6 +13,7 @@
     "test:live": "node tests/live.mjs",
     "test:operator": "node tests/operator.browser.mjs",
     "test:activity": "node tests/activity.browser.mjs",
+    "test:settings": "node tests/settings.browser.mjs",
     "test:forms": "node tests/forms.browser.mjs"
   },
   "dependencies": {

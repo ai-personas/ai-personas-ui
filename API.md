@@ -28,6 +28,8 @@ Default loopback listeners allow the same-origin local operator workspace withou
 | GET | `/api/messages/{id}/delivery?after=0&limit=24` | Operator delivery receipts: inbox delivery, recorded request inclusion and acknowledgment are distinct; current participation and funding explain blockers without inference |
 | GET | `/api/deployment` | Recorded execution profile and setup capabilities |
 | GET | `/api/inference?refresh=false` | Cached available models and access-safe provider setup status; explicit refresh performs discovery, never inference |
+| GET | `/api/settings/providers` | Operator-only saved provider configuration and key-presence status; no credentials are returned |
+| POST | `/api/settings/providers` | Save or remove an operator-owned API-key connection at the expected settings revision. Credentials stay in the node's owner-only secret file, outside records and action journals. Future decisions use the new configuration; admitted calls retain theirs. No work is resumed or funded. |
 | GET | `/api/curricula` | Optional ordinary starter environment briefs |
 | GET | `/api/contract` | Generated operation, type and route contract |
 | GET | `/api/release` | Matching runtime, design and UI revisions |

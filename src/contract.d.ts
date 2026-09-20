@@ -779,6 +779,31 @@ export type WaitCondition =
       kind: "transfer";
     };
 export type Outcome2 = "succeeded" | "failed" | "unknown";
+export type Protocol = "responses" | "anthropic" | "gemini";
+/**
+ * This body is write-only and must never enter the action journal or logs.
+ */
+export type SettingsChange =
+  | {
+      revision: string;
+      connection: Connection;
+      api_key?: string | null;
+      action: "save";
+    }
+  | {
+      revision: string;
+      provider: string;
+      action: "remove";
+    }
+  | {
+      revision: string;
+      api_key: string;
+      action: "save_typesafe";
+    }
+  | {
+      revision: string;
+      action: "remove_typesafe";
+    };
 
 export interface ApiTypes {
   command: Command;
@@ -790,6 +815,8 @@ export interface ApiTypes {
   event: Event;
   model: Model;
   inference: InferenceCatalog;
+  provider_settings: ProviderSettings;
+  provider_settings_change: SettingsChange;
   message_delivery: Page3;
   call_progress: CallProgress;
   action_activity: ActionActivity[];
@@ -818,9 +845,15 @@ export interface GrantDraft {
    */
   command_digest?: string | null;
   /**
-   * Exact serialized JSON request digest for mediated external effects.
+   * Exact serialized JSON request digest for generic mediated external effects.
+   * Optional only with an explicit bounded native TypeSafe choice permission.
    */
   body_digest?: string | null;
+  /**
+   * Allows changing choice questions only at the exact native TypeSafe
+   * destination, with explicit model and exposure bounds. No generic wildcard.
+   */
+  typesafe_choice?: ChoiceGrant | null;
   reason: string;
 }
 export interface VersionRef {
@@ -832,6 +865,21 @@ export interface ExecutionLimits {
   cpu_seconds: number;
   memory_bytes: number;
   output_bytes: number;
+}
+/**
+ * Explicit authority for a persona to formulate changing choice questions.
+ * Absence of this policy NEVER turns an exact-body effect grant into a wildcard.
+ * Token reservations are operator-supplied conservative exposure, not undocumented
+ * max-token request parameters sent to TypeSafe. Keep their evidence current.
+ */
+export interface ChoiceGrant {
+  models: string[];
+  max_questions: number;
+  max_options: number;
+  max_request_bytes: number;
+  input_tokens: number;
+  output_tokens: number;
+  evidence: string;
 }
 export interface Bounds {
   expires: string;
@@ -860,6 +908,15 @@ export interface Price {
 export interface Destination {
   endpoint: string;
   api_key_env?: string | null;
+  /**
+   * Node-owned saved credential. Currently only "typesafe", bound to its
+   * exact official endpoint; the key never enters this configuration record.
+   */
+  api_key_ref?: string | null;
+  /**
+   * True only for an actual remote idempotency contract. Native TypeSafe
+   * decisions require false: local replay protection is not remote deduplication.
+   */
   idempotency_supported: boolean;
   timeout_ms: number;
   max_request_bytes: number;
@@ -1085,6 +1142,10 @@ export interface Model {
 }
 export interface InferenceCatalog {
   models: Model[];
+  /**
+   * Separately funded structured-decision capabilities, not chat models.
+   */
+  decision_models: Model[];
   providers: ProviderStatus[];
   checked: string;
   [k: string]: unknown;
@@ -1097,6 +1158,74 @@ export interface ProviderStatus {
    * Access-safe setup guidance; never raw provider output or credentials.
    */
   message: string;
+  [k: string]: unknown;
+}
+export interface ProviderSettings {
+  revision: string;
+  connections: SavedConnection[];
+  /**
+   * Connections supplied by the node launcher cannot be overwritten here.
+   */
+  host_providers: string[];
+  /**
+   * Verified model limits, intersected with the account's /models response.
+   */
+  templates: Connection[];
+  /**
+   * Separate choice capability; never a persona's primary chat model.
+   */
+  typesafe?: KeyStatus | null;
+  [k: string]: unknown;
+}
+export interface SavedConnection {
+  connection: Connection;
+  key_saved: boolean;
+  updated: string;
+  [k: string]: unknown;
+}
+export interface Connection {
+  provider: string;
+  protocol: Protocol;
+  config: HttpConfig;
+}
+export interface HttpConfig {
+  /**
+   * Exact /responses endpoint. No URL is supplied by a model decision.
+   */
+  endpoint: string;
+  api_key_env?: string | null;
+  trust_loopback_http?: boolean;
+  models: HttpModel[];
+  timeout_ms?: number;
+  max_request_bytes?: number;
+  max_response_bytes?: number;
+  max_actions?: number;
+  max_images?: number;
+}
+export interface HttpModel {
+  id: string;
+  context_window_tokens: number;
+  max_output_tokens: number;
+  /**
+   * Operator-supplied upper bound for the selected tokenizer. This is not
+   * tokenizer discovery. Use a documented byte-level tokenizer bound.
+   */
+  input_tokens_per_utf8_byte_upper_bound: number;
+  /**
+   * Accounts for framing/tokenizer overhead not represented by text bytes.
+   */
+  framing_token_allowance: number;
+  vision?: boolean;
+  /**
+   * Required for vision; a conservative per-image charge, not inferred from
+   * the model name, media byte length, or a hard-coded vendor tier.
+   */
+  image_token_upper_bound?: number | null;
+  allowed_reasoning_efforts?: string[];
+}
+export interface KeyStatus {
+  key_saved: boolean;
+  updated: string;
   [k: string]: unknown;
 }
 /**

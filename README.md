@@ -24,6 +24,12 @@ uses that login and lists its visible models. Funding and persona forms show
 connection status and a **Refresh models** control. No OAuth token is copied
 into the browser. Explicit HTTP provider configurations are also supported.
 
+Use **Funding → Settings** to save, replace, or remove API keys for OpenAI,
+Anthropic Claude, Google Gemini, TypeSafe.ai JEV, and custom providers. Keys stay
+in an owner-only file on the node and are never returned to the browser. Claude
+and Gemini use API billing. JEV is available alongside the persona’s normal LLM,
+which prepares structured requests and interprets the returned decisions.
+
 ## In the workspace
 
 - **Funding:** authorize finite calls, tokens, cost, and persona creation. Prices
@@ -74,6 +80,7 @@ npm run test:workspace
 npm run test:forms
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:activity
+PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:settings
 ```
 
 `test:workspace` uses synthetic HTTP records. `test:forms` checks the production
@@ -84,7 +91,10 @@ restricted Rust node and a synthetic HTTP inference provider, then exercises the
 production UI. It makes no paid model calls and writes evidence to a temporary
 directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. `test:activity` checks
 streaming, names, identity, draft retention, and tool output on a disposable
-node with synthetic inference and one harmless local shell command. These checks do not
+node with synthetic inference and one harmless local shell command.
+`test:settings` uses synthetic API keys and local model catalogues against a real
+restricted node to check persistence, restart, replacement/removal, native
+authentication, responsive typing, and mobile settings. These checks do not
 establish live model quality or engineering acceptance. The older `test:browser`
 and `test:live` campaigns have separate runtime and model prerequisites.
 

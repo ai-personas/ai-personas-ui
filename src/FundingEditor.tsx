@@ -66,7 +66,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
   const modelState = useModels(), [selected, setSelected] = useState('');
   const [prices, setPrices] = useState<Price[]>(bounds?.prices ?? []);
   const [included, setIncluded] = useState(false);
-  const available = modelState.models.filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
+  const available = [...modelState.models, ...(modelState.catalog?.decision_models || [])].filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
   const chosen = available.find(m => modelKey(m) === selected);
   const subscription = (chosen?.capabilities as any)?.billing === 'chatgpt_subscription';
   if (!bounds || d.status !== 'active') return <div class="operator-form"><h2>Allowance cannot be edited</h2><p role="alert">{!bounds ? 'Configure the initial limits before editing this allowance.' : 'This allowance is closed. Its history and spending remain retained.'}</p><button onClick={close}>Close form</button></div>;

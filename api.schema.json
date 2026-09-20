@@ -33,6 +33,12 @@
       "inference": {
         "$ref": "#/$defs/InferenceCatalog"
       },
+      "provider_settings": {
+        "$ref": "#/$defs/ProviderSettings"
+      },
+      "provider_settings_change": {
+        "$ref": "#/$defs/SettingsChange"
+      },
       "message_delivery": {
         "$ref": "#/$defs/Page3"
       },
@@ -65,6 +71,8 @@
       "event",
       "model",
       "inference",
+      "provider_settings",
+      "provider_settings_change",
       "message_delivery",
       "call_progress",
       "action_activity",
@@ -3624,10 +3632,21 @@
             ]
           },
           "body_digest": {
-            "description": "Exact serialized JSON request digest for mediated external effects.",
+            "description": "Exact serialized JSON request digest for generic mediated external effects.\nOptional only with an explicit bounded native TypeSafe choice permission.",
             "type": [
               "string",
               "null"
+            ]
+          },
+          "typesafe_choice": {
+            "description": "Allows changing choice questions only at the exact native TypeSafe\ndestination, with explicit model and exposure bounds. No generic wildcard.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ChoiceGrant"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "reason": {
@@ -3692,6 +3711,56 @@
           "cpu_seconds",
           "memory_bytes",
           "output_bytes"
+        ]
+      },
+      "ChoiceGrant": {
+        "description": "Explicit authority for a persona to formulate changing choice questions.\nAbsence of this policy NEVER turns an exact-body effect grant into a wildcard.\nToken reservations are operator-supplied conservative exposure, not undocumented\nmax-token request parameters sent to TypeSafe. Keep their evidence current.",
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_questions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_options": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "models",
+          "max_questions",
+          "max_options",
+          "max_request_bytes",
+          "input_tokens",
+          "output_tokens",
+          "evidence"
         ]
       },
       "Bounds": {
@@ -3831,7 +3900,15 @@
               "null"
             ]
           },
+          "api_key_ref": {
+            "description": "Node-owned saved credential. Currently only \"typesafe\", bound to its\nexact official endpoint; the key never enters this configuration record.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "idempotency_supported": {
+            "description": "True only for an actual remote idempotency contract. Native TypeSafe\ndecisions require false: local replay protection is not remote deduplication.",
             "type": "boolean"
           },
           "timeout_ms": {
@@ -4792,6 +4869,13 @@
               "$ref": "#/$defs/Model"
             }
           },
+          "decision_models": {
+            "description": "Separately funded structured-decision capabilities, not chat models.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Model"
+            }
+          },
           "providers": {
             "type": "array",
             "items": {
@@ -4804,6 +4888,7 @@
         },
         "required": [
           "models",
+          "decision_models",
           "providers",
           "checked"
         ]
@@ -4832,6 +4917,322 @@
           "available",
           "models",
           "message"
+        ]
+      },
+      "ProviderSettings": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SavedConnection"
+            }
+          },
+          "host_providers": {
+            "description": "Connections supplied by the node launcher cannot be overwritten here.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "templates": {
+            "description": "Verified model limits, intersected with the account's /models response.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Connection"
+            }
+          },
+          "typesafe": {
+            "description": "Separate choice capability; never a persona's primary chat model.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/KeyStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "connections",
+          "host_providers",
+          "templates"
+        ]
+      },
+      "SavedConnection": {
+        "type": "object",
+        "properties": {
+          "connection": {
+            "$ref": "#/$defs/Connection"
+          },
+          "key_saved": {
+            "type": "boolean"
+          },
+          "updated": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "key_saved",
+          "updated"
+        ]
+      },
+      "Connection": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "protocol": {
+            "$ref": "#/$defs/Protocol"
+          },
+          "config": {
+            "$ref": "#/$defs/HttpConfig"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "protocol",
+          "config"
+        ]
+      },
+      "Protocol": {
+        "type": "string",
+        "enum": [
+          "responses",
+          "anthropic",
+          "gemini"
+        ]
+      },
+      "HttpConfig": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "description": "Exact /responses endpoint. No URL is supplied by a model decision.",
+            "type": "string"
+          },
+          "api_key_env": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trust_loopback_http": {
+            "type": "boolean",
+            "default": false
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/HttpModel"
+            }
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "default": 60000
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "default": 8388608
+          },
+          "max_response_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "default": 2097152
+          },
+          "max_actions": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "default": 64
+          },
+          "max_images": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "default": 4
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "models"
+        ]
+      },
+      "HttpModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "context_window_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "input_tokens_per_utf8_byte_upper_bound": {
+            "description": "Operator-supplied upper bound for the selected tokenizer. This is not\ntokenizer discovery. Use a documented byte-level tokenizer bound.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "framing_token_allowance": {
+            "description": "Accounts for framing/tokenizer overhead not represented by text bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "vision": {
+            "type": "boolean",
+            "default": false
+          },
+          "image_token_upper_bound": {
+            "description": "Required for vision; a conservative per-image charge, not inferred from\nthe model name, media byte length, or a hard-coded vendor tier.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "allowed_reasoning_efforts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "context_window_tokens",
+          "max_output_tokens",
+          "input_tokens_per_utf8_byte_upper_bound",
+          "framing_token_allowance"
+        ]
+      },
+      "KeyStatus": {
+        "type": "object",
+        "properties": {
+          "key_saved": {
+            "type": "boolean"
+          },
+          "updated": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_saved",
+          "updated"
+        ]
+      },
+      "SettingsChange": {
+        "description": "This body is write-only and must never enter the action journal or logs.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string"
+              },
+              "connection": {
+                "$ref": "#/$defs/Connection"
+              },
+              "api_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "action": {
+                "type": "string",
+                "const": "save"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "revision",
+              "connection"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "const": "remove"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "revision",
+              "provider"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string"
+              },
+              "api_key": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "const": "save_typesafe"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "revision",
+              "api_key"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "const": "remove_typesafe"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "revision"
+            ]
+          }
         ]
       },
       "Page3": {
@@ -5301,6 +5702,16 @@
       "GET",
       "/api/inference?refresh=false",
       "Cached available models and access-safe provider setup status; explicit refresh performs discovery, never inference"
+    ],
+    [
+      "GET",
+      "/api/settings/providers",
+      "Operator-only saved provider configuration and key-presence status; no credentials are returned"
+    ],
+    [
+      "POST",
+      "/api/settings/providers",
+      "Save or remove an operator-owned API-key connection at the expected settings revision. Credentials stay in the node's owner-only secret file, outside records and action journals. Future decisions use the new configuration; admitted calls retain theirs. No work is resumed or funded."
     ],
     [
       "GET",
@@ -9241,10 +9652,21 @@
             ]
           },
           "body_digest": {
-            "description": "Exact serialized JSON request digest for mediated external effects.",
+            "description": "Exact serialized JSON request digest for generic mediated external effects.\nOptional only with an explicit bounded native TypeSafe choice permission.",
             "type": [
               "string",
               "null"
+            ]
+          },
+          "typesafe_choice": {
+            "description": "Allows changing choice questions only at the exact native TypeSafe\ndestination, with explicit model and exposure bounds. No generic wildcard.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ChoiceGrant"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "reason": {
@@ -9309,6 +9731,56 @@
           "cpu_seconds",
           "memory_bytes",
           "output_bytes"
+        ]
+      },
+      "ChoiceGrant": {
+        "description": "Explicit authority for a persona to formulate changing choice questions.\nAbsence of this policy NEVER turns an exact-body effect grant into a wildcard.\nToken reservations are operator-supplied conservative exposure, not undocumented\nmax-token request parameters sent to TypeSafe. Keep their evidence current.",
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_questions": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_options": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "models",
+          "max_questions",
+          "max_options",
+          "max_request_bytes",
+          "input_tokens",
+          "output_tokens",
+          "evidence"
         ]
       },
       "Bounds": {
@@ -9448,7 +9920,15 @@
               "null"
             ]
           },
+          "api_key_ref": {
+            "description": "Node-owned saved credential. Currently only \"typesafe\", bound to its\nexact official endpoint; the key never enters this configuration record.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "idempotency_supported": {
+            "description": "True only for an actual remote idempotency contract. Native TypeSafe\ndecisions require false: local replay protection is not remote deduplication.",
             "type": "boolean"
           },
           "timeout_ms": {

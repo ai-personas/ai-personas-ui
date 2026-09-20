@@ -8,6 +8,7 @@ import { modelKey, ModelStatus, useModels } from './Models';
 import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
 import { matchesAllowance } from './workspace';
+import { ProviderSettings } from './ProviderSettings';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -40,7 +41,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
   const [root, setRoot] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const errorNotice = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
-  const modelState = useModels(), models = modelState.models;
+  const modelState = useModels(), models = [...modelState.models, ...(modelState.catalog?.decision_models || [])];
   const [selected, setSelected] = useState(''), [included, setIncluded] = useState(false);
   useEffect(() => { if (!selected && models.length) setSelected(modelKey(models[0])); }, [models, selected]);
   const model = models.find(m => modelKey(m) === selected);
@@ -130,9 +131,21 @@ export function AllowanceSummary({ id, act }: { id: string; act?: Act }) {
   </> : !error && <p role="status">Loading allowance…</p>}</section>;
 }
 export function Funding({ act }: { act: Act }) {
+  const [tab, setTab] = useState('allowances');
+  return <section><header class="page-heading"><div><h1>Funding</h1><p>Manage shared allowances and provider connections.</p></div></header>
+    <div class="workspace-tabs" role="tablist" aria-label="Funding sections" onKeyDown={e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault(); const next = e.key === 'Home' ? 'allowances' : e.key === 'End' ? 'settings' : tab === 'allowances' ? 'settings' : 'allowances';
+      setTab(next); document.getElementById('funding-tab-' + next)?.focus();
+    }}>{['allowances', 'settings'].map(value => <button key={value} id={'funding-tab-' + value} role="tab" aria-selected={tab === value} aria-controls={'funding-panel-' + value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}>{value === 'allowances' ? 'Allowances' : 'Settings'}</button>)}</div>
+    <div id={'funding-panel-' + tab} role="tabpanel" aria-labelledby={'funding-tab-' + tab}>
+      {tab === 'settings' ? <ProviderSettings/> : <Allowances act={act}/>}
+    </div></section>;
+}
+function Allowances({ act }: { act: Act }) {
   const [create, setCreate] = useState(false), [configure, setConfigure] = useState<Entity>(), [cursor, setCursor] = useState([0]);
   const { value: page, error } = useRecords('resource_root', '', '', '', cursor.at(-1));
-  return <section><header class="page-heading"><div><h1>Funding</h1><p>Shared allowances for founders, tasks, review, and finishing.</p></div><button onClick={() => setCreate(true)}>New allowance</button></header>
+  return <section><header class="page-heading"><div><h2>Allowances</h2><p>Shared capacity for founders, tasks, review, and finishing.</p></div><button onClick={() => setCreate(true)}>New allowance</button></header>
     {error && <p role="alert">{error}</p>}{page?.items.length === 0 && <p>No funding allowances yet. Create one before starting personas and tasks on a restricted node.</p>}
     {page?.items.map(r => <article key={r.id} class="operator-card"><h2>{data(r).reason || 'Funding allowance'}</h2><p>{data(r).status} · {r.id.slice(0, 8)}</p><AllowanceSummary id={r.id} act={act}/>{!data(r).bounds_configured && <button onClick={() => setConfigure(r)}>Configure limits</button>}</article>)}
     <Pagination previous={cursor.length > 1} next={page?.next} onPrevious={() => setCursor(cursor.slice(0, -1))} onNext={() => page?.next != null && setCursor([...cursor, page.next])}/>

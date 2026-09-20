@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { request, type Model } from './api';
+import { changes, request, type Model } from './api';
 import type { ApiTypes } from './contract';
 
 type Catalog = ApiTypes['inference'];
@@ -8,6 +8,10 @@ export const modelKey = (model: Model) => JSON.stringify([model.provider, model.
 export function useModels(enabled = true) {
   const [catalog, setCatalog] = useState<Catalog>(), [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const update = (e: Event) => { if ((e as CustomEvent).detail?.kind === 'provider_settings') setAttempt(n => n + 1); };
+    changes.addEventListener('change', update); return () => changes.removeEventListener('change', update);
+  }, []);
   useEffect(() => {
     if (!enabled) { setLoading(false); return; }
     const controller = new AbortController();
@@ -25,7 +29,7 @@ export function ModelStatus({ catalog, models, loading, error, refresh }: Return
   return <div class="model-status"><div aria-live="polite">
     {loading ? <p role="status">Checking available models…</p> : error ? <p role="alert">Could not load models: {error}</p>
       : models.length ? <p class="micro">{models.length} available {models.length === 1 ? 'model' : 'models'}. Credentials stay on the node host.</p>
-      : !unavailable.length && <p>No inference provider is enabled. Connect a provider on the node host, then refresh.</p>}
+      : !unavailable.length && <p>No inference provider is enabled. Add a connection in Funding → Settings, then refresh.</p>}
     {!loading && unavailable.map(p => <p class="provider-notice" key={p.provider}><strong>{p.provider}</strong>: {p.message}</p>)}
   </div><button type="button" class="text-button" disabled={loading} onClick={refresh}>Refresh models</button></div>;
 }
