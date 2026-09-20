@@ -2,7 +2,7 @@
 
 Contract: `ai-personas/1`
 
-Application operations require the node bearer token. Browser file reads can use the session cookie established with bearer authentication. The node records its execution profile. Restricted execution requires scoped grants and enforced limits; the unrestricted compatibility profile requires explicit operator opt-in.
+Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution profile. Restricted execution requires scoped grants and enforced limits; the unrestricted compatibility profile requires explicit operator opt-in.
 
 | Method | Path | Behavior |
 |---|---|---|

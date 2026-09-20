@@ -1,5 +1,6 @@
 {
   "contract": "ai-personas/1",
+  "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "ApiTypes",
