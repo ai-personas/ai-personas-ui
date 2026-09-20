@@ -57,7 +57,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
       const reason = String(f.get('reason')).trim();
       const bounds = {
         expires: new Date(String(f.get('expires'))).toISOString(), tokens: integer(f, 'tokens'), closeout_tokens: integer(f, 'closeout_tokens'),
-        cost_units: noTokenCharge ? 0 : units(f, 'cost'), closeout_cost_units: noTokenCharge ? 0 : units(f, 'closeout_cost'), currency: String(f.get('currency')),
+        cost_units: noTokenCharge ? 0 : units(f, 'cost'), closeout_cost_units: noTokenCharge ? 0 : units(f, 'closeout_cost'), currency: String(f.get('currency') || 'USD'),
         prices: [{ provider: model.provider, model: model.id, input_units_per_million: noTokenCharge ? 0 : units(f, 'input_price'), output_units_per_million: noTokenCharge ? 0 : units(f, 'output_price'),
           evidence: noTokenCharge ? `Operator chose included Codex subscription usage with zero marginal token charge on ${new Date().toISOString().slice(0, 10)}. Plan limits still apply.` : String(f.get('price_evidence')).trim() }],
         remote_calls: integer(f, 'remote_calls'), retained_payload_bytes: integer(f, 'retained_payload_bytes'), cpu_seconds: integer(f, 'cpu_seconds'),
@@ -87,7 +87,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
       <ModelStatus {...modelState}/>
       {subscription && <label class="check"><input type="checkbox" checked={included} onChange={e => setIncluded(e.currentTarget.checked)}/>Use included subscription usage, with no per-token charge</label>}
       {noTokenCharge && <p class="provider-notice">Your Codex ChatGPT plan limits still apply. This records your choice of zero marginal token cost; calls and tokens remain limited. It does not purchase credits.</p>}
-      <div hidden={noTokenCharge}><div class="operator-grid"><label>Currency<input name="currency" required defaultValue="USD"/></label><label>Total budget<input type="number" name="cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="10"/></label>
+      <div hidden={noTokenCharge}><div class="operator-grid"><label>Currency<input name="currency" required={!noTokenCharge} defaultValue="USD"/></label><label>Total budget<input type="number" name="cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="10"/></label>
         <label>Budget reserved for finishing<input type="number" name="closeout_cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="2"/></label>
         <label>Input price per million tokens<input type="number" name="input_price" min="0" step="0.000001" required disabled={noTokenCharge}/></label>
         <label>Output price per million tokens<input type="number" name="output_price" min="0" step="0.000001" required disabled={noTokenCharge}/></label></div>

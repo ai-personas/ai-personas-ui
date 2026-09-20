@@ -96,11 +96,15 @@ try {
       await select.selectOption(JSON.stringify(['codex', 'alpha']));
     });
     await step(`${viewport.width}: subscription accounting is explicit and retains finite limits`, async () => {
+      // An unfinished currency draft must not leave an invalid required field
+      // hidden behind the included-usage choice and prevent submission.
+      await form.getByLabel('Currency', { exact: true }).fill('');
       await form.getByLabel('Use included subscription usage, with no per-token charge').check();
       await expect(form).toContainText('plan limits still apply');
       await form.getByRole('button', { name: 'Create allowance', exact: true }).click(); await expect(form).toHaveCount(0);
       const bounds = writes.at(-1).args.bounds;
       assert.equal(writes.at(-1).kind, 'resource.bounds.configure'); assert.equal(bounds.cost_units, 0); assert.equal(bounds.prices[0].model, 'alpha');
+      assert.equal(bounds.currency, 'USD');
       assert.equal(bounds.prices[0].input_units_per_million, 0); assert.match(bounds.prices[0].evidence, /Operator chose included/);
       assert(bounds.tokens > bounds.closeout_tokens && bounds.closeout_tokens > 0); assert.equal(bounds.effect_operations, 0);
     });
