@@ -63,8 +63,11 @@ async function checkImages(name, entries, field) {
 }
 try {
   await page.goto(base);
-  await page.getByLabel('Node token').fill(token);
-  await page.getByRole('button', { name: 'Connect to node' }).click();
+  const localSession = await fetch(base + '/api/session', { method: 'POST', headers: { 'X-Personas-Client': 'workspace' } });
+  if (localSession.status === 401) {
+    await page.getByLabel('Node token').fill(token);
+    await page.getByRole('button', { name: 'Connect to node' }).click();
+  } else if (!localSession.ok) throw Error('Node connection failed: ' + localSession.status);
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
   await page.screenshot({ path: join(out, 'live-work.png'), fullPage: true });
   await checkImages('Personas', personas, 'portrait');

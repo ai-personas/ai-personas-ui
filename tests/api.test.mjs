@@ -1,11 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connect, operate, watch, label, token } from '../src/api.ts';
+import { connect, operate, watch, label, token, request } from '../src/api.ts';
 const success = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
 test('token begins in memory and authored titles are type checked', () => {
   assert.equal(token, '');
   assert.equal(label({ kind: 'work', data: { title: { bad: true } } }), 'Untitled work');
+});
+test('local requests omit bearer secrets and mark non-form workspace requests', async () => {
+  connect(''); const headers = [];
+  globalThis.fetch = async (_, init) => { headers.push(init.headers); return success({}); };
+  await request('/session', { method: 'POST' });
+  assert.equal(headers[0]['X-Personas-Client'], 'workspace');
+  assert.equal(headers[0].Authorization, undefined);
+  connect('explicit-remote-token');
+  await request('/session', { method: 'POST' });
+  assert.equal(headers[1].Authorization, 'Bearer explicit-remote-token');
+  connect('');
 });
 test('ambiguous network retry reuses exact operation identity and payload', async () => {
   connect('test'); const bodies = []; let attempt = 0;

@@ -17,7 +17,7 @@ Application operations require the node bearer token. Browser file reads can use
 | GET | `/api/events?after=0` | Resumable lightweight change events; closing a view releases its observer |
 | GET | `/api/artifacts/{id}` | Stream immutable files with byte ranges and browser-managed downloads |
 | POST | `/api/uploads?id=&name=&media_type=&size=&digest=` | Stream a file with expected SHA-256 and size; retries preserve the upload identity |
-| POST | `/api/session` | Authorize browser file loading using a session cookie; other operations still require bearer authentication |
+| POST | `/api/session` | Connect the same-origin loopback workspace without a token; authenticated remote sessions authorize browser file reads |
 | GET | `/api/calls/{id}/{part}` | Load preserved provider input, request, response or usage on demand |
 | GET | `/api/models` | Provider-advertised models and capabilities |
 | GET | `/api/network` | Current node and connected peers |

@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, openSync, closeSyn
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
 
@@ -16,7 +17,7 @@ const root = mkdtempSync(join(tmpdir(), 'personas-operator-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence');
 mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
-let calls = 0, app, browser, page, url, token, port, checks = 0;
+let calls = 0, app, browser, page, url, port, checks = 0;
 const errors = [], providerErrors = [];
 const provider = createServer(async (req, res) => {
   try {
@@ -41,11 +42,11 @@ const provider = createServer(async (req, res) => {
   } catch (e) { providerErrors.push(String(e)); res.writeHead(500); res.end('{}'); }
 });
 async function get(path) {
-  const response = await fetch(url + '/api' + path, { headers: { Authorization: 'Bearer ' + token } });
+  const response = await fetch(url + '/api' + path, { headers: { 'X-Personas-Client': 'workspace' } });
   const body = await response.json(); assert(response.ok, JSON.stringify(body)); return body;
 }
 async function op(kind, args, actor = '', run = '', success = true) {
-  const response = await fetch(url + '/api/operations', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID().replaceAll('-', ''), kind, args, actor, run }) });
+  const response = await fetch(url + '/api/operations', { method: 'POST', headers: { 'X-Personas-Client': 'workspace', 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID().replaceAll('-', ''), kind, args, actor, run }) });
   const body = await response.json(); assert(response.ok, JSON.stringify(body));
   if (success) assert.equal(body.state, 'succeeded', JSON.stringify(body));
   return body;
@@ -54,15 +55,14 @@ async function until(test, label) {
   for (let i = 0; i < 160; i++) { const value = await test(); if (value) return value; await delay(100); }
   throw Error('Timed out: ' + label);
 }
-async function startNode() {
+async function startNode(requireToken = false) {
   const fd = openSync(join(root, 'node.log'), 'a');
-  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', process.env.PERSONAS_UI_DIST || resolve('dist')], { stdio: ['ignore', fd, fd] }); closeSync(fd);
+  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', process.env.PERSONAS_UI_DIST || resolve('dist'), ...(requireToken ? ['--require-token'] : [])], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   url = `http://127.0.0.1:${port}`;
   await until(async () => {
     if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8'));
     try { return (await fetch(url + '/health')).ok; } catch { return false; }
   }, 'node health');
-  token = readFileSync(join(root, 'node/token'), 'utf8').trim();
 }
 async function stopNode() {
   if (!app || app.exitCode !== null) return;
@@ -70,9 +70,10 @@ async function stopNode() {
 }
 async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name); }
 async function connect() {
-  await page.goto(url); await page.getByLabel('Node token').fill(token);
-  await page.getByRole('button', { name: 'Connect to node', exact: true }).click();
+  await page.goto(url);
   await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Node token')).toHaveCount(0);
+  assert.deepEqual(await page.context().cookies(), [], 'local session stored a browser secret');
 }
 try {
   provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
@@ -82,11 +83,32 @@ try {
   await startNode();
   browser = await chromium.launch({ headless: true }); page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
-  await step('operator API requires authentication', async () => {
-    assert.equal((await fetch(url + '/api/deployment')).status, 401);
+  await step('local API opens directly and rejects unrelated website origins', async () => {
+    assert.equal((await fetch(url + '/api/deployment')).status, 200);
+    assert.equal((await fetch(url + '/api/deployment', { headers: { Origin: 'https://unrelated.example' } })).status, 401);
     assert.equal((await get('/deployment')).funding_required, true);
   });
   await connect();
+  await step('local disconnect and reconnect need no token or reload', async () => {
+    await page.getByRole('button', { name: 'Disconnect view', exact: true }).click();
+    await expect(page.getByLabel('Node token')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Reconnect to local node', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
+  });
+  await step('an opened HTML artifact cannot act as the local operator', async () => {
+    const before = (await get('/records?kind=environment')).items.length;
+    const envelope = { id: crypto.randomUUID().replaceAll('-', ''), kind: 'environment.create', actor: '', run: '', args: {} };
+    const bytes = `<html><body><h1>Untrusted artifact fixture</h1><script>window.artifactScriptRan = true; fetch('/api/operations', {method:'POST',headers:{'X-Personas-Client':'workspace','Content-Type':'application/json'},body:${JSON.stringify(JSON.stringify(envelope))}});</script></body></html>`;
+    const q = new URLSearchParams({ id: crypto.randomUUID().replaceAll('-', ''), name: 'fixture.html', media_type: 'text/html', size: String(Buffer.byteLength(bytes)), digest: createHash('sha256').update(bytes).digest('hex') });
+    const upload = await fetch(url + '/api/uploads?' + q, { method: 'POST', headers: { 'X-Personas-Client': 'workspace' }, body: bytes });
+    assert(upload.ok); const result = await upload.json(); assert.equal(result.state, 'succeeded');
+    const response = await page.goto(url + '/api/artifacts/' + result.result.id);
+    assert(response.headers()['content-security-policy'].includes('sandbox'));
+    await expect(page.getByRole('heading', { name: 'Untrusted artifact fixture' })).toBeVisible();
+    assert.equal(await page.evaluate(() => window.artifactScriptRan), undefined);
+    assert.equal((await get('/records?kind=environment')).items.length, before);
+    await connect();
+  });
   let allowance, persona, environment, work, run, request;
   await step('create finite funding with explicit prices through UI', async () => {
     await page.getByRole('button', { name: 'Funding', exact: true }).click();
@@ -168,6 +190,8 @@ try {
     await page.getByRole('button', { name: 'Operator fixture question', exact: true }).first().click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByLabel('Your response').fill('Synthetic operator observation, not physical evidence.');
+    await details.getByLabel('Attach evidence').setInputFiles({ name: 'fixture-note.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic local upload; no external observation claimed.') });
+    await expect(details).toContainText('File attached');
     await details.getByRole('button', { name: 'Send response', exact: true }).click();
     await expect(details).toContainText('Response delivered to the owner');
     assert.equal((await get('/records/' + request.id)).data.status, 'answered');
@@ -238,6 +262,15 @@ try {
     await expect(page.getByRole('button', { name: 'Amended browser task', exact: true })).toBeVisible();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('personas-token')), null);
     assert.equal(await page.evaluate(() => localStorage.getItem('personas-token')), null);
+  });
+  await step('explicit token mode still requires and validates an operator token', async () => {
+    await stopNode(); await startNode(true); await page.goto(url);
+    await page.getByLabel('Node token').fill('incorrect-token');
+    await page.getByRole('button', { name: 'Connect to node', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Could not connect');
+    await page.getByLabel('Node token').fill(readFileSync(join(root, 'node/token'), 'utf8').trim());
+    await page.getByRole('button', { name: 'Connect to node', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
   });
   assert.deepEqual(errors, []); assert.deepEqual(providerErrors, []); assert(calls < 25, 'unexpected unbounded fixture inference');
   writeFileSync(join(evidence, 'report.json'), JSON.stringify({ scope: 'Real Rust API/SQLite and production browser; synthetic HTTP decisions, no live-model or process-kill claim', checks, calls, pageErrors: errors, providerErrors }, null, 2));

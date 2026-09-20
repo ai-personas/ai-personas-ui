@@ -4972,7 +4972,7 @@
     [
       "POST",
       "/api/session",
-      "Authorize browser file loading using a session cookie; other operations still require bearer authentication"
+      "Connect the same-origin loopback workspace without a token; authenticated remote sessions authorize browser file reads"
     ],
     [
       "GET",

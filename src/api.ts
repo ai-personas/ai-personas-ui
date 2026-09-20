@@ -10,13 +10,16 @@ export let token = '';
 try { sessionStorage.removeItem('personas-token'); } catch { /* Storage may be disabled. */ }
 const pending = new Map<string, { body: string; inflight?: Promise<Action> }>();
 export function connect(value: string) { token = value.trim(); pending.clear(); }
+export function authHeaders(): Record<string, string> {
+  return { 'X-Personas-Client': 'workspace', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
 export class HttpError extends Error {
   status: number;
   constructor(message: string, status: number) { super(message); this.name = 'HttpError'; this.status = status; }
 }
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch('/api' + path, { ...init, credentials: 'same-origin', headers: {
-    Authorization: `Bearer ${token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers,
+    ...authHeaders(), ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers,
   } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -76,7 +79,7 @@ export async function watch(signal: AbortSignal, status: (message: string) => vo
         if (!Number.isSafeInteger(page.sequence) || page.sequence < 0) throw new Error('Invalid activity watermark');
         cursor = page.sequence; changed();
       }
-      const response = await fetch('/api/events?after=' + cursor, { credentials: 'same-origin', headers: { Authorization: `Bearer ${token}` }, signal });
+      const response = await fetch('/api/events?after=' + cursor, { credentials: 'same-origin', headers: authHeaders(), signal });
       if (response.status === 409 || response.status === 410) cursor = undefined;
       if (!response.ok || !response.body) throw new Error('Activity stream unavailable');
       const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';

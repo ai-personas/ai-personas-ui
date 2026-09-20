@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { lazy, Suspense } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { connect, data, label, operate, request, token, watch, fileURL, type Entity, type Command } from './api';
+import { connect, data, label, operate, request, token, watch, fileURL, HttpError, type Entity, type Command } from './api';
 import { useDebounced, useRecords, useResource } from './hooks';
 import { text, isRecordID, recordIDs, workFacts, stateTone } from './workspace';
 import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, type View, type WorkFilter } from './presentation';
@@ -39,13 +39,16 @@ export function Pagination({ next, previous, onNext, onPrevious, disabled = fals
 }
 export type Act = (kind: Command['kind'], args: unknown, actor?: string, run?: string) => ReturnType<typeof operate>;
 
-function Connection({ onConnected }: { onConnected: () => void }) {
+function Connection({ onConnected, local, retryLocal, message }: { onConnected: () => void; local: boolean; retryLocal: () => void; message: string }) {
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const pending = useRef<AbortController>();
   useEffect(() => () => pending.current?.abort(), []);
   return <main class="connection connection-screen"><span class="brand-mark">ap</span><p class="eyebrow">AI PERSONAS · NODE WORKSPACE</p>
     <h1>Different perspectives.<br/>Accountable work.</h1><p class="connection-intro">Continuing AI collaborators. A shared purpose. Results you can inspect.</p>
-    <div class="connection-card"><h2>Connect to your node</h2><p>Use the operator token supplied by your running Rust node.</p>
+    <div class="connection-card"><h2>{local ? 'Open your local workspace' : 'Connect to your node'}</h2>
+      {message && <p role="alert">{message}</p>}
+      {local ? <><p>Your local node connects automatically. No token is needed.</p><button onClick={retryLocal}>Reconnect to local node</button></> : <>
+      <p>This node requires an operator token. Local nodes started with the default settings connect automatically.</p>
       <form onSubmit={async e => {
         e.preventDefault(); if (pending.current) return;
         const value = String(new FormData(e.currentTarget).get('token') || '').trim();
@@ -68,14 +71,29 @@ function Connection({ onConnected }: { onConnected: () => void }) {
         {busy && <button type="button" class="secondary" onClick={() => { pending.current?.abort(); pending.current = undefined; connect(''); setBusy(false); }}>Cancel connection</button>}
       </form>
       <p id="token-note" class="micro">Your token stays in this tab’s memory, not browser storage. The node controls execution and permissions; this UI does not add runtime isolation.</p>
+      </>}
     </div><p class="connection-principle"><Icon name="Shield"/>Activity, evidence, and acceptance are separate facts.</p>
   </main>;
 }
 function App() {
   const [connected, setConnected] = useState(!!token), [connection, setConnection] = useState('Connecting…');
+  const [opening, setOpening] = useState(true), [attempt, setAttempt] = useState(0), [local, setLocal] = useState(true), [openError, setOpenError] = useState('');
   const [page, setPage] = useState<View>('Work'), [selected, setSelected] = useState<string>(), [artifact, setArtifact] = useState<string>();
   const [work, setWork] = useState<string>(), [create, setCreate] = useState<string>(), [brief, setBrief] = useState(''), [error, setError] = useState('');
   const content = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const controller = new AbortController(); let active = true;
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    setOpening(true); setOpenError('');
+    void request('/session', { method: 'POST', signal: controller.signal }).then(() => {
+      if (active) { setLocal(!token); setConnected(true); }
+    }).catch(error => {
+      if (!active) return;
+      setLocal(!(error instanceof HttpError && error.status === 401));
+      if (!(error instanceof HttpError && error.status === 401)) setOpenError('Could not reach the node. Check that it is running, then reconnect.');
+    }).finally(() => { clearTimeout(timeout); if (active) setOpening(false); });
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [attempt]);
   useEffect(() => { document.title = `${work ? 'Work workspace' : page} · AI Personas`; }, [page, work]);
   useEffect(() => {
     if (!connected) return;
@@ -90,7 +108,8 @@ function App() {
   };
   const disconnect = () => { connect(''); setConnected(false); navigate('Work'); setConnection('Disconnected'); };
   const start = () => { setBrief(''); setCreate(page); };
-  if (!connected) return <Connection onConnected={() => setConnected(true)}/>;
+  if (opening) return <main class="connection connection-screen"><span class="brand-mark">ap</span><h1>AI Personas</h1><p role="status">Opening your workspace…</p></main>;
+  if (!connected) return <Connection local={local} message={openError} retryLocal={() => { connect(''); setAttempt(n => n + 1); }} onConnected={() => { setLocal(false); setConnected(true); }}/>;
   const meta = VIEW_META[page];
   return <div class="shell design-shell">
     <a class="skip-link" href="#main-content" onClick={e => { e.preventDefault(); content.current?.focus(); }}>Skip to content</a>

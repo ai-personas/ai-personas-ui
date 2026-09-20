@@ -12,10 +12,12 @@ From the matching [Rust runtime checkout](https://github.com/ai-personas/ai-pers
 ./start
 ```
 
-The same command works in a built release. Open **http://127.0.0.1:19000** and
-enter the node's token. See the runtime's
+Open **http://127.0.0.1:19000**. The local workspace connects automatically;
+no token is needed. On supported Linux hosts, missing build tools and the matching
+UI are downloaded automatically. Git and sudo are not required. The same command
+works in a built release. See the runtime's
 [setup guide](https://github.com/ai-personas/ai-personas/blob/rewrite/design-first/docs/SETUP.md)
-for prerequisites and inference configuration.
+for supported hosts and inference configuration.
 
 ## In the workspace
 
@@ -28,8 +30,9 @@ for prerequisites and inference configuration.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 
-The production Preact application uses the authenticated Rust API. Its token stays
-in tab memory. Invitations, accepted responsibilities, historical reviews, and
+The production Preact application uses the Rust API at the same address. Local
+access needs no browser secret; nonlocal nodes and explicit token mode still
+authenticate. Invitations, accepted responsibilities, historical reviews, and
 current acceptance remain distinct.
 
 ## Develop

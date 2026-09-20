@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { data, fileURL, request, token, type Entity } from './api';
+import { authHeaders, data, fileURL, request, type Entity } from './api';
 import Dialog from './Dialog';
 type Phase = 'connecting' | 'receiving' | 'verifying' | 'preparing' | 'ready' | 'native' | 'canceled' | 'failed';
 export default function Viewer({ id, close }: { id: string; close: () => void }) {
@@ -24,7 +24,7 @@ export default function Viewer({ id, close }: { id: string; close: () => void })
       if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error('A valid SHA-256 is required before preparing a preview.');
       if (!crypto.subtle) throw new Error('Digest verification requires a secure browser context. Download remains available.');
       setPhase('receiving'); setProgress([0, d.size]);
-      const response = await fetch(fileURL(id), { headers: { Authorization: `Bearer ${token}` }, credentials: 'same-origin', signal: controller.signal });
+      const response = await fetch(fileURL(id), { headers: authHeaders(), credentials: 'same-origin', signal: controller.signal });
       if (!response.ok || !response.body) { await response.body?.cancel().catch(() => {}); throw new Error('Artifact could not be loaded.'); }
       const reader = response.body.getReader(), parts: Uint8Array<ArrayBuffer>[] = []; let bytes = 0;
       try {

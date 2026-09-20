@@ -57,7 +57,7 @@ try {
       if (u.pathname.startsWith('/api/artifacts/')) return route.fulfill({ contentType: 'text/plain', body: bytes });
       return route.fulfill({ status: 404, json: { error: 'No such fixture endpoint' } });
     });
-    await page.goto(origin); await page.getByLabel('Node token').fill('fixture-token'); await page.getByRole('button', { name: 'Connect to node', exact: true }).click();
+    await page.goto(origin); await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible(); await expect(page.getByLabel('Node token')).toHaveCount(0);
     await step(`${viewport.width}: work opens in workspace`, async () => { await page.getByRole('button', { name: 'Open workspace ↗', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible(); });
     await step(`${viewport.width}: no invented acceptance or balance`, async () => {
       await expect(page.getByLabel('Independent work status')).toContainText('Not established');
