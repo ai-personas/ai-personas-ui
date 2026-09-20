@@ -634,7 +634,7 @@ Create a managed environment directory. Custom host paths require the explicit u
 
 ### `environment.update`
 
-Author the environment name, description and published image reference.
+Author the current work's environment name, description and published image reference after accepting participation. Revision checks preserve concurrent edits. This changes presentation only, never directories or permissions.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

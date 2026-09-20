@@ -31,6 +31,8 @@ const provider = createServer(async (req, res) => {
       actions = [{ kind: 'invitation.respond', args: { id: i.id, revision: i.revision, accept: true, reason: 'Synthetic fixture chooses participation' } }];
     } else if (!context.persona.data.name) {
       actions = [{ kind: 'persona.update', args: { revision: context.persona.revision, name: 'Browser fixture persona', character: 'Synthetic provider for operator mechanics, not model capability evidence.', reason: 'Fixture-authored identity' } }];
+    } else if (!context.environment.data.name) {
+      actions = [{ kind: 'environment.update', args: { id: context.environment.id, revision: context.environment.revision, name: 'Browser fixture place', description: 'A shared environment authored after accepting participation.' } }];
     } else if (!context.history.some(a => a.request.kind === 'request.create')) {
       actions = [{ kind: 'request.create', args: { purpose: 'Operator fixture question', instructions: 'Provide an observation through the UI.', evidence_required: 'A text response; no physical evidence is claimed.', artifacts: [] } }];
     } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'document.write')) {
@@ -165,6 +167,16 @@ try {
     assert(current.data.mandate.id); assert.deepEqual(current.data.personas, [persona.id]);
     await expect(page.getByLabel('Current obligations')).toContainText('No accepted owner');
     await expect(page.getByLabel('Current obligations')).toContainText('Evidence: missing');
+  });
+  await step('restricted participation can author a profile and environment without host grants', async () => {
+    assert.equal((await get('/records/' + environment.id)).data.name, 'Browser fixture place');
+    assert.equal((await get('/records?kind=grant')).items.length, 0);
+    await page.locator('.activity-persona').click();
+    const identity = page.getByLabel('Persona identity');
+    await expect(identity).toContainText(persona.id);
+    await expect(identity).toContainText('active');
+    await expect(identity).toContainText('Fixture-authored identity');
+    await page.getByRole('button', { name: 'Close details', exact: true }).click();
   });
   await step('amend scope through UI while preserving original request', async () => {
     await page.getByRole('button', { name: 'Amend task', exact: true }).click();

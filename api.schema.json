@@ -2341,7 +2341,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Author the environment name, description and published image reference.",
+            "description": "Author the current work's environment name, description and published image reference after accepting participation. Revision checks preserve concurrent edits. This changes presentation only, never directories or permissions.",
             "type": "object",
             "properties": {
               "kind": {
@@ -5553,7 +5553,7 @@
     ],
     [
       "environment.update",
-      "Author the environment name, description and published image reference."
+      "Author the current work's environment name, description and published image reference after accepting participation. Revision checks preserve concurrent edits. This changes presentation only, never directories or permissions."
     ],
     [
       "work.create",
@@ -7958,7 +7958,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Author the environment name, description and published image reference.",
+        "description": "Author the current work's environment name, description and published image reference after accepting participation. Revision checks preserve concurrent edits. This changes presentation only, never directories or permissions.",
         "type": "object",
         "properties": {
           "kind": {
