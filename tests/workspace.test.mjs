@@ -1,9 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WORK_TABS, fields, text, count, recordIDs, activityText, workFacts, assessmentFacts,
-  ownership, stateTone, assumptionNote, matchesRecords } from '../src/workspace.ts';
+  ownership, stateTone, assumptionNote, matchesRecords, matchesWork, matchesAllowance } from '../src/workspace.ts';
 const id = n => n.toString(16).padStart(32, '0');
 const record = (kind, data = {}) => ({ id: id(1), kind, scope: id(2), revision: 1, created: '', updated: '', data });
+
+test('actual Rust charge events refresh only the matching allowance', () => {
+  for (const kind of ['resource_charge', 'budget_charge']) {
+    const event = { kind, entity: id(9), data: { scope: id(2), owner: '', revision: 2, status: 'consumed' } };
+    assert.equal(matchesAllowance(event, id(2)), true);
+    assert.equal(matchesAllowance(event, id(3)), false);
+    assert.equal(matchesWork(event, id(4)), true);
+  }
+  assert.equal(matchesAllowance({ kind: 'resource_root', entity: id(2), data: { scope: '' } }, id(2)), true);
+  assert.equal(matchesAllowance({ kind: 'run', entity: id(9), data: { scope: id(2) } }, id(2)), false);
+});
+test('latest call and current work projections refresh from their dependencies', () => {
+  assert.equal(matchesRecords({ kind: 'call', entity: id(9), data: { scope: id(8) } }, 'run', id(2), id(3)), true);
+  for (const kind of ['commitment', 'work_mandate', 'work_feedback', 'work_release', 'agreement']) {
+    const event = { kind, entity: id(9), data: { scope: id(2), owner: id(3) } };
+    assert.equal(matchesRecords(event, 'work'), true);
+    assert.equal(matchesWork(event, id(2)), true);
+    assert.equal(matchesWork(event, id(4)), false);
+  }
+});
 
 test('six work views are independent from domain or a profession roster', () => {
   assert.equal(WORK_TABS.length, 6);

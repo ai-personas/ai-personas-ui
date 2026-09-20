@@ -34,7 +34,8 @@ into the browser. Explicit HTTP provider configurations are also supported.
 - **Personas and requests:** send messages, inspect decisions, pause or resume
   participation, and answer requests with observations or attachments. Message
   receipts distinguish delivery, model inclusion, and acknowledgment, and show
-  current blockers with links to activity and funding.
+  current blockers with links to activity and funding. Activity cards show the
+  latest decision, its time, and any failure; counters update as calls settle.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 
@@ -47,6 +48,10 @@ When production capacity runs out, use **Work → Funding → Edit allowance**.
 Finishing reserves remain separate. Saving a shared allowance can let waiting
 participants continue; paused and cancelled work stays stopped. An allowance
 does not transfer money or grant execution rights.
+
+Submitted document versions open from **Work → Artifacts & evidence**. If a
+decision fails, inspect its diagnostic before using **Resume** to request another
+call. A waiting persona can still have unfinished obligations and retained results.
 
 ## Develop
 

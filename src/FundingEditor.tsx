@@ -27,6 +27,20 @@ function NumberField({ name, title, value, money: currency = false }: { name: st
   return <label>{title}<input name={name} type="number" min="0" step={currency ? '0.000001' : '1'} required defaultValue={currency ? value / 1_000_000 : value}/></label>;
 }
 
+// Keep keystroke updates local; the funding dialog and model catalogue do not
+// rerender for each digit, and background events cannot reset this draft.
+function CallCapacity({ total, finishing }: { total: number; finishing: number }) {
+  const [calls, setCalls] = useState(String(total)), [reserve, setReserve] = useState(String(finishing));
+  const valid = /^\d+$/.test(calls) && /^\d+$/.test(reserve)
+    && Number.isSafeInteger(Number(calls)) && Number.isSafeInteger(Number(reserve));
+  return <div class="call-capacity"><div class="operator-grid">
+    <label>Total model calls<input name="calls" type="number" min="0" step="1" required value={calls} onInput={e => setCalls(e.currentTarget.value)}/></label>
+    <label>Calls reserved for review and finishing<input name="closeout_calls" type="number" min="0" step="1" required value={reserve} onInput={e => setReserve(e.currentTarget.value)}/></label>
+  </div>{valid && <p class={Number(reserve) > Number(calls) ? 'notice' : 'micro'} aria-live="polite">{Number(reserve) > Number(calls)
+    ? 'Finishing reserves exceed the total call limit.'
+    : `${Number(calls) - Number(reserve)} production calls before existing usage and reservations (${calls} total − ${reserve} reserved for finishing).`}</p>}</div>;
+}
+
 export function EditAllowance({ id, act }: { id: string; act: Act }) {
   const [editing, setEditing] = useState(false);
   return <><button class="secondary" onClick={() => setEditing(true)}>Edit allowance</button>
@@ -86,9 +100,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
       {(error || readError) && <p role="alert">{error || readError}</p>}
       {stale && <p role="alert">This allowance changed while you were editing. <button type="button" onClick={reload}>Reload current limits</button> to replace this draft before saving.</p>}
       <label>Reason for funding change<textarea name="reason" required rows={2}/></label>
-      <fieldset><legend>Calls and personas</legend><div class="operator-grid">
-        <NumberField name="calls" title="Total model calls" value={limits.calls}/>
-        <NumberField name="closeout_calls" title="Calls reserved for review and finishing" value={d.closeout_calls}/>
+      <fieldset><legend>Calls and personas</legend><CallCapacity total={limits.calls} finishing={d.closeout_calls}/><div class="operator-grid">
         <NumberField name="births" title="Maximum new personas, including founders" value={limits.births}/>
         <NumberField name="max_depth" title="Maximum descendant depth" value={limits.max_depth}/>
         <NumberField name="concurrent_calls" title="Concurrent calls" value={limits.concurrent_calls}/>

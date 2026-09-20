@@ -7,6 +7,7 @@ import './operator.css';
 import { modelKey, ModelStatus, useModels } from './Models';
 import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
+import { matchesAllowance } from './workspace';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -116,10 +117,11 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
 }
 
 export function AllowanceSummary({ id, act }: { id: string; act?: Act }) {
-  const { value, error } = useResource<any>('/resources/' + id, e => e.entity === id || ['resource_root', 'resource_charge', 'budget_charge'].includes(e.data?.kind));
+  const { value, error } = useResource<any>('/resources/' + id, e => matchesAllowance(e, id));
   return <section aria-label="Allowance usage">{error && <p role="alert">{error}</p>}{value ? <>
     <div class="operator-grid"><p><strong>{value.calls.production_remaining}</strong> production calls remaining</p><p><strong>{value.calls.closeout_remaining}</strong> finishing calls remaining</p><p><strong>{value.calls.uncertain}</strong> calls with uncertain usage</p></div>
     <p class="micro">{value.calls.consumed ?? 0} consumed · {value.calls.reserved ?? 0} running reservations · {value.calls.initialization_reserved ?? 0} reserved for persona initialization. Total call limit: {value.limits?.calls ?? 'not reported'}.</p>
+    <p class="micro">The total includes {value.closeout_calls ?? 0} calls reserved for review and finishing. Increasing the total does not make those protected calls available for production.</p>
     {value.calls.production_remaining === 0 && <p class="notice">Production calls are exhausted. A persona's unused initialization reservation can fund its first call; further decisions need more production capacity. Finishing calls remain protected until explicitly reassigned.</p>}
     {value.exposure?.bounds && <p class="micro">{value.exposure.accounted?.tokens?.toLocaleString() ?? 'Unknown'} accounted tokens of {value.exposure.bounds.tokens?.toLocaleString()} · expires {value.exposure.bounds.expires}. All tasks and personas sharing this allowance draw from these limits.</p>}
     {value.exposure?.accounting_status === 'unavailable' && <p role="alert">Accounting is incomplete. Inspect retained charge evidence before changing limits.</p>}

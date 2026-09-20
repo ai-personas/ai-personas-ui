@@ -5,7 +5,8 @@ import { useRef, useState } from 'preact/hooks';
 import { data, label, type Entity } from './api';
 import { useRecords, useResource } from './hooks';
 import { WORK_TABS, type WorkTab, fields, text, strings, recordIDs, isRecordID,
-  workFacts, assessmentFacts, ownership, stateTone, assumptionNote } from './workspace';
+  workFacts, assessmentFacts, ownership, stateTone, assumptionNote, matchesWork } from './workspace';
+import { RunProgress } from './RunProgress';
 import './workspace.css';
 
 type Open = (id: string) => void;
@@ -40,7 +41,8 @@ function RecordCard({ record: r, open, artifact }: { record: Entity } & Links) {
       <h3><button class="record-title" onClick={() => open(r.id)}>{label(r)}</button></h3></div>
       {state && !assessment && <Badge value={state}/>}</header>
     <Reference id={author} caption={isPerspective ? 'Perspective authored by' : 'Recorded by / owner'} open={open}/>
-    {body && <p class="record-prose record-excerpt">{body}</p>}
+    {body && r.kind !== 'run' && <p class="record-prose record-excerpt">{body}</p>}
+    {r.kind === 'run' && <RunProgress run={r} open={open}/>}
     {isPerspective && <><NamedField name="Proposed attention" value={d.priorities}/><NamedField name="Expected contribution" value={d.contribution}/><NamedField name="Concerns" value={d.concerns}/><p class="record-caveat">An individual perspective, not an assignment or a collective decision.</p></>}
     {r.kind === 'commitment' && <>
       <p class="ownership-label">{ownership(r).label}</p><Reference id={ownership(r).id} caption="Persona" open={open}/>
@@ -121,7 +123,7 @@ function Roster({ work, open }: { work: Entity; open: Open }) {
   </section>;
 }
 export default function Workspace({ id, open, artifact, back, act }: { id: string; back: () => void; act: Act } & Links) {
-  const { value: work, error, loading } = useResource<Entity>('/records/' + id, e => e.entity === id || e.data?.scope === id || e.data?.work === id);
+  const { value: work, error, loading } = useResource<Entity>('/records/' + id, e => matchesWork(e, id));
   const [tab, setTab] = useState<WorkTab>('Overview');
   const tabs = useRef<HTMLDivElement>(null);
   if (error && !work) return <section><button class="text-button" onClick={back}>← All work</button><p role="alert">{error}</p></section>;
@@ -150,6 +152,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
         aria-controls="workspace-panel" tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)}>{name}</button>)}</div>
     <section id="workspace-panel" role="tabpanel" aria-labelledby={`workspace-tab-${WORK_TABS.indexOf(tab)}`} tabIndex={0}>
       {tab === 'Overview' && <>
+        {section('Persona activity', 'run', 'No participation runs have been recorded.', 'Latest decisions and current stop reasons. Open a run to inspect actions or pause, resume, and cancel participation.')}
         <section class="workspace-section mandate"><span class="field-label">Recorded request · scope is not silently expanded</span><h2>The need</h2><p class="record-prose">{text(d.brief, 'Read the exact record for the retained request.')}</p>
           <p class="record-caveat">The interface does not assign professions, rank personalities, choose a team strategy, or declare a design safe.</p></section>
         {fields(d.mandate).id && <CurrentMandate id={text(fields(d.mandate).id)} open={open}/>}
@@ -157,7 +160,6 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
           {d.resource_root ? <section class="workspace-section"><h2>Funding and finishing capacity</h2><AllowanceSummary id={text(d.resource_root)}/></section> : <section class="workspace-section"><h2>Funding</h2><p>No allowance is bound. Use Funding above to authorize one.</p></section>}</div>
         {section('Current collective commitments', 'commitment', 'No explicit commitments are visible. Open persona activity to inspect what has actually happened.', 'Accepted responsibilities and dependencies, not an automatically ranked task list.')}
         {section('Needs attention', 'request,work_feedback,feedback', 'No requests or consequential feedback are visible on this page. This is not proof that the work has no blockers.', 'Answers, acknowledgements, dispositions and verified repairs are different states.')}
-        {section('Persona activity', 'run', 'No participation runs have been recorded.', 'Open a run to inspect actions or use the supported pause, resume and cancel controls.')}
       </>}
       {tab === 'Perspectives' && <>
         <div class="workspace-intro"><h2>Different people, different approaches</h2><p>Agendas belong to individuals. Proposals remain proposals until appropriately adopted. Private perspectives are not requested or exposed by this view.</p></div>
@@ -185,7 +187,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
       {tab === 'Decisions & learning' && <>
         {section('Decisions, changes & handoffs', 'decision,work_entry', 'No attributed work decisions are available. Open activity for original action receipts.')}
         {section('Retained fragments', 'fragment', 'No work-scoped fragments are visible. Persona-owned learning is available from that persona’s detail; it is not imported across scopes.')}
-        {section('Authored documents', 'document', 'No work-scoped documents are visible.', 'Documents remain documents; they are not automatically classified as learned skills.')}
+        <section class="workspace-section"><h2>Authored documents</h2><p>Documents belong to their author or shared environment. Exact versions submitted to this task are linked from its submissions.</p><button class="secondary" onClick={() => setTab('Artifacts & evidence')}>View submitted documents and files</button></section>
       </>}
     </section>
     <aside class="contract-boundary"><p>Scope, funding, participation, and evidence come from your node. Selecting participants offers an invitation; each persona chooses whether to join and accept responsibility.</p></aside>

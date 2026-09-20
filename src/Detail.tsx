@@ -8,6 +8,7 @@ import { useRecords, useResource } from './hooks';
 import { Facts, Portrait, Pagination, Status, type Act } from './main';
 import { assessmentFacts, isRecordID, recordIDs, text } from './workspace';
 import Dialog from './Dialog';
+import { RunProgress } from './RunProgress';
 const Upload = lazy(() => import('./Upload'));
 const Pick = lazy(() => import('./Create').then(m => ({ default: m.Pick })));
 function Expand({ title, children }: { title: string; children: () => ComponentChildren }) { const [open, setOpen] = useState(false); return <section class="expand"><button class="expand-title" aria-expanded={open} onClick={() => setOpen(!open)}>{title} {open ? '−' : '+'}</button>{open && children()}</section>; }
@@ -21,7 +22,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
   return <Dialog label="Record details" close={close} drawer><div class="drawer"><header><div><p class="eyebrow">{r?.kind || 'Details'}</p><h2>{r ? label(r) : 'Loading…'}</h2></div><button onClick={close}>Close details</button></header><div class="drawer-body">
     {(error || failure) && <p role="alert">{error || failure}</p>}{r && <>
       <Facts r={r}/><p class="long-text">{[d.character, d.description, d.brief, d.content, d.instructions, d.summary, d.findings, d.text, d.purpose].map(v => text(v)).find(Boolean)}</p>
-      {text(d.note) && <p class="notice">{d.note}</p>}{text(d.error) && <p role="alert">{d.error}</p>}
+      {r.kind === 'run' ? <RunProgress run={r} open={open}/> : text(d.note) && <p class="notice">{d.note}</p>}{text(d.error) && <p role="alert">{d.error}</p>}
       {['persona', 'environment'].includes(r.kind) && <><Portrait id={d.portrait || d.image} name={label(r)}/>{isRecordID(d.portrait || d.image) && <button class="text-button" onClick={() => artifact(d.portrait || d.image)}>Inspect original image</button>}</>}
       {r.kind === 'persona' && <><p>Chosen model: {text(d.provider, 'not recorded')} / {text(d.model, 'not recorded')}</p>
         <p class="notice">Preference, demonstrated competence and accepted responsibility are different. No profession is inferred from character or traits.</p>
@@ -43,7 +44,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
         <p>{recordIDs(d.checks).length} referenced checks. Command completion alone is not technical validation.</p>{recordIDs(d.checks).map(ref => <Expand key={ref} title={'Check ' + ref.slice(0, 8)}>{() => <ActionRecord id={ref} act={actSafe}/>}</Expand>)}</>}
       {r.kind === 'call' && <><p>{text(d.actual_model, 'Actual model not recorded')} · {text(d.status)}</p><p>{d.usage?.known ? `${d.usage.input} input · ${d.usage.cached} cached · ${d.usage.output} output tokens` : 'Usage unknown'}</p><p class="micro">Recorded usage is not a currency budget or a host-wide spend measure.</p><p>{d.context_bytes?.toLocaleString()} context bytes · {d.images?.length || 0} selected image inputs</p>
         <p class="notice">Provider archives may contain confidential task material or provider-internal data. They are diagnostics, not a public persona thought stream.</p>
-        <Expand title="Protected provider diagnostics">{() => <>{['request.json', 'input.json', 'response.json', 'provider.jsonl'].map(part => <a key={part} class="record-link" href={'/api/calls/' + id + '/' + part} target="_blank" rel="noreferrer">Inspect {part}</a>)}</>}</Expand></>}
+        <Expand title="Protected provider diagnostics">{() => <><p class="micro">The provider receipt identifies transport and validation failures. Files depend on the provider and completion stage; an unavailable file is not evidence of success.</p>{['provider-receipt.json', 'usage.json', 'request.json', 'response.json', 'provider.jsonl'].map(part => <a key={part} class="record-link" href={'/api/calls/' + id + '/' + part} target="_blank" rel="noreferrer">Inspect {part}</a>)}</>}</Expand></>}
       {r.kind === 'resource_root' && <AllowanceSummary id={id} act={actSafe}/>}
       {['document', 'artifact', 'fragment', 'perspective', 'message'].includes(r.kind) && <ErasePayload record={r} act={actSafe}/>}
       {r.kind === 'artifact' && <button onClick={() => artifact(id)}>Open artifact viewer</button>}

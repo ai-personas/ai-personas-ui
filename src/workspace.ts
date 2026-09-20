@@ -76,11 +76,30 @@ export function matchesRecords(event: unknown, kinds: string, scope = '', owner 
   const e = fields(event), d = fields(e.data);
   const kind = text(e.kind);
   const wanted = kinds.split(',');
-  const derivedWork = wanted.includes('work') && ['run', 'request', 'submission', 'finding'].includes(kind);
+  // Call events are scoped to a run, not to its work/owner. Run summaries
+  // include the latest call; conservatively refresh bounded visible run pages.
+  if (wanted.includes('run') && kind === 'call') return true;
+  const derivedWork = wanted.includes('work') && WORK_FACT_EVENTS.includes(kind);
   if (kinds && !wanted.includes(kind) && !derivedWork) return false;
   const eventScope = text(d.scope) || text(d.work);
   if (scope && eventScope && eventScope !== scope && e.entity !== scope) return false;
   const eventOwner = text(d.owner) || text(d.persona) || text(d.actor);
   if (owner && eventOwner && owner !== eventOwner) return false;
   return true;
+}
+
+const WORK_FACT_EVENTS = ['run', 'request', 'submission', 'finding', 'commitment', 'invitation',
+  'work_mandate', 'work_entry', 'work_feedback', 'work_assembly', 'work_release', 'agreement',
+  'working_agreement', 'resource_root', 'resource_charge', 'budget_charge'];
+
+export function matchesWork(event: unknown, id: string): boolean {
+  const e = fields(event), d = fields(e.data);
+  return e.entity === id || d.scope === id || d.work === id
+    || ['resource_root', 'resource_charge', 'budget_charge'].includes(text(e.kind));
+}
+
+export function matchesAllowance(event: unknown, id: string): boolean {
+  const e = fields(event), d = fields(e.data);
+  return e.entity === id || (['resource_charge', 'budget_charge'].includes(text(e.kind))
+    && (!d.scope || d.scope === id));
 }

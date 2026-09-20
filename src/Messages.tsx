@@ -4,6 +4,7 @@ import { data, label, type Entity, type Page } from './api';
 import { useRecords, useResource } from './hooks';
 import { Pagination, Status, type Act } from './main';
 import { text } from './workspace';
+import { RunProgress } from './RunProgress';
 
 type Delivery = ApiTypes['message_delivery']['items'][number];
 type Open = (id: string) => void;
@@ -11,7 +12,7 @@ type Open = (id: string) => void;
 export function MessageReceipt({ id, open }: { id: string; open: Open }) {
   const [cursors, setCursors] = useState([0]);
   const { value, error, loading } = useResource<Page<Delivery>>(`/messages/${id}/delivery?after=${cursors.at(-1)}&limit=24`,
-    e => e.entity === id || e.kind === 'action' || ['run', 'call', 'resource_root'].includes(e.data?.kind));
+    e => e.entity === id || ['action', 'run', 'call', 'resource_root'].includes(e.kind));
   return <section class="message-receipt" aria-label="Message delivery" aria-busy={loading}>
     <h3>Message delivery</h3><p class="micro">Delivery, inclusion in a model request, and acknowledgment are separate. None guarantees a reply or acceptance of work.</p>
     {error && <p role="alert">Delivery status unavailable: {error}. Previously shown status may be stale.</p>}
@@ -62,7 +63,7 @@ export function PersonaActivity({ persona, funding, open }: { persona: string; f
     {error && <p role="alert">Activity unavailable: {error}</p>}
     {!value && !error && <p role="status">Loading participation…</p>}
     {value?.items.length === 0 && <p>No participation on this page. A saved message does not create a funded task or imply a model is running.</p>}
-    {value?.items.map(run => <article key={run.id}><p><Status value={text(data(run).status)}/></p>{text(data(run).note) && <p class="notice">{data(run).note}</p>}
+    {value?.items.map(run => <article key={run.id}><p><Status value={text(data(run).status)}/></p><RunProgress run={run} open={open}/>
       <div class="button-row"><button class="text-button" onClick={() => open(run.id)}>Inspect activity {run.id.slice(0,8)}</button><button class="text-button" onClick={() => open(run.scope)}>Open related work</button></div></article>)}
     {funding && <button class="secondary" onClick={() => open(funding)}>Manage funding</button>}
     <Pagination previous={cursors.length > 1} next={value?.next} onPrevious={() => setCursors(cursors.slice(0,-1))} onNext={() => value?.next != null && setCursors([...cursors,value.next])}/>
@@ -72,7 +73,7 @@ export function PersonaActivity({ persona, funding, open }: { persona: string; f
 export function Correspondence({ persona, open }: { persona: string; open: Open }) {
   const [cursors, setCursors] = useState([0]);
   const { value, error } = useResource<Page<Entity>>(`/personas/${persona}/messages?after=${cursors.at(-1)}&limit=24`,
-    e => e.kind === 'input' || e.data?.kind === 'message');
+    e => e.kind === 'input' || e.kind === 'message');
   return <section aria-label="Persona correspondence">{error && <p role="alert">{error}</p>}
     {value?.items.map(message => <article class="correspondence-message" key={message.id}>
       <p class="field-label">{data(message).from === persona ? 'Sent' : 'Received'} · {message.created}</p><p class="long-text">{text(data(message).text, 'Payload unavailable')}</p>

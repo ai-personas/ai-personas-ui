@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream' }); res.end(bytes);
   } catch { res.writeHead(404); res.end(); }
 });
-const emit = () => { const event = { sequence: ++sequence, kind: 'record', entity: id(999), data: { kind: 'resource_root', scope: '', data: {} } }; for (const client of clients) client.write('data: ' + JSON.stringify(event) + '\n\n'); };
+const emit = () => { const event = { sequence: ++sequence, kind: 'resource_root', entity: id(999), data: { scope: '', owner: '', revision: sequence, status: 'active' } }; for (const client of clients) client.write('data: ' + JSON.stringify(event) + '\n\n'); };
 async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name); }
 try {
   await mkdir('.qa', { recursive: true }); server.listen(0, '127.0.0.1'); await once(server, 'listening');

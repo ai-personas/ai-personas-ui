@@ -17,13 +17,14 @@ const root = mkdtempSync(join(tmpdir(), 'personas-operator-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence');
 mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
-let calls = 0, app, browser, page, url, port, checks = 0;
+let calls = 0, app, browser, page, url, port, checks = 0, scenario = 'wait';
 const errors = [], providerErrors = [];
 const provider = createServer(async (req, res) => {
   try {
     let body = ''; for await (const chunk of req) body += chunk;
     const input = JSON.parse(body), context = JSON.parse(input.input[0].content[0].text);
     calls++;
+    assert.equal(context.run.data.note || '', '', 'a fresh decision inherited an obsolete stop reason');
     let actions;
     if (context.run.data.membership === 'invited') {
       const i = context.work.data.core.invitation;
@@ -32,12 +33,21 @@ const provider = createServer(async (req, res) => {
       actions = [{ kind: 'persona.update', args: { revision: context.persona.revision, name: 'Browser fixture persona', character: 'Synthetic provider for operator mechanics, not model capability evidence.', reason: 'Fixture-authored identity' } }];
     } else if (!context.history.some(a => a.request.kind === 'request.create')) {
       actions = [{ kind: 'request.create', args: { purpose: 'Operator fixture question', instructions: 'Provide an observation through the UI.', evidence_required: 'A text response; no physical evidence is claimed.', artifacts: [] } }];
+    } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'document.write')) {
+      actions = [{ kind: 'document.write', args: { title: 'Observed fixture document', content: 'Exact synthetic document, not task quality evidence.' } }];
+    } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'submit')) {
+      const written = context.history.find(a => a.request.kind === 'document.write' && a.state === 'succeeded');
+      assert(written, 'synchronous document receipt missing from next decision');
+      actions = [{ kind: 'submit', args: { summary: 'Fixture selected exact observed document', artifacts: [], documents: [written.result.id] } }];
     } else {
       actions = [{ kind: 'wait', args: { reason: 'Explicit synthetic wait for new outside input' } }];
     }
+    const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ summary: 'Synthetic operator decision ' + calls, actions }) }] }];
+    if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',
-      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ summary: 'Synthetic operator fixture', actions }) }] }],
+      output,
       usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, input_tokens_details: { cached_tokens: 0 } } }));
   } catch (e) { providerErrors.push(String(e)); res.writeHead(500); res.end('{}'); }
 });
@@ -303,8 +313,72 @@ try {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.getByRole('button', { name: 'Amended browser task', exact: true }).click();
   });
+  await step('external resume updates latest decision and charged allowance without a local mutation or navigation', async () => {
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'settled fixture');
+    const previous = calls;
+    await op('run.resume', { id: run.id });
+    await until(async () => calls > previous && (await get('/records/' + run.id)).data.status === 'waiting', 'fresh bounded decision');
+    const resources = await get('/resources/' + allowance.id);
+    await expect(page.getByLabel('Persona activity')).toContainText('Synthetic operator decision ' + calls);
+    await expect(page.getByLabel('Allowance usage').first()).toContainText(resources.calls.consumed + ' consumed');
+    await expect(page.getByLabel('Persona activity')).not.toContainText('RESOURCE_EXHAUSTED');
+  });
+  await step('malformed output is visible, charged, bounded, and recoverable through explicit resume', async () => {
+    scenario = 'malformed'; const before = await get('/resources/' + allowance.id);
+    await op('run.resume', { id: run.id });
+    await expect(page.getByLabel('Persona activity')).toContainText('decision_json');
+    const failed = await get('/records/' + run.id);
+    assert.equal(failed.data.latest_call.data.status, 'failed');
+    assert.equal(failed.data.latest_call.data.usage.known, true);
+    const after = await get('/resources/' + allowance.id);
+    assert.equal(after.calls.charged, before.calls.charged + 1, 'failed output must retain its charge');
+    const observed = calls; await delay(500); assert.equal(calls, observed, 'invalid output caused an automatic retry');
+    await expect(page.getByLabel('Persona activity')).not.toContainText('PRIVATE_INVALID_OUTPUT');
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'Inspect exact record ↗', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    scenario = 'commentary';
+    await details.getByRole('button', { name: 'Resume', exact: true }).click();
+    await until(async () => calls > observed && (await get('/records/' + run.id)).data.status === 'waiting', 'commentary plus final recovery');
+    await expect(details).toContainText('Synthetic operator decision ' + calls);
+    await expect(details).not.toContainText('decision_json');
+    await expect(details).not.toContainText('PRIVATE_PREAMBLE');
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+    scenario = 'wait';
+  });
+  await step('all six work sections load and exact submitted documents open from real summaries', async () => {
+    scenario = 'produce'; await op('run.resume', { id: run.id });
+    await until(async () => (await get('/records?kind=submission&scope=' + work.id)).items.length > 0 && (await get('/records/' + run.id)).data.status === 'waiting', 'write then exact submission then explicit wait');
+    await expect(page.getByLabel('Independent work status')).toContainText('1 submitted');
+    for (const tab of ['Perspectives', 'Work & outcomes', 'People & agreements', 'Artifacts & evidence', 'Decisions & learning', 'Overview']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
+      await expect(page.getByRole('tabpanel')).toBeVisible();
+      await expect(page.getByRole('tabpanel').getByRole('alert')).toHaveCount(0);
+    }
+    await page.getByRole('tab', { name: 'Artifacts & evidence', exact: true }).click();
+    await page.getByRole('button', { name: /Open document/ }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await expect(details).toContainText('Exact synthetic document, not task quality evidence.');
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+    await page.getByRole('tab', { name: 'Overview', exact: true }).click(); scenario = 'wait';
+  });
+  await step('open persona correspondence receives external messages while paused without spending', async () => {
+    await op('run.pause', { id: run.id });
+    await page.getByRole('button', { name: 'Personas', exact: true }).click();
+    await page.getByRole('button', { name: 'Browser fixture persona', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await details.getByRole('button', { name: 'Messages', exact: true }).click();
+    const before = calls;
+    await op('message.send', { to: persona.id, work: work.id, text: 'External correspondence fixture update' });
+    await expect(details.getByLabel('Persona correspondence')).toContainText('External correspondence fixture update');
+    assert.equal(calls, before); assert.equal((await get('/records/' + run.id)).data.status, 'paused');
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+    await page.getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('button', { name: 'Amended browser task', exact: true }).click();
+  });
   await expect(page.getByRole('heading', { name: 'Amended browser task', exact: true })).toBeVisible();
   await expect(page.getByLabel('Current obligations')).toContainText('No accepted owner');
+  await expect(page.getByLabel('Persona activity')).toContainText('Synthetic operator decision');
+  await expect(page.getByLabel('Allowance usage').first()).not.toContainText('Loading allowance');
   await page.screenshot({ path: join(evidence, 'operator-desktop.png'), fullPage: true });
   await step('mobile controls fit and archive retains history without refund or resume', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
