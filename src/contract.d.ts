@@ -579,6 +579,10 @@ export type Command =
          * Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.
          */
         capability?: VersionRef | null;
+        /**
+         * Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.
+         */
+        inputs?: VersionRef[] | null;
       };
     }
   | {

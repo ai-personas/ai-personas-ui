@@ -2768,6 +2768,16 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "inputs": {
+                    "description": "Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.",
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
                   }
                 },
                 "additionalProperties": false,
@@ -9055,6 +9065,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "inputs": {
+                "description": "Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.",
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
               }
             },
             "additionalProperties": false,

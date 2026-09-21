@@ -739,6 +739,7 @@ Execute under the node's recorded profile and current grant. Restricted executio
 | `directory` | string or null | Optional |  |
 | `background` | boolean or null | Optional |  |
 | `capability` | VersionRef or null | Optional | Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately. |
+| `inputs` | array or null | Optional | Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed. |
 
 ### `job.read`
 
