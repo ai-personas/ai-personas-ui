@@ -49,8 +49,8 @@ try {
   await expect(page.getByText('Not authored', { exact: true })).toHaveCount(8);
   assert.equal(requests.length, 0, 'opening a profile must not read history or create work');
   await page.evaluate(persona => window.showPersona(persona), revisions[2]);
-  await expect(page.locator('meter[aria-label="Valence: 0 on a -1 to 1 scale"]')).toHaveAttribute('value', '0');
-  await expect(page.locator('meter[aria-label="Arousal: -1 on a -1 to 1 scale"]')).toHaveAttribute('value', '-1');
+  await expect(page.locator('meter[aria-label="Valence: 0 on a -1 to 1 scale"]')).toHaveJSProperty('value', 0);
+  await expect(page.locator('meter[aria-label="Arousal: -1 on a -1 to 1 scale"]')).toHaveJSProperty('value', -1);
   await page.getByRole('button', { name: 'Show persona evolution' }).click();
   await expect(page.getByRole('article', { name: 'Identity revision 2', exact: true })).toContainText('Careful and curious');
   await expect(page.getByRole('img', { name: /^Openness:/ })).toBeVisible();
