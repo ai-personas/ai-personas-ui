@@ -11,7 +11,7 @@ const bytes = Buffer.from('Exact fixture bytes. Not a real engineering result.\n
 const digest = createHash('sha256').update(bytes).digest('hex');
 const documentText = '# A clear plan\n\nA **shared baseline** with readable steps.\n\n## Rooms\n\n- Four bedrooms\n- Two bathrooms\n\n| Room | Count |\n| --- | --- |\n| Bedroom | 4 |\n\n[Unsafe link](javascript:alert(1))\n\n![External image](https://example.invalid/tracker.png)\n\n<img src="x" onerror="window.readerInjected=true">\n\n```text\nA code example\n```';
 const records = [
-  record(1, 'work', { title: 'Fixture house', brief: 'A fixture need, not a generated house.', personas: [person], activity: { running: 1 }, submissions: 1, assessments: { accepted: 1 }, pending_requests: 1, input_requests: 1, mandate: { id: id(19), revision: 1 }, core: { binding: 'adopted', continuation: { status: 'awaiting_acceptance', owners: [] }, coverage: { outcomes: [], scope_review_current: false, scope_review_required: false }, acceptance: null, blocking_feedback: [{ id: id(25), revision: 1 }], stale_resolutions: [{ id: id(25), revision: 1 }], deferred_feedback: [{ id: id(26), revision: 1 }] }, last_operation: id(99), participant_ids: [person], runtime_only: { kind: 'INTERNAL_ENVELOPE', schema: 'transport/99' } }, ''),
+  record(1, 'work', { title: 'Fixture house', brief: 'A fixture need, not a generated house.', personas: [person], activity: { running: 1 }, submissions: 1, assessments: { accepted: 1 }, pending_requests: 1, input_requests: 1, mandate: { id: id(19), revision: 1 }, core: { binding: 'adopted', continuation: { status: 'awaiting_acceptance', owners: [] }, coverage: { outcomes: [], scope_review_current: false, scope_review_required: false }, acceptance: null, blocking_feedback: [{ id: id(25), revision: 1 }], stale_resolutions: [{ id: id(25), revision: 1 }], deferred_feedback: [{ id: id(26), revision: 1 }], stale_assumptions: [{ id: id(27), revision: 1 }], handoff_gaps: [{ commitment: { id: id(28), revision: 1 }, owner: person, continuation: true }] }, last_operation: id(99), participant_ids: [person], runtime_only: { kind: 'INTERNAL_ENVELOPE', schema: 'transport/99' } }, ''),
   record(2, 'persona', { name: 'Mira fixture', character: 'Interested in comparing alternatives.', model: 'fixture-only' }, ''),
   record(3, 'perspective', { owner: person, draft: { kind: 'agenda', subject: null, content: 'Compare alternatives on a common basis.', limitations: 'This is one authored priority, not a group decision.', sources: [] }, status: 'authored' }),
   record(4, 'commitment', { title: 'Unaccepted offer', status: 'offered', owner: person, offered_to: person, draft: { kind: 'INTERNAL_DRAFT', description: 'Compare two layouts for daylight.', criterion: 'Explain the daylight trade-offs clearly.', internal_flag: 'do-not-display' } }),
@@ -37,6 +37,8 @@ const records = [
   record(24, 'persona', { name: 'Rowan fixture' }, ''),
   record(25, 'work_feedback', { title: 'Check revised dimensions', status: 'resolved' }),
   record(26, 'work_feedback', { title: 'Confirm site access', status: 'deferred' }),
+  record(27, 'work_entry', { title: 'Site observation changed', entry_kind: 'assumption', status: 'confirmed_by_evidence' }),
+  record(28, 'commitment', { title: 'Carry the comparison forward', status: 'blocked', owner: person }),
   record(21, 'message', { from: person, to: 'user', text: 'The comparison is ready to read.', origin: { kind: 'INTERNAL_ORIGIN' } }),
 ];
 const sampleAction = { request: { id: id(40), kind: 'message.send', args: { to: 'user', text: 'The comparison is ready to read.', internal_flag: 'do-not-display' } }, state: 'succeeded', result: records.find(r => r.id === id(21)) };
@@ -135,6 +137,10 @@ try {
       await expect(conditions).toContainText('Delivery still has conditions');
       await expect(conditions).toContainText('Check revised dimensions');
       await expect(conditions).toContainText('Confirm site access');
+      await expect(conditions).toContainText('Assumptions need new evidence');
+      await expect(conditions).toContainText('Site observation changed');
+      await expect(conditions).toContainText('Responsibilities need a handoff');
+      await expect(conditions).toContainText('Carry the comparison forward');
     });
     await step(`${viewport.width}: offers and assumptions qualified`, async () => {
       await page.getByRole('tab', { name: 'Work & outcomes', exact: true }).click();
@@ -224,10 +230,10 @@ try {
     await step(`${viewport.width}: proposals and responsibilities have meaningful reading views`, async () => {
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
       await expect(page.getByLabel('Shared opportunity board')).toContainText('Compare daylight before choosing a layout.');
-      const update = page.getByLabel('Shared opportunity board').locator('.work-record');
+      const update = page.getByLabel('Shared opportunity board').locator('.work-record').filter({ hasText: 'Compare daylight before choosing a layout.' });
       const byline = await update.locator('.work-reference').boundingBox(), readAction = await update.getByRole('button', { name: 'View details ↗', exact: true }).boundingBox();
       expect(readAction.y).toBeGreaterThan(byline.y + byline.height);
-      await page.getByLabel('Shared opportunity board').getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await update.getByRole('button', { name: 'View details ↗', exact: true }).click();
       let detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail).toContainText('Compare daylight before choosing a layout.');
       await expect(detail.getByRole('heading', { name: 'Possible drawbacks', exact: true })).toBeVisible();
@@ -236,7 +242,7 @@ try {
       await expect(detail).not.toContainText('INTERNAL_ENVELOPE');
       await page.keyboard.press('Escape');
       await page.getByRole('tab', { name: 'Work & outcomes', exact: true }).click();
-      await page.getByLabel('Responsibilities & dependencies').getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await page.getByLabel('Responsibilities & dependencies').locator('.work-record').filter({ hasText: 'Unaccepted offer' }).getByRole('button', { name: 'View details ↗', exact: true }).click();
       detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail).toContainText('Compare two layouts for daylight.');
       await expect(detail).toContainText('Explain the daylight trade-offs clearly.');

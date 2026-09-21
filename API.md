@@ -416,7 +416,7 @@ Append an attributed observation, improvement hypothesis, decision summary or co
 
 ### `work.entry.dispose`
 
-Dispose a proposal or assumption at an exact revision. Authorization for exploration is not confirmation; confirming an assumption requires operator authority and evidence.
+Dispose a proposal or assumption at an exact revision. Exploration is not confirmation. Operator confirmation binds current evidence; changed or unavailable sources require explicit reconsideration.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -439,7 +439,7 @@ Propose exact working terms to named participants. Agreements never mint authori
 
 ### `agreement.endorse`
 
-Endorse or decline an exact agreement version as yourself; earlier endorsements cannot be inherited by revised terms.
+Endorse or decline an exact agreement version as yourself. Revised terms need fresh consent; superseded terms cannot be revived by withdrawal or a competing stale revision.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -469,7 +469,7 @@ Accept or decline your exact offered responsibility. Nobody can accept on anothe
 
 ### `commitment.update`
 
-Update an accepted responsibility. Final prerequisites need current qualifying closure; closure needs exact outcome evidence or a current explicit release.
+The accepted owner updates responsibility; the operator may cancel with an explicit note. Final prerequisites need current qualifying closure. Cancellation is not completion.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -481,7 +481,7 @@ Update an accepted responsibility. Final prerequisites need current qualifying c
 
 ### `commitment.handoff.offer`
 
-Offer a handoff while retaining current ownership until the successor explicitly responds to this revision.
+The owner or operator proposes a successor while retaining prior responsibility and any handoff gap. Ownership changes only when the successor accepts this exact revision.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

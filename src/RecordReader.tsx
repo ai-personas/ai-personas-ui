@@ -46,8 +46,12 @@ function ReadingStats({ items }: { items: [string, ComponentChildren][] }) {
 
 export function FeedbackConditions({ value, open, historical = false }: { value: unknown; open: Open; historical?: boolean }) {
   const d = fields(value), stale = Array.isArray(d.stale_resolutions) ? d.stale_resolutions : [], deferred = Array.isArray(d.deferred_feedback) ? d.deferred_feedback : [];
-  if (!stale.length && !deferred.length) return null;
+  const assumptions = Array.isArray(d.stale_assumptions) ? d.stale_assumptions : [];
+  const gaps = Array.isArray(d.handoff_gaps) ? d.handoff_gaps.map(fields) : [];
+  if (!stale.length && !deferred.length && !assumptions.length && !gaps.length) return null;
   return <aside class="completion-conditions" aria-label="Delivery conditions">
+    {!!assumptions.length && <><h3>Assumptions need new evidence</h3><p>The observations used to confirm these assumptions changed or became unavailable. Their earlier confirmation no longer supports the current result.</p><RelatedItems title="Assumptions to reconsider" value={assumptions} open={open}/></>}
+    {!!gaps.length && <><h3>{historical ? 'Handoffs outstanding at release' : 'Responsibilities need a handoff'}</h3><p>{historical ? 'These responsibilities still needed an accepted successor or an authorized cancellation when this result was released.' : 'A previous owner is unavailable. This needs an accepted successor or an authorized cancellation. Naming someone alone does not transfer ownership.'}</p><RelatedItems title="Responsibilities needing attention" value={gaps.map(gap => gap.commitment)} open={open}/></>}
     {!!stale.length && <><h3>Earlier resolutions need another check</h3><p>Their supporting evidence changed or is no longer available. These findings block delivery again until they are revalidated.</p><RelatedItems title="Feedback to recheck" value={stale} open={open}/></>}
     {!!deferred.length && <><h3>{historical ? 'Conditions recorded with this release' : 'Delivery still has conditions'}</h3><p>Deferred or waived blocking findings remain conditions on the result. They are not resolved findings or unconditional acceptance.</p><RelatedItems title="Deferred or waived findings" value={deferred} open={open}/></>}
   </aside>;

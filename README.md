@@ -82,6 +82,8 @@ which prepares structured requests and interprets the returned decisions.
 - **Delivery conditions:** Deferred or waived blocking findings remain visible
   conditions. Earlier resolutions with stale supporting evidence are shown as
   needing revalidation, with links to the feedback and its referenced version numbers.
+  Changed assumption evidence and responsibilities needing an accepted handoff
+  also appear as readable conditions with links to the affected records.
 
 The production Preact application uses the Rust API at the same address. Local
 access needs no browser secret; nonlocal nodes and explicit token mode still
