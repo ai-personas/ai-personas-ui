@@ -413,6 +413,24 @@ try {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.getByRole('button', { name: 'Amended browser task', exact: true }).click();
   });
+  await step('operator context recovery preserves saved evidence and does not start inference', async () => {
+    const before = await get('/actions?scope=' + run.id + '&limit=100');
+    const documents = (await get('/records?kind=document')).items.map(r => r.id);
+    const callsBefore = calls;
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await details.getByRole('button', { name: 'Reduce active context', exact: true }).click();
+    await details.getByLabel('Handoff note').fill('Operator handoff: prior synthetic output stays retained; inspect saved evidence before continuing.');
+    await details.getByRole('button', { name: 'Save smaller context', exact: true }).click();
+    await expect(details).toContainText('Active context reduced.');
+    const current = await get('/records/' + run.id);
+    assert.equal(current.data.status, 'paused'); assert.equal(calls, callsBefore);
+    assert(current.data.context.startsWith('Operator handoff:'));
+    assert.equal(current.data.history_through, before.items.at(-1).request.id);
+    assert.deepEqual((await get('/records?kind=document')).items.map(r => r.id), documents);
+    assert.equal((await get('/actions?scope=' + run.id + '&limit=100')).items.length, before.items.length + 1);
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+  });
   await expect(page.getByRole('heading', { name: 'Amended browser task', exact: true })).toBeVisible();
   await expect(page.getByLabel('Current obligations')).toContainText('No accepted owner');
   await expect(page.getByLabel('Persona activity')).toContainText('Synthetic operator decision');
