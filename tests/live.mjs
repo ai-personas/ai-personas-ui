@@ -53,7 +53,7 @@ async function checkImages(name, entries, field) {
     await page.getByRole('button', { name: 'Inspect original image', exact: true }).click();
     const viewer = page.getByRole('dialog', { name: 'Artifact viewer', exact: true });
     assert(d.size <= 8_000_000, 'Live visual verification cannot qualify an image beyond the explicit preview limit; retain this incomplete check');
-    await expect(viewer).toContainText('Preview ready · bytes verified');
+    await expect(viewer).toContainText('File loaded · bytes verified');
     await expect.poll(() => viewer.locator('.artifact-image').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     imageChecks.push({ record: entry.id, artifact: artifact.id, listPreview: d.size <= 512_000, originalDigestVerified: true });
     await page.getByRole('button', { name: 'Close viewer', exact: true }).click();

@@ -17,7 +17,7 @@ export function ContentCard({ record, open, artifact, summary, footer }: { recor
       <p class="card-summary">{recordExcerpt(record) || excerpt(summary) || (isFile ? 'Open the saved file to view or download it.' : 'Open to read the full document.')}</p>
       <div class="content-meta">{isRecordID(author) && <span>By <RecordReference id={author} open={open} fallback="Author"/></span>}
         {footer ? <span>{footer}</span> : <time dateTime={record.updated}>{timestamp(record.updated)}</time>}
-        {isFile && <span>{fileFormat(d.media_type)} · {fileSize(d.size)}</span>}
+        {isFile && <span>{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</span>}
         {text(d.status) && <span class={'state-badge tone-' + stateTone(d.status)}>{d.status.replaceAll('_', ' ')}</span>}
       </div>
     </div><div class="content-actions"><button class="text-button card-open" onClick={read}>{isFile ? 'Open file' : record.kind === 'fragment' ? 'Read note' : 'Read document'} ↗</button>

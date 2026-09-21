@@ -79,7 +79,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'document': return <>
       {text(d.content) ? <RichText text={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
     </>;
-    case 'artifact': return <><p class="reader-file-info">{fileFormat(d.media_type)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
+    case 'artifact': return <><p class="reader-file-info">{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
     case 'work': {
       const f = workFacts(record);
       return <><Story title="Your request" value={d.brief}/>

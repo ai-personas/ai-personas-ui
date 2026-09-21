@@ -7,10 +7,11 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "contract": "node scripts/contract.mjs",
-    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs",
+    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/files.test.mjs",
     "test:identity": "node tests/identity.browser.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:browser": "node tests/browser.mjs",
+    "test:files": "node tests/files.browser.mjs",
     "test:live": "node tests/live.mjs",
     "test:operator": "node tests/operator.browser.mjs",
     "test:activity": "node tests/activity.browser.mjs",
@@ -19,6 +20,8 @@
     "test:participants": "node tests/participants.browser.mjs"
   },
   "dependencies": {
+    "@zip.js/zip.js": "2.17.0",
+    "dompurify": "3.4.15",
     "hash-wasm": "^4.12.0",
     "marked": "18.0.13",
     "preact": "^10.27.0"

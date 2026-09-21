@@ -1,0 +1,54 @@
+.reading-viewer { width: min(1100px, 100%); }
+.viewer .viewer-heading { align-items: start; z-index: 1; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+.viewer-heading h2 { margin: 0; font-size: 1.2rem; }
+.viewer-heading p { margin: 6px 0 0; color: var(--muted); font-size: .8rem; }
+.viewer-heading > button { font-size: .85rem; }
+.viewer .preview-stage { color: var(--muted); font-size: .8rem; padding: 16px 0; }
+.file-preview { min-width: 0; }
+.file-preview .artifact-image { background: #fff; border: 1px solid var(--line); border-radius: 8px; margin: 0; }
+.file-preview .file-source { margin: 0; max-height: 58vh; white-space: pre; overflow-wrap: normal; font-size: .85rem; }
+.file-source code { font-size: inherit; }
+.reading-viewer .reader-prose { max-width: 82ch; margin-inline: auto; }
+.file-video, .file-audio { display: block; width: 100%; }
+.file-video { max-height: 58vh; background: #17231d; border-radius: 8px; }
+.file-pdf { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 8px; }
+.preview-progress { display: grid; gap: 8px; }
+.preview-progress > button { justify-self: start; }
+.viewer-footer { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.viewer-actions { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.viewer .viewer-actions .button, .viewer .archive-file-heading .button { margin: 0; }
+.viewer-actions > button, .viewer-actions > a { font-size: .85rem; }
+.archive-browser { min-width: 0; }
+.archive-breadcrumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin-bottom: 14px; overflow-wrap: anywhere; }
+.archive-breadcrumbs .text-button { font-size: .85rem; max-width: 100%; overflow-wrap: anywhere; }
+.archive-breadcrumbs > span { min-width: 0; }
+.archive-toolbar { display: flex; gap: 16px; justify-content: space-between; align-items: center; margin: 0 0 12px; }
+.archive-toolbar p { margin: 0; font-size: .85rem; color: var(--muted); }
+.archive-toolbar label { margin: 0; font-size: .8rem; width: min(260px, 50%); }
+.archive-files { list-style: none; margin: 0 0 18px; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 52vh; overflow: auto; }
+.archive-files > li + li { border-top: 1px solid var(--line); }
+.archive-file { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; background: var(--paper); color: var(--ink); border-radius: 0; padding: 13px 16px; }
+.archive-file:focus-visible { outline-offset: -3px; }
+.archive-file:hover { background: #edf3e8; }
+.archive-icon { color: var(--accent); font-size: 1.4rem; flex-shrink: 0; }
+.archive-icon .ui-icon { display: block; width: 22px; height: 22px; }
+.archive-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 550; font-size: .9rem; }
+.archive-name small { display: block; margin-top: 3px; font-weight: 400; }
+.archive-size { white-space: nowrap; }
+.archive-file-heading { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.archive-file-heading > div { min-width: 0; }
+.archive-file-heading h3 { overflow-wrap: anywhere; margin: 0 0 4px; }
+.archive-file-heading > a { font-size: .8rem; flex-shrink: 0; }
+.archive-back { margin-bottom: 18px; font-size: .85rem; }
+.archive-selection > h3 { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .viewer .viewer-heading { gap: 12px; }
+  .viewer-heading h2 { font-size: 1rem; }
+  .viewer-heading > button { padding: 8px 10px; font-size: .8rem; }
+  .archive-toolbar, .archive-file-heading { align-items: start; flex-direction: column; }
+  .archive-toolbar label { width: 100%; }
+  .archive-file { padding: 12px; gap: 9px; flex-wrap: wrap; }
+  .archive-size { font-size: .7rem; }
+  .archive-file-heading > a { align-self: start; }
+  .viewer-actions { gap: 10px; }
+}

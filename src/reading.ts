@@ -1,5 +1,6 @@
 import { data, label, type Entity } from './api';
 import { fields, text } from './workspace';
+import { fileFormat as describeFile } from './files/formats';
 
 const LABELS: Record<string, string> = {
   run: 'Persona activity', call: 'Model activity', fragment: 'Learning note', document: 'Document', artifact: 'File',
@@ -71,9 +72,6 @@ export function fileSize(bytes: unknown): string {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB`;
   return `${(bytes / 1024 ** 2).toLocaleString(undefined, { maximumFractionDigits: 1 })} MB`;
 }
-export function fileFormat(media: unknown): string {
-  if (typeof media !== 'string') return 'File';
-  return ({ 'text/plain': 'Text file', 'text/markdown': 'Markdown document', 'application/pdf': 'PDF document',
-    'image/png': 'PNG image', 'image/jpeg': 'JPEG image', 'image/webp': 'WebP image', 'image/svg+xml': 'SVG image',
-    'text/html': 'HTML document', 'application/json': 'JSON data', 'application/octet-stream': 'File' } as Record<string, string>)[media] || media;
+export function fileFormat(media: unknown, name?: unknown): string {
+  return describeFile(typeof name === 'string' ? name : '', typeof media === 'string' ? media : '').label;
 }

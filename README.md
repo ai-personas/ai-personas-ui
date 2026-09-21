@@ -73,7 +73,25 @@ which prepares structured requests and interprets the returned decisions.
   questions, and conclusions in dedicated reading views. Internal fields and
   unknown backend properties are never automatically rendered as tables.
   **Version history** uses the same reader. Raw fields remain under
-  **Technical details**. Files still use verified previews and original downloads.
+  **Technical details**. Files use verified previews and original downloads.
+- **File previews:** Markdown uses marked for headings, lists, tables and code.
+  SVG and raster images display as images; PDF, audio and video use browser
+  viewers. Text, JSON and source files retain their contents without becoming
+  property tables. ZIP files open as folders with breadcrumbs, folder search,
+  paging, nested archives, and individual file previews/downloads. Only the
+  selected file is extracted, with a checksum check; originals remain unchanged.
+  HTML stays source text and SVG previews remove executable content.
+- **Preview performance:** The viewer and each renderer load on demand. Markdown
+  parsing code is also deferred until prose is opened. Download verification and
+  ZIP parsing/decompression run in workers. Closing or unloading a preview aborts
+  its reads, terminates workers, releases blobs/object URLs and stops playback;
+  returning to a ZIP folder unmounts the previously selected file. Imported
+  JavaScript stays in the browser's module cache, but closed previews keep no
+  active components or decoded-file cache. Browser previews hold at most 128 MiB
+  per file/archive (32 MiB raster, 2 MiB SVG), show the first 128 KiB of text, and
+  list up to 10,000 ZIP entries in pages of 100. Up to four nested ZIPs can be
+  browsed. Larger files and password-protected entries retain original downloads;
+  these are browser memory safeguards, not storage or work allowances.
 - **Perspectives:** Individual agendas show each persona's saved priorities for
   this work, including content, limitations, and sources. Relationship notes are
   separate. These optional records are not inferred from character or activity;
@@ -121,6 +139,7 @@ npm run test:participants
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:activity
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:settings
+PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:files
 ```
 
 `test:workspace` uses synthetic HTTP records. `test:forms` checks the production
@@ -141,6 +160,12 @@ and `test:live` campaigns have separate runtime and model prerequisites.
 check roster changes, re-invitations, request highlights, private and group replies,
 peer answers to shared questions, visible replies to the user, mobile layouts,
 and restart persistence. It leaves the real workspace untouched.
+`test:files` uses the production bundle and real Rust artifact API on a disposable
+node with explicit test admission, supplied file fixtures and a local synthetic
+provider. It checks authenticated reads, type-specific rendering, ZIP navigation,
+corrupt/encrypted entries, lazy asset requests, mobile layout and resource cleanup.
+Tampered and interrupted downloads are explicitly injected browser network faults.
+No model calls or changes to the real workspace are required.
 
 For hot reload, `npm run dev` proxies API requests to the node on port 19000.
 For a source launch using this checkout, run

@@ -159,7 +159,7 @@ try {
     await step(`${viewport.width}: verified preview and focus return`, async () => {
       await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'verified.txt', exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Artifact viewer', exact: true });
-      await expect(dialog).toContainText('Preview ready · bytes verified'); await expect(dialog.locator('.reader-prose')).toContainText('Exact fixture bytes');
+      await expect(dialog).toContainText('File loaded · bytes verified'); await expect(dialog.locator('.file-source')).toContainText('Exact fixture bytes');
       await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
       expect(await page.evaluate(() => document.activeElement?.textContent?.includes('Open file'))).toBe(true);
     });
@@ -171,7 +171,7 @@ try {
     await step(`${viewport.width}: native preview is not fetched`, async () => {
       const before = calls.filter(c => c === '/api/artifacts/' + nativeFile).length;
       await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'large-native.cad', exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true })).toContainText('Native application required');
+      await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true })).toContainText('Preview unavailable');
       expect(calls.filter(c => c === '/api/artifacts/' + nativeFile).length).toBe(before); await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: submitted documents have named Learning-style cards`, async () => {

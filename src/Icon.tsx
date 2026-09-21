@@ -5,6 +5,7 @@ const paths = {
   Environments: 'M3 10l9-7 9 7v11H3z M9 21v-8h6v8',
   Learning: 'M12 5v16 M12 5C8 2 5 3 2 4v16c3-1 6-2 10 1 4-3 7-2 10-1V4c-3-1-6-2-10 1',
   File: 'M14 2H5v20h14V7z M14 2v6h5 M8 12h8 M8 16h8',
+  Folder: 'M3 6h7l2 3h9v11H3z M3 6V4h7l2 2h7v3',
   Tools: 'M14 6a5 5 0 0 0-6 6L2 18l4 4 6-6a5 5 0 0 0 6-6l-3 3-4-4 3-3z',
   Network: 'M8 5h13 M17 1l4 4-4 4 M16 19H3 M7 15l-4 4 4 4',
   Funding: 'M3 6h18v14H3z M3 10h18 M15 14h6 M6 6V3h12v3',
