@@ -44,10 +44,27 @@ export default function ToolAccess({ work, act, open, close }: { work: Entity; a
   const [openedAt] = useState(() => Date.now());
   const [person, setPerson] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState('');
   const [cursor, setCursor] = useState([0]);
+  const { value: deployment, error: deploymentError, retry: reloadDeployment } = useResource<{ host_execution: boolean }>('/deployment');
   const { value: page, error: listError } = useRecords('grant', work.id, '', '', cursor.at(-1));
   const d = data(work), people = recordIDs(d.participant_ids ?? d.personas), archived = d.status === 'archived';
+  if (deployment?.host_execution) return <Dialog label="Tool access" close={close}><section class="operator-form">
+    <header><h2>Tool access</h2><button type="button" class="quiet" onClick={close}>Close tool access</button></header>
+    <p role="status">Host tools enabled</p>
+    <p>Personas can install tools and skills, access the network, run programs and subprocesses, and create or edit files using the app’s operating-system account.</p>
+    <p>This setting applies to all work on this node and is saved across restarts. Each accepted participant can choose the tools needed for their work without a separate tool permission.</p>
+    <p class="micro">Commands, results and saved artifacts remain available in activity and evidence. Model usage follows the work’s funding allowance.</p>
+  </section></Dialog>;
   return <Dialog label="Tool access" close={close}><section class="operator-form">
     <header><h2>Tool access</h2><button type="button" class="quiet" onClick={close}>Close tool access</button></header>
+    {deploymentError && <p role="alert">{deploymentError}</p>}
+    {deployment && <section class="work-record"><h3>Install and use host tools</h3>
+      <p>Enable tool and skill installation, network access, subprocesses and file changes with the app’s operating-system account. Applies to all work and is saved across restarts.</p>
+      <button disabled={busy} onClick={async () => {
+        setBusy(true); setError('');
+        try { await act('deployment.configure', { host_execution: true, reason: 'Operator enabled host tool installation, network, subprocesses and file writes for this node.' }); reloadDeployment(); }
+        catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+      }}>{busy ? 'Saving…' : 'Enable host tools'}</button>
+    </section>}
     <p>Allow a persona to run local computations for {label(work)} and save completed output as artifact files. The runtime keeps filesystem access read-only and blocks networking and subprocesses.</p>
     <p class="micro">Each computation and each saved output uses one tool operation from this work’s funding allowance. Funding and permission are both required. This control does not install software or permit physical equipment operation.</p>
     {!archived && <form onInvalidCapture={e => { const details = (e.target as HTMLElement).closest('details'); if (details) details.open = true; }} onSubmit={async e => {

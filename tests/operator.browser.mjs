@@ -204,6 +204,48 @@ try {
     assert.equal((await get('/records/' + grant.id)).data.status, 'revoked');
     await form.getByRole('button', { name: 'Close tool access', exact: true }).click();
   });
+  await step('enable persistent host tools through the UI without changing funding', async () => {
+    await page.getByRole('button', { name: 'Tool access', exact: true }).click();
+    const form = page.getByRole('dialog', { name: 'Tool access', exact: true });
+    const before = await get('/resources/' + allowance.id);
+    await form.getByRole('button', { name: 'Enable host tools', exact: true }).click();
+    await expect(form).toContainText('Host tools enabled');
+    await expect(form.getByRole('button', { name: 'Allow computation and files', exact: true })).toHaveCount(0);
+    const deployment = await get('/deployment');
+    assert.equal(deployment.host_execution, true); assert.equal(deployment.sandboxed, false);
+    assert.equal(deployment.funding_required, true);
+    assert.deepEqual((await get('/resources/' + allowance.id)).limits, before.limits);
+    await form.getByRole('button', { name: 'Close tool access', exact: true }).click();
+  });
+  await step('host job downloads a tool, runs a subprocess, writes a file and publishes evidence', async () => {
+    const artifactText = '<svg xmlns="http://www.w3.org/2000/svg"><text x="10" y="20">Host tool fixture</text></svg>';
+    const toolSource = `from pathlib import Path\nPath('host-tool-output.svg').write_text(${JSON.stringify(artifactText)})\nprint('HOST_TOOL_EXECUTED')\n`;
+    let downloads = 0;
+    const source = createServer((req, res) => { downloads++; res.end(toolSource); });
+    source.listen(0, '127.0.0.1'); await once(source, 'listening');
+    try {
+      const code = `from pathlib import Path\nimport urllib.request,subprocess,sys\np=Path('installed-tools/fixture.py')\np.parent.mkdir(exist_ok=True)\np.write_bytes(urllib.request.urlopen('http://127.0.0.1:${source.address().port}/tool.py').read())\nsubprocess.run([sys.executable,str(p)],check=True)`;
+      const command = "python3 -c '" + code.replaceAll("'", "'\\''") + "'";
+      const launched = await op('exec', { command }, persona.id, run.id, false);
+      assert.equal(launched.state, 'running', JSON.stringify(launched));
+      assert.equal(launched.result.execution_profile, 'host');
+      const finished = await until(async () => {
+        const action = await get('/actions/' + launched.request.id);
+        return action.state !== 'running' && action;
+      }, 'host tool job');
+      assert.equal(finished.state, 'succeeded', JSON.stringify(finished));
+      assert.equal(downloads, 1);
+      const directory = (await get('/records/' + environment.id)).data.directory;
+      assert.equal(readFileSync(join(directory, 'host-tool-output.svg'), 'utf8'), artifactText);
+      const artifact = await op('artifact.publish', { path: join(directory, 'host-tool-output.svg'), name: 'host-tool-output.svg', media_type: 'image/svg+xml' }, persona.id, run.id);
+      assert.equal(artifact.result.data.digest, createHash('sha256').update(artifactText).digest('hex'));
+      const registered = await op('tool.register', { name: 'Downloaded fixture tool', command, description: 'Local test tool download and execution', acquisition: 'Synthetic HTTP source owned by this test' }, persona.id, run.id);
+      const acquired = await op('capability.acquire', { id: registered.result.id, revision: registered.result.revision, check: launched.request.id, limitations: 'Fixture verifies installation mechanics only' }, persona.id, run.id);
+      assert.equal(acquired.result.data.status, 'available');
+      assert.equal((await get('/records?kind=grant&scope=' + work.id)).items.length, 1, 'host tools created a hidden execution grant');
+      await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'persona observes host job');
+    } finally { await new Promise(resolve => source.close(resolve)); }
+  });
   await step('amend scope through UI while preserving original request', async () => {
     await page.getByRole('button', { name: 'Amend task', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Amend task', exact: true });
@@ -473,6 +515,7 @@ try {
   });
   await step('restart retains archive, funding, identity and no idle inference', async () => {
     await stopNode(); await startNode();
+    assert.equal((await get('/deployment')).host_execution, true);
     assert.equal((await get('/records/' + work.id)).data.status, 'archived');
     assert.equal((await get('/records/' + run.id)).data.status, 'cancelled');
     const before = calls; await delay(1200); assert.equal(calls, before);

@@ -22,6 +22,13 @@ export type Command =
       args: {};
     }
   | {
+      kind: "deployment.configure";
+      args: {
+        host_execution: boolean;
+        reason: string;
+      };
+    }
+  | {
       kind: "grant.issue";
       args: {
         draft: GrantDraft;
@@ -576,11 +583,11 @@ export type Command =
         directory?: string | null;
         background?: boolean | null;
         /**
-         * Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.
+         * Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution. In isolated mode the runtime selects the scoped execution grant separately.
          */
         capability?: VersionRef | null;
         /**
-         * Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.
+         * Exact readable artifact versions used by this command. Binds their provenance and verifies their bytes. Isolated execution adds only these files as read-only inputs; host execution uses ordinary account permissions. Omit or use null when no saved files are needed.
          */
         inputs?: VersionRef[] | null;
       };

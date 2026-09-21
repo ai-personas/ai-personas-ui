@@ -2,7 +2,7 @@
 
 Contract: `ai-personas/1`
 
-Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution profile. Restricted execution requires scoped grants and enforced limits; the unrestricted test profile requires explicit operator opt-in.
+Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -64,9 +64,18 @@ Invoke an explicitly selected non-chat model through its adapter and ordinary ca
 
 ### `deployment.read`
 
-Inspect the recorded execution profile and disabled deployment extensions.
+Inspect current host tool access, execution mode, funding and deployment capabilities.
 
 No arguments.
+
+### `deployment.configure`
+
+Operator setting for persistent host tool access. Host commands use the app account with network, subprocesses and writes; no per-tool execution grant is required. Does not resume work or change inference funding.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `host_execution` | boolean | Required |  |
+| `reason` | string | Required |  |
 
 ### `grant.issue`
 
@@ -731,15 +740,15 @@ Cancel decisions and tracked jobs without undoing prior effects.
 
 ### `exec`
 
-Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work.
+Execute a host command. When deployment.host_execution is true, normal app-account commands may install tools and skills, use the network, launch subprocesses and write files without a per-tool grant. Otherwise a current scoped grant is required and execution is isolated: one program, read-only files, no network or subprocesses, finite resource limits. Publish created files with artifact.publish in host mode, or preserve job output with artifact.capture. A launch ends this decision batch; observe its receipt before further work.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `command` | string | Required |  |
 | `directory` | string or null | Optional |  |
 | `background` | boolean or null | Optional |  |
-| `capability` | VersionRef or null | Optional | Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately. |
-| `inputs` | array or null | Optional | Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed. |
+| `capability` | VersionRef or null | Optional | Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution. In isolated mode the runtime selects the scoped execution grant separately. |
+| `inputs` | array or null | Optional | Exact readable artifact versions used by this command. Binds their provenance and verifies their bytes. Isolated execution adds only these files as read-only inputs; host execution uses ordinary account permissions. Omit or use null when no saved files are needed. |
 
 ### `job.read`
 

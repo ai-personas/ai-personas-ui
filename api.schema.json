@@ -192,7 +192,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Inspect the recorded execution profile and disabled deployment extensions.",
+            "description": "Inspect current host tool access, execution mode, funding and deployment capabilities.",
             "type": "object",
             "properties": {
               "kind": {
@@ -202,6 +202,37 @@
               "args": {
                 "type": "object",
                 "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator setting for persistent host tool access. Host commands use the app account with network, subprocesses and writes; no per-tool execution grant is required. Does not resume work or change inference funding.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "deployment.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "host_execution": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "host_execution",
+                  "reason"
+                ]
               }
             },
             "required": [
@@ -2733,7 +2764,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work.",
+            "description": "Execute a host command. When deployment.host_execution is true, normal app-account commands may install tools and skills, use the network, launch subprocesses and write files without a per-tool grant. Otherwise a current scoped grant is required and execution is isolated: one program, read-only files, no network or subprocesses, finite resource limits. Publish created files with artifact.publish in host mode, or preserve job output with artifact.capture. A launch ends this decision batch; observe its receipt before further work.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2759,7 +2790,7 @@
                     ]
                   },
                   "capability": {
-                    "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.",
+                    "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution. In isolated mode the runtime selects the scoped execution grant separately.",
                     "anyOf": [
                       {
                         "$ref": "#/$defs/VersionRef"
@@ -2770,7 +2801,7 @@
                     ]
                   },
                   "inputs": {
-                    "description": "Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.",
+                    "description": "Exact readable artifact versions used by this command. Binds their provenance and verifies their bytes. Isolated execution adds only these files as read-only inputs; host execution uses ordinary account permissions. Omit or use null when no saved files are needed.",
                     "type": [
                       "array",
                       "null"
@@ -6036,7 +6067,11 @@
     ],
     [
       "deployment.read",
-      "Inspect the recorded execution profile and disabled deployment extensions."
+      "Inspect current host tool access, execution mode, funding and deployment capabilities."
+    ],
+    [
+      "deployment.configure",
+      "Operator setting for persistent host tool access. Host commands use the app account with network, subprocesses and writes; no per-tool execution grant is required. Does not resume work or change inference funding."
     ],
     [
       "grant.issue",
@@ -6296,7 +6331,7 @@
     ],
     [
       "exec",
-      "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work."
+      "Execute a host command. When deployment.host_execution is true, normal app-account commands may install tools and skills, use the network, launch subprocesses and write files without a per-tool grant. Otherwise a current scoped grant is required and execution is isolated: one program, read-only files, no network or subprocesses, finite resource limits. Publish created files with artifact.publish in host mode, or preserve job output with artifact.capture. A launch ends this decision batch; observe its receipt before further work."
     ],
     [
       "job.read",
@@ -6489,7 +6524,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Inspect the recorded execution profile and disabled deployment extensions.",
+        "description": "Inspect current host tool access, execution mode, funding and deployment capabilities.",
         "type": "object",
         "properties": {
           "kind": {
@@ -6499,6 +6534,37 @@
           "args": {
             "type": "object",
             "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator setting for persistent host tool access. Host commands use the app account with network, subprocesses and writes; no per-tool execution grant is required. Does not resume work or change inference funding.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "deployment.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "host_execution": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "host_execution",
+              "reason"
+            ]
           }
         },
         "required": [
@@ -9030,7 +9096,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Execute under the node's recorded profile and current grant. Restricted execution permits a shell builtin or exec of one program, read-only workspace/system files, no network or subprocesses, and finite CPU, memory, wall time and output. artifact.capture preserves output. The explicit unrestricted test profile retains shared-host execution. A launch ends this decision batch; observe its receipt before further work.",
+        "description": "Execute a host command. When deployment.host_execution is true, normal app-account commands may install tools and skills, use the network, launch subprocesses and write files without a per-tool grant. Otherwise a current scoped grant is required and execution is isolated: one program, read-only files, no network or subprocesses, finite resource limits. Publish created files with artifact.publish in host mode, or preserve job output with artifact.capture. A launch ends this decision batch; observe its receipt before further work.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9056,7 +9122,7 @@
                 ]
               },
               "capability": {
-                "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.",
+                "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution. In isolated mode the runtime selects the scoped execution grant separately.",
                 "anyOf": [
                   {
                     "$ref": "#/$defs/VersionRef"
@@ -9067,7 +9133,7 @@
                 ]
               },
               "inputs": {
-                "description": "Exact readable artifact versions to open read-only at the paths returned by artifact.inspect. Other blobs remain inaccessible. Omit or use null when no saved files are needed.",
+                "description": "Exact readable artifact versions used by this command. Binds their provenance and verifies their bytes. Isolated execution adds only these files as read-only inputs; host execution uses ordinary account permissions. Omit or use null when no saved files are needed.",
                 "type": [
                   "array",
                   "null"
