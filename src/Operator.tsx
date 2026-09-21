@@ -16,7 +16,7 @@ export function FundingChoice({ value, onChange, required = true }: { value: str
   const { value: page, error } = useRecords('resource_root', '', '', '', cursor.at(-1), 'active');
   return <fieldset><legend>Funding allowance</legend>{error && <p role="alert">{error}</p>}
     <select aria-label="Funding allowance" required={required} value={value} onChange={e => onChange(e.currentTarget.value)}>
-      <option value="">{required ? 'Choose an allowance' : 'No allowance (compatibility mode)'}</option>
+      <option value="">{required ? 'Choose an allowance' : 'No allowance (test mode)'}</option>
       {page?.items.map(r => <option value={r.id} key={r.id}>{data(r).reason || r.id.slice(0, 8)}</option>)}
     </select><small>Allowances are shared ceilings. Create one under Funding, then use it for founders and tasks.</small>
     <Pagination previous={cursor.length > 1} next={page?.next} onPrevious={() => setCursor(cursor.slice(0, -1))} onNext={() => page?.next != null && setCursor([...cursor, page.next])}/>
@@ -169,7 +169,7 @@ export function CurrentMandate({ id, open }: { id: string; open: (id: string) =>
 export function WorkState({ value, open }: { value: any; open: (id: string) => void }) {
   return <section class="workspace-section" aria-label="Current obligations"><h2>Current obligations</h2>
     {!value && <p>No current scope projection was supplied. Inspect the exact work record.</p>}
-    {value?.binding === 'legacy_unbound' && <p>No scope has been adopted. Use Amend task to record the required results.</p>}
+    {value?.binding === 'not_adopted' && <p>No scope has been adopted. Use Amend task to record the required results.</p>}
     {value?.binding === 'adopted' && <><p>Continuation: <strong>{value.continuation.status.replaceAll('_', ' ')}</strong></p>
       {value.continuation.owners.map((owner: string) => <button key={owner} class="text-button" onClick={() => open(owner)}>Inspect continuation owner {owner.slice(0, 8)}</button>)}
       <ul>{value.coverage.outcomes.map((o: any) => <li key={o.key}><strong>{o.key}</strong> · {o.required ? 'Required' : 'Optional'} · {o.unowned ? 'No accepted owner' : 'Accepted owner recorded'} · Evidence: {o.evidence.replaceAll('_', ' ')} · Outside validation: {o.outside_validation.replaceAll('_', ' ')}</li>)}</ul>

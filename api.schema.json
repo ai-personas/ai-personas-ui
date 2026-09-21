@@ -1013,7 +1013,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
+            "description": "Operator binds paused/unstarted unfunded or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
             "type": "object",
             "properties": {
               "kind": {
@@ -6113,7 +6113,7 @@
     ],
     [
       "resource.bind",
-      "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure."
+      "Operator binds paused/unstarted unfunded or imported work to local funding. An existing local binding cannot be replaced to reset expenditure."
     ],
     [
       "resource.closeout.assign",
@@ -7299,7 +7299,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Operator binds paused/unstarted legacy or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
+        "description": "Operator binds paused/unstarted unfunded or imported work to local funding. An existing local binding cannot be replaced to reset expenditure.",
         "type": "object",
         "properties": {
           "kind": {

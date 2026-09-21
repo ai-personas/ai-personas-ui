@@ -61,8 +61,8 @@ test('exact revision attribution retains the operation, explanation and evidence
 test('an inherited stamp never misattributes later lifecycle or model revisions', () => {
   assert.equal(revisionAttribution(revision(3, { profile_revision: { revision: 2, actor: id, operation, reason: 'Earlier explanation' } })).recorded, false);
 });
-test('legacy revisions remain readable without fabricated authorship', () => {
-  assert.deepEqual(revisionAttribution(revision(1, { reason: 'Older explanation', evidence: [evidence] })), { recorded: false, evidence: [] });
+test('unattributed fields do not establish revision authorship', () => {
+  assert.deepEqual(revisionAttribution(revision(1, { reason: 'Unattributed explanation', evidence: [evidence] })), { recorded: false, evidence: [] });
 });
 test('invalid actors and invalid action identities do not become attribution', () => {
   assert.equal(revisionAttribution(revision(2, { profile_revision: { revision: 2, actor: evidence, operation } })).recorded, false);

@@ -7,7 +7,7 @@ import { RecordReference, RelatedItems, Story } from './RecordReader';
 
 function perspectiveType(record: Entity): string {
   const d = data(record);
-  return text(fields(d.draft).kind) || (text(d.agenda) ? 'agenda' : 'other');
+  return text(fields(d.draft).kind);
 }
 
 function PerspectiveCard({ record, open }: { record: Entity; open: (id: string) => void }) {
@@ -16,9 +16,9 @@ function PerspectiveCard({ record, open }: { record: Entity; open: (id: string) 
     <header><h3>{text(d.title) || (kind === 'agenda' ? 'What I am focusing on' : kind === 'relationship' ? 'Working relationship' : 'Authored perspective')}</h3></header>
     <div class="reader-meta">{isRecordID(d.owner) && <span>By <RecordReference id={d.owner} open={open}/></span>}<time dateTime={record.updated}>{timestamp(record.updated)}</time></div>
     {kind === 'relationship' && isRecordID(draft.subject) && <p class="reader-byline">About working with <RecordReference id={draft.subject} open={open}/></p>}
-    <Story value={draft.content || d.content || d.agenda}/>
-    <Story title="Limitations" value={draft.limitations || d.limitations}/>
-    <RelatedItems title="Sources" value={draft.sources || d.sources} open={open}/>
+    <Story value={draft.content}/>
+    <Story title="Limitations" value={draft.limitations}/>
+    <RelatedItems title="Sources" value={draft.sources} open={open}/>
     <button class="text-button" onClick={() => open(record.id)}>View details ↗</button>
   </article>;
 }

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { type Action, type Entity, type Page } from './api';
 import { useResource } from './hooks';
 import {
-  TRAITS, displayValue, object, profileChanges, recordID, revisionAttribution,
+  TRAITS, displayValue, profileChanges, revisionAttribution,
   timestamp, traitNumber, traitPosition, traitSegments, validateRevisionPage,
 } from './identity';
 
@@ -24,12 +24,8 @@ function AuthoringReceipt({ operation, persona }: { operation: string; persona: 
 
 function RevisionCard({ record, before, open }: { record: Entity; before?: Entity; open: (id: string) => void }) {
   const [receipt, setReceipt] = useState(false);
-  const changes = profileChanges(before, record), attribution = revisionAttribution(record), d = object(record.data);
+  const changes = profileChanges(before, record), attribution = revisionAttribution(record);
   const gap = before && before.revision + 1 !== record.revision;
-  const profileChanged = changes.some(change => ['name', 'character', 'portrait', 'attributes'].includes(change.field)
-    || change.field.startsWith('ocean.') || change.field.startsWith('vad.'));
-  const legacyReason = !attribution.recorded && profileChanged && typeof d.reason === 'string' && d.reason.trim() ? d.reason : '';
-  const legacyEvidence = !attribution.recorded && profileChanged && Array.isArray(d.evidence) ? d.evidence.filter(recordID) : [];
   return <article class="identity-revision" aria-label={`Identity revision ${record.revision}`}>
     <header><h5>Revision {record.revision}{!before && record.revision === 1 ? ' · Creation snapshot' : ''}</h5>
       <time dateTime={record.updated}>{timestamp(record.updated)}</time></header>
@@ -48,8 +44,6 @@ function RevisionCard({ record, before, open }: { record: Entity; before?: Entit
       {attribution.evidence.map(ref => <p key={ref.id} class="micro">Supporting record <code>{ref.id.slice(0, 8)}</code>, recorded revision {ref.revision}. <button class="text-button" onClick={() => open(ref.id)}>Read details and version history</button></p>)}
     </> : <>
       <p class="micro">Per-revision authorship was not recorded here. Do not infer it from the current persona or a later revision.</p>
-      {legacyReason && <p class="record-prose">Preserved explanation (not revision-attributed): {legacyReason}</p>}
-      {legacyEvidence.map(id => <p key={id} class="micro">Supporting reference, version not recorded: <button class="text-button" onClick={() => open(id)}>{id.slice(0, 8)}</button></p>)}
     </>}
   </article>;
 }

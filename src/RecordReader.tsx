@@ -116,8 +116,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     </>;
     case 'perspective': return <>
       {draft.kind === 'relationship' && isRecordID(draft.subject) && <p class="reader-byline">About working with <RecordReference id={draft.subject} open={open}/></p>}
-      <Story value={d.content || draft.content || d.agenda || d.description}/><Story title="Priorities" value={d.priorities}/><Story title="Proposed contribution" value={d.contribution}/>
-      <Story title="Concerns" value={d.concerns}/><Story title="Limitations" value={d.limitations || draft.limitations}/><RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/>
+      <Story value={draft.content}/><Story title="Limitations" value={draft.limitations}/><RelatedItems title="Sources" value={draft.sources} open={open}/>
     </>;
     case 'fragment': return <>
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
