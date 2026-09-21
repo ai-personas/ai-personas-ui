@@ -2,6 +2,22 @@
 
 export type Command =
   | {
+      kind: "model.catalog";
+      args: {};
+    }
+  | {
+      kind: "model.invoke.preview";
+      args: {
+        invocation: Invocation;
+      };
+    }
+  | {
+      kind: "model.invoke";
+      args: {
+        invocation: Invocation;
+      };
+    }
+  | {
       kind: "deployment.read";
       args: {};
     }
@@ -518,6 +534,24 @@ export type Command =
       };
     }
   | {
+      kind: "participants.add";
+      args: {
+        subject: string;
+        revision: number;
+        persona: string;
+        reason: string;
+      };
+    }
+  | {
+      kind: "participants.remove";
+      args: {
+        subject: string;
+        revision: number;
+        persona: string;
+        reason: string;
+      };
+    }
+  | {
       kind: "run.resume";
       args: {
         id: string;
@@ -657,6 +691,7 @@ export type Command =
   | {
       kind: "request.create";
       args: {
+        audience?: RequestAudience | null;
         purpose: string;
         instructions: string;
         evidence_required: string;
@@ -751,6 +786,7 @@ export type Command =
         evidence: string;
       };
     };
+export type Capability = "persona_decision" | "choice";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
 export type PerspectiveKind = "agenda" | "relationship";
 export type EntryKind = "observation" | "opportunity" | "decision" | "assumption";
@@ -769,6 +805,7 @@ export type CommitmentStatus = "working" | "blocked" | "submitted" | "closed" | 
 export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" | "resolved" | "deferred" | "waived";
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type Verdict = "accepted" | "rejected" | "incomplete";
+export type RequestAudience = "work" | "user";
 export type WaitCondition =
   | {
       id: string;
@@ -806,6 +843,7 @@ export type SettingsChange =
     };
 
 export interface ApiTypes {
+  attention: Attention;
   command: Command;
   records: Page;
   inputs: Inbox;
@@ -824,6 +862,28 @@ export interface ApiTypes {
   response: ModelResponse;
   network: NetworkInfo;
   [k: string]: unknown;
+}
+export interface Attention {
+  requests: number;
+  work: number;
+  personas: number;
+  environments: number;
+  [k: string]: unknown;
+}
+export interface Invocation {
+  target: Selection;
+  capability: Capability;
+  /**
+   * Direct adapter input, or JSON work data to formulate when prepare is set.
+   * A string keeps arbitrary JSON out of strict provider output schemas.
+   */
+  request_json: string;
+  prepare?: Selection | null;
+}
+export interface Selection {
+  provider: string;
+  model: string;
+  effort?: string | null;
 }
 export interface GrantDraft {
   actor: string;
@@ -890,7 +950,11 @@ export interface Bounds {
   currency: string;
   prices: Price[];
   remote_calls: number;
-  retained_payload_bytes: number;
+  /**
+   * Optional ceiling on authored content/effect reservations. Model transport
+   * is transient and never consumes this allowance. None means no ceiling.
+   */
+  retained_payload_bytes?: number | null;
   cpu_seconds: number;
   effect_operations: number;
   concurrent_memory_bytes: number;

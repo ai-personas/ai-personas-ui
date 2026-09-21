@@ -7,7 +7,7 @@ const id = n => n.toString(16).padStart(32, '0');
 const stamp = '2026-09-19T00:00:00Z';
 const record = (n, kind, data) => ({ id: id(n), kind, scope: '', revision: 1, created: stamp, updated: stamp, data });
 const records = [
-  record(1, 'work', { title: 'Active fixture', brief: 'A recorded need, not generated work.', activity: { running: 1 }, pending_requests: 1, submissions: 2, personas: [id(10)] }),
+  record(1, 'work', { title: 'Active fixture', brief: 'A recorded need, not generated work.', activity: { running: 1 }, pending_requests: 1, input_requests: 1, submissions: 2, personas: [id(10)] }),
   record(2, 'work', { title: 'Paused fixture', brief: 'A different original need.', activity: { paused: 1 }, pending_requests: 0, personas: [] }),
   record(3, 'work', { title: 'Historical fixture', brief: 'Historical review does not establish current activity.', assessments: { accepted: 3 }, submissions: 3 }),
   record(10, 'persona', { name: 'Mira fixture', character: 'An explicitly authored perspective.', provider: 'fixture-provider', model: 'fixture-only' }),
@@ -49,6 +49,7 @@ try {
         return route.fulfill({ json: { items, next, sequence: 0 } });
       }
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-node', peers: [], addresses: [] } });
+      if (/^\/api\/work\/[^/]+\/messages$/.test(u.pathname)) return route.fulfill({ json: { items: [], next: null, sequence: 0 } });
       if (u.pathname === '/api/models' || u.pathname === '/api/curricula') return route.fulfill({ json: [] });
       if (u.pathname.startsWith('/api/records/')) {
         const found = records.find(r => r.id === u.pathname.split('/').at(-1));

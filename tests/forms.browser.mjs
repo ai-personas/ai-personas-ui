@@ -112,6 +112,7 @@ try {
       const bounds = writes.at(-1).args.bounds;
       assert.equal(writes.at(-1).kind, 'resource.bounds.configure'); assert.equal(bounds.cost_units, 0); assert.equal(bounds.prices[0].model, 'alpha');
       assert.equal(bounds.currency, 'USD');
+      assert.equal(bounds.retained_payload_bytes, null, 'storage must have no default ceiling');
       assert.equal(bounds.prices[0].input_units_per_million, 0); assert.match(bounds.prices[0].evidence, /Operator chose included/);
       assert(bounds.tokens > bounds.closeout_tokens && bounds.closeout_tokens > 0); assert.equal(bounds.effect_operations, 0);
     });
@@ -152,9 +153,13 @@ try {
       await expect(editor.getByLabel('Input price per million tokens — alpha', { exact: true })).toHaveValue('0.5');
       await expect(input).toHaveValue(text);
       await editor.getByLabel('Total budget (USD)', { exact: true }).fill('1');
+      await editor.getByText('Execution and growth limits', { exact: true }).click();
+      const storage = editor.getByLabel('Optional content storage allowance (bytes)');
+      await storage.fill('268435456'); await storage.fill('');
       await editor.getByRole('button', { name: 'Save funding changes' }).click(); await expect(editor).toHaveCount(0);
       const amendment = writes.at(-1); assert.equal(amendment.kind, 'resource.root.amend');
       assert.equal(amendment.args.limits.calls, 125);
+      assert.equal(amendment.args.bounds.retained_payload_bytes, null, 'clearing storage must remove its ceiling');
       assert.equal(amendment.args.bounds.prices[0].input_units_per_million, 500000);
       assert.equal(amendment.args.bounds.prices[1].model, 'beta');
       assert.equal(amendment.args.bounds.prices[1].input_units_per_million, 0);

@@ -23,7 +23,7 @@ test('work filters never claim accepted or completed work', () => {
   assert.equal(matchesWorkFilter({ activity: { completed: 2 } }, 'active'), false);
 });
 test('archived work is retained separately from current work and activity', () => {
-  const archived = { status: 'archived', activity: { running: 1 }, pending_requests: 1 };
+  const archived = { status: 'archived', activity: { running: 1 }, input_requests: 1 };
   for (const filter of ['all', 'active', 'needs-input']) assert.equal(matchesWorkFilter(archived, filter), false);
   assert.equal(matchesWorkFilter(archived, 'archived'), true);
   assert.equal(matchesWorkFilter({ status: 'waiting' }, 'archived'), false);
@@ -34,10 +34,11 @@ test('active requires an explicit positive running count', () => {
     assert.equal(matchesWorkFilter({ activity: { running } }, 'active'), false);
   }
 });
-test('needs input requires an explicit positive unresolved request count', () => {
-  assert.equal(matchesWorkFilter({ pending_requests: 1 }, 'needs-input'), true);
-  for (const pending_requests of [0, -1, '2', false, undefined, 0.5, Infinity]) {
-    assert.equal(matchesWorkFilter({ pending_requests }, 'needs-input'), false);
+test('needs input requires an explicit positive unanswered request count', () => {
+  assert.equal(matchesWorkFilter({ input_requests: 1 }, 'needs-input'), true);
+  assert.equal(matchesWorkFilter({ pending_requests: 5, input_requests: 0 }, 'needs-input'), false);
+  for (const input_requests of [0, -1, '2', false, undefined, 0.5, Infinity]) {
+    assert.equal(matchesWorkFilter({ input_requests }, 'needs-input'), false);
   }
 });
 test('missing or malformed records do not acquire activity or decision claims', () => {

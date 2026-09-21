@@ -4,6 +4,7 @@ import { fields, isRecordID, recordIDs, text } from './workspace';
 import { timestamp } from './identity';
 import Traits from './Traits';
 import IdentityHistory from './IdentityHistory';
+import { Story } from './RecordReader';
 import './identity.css';
 
 export default function Identity({ persona, open }: { persona: Entity; open: (id: string) => void }) {
@@ -28,7 +29,7 @@ export default function Identity({ persona, open }: { persona: Entity; open: (id
     </details>
     <Traits value={d}/>
     <p class="micro">Use an introduction request or a message to ask this persona to describe or reconsider its character, OCEAN and VAD. Authorship remains optional and uses existing funded participation; opening this view does not create work.</p>
-    {Object.keys(fields(d.attributes)).length > 0 && <details><summary>Authored interests and attributes</summary><pre>{JSON.stringify(d.attributes, null, 2)}</pre></details>}
+    {Object.keys(fields(d.attributes)).length > 0 && <details><summary>Authored interests and attributes</summary><Story title="Interests" value={fields(d.attributes).interests}/><Story title="Values" value={fields(d.attributes).values}/><Story title="Strengths" value={fields(d.attributes).strengths}/><Story title="Working preferences" value={fields(d.attributes).preferences}/><Story value={fields(d.attributes).description}/></details>}
     {text(d.reason) && <p class="micro">Last preserved profile explanation: {d.reason}</p>}
     {recordIDs(d.evidence).map(id => <button class="text-button" key={id} onClick={() => open(id)}>Supporting record {id.slice(0, 8)}</button>)}
     <button class="identity-history-toggle" aria-expanded={history} onClick={() => setHistory(!history)}>{history ? 'Hide persona evolution' : 'Show persona evolution'}</button>

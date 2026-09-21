@@ -82,7 +82,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
         expires: new Date(String(f.get('expires'))).toISOString(),
         tokens: whole(f, 'tokens'), closeout_tokens: whole(f, 'closeout_tokens'),
         cost_units: money(f, 'cost'), closeout_cost_units: money(f, 'closeout_cost'),
-        remote_calls: whole(f, 'remote_calls'), retained_payload_bytes: whole(f, 'retained_payload_bytes'),
+        remote_calls: whole(f, 'remote_calls'), retained_payload_bytes: String(f.get('retained_payload_bytes') || '').trim() ? whole(f, 'retained_payload_bytes') : null,
         cpu_seconds: whole(f, 'cpu_seconds'), concurrent_memory_bytes: whole(f, 'concurrent_memory_bytes'),
         effect_operations: whole(f, 'effect_operations'), births_per_window: whole(f, 'births_per_window'), birth_window_seconds: whole(f, 'birth_window_seconds'),
         prices: prices.map((p, i) => ({ ...p, input_units_per_million: money(f, `price.${i}.input`), output_units_per_million: money(f, `price.${i}.output`), evidence: String(f.get(`price.${i}.evidence`) || '').trim() })),
@@ -126,7 +126,8 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
         }}>Add model policy</button>
       </fieldset>
       <details><summary>Execution and growth limits</summary><div class="operator-grid">
-        {([['remote_calls','Maximum remote calls'],['retained_payload_bytes','Retained payload bytes'],['cpu_seconds','Execution CPU seconds'],['concurrent_memory_bytes','Concurrent execution memory bytes'],['effect_operations','External effect operations'],['births_per_window','New personas per rate window'],['birth_window_seconds','Rate window seconds']] as const).map(([name,title]) => <NumberField key={name} name={name} title={title} value={bounds[name]}/>)}
+        <label>Optional content storage allowance (bytes)<input name="retained_payload_bytes" type="number" min="0" step="1" defaultValue={bounds.retained_payload_bytes ?? ''} placeholder="No ceiling"/><small>Leave blank for no ceiling. Model requests, responses, and logs are not archived.</small></label>
+        {([['remote_calls','Maximum remote calls'],['cpu_seconds','Execution CPU seconds'],['concurrent_memory_bytes','Concurrent execution memory bytes'],['effect_operations','External effect operations'],['births_per_window','New personas per rate window'],['birth_window_seconds','Rate window seconds']] as const).map(([name,title]) => <NumberField key={name} name={name} title={title} value={bounds[name]}/>)}
       </div></details>
     </div><footer class="form-actions"><p class="micro">Changing the finishing reserve is an explicit reallocation. Required review and repair obligations remain.</p><button disabled={busy || stale || !!readError}>{busy ? 'Saving…' : 'Save funding changes'}</button></footer>
   </form>;

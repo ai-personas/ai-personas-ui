@@ -77,6 +77,7 @@ try {
   const work = await op('work.create', { title: 'Live activity fixture', brief: 'Synthetic software mechanics only.', environment: environment.id, personas: [persona.id], resource_root: allowance.id });
   await page.getByRole('button', { name: 'Work', exact: true }).click(); await page.getByRole('button', { name: 'Live activity fixture', exact: true }).click();
   await step('public progress appears before any action executes', async () => {
+    await page.getByLabel('Live progress and actions').scrollIntoViewIfNeeded();
     await expect(page.getByLabel('Live progress and actions')).toContainText('Checking fixture inputs for decision 1.');
     await expect(page.getByLabel('Live progress and actions')).toContainText('Reading the current profile.');
     assert.equal((await get('/actions?owner=' + persona.id)).items.length, 0);
@@ -107,13 +108,14 @@ try {
   releaseFirst();
   await step('profile and environment choices update the UI from real action receipts', async () => {
     await until(async () => (await get('/records/' + persona.id)).data.name === 'Mira', 'persona name');
-    await expect(page.locator('.activity-persona')).toHaveText('Mira ↗');
+    await expect(page.locator('.activity-persona')).toHaveText(`Mira ${persona.id.slice(0, 8)} ↗`);
     assert.equal((await get('/records/' + environment.id)).data.name, 'Observation room');
   });
   await step('tool output follows automatically and retains both chunks at completion', async () => {
+    await page.getByLabel('Live progress and actions').scrollIntoViewIfNeeded();
     await expect(page.getByLabel('Tool output')).toContainText('first tool line');
     await expect(page.getByLabel('Tool output')).toContainText('second tool line');
-    await expect(page.getByLabel('Live progress and actions')).toContainText('exec');
+    await expect(page.getByLabel('Live progress and actions')).toContainText('Run a tool');
     await until(async () => (await get('/records?kind=run&scope=' + work.id)).items[0]?.data.status === 'waiting', 'explicit wait');
     assert.equal(calls, 2);
   });

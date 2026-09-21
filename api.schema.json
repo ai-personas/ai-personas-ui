@@ -6,6 +6,9 @@
     "title": "ApiTypes",
     "type": "object",
     "properties": {
+      "attention": {
+        "$ref": "#/$defs/Attention"
+      },
       "command": {
         "$ref": "#/$defs/Command"
       },
@@ -62,6 +65,7 @@
       }
     },
     "required": [
+      "attention",
       "command",
       "records",
       "inputs",
@@ -81,8 +85,112 @@
       "network"
     ],
     "$defs": {
+      "Attention": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "work": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "personas": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "environments": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "requests",
+          "work",
+          "personas",
+          "environments"
+        ]
+      },
       "Command": {
         "oneOf": [
+          {
+            "description": "Discover all configured provider/model capabilities; discovery is not budget or live acceptance.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "model.catalog"
+              },
+              "args": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Preview every stage of an explicit optional preparation/evaluation chain. No remote calls or reservations.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "model.invoke.preview"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "invocation": {
+                    "$ref": "#/$defs/Invocation"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "invocation"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Invoke an explicitly selected non-chat model through its adapter and ordinary call/token/cost budget. Optional LLM preparation is separately metered and never executes actions. Ends this decision batch; inspect the receipt in a fresh decision.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "model.invoke"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "invocation": {
+                    "$ref": "#/$defs/Invocation"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "invocation"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
           {
             "description": "Inspect the recorded execution profile and disabled deployment extensions.",
             "type": "object",
@@ -2462,6 +2570,88 @@
             "additionalProperties": false
           },
           {
+            "description": "Operator adds a persona to an environment roster, or invites them into existing work using its current brief and allowance. Environment selection alone starts no decisions and grants no work membership.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "participants.add"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "persona": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "subject",
+                  "revision",
+                  "persona",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator removes a persona from work, or from an environment and all its work. Cancels participation and open requests, withdraws pending invitations, stops tracked jobs, and preserves responsibility gaps and prior effects.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "participants.remove"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "persona": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "subject",
+                  "revision",
+                  "persona",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Queue a run for continued decisions. A busy identity retains this request.",
             "type": "object",
             "properties": {
@@ -2928,7 +3118,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present.",
+            "description": "Deliver durable correspondence. Use to=\"user\" to reply to the human, a persona ID for private correspondence, or the work's environment ID with work for a group message. Group messages notify permitted participants; they may answer voluntarily. Work defaults to the caller's current work. Private source restrictions remain enforced.",
             "type": "object",
             "properties": {
               "kind": {
@@ -3125,7 +3315,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies.",
+            "description": "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts.",
             "type": "object",
             "properties": {
               "kind": {
@@ -3135,6 +3325,16 @@
               "args": {
                 "type": "object",
                 "properties": {
+                  "audience": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/RequestAudience"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "purpose": {
                     "type": "string"
                   },
@@ -3167,7 +3367,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.",
+            "description": "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.",
             "type": "object",
             "properties": {
               "kind": {
@@ -3573,6 +3773,66 @@
           }
         ]
       },
+      "Invocation": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/$defs/Selection"
+          },
+          "capability": {
+            "$ref": "#/$defs/Capability"
+          },
+          "request_json": {
+            "description": "Direct adapter input, or JSON work data to formulate when prepare is set.\nA string keeps arbitrary JSON out of strict provider output schemas.",
+            "type": "string"
+          },
+          "prepare": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Selection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "capability",
+          "request_json"
+        ]
+      },
+      "Selection": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model"
+        ]
+      },
+      "Capability": {
+        "type": "string",
+        "enum": [
+          "persona_decision",
+          "choice"
+        ]
+      },
       "GrantDraft": {
         "type": "object",
         "properties": {
@@ -3804,9 +4064,14 @@
             "minimum": 0
           },
           "retained_payload_bytes": {
-            "type": "integer",
+            "description": "Optional ceiling on authored content/effect reservations. Model transport\nis transient and never consumes this allowance. None means no ceiling.",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "default": null
           },
           "cpu_seconds": {
             "type": "integer",
@@ -3847,7 +4112,6 @@
           "currency",
           "prices",
           "remote_calls",
-          "retained_payload_bytes",
           "cpu_seconds",
           "effect_operations",
           "concurrent_memory_bytes",
@@ -4538,6 +4802,13 @@
           "accepted",
           "rejected",
           "incomplete"
+        ]
+      },
+      "RequestAudience": {
+        "type": "string",
+        "enum": [
+          "work",
+          "user"
         ]
       },
       "WaitCondition": {
@@ -5595,6 +5866,16 @@
   "routes": [
     [
       "GET",
+      "/api/attention",
+      "Whole-store counts of unanswered requests and affected work, personas and environments; answered requests are not awaiting user input"
+    ],
+    [
+      "GET",
+      "/api/work/{id}/messages?after=0&limit=24",
+      "Operator conversation view: work messages, questions and attributed responses, newest first; next is the cursor for older entries"
+    ],
+    [
+      "GET",
       "/api/records?kind=&scope=&owner=&query=&after=0&limit=40",
       "Bounded summaries, indexed text search, stable cursor and event watermark"
     ],
@@ -5656,7 +5937,7 @@
     [
       "GET",
       "/api/calls/{id}/{part}",
-      "Load preserved provider input, request, response or usage on demand"
+      "Read metered usage.json from the call record; model request/response and provider log archives return 410 Gone"
     ],
     [
       "GET",
@@ -5681,7 +5962,7 @@
     [
       "GET",
       "/api/calls/{id}/progress",
-      "SSE snapshots of bounded public assistant messages and provisional summary, followed by the durable call disposition. No private reasoning or partial commands; reconnect reads the retained snapshot; closing releases the observer"
+      "SSE snapshots of transient public assistant progress while a call runs, followed by its durable disposition. No private reasoning or partial commands; completed progress is not archived; closing releases the observer"
     ],
     [
       "GET",
@@ -5730,6 +6011,18 @@
     ]
   ],
   "operations": [
+    [
+      "model.catalog",
+      "Discover all configured provider/model capabilities; discovery is not budget or live acceptance."
+    ],
+    [
+      "model.invoke.preview",
+      "Preview every stage of an explicit optional preparation/evaluation chain. No remote calls or reservations."
+    ],
+    [
+      "model.invoke",
+      "Invoke an explicitly selected non-chat model through its adapter and ordinary call/token/cost budget. Optional LLM preparation is separately metered and never executes actions. Ends this decision batch; inspect the receipt in a fresh decision."
+    ],
     [
       "deployment.read",
       "Inspect the recorded execution profile and disabled deployment extensions."
@@ -5971,6 +6264,14 @@
       "Create funded work and invite participants to bounded orientation. Restricted nodes require explicit membership consent before contribution; commitment consent remains separate."
     ],
     [
+      "participants.add",
+      "Operator adds a persona to an environment roster, or invites them into existing work using its current brief and allowance. Environment selection alone starts no decisions and grants no work membership."
+    ],
+    [
+      "participants.remove",
+      "Operator removes a persona from work, or from an environment and all its work. Cancels participation and open requests, withdraws pending invitations, stops tracked jobs, and preserves responsibility gaps and prior effects."
+    ],
+    [
       "run.resume",
       "Queue a run for continued decisions. A busy identity retains this request."
     ],
@@ -6024,7 +6325,7 @@
     ],
     [
       "message.send",
-      "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present."
+      "Deliver durable correspondence. Use to=\"user\" to reply to the human, a persona ID for private correspondence, or the work's environment ID with work for a group message. Group messages notify permitted participants; they may answer voluntarily. Work defaults to the caller's current work. Private source restrictions remain enforced."
     ],
     [
       "artifact.publish",
@@ -6044,11 +6345,11 @@
     ],
     [
       "request.create",
-      "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies."
+      "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts."
     ],
     [
       "request.respond",
-      "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries."
+      "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries."
     ],
     [
       "request.resolve",
@@ -6103,6 +6404,79 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "Command",
     "oneOf": [
+      {
+        "description": "Discover all configured provider/model capabilities; discovery is not budget or live acceptance.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "model.catalog"
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Preview every stage of an explicit optional preparation/evaluation chain. No remote calls or reservations.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "model.invoke.preview"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "invocation": {
+                "$ref": "#/$defs/Invocation"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "invocation"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Invoke an explicitly selected non-chat model through its adapter and ordinary call/token/cost budget. Optional LLM preparation is separately metered and never executes actions. Ends this decision batch; inspect the receipt in a fresh decision.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "model.invoke"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "invocation": {
+                "$ref": "#/$defs/Invocation"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "invocation"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
       {
         "description": "Inspect the recorded execution profile and disabled deployment extensions.",
         "type": "object",
@@ -8482,6 +8856,88 @@
         "additionalProperties": false
       },
       {
+        "description": "Operator adds a persona to an environment roster, or invites them into existing work using its current brief and allowance. Environment selection alone starts no decisions and grants no work membership.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "participants.add"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "persona": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "subject",
+              "revision",
+              "persona",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator removes a persona from work, or from an environment and all its work. Cancels participation and open requests, withdraws pending invitations, stops tracked jobs, and preserves responsibility gaps and prior effects.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "participants.remove"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "persona": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "subject",
+              "revision",
+              "persona",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
         "description": "Queue a run for continued decisions. A busy identity retains this request.",
         "type": "object",
         "properties": {
@@ -8948,7 +9404,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present.",
+        "description": "Deliver durable correspondence. Use to=\"user\" to reply to the human, a persona ID for private correspondence, or the work's environment ID with work for a group message. Group messages notify permitted participants; they may answer voluntarily. Work defaults to the caller's current work. Private source restrictions remain enforced.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9145,7 +9601,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies.",
+        "description": "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9155,6 +9611,16 @@
           "args": {
             "type": "object",
             "properties": {
+              "audience": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RequestAudience"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "purpose": {
                 "type": "string"
               },
@@ -9187,7 +9653,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.",
+        "description": "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9593,6 +10059,66 @@
       }
     ],
     "$defs": {
+      "Invocation": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "$ref": "#/$defs/Selection"
+          },
+          "capability": {
+            "$ref": "#/$defs/Capability"
+          },
+          "request_json": {
+            "description": "Direct adapter input, or JSON work data to formulate when prepare is set.\nA string keeps arbitrary JSON out of strict provider output schemas.",
+            "type": "string"
+          },
+          "prepare": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Selection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "capability",
+          "request_json"
+        ]
+      },
+      "Selection": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model"
+        ]
+      },
+      "Capability": {
+        "type": "string",
+        "enum": [
+          "persona_decision",
+          "choice"
+        ]
+      },
       "GrantDraft": {
         "type": "object",
         "properties": {
@@ -9824,9 +10350,14 @@
             "minimum": 0
           },
           "retained_payload_bytes": {
-            "type": "integer",
+            "description": "Optional ceiling on authored content/effect reservations. Model transport\nis transient and never consumes this allowance. None means no ceiling.",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "default": null
           },
           "cpu_seconds": {
             "type": "integer",
@@ -9867,7 +10398,6 @@
           "currency",
           "prices",
           "remote_calls",
-          "retained_payload_bytes",
           "cpu_seconds",
           "effect_operations",
           "concurrent_memory_bytes",
@@ -10558,6 +11088,13 @@
           "accepted",
           "rejected",
           "incomplete"
+        ]
+      },
+      "RequestAudience": {
+        "type": "string",
+        "enum": [
+          "work",
+          "user"
         ]
       },
       "WaitCondition": {

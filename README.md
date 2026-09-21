@@ -37,6 +37,21 @@ which prepares structured requests and interprets the returned decisions.
   and model prices without resetting spending or reservations.
 - **Work:** create a funded task, amend its scope, message participants, inspect
   missing owners and evidence, or archive it. Original instructions remain in history.
+- **Conversation:** see user messages, persona replies and shared questions in
+  the work overview. **Reply to persona** beside waiting activity defaults to
+  **All participants in this work**; choose **Only this persona** for a private
+  reply. Activity shows receipt of your latest input separately from the current
+  stop reason. Shared questions can receive attributed peer answers; user-only
+  questions remain addressed to the human, and the requester assesses replies.
+- **Manage personas:** add or remove personas in existing work from **Manage
+  personas** or **People & agreements**. Environment details also have an editable
+  roster, available before work exists; use **Use environment personas** when
+  creating a task. Work additions invite the persona to join. Environment removal
+  ends that persona’s participation in all its work, preserving prior results and
+  flagging unfinished responsibilities for handoff.
+- **Needs your input:** amber navigation counts, cards, activity, and detail banners
+  identify unanswered requests. **Respond now** opens the exact request. A reply
+  clears the input highlight while the request remains available for assessment.
 - **Personas and requests:** send messages, inspect decisions, pause or resume
   participation, and answer requests with observations or attachments. Message
   receipts distinguish delivery, model inclusion, and acknowledgment, and show
@@ -51,6 +66,22 @@ which prepares structured requests and interprets the returned decisions.
   environment. Portraits appear only when a real image artifact exists.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
+- **Documents and details:** **Work → Artifacts & evidence** shows submitted
+  documents and files as Learning-style cards with titles, authors, dates, and
+  previews. **Read document** opens formatted headings, lists, and tables.
+  **View details** presents work progress, authored content, responsibilities,
+  questions, and conclusions in dedicated reading views. Internal fields and
+  unknown backend properties are never automatically rendered as tables.
+  **Version history** uses the same reader. Raw fields remain under
+  **Technical details**. Files still use verified previews and original downloads.
+- **Perspectives:** Individual agendas show each persona's saved priorities for
+  this work, including content, limitations, and sources. Relationship notes are
+  separate. These optional records are not inferred from character or activity;
+  the empty state explains when none have been written. Manage participants from
+  **People & agreements**.
+- **Delivery conditions:** Deferred or waived blocking findings remain visible
+  conditions. Earlier resolutions with stale supporting evidence are shown as
+  needing revalidation, with links to the feedback and its referenced version numbers.
 
 The production Preact application uses the Rust API at the same address. Local
 access needs no browser secret; nonlocal nodes and explicit token mode still
@@ -63,8 +94,14 @@ participants continue; paused and cancelled work stays stopped. An allowance
 does not transfer money or grant execution rights.
 
 Submitted document versions open from **Work → Artifacts & evidence**. If a
-decision fails, inspect its diagnostic before using **Resume** to request another
+decision fails, inspect its status and error before using **Resume** to request another
 call. A waiting persona can still have unfinished obligations and retained results.
+
+Model requests, raw responses, and provider logs are not archived. Live progress
+is temporary; personas, saved work, conversations, action receipts, and usage
+totals remain available. The optional content storage allowance has no ceiling
+by default. Clearing that field removes an existing storage ceiling without
+changing call, token, or cost limits.
 
 ## Develop
 
@@ -78,6 +115,7 @@ npm test
 npx playwright install chromium
 npm run test:workspace
 npm run test:forms
+npm run test:participants
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:activity
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:settings
@@ -97,6 +135,10 @@ restricted node to check persistence, restart, replacement/removal, native
 authentication, responsive typing, and mobile settings. These checks do not
 establish live model quality or engineering acceptance. The older `test:browser`
 and `test:live` campaigns have separate runtime and model prerequisites.
+`test:participants` uses a disposable restricted node and synthetic inference to
+check roster changes, re-invitations, request highlights, private and group replies,
+peer answers to shared questions, visible replies to the user, mobile layouts,
+and restart persistence. It leaves the real workspace untouched.
 
 For hot reload, `npm run dev` proxies API requests to the node on port 19000.
 For a source launch using this checkout, run

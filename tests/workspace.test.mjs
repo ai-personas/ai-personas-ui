@@ -2,8 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WORK_TABS, fields, text, count, recordIDs, activityText, workFacts, assessmentFacts,
   ownership, stateTone, assumptionNote, matchesRecords, matchesWork, matchesAllowance } from '../src/workspace.ts';
+import { inputRequestCount } from '../src/workspace.ts';
 const id = n => n.toString(16).padStart(32, '0');
 const record = (kind, data = {}) => ({ id: id(1), kind, scope: id(2), revision: 1, created: '', updated: '', data });
+
+test('only unanswered requests need user input, not waiting runs or answered requests', () => {
+  assert.equal(inputRequestCount(record('request', { status: 'open' })), 1);
+  for (const status of ['answered', 'resolved', 'cancelled']) assert.equal(inputRequestCount(record('request', { status })), 0);
+  assert.equal(inputRequestCount(record('run', { status: 'waiting' })), 0);
+  assert.equal(inputRequestCount(record('work', { pending_requests: 3, input_requests: 0 })), 0);
+  for (const kind of ['work', 'persona', 'environment', 'run']) assert.equal(inputRequestCount(record(kind, { input_requests: 2 })), 2);
+});
+test('attention refreshes across work and request scopes', () => {
+  for (const kind of ['request', 'response', 'work', 'run', 'invitation']) {
+    assert.equal(matchesRecords({ kind, data: { scope: id(42) } }, 'environment', id(2)), true);
+    assert.equal(matchesRecords({ kind, data: { owner: id(42) } }, 'persona', '', id(2)), true);
+  }
+});
 
 test('actual Rust charge events refresh only the matching allowance', () => {
   for (const kind of ['resource_charge', 'budget_charge']) {

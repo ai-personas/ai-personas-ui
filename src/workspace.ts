@@ -43,6 +43,12 @@ export function workFacts(work: Entity) {
       ? `${text(acceptance.disposition).replaceAll('_', ' ')} · ${acceptance.applicability} release` : 'Not established',
   };
 }
+/** An answered request still needs disposition, but no longer needs a user reply. */
+export function inputRequestCount(record: Entity): number {
+  const d = fields(record.data);
+  if (record.kind === 'request') return d.status === 'open' ? 1 : 0;
+  return count(d.input_requests) ?? 0;
+}
 export function assessmentFacts(record: Entity) {
   const d = fields(record.data);
   const verdict = text(d.verdict, 'not recorded');
@@ -76,9 +82,13 @@ export function matchesRecords(event: unknown, kinds: string, scope = '', owner 
   const e = fields(event), d = fields(e.data);
   const kind = text(e.kind);
   const wanted = kinds.split(',');
+  // Derived attention/rosters cross work scopes. Request events name their work,
+  // response events name the request; neither directly names the environment.
+  if (wanted.some(k => ['persona', 'environment'].includes(k))
+      && ['request', 'response', 'work', 'run', 'invitation'].includes(kind)) return true;
   // Call events are scoped to a run, not to its work/owner. Run summaries
   // include the latest call; conservatively refresh bounded visible run pages.
-  if (wanted.includes('run') && kind === 'call') return true;
+  if (wanted.includes('run') && ['call', 'request', 'response'].includes(kind)) return true;
   const derivedWork = wanted.includes('work') && WORK_FACT_EVENTS.includes(kind);
   if (kinds && !wanted.includes(kind) && !derivedWork) return false;
   const eventScope = text(d.scope) || text(d.work);

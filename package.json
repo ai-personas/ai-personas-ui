@@ -15,10 +15,12 @@
     "test:operator": "node tests/operator.browser.mjs",
     "test:activity": "node tests/activity.browser.mjs",
     "test:settings": "node tests/settings.browser.mjs",
-    "test:forms": "node tests/forms.browser.mjs"
+    "test:forms": "node tests/forms.browser.mjs",
+    "test:participants": "node tests/participants.browser.mjs"
   },
   "dependencies": {
     "hash-wasm": "^4.12.0",
+    "marked": "18.0.13",
     "preact": "^10.27.0"
   },
   "devDependencies": {

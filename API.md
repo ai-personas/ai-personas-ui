@@ -6,6 +6,8 @@ Default loopback listeners allow the same-origin local operator workspace withou
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/attention` | Whole-store counts of unanswered requests and affected work, personas and environments; answered requests are not awaiting user input |
+| GET | `/api/work/{id}/messages?after=0&limit=24` | Operator conversation view: work messages, questions and attributed responses, newest first; next is the cursor for older entries |
 | GET | `/api/records?kind=&scope=&owner=&query=&after=0&limit=40` | Bounded summaries, indexed text search, stable cursor and event watermark |
 | GET | `/api/records/{id}` | Load one complete record; work activity and version assessments are separate facts |
 | GET | `/api/records/{id}/revisions?after=0&limit=20` | Load a bounded page of preserved versions on demand |
@@ -18,12 +20,12 @@ Default loopback listeners allow the same-origin local operator workspace withou
 | GET | `/api/artifacts/{id}` | Stream immutable files with byte ranges and browser-managed downloads |
 | POST | `/api/uploads?id=&name=&media_type=&size=&digest=` | Stream a file with expected SHA-256 and size; retries preserve the upload identity |
 | POST | `/api/session` | Connect the same-origin loopback workspace without a token; authenticated remote sessions authorize browser file reads |
-| GET | `/api/calls/{id}/{part}` | Load preserved provider input, request, response or usage on demand |
+| GET | `/api/calls/{id}/{part}` | Read metered usage.json from the call record; model request/response and provider log archives return 410 Gone |
 | GET | `/api/models` | Provider-advertised models and capabilities |
 | GET | `/api/network` | Current node and connected peers |
 | GET | `/api/resources/{id}` | Current allowance, usage, reservations and uncertain exposure; no model call |
 | GET | `/api/runs/{id}/activity` | Operator view of the latest twelve action receipts in chronological order, with bounded fields; inspect full receipts separately |
-| GET | `/api/calls/{id}/progress` | SSE snapshots of bounded public assistant messages and provisional summary, followed by the durable call disposition. No private reasoning or partial commands; reconnect reads the retained snapshot; closing releases the observer |
+| GET | `/api/calls/{id}/progress` | SSE snapshots of transient public assistant progress while a call runs, followed by its durable disposition. No private reasoning or partial commands; completed progress is not archived; closing releases the observer |
 | GET | `/api/personas/{id}/messages?after=0&limit=24` | Operator correspondence view: sent and received messages, including retained broadcasts; bounded cursor page |
 | GET | `/api/messages/{id}/delivery?after=0&limit=24` | Operator delivery receipts: inbox delivery, recorded request inclusion and acknowledgment are distinct; current participation and funding explain blockers without inference |
 | GET | `/api/deployment` | Recorded execution profile and setup capabilities |
@@ -37,6 +39,28 @@ Default loopback listeners allow the same-origin local operator workspace withou
 ## Operations
 
 Send an Operation with random 32-character hex `id`, `kind`, `actor`, `run` and typed `args`. The server assigns `source` to `api`; model actions carry their originating call identity. An identical retry returns the saved result, while a changed request with that identity is rejected.
+
+### `model.catalog`
+
+Discover all configured provider/model capabilities; discovery is not budget or live acceptance.
+
+No arguments.
+
+### `model.invoke.preview`
+
+Preview every stage of an explicit optional preparation/evaluation chain. No remote calls or reservations.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `invocation` | Invocation | Required |  |
+
+### `model.invoke`
+
+Invoke an explicitly selected non-chat model through its adapter and ordinary call/token/cost budget. Optional LLM preparation is separately metered and never executes actions. Ends this decision batch; inspect the receipt in a fresh decision.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `invocation` | Invocation | Required |  |
 
 ### `deployment.read`
 
@@ -659,6 +683,28 @@ Create funded work and invite participants to bounded orientation. Restricted no
 | `mandate` | Mandate or null | Optional | Optional operator-authored initial scope, adopted atomically before invitations can run. |
 | `resource_root` | string or null | Optional | Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it. |
 
+### `participants.add`
+
+Operator adds a persona to an environment roster, or invites them into existing work using its current brief and allowance. Environment selection alone starts no decisions and grants no work membership.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `subject` | string | Required |  |
+| `revision` | integer | Required |  |
+| `persona` | string | Required |  |
+| `reason` | string | Required |  |
+
+### `participants.remove`
+
+Operator removes a persona from work, or from an environment and all its work. Cancels participation and open requests, withdraws pending invitations, stops tracked jobs, and preserves responsibility gaps and prior effects.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `subject` | string | Required |  |
+| `revision` | integer | Required |  |
+| `persona` | string | Required |  |
+| `reason` | string | Required |  |
+
 ### `run.resume`
 
 Queue a run for continued decisions. A busy identity retains this request.
@@ -783,7 +829,7 @@ Retain an owned tool or skill and acquisition provenance. Registration never gat
 
 ### `message.send`
 
-Deliver durable correspondence. General messages belong to the identity once; work defaults to the caller’s current work when present.
+Deliver durable correspondence. Use to="user" to reply to the human, a persona ID for private correspondence, or the work's environment ID with work for a group message. Group messages notify permitted participants; they may answer voluntarily. Work defaults to the caller's current work. Private source restrictions remain enforced.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -834,10 +880,11 @@ Preserve assessment of this exact submission and deliver findings to its owner. 
 
 ### `request.create`
 
-Ask a human or external connection for facts, a decision, physical work or evidence. Give actionable instructions and evidence requirements. You retain ownership and assess replies.
+Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
+| `audience` | RequestAudience or null | Optional |  |
 | `purpose` | string | Required |  |
 | `instructions` | string | Required |  |
 | `evidence_required` | string | Required |  |
@@ -845,7 +892,7 @@ Ask a human or external connection for facts, a decision, physical work or evide
 
 ### `request.respond`
 
-Append a response and explicitly share attached artifacts with the requesting persona for reading, preserving source restrictions and without granting export. Wakes the owner without implying success. Reuse the operation identity for retries.
+Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

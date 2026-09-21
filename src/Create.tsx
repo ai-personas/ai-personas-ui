@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'preact/hooks';
-import { data, label } from './api';
+import { data, label, type Entity } from './api';
+import { recordIDs, matchesRecords } from './workspace';
 import { useRecords, useResource } from './hooks';
 import { FundingChoice, initialMandate } from './Operator';
 import { Pagination, type Act } from './main';
 import Dialog from './Dialog';
 import SearchInput from './SearchInput';
 import { modelKey, ModelStatus, useModels } from './Models';
-export function Pick({ kind, multiple, value, onChange }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void }) {
+export function Pick({ kind, multiple, value, onChange, exclude = [], disabled = false }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void; exclude?: string[]; disabled?: boolean }) {
   const [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
   const settled = query;
   const { value: page, error } = useRecords(kind, '', '', settled, cursors.at(-1));
-  return <fieldset><legend>{kind === 'persona' ? 'Choose personas' : 'Choose an environment'}</legend><div class="search-field"><SearchInput label={'Find ' + kind} value={query} onSearch={q => { setQuery(q); setCursors([0]); }} placeholder="Search…"/></div>
-    {error && <p role="alert">{error}</p>}{page?.items.map(r => <label key={r.id} class="check"><input type={multiple ? 'checkbox' : 'radio'} checked={value.includes(r.id)} onChange={() => onChange(multiple ? value.includes(r.id) ? value.filter(id => id !== r.id) : [...value, r.id] : [r.id])}/>{label(r)}{kind === 'persona' && <small>{data(r).model}</small>}</label>)}
+  const rows = page?.items.filter(r => !exclude.includes(r.id) && data(r).lifecycle !== 'retired');
+  return <fieldset disabled={disabled}><legend>{kind === 'persona' ? 'Choose personas' : 'Choose an environment'}</legend><div class="search-field"><SearchInput label={'Find ' + kind} value={query} onSearch={q => { setQuery(q); setCursors([0]); }} placeholder="Search…"/></div>
+    {error && <p role="alert">{error}</p>}{rows?.length === 0 && <p>No available {kind === 'persona' ? 'personas' : 'environments'} on this page.</p>}{rows?.map(r => <label key={r.id} class="check"><input type={multiple ? 'checkbox' : 'radio'} checked={value.includes(r.id)} onChange={() => onChange(multiple ? value.includes(r.id) ? value.filter(id => id !== r.id) : [...value, r.id] : [r.id])}/>{label(r)}{kind === 'persona' && <small>{data(r).model}</small>}</label>)}
     <Pagination previous={cursors.length > 1} next={page?.next} onPrevious={() => setCursors(cursors.slice(0, -1))} onNext={() => { if (page?.next != null) setCursors([...cursors, page.next]); }}/></fieldset>;
+}
+function EnvironmentPersonas({ id, choose }: { id: string; choose: (ids: string[]) => void }) {
+  const { value } = useResource<Entity>('/records/' + id, e => e.entity === id || matchesRecords(e, 'environment'));
+  const ids = value ? recordIDs(data(value).participant_ids ?? data(value).personas) : [];
+  return ids.length ? <button type="button" class="secondary" onClick={() => choose(ids)}>Use environment personas ({ids.length})</button> : null;
 }
 export default function Create({ kind, brief, close, act }: { kind: string; brief: string; close: () => void; act: Act }) {
   const [root, setRoot] = useState('');
@@ -46,7 +53,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
     {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)} disabled={modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label><p>Creating reserves a bounded initialization call. Select the persona for funded work to begin orientation, where it can choose its name and character. No model call starts from creation alone.</p><ModelStatus {...modelState}/></>
       : kind === 'Environments' ? <p>Create a shared place for work. Participating personas can choose its name and description when work begins. An image appears only after an actual artifact is published.</p>
       : kind === 'Network' ? <><label>Peer address<input name="address" placeholder="/ip4/…/tcp/…/p2p/…"/></label><label>Or shared artifact details<textarea name="descriptor" rows={5}/></label><p>Both nodes must trust one another to exchange artifacts. Receiving bytes does not grant execution authority.</p></>
-      : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
+      : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}{env[0] && <EnvironmentPersonas id={env[0]} choose={setPeople}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
     {['Personas', 'Work'].includes(kind) && <FundingChoice value={root} onChange={setRoot} required={deployment?.funding_required !== false}/>}
     <button disabled={busy || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
   </form></Dialog>;

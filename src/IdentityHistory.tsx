@@ -45,7 +45,7 @@ function RevisionCard({ record, before, open }: { record: Entity; before?: Entit
       {attribution.run && <button class="text-button" onClick={() => open(attribution.run!)}>Open originating participation</button>}
       <button class="text-button" aria-expanded={receipt} onClick={() => setReceipt(!receipt)}>{receipt ? 'Hide authoring receipt' : 'Inspect authoring receipt'}</button>
       {receipt && <AuthoringReceipt operation={attribution.operation!} persona={record.id}/>}
-      {attribution.evidence.map(ref => <p key={ref.id} class="micro">Supporting record <code>{ref.id.slice(0, 8)}</code>, recorded revision {ref.revision}. <button class="text-button" onClick={() => open(ref.id)}>Inspect record and preserved revisions</button></p>)}
+      {attribution.evidence.map(ref => <p key={ref.id} class="micro">Supporting record <code>{ref.id.slice(0, 8)}</code>, recorded revision {ref.revision}. <button class="text-button" onClick={() => open(ref.id)}>Read details and version history</button></p>)}
     </> : <>
       <p class="micro">Per-revision authorship was not recorded here. Do not infer it from the current persona or a later revision.</p>
       {legacyReason && <p class="record-prose">Preserved explanation (not revision-attributed): {legacyReason}</p>}

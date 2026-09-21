@@ -228,7 +228,7 @@ try {
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
   });
   await step('run controls and direct persona messaging stay attributable', async () => {
-    await page.getByLabel('Persona activity').getByRole('button', { name: 'Inspect exact record ↗', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: 'Pause decisions', exact: true }).click();
     await until(async () => (await get('/records/' + run.id)).data.status === 'paused', 'pause');
@@ -346,7 +346,7 @@ try {
     assert.equal(after.calls.charged, before.calls.charged + 1, 'failed output must retain its charge');
     const observed = calls; await delay(500); assert.equal(calls, observed, 'invalid output caused an automatic retry');
     await expect(page.getByLabel('Persona activity')).not.toContainText('PRIVATE_INVALID_OUTPUT');
-    await page.getByLabel('Persona activity').getByRole('button', { name: 'Inspect exact record ↗', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     scenario = 'commentary';
     await details.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -367,7 +367,7 @@ try {
       await expect(page.getByRole('tabpanel').getByRole('alert')).toHaveCount(0);
     }
     await page.getByRole('tab', { name: 'Artifacts & evidence', exact: true }).click();
-    await page.getByRole('button', { name: /Open document/ }).click();
+    await page.getByRole('button', { name: /Read document/ }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await expect(details).toContainText('Exact synthetic document, not task quality evidence.');
     await details.getByRole('button', { name: 'Close details', exact: true }).click();

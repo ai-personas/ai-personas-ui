@@ -219,3 +219,27 @@ summary:focus-visible { outline: 3px solid #a86a0b; outline-offset: 3px; }
   button[aria-current=page], .filter-button[aria-pressed=true], .workspace-tabs > button[aria-selected=true] { outline: 2px solid Highlight; }
   .live-dot { border: 1px solid CanvasText; }
 }
+
+/* Human input uses one high-contrast amber treatment across navigation and records. */
+.design-shell .needs-input { background: #fff7e6; border-color: #c68b23; box-shadow: inset 4px 0 #b97300; }
+.input-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0; }
+.input-badge { display: inline-flex; align-items: center; gap: 7px; color: #764600; background: #ffedbe; border: 1px solid #dba746; border-radius: 6px; padding: 6px 9px; font-size: .8rem; font-weight: 650; }
+.input-badge .ui-icon { width: 17px; height: 17px; }
+.input-action { background: #865000; color: #fff; padding: 8px 12px; font-size: .8rem; }
+.input-action .ui-icon { width: 15px; height: 15px; margin-left: 5px; }
+.input-action:hover { background: #683d00; }
+.design-shell .sidebar nav button.nav-attention { color: #764600; background: #fff0ca; box-shadow: inset 3px 0 #b97300; }
+.design-shell .sidebar nav button.nav-attention.active { outline: 1px solid #b97300; outline-offset: -1px; }
+.nav-input-count { margin-left: auto; min-width: 23px; padding: 2px 6px; border-radius: 12px; color: #fff; background: #865000; font-size: .72rem; text-align: center; }
+.workspace-quick-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
+.participants .section-heading { align-items: center; flex-wrap: wrap; gap: 12px; }
+.participant-list { display: grid; gap: 10px; margin-top: 16px; }
+.participant-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid var(--line); padding: 14px; border-radius: 9px; }
+.participant-row > div { min-width: 0; overflow-wrap: anywhere; }
+.participant-row > button { flex-shrink: 0; }
+.participant-editor { padding: 16px; border: 1px solid var(--line); border-radius: 9px; margin: 16px 0; background: var(--paper); }
+.run-reply { margin-block: .8rem; padding-block: .8rem; border-block: 1px solid var(--line, #d6dfd1); }
+.run-reply form { margin-top: .8rem; }
+.latest-user-input { padding-block: .6rem; border-bottom: 1px solid var(--line, #d6dfd1); }
+.conversation-entry { padding-block: 1rem; border-bottom: 1px solid var(--line, #d6dfd1); overflow-wrap: anywhere; }
+.conversation-entry:last-of-type { border-bottom: 0; }

@@ -3,13 +3,17 @@ import { lazy, memo, Suspense } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { connect, data, label, operate, request, token, watch, fileURL, HttpError, type Entity, type Command } from './api';
 import { useRecords, useResource } from './hooks';
-import { text, isRecordID, recordIDs, workFacts, stateTone } from './workspace';
+import { text, isRecordID, recordIDs, workFacts, stateTone, inputRequestCount } from './workspace';
+import type { ApiTypes } from './contract';
+import { InputNotice } from './Attention';
 import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, type View, type WorkFilter } from './presentation';
 import Icon from './Icon';
 import SearchInput from './SearchInput';
+import { ContentCard } from './ContentCards';
 import './style.css';
 import './workspace.css';
 import './design-system.css';
+import './reading.css';
 const Detail = lazy(() => import('./Detail'));
 const Viewer = lazy(() => import('./Viewer'));
 const Create = lazy(() => import('./Create'));
@@ -83,6 +87,8 @@ function App() {
   const [page, setPage] = useState<View>('Work'), [selected, setSelected] = useState<string>(), [artifact, setArtifact] = useState<string>();
   const [work, setWork] = useState<string>(), [create, setCreate] = useState<string>(), [brief, setBrief] = useState(''), [error, setError] = useState('');
   const content = useRef<HTMLElement>(null);
+  const attention = useResource<ApiTypes['attention']>('/attention', e => ['request', 'response', 'work', 'run'].includes(e.kind), connected);
+  const counts: Record<string, number> = { Work: attention.value?.work || 0, Personas: attention.value?.personas || 0, Environments: attention.value?.environments || 0 };
   useEffect(() => {
     const controller = new AbortController(); let active = true;
     const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -116,7 +122,7 @@ function App() {
   return <div class="shell design-shell">
     <a class="skip-link" href="#main-content" onClick={e => { e.preventDefault(); content.current?.focus(); }}>Skip to content</a>
     <aside class="sidebar"><a class="brand" href="#" onClick={e => { e.preventDefault(); navigate('Work'); }}><span class="brand-mark">ap</span><span>AI Personas<small>Continuing collaborators</small></span></a>
-      <nav aria-label="Main navigation">{PAGES.map(name => <button key={name} aria-label={name} aria-current={page === name ? 'page' : undefined} class={page === name ? 'active' : ''} onClick={() => navigate(name)}><Icon name={name}/><span>{name}</span></button>)}</nav>
+      <nav aria-label="Main navigation">{PAGES.map(name => <button key={name} aria-label={name} aria-current={page === name ? 'page' : undefined} class={`${page === name ? 'active' : ''}${counts[name] ? ' nav-attention' : ''}`} title={counts[name] ? `${counts[name]} ${name.toLowerCase()} need your input` : undefined} onClick={() => navigate(name)}><Icon name={name}/><span>{name}</span>{counts[name] > 0 && <span class="nav-input-count" aria-label={`${counts[name]} need your input`}>{counts[name]}</span>}</button>)}</nav>
       <div class="sidebar-note"><span class="eyebrow">INDIVIDUAL PERSPECTIVES.<br/>SHARED PURPOSE.</span><p>People set the boundaries. Personas choose their approaches. Evidence makes the work inspectable.</p></div>
       <div class="advanced-navigation"><button aria-current={page === 'Funding' ? 'page' : undefined} onClick={() => navigate('Funding')}>Funding</button><span class="field-label">Advanced</span><button aria-current={page === 'Network' ? 'page' : undefined} class={page === 'Network' ? 'active' : ''} onClick={() => navigate('Network')}><Icon name="Network"/>Network</button></div>
       <div class="connection-state"><span role="status"><span class={'live-dot ' + (connection === 'Connected' ? '' : 'offline')} aria-hidden="true"/>{connection}</span><button class="quiet" onClick={disconnect}>Disconnect view</button></div>
@@ -126,7 +132,7 @@ function App() {
       <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection.startsWith('Reconnecting') ? connection : `${connection}. Displayed records may be stale.`}</p>}{error && <p role="alert">{error}</p>}
         {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact} act={act}/></Suspense> : page === 'Funding' ? <Suspense fallback={<p>Loading funding…</p>}><Funding act={act}/></Suspense> : <>
           <header class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>{page}</h1><p>{meta.description}</p></div>{meta.create && <button onClick={start}>+ {meta.create}</button>}</header>
-          {page === 'Work' && <Requests open={setSelected}/>}
+          {['Work', 'Personas', 'Environments'].includes(page) && <Requests open={setSelected}/>}
           {page === 'Environments' && <Starters choose={b => { setBrief(b); setCreate('Work'); }}/>}
           {page === 'Network' && <Network/>}
           <List key={page} view={page} open={setSelected} openWork={setWork} artifact={setArtifact} act={act} start={start} navigate={navigate}/>
@@ -142,12 +148,12 @@ function App() {
 function ReadFailure({ title, error, retry, loading }: { title: string; error: string; retry: () => void; loading: boolean }) {
   return <div class="read-failure" role="alert"><div><strong>{title}</strong><p>{error}. Previously displayed records may be stale.</p></div><button class="secondary" disabled={loading} onClick={retry}>Retry</button></div>;
 }
-const WorkRow = memo(function WorkRow({ r, open }: { r: Entity; open: (id: string) => void }) {
+const WorkRow = memo(function WorkRow({ r, open, openRequest }: { r: Entity; open: (id: string) => void; openRequest: (id: string) => void }) {
   const d = data(r), f = workFacts(r);
-  const people = Array.isArray(d.personas) ? recordIDs(d.personas).length : undefined;
-  return <article class="work-row">
+  const people = Array.isArray(d.participant_ids ?? d.personas) ? recordIDs(d.participant_ids ?? d.personas).length : undefined;
+  return <article class={`work-row${inputRequestCount(r) ? ' needs-input' : ''}`}>
     <div class="work-identity"><span class="record-symbol"><Icon name="Work"/></span><div><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.brief) || text(d.description) || 'Open the workspace to inspect the original need.'}</p>
-      {f.pendingRequests !== undefined && f.pendingRequests > 0 && <span class="request-chip"><Icon name="Attention"/>{f.pendingRequests} unresolved {f.pendingRequests === 1 ? 'request' : 'requests'}</span>}</div></div>
+      <InputNotice record={r} open={openRequest}/></div></div>
     <div class="work-fact"><span class="field-label">Activity</span><strong>{f.activity}</strong><small>Execution, not accomplishment</small></div>
     <div class="work-fact"><span class="field-label">Participants</span><strong>{people === undefined ? 'Not reported' : `${people} selected`}</strong><small>Selection is not a commitment</small></div>
     <div class="work-fact"><span class="field-label">Evidence</span><strong>{f.submissions === undefined ? 'Versions not reported' : `${f.submissions} preserved ${f.submissions === 1 ? 'submission' : 'submissions'}`}</strong><small>Acceptance not established</small></div>
@@ -176,10 +182,11 @@ function List({ view, open, openWork, artifact, act, start, navigate }: {
       <p>{settled ? 'Try a different search. Search reads the node’s indexed records; it does not generate new content.' : filter !== 'all' ? 'This filter only examines the loaded page. Clear it or continue to another page; missing activity is not treated as completion.' : cursor > 0 ? 'Records may have changed. Return to the previous page or start a new search.' : meta.emptyBody}</p>
       <div class="empty-actions">{settled || filter !== 'all' ? <button class="secondary" onClick={clear}>Clear search and filters</button> : cursor === 0 && <>{meta.create && <button onClick={start}>+ {meta.create}</button>}{view === 'Work' && <button class="secondary" onClick={() => navigate('Personas')}>Choose personas</button>}</>}</div>
     </div>}
-    {view === 'Work' ? <div class="work-collection" aria-busy={busy}>{rows.length > 0 && <div class="work-table-heading" aria-hidden="true"><span>Work & original need</span><span>Activity</span><span>Participants</span><span>Evidence</span></div>}{rows.map(r => <WorkRow key={r.id} r={r} open={openWork}/>)}</div>
-      : <div class={view === 'Personas' ? 'cards persona-cards' : 'cards compact-records'} aria-busy={busy}>{rows.map(r => { const d = data(r); return <article class="card" key={r.id}>
+    {view === 'Work' ? <div class="work-collection" aria-busy={busy}>{rows.length > 0 && <div class="work-table-heading" aria-hidden="true"><span>Work & original need</span><span>Activity</span><span>Participants</span><span>Evidence</span></div>}{rows.map(r => <WorkRow key={r.id} r={r} open={openWork} openRequest={open}/>)}</div>
+      : <div class={view === 'Personas' ? 'cards persona-cards' : 'cards compact-records'} aria-busy={busy}>{rows.map(r => { const d = data(r); if (view === 'Learning') return <ContentCard key={r.id} record={r} open={open} artifact={artifact}/>; return <article class={`card${inputRequestCount(r) ? ' needs-input' : ''}`} key={r.id}>
         <div class="card-top">{['persona', 'environment'].includes(r.kind) ? <Portrait id={d.portrait || d.image} name={label(r)}/> : <span class="record-symbol"><Icon name={view}/></span>}<small>{r.kind === 'persona' ? 'AI collaborator' : r.kind}</small></div>
-        <div class="card-content"><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.character) || text(d.description) || text(d.brief) || text(d.summary) || text(d.note) || (r.kind === 'persona' ? 'Identity created. Self-authored character is awaiting funded orientation.' : r.kind === 'environment' ? 'Shared place created. Participants can author its name and description when work begins.' : 'Inspect the exact record for details.')}</p><Facts r={r}/>
+        <div class="card-content"><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.character) || text(d.description) || text(d.brief) || text(d.summary) || text(d.note) || (r.kind === 'persona' ? 'Identity created. Self-authored character is awaiting funded orientation.' : r.kind === 'environment' ? 'Shared place created. Participants can author its name and description when work begins.' : 'Open details to read more.')}</p><Facts r={r}/>
+          <InputNotice record={r} open={open}/>
           {r.kind === 'persona' && <><p class="record-caveat">Authored character, not a claim of demonstrated expertise.</p><details class="model-disclosure"><summary>Model details</summary><p class="micro">Current model: {text(d.provider, 'not recorded')} / {text(d.model, 'not recorded')}</p></details></>}
           {r.kind === 'document' && <p class="micro">Authored document · not automatically learned knowledge</p>}
           {r.kind === 'fragment' && <p class="micro">Retained interpretation · later usefulness needs evidence</p>}

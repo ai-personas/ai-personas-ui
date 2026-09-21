@@ -9,6 +9,7 @@ import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
 import { matchesAllowance } from './workspace';
 import { ProviderSettings } from './ProviderSettings';
+import { FeedbackConditions } from './RecordReader';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -64,7 +65,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
         cost_units: noTokenCharge ? 0 : units(f, 'cost'), closeout_cost_units: noTokenCharge ? 0 : units(f, 'closeout_cost'), currency: String(f.get('currency') || 'USD'),
         prices: [{ provider: model.provider, model: model.id, input_units_per_million: noTokenCharge ? 0 : units(f, 'input_price'), output_units_per_million: noTokenCharge ? 0 : units(f, 'output_price'),
           evidence: noTokenCharge ? `Operator chose included Codex subscription usage with zero marginal token charge on ${new Date().toISOString().slice(0, 10)}. Plan limits still apply.` : String(f.get('price_evidence')).trim() }],
-        remote_calls: integer(f, 'remote_calls'), retained_payload_bytes: integer(f, 'retained_payload_bytes'), cpu_seconds: integer(f, 'cpu_seconds'),
+        remote_calls: integer(f, 'remote_calls'), retained_payload_bytes: String(f.get('retained_payload_bytes') || '').trim() ? integer(f, 'retained_payload_bytes') : null, cpu_seconds: integer(f, 'cpu_seconds'),
         effect_operations: integer(f, 'effect_operations'), concurrent_memory_bytes: integer(f, 'concurrent_memory_bytes'), births_per_window: integer(f, 'births_per_window'), birth_window_seconds: integer(f, 'birth_window_seconds'), reason,
       };
       if (!reason) throw new Error('Enter a purpose for this allowance.');
@@ -110,7 +111,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
       <label>Allowance expires<input type="datetime-local" name="expires" required defaultValue={expires}/></label>
     </fieldset>
     <details><summary>Execution and growth limits</summary><p class="micro">Funding grants no permission for host or external effects.</p><div class="operator-grid">
-      <NumberField name="remote_calls" title="Maximum remote calls" value={100} min={1}/><NumberField name="retained_payload_bytes" title="Retained payload bytes" value={268435456}/>
+      <NumberField name="remote_calls" title="Maximum remote calls" value={100} min={1}/><label>Optional content storage allowance (bytes)<input name="retained_payload_bytes" type="number" min="0" step="1" placeholder="No ceiling"/><small>Leave blank for no ceiling. Model requests, responses, and logs are not archived.</small></label>
       <NumberField name="cpu_seconds" title="Execution CPU seconds" value={600}/><NumberField name="concurrent_memory_bytes" title="Concurrent execution memory bytes" value={268435456}/>
       <NumberField name="effect_operations" title="External effect operations" value={0}/><NumberField name="births_per_window" title="New personas per rate window" value={4} min={1}/><NumberField name="birth_window_seconds" title="Rate window seconds" value={3600} min={1}/>
     </div></details></div><footer class="form-actions"><p class="micro">Limits are shared by every task and persona using this allowance.</p><button disabled={busy || !model || modelState.loading}>{busy ? 'Saving…' : root ? 'Save limits' : 'Create allowance'}</button></footer>
@@ -177,6 +178,7 @@ export function WorkState({ value, open }: { value: any; open: (id: string) => v
       <p>Acceptance: {value.acceptance ? `${value.acceptance.disposition.replaceAll('_', ' ')} · ${value.acceptance.applicability}` : 'Not established'}</p>
       {value.acceptance?.release?.id && <button class="text-button" onClick={() => open(value.acceptance.release.id)}>Inspect exact release</button>}
       {value.blocking_feedback.length > 0 && <p>{value.blocking_feedback.length} unresolved blocking feedback records</p>}
+      <FeedbackConditions value={value} open={open}/>
     </>}
   </section>;
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { authHeaders, data, fileURL, request, type Entity } from './api';
 import Dialog from './Dialog';
+import RichText from './RichText';
+import './reading.css';
 type Phase = 'connecting' | 'receiving' | 'verifying' | 'preparing' | 'ready' | 'native' | 'canceled' | 'failed';
 export default function Viewer({ id, close }: { id: string; close: () => void }) {
   const [record, setRecord] = useState<Entity>(), [text, setText] = useState(''), [error, setError] = useState('');
@@ -49,11 +51,12 @@ export default function Viewer({ id, close }: { id: string; close: () => void })
     return () => { disposed = true; controller.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
   }, [id]);
   const d = record && data(record), busy = ['connecting', 'receiving', 'verifying', 'preparing'].includes(phase);
-  return <Dialog label="Artifact viewer" close={close}><section class="viewer"><header><h2>{d?.name || 'Artifact'}</h2><button onClick={close}>Close viewer</button></header>
+  return <Dialog label="Artifact viewer" close={close}><section class="viewer reading-viewer"><header><h2>{d?.name || 'Artifact'}</h2><button onClick={close}>Close viewer</button></header>
     <div class="preview-stage" role="status">{({ connecting: 'Connecting…', receiving: 'Receiving bytes…', verifying: 'Verifying SHA-256…', preparing: 'Preparing preview…', ready: 'Preview ready · bytes verified', native: 'Native application required · preview not loaded', canceled: 'Preview canceled', failed: 'Preview failed' })[phase]}</div>
     {error && <p role="alert">{error}</p>}
     {url && phase !== 'failed' && phase !== 'canceled' && <img class="artifact-image" src={url} alt="Recorded artifact preview" onLoad={() => setPhase('ready')} onError={() => { setPhase('failed'); setError('Verified bytes could not be decoded as the declared image type.'); }}/ >}
-    {phase === 'ready' && !url && <pre>{text || '(Empty text file)'}</pre>}
+    {phase === 'ready' && !url && (['text/plain', 'text/markdown'].includes(d?.media_type) || /\.md$/i.test(d?.name || '')
+      ? <RichText text={text || '(Empty text file)'}/> : <pre>{text || '(Empty text file)'}</pre>)}
     {phase === 'native' && <p>{d?.size.toLocaleString()} bytes. Open the original in its native application. HTML and SVG are never executed in the UI origin.</p>}
     {busy && <><progress aria-label="Artifact bytes received" value={progress[0]} max={progress[1] || 1}/><small>{progress[0].toLocaleString()} / {progress[1].toLocaleString()} bytes</small><button class="secondary" onClick={() => { cancel?.abort(); setPhase('canceled'); }}>Cancel preview</button></>}
     {verified && <p class="verified-digest">SHA-256 matches the recorded bytes. Integrity is not technical validation.</p>}

@@ -4,6 +4,8 @@ import { type Action } from './api';
 import { useResource } from './hooks';
 import { followProgress, type Progress } from './activity';
 import ToolOutput from './ToolOutput';
+import ActionReader from './ActionReader';
+import { actionTitle } from './reading';
 
 type Receipt = ApiTypes['action_activity'][number];
 
@@ -16,28 +18,28 @@ function CallMessages({ id, visible }: { id: string; visible: boolean }) {
     {snapshot?.messages.map(m => <div class="progress-message" key={m.index}><span class="field-label">{m.kind === 'summary' ? 'Provisional decision summary' : 'Progress message'}</span><p class="record-prose">{m.text}</p></div>)}
     {snapshot && !snapshot.done && !snapshot.messages.length && <p class="micro">The model is responding. No public progress message has arrived yet.</p>}
     {snapshot && snapshot.messages.length > 0 && <p class="micro">{snapshot.done ? `Decision ${snapshot.status}.` : 'Decision still in progress.'} Progress messages are reported activity; action receipts show what actually ran.</p>}
-    {snapshot?.truncated && <p class="micro">Progress preview reached its size limit. The completed decision is retained separately.</p>}
+    {snapshot?.truncated && <p class="micro">Progress preview reached its size limit. Saved work and action receipts remain available after the call.</p>}
   </div>;
 }
 
-function ReceiptDetails({ id }: { id: string }) {
+function ReceiptDetails({ id, open }: { id: string; open: (id: string) => void }) {
   const { value, error } = useResource<Action>(`/actions/${id}`, e => e.entity === id);
-  return error ? <p role="alert">{error}</p> : value ? <pre>{JSON.stringify(value, null, 2)}</pre> : <p>Loading receipt…</p>;
+  return error ? <p role="alert">{error}</p> : value ? <div class="readable-action"><ActionReader action={value} open={open}/><details><summary>Technical action details</summary><pre>{JSON.stringify(value, null, 2)}</pre></details></div> : <p>Loading receipt…</p>;
 }
 
-function ActionItem({ action, follow, visible }: { action: Receipt; follow: boolean; visible: boolean }) {
+function ActionItem({ action, follow, visible, open }: { action: Receipt; follow: boolean; visible: boolean; open: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   return <li class="activity-action" data-state={action.state}>
-    <div class="activity-action-heading"><strong>{action.kind}</strong><span class={'state-badge tone-' + (action.state === 'failed' || action.state === 'conflict' ? 'attention' : action.state === 'running' ? 'active' : 'neutral')}>{action.state}</span></div>
+    <div class="activity-action-heading"><strong>{actionTitle(action.kind)}</strong><span class={'state-badge tone-' + (action.state === 'failed' || action.state === 'conflict' ? 'attention' : action.state === 'running' ? 'active' : 'neutral')}>{action.state}</span></div>
     <time class="micro" dateTime={action.finished || action.created}>{new Date(action.finished || action.created).toLocaleTimeString()}</time>
     {action.error && <p role="alert">{action.error}</p>}
     {follow && <ToolOutput id={action.id} state={action.state} visible={visible}/>}
-    <button class="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Close receipt' : 'Inspect receipt'}</button>
-    {expanded && <ReceiptDetails id={action.id}/>}
+    <button class="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Hide activity details' : 'View activity details'}</button>
+    {expanded && <ReceiptDetails id={action.id} open={open}/>}
   </li>;
 }
 
-export default function LiveActivity({ run, call }: { run: string; call?: string }) {
+export default function LiveActivity({ run, call, open }: { run: string; call?: string; open: (id: string) => void }) {
   const section = useRef<HTMLElement>(null);
   const list = useRef<HTMLOListElement>(null), following = useRef(true);
   const [onScreen, setOnScreen] = useState(false), [tabVisible, setTabVisible] = useState(!document.hidden), [paused, setPaused] = useState(false);
@@ -58,7 +60,7 @@ export default function LiveActivity({ run, call }: { run: string; call?: string
     {call && <CallMessages id={call} visible={visible}/>}
     {error && <p role="alert">Recent actions unavailable: {error}</p>}
     {actions?.length === 0 && <p class="micro">No actions recorded for this participation yet.</p>}
-    <ol ref={list} class="activity-actions" onScroll={e => { const el = e.currentTarget; following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{actions?.map(action => <ActionItem key={action.id} action={action} follow={followed.includes(action.id)} visible={visible}/>)}</ol>
+    <ol ref={list} class="activity-actions" onScroll={e => { const el = e.currentTarget; following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{actions?.map(action => <ActionItem key={action.id} action={action} follow={followed.includes(action.id)} visible={visible} open={open}/>)}</ol>
     {!!actions?.length && <p class="micro">Latest {actions.length} action receipts. Open activity details for the full history.</p>}
   </section>;
 }

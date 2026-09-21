@@ -56,7 +56,7 @@ export function matchesWorkFilter(data: unknown, filter: WorkFilter): boolean {
   if (d.status === 'archived') return false;
   if (filter === 'all') return true;
   const positive = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n > 0;
-  if (filter === 'needs-input') return positive(d.pending_requests);
+  if (filter === 'needs-input') return positive(d.input_requests);
   const activity = d.activity;
   return !!activity && typeof activity === 'object' && !Array.isArray(activity)
     && positive((activity as Record<string, unknown>).running);
