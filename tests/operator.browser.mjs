@@ -178,6 +178,32 @@ try {
     await expect(identity).toContainText('Fixture-authored identity');
     await page.getByRole('button', { name: 'Close details', exact: true }).click();
   });
+  await step('scoped local computation permissions can be issued and revoked through UI', async () => {
+    await page.getByRole('button', { name: 'Tool access', exact: true }).click();
+    const form = page.getByRole('dialog', { name: 'Tool access', exact: true });
+    await expect(form.getByRole('button', { name: 'Allow computation and files', exact: true })).toBeDisabled();
+    await form.getByLabel('Persona', { exact: true }).selectOption(persona.id);
+    await form.getByLabel('Reason for access').fill('Synthetic local computation permission fixture');
+    await form.getByLabel('Maximum tool operations').fill('7');
+    await form.getByRole('button', { name: 'Allow computation and files', exact: true }).click();
+    await expect(form).toContainText('The persona has been notified.');
+    const grants = (await get('/records?kind=grant&scope=' + work.id)).items;
+    assert.equal(grants.length, 1);
+    const grant = await get('/records/' + grants[0].id);
+    assert.equal(grant.data.actor, persona.id); assert.equal(grant.data.work, work.id);
+    assert.deepEqual(grant.data.operations, ['exec', 'artifact.capture']);
+    assert.equal(grant.data.max_operations, 7);
+    assert.equal(grant.data.execution.memory_bytes, 256 * 1048576);
+    assert.equal(grant.data.execution.cpu_seconds, 10);
+    assert.equal(grant.data.destination, null);
+    await expect(form.getByLabel('Existing permissions')).toContainText('Save completed output as a file');
+    await form.getByRole('button', { name: 'Revoke permission', exact: true }).click();
+    await form.getByLabel('Reason for revoking').fill('Fixture ended');
+    await form.getByRole('button', { name: 'Revoke now', exact: true }).click();
+    await expect(form.getByLabel('Existing permissions')).toContainText('Revoked');
+    assert.equal((await get('/records/' + grant.id)).data.status, 'revoked');
+    await form.getByRole('button', { name: 'Close tool access', exact: true }).click();
+  });
   await step('amend scope through UI while preserving original request', async () => {
     await page.getByRole('button', { name: 'Amend task', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Amend task', exact: true });

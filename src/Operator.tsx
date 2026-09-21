@@ -10,6 +10,7 @@ import { MessageComposer } from './Messages';
 import { matchesAllowance } from './workspace';
 import { ProviderSettings } from './ProviderSettings';
 import { FeedbackConditions } from './RecordReader';
+import ToolAccess from './ToolAccess';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -113,7 +114,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
     <details><summary>Execution and growth limits</summary><p class="micro">Funding grants no permission for host or external effects.</p><div class="operator-grid">
       <NumberField name="remote_calls" title="Maximum remote calls" value={100} min={1}/><label>Optional content storage allowance (bytes)<input name="retained_payload_bytes" type="number" min="0" step="1" placeholder="No ceiling"/><small>Leave blank for no ceiling. Model requests, responses, and logs are not archived.</small></label>
       <NumberField name="cpu_seconds" title="Execution CPU seconds" value={600}/><NumberField name="concurrent_memory_bytes" title="Concurrent execution memory bytes" value={268435456}/>
-      <NumberField name="effect_operations" title="External effect operations" value={0}/><NumberField name="births_per_window" title="New personas per rate window" value={4} min={1}/><NumberField name="birth_window_seconds" title="Rate window seconds" value={3600} min={1}/>
+      <NumberField name="effect_operations" title="Tool and external operations" value={0}/><NumberField name="births_per_window" title="New personas per rate window" value={4} min={1}/><NumberField name="birth_window_seconds" title="Rate window seconds" value={3600} min={1}/>
     </div></details></div><footer class="form-actions"><p class="micro">Limits are shared by every task and persona using this allowance.</p><button disabled={busy || !model || modelState.loading}>{busy ? 'Saving…' : root ? 'Save limits' : 'Create allowance'}</button></footer>
   </form></Dialog>;
 }
@@ -227,10 +228,11 @@ export function WorkControls({ work, act, open }: { work: Entity; act: Act; open
   const [mode, setMode] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [root, setRoot] = useState('');
   const d = data(work), archived = d.status === 'archived';
   return <section class="operator-controls" aria-label="Task controls"><div class="button-row">
-    {!archived && <><button class="secondary" onClick={() => setMode('amend')}>Amend task</button><button class="secondary" onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" onClick={() => setMode('archive')}>Archive task</button></>}
+    {!archived && <><button class="secondary" onClick={() => setMode('amend')}>Amend task</button><button class="secondary" onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" onClick={() => setMode('tools')}>Tool access</button><button class="secondary" onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" onClick={() => setMode('archive')}>Archive task</button></>}
     {archived && <p role="status">Archived. Participation was cancelled; historical results, spending, and late effects remain inspectable. Open a document, artifact, or message to erase a selected payload.</p>}
   </div>{error && <p role="alert">{error}</p>}
     {mode === 'amend' && <Amend work={work} act={act} close={() => setMode('')}/>}
+    {mode === 'tools' && <ToolAccess work={work} act={act} open={open} close={() => setMode('')}/>}
     {mode === 'fund' && (d.resource_root ? <AllowanceSummary id={d.resource_root} act={act}/> : <form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await act('resource.bind', { work: work.id, revision: work.revision, root, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><FundingChoice value={root} onChange={setRoot}/><label>Funding reason<input name="reason" required/></label><button disabled={busy}>Fund task</button></form>)}
     {mode === 'message' && <MessageComposer to={d.environment} environment={d.environment} work={work.id} act={act} open={open}/>}
     {mode === 'archive' && <Dialog label="Archive task" close={() => setMode('')}><form class="operator-form" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await act('work.archive', { work: work.id, revision: work.revision, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><h2>Archive {label(work)}</h2><p>This cancels task participation and outstanding responsibilities, requests stopping of tracked jobs, and removes the task from the current list. Completed effects and accounting remain recorded.</p><label>Reason<textarea name="reason" required/></label>{error && <p role="alert">{error}</p>}<button disabled={busy}>Cancel participation and archive</button><button type="button" class="quiet" onClick={() => setMode('')}>Keep task</button></form></Dialog>}

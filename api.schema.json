@@ -2759,6 +2759,7 @@
                     ]
                   },
                   "capability": {
+                    "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.",
                     "anyOf": [
                       {
                         "$ref": "#/$defs/VersionRef"
@@ -9045,6 +9046,7 @@
                 ]
               },
               "capability": {
+                "description": "Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.",
                 "anyOf": [
                   {
                     "$ref": "#/$defs/VersionRef"

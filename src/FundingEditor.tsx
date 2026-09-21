@@ -127,7 +127,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
       </fieldset>
       <details><summary>Execution and growth limits</summary><div class="operator-grid">
         <label>Optional content storage allowance (bytes)<input name="retained_payload_bytes" type="number" min="0" step="1" defaultValue={bounds.retained_payload_bytes ?? ''} placeholder="No ceiling"/><small>Leave blank for no ceiling. Model requests, responses, and logs are not archived.</small></label>
-        {([['remote_calls','Maximum remote calls'],['cpu_seconds','Execution CPU seconds'],['concurrent_memory_bytes','Concurrent execution memory bytes'],['effect_operations','External effect operations'],['births_per_window','New personas per rate window'],['birth_window_seconds','Rate window seconds']] as const).map(([name,title]) => <NumberField key={name} name={name} title={title} value={bounds[name]}/>)}
+        {([['remote_calls','Maximum remote calls'],['cpu_seconds','Execution CPU seconds'],['concurrent_memory_bytes','Concurrent execution memory bytes'],['effect_operations','Tool and external operations'],['births_per_window','New personas per rate window'],['birth_window_seconds','Rate window seconds']] as const).map(([name,title]) => <NumberField key={name} name={name} title={title} value={bounds[name]}/>)}
       </div></details>
     </div><footer class="form-actions"><p class="micro">Changing the finishing reserve is an explicit reallocation. Required review and repair obligations remain.</p><button disabled={busy || stale || !!readError}>{busy ? 'Saving…' : 'Save funding changes'}</button></footer>
   </form>;

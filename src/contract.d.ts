@@ -575,6 +575,9 @@ export type Command =
         command: string;
         directory?: string | null;
         background?: boolean | null;
+        /**
+         * Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately.
+         */
         capability?: VersionRef | null;
       };
     }

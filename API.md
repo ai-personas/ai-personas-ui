@@ -738,7 +738,7 @@ Execute under the node's recorded profile and current grant. Restricted executio
 | `command` | string | Required |  |
 | `directory` | string or null | Optional |  |
 | `background` | boolean or null | Optional |  |
-| `capability` | VersionRef or null | Optional |  |
+| `capability` | VersionRef or null | Optional | Optional evidence-backed tool version, never a grant ID. Omit or use null for ordinary execution; the runtime selects and checks the current scoped grant separately. |
 
 ### `job.read`
 
