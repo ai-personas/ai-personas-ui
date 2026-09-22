@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { data, label, type Entity } from './api';
-import { useResource } from './hooks';
+import { useResource, useRecords } from './hooks';
 import type { Act } from './main';
 import { Pick } from './Create';
 import { inputRequestCount, matchesRecords, recordIDs } from './workspace';
@@ -43,7 +43,23 @@ export default function Participants({ subject, act, open }: { subject: Entity; 
       <div class="button-row"><button disabled={busy || !person.length}>{busy ? 'Saving…' : mode === 'remove' ? 'Remove persona' : environment ? 'Add to environment' : 'Invite to work'}</button><button type="button" class="quiet" disabled={busy} onClick={() => setMode('')}>Cancel</button></div>
     </form>}
     {saved && <p role="status">{saved}</p>}
+    {!environment && <OrientationInvitations work={subject.id} act={act} open={open}/>}
     {ids.length ? <div class="participant-list">{ids.slice(currentPage * size, (currentPage + 1) * size).map(id => <Person key={id} id={id} open={open} disabled={busy} remove={() => edit('remove', id)}/>)}</div> : <p>No personas selected. Use Add persona to get started.</p>}
     {ids.length > size && <div class="record-pagination"><button class="secondary" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Previous personas</button><button class="secondary" disabled={(currentPage + 1) * size >= ids.length} onClick={() => setPage(currentPage + 1)}>Next personas</button></div>}
   </section>;
+}
+
+function OrientationInvitations({ work, act, open }: { work: string; act: Act; open: (id: string) => void }) {
+  const { value, error: loadError } = useRecords('invitation', work);
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const pending = value?.items.filter(r => data(r).status === 'offered') || [];
+  async function extend(invitation: Entity) {
+    if (busy) return; setBusy(invitation.id); setError('');
+    try { await act('invitation.extend', { id: invitation.id, revision: invitation.revision, additional_calls: Math.min(2, 16 - Number(data(invitation).orientation_calls)), reason: 'Operator provided additional orientation attempts' }); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(''); }
+  }
+  return <>{(error || loadError) && <p role="alert">{error || loadError}</p>}{pending.map(invitation => { const d = data(invitation); return <article class={`participant-row${d.orientation_calls_remaining === 0 ? ' needs-input' : ''}`} key={invitation.id}>
+    <div><button class="record-title" onClick={() => open(d.to)}>Pending invitation</button><p>{d.orientation_calls_remaining ?? '…'} orientation attempts remaining. Root funding still applies.</p></div>
+    <button class="secondary" disabled={!!busy || Number(d.orientation_calls) >= 16} onClick={() => void extend(invitation)}>{busy === invitation.id ? 'Saving…' : 'Add orientation attempts'}</button>
+  </article>; })}</>;
 }

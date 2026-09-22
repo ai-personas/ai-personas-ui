@@ -78,6 +78,7 @@ function ScopeStory({ value }: { value: unknown }) {
 function Content({ record, open, historical }: { record: Entity; open: Open; historical: boolean }) {
   const d = data(record), draft = fields(d.draft);
   switch (record.kind) {
+    case 'environment_tool': return <><Story value={d.description}/><p>{d.enabled ? 'Enabled for accepted participants in this environment.' : 'Removed from this environment.'}</p><Story title="Observed availability" value={d.availability_basis}/><p class="reader-muted">Shared access does not share private memory or credentials. Availability is separate from correctness or demonstrated experience.</p></>;
     case 'document': return <>
       <p class="record-caveat">{learningKind(record.kind)}. Saving or submitting a document does not establish lesson retention or later use.</p>
       {text(d.content) ? <RichText text={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
@@ -130,7 +131,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'assumption': return <><Story value={d.summary || d.text || d.description}/><p class="notice">{assumptionNote(text(d.status))}</p><Story title="Reconsider when" value={d.reconsider_if}/></>;
     case 'working_agreement': case 'agreement': return <><Story title="Agreement" value={d.terms || d.text}/><Story title="Concerns and exceptions" value={d.dissent || d.limitations}/><RelatedItems title="Endorsements" value={d.endorsements} open={open}/></>;
     case 'finding': case 'assessment': return <><Story title="Review" value={d.summary || d.content}/><Story title="Findings" value={d.findings}/><Story title="Limitations" value={d.limitations}/></>;
-    case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.persona} open={open}/></p><Story value={d.reason || d.note}/></>;
+    case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.to || d.persona} open={open}/></p><Story value={d.preview || d.reason || d.note}/>{typeof d.orientation_calls_remaining === 'number' && <p>{d.orientation_calls_remaining} orientation attempts remaining. Joining and accepting responsibility are separate decisions.</p>}</>;
     case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.message || d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
     case 'work_release': case 'release': return <><Story title="Released work" value={d.summary}/><Story title="Limitations" value={d.limitations || draft.limitations}/><FeedbackConditions value={d} open={open} historical/><RelatedItems title="Submitted work" value={d.submission} open={open}/></>;
     case 'resource_root': return <Story title="Purpose" value={d.reason}/>;

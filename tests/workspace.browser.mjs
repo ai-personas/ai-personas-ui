@@ -62,6 +62,7 @@ try {
       const req = route.request(), u = new URL(req.url()); calls.push(u.pathname + u.search);
       if (u.pathname === '/api/session') return route.fulfill({ json: {} });
       if (u.pathname === '/api/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': fixture keepalive\n\n' });
+      if (u.pathname === `/api/work/${work}/files`) return route.fulfill({json:{items:records.filter(r=>[file,badFile,nativeFile,id(16)].includes(r.id)).map(record=>({record,status:'submitted',submissions:[{id:id(5),revision:1}],adopted_in:null,acceptance_established:false})),next:null,sequence:0}});
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-peer', peers: [], addresses: [] } });
       if (/^\/api\/work\/[^/]+\/messages$/.test(u.pathname)) return route.fulfill({ json: { items: [], next: null, sequence: 0 } });
       if (/^\/api\/runs\/[^/]+\/activity$/.test(u.pathname)) return route.fulfill({ json: [] });

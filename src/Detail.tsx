@@ -20,6 +20,7 @@ import { humanLabel, recordTitle, actionTitle } from './reading';
 import { timestamp } from './identity';
 import RichText from './RichText';
 import ContextRecovery from './ContextRecovery';
+const EnvironmentTools = lazy(() => import('./EnvironmentTools'));
 const Upload = lazy(() => import('./Upload'));
 const Pick = lazy(() => import('./Create').then(m => ({ default: m.Pick })));
 function Expand({ title, children }: { title: string; children: () => ComponentChildren }) { const [open, setOpen] = useState(false); return <section class="expand"><button class="expand-title" aria-expanded={open} onClick={() => setOpen(!open)}>{title} {open ? '−' : '+'}</button>{open && children()}</section>; }
@@ -27,13 +28,14 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
   const { value: r, error } = useResource<Entity>('/records/' + id, e => matchesWork(e, id) || matchesRecords(e, 'persona,environment'));
   const [tab, setTab] = useState(''), [failure, setFailure] = useState(''), [review, setReview] = useState(false), [reviewers, setReviewers] = useState<string[]>([]), [reviewBusy, setReviewBusy] = useState(false);
   const d = r ? data(r) : {};
-  const tabs = r?.kind === 'work' ? ['Activity', 'Submissions', 'Assessments', 'Requests'] : r?.kind === 'persona' ? ['Work', 'Learning', 'Tools', 'Perspectives', 'Messages', 'History'] : r?.kind === 'environment' ? ['Work', 'Learning', 'Messages'] : r?.kind === 'run' ? ['Actions', 'Model calls'] : r?.kind === 'request' ? ['Responses'] : [];
+  const tabs = r?.kind === 'work' ? ['Activity', 'Submissions', 'Assessments', 'Requests'] : r?.kind === 'persona' ? ['Work', 'Learning', 'Tools', 'Perspectives', 'Messages', 'History'] : r?.kind === 'environment' ? ['Work', 'Learning', 'Tools', 'Messages'] : r?.kind === 'run' ? ['Actions', 'Model calls'] : r?.kind === 'request' ? ['Responses'] : [];
   const current = tab || tabs[0];
   const actSafe: Act = async (...args) => { setFailure(''); try { return await act(...args); } catch (e) { setFailure((e as Error).message); throw e; } };
   return <Dialog label="Record details" close={close} drawer><div class="drawer record-detail"><header><div><p class="eyebrow">{r ? humanLabel(r.kind) : 'Details'}</p><h2>{r ? recordTitle(r) : 'Loading…'}</h2></div><button onClick={close}>Close details</button></header><div class="drawer-body">
     {(error || failure) && <p role="alert">{error || failure}</p>}{r && <>
       {r.kind === 'request' ? <InputBadge record={r}/> : <InputNotice record={r} open={open}/>}
       {r.kind !== 'persona' && <RecordReader record={r} open={open}/>}
+      {r.kind === 'environment_tool' && isRecordID(d.last_action) && <Expand title="Last tool observation">{() => <ActionRecord id={d.last_action} act={actSafe} open={open}/>}</Expand>}
       {r.kind === 'run' && <RunProgress run={r} open={open} act={actSafe}/>} {text(d.error) && <p role="alert">{d.error}</p>}
       {['persona', 'environment'].includes(r.kind) && <><Portrait id={d.portrait || d.image} name={label(r)}/>{isRecordID(d.portrait || d.image) && <button class="text-button" onClick={() => artifact(d.portrait || d.image)}>Inspect original image</button>}</>}
       {r.kind === 'persona' && <><Identity persona={r} open={open}/>
@@ -63,6 +65,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {r.kind === 'artifact' && <button onClick={() => artifact(id)}>Open file</button>}
       {tabs.length > 0 && <><nav class="tabs" aria-label="Detail sections">{tabs.map(t => <button key={t} class={current === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav>
         {current === 'Messages' && r.kind === 'persona' ? <Correspondence key={id} persona={id} open={open}/> : current === 'Actions' || current === 'History' ? <Actions key={current + id} owner={r.kind === 'persona' ? id : ''} run={r.kind === 'run' ? id : ''} act={actSafe} open={open}/>
+          : current === 'Tools' && r.kind === 'environment' ? <Suspense fallback={<p>Loading tools…</p>}><EnvironmentTools environment={id} act={actSafe} open={open}/></Suspense>
           : <Records key={current + id} kind={({ Activity: 'run', Work: r.kind === 'persona' ? 'run' : 'work', Learning: 'fragment,document', Tools: 'tool,capability', Perspectives: 'perspective', Messages: 'message', 'Model calls': 'call', Submissions: 'submission', Assessments: 'finding,assessment', Requests: 'request', Responses: 'response' } as Record<string, string>)[current]} scope={r.kind === 'persona' ? '' : id} owner={r.kind === 'persona' ? id : ''} open={open}/>}
       </>}
       <Expand title="Version history">{() => <Revisions id={id} open={open}/>}</Expand>

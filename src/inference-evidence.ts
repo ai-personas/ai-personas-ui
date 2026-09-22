@@ -38,7 +38,14 @@ export function inferenceEvidence(value: unknown) {
   const questionRefs = questionList ? references(questionList, 'question') : undefined;
   const replies = questionList?.map(q => count(object(q).visible_reply_count));
   const replyCount = replies?.every(n => n !== undefined) ? replies.reduce<number>((a, b) => a + b!, 0) : undefined;
+  const breakdown = object(d.context_breakdown);
+  const contextParts = breakdown.unit === 'serialized_utf8_bytes' && breakdown.not_token_usage === true ? [
+    ['Instructions', 'instructions'], ['Operation descriptions', 'operation_schema'], ['Current work and obligations', 'mandatory_work'],
+    ['Selected records', 'selected_records'], ['Selected lessons', 'selected_learning'], ['Action history', 'history'],
+    ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
+  ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {
+    contextParts, maintenance: d.decision_mode === 'context_maintenance',
     state: typeof d.status === 'string' ? d.status.slice(0, 96) : 'Not recorded',
     contextBytes: count(d.context_bytes) ?? exposure?.bytes, measured, exposure,
     recovery: recovery ? {

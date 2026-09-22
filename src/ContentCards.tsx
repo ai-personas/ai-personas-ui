@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { data, type Entity } from './api';
-import { useResource, useRecords } from './hooks';
+import { useResource } from './hooks';
 import { isRecordID, recordIDs, text, stateTone } from './workspace';
 import { timestamp } from './identity';
 import { excerpt, fileFormat, fileSize, recordExcerpt, recordTitle } from './reading';
@@ -44,33 +44,20 @@ export function ContentReferences({ ids, open, artifact }: { ids: string[] } & L
   </div></div>}</div>;
 }
 
-/** Only references actually submitted to this work are listed. Persona-owned
- * documents are never guessed into a task from author or environment alone. */
+/** Runtime provenance distinguishes published drafts, submissions and adopted candidates. */
 export default function WorkArtifacts({ work, open, artifact }: { work: string } & Links) {
-  const [pages, setPages] = useState([{ after: 0, offset: 0 }]);
-  const current = pages.at(-1)!;
-  const { value, error, loading, retry } = useRecords('submission', work, '', '', current.after);
-  const references = new Map<string, { id: string; summary: string; submitted: string }>();
-  for (const submission of value?.items || []) {
-    const d = data(submission);
-    for (const id of [...recordIDs(d.documents), ...recordIDs(d.artifacts)]) {
-      if (!references.has(id)) references.set(id, { id, summary: text(d.summary), submitted: submission.created });
-    }
-  }
-  const all = [...references.values()], count = 12;
-  const visible = all.slice(current.offset, current.offset + count);
-  const more = current.offset + count < all.length || value?.next != null;
+  const [cursors, setCursors] = useState([0]);
+  const { value, error, loading, retry } = useResource<import('./contract').ApiTypes['work_files']>(`/work/${work}/files?after=${cursors.at(-1)}&limit=12`, e => ['artifact', 'document', 'submission', 'work_assembly', 'action'].includes(e.kind));
+  const statuses: Record<string, string> = { published_draft: 'Published draft', submitted: 'Submitted · review is separate', adopted_candidate: 'In adopted candidate · approval is separate', historical_or_unavailable: 'Historical or unavailable' };
   return <section class="workspace-section artifact-library" aria-label="Documents & files" aria-busy={loading}>
-    <header class="section-heading"><div><h2>Documents & files</h2><p>Read the work submitted by your personas, or open its original files.</p></div></header>
+    <header class="section-heading"><div><h2>Documents & files</h2><p>Read published drafts and submitted files. Each card shows how it relates to this work.</p></div></header>
     {error && <p role="alert">Documents and files could not be loaded. <button class="text-button" onClick={retry}>Try again</button></p>}
-    {!value && !error && <p role="status">Loading submitted work…</p>}
-    {value && !error && !all.length && <div class="workspace-empty"><strong>No documents or files on this page</strong><p>When a persona submits its work, you can read it here.</p></div>}
-    <div class="cards compact-records reading-collection">{visible.map(item => <ContentReferenceCard key={item.id} id={item.id} open={open} artifact={artifact} summary={item.summary} footer={'Submitted ' + timestamp(item.submitted)}/>)}</div>
-    {(pages.length > 1 || more) && <div class="record-pagination"><span>{visible.length} documents and files on this page</span><div>
-      <button class="secondary" disabled={loading || pages.length === 1} onClick={() => setPages(pages.slice(0, -1))}>Previous files</button>
-      <button class="secondary" disabled={loading || !more} onClick={() => setPages([...pages, current.offset + count < all.length
-        ? { ...current, offset: current.offset + count } : { after: value!.next!, offset: 0 }])}>Next files</button>
+    {!value && !error && <p role="status">Loading work files…</p>}
+    {value && !error && !value.items.length && <div class="workspace-empty"><strong>No documents or files on this page</strong><p>Files appear here when a persona publishes or submits them in this work.</p></div>}
+    <div class="cards compact-records reading-collection">{value?.items.map(item => <ContentCard key={item.record.id} record={item.record} open={open} artifact={artifact} footer={statuses[item.status] || item.status}/>)}</div>
+    {(cursors.length > 1 || value?.next != null) && <div class="record-pagination"><div>
+      <button class="secondary" disabled={loading || cursors.length === 1} onClick={() => setCursors(cursors.slice(0, -1))}>Previous files</button>
+      <button class="secondary" disabled={loading || value?.next == null} onClick={() => { if (value?.next != null) setCursors([...cursors, value.next]); }}>Next files</button>
     </div></div>}
-    <p class="record-caveat">Submitted work is available to read here. Review and approval are shown separately below.</p>
   </section>;
 }

@@ -4,3 +4,10 @@
 @media(max-width:800px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar{min-width:0}.sidebar nav{min-width:0;max-width:100%;overflow-x:auto}.sidebar nav button{flex:0 0 auto}}
 
 p,small,code{overflow-wrap:anywhere}
+
+.tool-choice { display: flex; align-items: flex-start; gap: .75rem; padding: .75rem 0; }
+.tool-choice input { flex: 0 0 auto; width: auto; margin-top: .25rem; }
+.tool-choice span { display: grid; gap: .35rem; min-width: 0; }
+.tool-choice small { font-weight: normal; line-height: 1.5; }
+.environment-tool { padding: 1rem; display: flex; flex-direction: column; gap: .5rem; }
+.environment-tool .button-row { margin-top: auto; }

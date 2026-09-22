@@ -48,7 +48,7 @@ export function actionTitle(kind: string): string {
     'agreement.propose': 'Propose an agreement', 'agreement.endorse': 'Endorse an agreement', 'feedback.open': 'Give feedback', 'feedback.dispose': 'Respond to feedback',
     'assembly.adopt': 'Choose a work version', 'evidence.bind': 'Link supporting evidence', 'release.commit': 'Release a work version',
     'participants.add': 'Invite a persona', 'participants.remove': 'Remove a persona', 'persona.create': 'Create a persona', 'persona.retire': 'Retire a persona', 'persona.activate': 'Activate a persona',
-    'environment.create': 'Create an environment', 'request.cancel': 'Close a question', 'invitation.offer': 'Invite a persona',
+    'environment.create': 'Create an environment', 'environment.tool.add': 'Add a shared tool', 'environment.tool.remove': 'Remove a shared tool', 'browser.search': 'Search the web', 'browser.open': 'Read a source page', 'invitation.extend': 'Extend orientation', 'request.cancel': 'Close a question', 'invitation.offer': 'Invite a persona',
     'action.read': 'Read action details', 'artifact.inspect': 'Inspect a saved file', 'artifact.capture': 'Save a file', 'tool.register': 'Register a tool',
     'resource.summary': 'Check available funding', 'resource.root.create': 'Create a funding allowance', 'resource.root.amend': 'Update funding limits',
     'information.policy': 'Update sharing settings', 'information.withdraw': 'Withdraw shared information', 'information.erase': 'Erase selected content',

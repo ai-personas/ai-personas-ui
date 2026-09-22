@@ -39,6 +39,28 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/tests/reliability-fixture.html`);
   await expect(page.getByRole('heading',{name:'Reliability fixture ready'})).toBeVisible();
+  await page.route('**/api/environment-tools', route => route.fulfill({json:[
+    {id:'browser_research',name:'Browser research',description:'Synthetic browser research option',default_enabled:true},
+    {id:'assigned_model_knowledge',name:'Ask assigned LLM',description:'Synthetic model knowledge option',default_enabled:true},
+  ]}));
+  await step('Environment defaults can all be removed without being restored by rendering', async () => {
+    await page.evaluate(() => window.mountTools());
+    await expect(page.getByLabel('Tool selection')).toHaveText('["browser_research","assigned_model_knowledge"]');
+    await page.getByRole('checkbox',{name:/Browser research/}).uncheck();
+    await page.getByRole('checkbox',{name:/Ask assigned LLM/}).uncheck();
+    await expect(page.getByLabel('Tool selection')).toHaveText('[]');
+    await page.evaluate(() => window.mountTools());
+    await expect(page.getByLabel('Tool selection')).toHaveText('[]');
+    await page.evaluate(() => window.unmount());
+  });
+  await step('Research presents attributed sources and rejects executable link schemes', async () => {
+    await page.evaluate(() => window.mountResearch('browser.search',{query:'fixture research'},{engine:'Fixture',retrieved_at:'2026-01-01T00:00:00Z',truncated:true,results:[{title:'Original source',url:'https://example.org/source',excerpt:'An attributed source excerpt'},{title:'Untrusted injected link',url:'javascript:window.injected=true',excerpt:'Not an executable link'}]}));
+    await expect(page.getByRole('link',{name:'Original source'})).toHaveAttribute('href','https://example.org/source');
+    await expect(page.getByRole('link',{name:'Untrusted injected link'})).toHaveCount(0);
+    assert.equal(await page.evaluate(() => window.injected),undefined);
+    await expect(page.getByText('This result is a bounded excerpt.',{exact:false})).toBeVisible();
+    await page.evaluate(() => window.unmount());
+  });
   await page.evaluate(encoded => window.mountArchive(encoded,'example.TAR.GZ','application/octet-stream'),gzip.toString('base64'));
   await step('TAR.GZ opens as a folder without eager extraction',async () => {
     await expect(page.getByRole('button',{name:'Open folder plans',exact:true})).toBeVisible();

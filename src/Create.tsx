@@ -5,6 +5,7 @@ import { useRecords, useResource } from './hooks';
 import { FundingChoice, initialMandate } from './Operator';
 import { Pagination, type Act } from './main';
 import Dialog from './Dialog';
+import { ToolChoices } from './EnvironmentTools';
 import SearchInput from './SearchInput';
 import { modelKey, ModelStatus, useModels } from './Models';
 export function Pick({ kind, multiple, value, onChange, exclude = [], disabled = false }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void; exclude?: string[]; disabled?: boolean }) {
@@ -23,6 +24,8 @@ function EnvironmentPersonas({ id, choose }: { id: string; choose: (ids: string[
 }
 export default function Create({ kind, brief, close, act }: { kind: string; brief: string; close: () => void; act: Act }) {
   const [root, setRoot] = useState('');
+  const [tools, setTools] = useState<string[] | undefined>();
+  const createsEnvironment = kind === 'Environments' || kind === 'Work' && !!brief;
   const { value: deployment } = useResource<{ funding_required: boolean }>('/deployment', () => false);
   const modelState = useModels(kind === 'Personas'), models = modelState.models;
   const [selectedModel, setSelectedModel] = useState('');
@@ -34,7 +37,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
     try {
       const f = new FormData(form);
       if (kind === 'Personas') { const model = models.find(m => modelKey(m) === f.get('model')); if (!model) throw new Error('Choose an available model.'); await act('persona.create', { provider: model.provider, model: model.id, ...(root ? { resource_root: root } : {}) }); }
-      else if (kind === 'Environments') await act('environment.create', {});
+      else if (kind === 'Environments') await act('environment.create', { tools });
       else if (kind === 'Network') {
         const descriptor = String(f.get('descriptor')).trim();
         if (descriptor) { const d = JSON.parse(descriptor); if (d.address) await act('peer.connect', { address: d.address }); const { peer, artifact, digest, size, name } = d; await act('transfer.start', { peer, artifact, digest, size, name }); }
@@ -42,7 +45,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
       } else {
         if (!people.length) throw new Error('Choose at least one persona');
         let environment = env[0];
-        if (!environment && brief) { const r = await act('environment.create', {}); environment = (r.result as any).id; setEnv([environment]); }
+        if (!environment && brief) { const r = await act('environment.create', { tools }); environment = (r.result as any).id; setEnv([environment]); }
         if (!environment) throw new Error('Choose an environment');
         await act('work.create', { title: String(f.get('title')), brief: String(f.get('brief')), environment, personas: people, ...(root ? { resource_root: root } : {}), mandate: initialMandate(String(f.get('brief')), String(f.get('criterion'))) });
       }
@@ -54,7 +57,8 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
       : kind === 'Environments' ? <p>Create a shared place for work. Participating personas can choose its name and description when work begins. An image appears only after an actual artifact is published.</p>
       : kind === 'Network' ? <><label>Peer address<input name="address" placeholder="/ip4/…/tcp/…/p2p/…"/></label><label>Or shared artifact details<textarea name="descriptor" rows={5}/></label><p>Both nodes must trust one another to exchange artifacts. Receiving bytes does not grant execution authority.</p></>
       : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}{env[0] && <EnvironmentPersonas id={env[0]} choose={setPeople}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
+    {createsEnvironment && <ToolChoices value={tools} onChange={setTools}/>}
     {['Personas', 'Work'].includes(kind) && <FundingChoice value={root} onChange={setRoot} required={deployment?.funding_required !== false}/>}
-    <button disabled={busy || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
+    <button disabled={busy || createsEnvironment && tools === undefined || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
   </form></Dialog>;
 }

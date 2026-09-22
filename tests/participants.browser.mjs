@@ -59,7 +59,7 @@ async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name
 async function stopNode() { if (app && app.exitCode === null) { const exited = once(app, 'exit'); app.kill('SIGTERM'); await exited; } }
 async function startNode() {
   const fd = openSync(join(root, 'node.log'), 'a');
-  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', url.replace('http://', ''), '--http-providers', join(root, 'providers.json'), '--ui', resolve('dist')], { stdio: ['ignore', fd, fd] }); closeSync(fd);
+  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', url.replace('http://', ''), '--http-providers', join(root, 'providers.json'), '--ui', resolve(process.env.PERSONAS_UI_DIST || 'dist')], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   await until(async () => { if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8')); try { return (await fetch(url + '/health')).ok; } catch { return false; } }, 'node');
 }
 const bounds = { expires: '2099-01-01T00:00:00Z', tokens: 10000000, closeout_tokens: 1000, cost_units: 1000000, closeout_cost_units: 100, currency: 'fixture',

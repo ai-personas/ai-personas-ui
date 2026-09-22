@@ -45,7 +45,7 @@ const server = createServer(async (req, res) => {
   if (u.pathname.startsWith('/api/')) return json({ items: [], next: null, sequence });
   const path = u.pathname === '/' ? '/index.html' : u.pathname;
   try {
-    const file = resolve('dist', '.' + path); assert(file.startsWith(resolve('dist') + '/'));
+    const file = resolve(process.env.PERSONAS_UI_DIST || 'dist', '.' + path); assert(file.startsWith(resolve(process.env.PERSONAS_UI_DIST || 'dist') + '/'));
     const bytes = await readFile(file);
     res.writeHead(200, { 'Content-Type': ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml' })[extname(path)] || 'application/octet-stream' }); res.end(bytes);
   } catch { res.writeHead(404); res.end(); }

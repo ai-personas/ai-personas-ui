@@ -15,7 +15,7 @@ const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function freePort(){const s=createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const port=s.address().port;await new Promise(r=>s.close(r));return port;}
 async function start(name,load=false){const dir=join(root,name);mkdirSync(dir);if(load)execFileSync(integration,['--root',dir,'load-fixture'],{stdio:'pipe'});else mkdirSync(join(dir,'node'));
   const cfg=join(dir,'providers.json');writeFileSync(cfg,JSON.stringify({fixture:['python3',join(runtime,'integtest/provider_fixture.py')]}));const port=await freePort();const log=openSync(join(dir,'server.log'),'a');
-  const child=spawn(binary,['serve','--require-token','--unrestricted-test-mode','--root',join(dir,'node'),'--listen',`127.0.0.1:${port}`,'--providers',cfg,'--ui',installed?join(runtime,'ui'):resolve('dist')],{stdio:['ignore',log,log]});closeSync(log);servers.push(child);
+  const child=spawn(binary,['serve','--require-token','--unrestricted-test-mode','--root',join(dir,'node'),'--listen',`127.0.0.1:${port}`,'--providers',cfg,'--ui',installed?join(runtime,'ui'):resolve(process.env.PERSONAS_UI_DIST || 'dist')],{stdio:['ignore',log,log]});closeSync(log);servers.push(child);
   const url=`http://127.0.0.1:${port}`;for(let i=0;i<300;i++){if(child.exitCode!==null)throw Error(readFileSync(join(dir,'server.log'),'utf8'));try{if((await fetch(url+'/health')).ok)break;}catch{}await delay(100);}
   const token=readFileSync(join(dir,'node/token'),'utf8');
   async function get(path){const r=await fetch(url+'/api'+path,{headers:{Authorization:`Bearer ${token}`}});const body=await r.json();assert(r.ok,JSON.stringify(body));return body;}

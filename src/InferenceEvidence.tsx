@@ -19,6 +19,8 @@ export default function InferenceEvidence({ value, open }: { value: unknown; ope
     <p>Call status: {facts.state.replaceAll('_', ' ')}. Status is not a verdict on the work.</p>
     <dl><dt>Serialized context bytes</dt><dd>{number(facts.contextBytes)} — not a token count</dd>
       <dt>Measured provider usage</dt><dd>{facts.measured ? `${number(facts.measured.input)} input, ${number(facts.measured.output)} output; ${number(facts.measured.cached)} cached input tokens` : 'Unknown or not coherently recorded; do not assume this call was free.'}</dd></dl>
+    {facts.maintenance && <p class="notice">This call was the funded context-maintenance attempt. It uses the same assigned model and allowance.</p>}
+    {facts.contextParts && <details><summary>What occupied the context</summary><dl>{facts.contextParts.map(part => <div key={part.label}><dt>{part.label}</dt><dd>{number(part.bytes)} bytes</dd></div>)}</dl><p class="reader-muted">Serialized sections are not tokenizer measurements. Adapter framing and encoded media are accounted separately.</p></details>}
     {facts.exposure && <p>Admitted upper-bound exposure: {number(facts.exposure.input)} input and {number(facts.exposure.output)} output tokens. These are reservations or estimates, not measured usage or a tokenizer result.</p>}
     {facts.recovery && <section><h4>Bounded context recovery</h4><dl>
       <dt>Older successful receipts omitted</dt><dd>{number(facts.recovery.history)}</dd>

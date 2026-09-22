@@ -114,6 +114,15 @@ export type Command =
       };
     }
   | {
+      kind: "invitation.extend";
+      args: {
+        id: string;
+        revision: number;
+        additional_calls: number;
+        reason: string;
+      };
+    }
+  | {
       kind: "persona.retire";
       args: {
         id: string;
@@ -508,6 +517,41 @@ export type Command =
       kind: "environment.create";
       args: {
         directory?: string | null;
+        tools?: string[] | null;
+      };
+    }
+  | {
+      kind: "environment.tools.catalog";
+      args: {};
+    }
+  | {
+      kind: "environment.tool.add";
+      args: {
+        environment: string;
+        tool: string;
+        revision: number;
+      };
+    }
+  | {
+      kind: "environment.tool.remove";
+      args: {
+        environment: string;
+        tool: string;
+        revision: number;
+      };
+    }
+  | {
+      kind: "browser.search";
+      args: {
+        query: string;
+        limit?: number | null;
+        engine?: BrowserSearchEngine | null;
+      };
+    }
+  | {
+      kind: "browser.open";
+      args: {
+        url: string;
       };
     }
   | {
@@ -800,7 +844,7 @@ export type Command =
         evidence: string;
       };
     };
-export type Capability = "persona_decision" | "choice";
+export type Capability = "persona_decision" | "choice" | "knowledge";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
 export type PerspectiveKind = "agenda" | "relationship";
 export type EntryKind = "observation" | "opportunity" | "decision" | "assumption";
@@ -818,6 +862,7 @@ export type DependencyMode = "final_acceptance" | "version_ready";
 export type CommitmentStatus = "working" | "blocked" | "submitted" | "closed" | "cancelled";
 export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" | "resolved" | "deferred" | "waived";
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
+export type BrowserSearchEngine = "bing" | "duckduckgo";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type WaitCondition =
@@ -858,10 +903,12 @@ export type SettingsChange =
 
 export interface ApiTypes {
   attention: Attention;
+  environment_tools: ToolDescriptor[];
+  work_files: Page;
   command: Command;
-  records: Page;
+  records: Page2;
   inputs: Inbox;
-  actions: Page2;
+  actions: Page3;
   operation: Operation;
   action: Action;
   event: Event;
@@ -869,7 +916,7 @@ export interface ApiTypes {
   inference: InferenceCatalog;
   provider_settings: ProviderSettings;
   provider_settings_change: SettingsChange;
-  message_delivery: Page3;
+  message_delivery: Page4;
   call_progress: CallProgress;
   action_activity: ActionActivity[];
   request: ModelRequest;
@@ -883,6 +930,49 @@ export interface Attention {
   personas: number;
   environments: number;
   [k: string]: unknown;
+}
+export interface ToolDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  operations: string[];
+  default_enabled: boolean;
+  adapter: string;
+  [k: string]: unknown;
+}
+/**
+ * Cursor pages are bounded transport, not a persona memory policy.
+ */
+export interface Page {
+  items: WorkFile[];
+  next?: number | null;
+  sequence: number;
+  [k: string]: unknown;
+}
+export interface WorkFile {
+  record: Record;
+  status: string;
+  submissions: VersionRef[];
+  adopted_in?: VersionRef | null;
+  acceptance_established: boolean;
+  [k: string]: unknown;
+}
+/**
+ * Persistent entities retain arbitrary persona-authored fields in `data`.
+ */
+export interface Record {
+  id: string;
+  kind: string;
+  scope: string;
+  revision: number;
+  created: string;
+  updated: string;
+  data: unknown;
+  [k: string]: unknown;
+}
+export interface VersionRef {
+  id: string;
+  revision: number;
 }
 export interface Invocation {
   target: Selection;
@@ -929,10 +1019,6 @@ export interface GrantDraft {
    */
   typesafe_choice?: ChoiceGrant | null;
   reason: string;
-}
-export interface VersionRef {
-  id: string;
-  revision: number;
 }
 export interface ExecutionLimits {
   wall_ms: number;
@@ -1131,23 +1217,10 @@ export interface Vad {
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
  */
-export interface Page {
+export interface Page2 {
   items: Record[];
   next?: number | null;
   sequence: number;
-  [k: string]: unknown;
-}
-/**
- * Persistent entities retain arbitrary persona-authored fields in `data`.
- */
-export interface Record {
-  id: string;
-  kind: string;
-  scope: string;
-  revision: number;
-  created: string;
-  updated: string;
-  data: unknown;
   [k: string]: unknown;
 }
 /**
@@ -1172,7 +1245,7 @@ export interface Input {
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
  */
-export interface Page2 {
+export interface Page3 {
   items: Action[];
   next?: number | null;
   sequence: number;
@@ -1309,7 +1382,7 @@ export interface KeyStatus {
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
  */
-export interface Page3 {
+export interface Page4 {
   items: MessageDelivery[];
   next?: number | null;
   sequence: number;

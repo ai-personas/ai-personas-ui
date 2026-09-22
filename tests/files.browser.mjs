@@ -53,7 +53,7 @@ try {
   provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
   const reservation = createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening'); const port = reservation.address().port; await new Promise(r => reservation.close(r));
   await writeFile(join(root, 'providers.json'), JSON.stringify({ fixture: { endpoint: `http://127.0.0.1:${provider.address().port}/responses`, trust_loopback_http: true, models: [{ id: 'file-fixture', context_window_tokens: 1000000, max_output_tokens: 1024, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 1024 }] } }));
-  app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--require-token', '--unrestricted-test-mode', '--http-providers', join(root, 'providers.json'), '--ui', resolve('dist')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--require-token', '--unrestricted-test-mode', '--http-providers', join(root, 'providers.json'), '--ui', resolve(process.env.PERSONAS_UI_DIST || 'dist')], { stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; app.stdout.on('data', b => { log += b; }); app.stderr.on('data', b => { log += b; }); url = `http://127.0.0.1:${port}`;
   await until(async () => { if (app.exitCode !== null) throw Error(log); try { return (await fetch(url + '/health')).ok; } catch { return false; } });
   token = (await readFile(join(root, 'node/token'), 'utf8')).trim();

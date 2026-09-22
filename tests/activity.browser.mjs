@@ -62,7 +62,7 @@ try {
   writeFileSync(join(root, 'providers.json'), JSON.stringify({ fixture: { endpoint: `http://127.0.0.1:${provider.address().port}/responses`, trust_loopback_http: true,
     models: [{ id: 'activity-fixture', context_window_tokens: 1_000_000, max_output_tokens: 1024, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 1024 }] } }));
   const fd = openSync(join(root, 'node.log'), 'a');
-  app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', resolve('dist'), '--unrestricted-test-mode'], { stdio: ['ignore', fd, fd] }); closeSync(fd);
+  app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', resolve(process.env.PERSONAS_UI_DIST || 'dist'), '--unrestricted-test-mode'], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   await until(async () => { if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8')); try { return (await fetch(url + '/health')).ok; } catch { return false; } }, 'node health');
   const allowance = await op('resource.root.create', { limits: { calls: 5, births: 1, max_depth: 0, concurrent_calls: 1 }, closeout_calls: 1, reason: 'Synthetic activity mechanics; no live inference' });
   const persona = await op('persona.create', { provider: 'fixture', model: 'activity-fixture', resource_root: allowance.id });
