@@ -3365,12 +3365,14 @@
                 "type": "object",
                 "properties": {
                   "records": {
+                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "actions": {
+                    "description": "IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -3405,15 +3407,18 @@
                     "type": "string"
                   },
                   "through": {
+                    "description": "An executed operation's history.request.id from this run, not a record ID.",
                     "type": "string"
                   },
                   "records": {
+                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "actions": {
+                    "description": "IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -9902,12 +9907,14 @@
             "type": "object",
             "properties": {
               "records": {
+                "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "actions": {
+                "description": "IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -9942,15 +9949,18 @@
                 "type": "string"
               },
               "through": {
+                "description": "An executed operation's history.request.id from this run, not a record ID.",
                 "type": "string"
               },
               "records": {
+                "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "actions": {
+                "description": "IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.",
                 "type": "array",
                 "items": {
                   "type": "string"

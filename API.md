@@ -852,8 +852,8 @@ Choose exact retained records and action results for future context. Replaces se
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `records` | string[] | Required |  |
-| `actions` | string[] | Required |  |
+| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
+| `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
 
 ### `context.compact`
 
@@ -862,9 +862,9 @@ Replace active history in the referenced action's work run through that ID with 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `summary` | string | Required |  |
-| `through` | string | Required |  |
-| `records` | string[] | Required |  |
-| `actions` | string[] | Required |  |
+| `through` | string | Required | An executed operation's history.request.id from this run, not a record ID. |
+| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
+| `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
 
 ### `input.acknowledge`
 

@@ -669,7 +669,13 @@ export type Command =
   | {
       kind: "context.select";
       args: {
+        /**
+         * Retained record IDs, such as messages, documents, submissions and artifacts.
+         */
         records: string[];
+        /**
+         * IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.
+         */
         actions: string[];
       };
     }
@@ -677,8 +683,17 @@ export type Command =
       kind: "context.compact";
       args: {
         summary: string;
+        /**
+         * An executed operation's history.request.id from this run, not a record ID.
+         */
         through: string;
+        /**
+         * Retained record IDs, such as messages, documents, submissions and artifacts.
+         */
         records: string[];
+        /**
+         * IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.
+         */
         actions: string[];
       };
     }
