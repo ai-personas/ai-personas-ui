@@ -104,6 +104,20 @@ try {
     assert.equal(calls, 0); await details.getByRole('button', { name: 'Close details', exact: true }).click();
   });
   let work;
+  await step('environment tool controls reflect real bindings and add or remove without inference', async () => {
+    await page.getByRole('button', { name: 'Roster environment', exact: true }).click();
+    await details.getByRole('button', { name: 'Tools', exact: true }).click();
+    const card = details.locator('.environment-tool').filter({ has: page.getByRole('heading', { name: 'Browser research', exact: true }) });
+    await expect(card).toContainText('Ready to try · not checked yet');
+    await card.getByRole('button', { name: 'Remove tool', exact: true }).click();
+    await expect(card).toContainText('Not enabled');
+    await card.getByRole('button', { name: 'Add tool', exact: true }).click();
+    await expect(card).toContainText('Ready to try · not checked yet');
+    const bindings = (await get('/records?kind=environment_tool&scope=' + environment.id)).items;
+    assert.equal(bindings.length, 2); assert(bindings.every(r => r.data.enabled && r.data.tool));
+    assert.equal(calls, 0);
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+  });
   await step('new work can select its environment roster', async () => {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.locator('.page-heading').getByRole('button', { name: '+ New work', exact: true }).click();
@@ -203,6 +217,9 @@ try {
     assert.equal((await get('/records/' + oldRun.id)).data.membership, 'removed');
   });
   await step('group replies reach both personas and a peer can answer a shared question', async () => {
+    // A visible question can precede the final wait call. Complete that setup
+    // before starting the second task; this check is about group messaging.
+    await until(async () => (await get('/records?kind=call&limit=100')).items.every(r => !['running', 'decided'].includes(r.data.status)), 'previous task inference settled');
     const groupWork = await op('work.create', { title: 'Group task', brief: 'Discuss shared choices', environment: environment.id, personas: people.map(p => p.id), resource_root: allowance.id });
     await until(async () => {
       const runs = (await get('/records?kind=run&scope=' + groupWork.id)).items;
