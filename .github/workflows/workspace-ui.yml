@@ -36,6 +36,8 @@ jobs:
       - run: npm run test:identity
       - run: npm run test:workspace
       - run: npm run test:forms
+      - name: Archive and evidence components (synthetic fixtures only)
+        run: npm run test:reliability
       - uses: actions/upload-artifact@v4
         if: always()
         with:

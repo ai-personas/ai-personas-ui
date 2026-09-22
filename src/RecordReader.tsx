@@ -6,6 +6,8 @@ import { fields, isRecordID, strings, text, workFacts, stateTone, assumptionNote
 import { timestamp } from './identity';
 import { humanLabel, recordTitle, fileSize, fileFormat } from './reading';
 import RichText from './RichText';
+import InferenceEvidence from './InferenceEvidence';
+import { learningKind } from './inference-evidence';
 
 type Open = (id: string) => void;
 export function RecordReference({ id, open, fallback = 'Related item' }: { id: string; open: Open; fallback?: string }) {
@@ -77,6 +79,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
   const d = data(record), draft = fields(d.draft);
   switch (record.kind) {
     case 'document': return <>
+      <p class="record-caveat">{learningKind(record.kind)}. Saving or submitting a document does not establish lesson retention or later use.</p>
       {text(d.content) ? <RichText text={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
     </>;
     case 'artifact': return <><p class="reader-file-info">{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
@@ -93,13 +96,14 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'environment': return <Story value={d.description}/>;
     case 'persona': return <Story title="About this persona" value={d.character}/>;
     case 'run': return <><p class="reader-byline">Activity for <Person id={d.persona} open={open}/></p><Story title="Instructions for this work" value={d.instructions}/></>;
-    case 'call': return <Story title="Decision summary" value={d.summary}/>;
+    case 'call': return <><Story title="Decision summary" value={d.summary}/><Story title="Recorded failure" value={d.error}/><InferenceEvidence value={d} open={open}/></>;
     case 'message': return <><p class="reader-byline"><Person id={d.from} open={open} user/><span>to</span><Person id={d.to} open={open} user/></p><Story value={d.text}/></>;
     case 'request': return <>
+      {d.status === 'answered' && <p class="notice">Replies were recorded, but this question is not resolved at this version. The owner still needs to assess the answers and explain any remaining need. Acknowledgement alone is not resolution.</p>}
       <Story title="What is needed" value={d.purpose}/><Story title="How to help" value={d.instructions}/><Story title="Information to include" value={d.evidence_required}/>
       <Story title="Conclusion" value={fields(d.resolution).conclusion}/>
     </>;
-    case 'response': return <Story title="Answer" value={d.text}/>;
+    case 'response': return <><p class="reader-byline">Answer from <Person id={d.from} open={open} user/></p><Story title="Answer" value={d.text}/><p class="record-caveat">An attributed reply is not automatic confirmation, permission or question resolution.</p></>;
     case 'submission': return <Story title="What was submitted" value={d.summary}/>;
     case 'work_mandate': return <><Story title="Original request" value={d.original_need}/><ScopeStory value={d.mandate}/></>;
     case 'commitment': return <>
@@ -119,6 +123,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <Story value={draft.content}/><Story title="Limitations" value={draft.limitations}/><RelatedItems title="Sources" value={draft.sources} open={open}/>
     </>;
     case 'fragment': return <>
+      <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
       <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
     </>;
@@ -126,7 +131,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'working_agreement': case 'agreement': return <><Story title="Agreement" value={d.terms || d.text}/><Story title="Concerns and exceptions" value={d.dissent || d.limitations}/><RelatedItems title="Endorsements" value={d.endorsements} open={open}/></>;
     case 'finding': case 'assessment': return <><Story title="Review" value={d.summary || d.content}/><Story title="Findings" value={d.findings}/><Story title="Limitations" value={d.limitations}/></>;
     case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.persona} open={open}/></p><Story value={d.reason || d.note}/></>;
-    case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
+    case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.message || d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
     case 'work_release': case 'release': return <><Story title="Released work" value={d.summary}/><Story title="Limitations" value={d.limitations || draft.limitations}/><FeedbackConditions value={d} open={open} historical/><RelatedItems title="Submitted work" value={d.submission} open={open}/></>;
     case 'resource_root': return <Story title="Purpose" value={d.reason}/>;
     default: return <>

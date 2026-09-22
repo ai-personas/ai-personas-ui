@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { fileSize } from '../reading';
 import Icon from '../Icon';
 import FilePreview from './FilePreview';
-import { fileFormat, folderItems, MAX_PREVIEW_BYTES, previewLimit, type ArchiveEntry, type PreviewFile } from './formats';
+import { archiveFormat, fileFormat, folderItems, MAX_PREVIEW_BYTES, previewLimit, type ArchiveEntry, type PreviewFile } from './formats';
 import { useObjectURL } from './useObjectURL';
 
 function ExtractedFile({ entry, blob, depth }: { entry: ArchiveEntry; blob: Blob; depth: number }) {
@@ -20,10 +20,13 @@ export default function ArchivePreview({ file, depth }: { file: PreviewFile; dep
   const [selected, setSelected] = useState<ArchiveEntry>(), [blob, setBlob] = useState<Blob>(), [extractError, setExtractError] = useState(''), [bytes, setBytes] = useState(0);
   const [extracting, setExtracting] = useState(false);
   useEffect(() => {
+    request.current++;
+    setEntries(undefined); setError(''); setFolder(''); setPage(0); setQuery('');
+    setSelected(undefined); setBlob(undefined); setExtractError(''); setExtracting(false); setBytes(0);
     const current = new Worker(new URL('./archive.worker.ts', import.meta.url), { type: 'module' }); worker.current = current;
     current.onmessage = ({ data }) => {
       if (data.entries) setEntries(data.entries);
-      else if (data.request === undefined && data.error) { setError('Could not browse this ZIP. ' + data.error); current.terminate(); worker.current = undefined; }
+      else if (data.request === undefined && data.error) { setError('Could not browse this archive. ' + data.error); current.terminate(); worker.current = undefined; }
       else if (data.request === request.current) {
         if (data.error) { setExtractError('Could not extract this file. ' + data.error); setExtracting(false); }
         else if (data.blob) { setBlob(data.blob); setExtracting(false); }
@@ -31,9 +34,9 @@ export default function ArchivePreview({ file, depth }: { file: PreviewFile; dep
       }
     };
     current.onerror = () => { setError('The archive reader stopped. Close and reopen the file to try again.'); current.terminate(); worker.current = undefined; };
-    current.postMessage({ kind: 'open', blob: file.blob });
+    current.postMessage({ kind: 'open', blob: file.blob, format: archiveFormat(file.name, file.media) });
     return () => { current.onmessage = null; current.onerror = null; current.terminate(); worker.current = undefined; };
-  }, [file.blob]);
+  }, [file.blob, file.name, file.media]);
 
   const items = useMemo(() => folderItems(entries || [], folder).filter(item => item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [entries, folder, query]);
   const count = 100, start = page * count, segments = folder ? folder.split('/') : [];
@@ -74,7 +77,7 @@ export default function ArchivePreview({ file, depth }: { file: PreviewFile; dep
       {items.length > count && <div class="record-pagination"><small>{start + 1}–{Math.min(start + count, items.length)} of {items.length}</small><div>
         <button class="secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous files</button><button class="secondary" disabled={start + count >= items.length} onClick={() => setPage(page + 1)}>Next files</button>
       </div></div>}
-      <p class="reader-muted">Open a file to preview or download it. Files are extracted only when selected.</p>
+      <p class="reader-muted">Open a file to preview or download it. Only the selected file is retained for preview. TAR.GZ browsing scans the compressed stream without opening every file.</p>
     </>}
   </section>;
 }

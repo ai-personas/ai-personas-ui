@@ -6,6 +6,7 @@ import { timestamp } from './identity';
 import { excerpt, fileFormat, fileSize, recordExcerpt, recordTitle } from './reading';
 import { RecordReference } from './RecordReader';
 import Icon from './Icon';
+import { learningKind } from './inference-evidence';
 
 type Links = { open: (id: string) => void; artifact?: (id: string) => void };
 export function ContentCard({ record, open, artifact, summary, footer }: { record: Entity; summary?: string; footer?: string } & Links) {
@@ -15,7 +16,7 @@ export function ContentCard({ record, open, artifact, summary, footer }: { recor
     <div class="card-top" aria-hidden="true"><span class="record-symbol"><Icon name={isFile ? 'File' : 'Learning'}/></span></div>
     <div class="card-content"><h3><button class="card-title" onClick={read}>{recordTitle(record)}</button></h3>
       <p class="card-summary">{recordExcerpt(record) || excerpt(summary) || (isFile ? 'Open the saved file to view or download it.' : 'Open to read the full document.')}</p>
-      <div class="content-meta">{isRecordID(author) && <span>By <RecordReference id={author} open={open} fallback="Author"/></span>}
+      <div class="content-meta">{!isFile && <span>{learningKind(record.kind)}</span>}{isRecordID(author) && <span>By <RecordReference id={author} open={open} fallback="Author"/></span>}
         {footer ? <span>{footer}</span> : <time dateTime={record.updated}>{timestamp(record.updated)}</time>}
         {isFile && <span>{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</span>}
         {text(d.status) && <span class={'state-badge tone-' + stateTone(d.status)}>{d.status.replaceAll('_', ' ')}</span>}
