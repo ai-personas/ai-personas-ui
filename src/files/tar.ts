@@ -129,7 +129,10 @@ export async function scanTar(blob: Blob, options: TarOptions): Promise<{ entrie
   let stream: ReadableStream<Uint8Array> = blob.stream();
   if (options.gzip) {
     if (typeof DecompressionStream === 'undefined') throw invalid('this browser does not support GZIP decompression');
-    stream = stream.pipeThrough(new DecompressionStream('gzip'));
+    // DecompressionStream accepts BufferSource; keep that input type explicit
+    // across DOM library versions without asserting a shared-buffer is safe.
+    const compressed: ReadableStream<BufferSource> = blob.stream();
+    stream = compressed.pipeThrough(new DecompressionStream('gzip'));
   }
   const input = new Bytes(stream, options.signal, maximum), entries: ArchiveEntry[] = [], paths = new ArchivePaths();
   let attributes = new Map<string, string>(), longName: string | undefined, pendingMetadata = false;
