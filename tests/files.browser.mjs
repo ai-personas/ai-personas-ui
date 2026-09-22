@@ -167,7 +167,7 @@ try {
   });
   await step('empty and invalid ZIP files are readable states; failed workers terminate', async () => {
     await open('empty.zip'); await expect(dialog()).toContainText('This folder is empty.'); await close();
-    await open('corrupt.zip'); await expect(dialog().getByRole('alert')).toContainText('Could not browse this ZIP'); await expect.poll(() => page.evaluate(() => window.fileProbe.workers.size)).toBe(0); await close();
+    await open('corrupt.zip'); await expect(dialog().getByRole('alert')).toContainText('Could not browse this archive'); await expect.poll(() => page.evaluate(() => window.fileProbe.workers.size)).toBe(0); await close();
   });
   await step('large Markdown has a bounded reading surface and retains the original download', async () => { await open('large.md'); await expect(dialog()).toContainText('Showing the first 128 KB'); await expect(dialog().getByRole('link', { name: 'Download original', exact: true })).toBeVisible(); assert((await dialog().locator('.reader-prose').innerText()).length < 140000); await close(); });
   await step('audio uses native controls and stops/relinquishes its source on close', async () => {
