@@ -1364,6 +1364,10 @@ export interface HttpConfig {
   models: HttpModel[];
   timeout_ms?: number;
   max_request_bytes?: number;
+  /**
+   * Decoded response and individual SSE frame limit. Streaming wire bytes
+   * have a separate 64x allowance, capped at 128 MiB, and are not buffered.
+   */
   max_response_bytes?: number;
   max_actions?: number;
   max_images?: number;

@@ -5700,6 +5700,7 @@
             "default": 8388608
           },
           "max_response_bytes": {
+            "description": "Decoded response and individual SSE frame limit. Streaming wire bytes\nhave a separate 64x allowance, capped at 128 MiB, and are not buffered.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
