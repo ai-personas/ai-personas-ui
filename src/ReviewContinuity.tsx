@@ -4,7 +4,11 @@ import { RelatedItems } from './RecordReader';
 
 function version(value: unknown) {
   const v = fields(value);
-  return isRecordID(v.id) && Number.isSafeInteger(v.revision) && v.revision > 0;
+  return isRecordID(v.id) && typeof v.revision === 'number' && Number.isSafeInteger(v.revision) && v.revision > 0;
+}
+function evidence(value: unknown) {
+  const v = fields(value);
+  return version(value) || (isRecordID(v.action) && typeof v.receipt_digest === 'string' && /^[a-fA-F0-9]{64}$/.test(v.receipt_digest));
 }
 export default function ReviewContinuity({ value, open }: { value: unknown; open: (id: string) => void }) {
   const d = fields(value), [expanded, setExpanded] = useState(false);
@@ -12,7 +16,7 @@ export default function ReviewContinuity({ value, open }: { value: unknown; open
   const links = Array.isArray(d.change_evidence) ? d.change_evidence.slice(0, 32).map(fields).filter(link =>
     link.basis === 'explicit_exact_reference' && version(link.change) &&
     Array.isArray(link.observations) && link.observations.length > 0 && link.observations.length <= 128 &&
-    link.observations.every((v: unknown) => version(v) || (isRecordID(fields(v).action) && /^[a-fA-F0-9]{64}$/.test(fields(v).receipt_digest)))
+    link.observations.every(evidence)
   ) : [];
   if (!concludes && !links.length) return null;
   return <section class="reader-section" aria-label="Review continuity">
