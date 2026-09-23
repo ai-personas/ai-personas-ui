@@ -77,3 +77,9 @@ test('a nonexistent spring local time and invalid calendar dates are not silentl
     if (old === undefined) delete process.env.TZ; else process.env.TZ = old;
   }
 });
+
+test('unchanged permission retains sub-millisecond precision and the stored UTC offset', () => {
+  for (const original of ['2026-09-23T10:23:45.123456789Z', '2026-09-23T15:53:45.123456789+05:30']) {
+    assert.equal(expiryInput(localExpiry(original), original), original);
+  }
+});

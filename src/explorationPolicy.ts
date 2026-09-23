@@ -41,7 +41,9 @@ export function expiryInput(value: FormDataEntryValue | null, previous?: unknown
   if (!components) throw new Error('Choose a valid exploration expiry.');
   const preserved = localExpiry(previous);
   if (preserved && components === localComponents(preserved)) {
-    return new Date(previous as string | number).toISOString();
+    // The runtime accepts finer RFC 3339 precision than JavaScript dates.
+    // Preserve the exact stored permission when its displayed value is unchanged.
+    return typeof previous === 'string' ? previous : new Date(previous as number).toISOString();
   }
   const instant = new Date(value);
   if (!Number.isFinite(instant.getTime()) || localComponents(localExpiry(instant.getTime())) !== components) {
