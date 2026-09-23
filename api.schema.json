@@ -2440,7 +2440,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass.",
+            "description": "Bind your accepted reviewer judgment to its predeclared exact mandate/assembly and outcomes. Observation snapshots must remain current; command success does not decide adequacy.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4023,7 +4023,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine.",
+            "description": "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4058,7 +4058,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings.",
+            "description": "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4079,14 +4079,14 @@
                     "items": {
                       "type": "string",
                       "pattern": "^[a-fA-F0-9]{32}$"
-                    }
+                    },
+                    "default": []
                   }
                 },
                 "additionalProperties": false,
                 "required": [
                   "verdict",
-                  "findings",
-                  "checks"
+                  "findings"
                 ]
               }
             },
@@ -7224,7 +7224,7 @@
     ],
     [
       "evidence.bind",
-      "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass."
+      "Bind your accepted reviewer judgment to its predeclared exact mandate/assembly and outcomes. Observation snapshots must remain current; command success does not decide adequacy."
     ],
     [
       "release.commit",
@@ -7380,11 +7380,11 @@
     ],
     [
       "review.start",
-      "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine."
+      "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment."
     ],
     [
       "assess",
-      "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings."
+      "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict."
     ],
     [
       "request.create",
@@ -9605,7 +9605,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass.",
+        "description": "Bind your accepted reviewer judgment to its predeclared exact mandate/assembly and outcomes. Observation snapshots must remain current; command success does not decide adequacy.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11188,7 +11188,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine.",
+        "description": "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11223,7 +11223,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings.",
+        "description": "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11244,14 +11244,14 @@
                 "items": {
                   "type": "string",
                   "pattern": "^[a-fA-F0-9]{32}$"
-                }
+                },
+                "default": []
               }
             },
             "additionalProperties": false,
             "required": [
               "verdict",
-              "findings",
-              "checks"
+              "findings"
             ]
           }
         },

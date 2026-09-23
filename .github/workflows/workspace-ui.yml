@@ -40,6 +40,8 @@ jobs:
         run: npm run test:reliability
       - name: Review continuity (synthetic fixture only)
         run: node tests/review-continuity.browser.mjs
+      - name: Reviewer judgment (synthetic fixture only)
+        run: node tests/review-judgment.browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

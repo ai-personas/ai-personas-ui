@@ -835,7 +835,7 @@ export type Command =
       args: {
         verdict: Verdict;
         findings: string;
-        checks: string[];
+        checks?: string[];
       };
     }
   | {

@@ -620,7 +620,7 @@ Atomically adopt an exact submission/input/assumption vector under the mandate's
 
 ### `evidence.bind`
 
-Bind your actual accepted reviewer finding to its predeclared exact mandate/assembly and assessed outcomes. Old or failed checks cannot become a current pass.
+Bind your accepted reviewer judgment to its predeclared exact mandate/assembly and outcomes. Observation snapshots must remain current; command success does not decide adequacy.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1013,7 +1013,7 @@ Preserve exact evidence chosen by the persona. documents takes the outer documen
 
 ### `review.start`
 
-Queue independent assessment of an exact version by a persona outside the contributor group, using the ordinary work engine.
+Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1023,13 +1023,13 @@ Queue independent assessment of an exact version by a persona outside the contri
 
 ### `assess`
 
-Preserve assessment of this exact submission and deliver findings to its owner. Acceptance requires actual completed exec checks from this reviewer run. Explanations belong in findings.
+Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `verdict` | Verdict | Required |  |
 | `findings` | string | Required |  |
-| `checks` | string[] | Required |  |
+| `checks` | string[] | Optional |  |
 
 ### `request.create`
 

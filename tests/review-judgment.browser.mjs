@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdir,writeFile,rm} from 'node:fs/promises';
+import {chromium,expect} from '@playwright/test';
+const origin='http://127.0.0.1:5199', action='a'.repeat(32);
+await mkdir('.qa',{recursive:true});const harness='.qa/review-judgment-harness.tsx';
+const record=(data)=>({id:'b'.repeat(32),kind:'finding',scope:'',revision:1,created:'2026-09-23T00:00:00Z',updated:'2026-09-23T00:00:00Z',data});
+const plain=record({verdict:'accepted',findings:'The argument addresses the stated claim, with a clearly explained limitation.',check_receipts:{schema:'review-observations/1',receipts:[]}});
+const cited=record({verdict:'incomplete',findings:'The selected observation remains uncertain.',check_receipts:{schema:'review-observations/1',receipts:[{action,receipt_digest:'c'.repeat(64),state:'uncertain'}]}});
+await writeFile(harness,`import {render} from 'preact';import RecordReader from '../src/RecordReader';import '../src/style.css';const host=document.getElementById('test')!;(window as any).show=(r:any)=>render(<RecordReader record={r} open={()=>{}}/>,host);(window as any).show(${JSON.stringify(plain)});`);
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5199','--strictPort'],{stdio:'ignore'});let browser;
+try{
+ for(let i=0;i<100;i++){try{if((await fetch(origin)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ browser=await chromium.launch();const page=await browser.newPage({viewport:{width:390,height:900}}),reads=[],errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/review-judgment-fixture',r=>r.fulfill({contentType:'text/html',body:'<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="test" style="padding:12px"></main><script type="module" src="/.qa/review-judgment-harness.tsx"></script></body></html>'}));
+ await page.route('**/api/actions/*',r=>{reads.push(r.request().url());return r.fulfill({json:{request:{id:action,kind:'browser.open',args:{url:'https://example.invalid/observation'},actor:'',run:'',source:'api'},state:'uncertain',created:'2026-09-23T00:00:00Z',finished:null,error:null,result:{}}});});
+ await page.goto(origin+'/review-judgment-fixture');
+ await expect(page.getByRole('heading',{name:'Accepted by the reviewer'})).toBeVisible();
+ await expect(page.getByText('No additional actions were cited.',{exact:false})).toBeVisible();
+ assert.equal(reads.length,0);
+ await page.evaluate(r=>window.show(r),cited);
+ await expect(page.getByRole('heading',{name:'Review incomplete'})).toBeVisible();
+ await expect(page.getByText('At assessment: uncertain')).toBeVisible();
+ assert.equal(reads.length,0,'evidence readers must wait for expansion');
+ await page.getByRole('button',{name:'Recorded action aaaaaaaa'}).click();
+ await expect(page.getByText('Outcome uncertain',{exact:true})).toBeVisible();
+ assert.equal(reads.length,1);
+ await page.getByRole('button',{name:'Recorded action aaaaaaaa'}).click();
+ await expect(page.locator('.action-reader')).toHaveCount(0);
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ assert.deepEqual(errors,[]);
+ console.log('Review judgment browser passed: explained empty-citation verdict, uncertainty, lazy evidence reads, unmount and mobile layout.');
+}finally{await browser?.close();server.kill('SIGTERM');await rm(harness,{force:true});}

@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { lazy, Suspense } from 'preact/compat';
 const ActionEvidence = lazy(() => import('./ActionEvidence'));
+const ReviewJudgment = lazy(() => import('./ReviewJudgment'));
 import { data, type Entity } from './api';
 import { useResource } from './hooks';
 import { fields, isRecordID, strings, text, workFacts, stateTone, assumptionNote } from './workspace';
@@ -40,7 +41,7 @@ export function RelatedItems({ title, value, open }: { title: string; value: unk
   const refs = items.map(item => typeof item === 'string' ? { id: item } : fields(item)).filter(item => isRecordID(item.id) || isRecordID(item.action));
   if (!refs.length) return null;
   return <section class="reader-section reader-related"><h3>{title}</h3><ul>
-    {(expanded ? refs : refs.slice(0, 8)).map((item, i) => <li key={i}>{isRecordID(item.id) ? <RecordReference id={text(item.id)} open={open}/> : <><button class="text-button" aria-expanded={action === item.action} onClick={() => setAction(action === item.action ? '' : text(item.action))}>Recorded action {text(item.action).slice(0,8)}</button>{action === item.action && <Suspense fallback={<p>Loading observation…</p>}><ActionEvidence id={item.action} digest={text(item.receipt_digest)} open={open}/></Suspense>}</>}{typeof item.revision === 'number' && <small>Referenced version {item.revision}</small>}</li>)}
+    {(expanded ? refs : refs.slice(0, 8)).map((item, i) => <li key={i}>{isRecordID(item.id) ? <RecordReference id={text(item.id)} open={open}/> : <><button class="text-button" aria-expanded={action === item.action} onClick={() => setAction(action === item.action ? '' : text(item.action))}>Recorded action {text(item.action).slice(0,8)}</button>{action === item.action && <Suspense fallback={<p>Loading observation…</p>}><ActionEvidence id={item.action} digest={text(item.receipt_digest)} open={open}/></Suspense>}</>}{typeof item.revision === 'number' && <small>Referenced version {item.revision}</small>}{typeof item.state === 'string' && <small>At assessment: {({succeeded:'completed',failed:'failed',running:'in progress',pending:'pending',uncertain:'uncertain',cancelled:'cancelled',conflict:'conflict'} as Record<string,string>)[item.state] || 'outcome not confirmed'}</small>}</li>)}
   </ul>{!expanded && refs.length > 8 && <button class="text-button" onClick={() => setExpanded(true)}>Show {refs.length - 8} more</button>}</section>;
 }
 
@@ -135,7 +136,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     </>;
     case 'assumption': return <><Story value={d.summary || d.text || d.description}/><p class="notice">{assumptionNote(text(d.status))}</p><Story title="Reconsider when" value={d.reconsider_if}/></>;
     case 'working_agreement': case 'agreement': return <><Story title="Agreement" value={d.terms || d.text}/><Story title="Concerns and exceptions" value={d.dissent || d.limitations}/><RelatedItems title="Endorsements" value={d.endorsements} open={open}/></>;
-    case 'finding': case 'assessment': return <><Story title="Review" value={d.summary || d.content}/><Story title="Findings" value={d.findings}/><Story title="Limitations" value={d.limitations}/></>;
+    case 'finding': case 'assessment': return <Suspense fallback={<p>Loading review…</p>}><ReviewJudgment value={d} open={open}/></Suspense>;
     case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.to || d.persona} open={open}/></p><Story value={d.preview || d.reason || d.note}/>{typeof d.orientation_calls_remaining === 'number' && <p>{d.orientation_calls_remaining} orientation attempts remaining. Joining and accepting responsibility are separate decisions.</p>}</>;
     case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.message || d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
     case 'work_release': case 'release': return <><Story title="Released work" value={d.summary}/><Story title="Limitations" value={d.limitations || draft.limitations}/><FeedbackConditions value={d} open={open} historical/><RelatedItems title="Submitted work" value={d.submission} open={open}/></>;
