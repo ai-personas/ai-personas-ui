@@ -49,7 +49,7 @@ test('private carried context, selections and source payloads never become profi
 });
 test('removal remains different from zero and null is not an authored number', () => {
   const changes = profileChanges(revision(1, { ocean: { openness: 0 } }), revision(2, { ocean: { openness: null } }));
-  assert.equal(changes[0].before, 0); assert.equal(displayValue(changes[0].after), 'Not authored');
+  assert.equal(changes[0].before, 0); assert.equal(displayValue(changes[0].after), 'Not recorded');
   assert.equal(displayValue(''), 'Cleared / empty');
 });
 test('exact revision attribution retains the operation, explanation and evidence version', () => {

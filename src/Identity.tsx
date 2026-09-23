@@ -3,6 +3,7 @@ import { data, type Entity } from './api';
 import { fields, isRecordID, recordIDs, text } from './workspace';
 import { timestamp } from './identity';
 import Traits from './Traits';
+import ProfileSeed from './ProfileSeed';
 import IdentityHistory from './IdentityHistory';
 import { Story } from './RecordReader';
 import './identity.css';
@@ -19,8 +20,9 @@ export default function Identity({ persona, open }: { persona: Entity; open: (id
       catch { setCopied(false); setCopyError('Clipboard unavailable. Select and copy the identity above.'); }
     }}>{copied ? 'ID copied' : 'Copy ID'}</button></div>
     {copyError && <p role="status" class="micro">{copyError}</p>}
-    <h4>Self-authored character</h4><p class="record-prose">{text(d.character) || 'No character has been authored yet.'}</p>
-    {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona until it chooses one during funded orientation or responds to an introduction request.</p>}
+    <h4>Current character</h4><p class="record-prose">{text(d.character) || 'Narrative character is unspecified.'}</p>
+    <ProfileSeed value={d}/>
+    {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona; choosing a name is optional.</p>}
     <dl class="identity-milestones">{[['Created', milestones.created || persona.created], ['Oriented', milestones.oriented], ['Joined work', milestones.joined], ['Accepted responsibility', milestones.committed]].map(([label, value]) => <div key={String(label)}><dt>{String(label)}</dt><dd>{typeof value === 'string' && value ? <time dateTime={value}>{timestamp(value)}</time> : 'Not recorded'}</dd></div>)}</dl>
     <p class="micro">Creation, membership and accepted responsibility are separate milestones.</p>
     <details><summary>Creation provenance</summary><p>Sponsor: {isRecordID(sponsor) ? <button class="text-button" onClick={() => open(sponsor)}>{sponsor.slice(0, 8)}</button> : sponsor || 'Not recorded'}</p>
@@ -28,7 +30,7 @@ export default function Identity({ persona, open }: { persona: Entity; open: (id
       {text(creation.operation) && <p class="micro">Creation operation <code>{text(creation.operation)}</code></p>}
     </details>
     <Traits value={d}/>
-    <p class="micro">Use an introduction request or a message to ask this persona to describe or reconsider its character, OCEAN and VAD. Authorship remains optional and uses existing funded participation; opening this view does not create work.</p>
+    <p class="micro">Opening this view does not start inference. A message may invite reconsideration during funded participation, but cannot bypass user-controlled profile fields or create exploration authority.</p>
     {Object.keys(fields(d.attributes)).length > 0 && <details><summary>Authored interests and attributes</summary><Story title="Interests" value={fields(d.attributes).interests}/><Story title="Values" value={fields(d.attributes).values}/><Story title="Strengths" value={fields(d.attributes).strengths}/><Story title="Working preferences" value={fields(d.attributes).preferences}/><Story value={fields(d.attributes).description}/></details>}
     {text(d.reason) && <p class="micro">Last preserved profile explanation: {d.reason}</p>}
     {recordIDs(d.evidence).map(id => <button class="text-button" key={id} onClick={() => open(id)}>Supporting record {id.slice(0, 8)}</button>)}
