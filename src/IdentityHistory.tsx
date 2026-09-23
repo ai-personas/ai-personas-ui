@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { type Action, type Entity, type Page } from './api';
 import { useResource } from './hooks';
+import { RelatedItems } from './RecordReader';
 import {
   TRAITS, displayValue, profileChanges, revisionAttribution,
   timestamp, traitNumber, traitPosition, traitSegments, validateRevisionPage,
@@ -10,12 +11,12 @@ function AuthoringReceipt({ operation, persona }: { operation: string; persona: 
   const { value, error, loading, retry } = useResource<Action>('/actions/' + encodeURIComponent(operation), e => e.entity === operation);
   if (error) return <p role="alert">Authoring receipt unavailable: {error} <button onClick={retry}>Retry receipt</button></p>;
   if (!value) return <p role="status">Loading authoring receipt…</p>;
-  if (value.request.id !== operation || value.request.actor !== persona || value.request.kind !== 'persona.update') {
+  if (value.request.id !== operation || !(value.request.actor === persona && value.request.kind === 'persona.update' || value.request.actor === '' && value.request.kind === 'persona.profile.configure')) {
     return <p role="alert">The saved attribution does not match this authoring receipt.</p>;
   }
   return <div class="identity-receipt" aria-busy={loading}>
     <p>Action <code>{operation}</code> · {value.state}</p>
-    <p>Actor <code>{value.request.actor}</code></p>
+    <p>Actor <code>{value.request.actor || 'You (operator)'}</code></p>
     <p>{value.request.source === 'api' ? 'Operator-submitted operation; not an autonomous model decision.' : <>Originating call <code>{value.request.source || 'Not recorded'}</code></>}</p>
     <p>Recorded {timestamp(value.finished || value.created)}</p>
     {value.error && <p role="alert">{value.error}</p>}
@@ -36,12 +37,12 @@ function RevisionCard({ record, before, open }: { record: Entity; before?: Entit
         <span class="change-after">{displayValue(change.after)}</span></dd>
     </div>)}</dl> : <p>No descriptor or identity-field change in this revision.</p>}
     {attribution.recorded ? <>
-      <p class="micro">Attributed to this persona · {attribution.source === 'api' ? 'operator-submitted operation' : attribution.source ? 'recorded decision' : 'origin not recorded'}</p>
+      <p class="micro">{attribution.actor === '' ? 'Changed by you' : 'Authored by this persona'} · {attribution.source === 'api' ? 'operator-submitted operation' : attribution.source ? 'recorded decision' : 'origin not recorded'}</p>
       <p class="record-prose">{attribution.reason || 'No authored explanation on this revision.'}</p>
       {attribution.run && <button class="text-button" onClick={() => open(attribution.run!)}>Open originating participation</button>}
       <button class="text-button" aria-expanded={receipt} onClick={() => setReceipt(!receipt)}>{receipt ? 'Hide authoring receipt' : 'Inspect authoring receipt'}</button>
       {receipt && <AuthoringReceipt operation={attribution.operation!} persona={record.id}/>}
-      {attribution.evidence.map(ref => <p key={ref.id} class="micro">Supporting record <code>{ref.id.slice(0, 8)}</code>, recorded revision {ref.revision}. <button class="text-button" onClick={() => open(ref.id)}>Read details and version history</button></p>)}
+      <RelatedItems title="Supporting observations" value={attribution.evidence} open={open}/>
     </> : <>
       <p class="micro">Per-revision authorship was not recorded here. Do not infer it from the current persona or a later revision.</p>
     </>}

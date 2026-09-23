@@ -30,7 +30,7 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
       <button class="text-button" onClick={() => open(text(inputRecord.id))}>View your input and delivery</button>
     </div>}
     {active ? <p role="status">{d.status === 'queued' ? 'Ready for a decision; waiting for an execution slot.' : 'Decision in progress.'}</p>
-      : text(d.note) && <div class="current-wait"><p class="field-label">Current stop reason · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
+      : text(d.note) && <div class="current-wait"><p class="field-label">{({outside_dependency:'Awaiting an outside observation',peer_dependency:'Awaiting an accepted peer contribution',scheduled:'Personal exploration scheduled',voluntary_yield:'Persona chose to yield',partial_delivery:'Partial delivery with remaining gaps',completion:'Checked delivery recorded',blocked:'A limitation stopped this decision'} as Record<string,string>)[text((d.stop_disposition as any)?.authored?.kind || (d.stop_disposition as any)?.classification)] || 'Current stop reason'} · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
     {canReply && (d.status === 'waiting' || reply) && <section class="run-reply" aria-label="Reply to this persona">
       {d.status === 'waiting' && <p class="micro">Open requests have a Respond now button. You can also send feedback or new direction for this work here.</p>}
       <button class="secondary" aria-expanded={reply} onClick={() => setReply(!reply)}>{reply ? 'Close reply' : 'Reply to persona'}</button>

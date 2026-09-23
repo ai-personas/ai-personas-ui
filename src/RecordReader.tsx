@@ -1,5 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
+import { lazy, Suspense } from 'preact/compat';
+const ActionEvidence = lazy(() => import('./ActionEvidence'));
 import { data, type Entity } from './api';
 import { useResource } from './hooks';
 import { fields, isRecordID, strings, text, workFacts, stateTone, assumptionNote } from './workspace';
@@ -33,12 +35,12 @@ function Person({ id, open, user = false }: { id: unknown; open: Open; user?: bo
 }
 
 export function RelatedItems({ title, value, open }: { title: string; value: unknown; open: Open }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false), [action, setAction] = useState('');
   const items = Array.isArray(value) ? value : [value];
-  const refs = items.map(item => typeof item === 'string' ? { id: item } : fields(item)).filter(item => isRecordID(item.id));
+  const refs = items.map(item => typeof item === 'string' ? { id: item } : fields(item)).filter(item => isRecordID(item.id) || isRecordID(item.action));
   if (!refs.length) return null;
   return <section class="reader-section reader-related"><h3>{title}</h3><ul>
-    {(expanded ? refs : refs.slice(0, 8)).map((item, i) => <li key={i}><RecordReference id={text(item.id)} open={open}/>{typeof item.revision === 'number' && <small>Referenced version {item.revision}</small>}</li>)}
+    {(expanded ? refs : refs.slice(0, 8)).map((item, i) => <li key={i}>{isRecordID(item.id) ? <RecordReference id={text(item.id)} open={open}/> : <><button class="text-button" aria-expanded={action === item.action} onClick={() => setAction(action === item.action ? '' : text(item.action))}>Recorded action {text(item.action).slice(0,8)}</button>{action === item.action && <Suspense fallback={<p>Loading observation…</p>}><ActionEvidence id={item.action} digest={text(item.receipt_digest)} open={open}/></Suspense>}</>}{typeof item.revision === 'number' && <small>Referenced version {item.revision}</small>}</li>)}
   </ul>{!expanded && refs.length > 8 && <button class="text-button" onClick={() => setExpanded(true)}>Show {refs.length - 8} more</button>}</section>;
 }
 
@@ -123,6 +125,9 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       {draft.kind === 'relationship' && isRecordID(draft.subject) && <p class="reader-byline">About working with <RecordReference id={draft.subject} open={open}/></p>}
       <Story value={draft.content}/><Story title="Limitations" value={draft.limitations}/><RelatedItems title="Sources" value={draft.sources} open={open}/>
     </>;
+    case 'experience_review': return <><p>{{retain:'Retained change',revise:'Revised prior learning',no_change:'No lasting change',defer:'Interpretation deferred'}[text(d.disposition)] || 'Recorded interpretation'}</p><Story value={d.interpretation}/><RelatedItems title="Observed evidence" value={d.observations} open={open}/><RelatedItems title="Committed changes" value={d.changes} open={open}/><p class="record-caveat">This is the persona’s interpretation. A retained change does not establish later benefit.</p></>;
+    case 'exploration_opportunity': return <><Story title="Question to investigate" value={d.question}/><Story title="Stopping condition" value={d.stopping_condition}/><p>{d.status === 'scheduled' ? `Scheduled no earlier than ${timestamp(d.not_before)}` : `Episode ${text(d.status, 'status not recorded')}`}</p><Story title="Outcome or limitation" value={d.reason}/><RelatedItems title="Observations" value={d.observations} open={open}/>{isRecordID(d.work) && <p>Episode work <RecordReference id={d.work} open={open}/></p>}</>;
+    case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
     case 'fragment': return <>
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>

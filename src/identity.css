@@ -45,3 +45,11 @@
   .descriptor-row dd { padding-left: .1rem; }
   .trait-history-row { grid-template-columns: minmax(5rem, .7fr) minmax(0, 1.3fr); }
 }
+
+.profile-fields { display: grid; gap: .8rem; min-width: 0; }
+.profile-trait-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; margin-block: .8rem; }
+.profile-trait-fields label { display: grid; align-content: start; gap: .35rem; }
+.profile-trait-fields input { width: 100%; min-width: 0; }
+.development-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.development-panel { min-width: 0; }
+.development-card { border: 1px solid var(--line, #d5d5d5); border-radius: .6rem; padding: 1rem; margin-block: .8rem; overflow-wrap: anywhere; }

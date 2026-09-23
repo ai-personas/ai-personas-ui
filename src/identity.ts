@@ -15,7 +15,7 @@ export type Trait = typeof TRAITS[number];
 export type TraitGroup = Trait['group'];
 export type TraitReading = { state: 'authored'; value: number } | { state: 'missing' } | { state: 'invalid'; raw: unknown };
 export type ProfileChange = { field: string; label: string; before: unknown; after: unknown };
-export type RevisionEvidence = { id: string; revision?: number };
+export type RevisionEvidence = { id?: string; revision?: number; action?: string; receipt_digest?: string };
 
 export function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -59,7 +59,7 @@ const PROFILE_FIELDS = [
   ['name', 'Display name'], ['character', 'Character'], ['portrait', 'Portrait artifact'],
   ['attributes', 'Interests and attributes'], ['provider', 'Inference provider'],
   ['model', 'Inference model'], ['effort', 'Inference effort'], ['lifecycle', 'Lifecycle'],
-  ['milestones', 'Identity milestones'],
+  ['milestones', 'Identity milestones'], ['self_authorship', 'Persona may shape character'],
 ] as const;
 
 /** Compare only identity fields. Never copy private carried context or source payloads. */
@@ -80,13 +80,15 @@ export function revisionAttribution(record: Entity): {
   reason?: string; evidence: RevisionEvidence[];
 } {
   const d = object(record.data), stamp = object(d.profile_revision);
-  const current = stamp.revision === record.revision && recordID(stamp.operation) && stamp.actor === record.id;
+  const current = stamp.revision === record.revision && recordID(stamp.operation) && (stamp.actor === record.id || stamp.actor === '' && stamp.source === 'api');
   if (!current) return { recorded: false, evidence: [] };
   const evidence: RevisionEvidence[] = [];
   for (const candidate of Array.isArray(stamp.evidence) ? stamp.evidence : []) {
     const ref = object(candidate);
     if (recordID(ref.id) && Number.isSafeInteger(ref.revision) && (ref.revision as number) > 0) {
       evidence.push({ id: ref.id, revision: ref.revision as number });
+    } else if (recordID(ref.action) && typeof ref.receipt_digest === 'string' && /^[a-fA-F0-9]{64}$/.test(ref.receipt_digest)) {
+      evidence.push({ action: ref.action, receipt_digest: ref.receipt_digest });
     }
   }
   return {

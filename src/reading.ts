@@ -23,6 +23,10 @@ export function recordTitle(record: Entity): string {
     if (record.kind === 'work_mandate') return 'Agreed scope';
     if (record.kind === 'message') return 'Message';
   }
+  if (record.kind === 'experience_review') return ({ retain:'Retained learning', revise:'Reconsidered learning', no_change:'Observation without lasting change', defer:'Interpretation deferred' } as Record<string,string>)[text(d.disposition)] || 'Experience interpretation';
+  if (record.kind === 'exploration_opportunity') return excerpt(d.question, 100) || 'Personal exploration';
+  if (record.kind === 'exploration_policy') return 'Exploration permission';
+  if (record.kind === 'perspective') return ({ interest:'Continuing interest', relationship:'Relationship interpretation', agenda:'Work agenda' } as Record<string,string>)[text(draft.kind)] || 'Authored perspective';
   const title = label(record);
   return title === record.kind ? humanLabel(record.kind) : title;
 }
@@ -30,6 +34,7 @@ export function actionTitle(kind: string): string {
   const titles: Record<string, string> = {
     'record.read': 'Read saved information', 'record.list': 'Find saved information', 'history.read': 'Read earlier activity',
     'message.send': 'Send a message', 'request.create': 'Ask for input', 'request.respond': 'Answer a question', 'request.resolve': 'Record a conclusion',
+    'persona.profile.configure': 'Change character settings', 'persona.orientation.record': 'Record an initial approach', 'experience.review': 'Interpret an observation', 'exploration.propose': 'Propose personal exploration', 'exploration.configure': 'Configure exploration permission', 'exploration.finish': 'Conclude an exploration episode', 'exploration.cancel': 'Cancel scheduled exploration',
     'profile.update': 'Update persona profile', 'persona.update': 'Update persona profile', 'environment.update': 'Update the shared environment',
     'document.create': 'Write a document', 'document.revise': 'Revise a document', 'document.update': 'Update a document', 'document.read': 'Read a document',
     'fragment.create': 'Save a learning note', 'fragment.revise': 'Refine a learning note', 'artifact.publish': 'Save a file',

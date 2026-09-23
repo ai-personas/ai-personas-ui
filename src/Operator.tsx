@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { data, label, request, type Entity, type Model } from './api';
 import { useRecords, useResource } from './hooks';
-import { Pagination, type Act } from './main';
+import type { Act } from './main';
+import Pagination from './Pagination';
 import Dialog from './Dialog';
 import './operator.css';
 import { modelKey, ModelStatus, useModels } from './Models';

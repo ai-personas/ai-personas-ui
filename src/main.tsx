@@ -1,3 +1,4 @@
+import Pagination from './Pagination';
 import { render } from 'preact';
 import { lazy, memo, Suspense } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -40,9 +41,7 @@ function BoundedPortrait({ id, name }: { id: string; name: string }) {
   return safe ? <img class="portrait" src={fileURL(id)} loading="lazy" width="42" height="42" alt={name + ', authored image'} onError={() => setFailed(true)}/>
     : <span class="portrait placeholder" aria-label="Portrait preview unavailable; inspect the original in details">◌</span>;
 }
-export function Pagination({ next, previous, onNext, onPrevious, disabled = false }: { next?: number | null; previous: boolean; onNext: () => void; onPrevious: () => void; disabled?: boolean }) {
-  return <div class="pagination"><button class="secondary" disabled={disabled || !previous} onClick={onPrevious}>Previous page</button><button class="secondary" disabled={disabled || next == null} onClick={onNext}>Next page</button></div>;
-}
+export { default as Pagination } from './Pagination';
 export type Act = (kind: Command['kind'], args: unknown, actor?: string, run?: string) => ReturnType<typeof operate>;
 
 function Connection({ onConnected, local, retryLocal, message }: { onConnected: () => void; local: boolean; retryLocal: () => void; message: string }) {

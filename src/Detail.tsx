@@ -38,7 +38,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {r.kind === 'environment_tool' && isRecordID(d.last_action) && <Expand title="Last tool observation">{() => <ActionRecord id={d.last_action} act={actSafe} open={open}/>}</Expand>}
       {r.kind === 'run' && <RunProgress run={r} open={open} act={actSafe}/>} {text(d.error) && <p role="alert">{d.error}</p>}
       {['persona', 'environment'].includes(r.kind) && <><Portrait id={d.portrait || d.image} name={label(r)}/>{isRecordID(d.portrait || d.image) && <button class="text-button" onClick={() => artifact(d.portrait || d.image)}>Inspect original image</button>}</>}
-      {r.kind === 'persona' && <><Identity persona={r} open={open}/>
+      {r.kind === 'persona' && <><Identity persona={r} open={open} act={actSafe}/>
         <Expand title="Private carried context">{() => <><RichText text={text(d.context, 'No compacted account authored yet.')}/>{recordIDs(d.selected).map(ref => <button key={ref} class="record-link" onClick={() => open(ref)}>Selected record {ref.slice(0, 8)}</button>)}</>}</Expand></>}
       {r.kind === 'persona' && <PersonaActivity persona={id} funding={d.resource_root} open={open} act={actSafe}/>}
       {['work', 'environment'].includes(r.kind) && <Participants subject={r} act={actSafe} open={open}/>}

@@ -1665,7 +1665,11 @@
                 "type": "object",
                 "properties": {
                   "work": {
-                    "type": "string"
+                    "description": "Omit for a continuing personal interest or relationship. Agendas require work scope.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "id": {
                     "type": [
@@ -1687,8 +1691,237 @@
                 },
                 "additionalProperties": false,
                 "required": [
-                  "work",
                   "draft"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Interpret exact observed evidence without inventing a lesson. Link retained changes only after their writes succeeded. Deferral does not schedule another decision.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "experience.review"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "observations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/EvidenceRef"
+                    }
+                  },
+                  "disposition": {
+                    "$ref": "#/$defs/ReviewDisposition"
+                  },
+                  "interpretation": {
+                    "type": "string"
+                  },
+                  "changes": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/VersionRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "observations",
+                  "disposition",
+                  "interpretation",
+                  "changes"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator authorizes optional personal exploration under existing funding. Disabled until configured; amendments never reset consumed episodes. Revision is zero for a new policy.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exploration.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "persona": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "resource_root": {
+                    "type": "string"
+                  },
+                  "calls_per_episode": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "seconds_per_episode": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "max_episodes": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "expires": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "persona",
+                  "revision",
+                  "enabled",
+                  "environment",
+                  "resource_root",
+                  "calls_per_episode",
+                  "seconds_per_episode",
+                  "max_episodes",
+                  "expires",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Propose one question and stopping condition under a current enabled personal-exploration policy. A saved opportunity is not an executed trial. New foreground work has priority.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exploration.propose"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "stopping_condition": {
+                    "type": "string"
+                  },
+                  "not_before": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "policy",
+                  "question",
+                  "stopping_condition",
+                  "not_before"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel your unstarted exploration opportunity, or let the operator cancel it. Use ordinary run.pause/run.cancel for an episode that already started.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exploration.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Finish your current optional exploration episode with an honest result. Existing responsibilities remain recorded. This closes this participation and does not renew funding or start another episode.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "exploration.finish"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "$ref": "#/$defs/ExplorationOutcome"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "observations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/EvidenceRef"
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "outcome",
+                  "reason",
+                  "observations"
                 ]
               }
             },
@@ -2524,7 +2757,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Create a fresh identity with unauthored character.",
+            "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2567,12 +2800,133 @@
                     "items": {
                       "$ref": "#/$defs/VersionRef"
                     }
+                  },
+                  "profile_seed": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ProfileSeed"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "self_authorship": {
+                    "description": "Defaults to true. When false, narrative character, traits and substitute profile attributes are operator-controlled; learning and interests remain available.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
                 "required": [
                   "provider",
                   "model"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.profile.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "character": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ocean": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Ocean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "vad": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Vad"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "self_authorship": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Record your initial approach to the actual starting profile, or explicitly defer it. No invented biography or qualification is implied.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.orientation.record"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "disposition": {
+                    "$ref": "#/$defs/OrientationDisposition"
+                  },
+                  "approach": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "disposition",
+                  "approach",
+                  "reason"
                 ]
               }
             },
@@ -2651,7 +3005,7 @@
                       "null"
                     ],
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/EvidenceRef"
                     }
                   }
                 },
@@ -3924,6 +4278,16 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "disposition": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/StopDisposition"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -4813,14 +5177,14 @@
           "sources": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           },
           "counterevidence": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           }
@@ -4831,6 +5195,32 @@
           "content",
           "applicability",
           "limitations"
+        ]
+      },
+      "EvidenceRef": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/VersionRef"
+          },
+          {
+            "$ref": "#/$defs/ActionEvidence"
+          }
+        ]
+      },
+      "ActionEvidence": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "receipt_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "receipt_digest"
         ]
       },
       "PerspectiveDraft": {
@@ -4854,7 +5244,7 @@
           "sources": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           }
@@ -4870,7 +5260,25 @@
         "type": "string",
         "enum": [
           "agenda",
-          "relationship"
+          "relationship",
+          "interest"
+        ]
+      },
+      "ReviewDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "no_change",
+          "defer"
+        ]
+      },
+      "ExplorationOutcome": {
+        "type": "string",
+        "enum": [
+          "trial_complete",
+          "unpromising",
+          "partial"
         ]
       },
       "EntryDraft": {
@@ -5123,6 +5531,45 @@
           "partial_delivered"
         ]
       },
+      "ProfileSeed": {
+        "type": "object",
+        "properties": {
+          "character": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ocean": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Ocean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vad": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Vad"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "random_seed": {
+            "description": "Optional reproducible initialization seed. Omit for a fresh random seed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "Ocean": {
         "type": "object",
         "properties": {
@@ -5207,11 +5654,27 @@
         },
         "additionalProperties": false
       },
-      "BrowserSearchEngine": {
+      "OrientationDisposition": {
         "type": "string",
         "enum": [
-          "bing",
-          "duckduckgo"
+          "adopted",
+          "deferred"
+        ]
+      },
+      "BrowserSearchEngine": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bing",
+              "duckduckgo"
+            ]
+          },
+          {
+            "description": "Optional normalized HTTP search service configured by the operator on the node host.",
+            "type": "string",
+            "const": "configured"
+          }
         ]
       },
       "Verdict": {
@@ -5265,6 +5728,137 @@
               "id"
             ]
           }
+        ]
+      },
+      "StopDisposition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "request": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "outside_dependency"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "request"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "commitment": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "peer_dependency"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "commitment"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "opportunity": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "scheduled"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "opportunity"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "voluntary_yield"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "gaps": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "partial_delivery"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "gaps"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "release": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "completion"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "release"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "category": {
+                "$ref": "#/$defs/Blockage"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "blocked"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "category",
+              "detail"
+            ]
+          }
+        ]
+      },
+      "Blockage": {
+        "type": "string",
+        "enum": [
+          "resource",
+          "tool",
+          "runtime"
         ]
       },
       "Outcome2": {
@@ -6561,6 +7155,26 @@
       "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created."
     ],
     [
+      "experience.review",
+      "Interpret exact observed evidence without inventing a lesson. Link retained changes only after their writes succeeded. Deferral does not schedule another decision."
+    ],
+    [
+      "exploration.configure",
+      "Operator authorizes optional personal exploration under existing funding. Disabled until configured; amendments never reset consumed episodes. Revision is zero for a new policy."
+    ],
+    [
+      "exploration.propose",
+      "Propose one question and stopping condition under a current enabled personal-exploration policy. A saved opportunity is not an executed trial. New foreground work has priority."
+    ],
+    [
+      "exploration.cancel",
+      "Cancel your unstarted exploration opportunity, or let the operator cancel it. Use ordinary run.pause/run.cancel for an episode that already started."
+    ],
+    [
+      "exploration.finish",
+      "Finish your current optional exploration episode with an honest result. Existing responsibilities remain recorded. This closes this participation and does not renew funding or start another episode."
+    ],
+    [
       "work.entry.append",
       "Append an attributed observation, improvement hypothesis, decision summary or conditional assumption to the unranked work board."
     ],
@@ -6646,7 +7260,15 @@
     ],
     [
       "persona.create",
-      "Create a fresh identity with unauthored character."
+      "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference."
+    ],
+    [
+      "persona.profile.configure",
+      "Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority."
+    ],
+    [
+      "persona.orientation.record",
+      "Record your initial approach to the actual starting profile, or explicitly defer it. No invented biography or qualification is implied."
     ],
     [
       "persona.update",
@@ -8208,7 +8830,11 @@
             "type": "object",
             "properties": {
               "work": {
-                "type": "string"
+                "description": "Omit for a continuing personal interest or relationship. Agendas require work scope.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "id": {
                 "type": [
@@ -8230,8 +8856,237 @@
             },
             "additionalProperties": false,
             "required": [
-              "work",
               "draft"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Interpret exact observed evidence without inventing a lesson. Link retained changes only after their writes succeeded. Deferral does not schedule another decision.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "experience.review"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "observations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              },
+              "disposition": {
+                "$ref": "#/$defs/ReviewDisposition"
+              },
+              "interpretation": {
+                "type": "string"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "observations",
+              "disposition",
+              "interpretation",
+              "changes"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator authorizes optional personal exploration under existing funding. Disabled until configured; amendments never reset consumed episodes. Revision is zero for a new policy.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "exploration.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "persona": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "environment": {
+                "type": "string"
+              },
+              "resource_root": {
+                "type": "string"
+              },
+              "calls_per_episode": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "seconds_per_episode": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "max_episodes": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "expires": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "persona",
+              "revision",
+              "enabled",
+              "environment",
+              "resource_root",
+              "calls_per_episode",
+              "seconds_per_episode",
+              "max_episodes",
+              "expires",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Propose one question and stopping condition under a current enabled personal-exploration policy. A saved opportunity is not an executed trial. New foreground work has priority.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "exploration.propose"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "policy": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "question": {
+                "type": "string"
+              },
+              "stopping_condition": {
+                "type": "string"
+              },
+              "not_before": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "policy",
+              "question",
+              "stopping_condition",
+              "not_before"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel your unstarted exploration opportunity, or let the operator cancel it. Use ordinary run.pause/run.cancel for an episode that already started.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "exploration.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Finish your current optional exploration episode with an honest result. Existing responsibilities remain recorded. This closes this participation and does not renew funding or start another episode.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "exploration.finish"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "$ref": "#/$defs/ExplorationOutcome"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "observations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "outcome",
+              "reason",
+              "observations"
             ]
           }
         },
@@ -9067,7 +9922,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Create a fresh identity with unauthored character.",
+        "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9110,12 +9965,133 @@
                 "items": {
                   "$ref": "#/$defs/VersionRef"
                 }
+              },
+              "profile_seed": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ProfileSeed"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self_authorship": {
+                "description": "Defaults to true. When false, narrative character, traits and substitute profile attributes are operator-controlled; learning and interests remain available.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
             "required": [
               "provider",
               "model"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.profile.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "character": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "ocean": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Ocean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vad": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Vad"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "self_authorship": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Record your initial approach to the actual starting profile, or explicitly defer it. No invented biography or qualification is implied.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.orientation.record"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "disposition": {
+                "$ref": "#/$defs/OrientationDisposition"
+              },
+              "approach": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "disposition",
+              "approach",
+              "reason"
             ]
           }
         },
@@ -9194,7 +10170,7 @@
                   "null"
                 ],
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/EvidenceRef"
                 }
               }
             },
@@ -10467,6 +11443,16 @@
                     "type": "null"
                   }
                 ]
+              },
+              "disposition": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/StopDisposition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "additionalProperties": false,
@@ -11374,14 +12360,14 @@
           "sources": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           },
           "counterevidence": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           }
@@ -11392,6 +12378,32 @@
           "content",
           "applicability",
           "limitations"
+        ]
+      },
+      "EvidenceRef": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/VersionRef"
+          },
+          {
+            "$ref": "#/$defs/ActionEvidence"
+          }
+        ]
+      },
+      "ActionEvidence": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "receipt_digest": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "receipt_digest"
         ]
       },
       "PerspectiveDraft": {
@@ -11415,7 +12427,7 @@
           "sources": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/VersionRef"
+              "$ref": "#/$defs/EvidenceRef"
             },
             "default": []
           }
@@ -11431,7 +12443,25 @@
         "type": "string",
         "enum": [
           "agenda",
-          "relationship"
+          "relationship",
+          "interest"
+        ]
+      },
+      "ReviewDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "no_change",
+          "defer"
+        ]
+      },
+      "ExplorationOutcome": {
+        "type": "string",
+        "enum": [
+          "trial_complete",
+          "unpromising",
+          "partial"
         ]
       },
       "EntryDraft": {
@@ -11684,6 +12714,45 @@
           "partial_delivered"
         ]
       },
+      "ProfileSeed": {
+        "type": "object",
+        "properties": {
+          "character": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ocean": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Ocean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vad": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Vad"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "random_seed": {
+            "description": "Optional reproducible initialization seed. Omit for a fresh random seed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "Ocean": {
         "type": "object",
         "properties": {
@@ -11768,11 +12837,27 @@
         },
         "additionalProperties": false
       },
-      "BrowserSearchEngine": {
+      "OrientationDisposition": {
         "type": "string",
         "enum": [
-          "bing",
-          "duckduckgo"
+          "adopted",
+          "deferred"
+        ]
+      },
+      "BrowserSearchEngine": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bing",
+              "duckduckgo"
+            ]
+          },
+          {
+            "description": "Optional normalized HTTP search service configured by the operator on the node host.",
+            "type": "string",
+            "const": "configured"
+          }
         ]
       },
       "Verdict": {
@@ -11826,6 +12911,137 @@
               "id"
             ]
           }
+        ]
+      },
+      "StopDisposition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "request": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "outside_dependency"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "request"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "commitment": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "peer_dependency"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "commitment"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "opportunity": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "scheduled"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "opportunity"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "voluntary_yield"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "gaps": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "partial_delivery"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "gaps"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "release": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "completion"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "release"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "category": {
+                "$ref": "#/$defs/Blockage"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "blocked"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "category",
+              "detail"
+            ]
+          }
+        ]
+      },
+      "Blockage": {
+        "type": "string",
+        "enum": [
+          "resource",
+          "tool",
+          "runtime"
         ]
       },
       "Outcome2": {

@@ -422,10 +422,69 @@ Author your own work-scoped agenda or directional relationship interpretation. N
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `work` | string | Required |  |
+| `work` | string or null | Optional | Omit for a continuing personal interest or relationship. Agendas require work scope. |
 | `id` | string or null | Optional |  |
 | `revision` | integer or null | Optional |  |
 | `draft` | PerspectiveDraft | Required |  |
+
+### `experience.review`
+
+Interpret exact observed evidence without inventing a lesson. Link retained changes only after their writes succeeded. Deferral does not schedule another decision.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `observations` | EvidenceRef[] | Required |  |
+| `disposition` | ReviewDisposition | Required |  |
+| `interpretation` | string | Required |  |
+| `changes` | VersionRef[] | Required |  |
+
+### `exploration.configure`
+
+Operator authorizes optional personal exploration under existing funding. Disabled until configured; amendments never reset consumed episodes. Revision is zero for a new policy.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `persona` | string | Required |  |
+| `revision` | integer | Required |  |
+| `enabled` | boolean | Required |  |
+| `environment` | string | Required |  |
+| `resource_root` | string | Required |  |
+| `calls_per_episode` | integer | Required |  |
+| `seconds_per_episode` | integer | Required |  |
+| `max_episodes` | integer | Required |  |
+| `expires` | string | Required |  |
+| `reason` | string | Required |  |
+
+### `exploration.propose`
+
+Propose one question and stopping condition under a current enabled personal-exploration policy. A saved opportunity is not an executed trial. New foreground work has priority.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `policy` | VersionRef | Required |  |
+| `question` | string | Required |  |
+| `stopping_condition` | string | Required |  |
+| `not_before` | string | Required |  |
+
+### `exploration.cancel`
+
+Cancel your unstarted exploration opportunity, or let the operator cancel it. Use ordinary run.pause/run.cancel for an episode that already started.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
+| `reason` | string | Required |  |
+
+### `exploration.finish`
+
+Finish your current optional exploration episode with an honest result. Existing responsibilities remain recorded. This closes this participation and does not renew funding or start another episode.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `outcome` | ExplorationOutcome | Required |  |
+| `reason` | string | Required |  |
+| `observations` | EvidenceRef[] | Required |  |
 
 ### `work.entry.append`
 
@@ -645,7 +704,7 @@ Select a published PNG, JPEG, or WebP for visual input on subsequent model calls
 
 ### `persona.create`
 
-Create a fresh identity with unauthored character.
+Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -655,6 +714,32 @@ Create a fresh identity with unauthored character.
 | `resource_root` | string or null | Optional | Operator's explicit funding for a founder. Descendants inherit the caller's root and reserve initialization; they cannot choose a new allowance. |
 | `need` | string or null | Optional |  |
 | `seed` | array or null | Optional |  |
+| `profile_seed` | ProfileSeed or null | Optional |  |
+| `self_authorship` | boolean or null | Optional | Defaults to true. When false, narrative character, traits and substitute profile attributes are operator-controlled; learning and interests remain available. |
+
+### `persona.profile.configure`
+
+Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
+| `character` | string or null | Optional |  |
+| `ocean` | Ocean or null | Optional |  |
+| `vad` | Vad or null | Optional |  |
+| `self_authorship` | boolean or null | Optional |  |
+| `reason` | string | Required |  |
+
+### `persona.orientation.record`
+
+Record your initial approach to the actual starting profile, or explicitly defer it. No invented biography or qualification is implied.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `disposition` | OrientationDisposition | Required |  |
+| `approach` | string | Required |  |
+| `reason` | string | Required |  |
 
 ### `persona.update`
 
@@ -995,6 +1080,7 @@ End this decision and wait for new input. Optionally name an owned action reques
 |---|---|---|---|
 | `reason` | string | Required |  |
 | `condition` | WaitCondition or null | Optional |  |
+| `disposition` | StopDisposition or null | Optional |  |
 
 ### `network.read`
 

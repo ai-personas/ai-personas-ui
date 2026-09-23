@@ -302,10 +302,62 @@ export type Command =
   | {
       kind: "perspective.write";
       args: {
-        work: string;
+        /**
+         * Omit for a continuing personal interest or relationship. Agendas require work scope.
+         */
+        work?: string | null;
         id?: string | null;
         revision?: number | null;
         draft: PerspectiveDraft;
+      };
+    }
+  | {
+      kind: "experience.review";
+      args: {
+        observations: EvidenceRef[];
+        disposition: ReviewDisposition;
+        interpretation: string;
+        changes: VersionRef[];
+      };
+    }
+  | {
+      kind: "exploration.configure";
+      args: {
+        persona: string;
+        revision: number;
+        enabled: boolean;
+        environment: string;
+        resource_root: string;
+        calls_per_episode: number;
+        seconds_per_episode: number;
+        max_episodes: number;
+        expires: string;
+        reason: string;
+      };
+    }
+  | {
+      kind: "exploration.propose";
+      args: {
+        policy: VersionRef;
+        question: string;
+        stopping_condition: string;
+        not_before: string;
+      };
+    }
+  | {
+      kind: "exploration.cancel";
+      args: {
+        id: string;
+        revision: number;
+        reason: string;
+      };
+    }
+  | {
+      kind: "exploration.finish";
+      args: {
+        outcome: ExplorationOutcome;
+        reason: string;
+        observations: EvidenceRef[];
       };
     }
   | {
@@ -494,6 +546,31 @@ export type Command =
         resource_root?: string | null;
         need?: string | null;
         seed?: VersionRef[] | null;
+        profile_seed?: ProfileSeed | null;
+        /**
+         * Defaults to true. When false, narrative character, traits and substitute profile attributes are operator-controlled; learning and interests remain available.
+         */
+        self_authorship?: boolean | null;
+      };
+    }
+  | {
+      kind: "persona.profile.configure";
+      args: {
+        id: string;
+        revision: number;
+        character?: string | null;
+        ocean?: Ocean | null;
+        vad?: Vad | null;
+        self_authorship?: boolean | null;
+        reason: string;
+      };
+    }
+  | {
+      kind: "persona.orientation.record";
+      args: {
+        disposition: OrientationDisposition;
+        approach: string;
+        reason: string;
       };
     }
   | {
@@ -510,7 +587,7 @@ export type Command =
         vad?: Vad | null;
         attributes?: unknown;
         reason?: string | null;
-        evidence?: string[] | null;
+        evidence?: EvidenceRef[] | null;
       };
     }
   | {
@@ -799,6 +876,7 @@ export type Command =
       args: {
         reason: string;
         condition?: WaitCondition | null;
+        disposition?: StopDisposition | null;
       };
     }
   | {
@@ -861,7 +939,10 @@ export type Command =
     };
 export type Capability = "persona_decision" | "choice" | "knowledge";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
-export type PerspectiveKind = "agenda" | "relationship";
+export type EvidenceRef = VersionRef | ActionEvidence;
+export type PerspectiveKind = "agenda" | "relationship" | "interest";
+export type ReviewDisposition = "retain" | "revise" | "no_change" | "defer";
+export type ExplorationOutcome = "trial_complete" | "unpromising" | "partial";
 export type EntryKind = "observation" | "opportunity" | "decision" | "assumption";
 export type EntryDisposition =
   | "exploring"
@@ -877,7 +958,8 @@ export type DependencyMode = "final_acceptance" | "version_ready";
 export type CommitmentStatus = "working" | "blocked" | "submitted" | "closed" | "cancelled";
 export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" | "resolved" | "deferred" | "waived";
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
-export type BrowserSearchEngine = "bing" | "duckduckgo";
+export type OrientationDisposition = "adopted" | "deferred";
+export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type WaitCondition =
@@ -889,6 +971,36 @@ export type WaitCondition =
       id: string;
       kind: "transfer";
     };
+export type StopDisposition =
+  | {
+      request: VersionRef;
+      kind: "outside_dependency";
+    }
+  | {
+      commitment: VersionRef;
+      kind: "peer_dependency";
+    }
+  | {
+      opportunity: VersionRef;
+      kind: "scheduled";
+    }
+  | {
+      kind: "voluntary_yield";
+    }
+  | {
+      gaps: string;
+      kind: "partial_delivery";
+    }
+  | {
+      release: VersionRef;
+      kind: "completion";
+    }
+  | {
+      category: Blockage;
+      detail: string;
+      kind: "blocked";
+    };
+export type Blockage = "resource" | "tool" | "runtime";
 export type Outcome2 = "succeeded" | "failed" | "unknown";
 export type Protocol = "responses" | "anthropic" | "gemini";
 /**
@@ -1161,15 +1273,19 @@ export interface FragmentDraft {
   content: string;
   applicability: string;
   limitations: string;
-  sources?: VersionRef[];
-  counterevidence?: VersionRef[];
+  sources?: EvidenceRef[];
+  counterevidence?: EvidenceRef[];
+}
+export interface ActionEvidence {
+  action: string;
+  receipt_digest: string;
 }
 export interface PerspectiveDraft {
   kind: PerspectiveKind;
   subject?: string | null;
   content: string;
   limitations: string;
-  sources?: VersionRef[];
+  sources?: EvidenceRef[];
 }
 export interface EntryDraft {
   kind: EntryKind;
@@ -1216,6 +1332,15 @@ export interface ReleaseDraft {
   user_judgment_outcomes?: string[];
   disposition: ReleaseDisposition;
   limitations: string;
+}
+export interface ProfileSeed {
+  character?: string | null;
+  ocean?: Ocean | null;
+  vad?: Vad | null;
+  /**
+   * Optional reproducible initialization seed. Omit for a fresh random seed.
+   */
+  random_seed?: string | null;
 }
 export interface Ocean {
   openness?: number | null;

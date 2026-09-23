@@ -14,7 +14,9 @@ export default function ResearchEvidence({ kind, args, result }: { kind: string;
   }
   return <section class="reader-section"><h3>{kind === 'browser.search' ? 'Web research' : 'Source page'}</h3>
     {text(args.query) && <p>Searched for: <strong>{args.query}</strong></p>}
-    {text(result.engine) && <p>Search engine: {result.engine}</p>}
+    {text(result.backend || result.engine) && <p>Source service: {text(result.backend || result.engine)}</p>}
+    {text(result.outcome) && <p>{{candidates:'Candidate sources returned',empty:'No results returned',blocked:'This search service blocked the request',page:'Source page received',unrecognized:'The page could not be interpreted',rate_limited:'The service rate limit was reached',adapter_unavailable:'The adapter was unavailable',timeout:'The attempt timed out'}[text(result.outcome)] || text(result.outcome).replaceAll('_',' ')}</p>}
+    {text(result.availability_scope) && <p class="reader-muted">{text(result.availability_scope)}</p>}
     {text(result.retrieved_at) && <p class="reader-muted">Observed {new Date(result.retrieved_at).toLocaleString()}</p>}
     {Array.isArray(result.results) && <div class="research-sources">{result.results.slice(0,10).map((item: unknown, index: number) => { const row=fields(item), url=sourceURL(row.url); return <article key={url || index}><h4>{url ? <a href={url} target="_blank" rel="noopener noreferrer">{text(row.title,'Source')}</a> : text(row.title,'Source')}</h4>{url && <small>{new URL(url).hostname}</small>}<p>{text(row.excerpt)}</p></article>; })}</div>}
     {sourceURL(result.url) && <p><a href={sourceURL(result.url)} target="_blank" rel="noopener noreferrer">{text(result.title,'Open original page')}</a></p>}
