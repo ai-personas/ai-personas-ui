@@ -38,6 +38,8 @@ jobs:
       - run: npm run test:forms
       - name: Archive and evidence components (synthetic fixtures only)
         run: npm run test:reliability
+      - name: Review continuity (synthetic fixture only)
+        run: node tests/review-continuity.browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

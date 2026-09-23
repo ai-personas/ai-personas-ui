@@ -10,11 +10,13 @@ import { timestamp } from './identity';
 const ExplorationControls = lazy(() => import('./ExplorationControls'));
 const RecordReader = lazy(() => import('./RecordReader'));
 const ActionEvidence = lazy(() => import('./ActionEvidence'));
+const ReviewContinuity = lazy(() => import('./ReviewContinuity'));
 
 function RecordDetails({ id, open, act }: { id: string; open: (id: string) => void; act: Act }) {
   const { value, error } = useResource<Entity>('/records/' + id, e => e.entity === id);
   const [failure, setFailure] = useState(''), [busy, setBusy] = useState(false);
   return error ? <p role="alert">{error}</p> : value ? <><Suspense fallback={<p>Loading details…</p>}><RecordReader record={value} open={open}/></Suspense>
+    {value.kind === 'experience_review' && <Suspense fallback={<p>Loading review links…</p>}><ReviewContinuity value={data(value)} open={open}/></Suspense>}
     {value.kind === 'exploration_opportunity' && data(value).status === 'scheduled' && <form onSubmit={async e => {
       e.preventDefault(); if (busy) return; const reason = String(new FormData(e.currentTarget).get('reason')); setBusy(true); setFailure('');
       try { await act('exploration.cancel', {id:value.id, revision:value.revision, reason}); } catch (e) { setFailure((e as Error).message); } finally { setBusy(false); }
