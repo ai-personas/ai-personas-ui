@@ -5,6 +5,7 @@ import { Pick } from './Create';
 import { FundingChoice } from './Operator';
 import type { Act } from './main';
 import { text } from './workspace';
+import { explorationLimits, localExpiry, expiryInput } from './explorationPolicy';
 
 function PolicyForm({ persona, policy, act }: { persona: Entity; policy?: Entity; act: Act }) {
   const d = policy ? data(policy) : {}, [enabled, setEnabled] = useState(d.enabled === true);
@@ -15,8 +16,8 @@ function PolicyForm({ persona, policy, act }: { persona: Entity; policy?: Entity
     e.preventDefault(); if (busy) return; const form = new FormData(e.currentTarget); setBusy(true); setError(''); setSaved(false);
     try {
       await act('exploration.configure', { persona: persona.id, revision: policy?.revision ?? 0, enabled, environment: environment[0], resource_root: root,
-        calls_per_episode: Number(form.get('calls')), seconds_per_episode: Number(form.get('minutes')) * 60, max_episodes: Number(form.get('episodes')),
-        expires: new Date(String(form.get('expires'))).toISOString(), reason: String(form.get('reason')) });
+        ...explorationLimits(form),
+        expires: expiryInput(form.get('expires'), d.expires), reason: String(form.get('reason')) });
       setSaved(true);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }}>
@@ -26,11 +27,11 @@ function PolicyForm({ persona, policy, act }: { persona: Entity; policy?: Entity
     <p class="micro">Disabled by default. Enabling does not create a question or a lesson. The persona chooses a question and stopping condition. Foreground work has priority.</p>
     <Pick kind="environment" value={environment} onChange={setEnvironment}/><p class="micro">Choose an environment where this persona already has access.</p>
     <FundingChoice value={root} onChange={setRoot} required/>
-    <div class="profile-trait-fields"><label>Calls per episode<input name="calls" type="number" min="1" max="1000" defaultValue={d.calls_per_episode ?? 6} required/></label>
-      <label>Minutes per episode<input name="minutes" type="number" min="1" max="10080" defaultValue={d.seconds_per_episode ? d.seconds_per_episode / 60 : 30} required/></label>
-      <label>Total episode allowance<input name="episodes" type="number" min="1" max="10000" defaultValue={d.max_episodes ?? 3} required/></label>
-      <label>Permission expires<input name="expires" type="datetime-local" required defaultValue={new Date(new Date(d.expires || Date.now() + 7 * 86400000).getTime() - new Date(d.expires || Date.now() + 7 * 86400000).getTimezoneOffset() * 60000).toISOString().slice(0,16)}/><small>Time is entered in your local timezone.</small></label></div>
-    <p class="micro">Episodes use the existing allowance. Editing these limits does not reset spending or reclaim already started episodes. Changing or disabling the policy invalidates old scheduled triggers. Pause or cancel a started episode from its participation.</p>
+    <div class="profile-trait-fields"><label>Calls per episode<input name="calls" type="number" min="1" max="1000" step="1" defaultValue={d.calls_per_episode ?? 6} required/></label>
+      <label>Seconds per episode<input name="seconds" type="number" min="1" max="604800" step="1" defaultValue={d.seconds_per_episode ?? 1800} required/><small>Exact time allowance; 60 seconds equals one minute.</small></label>
+      <label>Total episode allowance<input name="episodes" type="number" min="1" max="10000" step="1" defaultValue={d.max_episodes ?? 3} required/></label>
+      <label>Permission expires<input name="expires" type="datetime-local" step="0.001" required defaultValue={localExpiry(policy ? d.expires : Date.now() + 7 * 86400000)}/><small>Time is entered in your local timezone.</small></label></div>
+    <p class="micro">Episodes share their call and time limits across all participants, including later reviewers. They use the existing allowance. Editing these limits does not reset spending or reclaim already started episodes. Changing or disabling the policy invalidates old scheduled triggers. Pause or cancel a started episode from its participation.</p>
     <label>Reason<textarea name="reason" rows={2} required/></label>
     {error && <p role="alert">{error}</p>}{saved && <p role="status">Exploration settings saved.</p>}
     <button disabled={busy || !environment.length || !root}>{busy ? 'Saving…' : 'Save exploration settings'}</button>
