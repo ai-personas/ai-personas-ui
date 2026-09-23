@@ -156,7 +156,8 @@ try {
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     await form.getByLabel('Short title').fill('Operator browser task');
     await form.getByLabel('Your instructions').fill('Original synthetic request remains intact.');
-    await form.getByRole('radio').check(); await form.getByRole('checkbox').check();
+    await form.getByRole('radio').check(); await form.getByRole('group', { name: 'Choose personas', exact: true }).getByRole('checkbox').check();
+    await expect(form.getByLabel('Allow selected personas to choose proposals and assemble a result')).toBeChecked();
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(allowance.id);
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     work = (await get('/records?kind=work')).items[0];
@@ -165,6 +166,9 @@ try {
     run = (await get('/records?kind=run&scope=' + work.id)).items[0];
     const current = await get('/records/' + work.id);
     assert(current.data.mandate.id); assert.deepEqual(current.data.personas, [persona.id]);
+    const mandate = await get('/records/' + current.data.mandate.id);
+    assert.deepEqual(mandate.data.mandate.assembly_editors, [persona.id]);
+    assert.equal(mandate.data.mandate.outcomes[0].evidence, 'user_judgment');
     await expect(page.getByLabel('Current obligations')).toContainText('No accepted owner');
     await expect(page.getByLabel('Current obligations')).toContainText('Evidence: missing');
   });
@@ -253,10 +257,14 @@ try {
     await form.getByLabel('Clarifications and updated instructions').fill('A second explicit requirement.');
     await form.getByLabel('Expected result').fill('Amended synthetic outcome');
     await form.getByLabel('Evidence', { exact: true }).selectOption('reviewed');
+    const editors = form.getByRole('group', { name: 'Choose proposals and assemble a result', exact: true });
+    await expect(editors.getByRole('checkbox')).toBeChecked();
+    await editors.getByRole('checkbox').uncheck();
     await form.getByRole('button', { name: 'Add outcome', exact: true }).click();
     await expect(form.getByLabel('Expected result')).toHaveCount(2);
     await expect(form.getByLabel('Expected result').first()).toHaveValue('Amended synthetic outcome');
     await expect(form.getByLabel('Evidence', { exact: true }).first()).toHaveValue('reviewed');
+    await expect(editors.getByRole('checkbox')).not.toBeChecked();
     await form.getByRole('button', { name: 'Remove outcome', exact: true }).last().click();
     await expect(form.getByLabel('Clarifications and updated instructions')).toHaveValue('A second explicit requirement.');
     await form.getByRole('button', { name: 'Adopt amendment', exact: true }).click(); await expect(form).toHaveCount(0);
@@ -266,6 +274,7 @@ try {
     const mandate = await get('/records/' + current.data.mandate.id);
     assert.equal(mandate.data.mandate.outcomes[0].description, 'Amended synthetic outcome');
     assert.equal(mandate.data.mandate.outcomes[0].evidence, 'reviewed');
+    assert.deepEqual(mandate.data.mandate.assembly_editors, [], 'operator can revoke assembly permission without changing the roster');
     assert.equal((await op('work.amend', { work: work.id, revision: work.revision, title: 'Stale', mandate: mandate.data.mandate }, '', '', false)).state, 'failed');
   });
   await step('an open amendment cannot silently overwrite a concurrent scope change', async () => {

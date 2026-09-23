@@ -8,7 +8,7 @@ import './operator.css';
 import { modelKey, ModelStatus, useModels } from './Models';
 import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
-import { matchesAllowance } from './workspace';
+import { matchesAllowance, recordIDs } from './workspace';
 import { ProviderSettings } from './ProviderSettings';
 import { FeedbackConditions } from './RecordReader';
 import ToolAccess from './ToolAccess';
@@ -155,8 +155,8 @@ function Allowances({ act }: { act: Act }) {
     {(create || configure) && <AllowanceForm initial={configure} act={act} close={() => { setCreate(false); setConfigure(undefined); }}/>}</section>;
 }
 
-export function initialMandate(brief: string, criterion: string) {
-  return { clarifications: [], constraints: [], preferences: [], unresolved_inputs: [], outcomes: [{ key: 'result', description: brief, criterion, required: true, evidence: 'user_judgment', conditional_allowed: false, outside_validation_required: false }], completion_agreement: 'User acceptance of the requested result', assembly_editors: [], non_contributor_review: false, scope_coverage_review_required: false };
+export function initialMandate(brief: string, criterion: string, assemblyEditors: string[] = []) {
+  return { clarifications: [], constraints: [], preferences: [], unresolved_inputs: [], outcomes: [{ key: 'result', description: brief, criterion, required: true, evidence: 'user_judgment', conditional_allowed: false, outside_validation_required: false }], completion_agreement: 'User acceptance of the requested result', assembly_editors: assemblyEditors, non_contributor_review: false, scope_coverage_review_required: false };
 }
 export function CurrentMandate({ id, open }: { id: string; open: (id: string) => void }) {
   const { value, error } = useResource<Entity>('/records/' + id);
@@ -189,12 +189,17 @@ function editedMandate(mandate: any, form: FormData) {
   return { ...mandate,
     ...Object.fromEntries(['clarifications', 'constraints', 'preferences', 'unresolved_inputs'].map(key => [key, lines(key)])),
     completion_agreement: String(form.get('completion_agreement') || ''),
+    assembly_editors: form.getAll('assembly_editor').map(String),
     non_contributor_review: form.has('non_contributor_review'), scope_coverage_review_required: form.has('scope_coverage_review_required'),
     outcomes: mandate.outcomes.map((o: any) => ({ ...o,
       ...Object.fromEntries(['description', 'criterion', 'evidence'].map(key => [key, String(form.get(`outcome.${o.key}.${key}`) || '')])),
       ...Object.fromEntries(['required', 'conditional_allowed', 'outside_validation_required'].map(key => [key, form.has(`outcome.${o.key}.${key}`)])),
     })),
   };
+}
+function AssemblyEditor({ id, selected }: { id: string; selected: boolean }) {
+  const { value, error } = useResource<Entity>('/records/' + id, e => e.entity === id);
+  return <label class="check"><input type="checkbox" name="assembly_editor" value={id} defaultChecked={selected}/>{value ? label(value) : `Persona ${id.slice(0, 8)}`}{error && <small>Identity unavailable; the saved permission is still shown.</small>}</label>;
 }
 function Amend({ work, act, close }: { work: Entity; act: Act; close: () => void }) {
   // Keep the edited mandate and its revision from the same opening snapshot.
@@ -221,6 +226,9 @@ function Amend({ work, act, close }: { work: Entity; act: Act; close: () => void
       </fieldset>)}<button type="button" class="secondary" onClick={() => { const current = editedMandate(mandate, new FormData(form.current!)); setMandate({ ...current, outcomes: [...current.outcomes, { ...initialMandate('', '').outcomes[0], key: crypto.randomUUID() }] }); }}>Add outcome</button>
       {(['constraints', 'preferences', 'unresolved_inputs'] as const).map(key => <label key={key}>{key.replaceAll('_', ' ')}<textarea name={key} defaultValue={mandate[key].join('\n')}/></label>)}
       <label>Completion agreement<input required name="completion_agreement" defaultValue={mandate.completion_agreement}/></label>
+      <fieldset><legend>Choose proposals and assemble a result</legend><p class="micro">These personas may select proposals and assemble submissions for review within the task’s scope and allowance. Final acceptance follows the completion agreement. Permission does not assign responsibility.</p>
+        {[...new Set([...recordIDs(data(base).personas), ...recordIDs(mandate.assembly_editors)])].map(id => <AssemblyEditor key={id} id={id} selected={mandate.assembly_editors.includes(id)}/>)}
+      </fieldset>
       {(['non_contributor_review', 'scope_coverage_review_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" name={key} defaultChecked={mandate[key]}/>{key.replaceAll('_', ' ')}</label>)}
     </>}<button disabled={busy || !mandate || work.revision !== base.revision}>{busy ? 'Saving…' : 'Adopt amendment'}</button></form></Dialog>;
 }
