@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { data, label, type Entity, type Page } from './api';
+import { data, type Entity, type Page } from './api';
 import { useResource } from './hooks';
 import { isRecordID, text } from './workspace';
 import { Pagination } from './main';
@@ -7,7 +7,7 @@ import { timestamp } from './identity';
 
 function Person({ id, open }: { id: string; open: (id: string) => void }) {
   const { value } = useResource<Entity>('/records/' + id, e => e.entity === id);
-  return <button class="text-button" onClick={() => open(id)}>{value ? label(value) : 'Persona'} <code>{id.slice(0, 8)}</code></button>;
+  return <button class="text-button" onClick={() => open(id)}>{value ? text(data(value).name) || 'Unnamed persona' : 'Persona'} <code>{id.slice(0, 8)}</code></button>;
 }
 
 /** Operator view. Audience labels do not grant persona access to private replies. */

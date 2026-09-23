@@ -40,7 +40,7 @@ function NamedField({ name, value }: { name: string; value: unknown }) {
 }
 function ActivityPersona({ id, open }: { id: string; open: Open }) {
   const { value } = useResource<Entity>('/records/' + id, e => e.entity === id);
-  return <button class="reference-link activity-persona" onClick={() => open(id)}>{value ? label(value) : 'Persona'} <code>{id.slice(0, 8)}</code> <span aria-hidden="true">↗</span></button>;
+  return <button class="reference-link activity-persona" onClick={() => open(id)}>{value ? text(data(value).name) || 'Unnamed persona' : 'Persona'} <code>{id.slice(0, 8)}</code> <span aria-hidden="true">↗</span></button>;
 }
 function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act } & Links) {
   // Work-list projections omit authored drafts. Load the visible card's content
