@@ -1,4 +1,5 @@
 import type { Entity } from './api';
+import { operatorProfileStamp } from './profile.ts';
 
 /** These are the runtime's descriptor scales, not clinical measurements. */
 export const TRAITS = [
@@ -30,7 +31,6 @@ export function traitPosition(value: number, trait: Trait): number {
   return 100 * (value - trait.min) / (trait.max - trait.min);
 }
 export function traitNumber(value: number): string {
-  // No score conversion or percentage substitution. Keep small authored values visible.
   return String(Object.is(value, -0) ? 0 : value);
 }
 export function timestamp(value: unknown): string {
@@ -49,14 +49,16 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 export function displayValue(value: unknown): string {
-  if (value === undefined || value === null) return 'Not authored';
+  if (value === undefined || value === null) return 'Not recorded';
   if (value === '') return 'Cleared / empty';
   if (typeof value === 'number') return traitNumber(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? 'Not recorded';
 }
 
 const PROFILE_FIELDS = [
   ['name', 'Display name'], ['character', 'Character'], ['portrait', 'Portrait artifact'],
+  ['self_authorship', 'May shape its character'],
   ['attributes', 'Interests and attributes'], ['provider', 'Inference provider'],
   ['model', 'Inference model'], ['effort', 'Inference effort'], ['lifecycle', 'Lifecycle'],
   ['milestones', 'Identity milestones'],
@@ -76,11 +78,13 @@ export function profileChanges(before: Entity | undefined, after: Entity): Profi
 
 /** An inherited stamp is not attribution for a later lifecycle/model revision. */
 export function revisionAttribution(record: Entity): {
-  recorded: boolean; actor?: string; operation?: string; source?: string; run?: string;
+  recorded: boolean; authorKind?: 'operator' | 'persona'; actor?: string; operation?: string; source?: string; run?: string;
   reason?: string; evidence: RevisionEvidence[];
 } {
   const d = object(record.data), stamp = object(d.profile_revision);
-  const current = stamp.revision === record.revision && recordID(stamp.operation) && stamp.actor === record.id;
+  const operator = operatorProfileStamp(record);
+  const persona = stamp.actor === record.id && (stamp.author_kind === undefined || stamp.author_kind === 'persona');
+  const current = stamp.revision === record.revision && recordID(stamp.operation) && (operator || persona);
   if (!current) return { recorded: false, evidence: [] };
   const evidence: RevisionEvidence[] = [];
   for (const candidate of Array.isArray(stamp.evidence) ? stamp.evidence : []) {
@@ -90,7 +94,7 @@ export function revisionAttribution(record: Entity): {
     }
   }
   return {
-    recorded: true, actor: stamp.actor as string, operation: stamp.operation as string,
+    recorded: true, authorKind: operator ? 'operator' : 'persona', actor: stamp.actor as string, operation: stamp.operation as string,
     source: typeof stamp.source === 'string' ? stamp.source : undefined,
     run: recordID(stamp.run) ? stamp.run : undefined,
     reason: typeof stamp.reason === 'string' && stamp.reason.trim() ? stamp.reason : undefined,

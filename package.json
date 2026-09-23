@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "contract": "node scripts/contract.mjs",
-    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/files.test.mjs tests/tar.test.mjs tests/inference-evidence.test.mjs",
+    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/profile.test.mjs tests/files.test.mjs tests/tar.test.mjs tests/inference-evidence.test.mjs",
     "test:identity": "node tests/identity.browser.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:browser": "node tests/browser.mjs",
