@@ -68,7 +68,7 @@ export function ownership(record: Entity): { label: string; id?: string } {
 }
 export function stateTone(value: string): 'neutral' | 'warning' | 'danger' {
   if (['failed', 'rejected', 'conflict', 'effect_unknown'].includes(value)) return 'danger';
-  if (['stale', 'pending', 'blocked', 'unverifiable', 'uncertain', 'waiting', 'unowned'].includes(value)) return 'warning';
+  if (['stale', 'pending', 'blocked', 'unverifiable', 'uncertain', 'waiting', 'unowned', 'source_disposition_required'].includes(value)) return 'warning';
   // "accepted" alone must never turn an entire work, proposal or old review green.
   return 'neutral';
 }

@@ -139,6 +139,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'finding': case 'assessment': return <Suspense fallback={<p>Loading review…</p>}><ReviewJudgment value={d} open={open}/></Suspense>;
     case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.to || d.persona} open={open}/></p><Story value={d.preview || d.reason || d.note}/>{typeof d.orientation_calls_remaining === 'number' && <p>{d.orientation_calls_remaining} orientation attempts remaining. Joining and accepting responsibility are separate decisions.</p>}</>;
     case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.message || d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
+    case 'work_notice': return <>{d.status === 'source_disposition_required' ? <><h3>Feedback needs a sharing decision</h3><p class="notice">A participant cannot read this feedback because its sources are private. The author needs to decide how to make the finding available. Its access restrictions and unresolved status still apply.</p>{isRecordID(d.blocked_participant) && <p>Waiting for access: <Person id={d.blocked_participant} open={open}/></p>}</> : <Story value={d.message}/>}<RelatedItems title="Related work record" value={d.subject} open={open}/></>;
     case 'work_release': case 'release': return <><Story title="Released work" value={d.summary}/><Story title="Limitations" value={d.limitations || draft.limitations}/><FeedbackConditions value={d} open={open} historical/><RelatedItems title="Submitted work" value={d.submission} open={open}/></>;
     case 'resource_root': return <Story title="Purpose" value={d.reason}/>;
     default: return <>
@@ -155,7 +156,7 @@ export default function RecordReader({ record, open, historical = false }: { rec
     <div class="reader-meta">
       {isRecordID(author) && <span class="reader-byline">{record.kind === 'request' ? 'Asked by' : 'By'} <Person id={author} open={open}/></span>}
       <span>{historical ? 'Saved' : 'Updated'} <time dateTime={record.updated}>{timestamp(record.updated)}</time></span>
-      {text(d.status) && !['run', 'call'].includes(record.kind) && !(record.kind === 'request' && d.status === 'open') && <span class={'state-badge tone-' + stateTone(d.status)}>{humanLabel(d.status)}</span>}
+      {text(d.status) && !['run', 'call'].includes(record.kind) && !(record.kind === 'request' && d.status === 'open') && <span class={'state-badge tone-' + stateTone(d.status)}>{d.status === 'source_disposition_required' ? 'Sharing decision needed' : humanLabel(d.status)}</span>}
     </div>
     <Content record={record} open={open} historical={historical}/>
     {['document', 'fragment'].includes(record.kind) && isRecordID(d.environment) && <div class="reader-context-links">Shared in <RecordReference id={d.environment} open={open}/></div>}

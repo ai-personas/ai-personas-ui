@@ -28,7 +28,12 @@ try{
  assert.equal(reads.length,1);
  await page.getByRole('button',{name:'Recorded action aaaaaaaa'}).click();
  await expect(page.locator('.action-reader')).toHaveCount(0);
+ await page.evaluate(r=>window.show(r),{...record({status:'source_disposition_required',message:'Internal recovery detail: information_sources'}),kind:'work_notice'});
+ await expect(page.getByRole('heading',{name:'Feedback needs a sharing decision'})).toBeVisible();
+ await expect(page.locator('.state-badge.tone-warning')).toHaveText('Sharing decision needed');
+ await expect(page.getByText('A participant cannot read this feedback because its sources are private.',{exact:false})).toBeVisible();
+ await expect(page.getByText('Internal recovery detail:',{exact:false})).toHaveCount(0);
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  assert.deepEqual(errors,[]);
- console.log('Review judgment browser passed: explained empty-citation verdict, uncertainty, lazy evidence reads, unmount and mobile layout.');
+ console.log('Review judgment browser passed: explained verdict, uncertainty, lazy reads, unmount, readable sharing notice and mobile layout.');
 }finally{await browser?.close();server.kill('SIGTERM');await rm(harness,{force:true});}
