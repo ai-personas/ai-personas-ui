@@ -4,19 +4,21 @@ import { useRecords, useResource } from './hooks';
 import { label, type Entity } from './api';
 import Pagination from './Pagination';
 import { Story } from './RecordReader';
+const Locator = lazy(() => import('./MemoryLocator'));
 const Fragment = lazy(() => import('./MemoryFragment'));
 
 type Ref = { id: string; revision: number };
-type Card = { node: Ref; fragment: Ref; title: string; short_description: string };
+type Card = { node: Ref; fragment: Ref; title: string; short_description: string; basis?: string; locator?: {description: string} | null };
 type Branch = { path: Card[]; related: Card[]; items: Card[]; next: number | null };
 export default function MemoryTree({ owner, open }: { owner: string; open: (id: string) => void }) {
-  const [branch, setBranch] = useState(''), [pages, setPages] = useState([0]), [expanded, setExpanded] = useState('');
-  const navigate = (id: string) => { setBranch(id); setPages([0]); setExpanded(''); };
+  const [branch, setBranch] = useState(''), [pages, setPages] = useState([0]), [expanded, setExpanded] = useState(''), [utility, setUtility] = useState('');
+  const navigate = (id: string) => { setBranch(id); setPages([0]); setExpanded(''); setUtility(''); };
   const path = `/personas/${owner}/memory?limit=12&after=${pages.at(-1)}${branch ? '&branch=' + encodeURIComponent(branch) : ''}`;
   const { value, error, loading, retry } = useResource<Branch>(path, e => ['memory_node', 'fragment', 'information_policy'].includes(e.kind));
   const cards = (items: Card[]) => <div class="memory-cards">{items.map(item => <article class="memory-card" key={item.node.id}>
-    <h4>{item.title || 'Retained learning'}</h4><Story value={item.short_description}/>
-    <div class="memory-actions"><button class="text-button" onClick={() => navigate(item.node.id)}>Explore branch</button><button class="text-button" aria-expanded={expanded === item.node.id} onClick={() => setExpanded(expanded === item.node.id ? '' : item.node.id)}>{expanded === item.node.id ? 'Close fragment' : 'Read fragment'}</button></div>
+    <p class="field-label">{{tentative: 'Idea to test', observed: 'From experience', reported: 'Reported by others'}[item.basis || 'tentative']}</p><h4>{item.title || 'Retained learning'}</h4><Story value={item.short_description}/>
+    <div class="memory-actions"><button class="text-button" onClick={() => navigate(item.node.id)}>Explore branch</button><button class="text-button" aria-expanded={expanded === item.node.id} onClick={() => setExpanded(expanded === item.node.id ? '' : item.node.id)}>{expanded === item.node.id ? 'Close fragment' : 'Read fragment'}</button>{item.locator && <button class="text-button" aria-expanded={utility === item.node.id} onClick={() => setUtility(utility === item.node.id ? '' : item.node.id)}>{utility === item.node.id ? 'Close retrieval utility' : 'How this finds lessons'}</button>}</div>
+    {utility === item.node.id && <Suspense fallback={<p>Loading retrieval utility…</p>}><Locator node={item.node.id}/></Suspense>}
     {expanded === item.node.id && <Suspense fallback={<p role="status">Loading fragment…</p>}><Fragment key={item.fragment.id} id={item.fragment.id} owner={owner} open={open}/></Suspense>}
   </article>)}</div>;
   return <section class="memory-tree" aria-label="Learning tree" aria-busy={loading}>
@@ -25,7 +27,7 @@ export default function MemoryTree({ owner, open }: { owner: string; open: (id: 
     {error && <p role="alert">Could not load this branch. {error} <button class="text-button" onClick={retry}>Try again</button></p>}
     {!value && loading && <p role="status">Loading learning…</p>}
     {value && <>{!!value.path.length && cards([value.path[value.path.length - 1]])}<h3>{branch ? 'Within this branch' : 'Learning branches'}</h3>{cards(value.items)}{!value.items.length && <p>{branch ? 'No further branches here.' : 'No lessons retained yet.'}</p>}
-      <Pagination disabled={loading} previous={pages.length > 1} next={value.next} onPrevious={() => { setPages(pages.slice(0, -1)); setExpanded(''); }} onNext={() => { if (value.next !== null) { setPages([...pages, value.next]); setExpanded(''); } }}/>
+      <Pagination disabled={loading} previous={pages.length > 1} next={value.next} onPrevious={() => { setPages(pages.slice(0, -1)); setExpanded(''); setUtility(''); }} onNext={() => { if (value.next !== null) { setPages([...pages, value.next]); setExpanded(''); } }}/>
       {!!value.related.length && <><h3>Related branches</h3>{cards(value.related)}</>}</>}
   </section>;
 }

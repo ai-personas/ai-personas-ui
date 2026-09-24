@@ -24,3 +24,6 @@ p,small,code{overflow-wrap:anywhere}
 .memory-fragment { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border, #ddd); }
 .memory-fragment img { max-width: 100%; }
 .learning-library { max-width: 70rem; }
+
+.memory-locator { padding: 1rem; border: 1px solid var(--line); border-radius: .6rem; margin-top: .75rem; min-width: 0; }
+.memory-code { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }

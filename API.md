@@ -1,6 +1,6 @@
 # Generated HTTP contract
 
-Contract: `ai-personas/memory-tree-1`
+Contract: `ai-personas/character-learning-1`
 
 Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
@@ -680,6 +680,23 @@ Discover a bounded page of record summaries. Use the returned cursor for the nex
 | `query` | string or null | Optional |  |
 | `after` | integer or null | Optional |  |
 | `limit` | integer or null | Optional |  |
+
+### `operation.describe`
+
+Read the complete exact argument schema for one currently available operation.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `operation` | string | Required |  |
+
+### `memory.locate`
+
+Execute this exact owned node's retrieval utility with named string arguments encoded as JSON. Replaces next memory selection with validated existing owned references. Ends the decision; failure preserves prior learning and selection. Requires host execution.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `node` | VersionRef | Required |  |
+| `arguments_json` | string | Required |  |
 
 ### `memory.browse`
 

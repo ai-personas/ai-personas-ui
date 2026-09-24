@@ -1,5 +1,5 @@
 {
-  "contract": "ai-personas/memory-tree-1",
+  "contract": "ai-personas/character-learning-1",
   "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2682,6 +2682,64 @@
             "additionalProperties": false
           },
           {
+            "description": "Read the complete exact argument schema for one currently available operation.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "operation.describe"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "operation"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Execute this exact owned node's retrieval utility with named string arguments encoded as JSON. Replaces next memory selection with validated existing owned references. Ends the decision; failure preserves prior learning and selection. Requires host execution.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "memory.locate"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "node": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
+                  "arguments_json": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "node",
+                  "arguments_json"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
             "type": "object",
             "properties": {
@@ -5285,6 +5343,11 @@
       "FragmentDraft": {
         "type": "object",
         "properties": {
+          "basis": {
+            "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+            "$ref": "#/$defs/LearningBasis",
+            "default": "tentative"
+          },
           "title": {
             "type": "string"
           },
@@ -5337,6 +5400,15 @@
           "content",
           "applicability",
           "limitations"
+        ]
+      },
+      "LearningBasis": {
+        "description": "The author's epistemic basis, not a runtime certification of truth.",
+        "type": "string",
+        "enum": [
+          "tentative",
+          "observed",
+          "reported"
         ]
       },
       "EvidenceRef": {
@@ -5822,6 +5894,11 @@
       "Continuity": {
         "type": "object",
         "properties": {
+          "next": {
+            "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
+            "$ref": "#/$defs/NextDecision",
+            "default": "wait"
+          },
           "focus": {
             "description": "Your next intended outcome or uncertainty, not a claim of completion.",
             "type": "string"
@@ -5874,6 +5951,13 @@
           "actions",
           "retrieval_query",
           "handoff"
+        ]
+      },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
         ]
       },
       "LearningDisposition": {
@@ -5931,6 +6015,17 @@
           },
           "retire": {
             "type": "boolean"
+          },
+          "locator": {
+            "description": "Replace the optional retrieval utility; null removes it. Versioned with this node.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Locator"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -5938,6 +6033,47 @@
           "handle",
           "related",
           "retire"
+        ]
+      },
+      "Locator": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "script": {
+            "description": "Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.",
+            "type": "string"
+          },
+          "parameters": {
+            "description": "Exact required string arguments chosen by the calling persona.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Parameter"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "description",
+          "script",
+          "parameters"
+        ]
+      },
+      "Parameter": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description"
         ]
       },
       "Selection2": {
@@ -7553,6 +7689,14 @@
     [
       "record.list",
       "Discover a bounded page of record summaries. Use the returned cursor for the next page."
+    ],
+    [
+      "operation.describe",
+      "Read the complete exact argument schema for one currently available operation."
+    ],
+    [
+      "memory.locate",
+      "Execute this exact owned node's retrieval utility with named string arguments encoded as JSON. Replaces next memory selection with validated existing owned references. Ends the decision; failure preserves prior learning and selection. Requires host execution."
     ],
     [
       "memory.browse",
@@ -10154,6 +10298,64 @@
               }
             },
             "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read the complete exact argument schema for one currently available operation.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "operation.describe"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "operation"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Execute this exact owned node's retrieval utility with named string arguments encoded as JSON. Replaces next memory selection with validated existing owned references. Ends the decision; failure preserves prior learning and selection. Requires host execution.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "memory.locate"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "arguments_json": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "node",
+              "arguments_json"
+            ]
           }
         },
         "required": [
@@ -12784,6 +12986,11 @@
       "FragmentDraft": {
         "type": "object",
         "properties": {
+          "basis": {
+            "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+            "$ref": "#/$defs/LearningBasis",
+            "default": "tentative"
+          },
           "title": {
             "type": "string"
           },
@@ -12836,6 +13043,15 @@
           "content",
           "applicability",
           "limitations"
+        ]
+      },
+      "LearningBasis": {
+        "description": "The author's epistemic basis, not a runtime certification of truth.",
+        "type": "string",
+        "enum": [
+          "tentative",
+          "observed",
+          "reported"
         ]
       },
       "EvidenceRef": {
@@ -13321,6 +13537,11 @@
       "Continuity": {
         "type": "object",
         "properties": {
+          "next": {
+            "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
+            "$ref": "#/$defs/NextDecision",
+            "default": "wait"
+          },
           "focus": {
             "description": "Your next intended outcome or uncertainty, not a claim of completion.",
             "type": "string"
@@ -13373,6 +13594,13 @@
           "actions",
           "retrieval_query",
           "handoff"
+        ]
+      },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
         ]
       },
       "LearningDisposition": {
@@ -13430,6 +13658,17 @@
           },
           "retire": {
             "type": "boolean"
+          },
+          "locator": {
+            "description": "Replace the optional retrieval utility; null removes it. Versioned with this node.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Locator"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -13437,6 +13676,47 @@
           "handle",
           "related",
           "retire"
+        ]
+      },
+      "Locator": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "script": {
+            "description": "Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.",
+            "type": "string"
+          },
+          "parameters": {
+            "description": "Exact required string arguments chosen by the calling persona.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Parameter"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "description",
+          "script",
+          "parameters"
+        ]
+      },
+      "Parameter": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "description"
         ]
       },
       "Selection2": {

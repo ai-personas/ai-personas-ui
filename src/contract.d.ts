@@ -518,6 +518,19 @@ export type Command =
       };
     }
   | {
+      kind: "operation.describe";
+      args: {
+        operation: string;
+      };
+    }
+  | {
+      kind: "memory.locate";
+      args: {
+        node: VersionRef;
+        arguments_json: string;
+      };
+    }
+  | {
       kind: "memory.browse";
       args: {
         owner: string;
@@ -1298,6 +1311,10 @@ export interface Outcome {
   outside_validation_required: boolean;
 }
 export interface FragmentDraft {
+  /**
+   * Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.
+   */
+  basis?: "tentative" | "observed" | "reported";
   title: string;
   /**
    * Your concise description of this prompt part, in your own voice.
@@ -1400,6 +1417,10 @@ export interface Vad {
 }
 export interface Continuity {
   /**
+   * Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.
+   */
+  next?: "continue" | "wait";
+  /**
    * Your next intended outcome or uncertainty, not a claim of completion.
    */
   focus: string;
@@ -1443,6 +1464,25 @@ export interface Change {
    */
   related: string[];
   retire: boolean;
+  /**
+   * Replace the optional retrieval utility; null removes it. Versioned with this node.
+   */
+  locator?: Locator | null;
+}
+export interface Locator {
+  description: string;
+  /**
+   * Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.
+   */
+  script: string;
+  /**
+   * Exact required string arguments chosen by the calling persona.
+   */
+  parameters: Parameter[];
+}
+export interface Parameter {
+  name: string;
+  description: string;
 }
 export interface Selection2 {
   /**
