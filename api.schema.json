@@ -6021,13 +6021,14 @@
             "$ref": "#/$defs/Selection2"
           },
           "records": {
-            "description": "Replace the next context selection; include still-needed record IDs.",
+            "description": "Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "actions": {
+            "description": "Select received action receipts by current @action alias or exact action ID; these are not record IDs.",
             "type": "array",
             "items": {
               "type": "string"
@@ -13830,13 +13831,14 @@
             "$ref": "#/$defs/Selection2"
           },
           "records": {
-            "description": "Replace the next context selection; include still-needed record IDs.",
+            "description": "Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "actions": {
+            "description": "Select received action receipts by current @action alias or exact action ID; these are not record IDs.",
             "type": "array",
             "items": {
               "type": "string"

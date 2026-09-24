@@ -1457,9 +1457,12 @@ export interface Continuity {
   changes: Change[];
   memory: Selection2;
   /**
-   * Replace the next context selection; include still-needed record IDs.
+   * Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.
    */
   records: string[];
+  /**
+   * Select received action receipts by current @action alias or exact action ID; these are not record IDs.
+   */
   actions: string[];
   retrieval_query: string;
   /**
