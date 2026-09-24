@@ -111,7 +111,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <Story title="Conclusion" value={fields(d.resolution).conclusion}/>
     </>;
     case 'response': return <><p class="reader-byline">Answer from <Person id={d.from} open={open} user/></p><Story title="Answer" value={d.text}/><p class="record-caveat">An attributed reply is not automatic confirmation, permission or question resolution.</p></>;
-    case 'submission': return <Story title="What was submitted" value={d.summary}/>;
+    case 'submission': return <><QuestionDelivery value={d.peer_delivery} status={d.status}/><Story title="What was submitted" value={d.summary}/></>;
     case 'work_mandate': return <><Story title="Original request" value={d.original_need}/><ScopeStory value={d.mandate}/></>;
     case 'commitment': return <>
       <Story title="Responsibility" value={draft.description || d.description || d.outcome}/><Story title="What success looks like" value={draft.criterion || d.criterion}/>

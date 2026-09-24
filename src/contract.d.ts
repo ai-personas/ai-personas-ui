@@ -581,6 +581,20 @@ export type Command =
       };
     }
   | {
+      kind: "persona.initialization.retry";
+      args: {
+        id: string;
+        revision: number;
+      };
+    }
+  | {
+      kind: "persona.initialization.cancel";
+      args: {
+        id: string;
+        revision: number;
+      };
+    }
+  | {
       kind: "persona.profile.configure";
       args: {
         id: string;

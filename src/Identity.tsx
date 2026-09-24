@@ -1,3 +1,4 @@
+import CharacterInitialization from './CharacterInitialization';
 import { useEffect, useState } from 'preact/hooks';
 import { data, type Entity } from './api';
 import { fields, isRecordID, text } from './workspace';
@@ -23,8 +24,9 @@ export default function Identity({ persona, open, act }: { persona: Entity; act:
       catch { setCopied(false); setCopyError('Clipboard unavailable. Select and copy the identity above.'); }
     }}>{copied ? 'ID copied' : 'Copy ID'}</button></div>
     {copyError && <p role="status" class="micro">{copyError}</p>}
+    <CharacterInitialization persona={persona} act={act}/>
     <h4>Current character</h4><p class="record-prose">{text(d.character) || 'No narrative character is recorded yet.'}</p>
-    {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona until it chooses one during funded orientation or responds to an introduction request.</p>}
+    {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona until it chooses one.</p>}
     <dl class="identity-milestones">{[['Created', milestones.created || persona.created], ['Oriented', milestones.oriented], ['Joined work', milestones.joined], ['Accepted responsibility', milestones.committed]].map(([label, value]) => <div key={String(label)}><dt>{String(label)}</dt><dd>{typeof value === 'string' && value ? <time dateTime={value}>{timestamp(value)}</time> : 'Not recorded'}</dd></div>)}</dl>
     <p class="micro">Creation, membership and accepted responsibility are separate milestones.</p>
     <details><summary>Creation provenance</summary><p>Sponsor: {isRecordID(sponsor) ? <button class="text-button" onClick={() => open(sponsor)}>{sponsor.slice(0, 8)}</button> : sponsor || 'Not recorded'}</p>
@@ -35,7 +37,7 @@ export default function Identity({ persona, open, act }: { persona: Entity; act:
     <p>{d.self_authorship === false ? 'Character and affect are controlled by you. Learning and interests remain available.' : 'This persona may shape its character and affect through attributed changes.'}</p>
     <p class="micro">Initial approach: {fields(d.profile_orientation).disposition === 'adopted' ? 'Recorded' : fields(d.profile_orientation).disposition === 'deferred' ? 'Explicitly deferred' : 'Not recorded yet'}</p>
     <Story value={fields(d.profile_orientation).approach}/>
-    <button class="secondary" aria-expanded={editing} onClick={() => setEditing(!editing)}>{editing ? 'Close profile editor' : 'Edit character and authorship'}</button>
+    <button class="secondary" disabled={['pending', 'running'].includes(text(fields(d.character_initialization).status))} aria-expanded={editing} onClick={() => setEditing(!editing)}>{editing ? 'Close profile editor' : 'Edit character and authorship'}</button>
     {editing && <Suspense fallback={<p>Loading editor…</p>}><ProfileEditor persona={persona} act={act} close={() => setEditing(false)}/></Suspense>}
     <button class="text-button" aria-expanded={starting} onClick={() => setStarting(!starting)}>{starting ? 'Hide starting profile' : 'Show starting profile'}</button>
     {starting && <section class="development-card"><h4>Starting profile</h4>{d.starting_profile ? <><Story value={fields(d.starting_profile).character}/><Traits value={fields(d.starting_profile)}/><p class="micro">Preserved initial values. Missing numeric entries were randomly initialized; this is not personal experience.</p><details><summary>Initialization provenance</summary><p>Generator: {text(fields(fields(d.starting_profile).initialization).algorithm, 'Not recorded')}</p><p>Reproducibility seed: <code>{text(fields(fields(d.starting_profile).initialization).random_seed, 'Not recorded')}</code></p></details></> : <p>No starting profile was recorded for this identity.</p>}</section>}

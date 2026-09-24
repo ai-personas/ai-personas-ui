@@ -1,3 +1,4 @@
+import QuestionDelivery from './QuestionDelivery';
 import { WorkControls, AllowanceSummary, CurrentMandate, WorkState } from './Operator';
 import type { Act } from './main';
 import type { ComponentChildren } from 'preact';
@@ -59,6 +60,7 @@ function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act 
       <h3><button class="record-title" onClick={() => open(r.id)}>{recordTitle(r)}</button></h3></div>
       {state && !assessment && <Badge value={state}/>}</header>
     <InputNotice record={r} open={open}/>
+    {r.kind === 'submission' && <QuestionDelivery value={d.peer_delivery} status={d.status}/>}
     {r.kind === 'run' && isRecordID(author) ? <ActivityPersona id={author} open={open}/> : r.kind !== 'commitment' && <Reference id={author} caption={isPerspective ? 'Perspective by' : 'By'} open={open}/>}
     {needsContent && !value && !error && <p class="micro" role="status">Loading the update…</p>}
     {needsContent && error && <p class="micro" role="alert">The written update could not be loaded. Open details to try again.</p>}

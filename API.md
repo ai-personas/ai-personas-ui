@@ -739,7 +739,7 @@ Select a published PNG, JPEG, or WebP for visual input on subsequent model calls
 
 ### `persona.create`
 
-Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.
+Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Missing narrative character schedules a funded initialization call with the assigned model before participation. Supplied nonempty character skips generation.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -751,6 +751,24 @@ Create a continuing identity. Supplied profile values are preserved; missing OCE
 | `seed` | array or null | Optional |  |
 | `profile_seed` | ProfileSeed or null | Optional |  |
 | `self_authorship` | boolean or null | Optional | Defaults to true. When false, narrative character, traits and substitute profile attributes are operator-controlled; learning and interests remain available. |
+
+### `persona.initialization.retry`
+
+Explicitly retry failed, cancelled or uncertain creation inference. Uses a new funded call; uncertain exposure remains accounted.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
+
+### `persona.initialization.cancel`
+
+Cancel pending creation inference. A dispatched call may still incur usage.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
 
 ### `persona.profile.configure`
 

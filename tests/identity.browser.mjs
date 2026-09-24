@@ -17,7 +17,7 @@ await writeFile(harness, `import { h, render } from 'preact';
 import Identity from '../src/Identity';
 import '../src/style.css';
 const host = document.getElementById('identity-test')!;
-(window as any).showPersona = (persona: any) => render(h(Identity, { persona, open: (id: string) => { (window as any).opened = id; } }), host);
+(window as any).showPersona = (persona: any) => render(h(Identity, { persona, act: async (kind: string, args: any) => { (window as any).initializationAction = {kind,args}; return {}; }, open: (id: string) => { (window as any).opened = id; } }), host);
 (window as any).showPersona(${JSON.stringify(revisions[0])});`);
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
 let output = ''; server.stdout.on('data', data => { output += data; }); server.stderr.on('data', data => { output += data; });
@@ -79,6 +79,18 @@ try {
   await expect(page.getByRole('region', { name: 'Persona evolution', exact: true })).toHaveCount(0);
   await expect(page.getByText('Not authored', { exact: true })).toHaveCount(8);
   assert.equal(requests.filter(req => req.method !== 'GET').length, 0, 'identity observation must be read-only');
+  await page.evaluate(persona => window.showPersona(persona), { ...revisions[0], data: { ...revisions[0].data, character_initialization: { status: 'running' } } });
+  await expect(page.getByRole('status', { name: 'Character initialization' })).toContainText('Writing a starting character');
+  await expect(page.getByRole('button', { name: 'Edit character and authorship' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Cancel character generation' }).click();
+  assert.equal((await page.evaluate(() => window.initializationAction)).kind, 'persona.initialization.cancel');
+  await page.evaluate(persona => window.showPersona(persona), { ...revisions[0], data: { ...revisions[0].data, character_initialization: { status: 'uncertain', error: 'Synthetic interrupted call' } } });
+  await expect(page.getByRole('status', { name: 'Character initialization' })).toContainText('earlier usage remains accounted');
+  await page.getByRole('button', { name: 'Retry character generation' }).click();
+  assert.equal((await page.evaluate(() => window.initializationAction)).kind, 'persona.initialization.retry');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.evaluate(persona => window.showPersona(persona), { ...revisions[0], data: { ...revisions[0].data, character_initialization: { status: 'ready' } } });
+  await expect(page.getByRole('status', { name: 'Character initialization' })).toHaveCount(0);
   assert.deepEqual(errors, []);
   console.log('Identity production-component browser checks passed: missing scores, signed values, history, pagination, attribution, failure/retry, wrong-persona rejection, responsive layout, identity switching and read-only observation.');
 } finally {

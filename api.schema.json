@@ -2896,7 +2896,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.",
+            "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Missing narrative character schedules a funded initialization call with the assigned model before participation. Supplied nonempty character skips generation.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2962,6 +2962,72 @@
                 "required": [
                   "provider",
                   "model"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Explicitly retry failed, cancelled or uncertain creation inference. Uses a new funded call; uncertain exposure remains accounted.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.initialization.retry"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel pending creation inference. A dispatched call may still incur usage.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.initialization.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision"
                 ]
               }
             },
@@ -7717,7 +7783,15 @@
     ],
     [
       "persona.create",
-      "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference."
+      "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Missing narrative character schedules a funded initialization call with the assigned model before participation. Supplied nonempty character skips generation."
+    ],
+    [
+      "persona.initialization.retry",
+      "Explicitly retry failed, cancelled or uncertain creation inference. Uses a new funded call; uncertain exposure remains accounted."
+    ],
+    [
+      "persona.initialization.cancel",
+      "Cancel pending creation inference. A dispatched call may still incur usage."
     ],
     [
       "persona.profile.configure",
@@ -10522,7 +10596,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Creation does not start inference.",
+        "description": "Create a continuing identity. Supplied profile values are preserved; missing OCEAN/VAD values receive recorded synthetic seeds. Missing narrative character schedules a funded initialization call with the assigned model before participation. Supplied nonempty character skips generation.",
         "type": "object",
         "properties": {
           "kind": {
@@ -10588,6 +10662,72 @@
             "required": [
               "provider",
               "model"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Explicitly retry failed, cancelled or uncertain creation inference. Uses a new funded call; uncertain exposure remains accounted.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.initialization.retry"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel pending creation inference. A dispatched call may still incur usage.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.initialization.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision"
             ]
           }
         },
