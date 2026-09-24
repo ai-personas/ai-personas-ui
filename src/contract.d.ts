@@ -794,7 +794,7 @@ export type Command =
       kind: "context.select";
       args: {
         /**
-         * Retained record IDs, such as messages, documents, submissions and artifacts.
+         * Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.
          */
         records: string[];
         /**
@@ -812,11 +812,11 @@ export type Command =
       args: {
         summary: string;
         /**
-         * An executed operation's history.request.id from this run, not a record ID.
+         * An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.
          */
         through: string;
         /**
-         * Retained record IDs, such as messages, documents, submissions and artifacts.
+         * Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.
          */
         records: string[];
         /**

@@ -999,19 +999,19 @@ undefined
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
+| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
 | `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results. |
 
 ### `context.compact`
 
-Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.
+Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `summary` | string | Required |  |
-| `through` | string | Required | An executed operation's history.request.id from this run, not a record ID. |
-| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
+| `through` | string | Required | An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes. |
+| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
 | `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery. |
 

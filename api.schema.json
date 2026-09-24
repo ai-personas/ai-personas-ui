@@ -3950,7 +3950,7 @@
                 "type": "object",
                 "properties": {
                   "records": {
-                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
+                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -3985,7 +3985,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.",
+            "description": "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
             "type": "object",
             "properties": {
               "kind": {
@@ -3999,11 +3999,11 @@
                     "type": "string"
                   },
                   "through": {
-                    "description": "An executed operation's history.request.id from this run, not a record ID.",
+                    "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.",
                     "type": "string"
                   },
                   "records": {
-                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
+                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -7887,7 +7887,7 @@
     ],
     [
       "context.compact",
-      "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule."
+      "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule."
     ],
     [
       "input.acknowledge",
@@ -11650,7 +11650,7 @@
             "type": "object",
             "properties": {
               "records": {
-                "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
+                "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -11685,7 +11685,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Replace active history in the referenced action's work run through that ID with your own account and selection. Other work histories and all originals remain retrievable. No imposed schedule.",
+        "description": "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11699,11 +11699,11 @@
                 "type": "string"
               },
               "through": {
-                "description": "An executed operation's history.request.id from this run, not a record ID.",
+                "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.",
                 "type": "string"
               },
               "records": {
-                "description": "Retained record IDs, such as messages, documents, submissions and artifacts.",
+                "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
                 "type": "array",
                 "items": {
                   "type": "string"
