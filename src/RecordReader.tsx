@@ -133,7 +133,9 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
     case 'fragment': return <>
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
+      {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
+      <Story title="Recall this when" value={draft.retrieval_cues}/><RelatedItems title="Related learning" value={draft.related_fragments} open={open}/>
       <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
     </>;
     case 'assumption': return <><Story value={d.summary || d.text || d.description}/><p class="notice">{assumptionNote(text(d.status))}</p><Story title="Reconsider when" value={d.reconsider_if}/></>;

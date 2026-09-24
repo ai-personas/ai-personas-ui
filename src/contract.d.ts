@@ -754,6 +754,10 @@ export type Command =
          * IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.
          */
         actions: string[];
+        /**
+         * Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.
+         */
+        retrieval_query?: string | null;
       };
     }
   | {
@@ -772,6 +776,10 @@ export type Command =
          * IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed.
          */
         actions: string[];
+        /**
+         * Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.
+         */
+        retrieval_query?: string | null;
       };
     }
   | {
@@ -1270,9 +1278,20 @@ export interface Outcome {
 }
 export interface FragmentDraft {
   title: string;
+  /**
+   * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
+   */
   content: string;
   applicability: string;
   limitations: string;
+  /**
+   * Owner-authored situations, questions or search terms that should recall this prompt fragment.
+   */
+  retrieval_cues?: string[];
+  /**
+   * Exact owned fragments to consider together. A relationship is not selection or proof.
+   */
+  related_fragments?: VersionRef[];
   sources?: EvidenceRef[];
   counterevidence?: EvidenceRef[];
 }

@@ -939,6 +939,7 @@ Choose exact retained records and action results for future context. Replaces se
 |---|---|---|---|
 | `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
+| `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results. |
 
 ### `context.compact`
 
@@ -950,6 +951,7 @@ Replace active history in the referenced action's work run through that ID with 
 | `through` | string | Required | An executed operation's history.request.id from this run, not a record ID. |
 | `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
+| `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery. |
 
 ### `input.acknowledge`
 

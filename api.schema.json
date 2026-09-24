@@ -3731,6 +3731,13 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "retrieval_query": {
+                    "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -3777,6 +3784,13 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "retrieval_query": {
+                    "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -5168,6 +5182,7 @@
             "type": "string"
           },
           "content": {
+            "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
             "type": "string"
           },
           "applicability": {
@@ -5175,6 +5190,22 @@
           },
           "limitations": {
             "type": "string"
+          },
+          "retrieval_cues": {
+            "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "related_fragments": {
+            "description": "Exact owned fragments to consider together. A relationship is not selection or proof.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
           },
           "sources": {
             "type": "array",
@@ -10898,6 +10929,13 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "retrieval_query": {
+                "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -10944,6 +10982,13 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "retrieval_query": {
+                "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -12353,6 +12398,7 @@
             "type": "string"
           },
           "content": {
+            "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
             "type": "string"
           },
           "applicability": {
@@ -12360,6 +12406,22 @@
           },
           "limitations": {
             "type": "string"
+          },
+          "retrieval_cues": {
+            "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "related_fragments": {
+            "description": "Exact owned fragments to consider together. A relationship is not selection or proof.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            },
+            "default": []
           },
           "sources": {
             "type": "array",
