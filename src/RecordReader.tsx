@@ -99,6 +99,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
         </div></>;
     }
     case 'artifact': return <>{d.sharing === 'work_members_with_source_restrictions' && <p class="record-caveat">Shared with this work’s participants. Access still depends on the source material’s permissions.</p>}</>;
+    case 'observation': return <><Story title="Why this image was selected" value={d.purpose}/><RelatedItems title="Image selected for inspection" value={d.artifact_version || d.artifact} open={open}/><p class="record-caveat">An image selection records what to inspect. It does not by itself establish a visual finding.</p></>;
     case 'environment': return <Story value={d.description}/>;
     case 'persona': return <Story title="About this persona" value={d.character}/>;
     case 'run': return <><p class="reader-byline">Activity for <Person id={d.persona} open={open}/></p><Story title="Instructions for this work" value={d.instructions}/></>;
