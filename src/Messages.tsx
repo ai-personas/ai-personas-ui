@@ -17,7 +17,7 @@ export function PersonaActivity({ persona, funding, open, act }: { persona: stri
   return <section class="persona-activity" aria-label="Current persona activity" aria-busy={loading}><h3>Current activity</h3>
     {error && <p role="alert">Activity unavailable: {error}</p>}
     {!value && !error && <p role="status">Loading participation…</p>}
-    {value?.items.length === 0 && <p>No participation on this page. Select this persona when creating funded work to start its bounded orientation. It can choose its name, character and optional OCEAN/VAD descriptors there; no default identity scores are assigned.</p>}
+    {value?.items.length === 0 && <p>No participation on this page. Once its starting character is ready, select this persona for funded work. It can then consider the invitation and choose whether to join; accepting responsibilities is a separate decision.</p>}
     {value?.items.map(run => <article key={run.id} class={inputRequestCount(run) ? 'needs-input' : ''}><p><Status value={text(data(run).status)}/></p><InputNotice record={run} open={open}/><RunProgress run={run} open={open} act={act}/>
       <div class="button-row"><button class="text-button" onClick={() => open(run.id)}>Inspect activity {run.id.slice(0,8)}</button><button class="text-button" onClick={() => open(run.scope)}>Open related work</button>
         {!['cancelled'].includes(text(data(run).status)) && data(run).historical !== true && <button class="text-button" onClick={() => setIntroduction(introduction === run.id ? '' : run.id)}>Request introduction</button>}
