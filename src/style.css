@@ -13,3 +13,14 @@ p,small,code{overflow-wrap:anywhere}
 .environment-tool .button-row { margin-top: auto; }
 
 .question-sharing{border-left:4px solid #b97300;background:#fff7e6;color:#593900;overflow-wrap:anywhere}
+
+.memory-tree { min-width: 0; padding-block: 1rem; }
+.memory-path, .memory-actions, .memory-owners { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; }
+.memory-path { margin-block: 1rem; }
+.memory-path [aria-current] { font-weight: 700; text-decoration: underline; }
+.memory-cards { display: grid; gap: 1rem; }
+.memory-card { min-width: 0; padding: 1rem; border: 1px solid var(--border, #ddd); border-radius: .75rem; overflow-wrap: anywhere; }
+.memory-card h4 { margin: 0 0 .5rem; }
+.memory-fragment { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border, #ddd); }
+.memory-fragment img { max-width: 100%; }
+.learning-library { max-width: 70rem; }

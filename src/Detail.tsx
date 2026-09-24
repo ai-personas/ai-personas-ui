@@ -20,6 +20,7 @@ import { humanLabel, recordTitle, actionTitle } from './reading';
 import { timestamp } from './identity';
 import RichText from './RichText';
 import ContextRecovery from './ContextRecovery';
+const MemoryTree = lazy(() => import('./MemoryTree'));
 const EnvironmentTools = lazy(() => import('./EnvironmentTools'));
 const Upload = lazy(() => import('./Upload'));
 const Pick = lazy(() => import('./Create').then(m => ({ default: m.Pick })));
@@ -66,6 +67,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {tabs.length > 0 && <><nav class="tabs" aria-label="Detail sections">{tabs.map(t => <button key={t} class={current === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav>
         {current === 'Messages' && r.kind === 'persona' ? <Correspondence key={id} persona={id} open={open}/> : current === 'Actions' || current === 'History' ? <Actions key={current + id} owner={r.kind === 'persona' ? id : ''} run={r.kind === 'run' ? id : ''} act={actSafe} open={open}/>
           : current === 'Tools' && r.kind === 'environment' ? <Suspense fallback={<p>Loading tools…</p>}><EnvironmentTools environment={id} act={actSafe} open={open}/></Suspense>
+          : current === 'Learning' && r.kind === 'persona' ? <Suspense fallback={<p>Loading learning…</p>}><MemoryTree key={id} owner={id} open={open}/></Suspense>
           : <Records key={current + id} kind={({ Activity: 'run', Work: r.kind === 'persona' ? 'run' : 'work', Learning: 'fragment,document', Tools: 'tool,capability', Perspectives: 'perspective', Messages: 'message', 'Model calls': 'call', Submissions: 'submission', Assessments: 'finding,assessment', Requests: 'request', Responses: 'response' } as Record<string, string>)[current]} scope={r.kind === 'persona' ? '' : id} owner={r.kind === 'persona' ? id : ''} open={open}/>}
       </>}
       <Expand title="Version history">{() => <Revisions id={id} open={open}/>}</Expand>

@@ -1,11 +1,13 @@
 # Generated HTTP contract
 
-Contract: `ai-personas/1`
+Contract: `ai-personas/memory-tree-1`
 
 Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/personas/{id}/memory/usage/{fragment}` | Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit |
+| GET | `/api/personas/{id}/memory?branch=&after=0&limit=12` | Private memory tree: bounded short descriptions, breadcrumbs and related branches; full fragments fetched on demand |
 | GET | `/api/work/{id}/files?after=0&limit=12` | Files linked by exact publication/submission receipts; drafts and adopted candidates remain distinct from acceptance |
 | GET | `/api/environment-tools` | Default shared tool catalog; no probes or inference |
 | GET | `/api/attention` | Whole-store counts of unanswered requests and affected work, personas and environments; answered requests are not awaiting user input |
@@ -406,6 +408,8 @@ Author owned retained learning with explicit applicability, limitations and exac
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `draft` | FragmentDraft | Required |  |
+| `parent` | string or null | Optional |  |
+| `related` | string[] | Required |  |
 
 ### `fragment.revise`
 
@@ -413,8 +417,10 @@ Create an immutable correction to an owned fragment. Earlier content remains ins
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `version` | VersionRef | Required |  |
+| `node` | VersionRef | Required |  |
 | `draft` | FragmentDraft | Required |  |
+| `parent` | string or null | Optional |  |
+| `related` | string[] | Required |  |
 
 ### `perspective.write`
 
@@ -674,6 +680,18 @@ Discover a bounded page of record summaries. Use the returned cursor for the nex
 | `query` | string or null | Optional |  |
 | `after` | integer or null | Optional |  |
 | `limit` | integer or null | Optional |  |
+
+### `memory.browse`
+
+Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `owner` | string | Required |  |
+| `branch` | string or null | Optional |  |
+| `after` | integer or null | Optional |  |
+| `limit` | integer or null | Optional |  |
+| `query` | string or null | Optional |  |
 
 ### `history.read`
 

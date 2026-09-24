@@ -87,7 +87,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <p class="record-caveat">{learningKind(record.kind)}. Saving or submitting a document does not establish lesson retention or later use.</p>
       {text(d.content) ? <RichText text={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
     </>;
-    case 'artifact': return <><p class="reader-file-info">{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
+    case 'artifact': return <>{d.sharing === 'work_members_with_source_restrictions' && <p class="record-caveat">Shared with this work’s participants, subject to source permissions.</p>}<p class="reader-file-info">{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
     case 'work': {
       const f = workFacts(record);
       return <><Story title="Your request" value={d.brief}/>
@@ -98,7 +98,6 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
           {isRecordID(d.resource_root) && <button class="text-button" onClick={() => open(d.resource_root)}>View funding ↗</button>}
         </div></>;
     }
-    case 'artifact': return <>{d.sharing === 'work_members_with_source_restrictions' && <p class="record-caveat">Shared with this work’s participants. Access still depends on the source material’s permissions.</p>}</>;
     case 'observation': return <><Story title="Why this image was selected" value={d.purpose}/><RelatedItems title="Image selected for inspection" value={d.artifact_version || d.artifact} open={open}/><p class="record-caveat">An image selection records what to inspect. It does not by itself establish a visual finding.</p></>;
     case 'environment': return <Story value={d.description}/>;
     case 'persona': return <Story title="About this persona" value={d.character}/>;
@@ -133,12 +132,13 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'experience_review': return <><p>{{retain:'Retained change',revise:'Revised prior learning',no_change:'No lasting change',defer:'Interpretation deferred'}[text(d.disposition)] || 'Recorded interpretation'}</p><Story value={d.interpretation}/><RelatedItems title="Observed evidence" value={d.observations} open={open}/><RelatedItems title="Committed changes" value={d.changes} open={open}/><p class="record-caveat">This is the persona’s interpretation. A retained change does not establish later benefit.</p></>;
     case 'exploration_opportunity': return <><Story title="Question to investigate" value={d.question}/><Story title="Stopping condition" value={d.stopping_condition}/><p>{d.status === 'scheduled' ? `Scheduled no earlier than ${timestamp(d.not_before)}` : `Episode ${text(d.status, 'status not recorded')}`}</p><Story title="Outcome or limitation" value={d.reason}/><RelatedItems title="Observations" value={d.observations} open={open}/>{isRecordID(d.work) && <p>Episode work <RecordReference id={d.work} open={open}/></p>}</>;
     case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
+    case 'memory_node': return <><p>This branch organizes a retained prompt fragment.</p><RelatedItems title="Prompt fragment" value={d.fragment} open={open}/><RelatedItems title="Related branches" value={d.related} open={open}/></>;
     case 'fragment': return <>
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
       <p class="record-caveat">{draft.procedural_reuse === true ? 'This private lesson permits procedural use in later shared work. Restricted source material remains protected.' : 'This lesson is private; its information restrictions apply to derived work.'}</p>
-      <Story title="Recall this when" value={draft.retrieval_cues}/><RelatedItems title="Related learning" value={draft.related_fragments} open={open}/>
+      <Story title="Recall this when" value={draft.retrieval_cues}/>
       <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
     </>;
     case 'assumption': return <><Story value={d.summary || d.text || d.description}/><p class="notice">{assumptionNote(text(d.status))}</p><Story title="Reconsider when" value={d.reconsider_if}/></>;

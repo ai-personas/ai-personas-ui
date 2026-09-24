@@ -1,5 +1,5 @@
 {
-  "contract": "ai-personas/1",
+  "contract": "ai-personas/memory-tree-1",
   "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1608,11 +1608,24 @@
                 "properties": {
                   "draft": {
                     "$ref": "#/$defs/FragmentDraft"
+                  },
+                  "parent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "related": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "additionalProperties": false,
                 "required": [
-                  "draft"
+                  "draft",
+                  "related"
                 ]
               }
             },
@@ -1633,17 +1646,30 @@
               "args": {
                 "type": "object",
                 "properties": {
-                  "version": {
+                  "node": {
                     "$ref": "#/$defs/VersionRef"
                   },
                   "draft": {
                     "$ref": "#/$defs/FragmentDraft"
+                  },
+                  "parent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "related": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "additionalProperties": false,
                 "required": [
-                  "version",
-                  "draft"
+                  "node",
+                  "draft",
+                  "related"
                 ]
               }
             },
@@ -2647,6 +2673,61 @@
                   }
                 },
                 "additionalProperties": false
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "memory.browse"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "after": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "query": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "owner"
+                ]
               }
             },
             "required": [
@@ -5207,6 +5288,10 @@
           "title": {
             "type": "string"
           },
+          "short_description": {
+            "description": "Your concise description of this prompt part, in your own voice.",
+            "type": "string"
+          },
           "content": {
             "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
             "type": "string"
@@ -5230,14 +5315,6 @@
             },
             "default": []
           },
-          "related_fragments": {
-            "description": "Exact owned fragments to consider together. A relationship is not selection or proof.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/VersionRef"
-            },
-            "default": []
-          },
           "sources": {
             "type": "array",
             "items": {
@@ -5256,6 +5333,7 @@
         "additionalProperties": false,
         "required": [
           "title",
+          "short_description",
           "content",
           "applicability",
           "limitations"
@@ -5758,8 +5836,11 @@
           "changes": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/FragmentChange"
+              "$ref": "#/$defs/Change"
             }
+          },
+          "memory": {
+            "$ref": "#/$defs/Selection2"
           },
           "records": {
             "description": "Replace the next context selection; include still-needed record IDs.",
@@ -5788,6 +5869,7 @@
           "disposition",
           "learning",
           "changes",
+          "memory",
           "records",
           "actions",
           "retrieval_query",
@@ -5804,11 +5886,15 @@
           "defer"
         ]
       },
-      "FragmentChange": {
+      "Change": {
         "type": "object",
         "properties": {
-          "version": {
-            "description": "None creates a lesson; an exact owned version revises it.",
+          "handle": {
+            "description": "Unique local name, referenced as $name elsewhere in this transaction.",
+            "type": "string"
+          },
+          "node": {
+            "description": "Exact node version to revise/reorganize/retire; null creates a node.",
             "anyOf": [
               {
                 "$ref": "#/$defs/VersionRef"
@@ -5819,17 +5905,70 @@
             ]
           },
           "draft": {
-            "$ref": "#/$defs/FragmentDraft"
+            "description": "Your new prompt part, or null to keep this node's current immutable fragment.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FragmentDraft"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "select_next": {
-            "description": "Select the committed fragment in the next context without an extra lookup turn.",
+          "parent": {
+            "description": "Replace primary parent; null places at root. Node ID or $handle.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related": {
+            "description": "Replace cross-links. Node IDs or $handles; links do not select their content.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retire": {
             "type": "boolean"
           }
         },
         "additionalProperties": false,
         "required": [
-          "draft",
-          "select_next"
+          "handle",
+          "related",
+          "retire"
+        ]
+      },
+      "Selection2": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "description": "Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branch": {
+            "description": "Branch whose short descriptions to show next. Null is the virtual root.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "active"
         ]
       },
       "Verdict": {
@@ -7002,6 +7141,16 @@
   "routes": [
     [
       "GET",
+      "/api/personas/{id}/memory/usage/{fragment}",
+      "Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit"
+    ],
+    [
+      "GET",
+      "/api/personas/{id}/memory?branch=&after=0&limit=12",
+      "Private memory tree: bounded short descriptions, breadcrumbs and related branches; full fragments fetched on demand"
+    ],
+    [
+      "GET",
       "/api/work/{id}/files?after=0&limit=12",
       "Files linked by exact publication/submission receipts; drafts and adopted candidates remain distinct from acceptance"
     ],
@@ -7404,6 +7553,10 @@
     [
       "record.list",
       "Discover a bounded page of record summaries. Use the returned cursor for the next page."
+    ],
+    [
+      "memory.browse",
+      "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts."
     ],
     [
       "history.read",
@@ -8936,11 +9089,24 @@
             "properties": {
               "draft": {
                 "$ref": "#/$defs/FragmentDraft"
+              },
+              "parent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "related": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false,
             "required": [
-              "draft"
+              "draft",
+              "related"
             ]
           }
         },
@@ -8961,17 +9127,30 @@
           "args": {
             "type": "object",
             "properties": {
-              "version": {
+              "node": {
                 "$ref": "#/$defs/VersionRef"
               },
               "draft": {
                 "$ref": "#/$defs/FragmentDraft"
+              },
+              "parent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "related": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "additionalProperties": false,
             "required": [
-              "version",
-              "draft"
+              "node",
+              "draft",
+              "related"
             ]
           }
         },
@@ -9975,6 +10154,61 @@
               }
             },
             "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "memory.browse"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string"
+              },
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limit": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "owner"
+            ]
           }
         },
         "required": [
@@ -12553,6 +12787,10 @@
           "title": {
             "type": "string"
           },
+          "short_description": {
+            "description": "Your concise description of this prompt part, in your own voice.",
+            "type": "string"
+          },
           "content": {
             "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
             "type": "string"
@@ -12576,14 +12814,6 @@
             },
             "default": []
           },
-          "related_fragments": {
-            "description": "Exact owned fragments to consider together. A relationship is not selection or proof.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/VersionRef"
-            },
-            "default": []
-          },
           "sources": {
             "type": "array",
             "items": {
@@ -12602,6 +12832,7 @@
         "additionalProperties": false,
         "required": [
           "title",
+          "short_description",
           "content",
           "applicability",
           "limitations"
@@ -13104,8 +13335,11 @@
           "changes": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/FragmentChange"
+              "$ref": "#/$defs/Change"
             }
+          },
+          "memory": {
+            "$ref": "#/$defs/Selection2"
           },
           "records": {
             "description": "Replace the next context selection; include still-needed record IDs.",
@@ -13134,6 +13368,7 @@
           "disposition",
           "learning",
           "changes",
+          "memory",
           "records",
           "actions",
           "retrieval_query",
@@ -13150,11 +13385,15 @@
           "defer"
         ]
       },
-      "FragmentChange": {
+      "Change": {
         "type": "object",
         "properties": {
-          "version": {
-            "description": "None creates a lesson; an exact owned version revises it.",
+          "handle": {
+            "description": "Unique local name, referenced as $name elsewhere in this transaction.",
+            "type": "string"
+          },
+          "node": {
+            "description": "Exact node version to revise/reorganize/retire; null creates a node.",
             "anyOf": [
               {
                 "$ref": "#/$defs/VersionRef"
@@ -13165,17 +13404,70 @@
             ]
           },
           "draft": {
-            "$ref": "#/$defs/FragmentDraft"
+            "description": "Your new prompt part, or null to keep this node's current immutable fragment.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FragmentDraft"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "select_next": {
-            "description": "Select the committed fragment in the next context without an extra lookup turn.",
+          "parent": {
+            "description": "Replace primary parent; null places at root. Node ID or $handle.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "related": {
+            "description": "Replace cross-links. Node IDs or $handles; links do not select their content.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retire": {
             "type": "boolean"
           }
         },
         "additionalProperties": false,
         "required": [
-          "draft",
-          "select_next"
+          "handle",
+          "related",
+          "retire"
+        ]
+      },
+      "Selection2": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "description": "Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branch": {
+            "description": "Branch whose short descriptions to show next. Null is the virtual root.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "active"
         ]
       },
       "Verdict": {

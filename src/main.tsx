@@ -15,6 +15,7 @@ import './style.css';
 import './workspace.css';
 import './design-system.css';
 import './reading.css';
+const LearningLibrary = lazy(() => import('./MemoryTree').then(m => ({ default: m.LearningLibrary })));
 const Detail = lazy(() => import('./Detail'));
 const Viewer = lazy(() => import('./Viewer'));
 const Create = lazy(() => import('./Create'));
@@ -159,7 +160,10 @@ const WorkRow = memo(function WorkRow({ r, open, openRequest }: { r: Entity; ope
     <button class="text-button work-open" onClick={() => open(r.id)}>Open workspace ↗</button>
   </article>;
 });
-function List({ view, open, openWork, artifact, act, start, navigate }: {
+function List(props: Parameters<typeof RecordList>[0]) {
+  return props.view === 'Learning' ? <Suspense fallback={<p>Loading learning…</p>}><LearningLibrary open={props.open}/></Suspense> : <RecordList {...props}/>;
+}
+function RecordList({ view, open, openWork, artifact, act, start, navigate }: {
   view: View; open: (id: string) => void; openWork: (id: string) => void; artifact: (id: string) => void; act: Act; start: () => void; navigate: (view: View) => void;
 }) {
   const [failure, setFailure] = useState(''), [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
@@ -182,7 +186,7 @@ function List({ view, open, openWork, artifact, act, start, navigate }: {
       <div class="empty-actions">{settled || filter !== 'all' ? <button class="secondary" onClick={clear}>Clear search and filters</button> : cursor === 0 && <>{meta.create && <button onClick={start}>+ {meta.create}</button>}{view === 'Work' && <button class="secondary" onClick={() => navigate('Personas')}>Choose personas</button>}</>}</div>
     </div>}
     {view === 'Work' ? <div class="work-collection" aria-busy={busy}>{rows.length > 0 && <div class="work-table-heading" aria-hidden="true"><span>Work & original need</span><span>Activity</span><span>Participants</span><span>Evidence</span></div>}{rows.map(r => <WorkRow key={r.id} r={r} open={openWork} openRequest={open}/>)}</div>
-      : <div class={view === 'Personas' ? 'cards persona-cards' : 'cards compact-records'} aria-busy={busy}>{rows.map(r => { const d = data(r); if (view === 'Learning') return <ContentCard key={r.id} record={r} open={open} artifact={artifact}/>; return <article class={`card${inputRequestCount(r) ? ' needs-input' : ''}`} key={r.id}>
+      : <div class={view === 'Personas' ? 'cards persona-cards' : 'cards compact-records'} aria-busy={busy}>{rows.map(r => { const d = data(r); return <article class={`card${inputRequestCount(r) ? ' needs-input' : ''}`} key={r.id}>
         <div class="card-top">{['persona', 'environment'].includes(r.kind) ? <Portrait id={d.portrait || d.image} name={label(r)}/> : <span class="record-symbol"><Icon name={view}/></span>}<small>{r.kind === 'persona' ? 'AI collaborator' : r.kind}</small></div>
         <div class="card-content"><h2><button class="card-title" onClick={() => open(r.id)}>{label(r)}</button></h2><p class="card-summary">{text(d.character) || text(d.description) || text(d.brief) || text(d.summary) || text(d.note) || (r.kind === 'persona' ? 'Identity created. Self-authored character is awaiting funded orientation.' : r.kind === 'environment' ? 'Shared place created. Participants can author its name and description when work begins.' : 'Open details to read more.')}</p><Facts r={r}/>
           <InputNotice record={r} open={open}/>

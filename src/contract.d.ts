@@ -290,13 +290,17 @@ export type Command =
       kind: "fragment.write";
       args: {
         draft: FragmentDraft;
+        parent?: string | null;
+        related: string[];
       };
     }
   | {
       kind: "fragment.revise";
       args: {
-        version: VersionRef;
+        node: VersionRef;
         draft: FragmentDraft;
+        parent?: string | null;
+        related: string[];
       };
     }
   | {
@@ -511,6 +515,16 @@ export type Command =
         query?: string | null;
         after?: number | null;
         limit?: number | null;
+      };
+    }
+  | {
+      kind: "memory.browse";
+      args: {
+        owner: string;
+        branch?: string | null;
+        after?: number | null;
+        limit?: number | null;
+        query?: string | null;
       };
     }
   | {
@@ -1286,6 +1300,10 @@ export interface Outcome {
 export interface FragmentDraft {
   title: string;
   /**
+   * Your concise description of this prompt part, in your own voice.
+   */
+  short_description: string;
+  /**
    * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
    */
   content: string;
@@ -1299,10 +1317,6 @@ export interface FragmentDraft {
    * Owner-authored situations, questions or search terms that should recall this prompt fragment.
    */
   retrieval_cues?: string[];
-  /**
-   * Exact owned fragments to consider together. A relationship is not selection or proof.
-   */
-  related_fragments?: VersionRef[];
   sources?: EvidenceRef[];
   counterevidence?: EvidenceRef[];
 }
@@ -1394,7 +1408,8 @@ export interface Continuity {
    * Brief reason for retaining, revising, organizing, deferring or making no change.
    */
   learning: string;
-  changes: FragmentChange[];
+  changes: Change[];
+  memory: Selection2;
   /**
    * Replace the next context selection; include still-needed record IDs.
    */
@@ -1406,16 +1421,39 @@ export interface Continuity {
    */
   handoff: string;
 }
-export interface FragmentChange {
+export interface Change {
   /**
-   * None creates a lesson; an exact owned version revises it.
+   * Unique local name, referenced as $name elsewhere in this transaction.
    */
-  version?: VersionRef | null;
-  draft: FragmentDraft;
+  handle: string;
   /**
-   * Select the committed fragment in the next context without an extra lookup turn.
+   * Exact node version to revise/reorganize/retire; null creates a node.
    */
-  select_next: boolean;
+  node?: VersionRef | null;
+  /**
+   * Your new prompt part, or null to keep this node's current immutable fragment.
+   */
+  draft?: FragmentDraft | null;
+  /**
+   * Replace primary parent; null places at root. Node ID or $handle.
+   */
+  parent?: string | null;
+  /**
+   * Replace cross-links. Node IDs or $handles; links do not select their content.
+   */
+  related: string[];
+  retire: boolean;
+}
+export interface Selection2 {
+  /**
+   * Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).
+   */
+  active: string[];
+  /**
+   * Branch whose short descriptions to show next. Null is the virtual root.
+   */
+  branch?: string | null;
+  after?: number | null;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.

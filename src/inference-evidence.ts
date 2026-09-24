@@ -23,6 +23,7 @@ function receipt(value: unknown, schema: string): ObjectValue | undefined {
 export function inferenceEvidence(value: unknown) {
   const d = object(value), recovery = receipt(d.context_recovery, 'context-recovery/1');
   const discovery = receipt(d.discovery_context, 'discovery-context/1');
+  const memory = receipt(d.memory_context, 'memory-context/1');
   const learning = receipt(d.learning_context, 'learning-context/1');
   const questions = receipt(d.question_context, 'question-context-receipt/1');
   const offered = discovery ? references(discovery.offered, 'version') : undefined;
@@ -41,7 +42,7 @@ export function inferenceEvidence(value: unknown) {
   const breakdown = object(d.context_breakdown);
   const contextParts = breakdown.unit === 'serialized_utf8_bytes' && breakdown.not_token_usage === true ? [
     ['Instructions', 'instructions'], ['Operation descriptions', 'operation_schema'], ['Current work and obligations', 'mandatory_work'],
-    ['Selected records', 'selected_records'], ['Selected lessons', 'selected_learning'], ['Action history', 'history'],
+    ['Memory branch descriptions', 'memory_descriptions'], ['Selected records', 'selected_records'], ['Selected lessons', 'selected_learning'], ['Action history', 'history'],
     ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
   ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {
@@ -56,6 +57,7 @@ export function inferenceEvidence(value: unknown) {
       retention: count(recovery.omitted_retention_opportunities),
       originalBytes: count(recovery.original_request_bytes),
     } : undefined,
+    memory: memory ? { offered: references(memory.offered, 'node') } : undefined,
     discovery: discovery ? { offered } : undefined,
     learning: learning ? { active, corrections } : undefined,
     questions: questions ? { references: questionRefs, replies: replyCount !== undefined && Number.isSafeInteger(replyCount) ? replyCount : undefined } : undefined,

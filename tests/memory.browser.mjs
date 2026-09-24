@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdir,writeFile,rm} from 'node:fs/promises';
+import {chromium,expect} from '@playwright/test';
+const port=5198,origin=`http://127.0.0.1:${port}`,owner='a'.repeat(32),node='b'.repeat(32),child='c'.repeat(32),lesson='d'.repeat(32),other='e'.repeat(32);
+const card=(id,title)=>({node:{id,revision:1},fragment:{id:lesson,revision:1},title,short_description:'I check the **published pair** before relying on it.'});
+const root={path:[],related:[],items:[card(node,'Check representations')],next:12};
+const branch={path:[card(node,'Check representations')],related:[card(other,'Related method')],items:[card(child,'Compare exports')],next:null};
+await mkdir('.qa',{recursive:true});const harness='.qa/memory-harness.tsx';
+await writeFile(harness,`import {render} from 'preact'; import {useState} from 'preact/hooks'; import {lazy,Suspense} from 'preact/compat'; import {changes} from '../src/api'; import '../src/style.css'; const Tree=lazy(()=>import('../src/MemoryTree')); (window as any).listeners=0;const add=changes.addEventListener.bind(changes),remove=changes.removeEventListener.bind(changes);changes.addEventListener=(...a)=>{(window as any).listeners++;return add(...a)};changes.removeEventListener=(...a)=>{(window as any).listeners--;return remove(...a)}; function App(){const [show,setShow]=useState(false);return <><button onClick={()=>setShow(!show)}>{show?'Close learning':'Open learning'}</button>{show&&<Suspense fallback={<p>Loading tree</p>}><Tree owner="${owner}" open={()=>{}}/></Suspense>}</>}render(<App/>,document.getElementById('test')!);`);
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(port),'--strictPort'],{stdio:'ignore'});let browser;
+try{
+ for(let i=0;i<100;i++){try{if((await fetch(origin)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ browser=await chromium.launch();const page=await browser.newPage({viewport:{width:390,height:900}}),errors=[],requests=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(r.url()));
+ await page.route('**/memory-fixture',r=>r.fulfill({contentType:'text/html',body:'<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="test" style="padding:12px"></main><script type="module" src="/.qa/memory-harness.tsx"></script></body></html>'}));
+ await page.route('**/api/personas/*/memory?*',r=>{const url=new URL(r.request().url());r.fulfill({json:url.searchParams.has('branch')?branch:url.searchParams.get('after')==='12'?{...root,items:[card(other,'A later branch')],next:null}:root});});
+ await page.route('**/api/personas/*/memory/usage/*',r=>r.fulfill({json:{selected_participations:1,admitted_calls:2,recent_calls:[]}}));
+ await page.route('**/api/records/'+lesson,r=>r.fulfill({json:{id:lesson,kind:'fragment',scope:owner,revision:1,created:'2026-09-24T00:00:00Z',updated:'2026-09-24T00:00:00Z',data:{owner,title:'Check representations',content:'## My check\n\nI compare the exact **published source** with its preview.\n\n<script>window.injected=true</script>',draft:{applicability:'When exporting related outputs',limitations:'This is a synthetic fixture.'},status:'retained'}}}));
+ await page.goto(origin+'/memory-fixture');assert(!requests.some(u=>u.includes('MemoryTree.tsx')));
+ await page.getByRole('button',{name:'Open learning',exact:true}).click();await expect(page.getByRole('heading',{name:'Check representations'})).toBeVisible();assert(!requests.some(u=>u.includes('MemoryFragment.tsx')));assert(!requests.some(u=>u.includes('/api/records/'+lesson)));
+ await page.getByRole('button',{name:'Read fragment',exact:true}).click();await expect(page.getByRole('heading',{name:'My check',exact:true})).toBeVisible();await expect(page.getByText('Selected in 1 participation.',{exact:true})).toBeVisible();assert.equal(await page.evaluate(()=>window.injected),undefined);
+ const expandedListeners=await page.evaluate(()=>window.listeners);
+ await page.getByRole('button',{name:'Close fragment',exact:true}).click();await expect(page.locator('.memory-fragment')).toHaveCount(0);assert((await page.evaluate(()=>window.listeners))<expandedListeners);
+ await page.getByRole('button',{name:'Explore branch',exact:true}).click();await expect(page.getByRole('heading',{name:'Compare exports',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Related branches',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'All learning',exact:true}).click();await page.getByRole('button',{name:'Next page',exact:true}).click();await expect(page.getByRole('heading',{name:'A later branch',exact:true})).toBeVisible();
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'.qa/memory-tree-mobile.png',fullPage:true});
+ await page.getByRole('button',{name:'Close learning',exact:true}).click();await expect(page.getByRole('region',{name:'Learning tree',exact:true})).toHaveCount(0);assert.equal(await page.evaluate(()=>window.listeners),0);assert.deepEqual(errors,[]);
+ console.log('Memory UI passed: lazy tree/detail, readable Markdown, sanitization, breadcrumbs, related links, pagination, evidence labels, mobile layout and subscription cleanup.');
+}finally{await browser?.close();server.kill('SIGTERM');await rm(harness,{force:true});}
