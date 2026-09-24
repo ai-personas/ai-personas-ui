@@ -1327,7 +1327,7 @@ export interface FragmentDraft {
   applicability: string;
   limitations: string;
   /**
-   * Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.
+   * Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.
    */
   procedural_reuse?: boolean;
   /**
@@ -1444,7 +1444,7 @@ export interface Continuity {
 }
 export interface Change {
   /**
-   * Unique local name, referenced as $name elsewhere in this transaction.
+   * Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.
    */
   handle: string;
   /**

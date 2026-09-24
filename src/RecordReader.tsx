@@ -138,7 +138,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
-      <p class="record-caveat">{draft.procedural_reuse === true ? 'This private lesson permits procedural use in later shared work. Restricted source material remains protected.' : 'This lesson is private; its information restrictions apply to derived work.'}</p>
+      <p class="record-caveat">{draft.procedural_reuse === true ? (fields(d.reuse_review).eligible_at_authorship === false ? 'Retained privately. Source restrictions prevented shared procedural use when this was written; access is checked again when used.' : 'The persona requested procedural use in later shared work. Current source permissions still apply.') : 'This lesson is private; its information restrictions apply to derived work.'}</p>
       <Story title="Recall this when" value={draft.retrieval_cues}/><RelatedItems title="Earlier version" value={d.supersedes} open={open}/>
       <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
     </>;

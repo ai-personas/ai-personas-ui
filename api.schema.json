@@ -5366,7 +5366,7 @@
             "type": "string"
           },
           "procedural_reuse": {
-            "description": "Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.",
+            "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
             "type": "boolean",
             "default": false
           },
@@ -5974,8 +5974,9 @@
         "type": "object",
         "properties": {
           "handle": {
-            "description": "Unique local name, referenced as $name elsewhere in this transaction.",
-            "type": "string"
+            "description": "Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,48}$"
           },
           "node": {
             "description": "Exact node version to revise/reorganize/retire; null creates a node.",
@@ -13009,7 +13010,7 @@
             "type": "string"
           },
           "procedural_reuse": {
-            "description": "Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.",
+            "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
             "type": "boolean",
             "default": false
           },
@@ -13617,8 +13618,9 @@
         "type": "object",
         "properties": {
           "handle": {
-            "description": "Unique local name, referenced as $name elsewhere in this transaction.",
-            "type": "string"
+            "description": "Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,48}$"
           },
           "node": {
             "description": "Exact node version to revise/reorganize/retire; null creates a node.",
