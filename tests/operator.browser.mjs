@@ -242,9 +242,9 @@ try {
       }, 'host tool job');
       assert.equal(finished.state, 'succeeded', JSON.stringify(finished));
       assert.equal(downloads, 1);
-      const directory = (await get('/records/' + environment.id)).data.directory;
+      const directory = join((await get('/records/' + environment.id)).data.directory, 'runs', run.id);
       assert.equal(readFileSync(join(directory, 'host-tool-output.svg'), 'utf8'), artifactText);
-      const artifact = await op('artifact.publish', { path: join(directory, 'host-tool-output.svg'), name: 'host-tool-output.svg', media_type: 'image/svg+xml' }, persona.id, run.id);
+      const artifact = await op('artifact.publish', { path: 'host-tool-output.svg', name: 'host-tool-output.svg', media_type: 'image/svg+xml' }, persona.id, run.id);
       assert.equal(artifact.result.data.digest, createHash('sha256').update(artifactText).digest('hex'));
       const registered = await op('tool.register', { name: 'Downloaded fixture tool', command, description: 'Local test tool download and execution', acquisition: 'Synthetic HTTP source owned by this test' }, persona.id, run.id);
       const acquired = await op('capability.acquire', { id: registered.result.id, revision: registered.result.revision, check: launched.request.id, limitations: 'Fixture verifies installation mechanics only' }, persona.id, run.id);
