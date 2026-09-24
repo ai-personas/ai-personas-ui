@@ -103,7 +103,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'environment': return <Story value={d.description}/>;
     case 'persona': return <Story title="About this persona" value={d.character}/>;
     case 'run': return <><p class="reader-byline">Activity for <Person id={d.persona} open={open}/></p><Story title="Instructions for this work" value={d.instructions}/></>;
-    case 'call': return <><Story title="Decision summary" value={d.summary}/><Story title="Recorded failure" value={d.error}/><InferenceEvidence value={d} open={open}/></>;
+    case 'call': return <><Story title="Decision summary" value={d.summary}/><Story title="Recorded failure" value={d.error}/><Story title="Learning or next context was not updated" value={fields(d.continuity_failure).error}/><InferenceEvidence value={d} open={open}/></>;
     case 'message': return <><p class="reader-byline"><Person id={d.from} open={open} user/><span>to</span><Person id={d.to} open={open} user/></p><Story value={d.text}/></>;
     case 'request': return <>
       <QuestionDelivery value={d.peer_delivery} status={d.status}/>
