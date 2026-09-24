@@ -7,7 +7,7 @@ await mkdir('.qa',{recursive:true});const harness='.qa/review-judgment-harness.t
 const record=(data)=>({id:'b'.repeat(32),kind:'finding',scope:'',revision:1,created:'2026-09-23T00:00:00Z',updated:'2026-09-23T00:00:00Z',data});
 const plain=record({judgment_kind:'peer_perspective',verdict:'accepted',findings:'The argument addresses the stated claim, with a clearly explained limitation.',check_receipts:{schema:'review-observations/1',capture_stage:'assessment_recording',receipts:[]}});
 const cited=record({verdict:'incomplete',findings:'The selected observation remains uncertain.',check_receipts:{schema:'review-observations/1',capture_stage:'assessment_recording',receipts:[{action,receipt_digest:'c'.repeat(64),state:'uncertain'}]}});
-await writeFile(harness,`import {render} from 'preact';import RecordReader from '../src/RecordReader';import '../src/style.css';const host=document.getElementById('test')!;(window as any).show=(r:any)=>render(<RecordReader record={r} open={()=>{}}/>,host);(window as any).show(${JSON.stringify(plain)});`);
+await writeFile(harness,`import {render} from 'preact';import RecordReader from '../src/RecordReader';import ContinuityView from '../src/ContinuityView';import '../src/style.css';const host=document.getElementById('test')!;(window as any).show=(r:any)=>render(<RecordReader record={r} open={()=>{}}/>,host);(window as any).continuity=(v:any)=>render(<ContinuityView value={v} open={()=>{}}/>,host);(window as any).show(${JSON.stringify(plain)});`);
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5199','--strictPort'],{stdio:'ignore'});let browser;
 try{
  for(let i=0;i<100;i++){try{if((await fetch(origin)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -58,6 +58,14 @@ try{
  await expect(page.getByText('Referenced version 3',{exact:true})).toBeVisible();
  await expect(page.locator('table')).toHaveCount(0);
  await expect(page.getByText('retrieval_cues',{exact:true})).toHaveCount(0);
+ await page.evaluate(()=>window.continuity({focus:'Compare editable representations',disposition:'no_change',learning:'I need an observation before retaining a lesson.',changes:[],selected:['e'.repeat(32)]}));
+ await expect(page.getByRole('heading',{name:'Current focus',exact:true})).toBeVisible();
+ await expect(page.getByText('No learning change needed',{exact:true})).toBeVisible();
+ await expect(page.locator('.continuity-details')).toHaveCount(0);
+ await page.getByRole('button',{name:'View learning and next context'}).click();
+ await expect(page.getByRole('heading',{name:'Selected for the next decision',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Hide learning details'}).click();
+ await expect(page.locator('.continuity-details')).toHaveCount(0);
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  assert.deepEqual(errors,[]);
  console.log('Review judgment browser passed: explained verdict, uncertainty, lazy reads, unmount, readable sharing notice, persona learning and mobile layout.');

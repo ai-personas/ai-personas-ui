@@ -31,3 +31,10 @@
 .tool-output small { display: block; font-size: .72rem; color: var(--muted, #5d6966); }
 .introduction-request { border-top: 1px solid var(--line, #d9dfdd); padding-top: .8rem; margin-top: .8rem; }
 @media (max-width: 480px) { .identity-milestones, .identity-traits { grid-template-columns: 1fr; } }
+
+.persona-continuity { margin-block: 1rem; padding-block: .75rem; border-block-start: 1px solid var(--line, #ddd); overflow-wrap: anywhere; min-width: 0; }
+.persona-continuity .reader-section { margin-block: .5rem; }
+.continuity-details { margin-block-start: .5rem; }
+
+.shared-question-notice { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-block: .5rem; }
+.shared-question-badge { font-size: .875rem; color: var(--muted, #666); }

@@ -41,7 +41,7 @@ export function actionTitle(kind: string): string {
     'submission.create': 'Submit work', 'work.submit': 'Submit work', 'work.entry.create': 'Propose a work update', 'work.entry.append': 'Add a work update',
     'commitment.offer': 'Offer responsibility', 'commitment.accept': 'Accept responsibility', 'commitment.update': 'Update a responsibility',
     'invitation.respond': 'Respond to an invitation', 'work.invitation.respond': 'Respond to an invitation',
-    'perspective.create': 'Share a perspective', 'model.choose': 'Choose a model', 'context.compact': 'Update retained context',
+    'perspective.create': 'Share a perspective', 'model.choose': 'Choose a model', 'context.compact': 'Update retained context', 'context.advance': 'Choose learning and next focus',
     'exec': 'Run a tool', 'job.read': 'Read tool output', 'job.cancel': 'Stop a tool', 'image.observe': 'Inspect an image',
     'run.pause': 'Pause decisions', 'run.resume': 'Resume work', 'run.cancel': 'Cancel work',
     'document.write': 'Write a document', 'fragment.write': 'Save a learning note', 'perspective.write': 'Share a perspective',

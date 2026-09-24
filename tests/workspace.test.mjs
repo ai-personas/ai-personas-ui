@@ -7,8 +7,9 @@ const id = n => n.toString(16).padStart(32, '0');
 const record = (kind, data = {}) => ({ id: id(1), kind, scope: id(2), revision: 1, created: '', updated: '', data });
 
 test('only unanswered requests need user input, not waiting runs or answered requests', () => {
-  assert.equal(inputRequestCount(record('request', { status: 'open' })), 1);
+  assert.equal(inputRequestCount(record('request', { status: 'open', audience: 'user' })), 1);
   for (const status of ['answered', 'resolved', 'cancelled']) assert.equal(inputRequestCount(record('request', { status })), 0);
+  assert.equal(inputRequestCount(record('request', { status: 'open', audience: 'work' })), 0);
   assert.equal(inputRequestCount(record('run', { status: 'waiting' })), 0);
   assert.equal(inputRequestCount(record('work', { pending_requests: 3, input_requests: 0 })), 0);
   for (const kind of ['work', 'persona', 'environment', 'run']) assert.equal(inputRequestCount(record(kind, { input_requests: 2 })), 2);

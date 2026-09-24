@@ -744,6 +744,12 @@ export type Command =
       };
     }
   | {
+      kind: "context.advance";
+      args: {
+        continuity: Continuity;
+      };
+    }
+  | {
       kind: "context.select";
       args: {
         /**
@@ -968,6 +974,7 @@ export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" |
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type OrientationDisposition = "adopted" | "deferred";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
+export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type WaitCondition =
@@ -1285,6 +1292,10 @@ export interface FragmentDraft {
   applicability: string;
   limitations: string;
   /**
+   * Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.
+   */
+  procedural_reuse?: boolean;
+  /**
    * Owner-authored situations, questions or search terms that should recall this prompt fragment.
    */
   retrieval_cues?: string[];
@@ -1372,6 +1383,39 @@ export interface Vad {
   valence?: number | null;
   arousal?: number | null;
   dominance?: number | null;
+}
+export interface Continuity {
+  /**
+   * Your next intended outcome or uncertainty, not a claim of completion.
+   */
+  focus: string;
+  disposition: LearningDisposition;
+  /**
+   * Brief reason for retaining, revising, organizing, deferring or making no change.
+   */
+  learning: string;
+  changes: FragmentChange[];
+  /**
+   * Replace the next context selection; include still-needed record IDs.
+   */
+  records: string[];
+  actions: string[];
+  retrieval_query: string;
+  /**
+   * Compact account for the next decision. Does not remove obligations or source restrictions.
+   */
+  handoff: string;
+}
+export interface FragmentChange {
+  /**
+   * None creates a lesson; an exact owned version revises it.
+   */
+  version?: VersionRef | null;
+  draft: FragmentDraft;
+  /**
+   * Select the committed fragment in the next context without an extra lookup turn.
+   */
+  select_next: boolean;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
@@ -1640,6 +1684,7 @@ export interface ModelResponse {
 }
 export interface Decision {
   summary: string;
+  continuity: Continuity;
   actions: DecisionAction[];
   [k: string]: unknown;
 }

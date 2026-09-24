@@ -34,7 +34,7 @@ const provider = createServer(async (req, res) => {
     } else if (!context.environment.data.name) {
       actions = [{ kind: 'environment.update', args: { id: context.environment.id, revision: context.environment.revision, name: 'Browser fixture place', description: 'A shared environment authored after accepting participation.' } }];
     } else if (!context.history.some(a => a.request.kind === 'request.create')) {
-      actions = [{ kind: 'request.create', args: { purpose: 'Operator fixture question', instructions: 'Provide an observation through the UI.', evidence_required: 'A text response; no physical evidence is claimed.', artifacts: [] } }];
+      actions = [{ kind: 'request.create', args: { audience: 'user', purpose: 'Operator fixture question', instructions: 'Provide an observation through the UI.', evidence_required: 'A text response; no physical evidence is claimed.', artifacts: [] } }];
     } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'document.write')) {
       actions = [{ kind: 'document.write', args: { title: 'Observed fixture document', content: 'Exact synthetic document, not task quality evidence.' } }];
     } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'submit')) {
@@ -45,7 +45,7 @@ const provider = createServer(async (req, res) => {
       actions = [{ kind: 'wait', args: { reason: 'Explicit synthetic wait for new outside input' } }];
     }
     const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
-      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ summary: 'Synthetic operator decision ' + calls, actions }) }] }];
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
     if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',

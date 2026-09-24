@@ -931,9 +931,18 @@ Read an immutable version.
 |---|---|---|---|
 | `version` | string | Required |  |
 
-### `context.select`
+### `context.advance`
 
 Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.
+Atomically author learning and select the next context. Does not change authority for actions in the current decision.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `continuity` | Continuity | Required |  |
+
+### `context.select`
+
+undefined
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

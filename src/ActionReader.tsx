@@ -1,3 +1,4 @@
+import ContinuityView from './ContinuityView';
 import { lazy, Suspense } from 'preact/compat';
 import { type Action } from './api';
 import { fields, isRecordID, text } from './workspace';
@@ -15,6 +16,7 @@ export default function ActionReader({ action, open }: { action: Action; open: (
   return <div class="action-reader">
     <p class="action-outcome"><strong>{actionTitle(kind)}</strong><span>{state}</span></p>
     {kind === 'message.send' && <p class="reader-byline">To {isRecordID(args.to) ? <RecordReference id={args.to} open={open}/> : args.to === 'user' || args.to === '' ? 'you' : 'the selected recipient'}</p>}
+    {kind === 'context.advance' && (result.continuity ? <ContinuityView value={result.continuity} open={open}/> : <><Story title="Proposed focus" value={fields(args.continuity).focus}/><p class="record-caveat">No committed learning or context change was recorded.</p></>)}
     <Story value={narrative}/><Story title="Reason" value={args.reason}/><Story title="Instructions" value={args.instructions}/>
     {(kind.startsWith('browser.') || kind === 'model.invoke' && result.capability === 'knowledge') && <Suspense fallback={<p>Loading research…</p>}><ResearchEvidence kind={kind} args={args} result={result}/></Suspense>}
     {kind === 'exec' && <><Story title="Command" value={args.command}/>{typeof result.exit_code === 'number' && <p>{result.exit_code === 0 ? 'The command finished without reporting an error.' : `The command reported exit code ${result.exit_code}.`}</p>}</>}
@@ -25,6 +27,6 @@ export default function ActionReader({ action, open }: { action: Action; open: (
     <Story title="Result" value={result.summary || result.message || result.conclusion || result.note}/>
     {isRecordID(result.id) && typeof result.kind === 'string' && result.data != null && <p class="reader-context-links">Saved item <RecordReference id={result.id} open={open}/></p>}
     {items && <><p class="reader-muted">{items.length} {items.length === 1 ? 'item' : 'items'} in this result{result.next != null ? '; more are available' : ''}.</p><RelatedItems title="Returned items" value={items} open={open}/></>}
-    {!narrative && !items && !text(args.name || args.title || args.reason || args.instructions) && !isRecordID(result.id) && !text(result.summary || result.message || result.conclusion || result.note) && kind !== 'exec' && !kind.startsWith('browser.') && !(kind === 'model.invoke' && result.capability === 'knowledge') && <p class="reader-muted">{action.state === 'succeeded' ? 'This action completed. Saved work and later activity show its effects.' : action.state === 'running' ? 'A result has not arrived yet.' : 'No written result was recorded for this action.'}</p>}
+    {!narrative && !items && !text(args.name || args.title || args.reason || args.instructions) && !isRecordID(result.id) && !text(result.summary || result.message || result.conclusion || result.note) && !['exec', 'context.advance'].includes(kind) && !kind.startsWith('browser.') && !(kind === 'model.invoke' && result.capability === 'knowledge') && <p class="reader-muted">{action.state === 'succeeded' ? 'This action completed. Saved work and later activity show its effects.' : action.state === 'running' ? 'A result has not arrived yet.' : 'No written result was recorded for this action.'}</p>}
   </div>;
 }

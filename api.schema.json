@@ -3708,7 +3708,33 @@
             "additionalProperties": false
           },
           {
-            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.",
+            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "context.advance"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "continuity": {
+                    "$ref": "#/$defs/Continuity"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "continuity"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "type": "object",
             "properties": {
               "kind": {
@@ -5191,6 +5217,11 @@
           "limitations": {
             "type": "string"
           },
+          "procedural_reuse": {
+            "description": "Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.",
+            "type": "boolean",
+            "default": false
+          },
           "retrieval_cues": {
             "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
             "type": "array",
@@ -5708,6 +5739,97 @@
             "type": "string",
             "const": "configured"
           }
+        ]
+      },
+      "Continuity": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "description": "Your next intended outcome or uncertainty, not a claim of completion.",
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/LearningDisposition"
+          },
+          "learning": {
+            "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FragmentChange"
+            }
+          },
+          "records": {
+            "description": "Replace the next context selection; include still-needed record IDs.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retrieval_query": {
+            "type": "string"
+          },
+          "handoff": {
+            "description": "Compact account for the next decision. Does not remove obligations or source restrictions.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "focus",
+          "disposition",
+          "learning",
+          "changes",
+          "records",
+          "actions",
+          "retrieval_query",
+          "handoff"
+        ]
+      },
+      "LearningDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "organize",
+          "no_change",
+          "defer"
+        ]
+      },
+      "FragmentChange": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "description": "None creates a lesson; an exact owned version revises it.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/$defs/FragmentDraft"
+          },
+          "select_next": {
+            "description": "Select the committed fragment in the next context without an extra lookup turn.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "draft",
+          "select_next"
         ]
       },
       "Verdict": {
@@ -6846,6 +6968,9 @@
           "summary": {
             "type": "string"
           },
+          "continuity": {
+            "$ref": "#/$defs/Continuity"
+          },
           "actions": {
             "type": "array",
             "items": {
@@ -6855,6 +6980,7 @@
         },
         "required": [
           "summary",
+          "continuity",
           "actions"
         ]
       },
@@ -7380,8 +7506,12 @@
       "Read an immutable version."
     ],
     [
+      "context.advance",
+      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision."
+    ],
+    [
       "context.select",
-      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs."
+      ""
     ],
     [
       "context.compact",
@@ -10906,7 +11036,33 @@
         "additionalProperties": false
       },
       {
-        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.",
+        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context.advance"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "continuity": {
+                "$ref": "#/$defs/Continuity"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "continuity"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
         "type": "object",
         "properties": {
           "kind": {
@@ -12407,6 +12563,11 @@
           "limitations": {
             "type": "string"
           },
+          "procedural_reuse": {
+            "description": "Permit procedural use in later shared work without sharing this private memory record. Restricted source facts are never declassified.",
+            "type": "boolean",
+            "default": false
+          },
           "retrieval_cues": {
             "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
             "type": "array",
@@ -12924,6 +13085,97 @@
             "type": "string",
             "const": "configured"
           }
+        ]
+      },
+      "Continuity": {
+        "type": "object",
+        "properties": {
+          "focus": {
+            "description": "Your next intended outcome or uncertainty, not a claim of completion.",
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/LearningDisposition"
+          },
+          "learning": {
+            "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/FragmentChange"
+            }
+          },
+          "records": {
+            "description": "Replace the next context selection; include still-needed record IDs.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retrieval_query": {
+            "type": "string"
+          },
+          "handoff": {
+            "description": "Compact account for the next decision. Does not remove obligations or source restrictions.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "focus",
+          "disposition",
+          "learning",
+          "changes",
+          "records",
+          "actions",
+          "retrieval_query",
+          "handoff"
+        ]
+      },
+      "LearningDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "organize",
+          "no_change",
+          "defer"
+        ]
+      },
+      "FragmentChange": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "description": "None creates a lesson; an exact owned version revises it.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/$defs/FragmentDraft"
+          },
+          "select_next": {
+            "description": "Select the committed fragment in the next context without an extra lookup turn.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "draft",
+          "select_next"
         ]
       },
       "Verdict": {

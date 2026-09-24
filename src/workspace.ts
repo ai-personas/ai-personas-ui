@@ -46,7 +46,7 @@ export function workFacts(work: Entity) {
 /** An answered request still needs disposition, but no longer needs a user reply. */
 export function inputRequestCount(record: Entity): number {
   const d = fields(record.data);
-  if (record.kind === 'request') return d.status === 'open' ? 1 : 0;
+  if (record.kind === 'request') return d.status === 'open' && d.audience === 'user' ? 1 : 0;
   return count(d.input_requests) ?? 0;
 }
 export function assessmentFacts(record: Entity) {

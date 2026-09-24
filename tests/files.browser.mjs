@@ -20,7 +20,7 @@ const provider = createServer(async (req, res) => {
   for await (const _ of req) { /* Drain the synthetic call. */ }
   providerCalls++;
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ id: 'file-fixture', status: 'completed', model: 'file-fixture', output: [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify({ summary: 'File viewer fixture', actions: [{ kind: 'wait', args: { reason: 'Viewer verification uses supplied files.' } }] }) }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }));
+  res.end(JSON.stringify({ id: 'file-fixture', status: 'completed', model: 'file-fixture', output: [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'File viewer fixture', actions: [{ kind: 'wait', args: { reason: 'Viewer verification uses supplied files.' } }] }) }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }));
 });
 async function until(fn) { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise(r => setTimeout(r, 100)); } throw Error('Fixture node did not start.'); }
 async function get(path) { const r = await fetch(url + '/api' + path, { headers: { Authorization: 'Bearer ' + token } }); assert(r.ok); return r.json(); }

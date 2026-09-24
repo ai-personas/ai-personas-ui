@@ -98,6 +98,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
           {isRecordID(d.resource_root) && <button class="text-button" onClick={() => open(d.resource_root)}>View funding ↗</button>}
         </div></>;
     }
+    case 'artifact': return <>{d.sharing === 'work_members_with_source_restrictions' && <p class="record-caveat">Shared with this work’s participants. Access still depends on the source material’s permissions.</p>}</>;
     case 'environment': return <Story value={d.description}/>;
     case 'persona': return <Story title="About this persona" value={d.character}/>;
     case 'run': return <><p class="reader-byline">Activity for <Person id={d.persona} open={open}/></p><Story title="Instructions for this work" value={d.instructions}/></>;
@@ -135,6 +136,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}
       <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
+      <p class="record-caveat">{draft.procedural_reuse === true ? 'This private lesson permits procedural use in later shared work. Restricted source material remains protected.' : 'This lesson is private; its information restrictions apply to derived work.'}</p>
       <Story title="Recall this when" value={draft.retrieval_cues}/><RelatedItems title="Related learning" value={draft.related_fragments} open={open}/>
       <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
     </>;
