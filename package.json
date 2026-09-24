@@ -19,7 +19,8 @@
     "test:forms": "node tests/forms.browser.mjs",
     "test:participants": "node tests/participants.browser.mjs",
     "test:reliability": "node tests/reliability.browser.mjs",
-    "test:development": "node tests/development.browser.mjs"
+    "test:development": "node tests/development.browser.mjs",
+    "test:memory": "node tests/memory.browser.mjs"
   },
   "dependencies": {
     "@zip.js/zip.js": "2.17.0",

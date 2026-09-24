@@ -34,18 +34,18 @@ const provider = createServer(async (req, res) => {
         { kind: 'request.resolve', args: { request: peerAnswer.data.request, conclusion: 'The peer supplied the requested fixture answer.', evidence: [peerAnswer.id] } }
       ];
     } else if (context.persona.data.name === 'Ada fixture' && groupInput && !context.history.some(a => a.request.kind === 'request.create' && a.request.args.purpose === 'Shared fixture question')) {
-      actions = [{ kind: 'request.create', args: { audience: 'work', purpose: 'Shared fixture question', instructions: 'Can another participant supply a fixture answer?', evidence_required: 'An attributed peer answer.', artifacts: [] } }];
+      actions = [{ kind: 'request.create', args: { audience: 'user', visibility: 'work', requires_human: false, purpose: 'Shared fixture question', instructions: 'Can another participant supply a fixture answer?', evidence_required: 'An attributed peer answer.', artifacts: [] } }];
     } else if (directInput && !context.history.some(a => a.request.kind === 'message.send' && a.request.args.to === 'user')) {
       actions = [{ kind: 'message.send', args: { to: 'user', text: 'I considered your additional fixture direction.' } }];
     } else if (context.work.data.title !== 'Group task' && !context.history.some(a => a.request.kind === 'request.create')) {
-      actions = [{ kind: 'request.create', args: { audience: 'user', purpose: `Question from ${context.persona.data.name}`, instructions: 'Please provide a fixture observation.', evidence_required: 'A text answer.', artifacts: [] } }];
+      actions = [{ kind: 'request.create', args: { audience: 'user', visibility: 'private', requires_human: true, purpose: `Question from ${context.persona.data.name}`, instructions: 'Please provide a fixture observation.', evidence_required: 'A text answer.', artifacts: [] } }];
     } else actions = [{ kind: 'wait', args: { reason: 'Waiting for fixture input' } }];
     if (context.inputs.through && actions[0].kind !== 'invitation.respond') {
       actions.unshift({ kind: 'input.acknowledge', args: { through: context.inputs.through } });
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', model: 'roster-fixture',
-      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', actions }) }] }],
+      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], branch: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', actions }) }] }],
       usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, input_tokens_details: { cached_tokens: 0 } } }));
   } catch (e) { providerErrors.push(String(e)); res.writeHead(500); res.end('{}'); }
 });
@@ -75,7 +75,7 @@ try {
   allowance = await op('resource.bounds.configure', { root: allowance.id, revision: allowance.revision, bounds });
   const people = [];
   for (const name of ['Ada fixture', 'Bo fixture']) {
-    let person = await op('persona.create', { provider: 'fixture', model: 'roster-fixture', resource_root: allowance.id });
+    let person = await op('persona.create', { provider: 'fixture', model: 'roster-fixture', resource_root: allowance.id, profile_seed: { character: 'I follow this synthetic browser fixture.' } });
     person = await op('persona.update', { revision: person.revision, name, reason: 'Fixture identity' }, person.id); people.push(person);
   }
   let environment = await op('environment.create', {});

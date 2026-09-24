@@ -1,11 +1,12 @@
 # Generated HTTP contract
 
-Contract: `ai-personas/character-learning-1`
+Contract: `ai-personas/character-learning-2`
 
 Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/personas/{id}/memory/activity?after=0&limit=12` | Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads |
 | GET | `/api/personas/{id}/memory/usage/{fragment}` | Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit |
 | GET | `/api/personas/{id}/memory?branch=&after=0&limit=12` | Private memory tree: bounded short descriptions, breadcrumbs and related branches; full fragments fetched on demand |
 | GET | `/api/work/{id}/files?after=0&limit=12` | Files linked by exact publication/submission receipts; drafts and adopted candidates remain distinct from acceptance |
@@ -1097,11 +1098,13 @@ Preserve your explained judgment of this exact submission. Optional checks cite 
 
 ### `request.create`
 
-Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts. The returned peer_delivery projection reports current source restrictions and actual delivery receipts; a work audience alone does not establish peer delivery.
+Ask a question. audience names the preferred addressee, not a privacy boundary. visibility=work (default) allows permitted peers to contribute even when addressed to the user; private restricts it to you and the user. requires_human is only for actual private facts or human authorization; optional preferences and provisional scenarios need not stop independent work. The owner assesses replies; assumptions never become verified facts or consent.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `audience` | RequestAudience or null | Optional |  |
+| `visibility` | QuestionVisibility or null | Optional |  |
+| `requires_human` | boolean or null | Optional |  |
 | `purpose` | string | Required |  |
 | `instructions` | string | Required |  |
 | `evidence_required` | string | Required |  |
@@ -1109,13 +1112,14 @@ Ask a question with actionable instructions and evidence requirements. audience=
 
 ### `request.respond`
 
-Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.
+Append an attributed answer, conditional assumption, evidence or challenge to a readable shared question, including one addressed to the user. A peer reply cannot satisfy required human input. The owner can use an assumption for conditional progress without resolving an outstanding factual question. Shared replies notify permitted participants; private replies reach the owner only.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `request` | string | Required |  |
 | `text` | string | Required |  |
 | `artifacts` | string[] | Required |  |
+| `basis` | ReplyBasis or null | Optional |  |
 
 ### `request.resolve`
 

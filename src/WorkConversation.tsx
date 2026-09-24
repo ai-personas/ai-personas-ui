@@ -25,10 +25,11 @@ export default function WorkConversation({ work, environment, open }: { work: st
       const d = data(record), from = text(record.kind === 'request' ? d.owner : d.from);
       const audience = record.kind === 'message'
         ? d.to === 'user' ? 'Reply to you' : d.to === environment ? 'All work participants' : 'Private message'
-        : d.audience === 'work' ? 'Shared question' : 'User question';
+        : d.visibility === 'work' ? 'Shared question' : 'Private question';
       return <article class="conversation-entry" key={record.id} data-kind={record.kind}>
         <p class="field-label">{isRecordID(from) ? <Person id={from} open={open}/> : 'You'}<time dateTime={record.created}>{timestamp(record.created)}</time></p>
-        <p class="micro">{record.kind === 'response' ? (d.audience === 'work' ? 'Shared answer' : 'Answer to the requesting persona') : audience}{text(d.status) ? ` · ${text(d.status)}` : ''}</p>
+        <p class="micro">{record.kind === 'response' ? (d.visibility === 'work' ? (d.basis === 'assumption' ? 'Shared assumption' : d.basis === 'challenge' ? 'Shared challenge' : 'Shared answer') : 'Answer to the requesting persona') : audience}{text(d.status) ? ` · ${text(d.status)}` : ''}</p>
+        {record.kind === 'request' && <p class={d.requires_human ? 'input-notice' : 'micro'}>{d.requires_human ? 'Needs your input; peers may still offer conditional alternatives.' : 'Your reply is optional; peers may contribute assumptions or evidence.'}</p>}
         {record.kind === 'request' && <QuestionDelivery value={d.peer_delivery} status={d.status}/>}
         <p class="record-prose">{text(record.kind === 'request' ? d.purpose : d.text)}</p>
         <button class="text-button" onClick={() => open(record.id)}>Read full {record.kind === 'request' ? 'question' : record.kind === 'response' ? 'answer' : 'message'}</button>

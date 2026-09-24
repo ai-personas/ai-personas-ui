@@ -897,6 +897,8 @@ export type Command =
       kind: "request.create";
       args: {
         audience?: RequestAudience | null;
+        visibility?: QuestionVisibility | null;
+        requires_human?: boolean | null;
         purpose: string;
         instructions: string;
         evidence_required: string;
@@ -909,6 +911,7 @@ export type Command =
         request: string;
         text: string;
         artifacts: string[];
+        basis?: ReplyBasis | null;
       };
     }
   | {
@@ -1015,9 +1018,10 @@ export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" |
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type OrientationDisposition = "adopted" | "deferred";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
-export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
+export type QuestionVisibility = "work" | "private";
+export type ReplyBasis = "answer" | "assumption" | "evidence" | "challenge";
 export type WaitCondition =
   | {
       id: string;
@@ -1438,11 +1442,18 @@ export interface Continuity {
    * Your next intended outcome or uncertainty, not a claim of completion.
    */
   focus: string;
-  disposition: LearningDisposition;
+  /**
+   * Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.
+   */
+  disposition: "retain" | "revise" | "organize" | "no_change" | "defer";
   /**
    * Brief reason for retaining, revising, organizing, deferring or making no change.
    */
   learning: string;
+  /**
+   * Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.
+   */
+  deferred?: DeferredLearning[];
   changes: Change[];
   memory: Selection2;
   /**
@@ -1455,6 +1466,12 @@ export interface Continuity {
    * Compact account for the next decision. Does not remove obligations or source restrictions.
    */
   handoff: string;
+}
+export interface DeferredLearning {
+  cue: string;
+  reason: string;
+  reconsider_when: string;
+  sources?: EvidenceRef[];
 }
 export interface Change {
   /**
@@ -1508,6 +1525,10 @@ export interface Selection2 {
    */
   branch?: string | null;
   after?: number | null;
+  /**
+   * Your search cue across owned memory descriptions for the next context. Results are previews, never automatically selected full fragments.
+   */
+  query?: string | null;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.

@@ -1,5 +1,5 @@
 {
-  "contract": "ai-personas/character-learning-1",
+  "contract": "ai-personas/character-learning-2",
   "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4344,7 +4344,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts. The returned peer_delivery projection reports current source restrictions and actual delivery receipts; a work audience alone does not establish peer delivery.",
+            "description": "Ask a question. audience names the preferred addressee, not a privacy boundary. visibility=work (default) allows permitted peers to contribute even when addressed to the user; private restricts it to you and the user. requires_human is only for actual private facts or human authorization; optional preferences and provisional scenarios need not stop independent work. The owner assesses replies; assumptions never become verified facts or consent.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4362,6 +4362,22 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "visibility": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/QuestionVisibility"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "requires_human": {
+                    "type": [
+                      "boolean",
+                      "null"
                     ]
                   },
                   "purpose": {
@@ -4396,7 +4412,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.",
+            "description": "Append an attributed answer, conditional assumption, evidence or challenge to a readable shared question, including one addressed to the user. A peer reply cannot satisfy required human input. The owner can use an assumption for conditional progress without resolving an outstanding factual question. Shared replies notify permitted participants; private replies reach the owner only.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4417,6 +4433,16 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "basis": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/ReplyBasis"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -5970,11 +5996,20 @@
             "type": "string"
           },
           "disposition": {
+            "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
             "$ref": "#/$defs/LearningDisposition"
           },
           "learning": {
             "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
             "type": "string"
+          },
+          "deferred": {
+            "description": "Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DeferredLearning"
+            },
+            "default": []
           },
           "changes": {
             "type": "array",
@@ -6034,6 +6069,33 @@
           "organize",
           "no_change",
           "defer"
+        ]
+      },
+      "DeferredLearning": {
+        "type": "object",
+        "properties": {
+          "cue": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reconsider_when": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cue",
+          "reason",
+          "reconsider_when"
         ]
       },
       "Change": {
@@ -6167,6 +6229,14 @@
             ],
             "format": "uint64",
             "minimum": 0
+          },
+          "query": {
+            "description": "Your search cue across owned memory descriptions for the next context. Results are previews, never automatically selected full fragments.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
@@ -6187,6 +6257,22 @@
         "enum": [
           "work",
           "user"
+        ]
+      },
+      "QuestionVisibility": {
+        "type": "string",
+        "enum": [
+          "work",
+          "private"
+        ]
+      },
+      "ReplyBasis": {
+        "type": "string",
+        "enum": [
+          "answer",
+          "assumption",
+          "evidence",
+          "challenge"
         ]
       },
       "WaitCondition": {
@@ -7344,6 +7430,11 @@
   "routes": [
     [
       "GET",
+      "/api/personas/{id}/memory/activity?after=0&limit=12",
+      "Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads"
+    ],
+    [
+      "GET",
       "/api/personas/{id}/memory/usage/{fragment}",
       "Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit"
     ],
@@ -7923,11 +8014,11 @@
     ],
     [
       "request.create",
-      "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts. The returned peer_delivery projection reports current source restrictions and actual delivery receipts; a work audience alone does not establish peer delivery."
+      "Ask a question. audience names the preferred addressee, not a privacy boundary. visibility=work (default) allows permitted peers to contribute even when addressed to the user; private restricts it to you and the user. requires_human is only for actual private facts or human authorization; optional preferences and provisional scenarios need not stop independent work. The owner assesses replies; assumptions never become verified facts or consent."
     ],
     [
       "request.respond",
-      "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries."
+      "Append an attributed answer, conditional assumption, evidence or challenge to a readable shared question, including one addressed to the user. A peer reply cannot satisfy required human input. The owner can use an assumption for conditional progress without resolving an outstanding factual question. Shared replies notify permitted participants; private replies reach the owner only."
     ],
     [
       "request.resolve",
@@ -12044,7 +12135,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts. The returned peer_delivery projection reports current source restrictions and actual delivery receipts; a work audience alone does not establish peer delivery.",
+        "description": "Ask a question. audience names the preferred addressee, not a privacy boundary. visibility=work (default) allows permitted peers to contribute even when addressed to the user; private restricts it to you and the user. requires_human is only for actual private facts or human authorization; optional preferences and provisional scenarios need not stop independent work. The owner assesses replies; assumptions never become verified facts or consent.",
         "type": "object",
         "properties": {
           "kind": {
@@ -12062,6 +12153,22 @@
                   {
                     "type": "null"
                   }
+                ]
+              },
+              "visibility": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/QuestionVisibility"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requires_human": {
+                "type": [
+                  "boolean",
+                  "null"
                 ]
               },
               "purpose": {
@@ -12096,7 +12203,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Append an attributed response. Any permitted participant may answer a shared work question; a persona response is not human consent. Shared questions and replies notify permitted participants, while user-only replies go to the requesting persona. Attachments follow that audience and retain source restrictions. The owner assesses and resolves the question. Reuse the operation identity for retries.",
+        "description": "Append an attributed answer, conditional assumption, evidence or challenge to a readable shared question, including one addressed to the user. A peer reply cannot satisfy required human input. The owner can use an assumption for conditional progress without resolving an outstanding factual question. Shared replies notify permitted participants; private replies reach the owner only.",
         "type": "object",
         "properties": {
           "kind": {
@@ -12117,6 +12224,16 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "basis": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ReplyBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "additionalProperties": false,
@@ -13688,11 +13805,20 @@
             "type": "string"
           },
           "disposition": {
+            "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
             "$ref": "#/$defs/LearningDisposition"
           },
           "learning": {
             "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
             "type": "string"
+          },
+          "deferred": {
+            "description": "Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/DeferredLearning"
+            },
+            "default": []
           },
           "changes": {
             "type": "array",
@@ -13752,6 +13878,33 @@
           "organize",
           "no_change",
           "defer"
+        ]
+      },
+      "DeferredLearning": {
+        "type": "object",
+        "properties": {
+          "cue": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reconsider_when": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cue",
+          "reason",
+          "reconsider_when"
         ]
       },
       "Change": {
@@ -13885,6 +14038,14 @@
             ],
             "format": "uint64",
             "minimum": 0
+          },
+          "query": {
+            "description": "Your search cue across owned memory descriptions for the next context. Results are previews, never automatically selected full fragments.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
@@ -13905,6 +14066,22 @@
         "enum": [
           "work",
           "user"
+        ]
+      },
+      "QuestionVisibility": {
+        "type": "string",
+        "enum": [
+          "work",
+          "private"
+        ]
+      },
+      "ReplyBasis": {
+        "type": "string",
+        "enum": [
+          "answer",
+          "assumption",
+          "evidence",
+          "challenge"
         ]
       },
       "WaitCondition": {
