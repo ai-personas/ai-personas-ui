@@ -42,6 +42,12 @@ try{
  await expect(page.locator('.state-badge.tone-warning')).toHaveText('Sharing decision needed');
  await expect(page.getByText('A participant cannot read this feedback because its sources are private.',{exact:false})).toBeVisible();
  await expect(page.getByText('Internal recovery detail:',{exact:false})).toHaveCount(0);
+ const question = {...record({status:'open',purpose:'Compare these fixture concepts',peer_delivery:{schema:'question-delivery/1',readable_peers:0,restricted_peers:2}}),kind:'request'};
+ await page.evaluate(r=>window.show(r),question);
+ await expect(page.getByText('Peers cannot read this question.',{exact:true})).toBeVisible();
+ await expect(page.getByText('Its sources have sharing restrictions.',{exact:false})).toBeVisible();
+ await page.evaluate(r=>window.show(r),{...question,data:{...question.data,peer_delivery:{schema:'question-delivery/1',readable_peers:2,restricted_peers:0}}});
+ await expect(page.getByText('Peers cannot read this question.',{exact:true})).toHaveCount(0);
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  assert.deepEqual(errors,[]);
  console.log('Review judgment browser passed: explained verdict, uncertainty, lazy reads, unmount, readable sharing notice and mobile layout.');

@@ -1033,7 +1033,7 @@ Preserve your explained judgment of this exact submission. Optional checks cite 
 
 ### `request.create`
 
-Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts.
+Ask a question with actionable instructions and evidence requirements. audience=work (default) shares it with permitted work participants and the user; peers can contribute answers or evidence. audience=user addresses only the human for private facts, permission or decisions. You retain ownership and assess attributed replies; a persona reply never supplies human consent or confirms unknown facts. The returned peer_delivery projection reports current source restrictions and actual delivery receipts; a work audience alone does not establish peer delivery.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

@@ -1,3 +1,4 @@
+import QuestionDelivery from './QuestionDelivery';
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { lazy, Suspense } from 'preact/compat';
@@ -103,6 +104,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'call': return <><Story title="Decision summary" value={d.summary}/><Story title="Recorded failure" value={d.error}/><InferenceEvidence value={d} open={open}/></>;
     case 'message': return <><p class="reader-byline"><Person id={d.from} open={open} user/><span>to</span><Person id={d.to} open={open} user/></p><Story value={d.text}/></>;
     case 'request': return <>
+      <QuestionDelivery value={d.peer_delivery} status={d.status}/>
       {d.status === 'answered' && <p class="notice">Replies were recorded, but this question is not resolved at this version. The owner still needs to assess the answers and explain any remaining need. Acknowledgement alone is not resolution.</p>}
       <Story title="What is needed" value={d.purpose}/><Story title="How to help" value={d.instructions}/><Story title="Information to include" value={d.evidence_required}/>
       <Story title="Conclusion" value={fields(d.resolution).conclusion}/>

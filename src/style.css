@@ -11,3 +11,5 @@ p,small,code{overflow-wrap:anywhere}
 .tool-choice small { font-weight: normal; line-height: 1.5; }
 .environment-tool { padding: 1rem; display: flex; flex-direction: column; gap: .5rem; }
 .environment-tool .button-row { margin-top: auto; }
+
+.question-sharing{border-left:4px solid #b97300;background:#fff7e6;color:#593900;overflow-wrap:anywhere}

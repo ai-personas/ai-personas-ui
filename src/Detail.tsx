@@ -25,7 +25,7 @@ const Upload = lazy(() => import('./Upload'));
 const Pick = lazy(() => import('./Create').then(m => ({ default: m.Pick })));
 function Expand({ title, children }: { title: string; children: () => ComponentChildren }) { const [open, setOpen] = useState(false); return <section class="expand"><button class="expand-title" aria-expanded={open} onClick={() => setOpen(!open)}>{title} {open ? '−' : '+'}</button>{open && children()}</section>; }
 export default function Detail({ id, open, artifact, close, act }: { id: string; open: (id: string) => void; artifact: (id: string) => void; close: () => void; act: Act }) {
-  const { value: r, error } = useResource<Entity>('/records/' + id, e => matchesWork(e, id) || matchesRecords(e, 'persona,environment'));
+  const { value: r, error } = useResource<Entity>('/records/' + id, e => e.kind === 'information_policy' || matchesWork(e, id) || matchesRecords(e, 'persona,environment'));
   const [tab, setTab] = useState(''), [failure, setFailure] = useState(''), [review, setReview] = useState(false), [reviewers, setReviewers] = useState<string[]>([]), [reviewBusy, setReviewBusy] = useState(false);
   const d = r ? data(r) : {};
   const tabs = r?.kind === 'work' ? ['Activity', 'Submissions', 'Assessments', 'Requests'] : r?.kind === 'persona' ? ['Work', 'Learning', 'Tools', 'Perspectives', 'Messages', 'History'] : r?.kind === 'environment' ? ['Work', 'Learning', 'Tools', 'Messages'] : r?.kind === 'run' ? ['Actions', 'Model calls'] : r?.kind === 'request' ? ['Responses'] : [];
