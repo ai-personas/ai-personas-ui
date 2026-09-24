@@ -6,16 +6,19 @@ export default function ReviewJudgment({ value, open }: { value: unknown; open: 
   const receipts = snapshot.schema === 'review-observations/1' && Array.isArray(snapshot.receipts)
     ? snapshot.receipts.map(fields).filter(r => isRecordID(r.action) && typeof r.receipt_digest === 'string' && /^[a-f0-9]{64}$/i.test(r.receipt_digest)) : [];
   const knownSnapshot = snapshot.schema === 'review-observations/1' && snapshot.capture_stage === 'assessment_recording' && Array.isArray(snapshot.receipts) && receipts.length === snapshot.receipts.length;
-  const verdict = ({ accepted: 'Accepted by the reviewer', rejected: 'Changes needed', incomplete: 'Review incomplete' } as Record<string, string>)[text(d.verdict)] || 'Review judgment';
-  return <section aria-label="Reviewer judgment">
+  const self = d.judgment_kind === 'self_assessment';
+  const verdict = ({ accepted: 'Judged satisfactory', rejected: 'Concerns raised', incomplete: 'Assessment incomplete' } as Record<string, string>)[text(d.verdict)] || 'Assessment';
+  return <section aria-label="Persona assessment">
     <h3>{verdict}</h3>
-    {isRecordID(d.reviewer) && <p>Reviewed by <RecordReference id={d.reviewer} open={open} fallback="Reviewer"/></p>}
-    <Story value={d.summary || d.content}/><Story title="Reviewer’s reasoning" value={d.findings}/><Story title="Limitations" value={d.limitations}/>
-    <p class="reader-muted">This judgment concerns the submitted version. Current acceptance also depends on the agreed scope, unresolved findings, and any required user decision.</p>
-    {knownSnapshot && <p class="reader-muted">Citation receipts were captured when this assessment was recorded. This does not establish what the reviewer saw or understood in an earlier request.</p>}
+    <p>{self ? 'Self-assessment — the author is judging their own contribution.' : d.judgment_kind === 'peer_perspective' ? 'Peer perspective on the submitted version.' : 'Assessment of the submitted version.'}</p>
+    {isRecordID(d.reviewer) && <p>Assessed by <RecordReference id={d.reviewer} open={open} fallback="Persona"/></p>}
+    <Story value={d.summary || d.content}/><Story title="Reasoning" value={d.findings}/><Story title="Limitations" value={d.limitations}/>
+    <p class="reader-muted">An assessment does not approve the work or decide what happens next. Acceptance depends on the agreed requirements and any required user decision.</p>
+    {self && <p class="reader-muted">This does not count as independent approval.</p>}
+    {knownSnapshot && <p class="reader-muted">Citation receipts were captured when this assessment was recorded. This does not establish what the persona saw or understood in an earlier request.</p>}
     {knownSnapshot && receipts.length === 0
-      ? <p>No additional actions were cited. The reviewer may assess material already received through reading and reasoning.</p>
+      ? <p>No additional actions were cited. The persona may assess material already received through reading and reasoning.</p>
       : knownSnapshot ? <RelatedItems title="Observations cited at assessment" value={receipts} open={open}/>
-      : <p class="reader-muted">{Object.hasOwn(d, 'check_receipts') ? 'Citation details are incomplete or unsupported. A fresh assessment is needed before relying on them.' : 'This earlier assessment has no recorded observation snapshots.'}</p>}
+      : <p class="reader-muted">Citation details are missing or unsupported. A fresh assessment is needed before relying on them.</p>}
   </section>;
 }

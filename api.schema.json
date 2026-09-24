@@ -4023,7 +4023,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.",
+            "description": "Request a perspective on an exact submission, or focus it for yourself in the current participation. Creating, assessing and continuing remain persona choices. Independence requirements apply when binding evidence, not when requesting a perspective.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4058,7 +4058,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
+            "description": "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4075,12 +4075,14 @@
                     "type": "string"
                   },
                   "checks": {
-                    "type": "array",
+                    "type": [
+                      "array",
+                      "null"
+                    ],
                     "items": {
-                      "type": "string",
-                      "pattern": "^[a-fA-F0-9]{32}$"
+                      "type": "string"
                     },
-                    "default": []
+                    "default": null
                   }
                 },
                 "additionalProperties": false,
@@ -7380,11 +7382,11 @@
     ],
     [
       "review.start",
-      "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment."
+      "Request a perspective on an exact submission, or focus it for yourself in the current participation. Creating, assessing and continuing remain persona choices. Independence requirements apply when binding evidence, not when requesting a perspective."
     ],
     [
       "assess",
-      "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict."
+      "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict."
     ],
     [
       "request.create",
@@ -11188,7 +11190,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.",
+        "description": "Request a perspective on an exact submission, or focus it for yourself in the current participation. Creating, assessing and continuing remain persona choices. Independence requirements apply when binding evidence, not when requesting a perspective.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11223,7 +11225,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
+        "description": "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
         "type": "object",
         "properties": {
           "kind": {
@@ -11240,12 +11242,14 @@
                 "type": "string"
               },
               "checks": {
-                "type": "array",
+                "type": [
+                  "array",
+                  "null"
+                ],
                 "items": {
-                  "type": "string",
-                  "pattern": "^[a-fA-F0-9]{32}$"
+                  "type": "string"
                 },
-                "default": []
+                "default": null
               }
             },
             "additionalProperties": false,

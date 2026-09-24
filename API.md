@@ -1013,7 +1013,7 @@ Preserve exact evidence chosen by the persona. documents takes the outer documen
 
 ### `review.start`
 
-Invite a different persona to assess an exact submission using ordinary work. Enforce any accepted non-contributor policy; membership alone neither makes someone independent nor prevents peer judgment.
+Request a perspective on an exact submission, or focus it for yourself in the current participation. Creating, assessing and continuing remain persona choices. Independence requirements apply when binding evidence, not when requesting a perspective.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1023,13 +1023,13 @@ Invite a different persona to assess an exact submission using ordinary work. En
 
 ### `assess`
 
-Preserve your explained judgment of this exact submission. Optional checks cite your reviewer-run observations, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.
+Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `verdict` | Verdict | Required |  |
 | `findings` | string | Required |  |
-| `checks` | string[] | Optional |  |
+| `checks` | array or null | Optional |  |
 
 ### `request.create`
 

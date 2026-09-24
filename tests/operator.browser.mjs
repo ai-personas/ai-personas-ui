@@ -93,6 +93,9 @@ try {
   writeFileSync(join(root, 'providers.json'), JSON.stringify({ fixture: { endpoint: `http://127.0.0.1:${provider.address().port}/responses`, trust_loopback_http: true,
     models: [{ id: 'operator-fixture', context_window_tokens: 1_000_000, max_output_tokens: 1024, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 1024 }] } }));
   await startNode();
+  assert.equal((await get('/deployment')).host_execution, true, 'fresh CLI workspace enables host tools');
+  // Exercise an explicit isolated deployment before the later host-mode switch.
+  await op('deployment.configure', { host_execution: false, reason: 'Browser fixture tests explicit isolated grants before enabling host tools.' });
   browser = await chromium.launch({ headless: true }); page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await step('local API opens directly and rejects unrelated website origins', async () => {
