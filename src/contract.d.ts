@@ -92,6 +92,10 @@ export type Command =
       args: {
         revision: number;
         reason: string;
+        /**
+         * Prepare the next decision for work-wide delivery. Private memory and correspondence remain stored but are not supplied in this context.
+         */
+        work_readable?: boolean;
       };
     }
   | {
@@ -1018,6 +1022,7 @@ export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" |
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type OrientationDisposition = "adopted" | "deferred";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
+export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type QuestionVisibility = "work" | "private";
@@ -1435,6 +1440,14 @@ export interface Vad {
 }
 export interface Continuity {
   /**
+   * Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.
+   */
+  intent?: Intent | null;
+  /**
+   * Explicitly dispose prior opportunities. Omitted opportunities stay pending; no_change dismisses one with a reason.
+   */
+  learning_resolutions?: LearningResolution[];
+  /**
    * Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.
    */
   next?: "continue" | "wait";
@@ -1451,7 +1464,7 @@ export interface Continuity {
    */
   learning: string;
   /**
-   * Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.
+   * Add or update pending opportunities. Omission preserves earlier opportunities; use learning_resolutions for an explicit disposition.
    */
   deferred?: DeferredLearning[];
   changes: Change[];
@@ -1470,7 +1483,23 @@ export interface Continuity {
    */
   handoff: string;
 }
+export interface Intent {
+  outcome: string;
+  fidelity: string;
+  unknowns: string[];
+  next_evidence: string;
+  collaboration: string;
+}
+export interface LearningResolution {
+  id: string;
+  disposition: LearningDisposition;
+  reason: string;
+}
 export interface DeferredLearning {
+  /**
+   * Reuse the supplied opportunity identity when reconsidering an earlier idea; omit for a new cue.
+   */
+  id?: string | null;
   cue: string;
   reason: string;
   reconsider_when: string;

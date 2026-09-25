@@ -61,3 +61,26 @@ test('uncertain receipt is not treated as success and retains its operation ID',
   await assert.rejects(operate('run.cancel', { id: 'r' }), /outcome is uncertain/);
   await operate('run.cancel', { id: 'r' }); assert.equal(bodies[0], bodies[1]);
 });
+
+test('concurrent resource reads share transport; unmounting one reader preserves the other', async () => {
+  const { resourceRequest } = await import('../src/api.ts');
+  const original = globalThis.fetch;
+  let complete, calls = 0, transport;
+  globalThis.fetch = (_url, init) => { calls++; transport = init.signal; return new Promise(resolve => { complete = resolve; }); };
+  try {
+    const a = new AbortController(), b = new AbortController();
+    const first = resourceRequest('/records/shared', a.signal);
+    const second = resourceRequest('/records/shared', b.signal);
+    const rejected = assert.rejects(first, { name: 'AbortError' });
+    a.abort(); await rejected;
+    assert.equal(calls, 1); assert.equal(transport.aborted, false);
+    complete(new Response(JSON.stringify({ id: 'shared' }), { status: 200 }));
+    assert.deepEqual(await second, { id: 'shared' });
+    assert.equal(transport.aborted, true);
+    const c = new AbortController();
+    const next = resourceRequest('/records/shared', c.signal);
+    assert.equal(calls, 2, 'completed data is not kept in the request cache');
+    const aborted = assert.rejects(next, { name: 'AbortError' }); c.abort(); await aborted;
+    assert.equal(transport.aborted, true);
+  } finally { globalThis.fetch = original; }
+});

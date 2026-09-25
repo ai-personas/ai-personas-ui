@@ -110,6 +110,16 @@ try {
     await expect(page.getByText('Retained lesson — usefulness not established',{exact:true})).toBeVisible();
     await page.screenshot({path:evidence+'/learning-labels.png'});
   });
+  await step('Provider recovery distinguishes automatic checks from stopped quota', async () => {
+    await page.evaluate(() => window.mountRecovery({status:'checking_health',next_at:'2026-09-25T12:00:00Z'}));
+    await expect(page.getByRole('status',{name:'Provider recovery'})).toContainText('continue automatically');
+    await expect(page.getByRole('status',{name:'Provider recovery'})).toContainText('Next check');
+    await page.evaluate(() => window.mountRecovery({status:'quota_exhausted'}));
+    await expect(page.getByRole('status',{name:'Provider recovery'})).toContainText('Automatic retries have stopped');
+    await expect(page.getByRole('status',{name:'Provider recovery'})).not.toContainText('Next check');
+    await page.evaluate(() => window.unmount());
+    await expect(page.getByRole('status',{name:'Provider recovery'})).toHaveCount(0);
+  });
   assert.deepEqual(errors,[]);
 } finally {
   await writeFile(evidence+'/checks.json',JSON.stringify({scope:'synthetic_frontend_components_not_runtime_acceptance',checks,errors},null,2));

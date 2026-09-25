@@ -9,7 +9,7 @@ export const data = (r: Entity): Record<string, any> => r.data && typeof r.data 
 export let token = '';
 try { sessionStorage.removeItem('personas-token'); } catch { /* Storage may be disabled. */ }
 const pending = new Map<string, { body: string; inflight?: Promise<Action> }>();
-export function connect(value: string) { token = value.trim(); pending.clear(); }
+export function connect(value: string) { token = value.trim(); pending.clear(); for (const read of reads.values()) read.controller.abort(); reads.clear(); }
 export function authHeaders(): Record<string, string> {
   return { 'X-Personas-Client': 'workspace', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
@@ -26,6 +26,32 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     throw new HttpError(typeof body.error === 'string' ? body.error : `Request failed (${response.status})`, response.status);
   }
   return response.json();
+}
+// Share only in-flight reads. No completed payload remains cached after unmount.
+const reads = new Map<string, { controller: AbortController; promise: Promise<unknown>; users: number }>();
+export function resourceRequest<T>(path: string, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  let read = reads.get(path);
+  if (!read) {
+    const controller = new AbortController();
+    read = { controller, users: 0, promise: request(path, { signal: controller.signal }) };
+    const current = read;
+    reads.set(path, read);
+    void read.promise.finally(() => { if (reads.get(path) === current) reads.delete(path); }).catch(() => {});
+  }
+  const current = read; current.users++;
+  return new Promise<T>((resolve, reject) => {
+    let done = false;
+    const finish = () => {
+      if (done) return false;
+      done = true; signal.removeEventListener('abort', abort);
+      if (--current.users === 0) { current.controller.abort(); if (reads.get(path) === current) reads.delete(path); }
+      return true;
+    };
+    const abort = () => { if (finish()) reject(new DOMException('Aborted', 'AbortError')); };
+    signal.addEventListener('abort', abort, { once: true });
+    current.promise.then(value => { if (finish()) resolve(value as T); }, error => { if (finish()) reject(error); });
+  });
 }
 function stable(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';

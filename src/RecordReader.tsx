@@ -108,8 +108,9 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <QuestionDelivery value={d.peer_delivery} status={d.status}/>
       {d.status === 'answered' && <p class="notice">Replies were recorded, but this question is not resolved at this version. The owner still needs to assess the answers and explain any remaining need. Acknowledgement alone is not resolution.</p>}
       <Story title="What is needed" value={d.purpose}/><Story title="How to help" value={d.instructions}/><Story title="Information to include" value={d.evidence_required}/>
-      <Story title="Conclusion" value={fields(d.resolution).conclusion}/>
+      <RelatedItems title="Conclusion" value={d.resolution} open={open}/>
     </>;
+    case 'request_resolution': return <><Story title="Conclusion" value={fields(d.resolution).conclusion}/><Story title="Reason" value={fields(d.resolution).reason}/><RelatedItems title="Question" value={d.request} open={open}/><RelatedItems title="Replies considered" value={fields(d.resolution).evidence} open={open}/></>;
     case 'response': return <><p class="field-label">{({answer:'Answer',assumption:'Assumed scenario',evidence:'Evidence or observation',challenge:'Challenge or alternative'} as Record<string,string>)[text(d.basis)] || 'Reply'}</p><p class="reader-byline">Answer from <Person id={d.from} open={open} user/></p><Story title="Answer" value={d.text}/><p class="record-caveat">An attributed reply is not automatic confirmation, permission or question resolution.</p></>;
     case 'submission': return <><QuestionDelivery value={d.peer_delivery} status={d.status}/><Story title="What was submitted" value={d.summary}/></>;
     case 'work_mandate': return <><Story title="Original request" value={d.original_need}/><ScopeStory value={d.mandate}/></>;

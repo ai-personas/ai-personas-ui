@@ -3,7 +3,7 @@ import { fields, text } from './workspace';
 import { fileFormat as describeFile } from './files/formats';
 
 const LABELS: Record<string, string> = {
-  run: 'Persona activity', call: 'Model activity', fragment: 'Learning note', document: 'Document', artifact: 'File',
+  request_resolution: 'Question conclusion', run: 'Persona activity', call: 'Model activity', fragment: 'Learning note', document: 'Document', artifact: 'File',
   submission: 'Submitted version', finding: 'Assessment', resource_root: 'Funding allowance',
   work_entry: 'Work update', work_mandate: 'Work brief', work_release: 'Release', response: 'Answer', request: 'Question',
   resource_charge: 'Call usage', budget_charge: 'Resource usage',

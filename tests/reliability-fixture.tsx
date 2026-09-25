@@ -1,3 +1,4 @@
+import ProviderRecovery from '../src/ProviderRecovery';
 // Synthetic frontend-only fixture. No runtime connection, credentials or live data.
 import { render } from 'preact';
 import ArchivePreview from '../src/files/ArchivePreview';
@@ -20,5 +21,6 @@ api.mountCards = () => render(<>{['document','fragment'].map((kind, i) => <Conte
   record={{id:String(i).repeat(32),kind,scope:'',revision:1,created:'2026-01-01T00:00:00Z',updated:'2026-01-01T00:00:00Z',data:{title:kind === 'document' ? 'Saved report' : 'Authored lesson',content:'Synthetic fixture'}}}/>)}</>, root);
 api.mountTools = () => render(<Choices/>, root);
 api.mountResearch = (kind: string, args: Record<string, any>, result: Record<string, any>) => render(<ResearchEvidence kind={kind} args={args} result={result}/>, root);
+api.mountRecovery = (value: unknown) => render(<ProviderRecovery value={value}/>, root);
 api.unmount = () => render(null, root);
 render(<h1>Reliability fixture ready</h1>, root);

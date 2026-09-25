@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import { changes, request, type Entity, type Page } from './api';
+import { changes, resourceRequest, type Entity, type Page } from './api';
 import { matchesRecords } from './workspace';
 
 export function useResource<T>(path: string, relevant: (event: any) => boolean = () => true, enabled = true) {
@@ -18,7 +18,7 @@ export function useResource<T>(path: string, relevant: (event: any) => boolean =
       loading = true;
       setState(s => ({ ...s, loading: true }));
       try {
-        const value = await request<T>(path, { signal: controller.signal });
+        const value = await resourceRequest<T>(path, controller.signal);
         if (!controller.signal.aborted) setState({ path, value, error: '', loading: false });
       } catch (e) {
         if (!controller.signal.aborted) setState(s => ({ ...s, path, error: (e as Error).message, loading: false }));

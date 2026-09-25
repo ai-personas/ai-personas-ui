@@ -1,5 +1,5 @@
 {
-  "contract": "ai-personas/character-learning-2",
+  "contract": "ai-personas/autonomous-continuity-1",
   "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -701,6 +701,11 @@
                   },
                   "reason": {
                     "type": "string"
+                  },
+                  "work_readable": {
+                    "description": "Prepare the next decision for work-wide delivery. Private memory and correspondence remain stored but are not supplied in this context.",
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "additionalProperties": false,
@@ -5986,6 +5991,26 @@
       "Continuity": {
         "type": "object",
         "properties": {
+          "intent": {
+            "description": "Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Intent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "learning_resolutions": {
+            "description": "Explicitly dispose prior opportunities. Omitted opportunities stay pending; no_change dismisses one with a reason.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LearningResolution"
+            },
+            "default": []
+          },
           "next": {
             "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
             "$ref": "#/$defs/NextDecision",
@@ -6004,7 +6029,7 @@
             "type": "string"
           },
           "deferred": {
-            "description": "Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.",
+            "description": "Add or update pending opportunities. Omission preserves earlier opportunities; use learning_resolutions for an explicit disposition.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/DeferredLearning"
@@ -6055,11 +6080,55 @@
           "handoff"
         ]
       },
-      "NextDecision": {
-        "type": "string",
-        "enum": [
-          "continue",
-          "wait"
+      "Intent": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "fidelity": {
+            "type": "string"
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_evidence": {
+            "type": "string"
+          },
+          "collaboration": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outcome",
+          "fidelity",
+          "unknowns",
+          "next_evidence",
+          "collaboration"
+        ]
+      },
+      "LearningResolution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/LearningDisposition"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "disposition",
+          "reason"
         ]
       },
       "LearningDisposition": {
@@ -6072,9 +6141,24 @@
           "defer"
         ]
       },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
+        ]
+      },
       "DeferredLearning": {
         "type": "object",
         "properties": {
+          "id": {
+            "description": "Reuse the supplied opportunity identity when reconsidering an earlier idea; omit for a new cue.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "cue": {
             "type": "string"
           },
@@ -8493,6 +8577,11 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "work_readable": {
+                "description": "Prepare the next decision for work-wide delivery. Private memory and correspondence remain stored but are not supplied in this context.",
+                "type": "boolean",
+                "default": false
               }
             },
             "additionalProperties": false,
@@ -13796,6 +13885,26 @@
       "Continuity": {
         "type": "object",
         "properties": {
+          "intent": {
+            "description": "Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Intent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "learning_resolutions": {
+            "description": "Explicitly dispose prior opportunities. Omitted opportunities stay pending; no_change dismisses one with a reason.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LearningResolution"
+            },
+            "default": []
+          },
           "next": {
             "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
             "$ref": "#/$defs/NextDecision",
@@ -13814,7 +13923,7 @@
             "type": "string"
           },
           "deferred": {
-            "description": "Replace deferred opportunities. Keep still-relevant entries; useful tentative lessons need not wait for success. An empty list clears deferrals without deleting retained lessons.",
+            "description": "Add or update pending opportunities. Omission preserves earlier opportunities; use learning_resolutions for an explicit disposition.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/DeferredLearning"
@@ -13865,11 +13974,55 @@
           "handoff"
         ]
       },
-      "NextDecision": {
-        "type": "string",
-        "enum": [
-          "continue",
-          "wait"
+      "Intent": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "fidelity": {
+            "type": "string"
+          },
+          "unknowns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_evidence": {
+            "type": "string"
+          },
+          "collaboration": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outcome",
+          "fidelity",
+          "unknowns",
+          "next_evidence",
+          "collaboration"
+        ]
+      },
+      "LearningResolution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/LearningDisposition"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "disposition",
+          "reason"
         ]
       },
       "LearningDisposition": {
@@ -13882,9 +14035,24 @@
           "defer"
         ]
       },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
+        ]
+      },
       "DeferredLearning": {
         "type": "object",
         "properties": {
+          "id": {
+            "description": "Reuse the supplied opportunity identity when reconsidering an earlier idea; omit for a new cue.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "cue": {
             "type": "string"
           },

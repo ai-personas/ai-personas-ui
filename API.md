@@ -1,6 +1,6 @@
 # Generated HTTP contract
 
-Contract: `ai-personas/character-learning-2`
+Contract: `ai-personas/autonomous-continuity-1`
 
 Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
@@ -163,6 +163,7 @@ Explicitly discard this run's active context and history window after a source d
 |---|---|---|---|
 | `revision` | integer | Required |  |
 | `reason` | string | Required |  |
+| `work_readable` | boolean | Optional | Prepare the next decision for work-wide delivery. Private memory and correspondence remain stored but are not supplied in this context. |
 
 ### `invitation.offer`
 
