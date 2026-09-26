@@ -13,7 +13,7 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
     {error && <p role="alert">Component status could not be refreshed. Displayed observations may be stale.</p>}
     {!value && !error && <p role="status">Reading component status…</p>}
     {value && <>
-      <p class="micro">Observed {timestamp(text(value.observed))}. Funding: {text(funding.binding, 'Not reported')}. {typeof tokens.input === 'number' && typeof tokens.output === 'number' && `Measured ${tokens.input.toLocaleString()} input + ${tokens.output.toLocaleString()} output tokens.`}</p>
+      <p class="micro">Observed {timestamp(text(value.observed))}. Funding: {text(funding.binding, 'Not reported')}. {typeof tokens.input === 'number' && typeof tokens.output === 'number' && `Measured across the shared allowance: ${tokens.input.toLocaleString()} input + ${tokens.output.toLocaleString()} output tokens.`}</p>
       <p>JEV node limit: <strong>{amount(budget.limit_micro_usd)}</strong> · Accounted: {amount(budget.accounted_micro_usd)} · Remaining: {amount(budget.remaining_micro_usd)}</p>
       {Boolean(budget.error) && <p role="alert">JEV spending could not be verified.</p>}
       <div class="work-records">{people.map(p => {

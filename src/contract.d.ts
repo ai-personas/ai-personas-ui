@@ -1589,7 +1589,7 @@ export interface Change {
    */
   draft?: FragmentDraft | null;
   /**
-   * Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.
+   * Replace directed associations to other nodes. Use IDs or "$rule" for local handle "rule"; cycles are valid and links do not select content.
    */
   related: string[];
   /**
@@ -1634,7 +1634,7 @@ export interface Parameter {
 }
 export interface Selection2 {
   /**
-   * Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).
+   * Replace the next call's full prompt parts with stable node IDs or local references: handle "rule" is referenced as "$rule".
    */
   active: string[];
   /**

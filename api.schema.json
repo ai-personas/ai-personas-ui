@@ -6331,7 +6331,7 @@
             ]
           },
           "related": {
-            "description": "Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.",
+            "description": "Replace directed associations to other nodes. Use IDs or \"$rule\" for local handle \"rule\"; cycles are valid and links do not select content.",
             "type": "array",
             "items": {
               "type": "string"
@@ -6700,7 +6700,7 @@
         "type": "object",
         "properties": {
           "active": {
-            "description": "Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).",
+            "description": "Replace the next call's full prompt parts with stable node IDs or local references: handle \"rule\" is referenced as \"$rule\".",
             "type": "array",
             "items": {
               "type": "string"
@@ -14769,7 +14769,7 @@
             ]
           },
           "related": {
-            "description": "Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.",
+            "description": "Replace directed associations to other nodes. Use IDs or \"$rule\" for local handle \"rule\"; cycles are valid and links do not select content.",
             "type": "array",
             "items": {
               "type": "string"
@@ -15138,7 +15138,7 @@
         "type": "object",
         "properties": {
           "active": {
-            "description": "Replace the next call's full prompt parts with these stable node IDs (or $handles created in this response).",
+            "description": "Replace the next call's full prompt parts with stable node IDs or local references: handle \"rule\" is referenced as \"$rule\".",
             "type": "array",
             "items": {
               "type": "string"
