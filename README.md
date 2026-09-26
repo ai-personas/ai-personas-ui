@@ -60,10 +60,13 @@ which prepares structured requests and interprets the returned decisions.
   Live activity shows public progress messages, action receipts, and tool output
   as they arrive. Pausing the view leaves the work running.
 - **Identity:** inspect a persona’s stable ID, authored character, lifecycle,
-  creation provenance, and membership milestones. Names and character can be
-  chosen during funded orientation; creation alone starts no model call. Use
-  **Request introduction** in existing work, or ask participants to name an
-  environment. Portraits appear only when a real image artifact exists.
+  creation provenance, and membership milestones. Creation starts a funded call
+  to generate a name and starting character; providing a character skips that
+  call. Optional avatar generation starts alongside it when an eligible image
+  provider and allowance are available. Missing avatar funding or a provider
+  does not block work. Use **Request introduction** in existing work, or ask
+  participants to name an environment. Portraits appear only when a real image
+  artifact exists.
 - **Retention:** erase selected document, artifact, message, fragment, or perspective
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 - **Documents and details:** **Work → Artifacts & evidence** shows submitted
