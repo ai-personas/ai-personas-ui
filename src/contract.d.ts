@@ -115,6 +115,11 @@ export type Command =
         revision: number;
         accept: boolean;
         reason: string;
+        /**
+         * Optional initial approach recorded atomically with this membership choice. Supply approach too; neither choice accepts a commitment.
+         */
+        orientation?: OrientationDisposition | null;
+        approach?: string | null;
       };
     }
   | {
@@ -1018,6 +1023,7 @@ export type Command =
       };
     };
 export type Capability = "persona_decision" | "choice" | "knowledge";
+export type OrientationDisposition = "adopted" | "deferred";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
 export type EvidenceRef = VersionRef | ActionEvidence;
 export type ReviewDisposition = "retain" | "revise" | "no_change" | "defer";
@@ -1038,7 +1044,6 @@ export type CommitmentStatus = "working" | "blocked" | "submitted" | "closed" | 
 export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" | "resolved" | "deferred" | "waived";
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type Fallback = "deterministic" | "block";
-export type OrientationDisposition = "adopted" | "deferred";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
 export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
 export type Condition =
@@ -1273,15 +1278,9 @@ export interface GrantDraft {
    */
   command_digest?: string | null;
   /**
-   * Exact serialized JSON request digest for generic mediated external effects.
-   * Optional only with an explicit bounded native TypeSafe choice permission.
+   * SHA-256 of the exact JSON body for an external effect.
    */
   body_digest?: string | null;
-  /**
-   * Allows changing choice questions only at the exact native TypeSafe
-   * destination, with explicit model and exposure bounds. No generic wildcard.
-   */
-  typesafe_choice?: ChoiceGrant | null;
   reason: string;
 }
 export interface ExecutionLimits {
@@ -1289,21 +1288,6 @@ export interface ExecutionLimits {
   cpu_seconds: number;
   memory_bytes: number;
   output_bytes: number;
-}
-/**
- * Explicit authority for a persona to formulate changing choice questions.
- * Absence of this policy NEVER turns an exact-body effect grant into a wildcard.
- * Token reservations are operator-supplied conservative exposure, not undocumented
- * max-token request parameters sent to TypeSafe. Keep their evidence current.
- */
-export interface ChoiceGrant {
-  models: string[];
-  max_questions: number;
-  max_options: number;
-  max_request_bytes: number;
-  input_tokens: number;
-  output_tokens: number;
-  evidence: string;
 }
 export interface Bounds {
   expires: string;
@@ -1337,13 +1321,7 @@ export interface Destination {
   endpoint: string;
   api_key_env?: string | null;
   /**
-   * Node-owned saved credential. Currently only "typesafe", bound to its
-   * exact official endpoint; the key never enters this configuration record.
-   */
-  api_key_ref?: string | null;
-  /**
-   * True only for an actual remote idempotency contract. Native TypeSafe
-   * decisions require false: local replay protection is not remote deduplication.
+   * Generic effects require an actual remote idempotency contract.
    */
   idempotency_supported: boolean;
   timeout_ms: number;

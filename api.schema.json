@@ -793,6 +793,23 @@
                   },
                   "reason": {
                     "type": "string"
+                  },
+                  "orientation": {
+                    "description": "Optional initial approach recorded atomically with this membership choice. Supply approach too; neither choice accepts a commitment.",
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/OrientationDisposition"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approach": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -5059,21 +5076,10 @@
             ]
           },
           "body_digest": {
-            "description": "Exact serialized JSON request digest for generic mediated external effects.\nOptional only with an explicit bounded native TypeSafe choice permission.",
+            "description": "SHA-256 of the exact JSON body for an external effect.",
             "type": [
               "string",
               "null"
-            ]
-          },
-          "typesafe_choice": {
-            "description": "Allows changing choice questions only at the exact native TypeSafe\ndestination, with explicit model and exposure bounds. No generic wildcard.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ChoiceGrant"
-              },
-              {
-                "type": "null"
-              }
             ]
           },
           "reason": {
@@ -5120,56 +5126,6 @@
           "cpu_seconds",
           "memory_bytes",
           "output_bytes"
-        ]
-      },
-      "ChoiceGrant": {
-        "description": "Explicit authority for a persona to formulate changing choice questions.\nAbsence of this policy NEVER turns an exact-body effect grant into a wildcard.\nToken reservations are operator-supplied conservative exposure, not undocumented\nmax-token request parameters sent to TypeSafe. Keep their evidence current.",
-        "type": "object",
-        "properties": {
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "max_questions": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "max_options": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "max_request_bytes": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "input_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "output_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "evidence": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "models",
-          "max_questions",
-          "max_options",
-          "max_request_bytes",
-          "input_tokens",
-          "output_tokens",
-          "evidence"
         ]
       },
       "Bounds": {
@@ -5301,6 +5257,13 @@
           "evidence"
         ]
       },
+      "OrientationDisposition": {
+        "type": "string",
+        "enum": [
+          "adopted",
+          "deferred"
+        ]
+      },
       "Destination": {
         "type": "object",
         "properties": {
@@ -5313,15 +5276,8 @@
               "null"
             ]
           },
-          "api_key_ref": {
-            "description": "Node-owned saved credential. Currently only \"typesafe\", bound to its\nexact official endpoint; the key never enters this configuration record.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "idempotency_supported": {
-            "description": "True only for an actual remote idempotency contract. Native TypeSafe\ndecisions require false: local replay protection is not remote deduplication.",
+            "description": "Generic effects require an actual remote idempotency contract.",
             "type": "boolean"
           },
           "timeout_ms": {
@@ -6111,13 +6067,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "OrientationDisposition": {
-        "type": "string",
-        "enum": [
-          "adopted",
-          "deferred"
-        ]
       },
       "BrowserSearchEngine": {
         "oneOf": [
@@ -9264,6 +9213,23 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "orientation": {
+                "description": "Optional initial approach recorded atomically with this membership choice. Supply approach too; neither choice accepts a commitment.",
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/OrientationDisposition"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approach": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -13530,21 +13496,10 @@
             ]
           },
           "body_digest": {
-            "description": "Exact serialized JSON request digest for generic mediated external effects.\nOptional only with an explicit bounded native TypeSafe choice permission.",
+            "description": "SHA-256 of the exact JSON body for an external effect.",
             "type": [
               "string",
               "null"
-            ]
-          },
-          "typesafe_choice": {
-            "description": "Allows changing choice questions only at the exact native TypeSafe\ndestination, with explicit model and exposure bounds. No generic wildcard.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ChoiceGrant"
-              },
-              {
-                "type": "null"
-              }
             ]
           },
           "reason": {
@@ -13609,56 +13564,6 @@
           "cpu_seconds",
           "memory_bytes",
           "output_bytes"
-        ]
-      },
-      "ChoiceGrant": {
-        "description": "Explicit authority for a persona to formulate changing choice questions.\nAbsence of this policy NEVER turns an exact-body effect grant into a wildcard.\nToken reservations are operator-supplied conservative exposure, not undocumented\nmax-token request parameters sent to TypeSafe. Keep their evidence current.",
-        "type": "object",
-        "properties": {
-          "models": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "max_questions": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "max_options": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "max_request_bytes": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "input_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "output_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "evidence": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "models",
-          "max_questions",
-          "max_options",
-          "max_request_bytes",
-          "input_tokens",
-          "output_tokens",
-          "evidence"
         ]
       },
       "Bounds": {
@@ -13790,6 +13695,13 @@
           "evidence"
         ]
       },
+      "OrientationDisposition": {
+        "type": "string",
+        "enum": [
+          "adopted",
+          "deferred"
+        ]
+      },
       "Destination": {
         "type": "object",
         "properties": {
@@ -13802,15 +13714,8 @@
               "null"
             ]
           },
-          "api_key_ref": {
-            "description": "Node-owned saved credential. Currently only \"typesafe\", bound to its\nexact official endpoint; the key never enters this configuration record.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "idempotency_supported": {
-            "description": "True only for an actual remote idempotency contract. Native TypeSafe\ndecisions require false: local replay protection is not remote deduplication.",
+            "description": "Generic effects require an actual remote idempotency contract.",
             "type": "boolean"
           },
           "timeout_ms": {
@@ -14600,13 +14505,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "OrientationDisposition": {
-        "type": "string",
-        "enum": [
-          "adopted",
-          "deferred"
-        ]
       },
       "BrowserSearchEngine": {
         "oneOf": [
