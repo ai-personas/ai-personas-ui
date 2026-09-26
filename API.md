@@ -998,11 +998,11 @@ Cancel a tracked process group.
 
 ### `document.write`
 
-Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved.
+Retain an immutable document version synchronously. result.id identifies this exact saved version for reading and submission. document_group groups later writes; omit it for a new document. parents are exact prior version IDs. The receipt includes persisted content in the next decision; rereading unchanged text adds no evidence. Concurrent children are preserved.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `id` | string or null | Optional |  |
+| `document_group` | string or null | Optional |  |
 | `parents` | array or null | Optional |  |
 | `title` | string | Required |  |
 | `content` | string | Required |  |
@@ -1010,11 +1010,11 @@ Retain an immutable document version synchronously. The outer result.id is the e
 
 ### `document.read`
 
-Read an immutable version.
+Read an exact immutable document version using document.write result.id, never its document_group or action request ID.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `version` | string | Required |  |
+| `version_id` | string | Required |  |
 
 ### `context.advance`
 
@@ -1099,7 +1099,7 @@ Preserve exact file bytes and digest.
 
 ### `submit`
 
-Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance.
+Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

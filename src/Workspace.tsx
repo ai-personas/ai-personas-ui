@@ -54,7 +54,7 @@ function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act 
   const assessment = r.kind === 'finding' || r.kind === 'assessment';
   const isBirth = ['birth', 'birth_link', 'birth_proposal'].includes(r.kind);
   const author = d.author || d.owner || d.persona || d.from;
-  const body = text(d.summary) || text(d.description) || text(d.agenda) || text(d.text) || text(d.content) || text(draft.text) || text(draft.description) || text(d.purpose) || text(d.note);
+  const body = text(d.summary) || text(d.description) || text(d.text) || text(d.content) || text(draft.text) || text(draft.description) || text(d.purpose) || text(d.note);
   return <article class={`work-record${inputRequestCount(r) ? ' needs-input' : ''}`} data-kind={r.kind}>
     <header><div>
       <h3><button class="record-title" onClick={() => open(r.id)}>{recordTitle(r)}</button></h3></div>

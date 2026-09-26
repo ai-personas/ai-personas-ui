@@ -798,7 +798,7 @@ export type Command =
   | {
       kind: "document.write";
       args: {
-        id?: string | null;
+        document_group?: string | null;
         parents?: string[] | null;
         title: string;
         content: string;
@@ -808,7 +808,7 @@ export type Command =
   | {
       kind: "document.read";
       args: {
-        version: string;
+        version_id: string;
       };
     }
   | {

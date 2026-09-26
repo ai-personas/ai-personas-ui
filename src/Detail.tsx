@@ -66,7 +66,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
         {d.recall_manifest?.selected?.map((item: any, i: number) => <p key={i}>{String(item.origin).replaceAll('_', ' ')} · {item.nodes?.length || 0} fragments in the required bundle</p>)}
         {d.error && <p role="alert">{text(d.error)}</p>}</>}
       {r.kind === 'resource_root' && <AllowanceSummary id={id} act={actSafe}/>}
-      {['document', 'artifact', 'fragment', 'perspective', 'message'].includes(r.kind) && <ErasePayload record={r} act={actSafe}/>}
+      {['document', 'artifact', 'fragment', 'message'].includes(r.kind) && <ErasePayload record={r} act={actSafe}/>}
       {r.kind === 'artifact' && <button onClick={() => artifact(id)}>Open file</button>}
       {tabs.length > 0 && <><nav class="tabs" aria-label="Detail sections">{tabs.map(t => <button key={t} class={current === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav>
         {current === 'Messages' && r.kind === 'persona' ? <Correspondence key={id} persona={id} open={open}/> : current === 'Actions' || current === 'History' ? <Actions key={current + id} owner={r.kind === 'persona' ? id : ''} run={r.kind === 'run' ? id : ''} act={actSafe} open={open}/>

@@ -3952,7 +3952,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved.",
+            "description": "Retain an immutable document version synchronously. result.id identifies this exact saved version for reading and submission. document_group groups later writes; omit it for a new document. parents are exact prior version IDs. The receipt includes persisted content in the next decision; rereading unchanged text adds no evidence. Concurrent children are preserved.",
             "type": "object",
             "properties": {
               "kind": {
@@ -3962,7 +3962,7 @@
               "args": {
                 "type": "object",
                 "properties": {
-                  "id": {
+                  "document_group": {
                     "type": [
                       "string",
                       "null"
@@ -4004,7 +4004,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Read an immutable version.",
+            "description": "Read an exact immutable document version using document.write result.id, never its document_group or action request ID.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4014,13 +4014,13 @@
               "args": {
                 "type": "object",
                 "properties": {
-                  "version": {
+                  "version_id": {
                     "type": "string"
                   }
                 },
                 "additionalProperties": false,
                 "required": [
-                  "version"
+                  "version_id"
                 ]
               }
             },
@@ -4345,7 +4345,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance.",
+            "description": "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.",
             "type": "object",
             "properties": {
               "kind": {
@@ -8591,11 +8591,11 @@
     ],
     [
       "document.write",
-      "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved."
+      "Retain an immutable document version synchronously. result.id identifies this exact saved version for reading and submission. document_group groups later writes; omit it for a new document. parents are exact prior version IDs. The receipt includes persisted content in the next decision; rereading unchanged text adds no evidence. Concurrent children are preserved."
     ],
     [
       "document.read",
-      "Read an immutable version."
+      "Read an exact immutable document version using document.write result.id, never its document_group or action request ID."
     ],
     [
       "context.advance",
@@ -8631,7 +8631,7 @@
     ],
     [
       "submit",
-      "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance."
+      "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance."
     ],
     [
       "review.start",
@@ -12372,7 +12372,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Retain an immutable document version synchronously. The outer result.id is the exact version for submit.documents; result.data.document groups versions. args.id is that grouping for a later write; parents are prior version record IDs. The receipt is available in the next decision without waiting. Concurrent children are preserved.",
+        "description": "Retain an immutable document version synchronously. result.id identifies this exact saved version for reading and submission. document_group groups later writes; omit it for a new document. parents are exact prior version IDs. The receipt includes persisted content in the next decision; rereading unchanged text adds no evidence. Concurrent children are preserved.",
         "type": "object",
         "properties": {
           "kind": {
@@ -12382,7 +12382,7 @@
           "args": {
             "type": "object",
             "properties": {
-              "id": {
+              "document_group": {
                 "type": [
                   "string",
                   "null"
@@ -12424,7 +12424,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Read an immutable version.",
+        "description": "Read an exact immutable document version using document.write result.id, never its document_group or action request ID.",
         "type": "object",
         "properties": {
           "kind": {
@@ -12434,13 +12434,13 @@
           "args": {
             "type": "object",
             "properties": {
-              "version": {
+              "version_id": {
                 "type": "string"
               }
             },
             "additionalProperties": false,
             "required": [
-              "version"
+              "version_id"
             ]
           }
         },
@@ -12765,7 +12765,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve exact evidence chosen by the persona. documents takes the outer document.write result.id, never result.data.document or the action request.id. A dependent submission is chosen in the next decision after inspecting the write receipt. This does not end ownership or declare acceptance.",
+        "description": "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.",
         "type": "object",
         "properties": {
           "kind": {

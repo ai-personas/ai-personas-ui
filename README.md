@@ -67,7 +67,7 @@ which prepares structured requests and interprets the returned decisions.
   does not block work. Use **Request introduction** in existing work, or ask
   participants to name an environment. Portraits appear only when a real image
   artifact exists.
-- **Retention:** erase selected document, artifact, message, fragment, or perspective
+- **Retention:** erase selected document, artifact, message, or fragment
   payloads separately. Archiving retains accounting, history, and actual effect outcomes.
 - **Documents and details:** **Work → Artifacts & evidence** shows submitted
   documents and files as Learning-style cards with titles, authors, dates, and
@@ -95,11 +95,10 @@ which prepares structured requests and interprets the returned decisions.
   list up to 10,000 ZIP entries in pages of 100. Up to four nested ZIPs can be
   browsed. Larger files and password-protected entries retain original downloads;
   these are browser memory safeguards, not storage or work allowances.
-- **Perspectives:** Individual agendas show each persona's saved priorities for
-  this work, including content, limitations, and sources. Relationship notes are
-  separate. These optional records are not inferred from character or activity;
-  the empty state explains when none have been written. Manage participants from
-  **People & agreements**.
+- **Individual approaches:** See each persona's recorded focus and working
+  intention for this work. Interests and relationship interpretations belong to
+  the persona's fragment graph. These authored views do not establish accepted
+  responsibility or completed work. Manage participants from **People & agreements**.
 - **Delivery conditions:** Deferred or waived blocking findings remain visible
   conditions. Earlier resolutions with stale supporting evidence are shown as
   needing revalidation, with links to the feedback and its referenced version numbers.
