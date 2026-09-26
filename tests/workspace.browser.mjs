@@ -99,7 +99,7 @@ try {
       const state = page.getByLabel('Component status', { exact: true });
       await expect(state).toContainText('Disabled for this work');
       await expect(state).toContainText('Selector was not called: deployment needs 65536 input + 65536 output token reservations');
-      await expect(state).toContainText('Selector assessments: 0 match · 0 no match · 1 unknown');
+      await expect(state).toContainText('Latest selector assessment: 0 match · 0 no match · 1 unknown');
       await expect(state).toContainText('$5.000000');
       await expect(state).toContainText('$0.000042');
       await expect(state).toContainText('24,000 input + 1,200 output tokens');

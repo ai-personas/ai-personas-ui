@@ -6762,7 +6762,7 @@
         "type": "object",
         "properties": {
           "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.",
+            "description": "Exact received source nodes whose conditional connections may select full text.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -15200,7 +15200,7 @@
         "type": "object",
         "properties": {
           "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.",
+            "description": "Exact received source nodes whose conditional connections may select full text.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"

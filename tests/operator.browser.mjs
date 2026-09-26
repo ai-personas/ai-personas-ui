@@ -45,6 +45,13 @@ const provider = createServer(async (req, res) => {
     } else {
       actions = [{ kind: 'wait', args: { reason: 'Explicit synthetic wait for new outside input' } }];
     }
+    // Follow the same contract discovery path available to real generation.
+    // A canonical command can still be absent from this call's loaded schema.
+    const loaded = context.run.data.operation_catalog?.loaded;
+    if (loaded) {
+      const missing = [...new Set(actions.map(action => action.kind).filter(kind => !loaded.includes(kind)))];
+      if (missing.length) actions = missing.map(operation => ({ kind: 'operation.describe', args: { operation } }));
+    }
     const continuity = { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
     if (scenario === 'learn' && !retainedGraph) {
       const lesson = (handle, title) => ({ handle, node: null, draft: { title, short_description: title, content: 'Synthetic graph fixture text.', applicability: 'Browser contract verification', limitations: 'No behavioral claim', sources: [], counterevidence: [] }, related: [], connections: [], retire: false, locator: null });

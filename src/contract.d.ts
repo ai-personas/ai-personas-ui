@@ -1658,6 +1658,8 @@ export interface Selection2 {
 export interface Delegation {
   /**
    * Exact received source nodes whose conditional connections may select full text.
+   * For a source created OR edited in this transaction, use its $handle with
+   * revision 0 to bind the committed version, not its old ID or @memory alias.
    */
   sources: VersionRef[];
   expires: string;
