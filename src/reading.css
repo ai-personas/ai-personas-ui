@@ -18,6 +18,9 @@ button.reader-reference { min-height: 24px; padding: 0; font-size: inherit; line
 .reader-prose h3, .reader-prose h4, .reader-prose h5, .reader-prose h6 { font-weight: 650; line-height: 1.4; margin: 1.5em 0 .65em; color: var(--ink); }
 .reader-prose ul, .reader-prose ol { padding-left: 1.5em; margin: .8em 0 1.15em; }
 .reader-prose li { margin: .35em 0; }
+.reader-prose ul > .reader-task-item { list-style: none; }
+.reader-prose ul > .reader-task-item > .reader-task,
+.reader-prose ul > .reader-task-item > p > .reader-task { margin-left: -1.35em; }
 .reader-prose li > p { margin: .25em 0; }
 .reader-prose blockquote { border-left: 3px solid #adc3b1; background: #f5f8f1; padding: 12px 18px; margin: 1em 0; }
 .reader-prose blockquote > :last-child { margin-bottom: 0; }

@@ -206,7 +206,9 @@ try {
       for (const text of ['Gather materials', 'Confirm details', 'Review notes', 'Nested check']) {
         const item = detail.locator('.reader-prose li').filter({ hasText: text }).last();
         await expect(item).not.toContainText(/\[[ xX]\]/);
+        await expect(item).toHaveCSS('list-style-type', 'none');
       }
+      await expect(detail.locator('.reader-prose li').filter({ hasText: 'Four bedrooms' })).toHaveCSS('list-style-type', 'disc');
       await expect(detail.locator('.reader-prose')).toContainText('Ordinary [ ] text stays literal.');
       await expect(detail.locator('code').filter({ hasText: 'A code example' })).toBeVisible();
       await expect(detail.locator('.reader-context-links')).toContainText('Shared design room');

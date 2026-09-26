@@ -43,8 +43,8 @@ function nodes(tokens: Token[], depth = 0): ComponentChildren {
       </svg>;
       case 'list': {
         const list = token as Tokens.List;
-        const items = list.items.map((item, n) => <li key={n}>{nodes(item.tokens, depth + 1)}</li>);
-        return list.ordered ? <ol key={i} start={Number(list.start) || 1}>{items}</ol> : <ul key={i}>{items}</ul>;
+        const items = list.items.map((item, n) => <li key={n} class={item.task ? 'reader-task-item' : undefined}>{nodes(item.tokens, depth + 1)}</li>);
+        return list.ordered ? <ol key={i} start={Number(list.start) || 1}>{items}</ol> : <ul key={i} role={list.items.some(item => item.task) ? 'list' : undefined}>{items}</ul>;
       }
       case 'table': {
         const table = token as Tokens.Table;
