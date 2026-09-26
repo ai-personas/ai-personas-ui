@@ -7,12 +7,14 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
   const { value, error, loading, retry } = useResource<Record<string, unknown>>(`/work/${work}/readiness`, e => ['run', 'call', 'persona', 'recall_policy', 'information_policy', 'work', 'resource_root', 'budget_charge', 'memory_node', 'action'].includes(e.kind));
   const people = Array.isArray(value?.participants) ? value.participants.map(fields) : [];
   const budget = fields(value?.jev_budget), funding = fields(value?.funding), tokens = fields(funding.observed_tokens);
+  const workUsage = fields(value?.work_usage), workTokens = fields(workUsage.observed_tokens);
   const amount = (n: unknown) => typeof n === 'number' ? `$${(n / 1_000_000).toFixed(6)}` : 'Not available';
   return <section class="workspace-section" aria-label="Component status" aria-busy={loading}>
     <header class="section-heading"><div><h2>Component status</h2><p>Current configuration and recorded activity. A configured component or selected fragment does not establish useful work.</p></div><button class="text-button" onClick={retry}>Refresh component status</button></header>
     {error && <p role="alert">Component status could not be refreshed. Displayed observations may be stale.</p>}
     {!value && !error && <p role="status">Reading component status…</p>}
     {value && <>
+      {typeof workTokens.input === 'number' && typeof workTokens.output === 'number' && <p>This work: <strong>{workTokens.input.toLocaleString()} input + {workTokens.output.toLocaleString()} output tokens</strong> · {String(workUsage.calls)} calls · {String(workUsage.running)} running · {String(workUsage.uncertain)} with uncertain usage. Initialization is counted in the shared allowance.</p>}
       <p class="micro">Observed {timestamp(text(value.observed))}. Funding: {text(funding.binding, 'Not reported')}. {typeof tokens.input === 'number' && typeof tokens.output === 'number' && `Measured across the shared allowance: ${tokens.input.toLocaleString()} input + ${tokens.output.toLocaleString()} output tokens.`}</p>
       <p>JEV node limit: <strong>{amount(budget.limit_micro_usd)}</strong> · Accounted: {amount(budget.accounted_micro_usd)} · Remaining: {amount(budget.remaining_micro_usd)}</p>
       {Boolean(budget.error) && <p role="alert">JEV spending could not be verified.</p>}

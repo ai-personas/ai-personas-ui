@@ -63,6 +63,7 @@ try {
       if (u.pathname === '/api/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': fixture keepalive\n\n' });
       if (u.pathname === `/api/work/${work}/readiness`) return route.fulfill({ json: {
         schema: 'work-readiness/1', observed: stamp, funding: { binding: 'unfunded', observed_tokens: { input: 24000, output: 1200 } },
+        work_usage: { calls: 4, running: 0, uncertain: 1, observed_tokens: { input: 9000, output: 600 } },
         jev_budget: { limit_micro_usd: 5000000, accounted_micro_usd: 42, remaining_micro_usd: 4999958 },
         participants: [{ persona: person, run: id(3), name: 'Mira fixture', status: 'running', provider: 'fixture', model: 'Fixture model', provider_configured: true, model_discovered: true, character_ready: true, avatar: 'unavailable', self_fragments: 1, retained_fragments: 3, selector_policy: 'disabled', last_selector: { call: id(40), result: { status: 'deterministic_fallback', diagnostic: { stage: 'exposure_check', attempt_admitted: false, quoted_tokens: { input: 65536, output: 65536 }, approved_tokens: { input: 64000, output: 8192 } } } }, publications: 0, submissions: 0 }, { persona: id(42), run: id(43), name: 'Unknown assessment fixture', last_selector: { result: { status: 'validated', counts: { match: 0, no_match: 0, unknown: 1 } } } }]
       } });
@@ -102,6 +103,8 @@ try {
       await expect(state).toContainText('$5.000000');
       await expect(state).toContainText('$0.000042');
       await expect(state).toContainText('24,000 input + 1,200 output tokens');
+      await expect(state).toContainText('This work: 9,000 input + 600 output tokens');
+      await expect(state).toContainText('1 with uncertain usage');
       await expect(state).toContainText('0 published versions · 0 submissions');
       await expect(state).toContainText('does not establish useful work');
     });
