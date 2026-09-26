@@ -6,6 +6,7 @@ import { chromium, expect } from '@playwright/test';
 
 const port = Number(process.env.IDENTITY_TEST_PORT || 5187), origin = `http://127.0.0.1:${port}`;
 const id = 'a'.repeat(32), operation = 'b'.repeat(32), second = 'c'.repeat(32);
+const selfFragment = 'd'.repeat(32), selfNode = 'e'.repeat(32), selfText = 'I retain exact constraints before acting.';
 const revision = (number, data = {}) => ({ id, kind: 'persona', scope: '', revision: number,
   created: '2026-01-01T00:00:00Z', updated: `2026-01-0${number}T00:00:00Z`, data });
 const revisions = [revision(1), revision(2, { character: 'Careful and curious', ocean: { openness: 0 }, vad: { valence: -1 } }),
@@ -15,9 +16,11 @@ await mkdir('.qa', { recursive: true });
 const harness = resolve('.qa/identity-harness.tsx');
 await writeFile(harness, `import { h, render } from 'preact';
 import Identity from '../src/Identity';
+import { changes } from '../src/api';
 import '../src/style.css';
 const host = document.getElementById('identity-test')!;
 (window as any).showPersona = (persona: any) => render(h(Identity, { persona, act: async (kind: string, args: any) => { (window as any).initializationAction = {kind,args}; return {}; }, open: (id: string) => { (window as any).opened = id; } }), host);
+(window as any).invalidateSelf = () => changes.dispatchEvent(new CustomEvent('change', {detail:{kind:'fragment'}}));
 (window as any).showPersona(${JSON.stringify(revisions[0])});`);
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
 let output = ''; server.stdout.on('data', data => { output += data; }); server.stderr.on('data', data => { output += data; });
@@ -33,10 +36,14 @@ try {
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 900, height: 950 } });
   const errors = [], requests = []; let failHistory = false, wrongPersona = false;
+  let fragmentRevision = 1;
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/identity-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main id="identity-test" style="max-width:600px;padding:16px;box-sizing:border-box"></main><script type="module" src="/.qa/identity-harness.tsx"></script></body></html>' }));
   await page.route('**/api/**', async route => {
     const req = route.request(), url = new URL(req.url()); requests.push({ method: req.method(), path: url.pathname });
+    if (url.pathname === '/api/records/' + selfNode) return route.fulfill({ json: { id: selfNode, kind: 'memory_node', revision: 1, scope: id, data: { owner: id, status: 'retained', fragment: { id: selfFragment, revision: 1 } } } });
+    if (url.pathname === '/api/records/' + selfFragment) return route.fulfill({ json: { id: selfFragment, kind: 'fragment', revision: fragmentRevision, scope: id, data: { owner: id, status: 'retained', draft: { title: 'My working approach', content: selfText } } } });
+    if (url.pathname.endsWith('/memory/usage/' + selfFragment)) return route.fulfill({ json: { selected_participations: 0, admitted_calls: 0, recent_calls: [] } });
     if (url.pathname.endsWith('/revisions')) {
       if (failHistory) return route.fulfill({ status: 503, json: { error: 'Synthetic history failure' } });
       const later = Number(url.searchParams.get('after')) > 0;
@@ -72,6 +79,35 @@ try {
   wrongPersona = false;
   await page.getByRole('button', { name: 'Retry history' }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit character and authorship' }).click();
+  await page.getByLabel('Character', { exact: true }).fill('Unsaved profile draft');
+  await page.evaluate(persona => window.showPersona(persona), revision(4, { character: 'Newer authored character' }));
+  await expect(page.getByRole('button', { name: 'Save your changes' })).toBeDisabled();
+  await expect(page.getByLabel('Character', { exact: true })).toHaveValue('Unsaved profile draft');
+  await expect(page.getByRole('alert')).toContainText('profile changed while you were editing');
+  await page.getByRole('button', { name: 'Cancel edit' }).click();
+  console.log('PASS profile: a changed revision cannot silently authorize an older draft');
+
+  const self = revision(5, { character: selfText, self_model: { revision: 5, nodes: [{ id: selfNode, revision: 1 }], fragments: [{ id: selfFragment, revision: 1 }] } });
+  await page.evaluate(persona => window.showPersona(persona), self);
+  const current = page.getByRole('region', { name: 'Current self-model', exact: true });
+  await expect(current.getByText(selfText, { exact: true })).toBeVisible();
+  await expect(current).toContainText('designation revision 5');
+  await current.getByRole('button', { name: 'Inspect self-fragment sources' }).click();
+  await expect(current.locator('.memory-fragment')).toContainText('revision 1');
+  console.log('PASS profile: current character exposes its exact ordinary fragment sources');
+  fragmentRevision = 2;
+  await page.evaluate(() => window.invalidateSelf());
+  await expect(current.getByRole('alert')).toContainText('Could not verify the current self-model');
+  await expect(current.getByText(selfText, { exact: true })).toHaveCount(0);
+  fragmentRevision = 1;
+  await current.getByRole('button', { name: 'Retry self-model' }).click();
+  await expect(current.locator('.record-prose').first()).toHaveText(selfText);
+  console.log('PASS profile: a changed source withholds the projection until exact retry succeeds');
+  await page.evaluate(persona => window.showPersona(persona), { ...self, revision: 6, data: { ...self.data, character: 'UNBOUND_CHARACTER_TEXT' } });
+  await expect(current.getByRole('alert')).toContainText('designated self-fragments');
+  await expect(current.getByText('UNBOUND_CHARACTER_TEXT', { exact: true })).toHaveCount(0);
+  await page.evaluate(persona => window.showPersona(persona), revisions[2]);
   await page.setViewportSize({ width: 375, height: 900 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'identity/history must fit a narrow screen');
   await page.screenshot({ path: '.qa/identity-mobile.png', fullPage: true });

@@ -24,6 +24,7 @@ import { render } from 'preact';
 import { useState } from 'preact/hooks';
 import Fragment from '../src/MemoryFragment';
 import Locator from '../src/MemoryLocator';
+import RecallControls from '../src/RecallControls';
 import { useResource } from '../src/hooks';
 import { changes } from '../src/api';
 import '../src/style.css';
@@ -48,6 +49,7 @@ function App() {
     {pane === 'fragment' && <Fragment id="${fragment}" revision={1} owner="${owner}" open={id => w.opened.push(id)}/>}
     {pane === 'utility' && <Locator node="${node}" revision={2} fragment={{id:'${fragment}',revision:1}} owner="${owner}"/>}
     {pane === 'probe' && <Probe/>}
+    {pane === 'recall' && <RecallControls run={{id:'${'9'.repeat(32)}',kind:'run',scope:'${'e'.repeat(32)}',revision:1,data:{persona:'${owner}'},created:'',updated:''}} act={async (kind, args) => {w.recallAction={kind,args};return {} as any;}}/>}
   </main>;
 }
 render(<App/>, document.getElementById('test')!);
@@ -67,6 +69,8 @@ try {
   let fragmentBody = { ...validFragment, revision: 2 }, utilityBody = validNode;
   let holdFragment = false, holdUtility = false, usageRequests = 0;
   let usageBody = { selected_participations: 1, admitted_calls: 2, recent_calls: [] };
+  const policy = { id: 'f'.repeat(32), kind: 'recall_policy', scope: owner, revision: 7, data: { owner, work: 'e'.repeat(32), status: 'disabled', policy: null } };
+  let failPolicyPage = true;
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (request.method() !== 'GET') writes.push(request.method()); });
   await page.route('**/memory-details-fixture', route => route.fulfill({ contentType: 'text/html',
@@ -81,6 +85,13 @@ try {
   });
   await page.route('**/api/personas/*/memory/usage/*', route => { usageRequests++; return route.fulfill({ json: usageBody }); });
   await page.route('**/api/memory-details-probe', route => { probeRequests.push(route); });
+  await page.route('**/api/inference', route => route.fulfill({ json: { models: [] } }));
+  await page.route('**/api/records?*', route => {
+    const after = Number(new URL(route.request().url()).searchParams.get('after'));
+    if (after && failPolicyPage) return route.fulfill({ status: 503, json: { error: 'Later permission page unavailable' } });
+    return route.fulfill({ json: { items: after ? [policy] : Array.from({length:24}, (_,i) => ({...policy,id:i.toString(16).padStart(32,'0'),data:{...policy.data,work:i.toString(16).padStart(32,'0')}})), next: after ? null : 24, sequence: 1 } });
+  });
+  await page.route('**/api/records/' + policy.id, route => route.fulfill({ json: policy }));
   await page.goto(origin + '/memory-details-fixture');
   await page.waitForFunction(() => typeof window.showMemory === 'function');
 
@@ -161,6 +172,17 @@ try {
   await probeRequests[4].fulfill({ json: { label: 'AFTER_REENABLE' } });
   await expect(page.getByTestId('probe')).toHaveText('AFTER_REENABLE');
   console.log('PASS race: re-enabled observer cannot flash its previous snapshot');
+
+  await page.evaluate(() => window.showMemory('recall'));
+  await expect(page.getByRole('alert')).toContainText('Later permission page unavailable');
+  await expect(page.getByRole('button', { name: 'Save recall permission' })).toHaveCount(0);
+  console.log('PASS recall: a later-page failure cannot become a new empty permission');
+  failPolicyPage = false;
+  await page.getByRole('button', { name: 'Retry recall permission' }).click();
+  await page.getByLabel('Reason', { exact: true }).fill('Retain disabled selector permission');
+  await page.getByRole('button', { name: 'Save recall permission' }).click();
+  assert.deepEqual(await page.evaluate(() => window.recallAction), { kind: 'recall.configure', args: { persona: owner, work: policy.data.work, revision: 7, reason: 'Retain disabled selector permission', policy: null } });
+  console.log('PASS recall: later pages resolve the exact existing policy revision');
 
   await page.evaluate(() => window.showMemory('none'));
   await expect.poll(() => page.evaluate(() => window.listeners)).toBe(0);

@@ -1,4 +1,5 @@
 import CharacterInitialization from './CharacterInitialization';
+import CurrentSelf from './CurrentSelf';
 import { useEffect, useState } from 'preact/hooks';
 import { data, type Entity } from './api';
 import { fields, isRecordID, text } from './workspace';
@@ -25,7 +26,7 @@ export default function Identity({ persona, open, act }: { persona: Entity; act:
     }}>{copied ? 'ID copied' : 'Copy ID'}</button></div>
     {copyError && <p role="status" class="micro">{copyError}</p>}
     <CharacterInitialization persona={persona} act={act}/>
-    <h4>Current character</h4><p class="record-prose">{text(d.character) || 'No narrative character is recorded yet.'}</p>
+    <h4>Current character</h4><CurrentSelf key={persona.id} persona={persona} open={open}/>
     {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona until it chooses one.</p>}
     <dl class="identity-milestones">{[['Created', milestones.created || persona.created], ['Oriented', milestones.oriented], ['Joined work', milestones.joined], ['Accepted responsibility', milestones.committed]].map(([label, value]) => <div key={String(label)}><dt>{String(label)}</dt><dd>{typeof value === 'string' && value ? <time dateTime={value}>{timestamp(value)}</time> : 'Not recorded'}</dd></div>)}</dl>
     <p class="micro">Creation, membership and accepted responsibility are separate milestones.</p>

@@ -3,7 +3,13 @@ import { changes, resourceRequest, type Entity, type Page } from './api';
 import { matchesRecords } from './workspace';
 
 export function useResource<T>(path: string, relevant: (event: any) => boolean = () => true, enabled = true) {
+  return useObservation(path, signal => resourceRequest<T>(path, signal), relevant, enabled);
+}
+
+// A multi-record read uses the same cancellation and invalidation fence as a single resource.
+export function useObservation<T>(path: string, read: (signal: AbortSignal) => Promise<T>, relevant: (event: any) => boolean = () => true, enabled = true) {
   const relevance = useRef(relevant); relevance.current = relevant;
+  const reader = useRef(read); reader.current = read;
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt(n => n + 1), []);
   // A retry or re-enabled observer must revalidate even when its path is unchanged.
@@ -24,7 +30,7 @@ export function useResource<T>(path: string, relevant: (event: any) => boolean =
       const started = generation;
       setState(s => ({ ...s, loading: true }));
       try {
-        const value = await resourceRequest<T>(path, controller.signal);
+        const value = await reader.current(controller.signal);
         if (!controller.signal.aborted && started === generation) setState({ key, value, error: '', loading: false });
       } catch (e) {
         if (!controller.signal.aborted && started === generation) setState(s => ({ ...s, key, error: (e as Error).message, loading: false }));
