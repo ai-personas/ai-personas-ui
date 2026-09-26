@@ -16,8 +16,8 @@ function Lesson({ item, owner, open, navigate }: { item: Card; owner: string; op
     <div class="memory-actions">
       <button class="text-button" onClick={() => navigate(item.node.id)}>Explore connections</button><button class="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Close fragment' : 'Read fragment'}</button>{item.locator && <button class="text-button" aria-expanded={utility} onClick={() => setUtility(!utility)}>{utility ? 'Close retrieval utility' : 'How this finds lessons'}</button>}
     </div>
-    {utility && <Suspense fallback={<p>Loading retrieval utility…</p>}><Locator node={item.node.id}/></Suspense>}
-    {expanded && <Suspense fallback={<p role="status">Loading fragment…</p>}><Fragment key={item.fragment.id + ":" + item.fragment.revision} id={item.fragment.id} owner={owner} open={open}/></Suspense>}
+    {utility && <Suspense fallback={<p>Loading retrieval utility…</p>}><Locator key={item.node.id + ":" + item.node.revision} node={item.node.id} revision={item.node.revision} fragment={item.fragment} owner={owner}/></Suspense>}
+    {expanded && <Suspense fallback={<p role="status">Loading fragment…</p>}><Fragment key={item.fragment.id + ":" + item.fragment.revision} id={item.fragment.id} revision={item.fragment.revision} owner={owner} open={open}/></Suspense>}
   </article></li>;
 }
 export default function MemoryGraph({ owner, open }: { owner: string; open: (id: string) => void }) {
