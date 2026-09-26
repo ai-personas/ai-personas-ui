@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "contract": "node scripts/contract.mjs",
-    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/files.test.mjs tests/tar.test.mjs tests/inference-evidence.test.mjs tests/exploration-policy.test.mjs tests/memory-graph.test.mjs tests/memory-graph-boundaries.test.mjs tests/memory-details.test.mjs",
+    "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/files.test.mjs tests/tar.test.mjs tests/inference-evidence.test.mjs tests/exploration-policy.test.mjs tests/memory-graph.test.mjs tests/memory-graph-boundaries.test.mjs tests/memory-details.test.mjs tests/resource-sharing.test.mjs",
     "test:identity": "node tests/identity.browser.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:files": "node tests/files.browser.mjs",
@@ -19,7 +19,7 @@
     "test:participants": "node tests/participants.browser.mjs",
     "test:reliability": "node tests/reliability.browser.mjs",
     "test:development": "node tests/development.browser.mjs",
-    "test:memory": "node tests/memory.browser.mjs && node tests/memory-details.browser.mjs"
+    "test:memory": "node tests/memory.browser.mjs && node tests/memory-details.browser.mjs && node tests/resource-sharing.browser.mjs"
   },
   "dependencies": {
     "@zip.js/zip.js": "2.17.0",

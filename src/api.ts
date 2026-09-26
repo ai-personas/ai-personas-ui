@@ -9,7 +9,8 @@ export const data = (r: Entity): Record<string, any> => r.data && typeof r.data 
 export let token = '';
 try { sessionStorage.removeItem('personas-token'); } catch { /* Storage may be disabled. */ }
 const pending = new Map<string, { body: string; inflight?: Promise<Action> }>();
-export function connect(value: string) { token = value.trim(); pending.clear(); for (const read of reads.values()) read.controller.abort(); reads.clear(); }
+let connectionGeneration = 0, resourceGeneration = 0;
+export function connect(value: string) { connectionGeneration++; token = value.trim(); pending.clear(); for (const read of reads.values()) read.controller.abort(); reads.clear(); }
 export function authHeaders(): Record<string, string> {
   return { 'X-Personas-Client': 'workspace', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
@@ -31,13 +32,16 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 const reads = new Map<string, { controller: AbortController; promise: Promise<unknown>; users: number }>();
 export function resourceRequest<T>(path: string, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
-  let read = reads.get(path);
+  // A new observer must not join a request that predates a known change.
+  const session = connectionGeneration;
+  const key = JSON.stringify([session, resourceGeneration, path]);
+  let read = reads.get(key);
   if (!read) {
     const controller = new AbortController();
     read = { controller, users: 0, promise: request(path, { signal: controller.signal }) };
     const current = read;
-    reads.set(path, read);
-    void read.promise.finally(() => { if (reads.get(path) === current) reads.delete(path); }).catch(() => {});
+    reads.set(key, read);
+    void read.promise.finally(() => { if (reads.get(key) === current) reads.delete(key); }).catch(() => {});
   }
   const current = read; current.users++;
   return new Promise<T>((resolve, reject) => {
@@ -45,12 +49,21 @@ export function resourceRequest<T>(path: string, signal: AbortSignal): Promise<T
     const finish = () => {
       if (done) return false;
       done = true; signal.removeEventListener('abort', abort);
-      if (--current.users === 0) { current.controller.abort(); if (reads.get(path) === current) reads.delete(path); }
+      current.controller.signal.removeEventListener('abort', abort);
+      if (--current.users === 0) { current.controller.abort(); if (reads.get(key) === current) reads.delete(key); }
       return true;
     };
     const abort = () => { if (finish()) reject(new DOMException('Aborted', 'AbortError')); };
     signal.addEventListener('abort', abort, { once: true });
-    current.promise.then(value => { if (finish()) resolve(value as T); }, error => { if (finish()) reject(error); });
+    current.controller.signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted || current.controller.signal.aborted) abort();
+    current.promise.then(value => {
+      if (session !== connectionGeneration) abort();
+      else if (finish()) resolve(value as T);
+    }, error => {
+      if (session !== connectionGeneration) abort();
+      else if (finish()) reject(error);
+    });
   });
 }
 function stable(value: unknown): string {
@@ -94,6 +107,9 @@ export function label(r?: Entity): string {
 export const short = (value: unknown, length = 180) => (typeof value === 'string' ? value : JSON.stringify(value) || '').slice(0, length);
 export const fileURL = (id: string) => '/api/artifacts/' + encodeURIComponent(id);
 export const changes = new EventTarget();
+// Register before UI observers, including observers added during dispatch. This
+// only fences future sharing; existing hooks decide which resources to reload.
+changes.addEventListener('change', () => { resourceGeneration++; });
 export function changed(detail: unknown = null) { changes.dispatchEvent(new CustomEvent('change', { detail })); }
 export async function watch(signal: AbortSignal, status: (message: string) => void) {
   let cursor: number | undefined;
