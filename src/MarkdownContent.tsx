@@ -37,11 +37,10 @@ function nodes(tokens: Token[], depth = 0): ComponentChildren {
       case 'code': return <pre key={i}><code>{token.text}</code></pre>;
       case 'codespan': return <code key={i}>{decoded(token.text)}</code>;
       case 'blockquote': return <blockquote key={i}>{children()}</blockquote>;
+      case 'checkbox': return <span key={i} class="reader-task" aria-label={token.checked ? 'Checked' : 'Unchecked'}>{token.checked ? '☑' : '☐'} </span>;
       case 'list': {
         const list = token as Tokens.List;
-        const items = list.items.map((item, n) => <li key={n}>
-          {item.task && <span class="reader-task" aria-label={item.checked ? 'Checked' : 'Unchecked'}>{item.checked ? '☑' : '☐'} </span>}
-          {nodes(item.tokens, depth + 1)}</li>);
+        const items = list.items.map((item, n) => <li key={n}>{nodes(item.tokens, depth + 1)}</li>);
         return list.ordered ? <ol key={i} start={Number(list.start) || 1}>{items}</ol> : <ul key={i}>{items}</ul>;
       }
       case 'table': {

@@ -9,7 +9,7 @@ const stamp = '2026-09-16T00:00:00Z';
 const record = (n, kind, data, scope = work) => ({ id: id(n), kind, scope, revision: 1, created: stamp, updated: stamp, data });
 const bytes = Buffer.from('Exact fixture bytes. Not a real engineering result.\n');
 const digest = createHash('sha256').update(bytes).digest('hex');
-const documentText = '# A clear plan\n\nA **shared baseline** with readable steps.\n\n## Rooms\n\n- Four bedrooms\n- Two bathrooms\n\n| Room | Count |\n| --- | --- |\n| Bedroom | 4 |\n\n[Unsafe link](javascript:alert(1))\n\n![External image](https://example.invalid/tracker.png)\n\n<img src="x" onerror="window.readerInjected=true">\n\n```text\nA code example\n```';
+const documentText = '# A clear plan\n\nA **shared baseline** with readable steps.\n\n## Rooms\n\n- Four bedrooms\n- Two bathrooms\n\n| Room | Count |\n| --- | --- |\n| Bedroom | 4 |\n\n## Checklist\n\n- [ ] Gather materials\n- [x] **Confirm details**\n\n- [ ] Review notes\n\n  Keep this paragraph with the task.\n\n  - [X] Nested check\n\nOrdinary [ ] text stays literal.\n\n[Unsafe link](javascript:alert(1))\n\n![External image](https://example.invalid/tracker.png)\n\n<img src="x" onerror="window.readerInjected=true">\n\n```text\nA code example\n```';
 const records = [
   record(1, 'work', { title: 'Fixture house', brief: 'A fixture need, not a generated house.', personas: [person], activity: { running: 1 }, submissions: 1, assessments: { accepted: 1 }, pending_requests: 1, input_requests: 1, mandate: { id: id(19), revision: 1 }, core: { binding: 'adopted', continuation: { status: 'awaiting_acceptance', owners: [] }, coverage: { outcomes: [], scope_review_current: false, scope_review_required: false }, acceptance: null, blocking_feedback: [{ id: id(25), revision: 1 }], stale_resolutions: [{ id: id(25), revision: 1 }], deferred_feedback: [{ id: id(26), revision: 1 }], stale_assumptions: [{ id: id(27), revision: 1 }], handoff_gaps: [{ commitment: { id: id(28), revision: 1 }, owner: person, continuation: true }] }, last_operation: id(99), participant_ids: [person], runtime_only: { kind: 'INTERNAL_ENVELOPE', schema: 'transport/99' } }, ''),
   record(2, 'persona', { name: 'Mira fixture', character: 'Interested in comparing alternatives.', model: 'fixture-only' }, ''),
@@ -199,6 +199,13 @@ try {
       await expect(detail.locator('strong').filter({ hasText: 'shared baseline' })).toBeVisible();
       await expect(detail.getByRole('columnheader', { name: 'Room', exact: true })).toBeVisible();
       await expect(detail.locator('.reader-prose li').filter({ hasText: 'Four bedrooms' })).toBeVisible();
+      await expect(detail.locator('.reader-task[aria-label=Unchecked]')).toHaveCount(2);
+      await expect(detail.locator('.reader-task[aria-label=Checked]')).toHaveCount(2);
+      for (const text of ['Gather materials', 'Confirm details', 'Review notes', 'Nested check']) {
+        const item = detail.locator('.reader-prose li').filter({ hasText: text }).last();
+        await expect(item).not.toContainText(/\[[ xX]\]/);
+      }
+      await expect(detail.locator('.reader-prose')).toContainText('Ordinary [ ] text stays literal.');
       await expect(detail.locator('code').filter({ hasText: 'A code example' })).toBeVisible();
       await expect(detail.locator('.reader-context-links')).toContainText('Shared design room');
       await expect(detail.locator('.reader-fields, .reader-properties')).toHaveCount(0);
