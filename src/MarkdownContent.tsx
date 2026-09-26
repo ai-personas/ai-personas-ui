@@ -37,7 +37,10 @@ function nodes(tokens: Token[], depth = 0): ComponentChildren {
       case 'code': return <pre key={i}><code>{token.text}</code></pre>;
       case 'codespan': return <code key={i}>{decoded(token.text)}</code>;
       case 'blockquote': return <blockquote key={i}>{children()}</blockquote>;
-      case 'checkbox': return <span key={i} class="reader-task" aria-label={token.checked ? 'Checked' : 'Unchecked'}>{token.checked ? '☑' : '☐'} </span>;
+      case 'checkbox': return <svg key={i} class="reader-task" viewBox="0 0 16 16" role="img" aria-label={token.checked ? 'Checked' : 'Unchecked'}>
+        <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
+        {token.checked && <path d="m4 8 2.5 2.5L12 5"/>}
+      </svg>;
       case 'list': {
         const list = token as Tokens.List;
         const items = list.items.map((item, n) => <li key={n}>{nodes(item.tokens, depth + 1)}</li>);

@@ -201,6 +201,8 @@ try {
       await expect(detail.locator('.reader-prose li').filter({ hasText: 'Four bedrooms' })).toBeVisible();
       await expect(detail.locator('.reader-task[aria-label=Unchecked]')).toHaveCount(2);
       await expect(detail.locator('.reader-task[aria-label=Checked]')).toHaveCount(2);
+      await expect(detail.getByRole('img', { name: 'Unchecked', exact: true })).toHaveCount(2);
+      await expect(detail.getByRole('img', { name: 'Checked', exact: true })).toHaveCount(2);
       for (const text of ['Gather materials', 'Confirm details', 'Review notes', 'Nested check']) {
         const item = detail.locator('.reader-prose li').filter({ hasText: text }).last();
         await expect(item).not.toContainText(/\[[ xX]\]/);
