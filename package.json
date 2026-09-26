@@ -10,7 +10,6 @@
     "test": "node --experimental-strip-types --test tests/workspace.test.mjs tests/api.test.mjs tests/presentation.test.mjs tests/identity.test.mjs tests/files.test.mjs tests/tar.test.mjs tests/inference-evidence.test.mjs tests/exploration-policy.test.mjs tests/memory-graph.test.mjs",
     "test:identity": "node tests/identity.browser.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
-    "test:browser": "node tests/browser.mjs",
     "test:files": "node tests/files.browser.mjs",
     "test:live": "node tests/live.mjs",
     "test:operator": "node tests/operator.browser.mjs",

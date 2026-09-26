@@ -45,10 +45,13 @@ export default function MemoryGraph({ owner, open }: { owner: string; open: (id:
       {loading && <p role="status">Loading learning…</p>}
       {value && <>{value.focus_card && cards([value.focus_card])}<h3>{query ? 'Matching lessons' : focus ? 'Connected fragments' : 'All fragments'}</h3>{cards(value.items)}{!value.items.length && <p>{query ? 'No matching lessons.' : focus ? 'No available connections here.' : 'No lessons retained yet.'}</p>}
         <Pagination disabled={loading} previous={pages.length > 1} next={value.next} onPrevious={() => setPages(pages.slice(0, -1))} onNext={() => { if (value.next !== null) setPages([...pages, value.next]); }}/>
-        {!!value.connections.length && <section aria-label="Authored connections"><h3>Authored connections</h3><p class="micro">Only connections between fragments on this page are shown. Associations do not activate full text or establish usefulness.</p>{value.connections.map(edge => {
+        {!!value.connections.length && <section aria-label="Authored connections"><h3>Authored connections</h3><p class="micro">Only connections between fragments on this page are shown. Browsing does not select context or establish usefulness.</p>{value.connections.map(edge => {
           const titles = [value.focus_card, ...value.items].filter(Boolean) as Card[];
           const name = (id: string) => titles.find(card => card.node.id === id)?.title || 'Fragment';
-          return <article class="memory-card" key={edge.source.id + ':' + edge.target.id}><p>{name(edge.source.id)} → {name(edge.target.id)}</p><p class="micro">{edge.origin === 'legacy_parent' ? 'Legacy association (not a hierarchy)' : 'Authored association'} · Preview only · Applicability not evaluated</p></article>;
+          return <article class="memory-card" key={edge.source.id + ':' + edge.target.id + ':' + edge.origin}><p>{name(edge.source.id)} → {name(edge.target.id)}</p>{edge.origin === 'authored_condition' ? <>
+            <Story value={edge.explanation}/><p class="micro">{edge.relation} · {edge.mode === 'full' ? 'Full text under delegation' : 'Preview'} · Applicability not evaluated</p>
+            <details><summary>Recall condition</summary><pre>{JSON.stringify(edge.condition, null, 2)}</pre>{edge.work && <p>Work: {edge.work}</p>}{edge.expires && <p>Expires: {edge.expires}</p>}</details>
+          </> : <p class="micro">Authored association · Preview only · Applicability not evaluated</p>}</article>;
         })}</section>}</>}
     </>}
   </section>;

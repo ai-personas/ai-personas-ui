@@ -1,60 +1,49 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { memoryGraphPath, readMemoryGraph } from '../src/memoryGraph.ts';
-import { owner, first, second, later, card, edge, page } from './memory-graph.fixture.mjs';
+import { owner, first, second, later, card, edge, conditional, page } from './memory-graph.fixture.mjs';
 const a = card(first, 'Check representations'), b = card(second, 'Compare exports');
 const request = (extra = {}) => ({ owner, focus: '', after: 0, query: '', ...extra });
 const focused = () => page({ focus: a, items: [b], connections: [edge(a, b)] });
 const reject = (value, req = request()) => assert.throws(() => readMemoryGraph(value, req), /supported memory-graph\/1 contract/);
 
-test('navigation uses the implemented branch query parameter, not an ignored focus parameter', () => {
+test('navigation requests the focused graph neighborhood', () => {
   const url = new URL(memoryGraphPath(request({ focus: first, after: 12 })), 'http://localhost');
   assert.equal(url.pathname, `/personas/${owner}/memory`);
-  assert.equal(url.searchParams.get('branch'), first);
-  assert.equal(url.searchParams.has('focus'), false);
+  assert.equal(url.searchParams.get('focus'), first);
   assert.equal(url.searchParams.get('after'), '12');
   assert.equal(url.searchParams.get('limit'), '12');
 });
 test('search text is encoded as data, not additional query parameters', () => {
-  const query = 'révision & branch=unexpected # +';
+  const query = 'révision & focus=unexpected # +';
   const url = new URL(memoryGraphPath(request({ query })), 'http://localhost');
   assert.equal(url.searchParams.get('query'), query);
-  assert.equal(url.searchParams.has('branch'), false);
+  assert.equal(url.searchParams.has('focus'), false);
   assert.equal(url.hash, '');
 });
-test('a rootless all-owned page is accepted without a focus_card wire field', () => {
+test('a rootless all-owned page has no focused card', () => {
   const raw = page({ items: [a] });
-  assert.equal(Object.hasOwn(raw, 'focus_card'), false);
   assert.deepEqual(readMemoryGraph(raw, request()).items.map(c => c.node), [a.node]);
   assert.equal(readMemoryGraph(raw, request()).focus_card, null);
 });
-test('the exact focused card comes from the singleton path', () => {
+test('the focused card carries its exact node version', () => {
   const result = readMemoryGraph(focused(), request({ focus: first }));
   assert.equal(result.focus_card.title, a.title);
   assert.deepEqual(result.focus_card.node, a.node);
   assert.equal(result.connections[0].mode, 'preview_only');
 });
-test('search pages can carry directed edges without a focus', () => {
-  const raw = page({ query: 'exports', items: [a, b], connections: [edge(b, a)] });
-  assert.deepEqual(readMemoryGraph(raw, request({ query: 'exports' })).connections[0].source, b.node);
-});
 test('cycles are displayed once per direction without recursion', () => {
-  const raw = page({ items: [a, b], connections: [edge(a, b), edge(b, a)] });
-  assert.equal(readMemoryGraph(raw, request()).connections.length, 2);
+  const raw = page({ focus: a, items: [b], connections: [edge(a, b), edge(b, a)] });
+  assert.equal(readMemoryGraph(raw, request({ focus: first })).connections.length, 2);
 });
-test('legacy parent is an association, and inert tree placeholders do not create edges', () => {
-  const raw = page({ items: [{ ...a, parent: later, child_count: 99 }, b], connections: [edge(a, b, 'legacy_parent')] });
-  const result = readMemoryGraph(raw, request());
-  assert.equal(result.connections[0].origin, 'legacy_parent');
-  assert.equal(JSON.stringify(result).includes(later), false);
-  assert.equal(Object.hasOwn(result.items[0], 'child_count'), false);
-});
-test('decoding does not mutate provider data or preserve speculative connection instructions', () => {
-  const raw = focused(); raw.connections[0].explanation = 'Invented qualification';
+test('authored conditions and required corrections survive display projection', () => {
+  const raw = focused(); raw.connections.push(conditional(a, b));
   const before = structuredClone(raw);
   const result = readMemoryGraph(raw, request({ focus: first }));
   assert.deepEqual(raw, before);
-  assert.equal(Object.hasOwn(result.connections[0], 'explanation'), false);
+  assert.deepEqual(result.connections, raw.connections);
+  // Association and qualification share endpoints without one erasing the other.
+  assert.equal(result.connections.length, 2);
 });
 test('wrong owner is rejected without echoing the foreign identity', () => {
   const raw = page({ items: [a] }); raw.owner = later;
@@ -68,13 +57,12 @@ test('stale cursor and search snapshots are rejected', () => {
 test('tree and unknown graph schemas are not silently interpreted', () => {
   for (const schema of ['memory-tree/1', 'memory-graph/2', undefined]) reject({ ...page(), schema });
 });
-test('a mock-only focus_card response is rejected', () => reject({ focus_card: a, items: [b], connections: [], next: null }, request({ focus: first })));
-test('focus must have one exact path card at the same revision', () => {
-  for (const path of [[], [a, b], [card(first, a.title, 2)]]) reject({ ...focused(), path }, request({ focus: first }));
+test('focus must have an exact card at the same revision', () => {
+  for (const focus_card of [null, undefined, b, card(first, a.title, 2)]) reject({ ...focused(), focus_card }, request({ focus: first }));
 });
-test('a rootless page cannot carry a hidden focus or ancestor path', () => {
+test('an all-owned page cannot carry a hidden focus', () => {
   reject({ ...page(), focus: a.node });
-  reject({ ...page(), path: [a] });
+  reject({ ...page(), focus_card: a });
 });
 test('duplicate cards, including duplication of the focus, are rejected', () => {
   reject(page({ items: [a, a] }));
@@ -92,9 +80,20 @@ test('duplicate directed connections and self-edges are rejected', () => {
   reject(page({ items: [a, b], connections: [edge(a, b), edge(a, b)] }));
   reject(page({ items: [a], connections: [edge(a, a)] }));
 });
-test('unimplemented conditional or full-text modes are not presented as supported', () => {
-  for (const change of [{ origin: 'authored_condition' }, { mode: 'full' }, { applicability: 'match' }]) {
+test('browsing cannot claim applicability or full inclusion from a plain association', () => {
+  for (const change of [{ origin: 'unknown' }, { mode: 'full' }, { applicability: 'match' }]) {
     const raw = focused(); Object.assign(raw.connections[0], change);
+    reject(raw, request({ focus: first }));
+  }
+});
+test('bounded compound conditions retain semantic unknowns without evaluating them', () => {
+  const rule = { kind: 'all', conditions: [{ kind: 'work', id: later }, { kind: 'semantic', situation: 'Comparing exported results' }] };
+  const raw = focused(); raw.connections = [conditional(a, b, { relation: 'association', mode: 'preview', condition: rule })];
+  const [connection] = readMemoryGraph(raw, request({ focus: first })).connections;
+  assert.deepEqual(connection.condition, rule);
+  assert.equal(connection.applicability, 'not_evaluated');
+  for (const condition of [{ kind: 'all', conditions: [rule] }, { kind: 'any', conditions: [] }, { kind: 'not', condition: rule }]) {
+    raw.connections[0].condition = condition;
     reject(raw, request({ focus: first }));
   }
 });
@@ -108,7 +107,7 @@ test('malformed references and oversized pages are rejected', () => {
   reject(page({ items: Array(13).fill(a) }));
 });
 test('malformed or missing graph arrays are explicit errors', () => {
-  for (const field of ['items', 'path', 'connections']) reject({ ...page(), [field]: null });
+  for (const field of ['items', 'connections']) reject({ ...page(), [field]: null });
   reject(null); reject([]);
 });
 test('pagination must progress and stay within the endpoint offset bound', () => {

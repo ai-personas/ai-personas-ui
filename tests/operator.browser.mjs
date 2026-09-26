@@ -18,6 +18,7 @@ const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence')
 mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
 let calls = 0, app, browser, page, url, port, checks = 0, scenario = 'wait';
+let retainedGraph = false;
 const errors = [], providerErrors = [];
 const provider = createServer(async (req, res) => {
   try {
@@ -44,8 +45,16 @@ const provider = createServer(async (req, res) => {
     } else {
       actions = [{ kind: 'wait', args: { reason: 'Explicit synthetic wait for new outside input' } }];
     }
+    const continuity = { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
+    if (scenario === 'learn' && !retainedGraph) {
+      const lesson = (handle, title) => ({ handle, node: null, draft: { title, short_description: title, content: 'Synthetic graph fixture text.', applicability: 'Browser contract verification', limitations: 'No behavioral claim', sources: [], counterevidence: [] }, related: [], connections: [], retire: false, locator: null });
+      const correction = lesson('correction', 'Graph fixture correction'), method = lesson('method', 'Graph fixture method');
+      method.related = ['$correction'];
+      method.connections = [{ target: '$correction', explanation: 'Keep this correction with the method.', condition: { kind: 'always' }, relation: 'correction', treatment: 'full', work: null, expires: null }];
+      continuity.disposition = 'retain'; continuity.changes = [correction, method]; retainedGraph = true;
+    }
     const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
-      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
     if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',
@@ -453,6 +462,30 @@ try {
     await expect(details).toContainText('Exact synthetic document, not task quality evidence.');
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
     await page.getByRole('tab', { name: 'Overview', exact: true }).click(); scenario = 'wait';
+  });
+  await step('current graph navigation displays authored connections from the real runtime', async () => {
+    scenario = 'learn'; await op('run.resume', { id: run.id });
+    await until(async () => (await get('/records?kind=memory_node&owner=' + persona.id)).items.length === 2 && (await get('/records/' + run.id)).data.status === 'waiting', 'synthetic decision retains graph');
+    scenario = 'wait'; await op('run.pause', { id: run.id });
+    const before = calls;
+    await page.getByRole('button', { name: 'Learning', exact: true }).click();
+    await page.getByRole('button', { name: 'Browser fixture persona', exact: true }).click();
+    const graph = page.getByRole('region', { name: 'Fragment graph', exact: true });
+    const method = graph.locator('.memory-card').filter({ has: page.getByRole('heading', { name: 'Graph fixture method', exact: true }) });
+    await method.getByRole('button', { name: 'Explore connections', exact: true }).click();
+    await expect(graph.getByRole('heading', { name: 'Graph fixture method', exact: true })).toBeVisible();
+    await expect(graph.getByRole('heading', { name: 'Graph fixture correction', exact: true })).toBeVisible();
+    const connections = graph.getByRole('region', { name: 'Authored connections', exact: true });
+    await expect(connections.locator('article')).toHaveCount(2);
+    await expect(connections).toContainText('Authored association · Preview only · Applicability not evaluated');
+    await expect(connections).toContainText('correction · Full text under delegation · Applicability not evaluated');
+    await expect(connections).toContainText('Keep this correction with the method.');
+    await connections.getByText('Recall condition', { exact: true }).click();
+    await expect(connections.locator('pre')).toContainText('always');
+    await expect(graph.getByRole('alert')).toHaveCount(0);
+    assert.equal(calls, before, 'browsing graph initiated inference');
+    await page.getByRole('button', { name: 'Work', exact: true }).click();
+    await page.getByRole('button', { name: 'Amended browser task', exact: true }).click();
   });
   await step('open persona correspondence receives external messages while paused without spending', async () => {
     await op('run.pause', { id: run.id });

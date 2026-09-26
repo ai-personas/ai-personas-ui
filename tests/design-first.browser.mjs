@@ -2,6 +2,7 @@
 import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { page as graphPage } from './memory-graph.fixture.mjs';
 const port = 4178, origin = `http://127.0.0.1:${port}`;
 const id = n => n.toString(16).padStart(32, '0');
 const stamp = '2026-09-19T00:00:00Z';
@@ -49,7 +50,7 @@ try {
         return route.fulfill({ json: { items, next, sequence: 0 } });
       }
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-node', peers: [], addresses: [] } });
-      if (/^\/api\/personas\/[^/]+\/memory$/.test(u.pathname)) return route.fulfill({ json: { focus_card: null, items: [], connections: [], next: null } });
+      if (/^\/api\/personas\/[^/]+\/memory$/.test(u.pathname)) return route.fulfill({ json: { ...graphPage(), owner: u.pathname.split('/')[3] } });
       if (/^\/api\/work\/[^/]+\/messages$/.test(u.pathname)) return route.fulfill({ json: { items: [], next: null, sequence: 0 } });
       if (u.pathname === '/api/models' || u.pathname === '/api/curricula') return route.fulfill({ json: [] });
       if (u.pathname.startsWith('/api/records/')) {

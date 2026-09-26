@@ -154,8 +154,12 @@ node with synthetic inference and one harmless local shell command.
 `test:settings` uses synthetic API keys and local model catalogues against a real
 restricted node to check persistence, restart, replacement/removal, native
 authentication, responsive typing, and mobile settings. These checks do not
-establish live model quality or engineering acceptance. The older `test:browser`
-and `test:live` campaigns have separate runtime and model prerequisites.
+establish live model quality or engineering acceptance. `test:memory` checks
+graph navigation and authored connections with synthetic API pages; the operator
+suite also checks the graph against the real runtime. The obsolete flat-document
+Learning load campaign was removed. Its historical timing and heap measurements
+do not qualify the current graph UI. `test:live` observes an existing campaign
+read-only and requires completed imagery; it does not initiate model calls.
 `test:participants` uses a disposable restricted node and synthetic inference to
 check roster changes, re-invitations, request highlights, private and group replies,
 peer answers to shared questions, visible replies to the user, mobile layouts,
