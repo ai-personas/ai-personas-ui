@@ -9,15 +9,20 @@ import RecallSourceAccess from './RecallSourceAccess';
 function Form({ run, policy, act, blocked }: { run: Entity; policy?: Entity; act: Act; blocked: boolean }) {
   const d = policy ? data(policy) : {}, p = d.policy || {};
   const [selectedModel, setSelectedModel] = useState(p.provider && p.model ? `${p.provider}:${p.model}` : '');
+  const [reservedInput, setReservedInput] = useState(String(p.max_input_tokens ?? ''));
+  const [reservedOutput, setReservedOutput] = useState(String(p.max_output_tokens ?? ''));
   const [enabled, setEnabled] = useState(d.status === 'enabled'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
   const { value, error: modelError, loading: modelsLoading, retry } = useResource<{ models: { provider: string; id: string; capabilities: any }[] }>('/inference', e => ['provider_settings', 'deployment'].includes(e.kind));
   const models = value?.models.filter(m => m.capabilities?.inference?.adapter === 'typesafe-systemone-choice/1') || [];
+  const reservation = models.find(m => `${m.provider}:${m.id}` === selectedModel)?.capabilities?.accounting_reservation;
+  const hasReservation = Number.isSafeInteger(reservation?.input_tokens) && reservation.input_tokens > 0 && Number.isSafeInteger(reservation?.output_tokens) && reservation.output_tokens > 0;
   return <form class="development-card" onSubmit={async event => {
     event.preventDefault(); if (busy || blocked) return; const form = new FormData(event.currentTarget); setBusy(true); setError(''); setSaved(false);
     try {
       const selected = models.find(m => `${m.provider}:${m.id}` === form.get('model'));
       if (enabled && !selected) throw new Error('Choose a configured choice model.');
       const number = (name: string) => { const n = Number(form.get(name)); if (!Number.isSafeInteger(n) || n <= 0) throw new Error('Limits must be positive whole numbers.'); return n; };
+      if (enabled && hasReservation && (number('input') < reservation.input_tokens || number('output') < reservation.output_tokens)) throw new Error(`This deployment requires reservations of ${reservation.input_tokens} input and ${reservation.output_tokens} output tokens per attempt. These lower limits would prevent every selector call.`);
       await act('recall.configure', { persona: data(run).persona, work: run.scope, revision: policy?.revision ?? 0, reason: String(form.get('reason')),
         policy: enabled ? { provider: selected!.provider, model: selected!.id, expires: expiryInput(form.get('expires'), p.expires),
           allow_owned_fragments: form.has('fragments'), allow_work_observations: form.has('observations'), allow_authored_focus: form.has('focus'),
@@ -28,14 +33,15 @@ function Form({ run, policy, act, blocked }: { run: Entity; policy?: Entity; act
   }}>
     <h4>Optional recall selector</h4><p>The persona’s delegation determines which memories may be selected. This permission allows a configured choice model to assess a bounded shortlist using the work’s existing priced allowance.</p>
     <label class="check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.currentTarget.checked)}/>Enable selection before a decision</label>
-    {enabled && <><label>Choice model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)}><option value="">Choose a deployment</option>{models.map(m => <option key={`${m.provider}:${m.id}`} value={`${m.provider}:${m.id}`}>{m.provider} · {m.id}</option>)}</select></label>{modelError ? <p role="alert">Could not load choice models. {modelError} <button type="button" onClick={retry}>Retry choice models</button></p> : modelsLoading ? <p role="status">Loading choice models…</p> : !models.length && <p>No choice deployment is configured. Add one in provider settings first.</p>}
+    {enabled && <><label>Choice model<select name="model" aria-label="Choice model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)}><option value="">Choose a deployment</option>{models.map(m => <option key={`${m.provider}:${m.id}`} value={`${m.provider}:${m.id}`}>{m.provider} · {m.id}</option>)}</select></label>{modelError ? <p role="alert">Could not load choice models. {modelError} <button type="button" onClick={retry}>Retry choice models</button></p> : modelsLoading ? <p role="status">Loading choice models…</p> : !models.length && <p>No choice deployment is configured. Add one in provider settings first.</p>}
       <fieldset><legend>Text this provider may process</legend><label class="check"><input type="checkbox" name="fragments" defaultChecked={p.allow_owned_fragments === true}/>Owned fragment descriptions and connection conditions</label><label class="check"><input type="checkbox" name="observations" defaultChecked={p.allow_work_observations === true}/>Permitted work observations</label><label class="check"><input type="checkbox" name="focus" defaultChecked={p.allow_authored_focus === true}/>The persona’s authored focus</label><p class="micro">Current source permissions still apply to every request and cache reuse.</p></fieldset>
+      {hasReservation && <p>Deployment reservation: {reservation.input_tokens.toLocaleString()} input + {reservation.output_tokens.toLocaleString()} output tokens per attempt. Actual known usage replaces the reservation; uncertainty retains it. <button class="text-button" type="button" onClick={() => { setReservedInput(String(reservation.input_tokens)); setReservedOutput(String(reservation.output_tokens)); }}>Use deployment reservations</button></p>}
       <div class="profile-trait-fields">{[
         ['candidates','Candidates per batch',p.max_candidates ?? 8,32], ['bytes','Request bytes',p.max_request_bytes ?? 16384,65536],
         ['input','Maximum reserved input tokens',p.max_input_tokens ?? '',100000000], ['output','Maximum reserved output tokens',p.max_output_tokens ?? '',100000000],
         ['episode','Attempts before the next primary call',p.max_episode_attempts ?? 1,4], ['total','Total attempt allowance',p.max_total_attempts ?? 10,10000],
         ['timeout','Timeout in milliseconds',p.timeout_ms ?? 5000,60000]
-      ].map(([name,label,current,max]) => <label key={String(name)}>{label}<input name={String(name)} type="number" min="1" max={Number(max)} step="1" required defaultValue={current}/></label>)}</div>
+      ].map(([name,label,current,max]) => <label key={String(name)}>{label}<input name={String(name)} type="number" min="1" max={Number(max)} step="1" required {...(name === 'input' ? { value: reservedInput, onInput: (e: Event) => setReservedInput((e.currentTarget as HTMLInputElement).value) } : name === 'output' ? { value: reservedOutput, onInput: (e: Event) => setReservedOutput((e.currentTarget as HTMLInputElement).value) } : { defaultValue: current })}/></label>)}</div>
       <label>On failure<select name="fallback" defaultValue={p.fallback ?? 'deterministic'}><option value="deterministic">Use deterministic recall</option><option value="block">Block the decision</option></select></label>
       <label>Permission expires<input name="expires" type="datetime-local" required defaultValue={localExpiry(p.expires || Date.now() + 86400000)}/></label>
       <p class="micro">Enter token reservations from the deployment’s reviewed limits. Timeouts retain uncertain spending. Changing these settings does not reset spent attempts. A moving model alias cannot reuse cached assessments.</p></>}

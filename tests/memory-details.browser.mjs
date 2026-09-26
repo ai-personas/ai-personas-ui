@@ -85,7 +85,7 @@ try {
   });
   await page.route('**/api/personas/*/memory/usage/*', route => { usageRequests++; return route.fulfill({ json: usageBody }); });
   await page.route('**/api/memory-details-probe', route => { probeRequests.push(route); });
-  await page.route('**/api/inference', route => route.fulfill({ json: { models: [] } }));
+  await page.route('**/api/inference', route => route.fulfill({ json: { models: [{ provider: 'fixture', id: 'choice', capabilities: { inference: { adapter: 'typesafe-systemone-choice/1' }, accounting_reservation: { input_tokens: 65536, output_tokens: 65536 } } }] } }));
   await page.route('**/api/records?*', route => {
     const after = Number(new URL(route.request().url()).searchParams.get('after'));
     if (after && failPolicyPage) return route.fulfill({ status: 503, json: { error: 'Later permission page unavailable' } });
@@ -187,6 +187,21 @@ try {
   await page.getByRole('button', { name: 'Save recall permission' }).click();
   assert.deepEqual(await page.evaluate(() => window.recallAction), { kind: 'recall.configure', args: { persona: owner, work: policy.data.work, revision: 7, reason: 'Retain disabled selector permission', policy: null } });
   console.log('PASS recall: later pages resolve the exact existing policy revision');
+
+  await page.evaluate(() => { window.recallAction = null; });
+  await page.getByLabel('Enable selection before a decision').check();
+  await page.getByLabel('Choice model', { exact: true }).selectOption('fixture:choice');
+  await page.getByLabel('Maximum reserved input tokens').fill('64000');
+  await page.getByLabel('Maximum reserved output tokens').fill('8192');
+  await page.getByRole('button', { name: 'Save recall permission' }).click();
+  await expect(page.getByRole('alert')).toContainText('would prevent every selector call');
+  assert.equal(await page.evaluate(() => window.recallAction), null);
+  await page.getByRole('button', { name: 'Use deployment reservations' }).click();
+  await expect(page.getByLabel('Maximum reserved input tokens')).toHaveValue('65536');
+  await expect(page.getByLabel('Maximum reserved output tokens')).toHaveValue('65536');
+  await page.getByRole('button', { name: 'Save recall permission' }).click();
+  assert.equal((await page.evaluate(() => window.recallAction)).args.policy.max_output_tokens, 65536);
+  console.log('PASS recall: reservation shortfall blocks a misleading save and uses the chosen deployment quote');
 
   await page.getByLabel('Allow these readers to export this work content').check();
   await page.getByLabel('Source permission reason').fill('Permit task processing for this comparison');

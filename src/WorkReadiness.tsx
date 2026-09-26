@@ -18,6 +18,7 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
       {Boolean(budget.error) && <p role="alert">JEV spending could not be verified.</p>}
       <div class="work-records">{people.map(p => {
         const latest = fields(p.last_selector), selected = fields(latest.result), delegation = fields(p.delegation);
+        const diagnostic = fields(selected.diagnostic), quoted = fields(diagnostic.quoted_tokens), approved = fields(diagnostic.approved_tokens);
         const selector = p.selector_policy === 'enabled' ? (delegation.semantic === true && p.delegation_current === true ? 'Enabled; current persona semantic delegation' : delegation.semantic === true ? 'Enabled; persona delegation expired or unverified' : 'Enabled; awaiting persona semantic delegation') : p.selector_policy === 'expired' ? 'Expired for this work' : 'Disabled for this work';
         return <article class="work-record" key={text(p.run)}>
           <h3>{text(p.name, 'Unnamed persona')}</h3>
@@ -27,6 +28,8 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
           <p>Recall selector: <strong>{selector}</strong></p>
           {p.selector_policy === 'enabled' && <p>Original task source: {p.work_export_allowed === true ? 'May be exported; processing permission also required' : 'Export not permitted; excluded from selector context'}</p>}
           <p>Last observed recall: {text(selected.status, 'No decision recorded').replaceAll('_', ' ')}{isRecordID(latest.call) && <> · <button class="text-button" onClick={() => open(latest.call as string)}>Inspect recall receipt</button></>}</p>
+          {selected.status === 'deterministic_fallback' && diagnostic.stage === 'exposure_check' && <p class="notice">Selector was not called: deployment needs {String(quoted.input)} input + {String(quoted.output)} output token reservations; this permission allows {String(approved.input)} + {String(approved.output)}. Update recall settings to permit an attempt.</p>}
+          {isRecordID(diagnostic.preparation_call ?? selected.assessment_call) && <button class="text-button" onClick={() => open(String(diagnostic.preparation_call ?? selected.assessment_call))}>Inspect selector attempt</button>}
           <p>{typeof p.publications === 'number' ? p.publications : 'Unknown'} published versions · {typeof p.submissions === 'number' ? p.submissions : 'Unknown'} submissions. Publication and activity do not establish completion.</p>
           {isRecordID(p.run) && <button class="text-button" onClick={() => open(p.run as string)}>Participation and recall settings</button>}
         </article>;
