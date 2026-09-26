@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connect, operate, watch, label, token, request } from '../src/api.ts';
+import { primaryModels, fundingModels } from '../src/model-catalog.ts';
 const success = body => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+
+test('choice models are fundable once but cannot become a primary persona model', () => {
+  const primary = { provider: 'fixture', id: 'primary', capabilities: { inference: { operations: ['persona_decision'] } } };
+  const choice = { provider: 'typesafe', id: 'jev-fixed', capabilities: { inference: { operations: ['choice'] } } };
+  const unknown = { provider: 'fixture', id: 'unadvertised', capabilities: {} };
+  const catalog = { models: [primary, choice, unknown], decision_models: [{ ...choice, name: 'Duplicate listing' }] };
+  assert.deepEqual(primaryModels(catalog.models), [primary]);
+  assert.deepEqual(fundingModels(catalog), [primary, choice, unknown]);
+});
 
 test('token begins in memory and authored titles are type checked', () => {
   assert.equal(token, '');

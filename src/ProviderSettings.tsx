@@ -63,7 +63,7 @@ export function ProviderSettings() {
     </article>
       {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p></article>)}
     </div>
-    <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available language models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
+    <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
     <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. All saved API-key connections currently support text input. Add each model’s price and allowance before starting work with it.</p>
     {editing && <ConnectionEditor key={editing.connection.provider + editing.exists} initial={editing.connection} exists={editing.exists} custom={editing.custom} revision={settings.revision} save={save} close={() => setEditing(undefined)}/>}
     {typesafe && <TypesafeKey revision={settings.revision} save={save} close={() => setTypesafe(false)}/>}

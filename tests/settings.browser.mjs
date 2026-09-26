@@ -141,6 +141,22 @@ try {
     await expect(page.getByLabel('Total Jev limit (USD)', { exact: true })).toHaveValue('2');
     assert.equal((await get('/settings/providers')).typesafe_budget.accounted_micro_usd, 0);
   });
+  await step('Jev remains a funding choice once and cannot be chosen as a primary persona model', async () => {
+    await page.getByRole('button', { name: 'Personas', exact: true }).click();
+    await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
+    const starting = page.getByLabel('Starting model');
+    await expect(starting.locator('option')).toHaveCount(3);
+    assert((await starting.locator('option').allTextContents()).every(text => !text.includes('typesafe')));
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Funding', exact: true }).click();
+    await page.getByRole('button', { name: 'New allowance' }).click();
+    const allowance = page.getByRole('dialog', { name: 'Create funding allowance' });
+    const choices = allowance.getByLabel('Price policy for model').locator('option');
+    await expect(choices.filter({ hasText: 'jev-1.13.0' })).toHaveCount(1);
+    const values = await choices.evaluateAll(items => items.map(item => item.value));
+    assert.equal(new Set(values).size, values.length);
+    await page.keyboard.press('Escape'); await funding();
+  });
   await step('bad key reports an access-safe error and removal clears the saved secret', async () => {
     await page.getByRole('button', { name: 'Edit fixture-responses' }).click();
     const dialog = page.getByRole('dialog', { name: 'Edit provider connection' }); await dialog.getByLabel('Replace API key').fill('rejected-key'); await dialog.getByRole('button', { name: 'Save connection' }).click();

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
-import { changes, request, type Model } from './api';
+import { changes, request } from './api';
 import type { ApiTypes } from './contract';
 
 type Catalog = ApiTypes['inference'];
-export const modelKey = (model: Model) => JSON.stringify([model.provider, model.id]);
+export { modelKey, primaryModels, fundingModels } from './model-catalog';
 
 export function useModels(enabled = true) {
   const [catalog, setCatalog] = useState<Catalog>(), [loading, setLoading] = useState(true), [error, setError] = useState('');

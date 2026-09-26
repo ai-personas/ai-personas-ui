@@ -5,7 +5,7 @@ import type { Act } from './main';
 import Pagination from './Pagination';
 import Dialog from './Dialog';
 import './operator.css';
-import { modelKey, ModelStatus, useModels } from './Models';
+import { modelKey, fundingModels, ModelStatus, useModels } from './Models';
 import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
 import { matchesAllowance, recordIDs } from './workspace';
@@ -44,7 +44,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
   const [root, setRoot] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const errorNotice = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
-  const modelState = useModels(), models = [...modelState.models, ...(modelState.catalog?.decision_models || [])];
+  const modelState = useModels(), models = fundingModels(modelState.catalog);
   const [selected, setSelected] = useState(''), [included, setIncluded] = useState(false);
   useEffect(() => { if (!selected && models.length) setSelected(modelKey(models[0])); }, [models, selected]);
   const model = models.find(m => modelKey(m) === selected);
@@ -91,7 +91,7 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
       <label>Price policy for model<select name="model" required value={selected} disabled={modelState.loading || !models.length} onChange={e => { setSelected(e.currentTarget.value); setIncluded(false); }}>
         {!model && <option value={selected}>{selected ? 'Selected model unavailable — choose another' : 'Choose an available model'}</option>}
         {models.map(m => <option value={modelKey(m)} key={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select></label>
-      <ModelStatus {...modelState}/>
+      <ModelStatus {...modelState} models={models}/>
       {subscription && <label class="check"><input type="checkbox" checked={included} onChange={e => setIncluded(e.currentTarget.checked)}/>Use included subscription usage, with no per-token charge</label>}
       {noTokenCharge && <p class="provider-notice">Your Codex ChatGPT plan limits still apply. This records your choice of zero marginal token cost; calls and tokens remain limited. It does not purchase credits.</p>}
       <div hidden={noTokenCharge}><div class="operator-grid"><label>Currency<input name="currency" required={!noTokenCharge} defaultValue="USD"/></label><label>Total budget<input type="number" name="cost" min="0" step="0.000001" required disabled={noTokenCharge} defaultValue="10"/></label>

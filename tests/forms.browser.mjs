@@ -8,7 +8,7 @@ import { resolve, extname } from 'node:path';
 
 const id = n => n.toString(16).padStart(32, '0');
 const record = (n, kind, data) => ({ id: id(n), kind, scope: '', revision: 1, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', data });
-const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription' } }));
+const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] } } }));
 let catalog = { models, providers: [{ provider: 'codex', available: true, models: 2, message: 'Ready' }], checked: '2026-01-01T00:00:00Z' };
 const roots = [], writes = [], reads = [], clients = new Set();
 let sequence = 0, checks = 0, browser;

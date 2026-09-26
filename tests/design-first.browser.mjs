@@ -49,6 +49,7 @@ try {
         return route.fulfill({ json: { items, next, sequence: 0 } });
       }
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-node', peers: [], addresses: [] } });
+      if (/^\/api\/personas\/[^/]+\/memory$/.test(u.pathname)) return route.fulfill({ json: { focus_card: null, items: [], connections: [], next: null } });
       if (/^\/api\/work\/[^/]+\/messages$/.test(u.pathname)) return route.fulfill({ json: { items: [], next: null, sequence: 0 } });
       if (u.pathname === '/api/models' || u.pathname === '/api/curricula') return route.fulfill({ json: [] });
       if (u.pathname.startsWith('/api/records/')) {
@@ -135,7 +136,14 @@ try {
       await expect(page.getByText('Current model: fixture-provider / fixture-only', { exact: true })).toBeVisible();
     });
     await page.screenshot({ path: `.qa/design-first-personas-${viewport.width}.png`, fullPage: true });
-    for (const [view, title] of [['Environments', 'Give your work a place.'], ['Learning', 'Learning needs a recorded history.'], ['Tools', 'No tools or capabilities recorded.']]) {
+    await step(`${viewport.width}: learning opens an owned graph with an honest empty state`, async () => {
+      await page.getByRole('button', { name: 'Learning', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Learning by persona', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Mira fixture', exact: true }).click();
+      await expect(page.getByText('No lessons retained yet.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^\+ / })).toHaveCount(0);
+    });
+    for (const [view, title] of [['Environments', 'Give your work a place.'], ['Tools', 'No tools or capabilities recorded.']]) {
       await step(`${viewport.width}: honest ${view.toLowerCase()} empty state`, async () => {
         await page.getByRole('button', { name: view, exact: true }).click();
         await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();

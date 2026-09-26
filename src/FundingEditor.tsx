@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { data, type Entity } from './api';
 import type { Bounds, Limits, Price } from './contract';
 import { useResource } from './hooks';
-import { modelKey, ModelStatus, useModels } from './Models';
+import { modelKey, fundingModels, ModelStatus, useModels } from './Models';
 import type { Act } from './main';
 import Dialog from './Dialog';
 
@@ -66,7 +66,8 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
   const modelState = useModels(), [selected, setSelected] = useState('');
   const [prices, setPrices] = useState<Price[]>(bounds?.prices ?? []);
   const [included, setIncluded] = useState(false);
-  const available = [...modelState.models, ...(modelState.catalog?.decision_models || [])].filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
+  const models = fundingModels(modelState.catalog);
+  const available = models.filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
   const chosen = available.find(m => modelKey(m) === selected);
   const subscription = (chosen?.capabilities as any)?.billing === 'chatgpt_subscription';
   if (!bounds || d.status !== 'active') return <div class="operator-form"><h2>Allowance cannot be edited</h2><p role="alert">{!bounds ? 'Configure the initial limits before editing this allowance.' : 'This allowance is closed. Its history and spending remain retained.'}</p><button onClick={close}>Close form</button></div>;
@@ -115,7 +116,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
           <NumberField name={`price.${i}.output`} title={`Output price per million tokens — ${price.model}`} value={price.output_units_per_million} money/>
         </div><label>Price source and date — {price.model}<input name={`price.${i}.evidence`} required defaultValue={price.evidence}/></label></fieldset>)}
         <label>Add price policy for model<select value={selected} onChange={e => { setSelected(e.currentTarget.value); setIncluded(false); }}><option value="">Choose a model to add</option>{available.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select></label>
-        <ModelStatus {...modelState}/>
+        <ModelStatus {...modelState} models={models}/>
         {subscription && <label class="check"><input type="checkbox" checked={included} onChange={e => setIncluded(e.currentTarget.checked)}/>Use included subscription usage for this model</label>}
         <button type="button" class="secondary" disabled={!chosen} onClick={() => {
           if (!chosen) return;

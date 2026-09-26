@@ -31,7 +31,8 @@ const records = [
   record(17, 'environment', { name: 'Shared design room' }, ''),
   record(18, 'work_entry', { entry_kind: 'proposal', status: 'proposed', author: person, draft: { kind: 'proposal', text: 'Compare daylight before choosing a layout.', alternatives: ['Courtyard', 'Compact plan'], expected_result: 'A clear comparison.', possible_regressions: 'Less room for storage.', check: 'Compare room schedules.', reconsider_if: 'The site changes.', sources: [] }, causal_operation: id(99), internal_data: { kind: 'INTERNAL_ENVELOPE' } }),
   record(19, 'work_mandate', { original_need: 'Create a practical comparison.', mandate: { outcomes: [{ key: 'INTERNAL_OUTCOME_KEY', description: 'Two comparable layouts', criterion: 'Show the trade-offs', required: true, evidence: 'user_judgment' }], constraints: ['Keep four bedrooms'], preferences: [], unresolved_inputs: [], completion_agreement: 'User accepts the comparison' }, status: 'adopted', causal_operation: id(99) }),
-  record(20, 'request', { purpose: 'Choose a comparison basis', instructions: 'Tell us which priorities matter.', evidence_required: 'Your priorities', status: 'resolved', resolution: { conclusion: 'Use equal floor areas for both concepts.', evidence: [id(99)], request: id(20) }, owner: person }),
+  record(20, 'request', { purpose: 'Choose a comparison basis', instructions: 'Tell us which priorities matter.', evidence_required: 'Your priorities', status: 'resolved', resolution: { id: id(29), revision: 1 }, owner: person }),
+  record(29, 'request_resolution', { request: id(20), resolution: { conclusion: 'Use equal floor areas for both concepts.', evidence: [], request: id(20) }, owner: person }, id(20)),
   record(22, 'perspective', { owner: person, draft: { kind: 'relationship', subject: id(24), content: 'Ask Rowan to review the comparison.', limitations: 'Rowan has not agreed yet.', sources: [] }, status: 'authored' }),
   record(23, 'perspective', { owner: person, draft: { kind: 'agenda', subject: null, content: 'OTHER_WORK_PRIVATE_AGENDA', limitations: '', sources: [] } }, id(100)),
   record(24, 'persona', { name: 'Rowan fixture' }, ''),
@@ -257,6 +258,7 @@ try {
       await detail.getByRole('button', { name: /Choose a comparison basis/ }).click();
       detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail.getByRole('heading', { name: 'Conclusion', exact: true })).toBeVisible();
+      await detail.locator('.reader-related').filter({ has: page.getByRole('heading', { name: 'Conclusion', exact: true }) }).getByRole('button').click();
       await expect(detail).toContainText('Use equal floor areas for both concepts.');
       await expect(detail.getByText('Kind', { exact: true })).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -297,10 +299,12 @@ try {
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).focus(); await page.keyboard.press('ArrowRight');
       await expect(page.getByRole('tab', { name: 'Work & outcomes', exact: true })).toBeFocused();
     });
-    await step(`${viewport.width}: tools and legacy create`, async () => {
+    await step(`${viewport.width}: tools and persona creation explain funded character generation`, async () => {
       await page.getByRole('button', { name: 'Tools', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Tools', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Personas', exact: true }).click(); await page.getByRole('button', { name: '+ New persona', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('No model call starts from creation alone'); await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('Creating starts a funded call');
+      await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('Providing your own character skips generation');
+      await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: no invented writes, token storage or page errors`, async () => {
       expect(writes).toEqual([]); expect(await page.evaluate(() => sessionStorage.getItem('personas-token'))).toBe(null); expect(errors).toEqual([]);

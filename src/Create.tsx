@@ -9,7 +9,7 @@ import Dialog from './Dialog';
 import { ToolChoices } from './EnvironmentTools';
 import SearchInput from './SearchInput';
 import ProfileFields, { profileInput } from './ProfileFields';
-import { modelKey, ModelStatus, useModels } from './Models';
+import { modelKey, primaryModels, ModelStatus, useModels } from './Models';
 export function Pick({ kind, multiple, value, onChange, exclude = [], disabled = false }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void; exclude?: string[]; disabled?: boolean }) {
   const [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
   const settled = query;
@@ -29,7 +29,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
   const [tools, setTools] = useState<string[] | undefined>();
   const createsEnvironment = kind === 'Environments' || kind === 'Work' && !!brief;
   const { value: deployment } = useResource<{ funding_required: boolean }>('/deployment', () => false);
-  const modelState = useModels(kind === 'Personas'), models = modelState.models;
+  const modelState = useModels(kind === 'Personas'), models = primaryModels(modelState.models);
   const [selectedModel, setSelectedModel] = useState('');
   useEffect(() => { if (!selectedModel && models.length) setSelectedModel(modelKey(models[0])); }, [models, selectedModel]);
   const availableModel = models.find(m => modelKey(m) === selectedModel);
@@ -56,7 +56,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <Dialog label="Create" close={close}><form class="create-panel" onSubmit={e => { e.preventDefault(); void save(e.currentTarget); }}><header><h2>{kind === 'Network' ? 'Connect or receive' : 'Create ' + kind.toLowerCase()}</h2><button type="button" class="quiet" onClick={close}>Close form</button></header>{error && <p role="alert">{error}</p>}
-    {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)} disabled={modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label>{efforts.length > 0 && <label>Reasoning effort<select key={selectedModel} name="effort" defaultValue=""><option value="">Model default</option>{efforts.map(e => <option value={e} key={e}>{e}</option>)}</select></label>}<p>Creating starts a funded call to write a distinctive character from these traits. Identical traits can produce different characters. Providing your own character skips generation. The persona becomes available for work when its character is ready.</p><ModelStatus {...modelState}/><ProfileFields creation/></>
+    {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)} disabled={modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label>{efforts.length > 0 && <label>Reasoning effort<select key={selectedModel} name="effort" defaultValue=""><option value="">Model default</option>{efforts.map(e => <option value={e} key={e}>{e}</option>)}</select></label>}<p>Creating starts a funded call to write a distinctive character from these traits. Identical traits can produce different characters. Providing your own character skips generation. The persona becomes available for work when its character is ready.</p><ModelStatus {...modelState} models={models}/><ProfileFields creation/></>
       : kind === 'Environments' ? <p>Create a shared place for work. Participating personas can choose its name and description when work begins. An image appears only after an actual artifact is published.</p>
       : kind === 'Network' ? <><label>Peer address<input name="address" placeholder="/ip4/…/tcp/…/p2p/…"/></label><label>Or shared artifact details<textarea name="descriptor" rows={5}/></label><p>Both nodes must trust one another to exchange artifacts. Receiving bytes does not grant execution authority.</p></>
       : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}{env[0] && <EnvironmentPersonas id={env[0]} choose={setPeople}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
