@@ -1499,6 +1499,11 @@ export interface Policy {
   fallback: Fallback;
 }
 export interface ProfileSeed {
+  /**
+   * Optional starting label. An omitted label is generated with character;
+   * stable persona identity remains independent of this presentation field.
+   */
+  name?: string | null;
   character?: string | null;
   ocean?: Ocean | null;
   vad?: Vad | null;

@@ -5985,6 +5985,13 @@
       "ProfileSeed": {
         "type": "object",
         "properties": {
+          "name": {
+            "description": "Optional starting label. An omitted label is generated with character;\nstable persona identity remains independent of this presentation field.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "character": {
             "type": [
               "string",
@@ -14467,6 +14474,13 @@
       "ProfileSeed": {
         "type": "object",
         "properties": {
+          "name": {
+            "description": "Optional starting label. An omitted label is generated with character;\nstable persona identity remains independent of this presentation field.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "character": {
             "type": [
               "string",

@@ -30,7 +30,7 @@ const provider = createServer(async (req, res) => {
     if (context.run.data.membership === 'invited') {
       const i = context.work.data.core.invitation;
       actions = [{ kind: 'invitation.respond', args: { id: i.id, revision: i.revision, accept: true, reason: 'Synthetic fixture chooses participation' } }];
-    } else if (!context.persona.data.name) {
+    } else if (!context.history.some(a => a.request.kind === 'persona.update')) {
       actions = [{ kind: 'persona.update', args: { revision: context.persona.revision, name: 'Browser fixture persona', character: 'Synthetic provider for operator mechanics, not model capability evidence.', reason: 'Fixture-authored identity' } }];
     } else if (!context.environment.data.name) {
       actions = [{ kind: 'environment.update', args: { id: context.environment.id, revision: context.environment.revision, name: 'Browser fixture place', description: 'A shared environment authored after accepting participation.' } }];
@@ -154,9 +154,13 @@ try {
     await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(allowance.id);
+    await form.getByLabel('Starting name', { exact: true }).fill('Rowan');
     await form.getByLabel('Character', { exact: true }).fill('I follow this synthetic operator-mechanics fixture.');
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     persona = (await get('/records?kind=persona')).items[0]; assert.equal(persona.data.resource_root, allowance.id);
+    assert.equal(persona.data.name, 'Rowan');
+    const initial = await get('/records/' + persona.id);
+    assert.equal(initial.data.starting_profile.initialization.field_origins.name, 'operator');
     await page.getByRole('button', { name: 'Environments', exact: true }).click();
     await page.locator('.page-heading').getByRole('button', { name: '+ New environment', exact: true }).click();
     await page.getByRole('dialog', { name: 'Create', exact: true }).getByRole('button', { name: 'Create', exact: true }).click();

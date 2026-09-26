@@ -3,6 +3,7 @@ import './identity.css';
 
 export function profileInput(form: FormData, creation = false) {
   const character = String(form.get('character') ?? '');
+  const name = String(form.get('persona_name') ?? '').trim();
   const descriptors: Record<string, Record<string, number>> = {};
   for (const trait of TRAITS) {
     const raw = String(form.get(`${trait.group}.${trait.key}`) ?? '').trim();
@@ -11,11 +12,12 @@ export function profileInput(form: FormData, creation = false) {
     if (!Number.isFinite(value) || value < trait.min || value > trait.max) throw new Error(`${trait.label} must be between ${trait.min} and ${trait.max}.`);
     (descriptors[trait.group] ??= {})[trait.key] = value;
   }
-  return { ...(form.has('character') && (character || !creation) ? { character } : {}), ...descriptors };
+  return { ...(creation && name ? { name } : {}), ...(form.has('character') && (character || !creation) ? { character } : {}), ...descriptors };
 }
 export default function ProfileFields({ value = {}, creation = false }: { value?: unknown; creation?: boolean }) {
   const d = object(value);
   return <fieldset class="profile-fields"><legend>{creation ? 'Starting character (optional)' : 'Current character'}</legend>
+    {creation && <label>Starting name<input name="persona_name" aria-label="Starting name" maxLength={64} placeholder="Generated with character"/><small>Optional. The persona can choose a different name during work.</small></label>}
     {d.self_model && !creation ? <p>Current character is supplied by the designated self-fragments. Ask the persona to revise them through a message; the graph lets you inspect them. This form controls traits and authorship permission.</p> : <label>Character<textarea name="character" aria-label="Character" rows={3} maxLength={8192} defaultValue={typeof d.character === 'string' ? d.character : ''} placeholder="Preferences, interests, and approach…"/></label>}
     <p class="micro">{creation ? 'Leave numeric fields blank for random starting values. These describe tendencies, not experience or qualifications.' : 'These edits are attributed to you. The original starting values remain in history.'}</p>
     <details><summary>{creation ? 'Choose starting traits and affect' : 'Edit traits and affect'}</summary><div class="profile-trait-fields">
