@@ -16,7 +16,7 @@ import './style.css';
 import './workspace.css';
 import './design-system.css';
 import './reading.css';
-const LearningLibrary = lazy(() => import('./MemoryTree').then(m => ({ default: m.LearningLibrary })));
+const LearningLibrary = lazy(() => import('./MemoryGraph').then(m => ({ default: m.LearningLibrary })));
 const Detail = lazy(() => import('./Detail'));
 const Viewer = lazy(() => import('./Viewer'));
 const Create = lazy(() => import('./Create'));

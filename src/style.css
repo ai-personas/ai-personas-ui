@@ -14,10 +14,10 @@ p,small,code{overflow-wrap:anywhere}
 
 .question-sharing{border-left:4px solid #b97300;background:#fff7e6;color:#593900;overflow-wrap:anywhere}
 
-.memory-tree { min-width: 0; padding-block: 1rem; }
-.memory-path, .memory-actions, .memory-owners { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; }
-.memory-path { margin-block: 1rem; }
-.memory-path [aria-current] { font-weight: 700; text-decoration: underline; }
+.memory-graph { min-width: 0; padding-block: 1rem; }
+.memory-focus, .memory-actions, .memory-owners { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem; }
+.memory-focus { margin-block: 1rem; }
+.memory-focus [aria-current] { font-weight: 700; text-decoration: underline; }
 .memory-cards { display: grid; gap: 1rem; }
 .memory-card { min-width: 0; padding: 1rem; border: 1px solid var(--border, #ddd); border-radius: .75rem; overflow-wrap: anywhere; }
 .memory-card h4 { margin: 0 0 .5rem; }
@@ -28,9 +28,8 @@ p,small,code{overflow-wrap:anywhere}
 .memory-locator { padding: 1rem; border: 1px solid var(--line); border-radius: .6rem; margin-top: .75rem; min-width: 0; }
 .memory-code { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 
-.memory-branches { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; min-width: 0; }
-.memory-tree-item { min-width: 0; }
-.memory-children { border-inline-start: 2px solid var(--border, #ddd); margin: .6rem 0 .6rem .4rem; padding-inline-start: clamp(.5rem, 2vw, 1.25rem); }
+.memory-fragments { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; min-width: 0; }
+.memory-graph-item { min-width: 0; }
 .memory-search { display: flex; align-items: end; flex-wrap: wrap; gap: .65rem; margin-block: 1rem; }
 .memory-search label { flex: 1 1 12rem; min-width: 0; }
 .memory-search input { width: 100%; }

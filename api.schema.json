@@ -1,5 +1,5 @@
 {
-  "contract": "ai-personas/autonomous-continuity-1",
+  "contract": "ai-personas/fragment-graph-1",
   "authentication": "Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently.",
   "types": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1614,12 +1614,6 @@
                   "draft": {
                     "$ref": "#/$defs/FragmentDraft"
                   },
-                  "parent": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
                   "related": {
                     "type": "array",
                     "items": {
@@ -1656,12 +1650,6 @@
                   },
                   "draft": {
                     "$ref": "#/$defs/FragmentDraft"
-                  },
-                  "parent": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
                   },
                   "related": {
                     "type": "array",
@@ -2745,7 +2733,97 @@
             "additionalProperties": false
           },
           {
-            "description": "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
+            "description": "Operator sets the saved Jev connection's total node-wide USD micro-unit ceiling. Retains consumed, reserved and uncertain spending across work allowances and key replacement. Revision zero creates the ceiling; zero blocks new spending.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "provider.budget.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "limit_micro_usd": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "revision",
+                  "limit_micro_usd",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator approves or disables a read-only selector for this persona and work. Requires separate processing permission, finite limits and an existing priced allowance. Revision zero creates the policy; null disables it.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "recall.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "persona": {
+                    "type": "string"
+                  },
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "policy": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/Policy"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "persona",
+                  "work",
+                  "revision",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Browse your private fragment graph. Null focus lists all owned fragments. Returns short descriptions and directed connections, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
             "type": "object",
             "properties": {
               "kind": {
@@ -2758,7 +2836,7 @@
                   "owner": {
                     "type": "string"
                   },
-                  "branch": {
+                  "focus": {
                     "type": [
                       "string",
                       "null"
@@ -5842,6 +5920,91 @@
           "partial_delivered"
         ]
       },
+      "Policy": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "expires": {
+            "type": "string"
+          },
+          "allow_owned_fragments": {
+            "type": "boolean"
+          },
+          "allow_work_observations": {
+            "type": "boolean"
+          },
+          "allow_authored_focus": {
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_input_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_episode_attempts": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_total_attempts": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "fallback": {
+            "$ref": "#/$defs/Fallback"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model",
+          "expires",
+          "allow_owned_fragments",
+          "allow_work_observations",
+          "allow_authored_focus",
+          "max_candidates",
+          "max_request_bytes",
+          "max_input_tokens",
+          "max_output_tokens",
+          "max_episode_attempts",
+          "max_total_attempts",
+          "timeout_ms",
+          "fallback"
+        ]
+      },
+      "Fallback": {
+        "type": "string",
+        "enum": [
+          "deterministic",
+          "block"
+        ]
+      },
       "ProfileSeed": {
         "type": "object",
         "properties": {
@@ -6213,19 +6376,23 @@
               }
             ]
           },
-          "parent": {
-            "description": "Replace primary parent; null places at root. Node ID or $handle.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "related": {
-            "description": "Replace cross-links. Node IDs or $handles; links do not select their content.",
+            "description": "Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "connections": {
+            "description": "Replace authored conditions. Null preserves them on organization-only edits.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/$defs/ConnectionDraft"
+            },
+            "default": null
           },
           "retire": {
             "type": "boolean"
@@ -6247,6 +6414,291 @@
           "handle",
           "related",
           "retire"
+        ]
+      },
+      "ConnectionDraft": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "description": "Received node ID, @memory alias, or a $handle in this transaction.",
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/$defs/Condition"
+          },
+          "relation": {
+            "$ref": "#/$defs/Relation"
+          },
+          "treatment": {
+            "$ref": "#/$defs/Treatment"
+          },
+          "work": {
+            "description": "Null permits any work in which the source is independently readable.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "explanation",
+          "condition",
+          "relation",
+          "treatment"
+        ]
+      },
+      "Condition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "always"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "work"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "sender"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "received"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "reference"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "situation": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "semantic"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "situation"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Predicate"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "all"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "conditions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Predicate"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "any"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "conditions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "condition": {
+                "$ref": "#/$defs/Predicate"
+              },
+              "kind": {
+                "type": "string",
+                "const": "not"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "condition"
+            ]
+          }
+        ]
+      },
+      "Predicate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "always"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "work"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "sender"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "received"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "reference"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "situation": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "semantic"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "situation"
+            ]
+          }
+        ]
+      },
+      "Relation": {
+        "type": "string",
+        "enum": [
+          "association",
+          "correction",
+          "prerequisite",
+          "contradiction"
+        ]
+      },
+      "Treatment": {
+        "type": "string",
+        "enum": [
+          "preview",
+          "full"
         ]
       },
       "Locator": {
@@ -6300,8 +6752,8 @@
               "type": "string"
             }
           },
-          "branch": {
-            "description": "Branch whose short descriptions to show next. Null is the virtual root.",
+          "focus": {
+            "description": "Focus whose connected fragment previews to show next. Null browses all owned nodes.",
             "type": [
               "string",
               "null"
@@ -6322,11 +6774,71 @@
               "null"
             ],
             "default": null
+          },
+          "current_self": {
+            "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "delegation": {
+            "description": "Optional bounded recall authority for this work. Null disables delegated recall.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Delegation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
         "required": [
           "active"
+        ]
+      },
+      "Delegation": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "description": "Exact received source nodes whose conditional connections may select full text.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          },
+          "expires": {
+            "type": "string"
+          },
+          "max_fragments": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "semantic": {
+            "description": "Permit the configured selector to assess unknown semantic conditions.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "sources",
+          "expires",
+          "max_fragments",
+          "max_bytes",
+          "semantic"
         ]
       },
       "Verdict": {
@@ -6870,6 +7382,16 @@
                 "type": "null"
               }
             ]
+          },
+          "typesafe_budget": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Status"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -7058,6 +7580,49 @@
         "required": [
           "key_saved",
           "updated"
+        ]
+      },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "limit_micro_usd": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "accounted_micro_usd": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "remaining_micro_usd": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "revision"
         ]
       },
       "SettingsChange": {
@@ -7525,8 +8090,8 @@
     ],
     [
       "GET",
-      "/api/personas/{id}/memory?branch=&after=0&limit=12",
-      "Private memory tree: bounded short descriptions, breadcrumbs and related branches; full fragments fetched on demand"
+      "/api/personas/{id}/memory?focus=&after=0&limit=12",
+      "Private fragment graph: bounded descriptions and directed connections; full fragments fetched on demand"
     ],
     [
       "GET",
@@ -7942,8 +8507,16 @@
       "Execute this exact owned node's retrieval utility with named string arguments encoded as JSON. Replaces next memory selection with validated existing owned references. Ends the decision; failure preserves prior learning and selection. Requires host execution."
     ],
     [
+      "provider.budget.configure",
+      "Operator sets the saved Jev connection's total node-wide USD micro-unit ceiling. Retains consumed, reserved and uncertain spending across work allowances and key replacement. Revision zero creates the ceiling; zero blocks new spending."
+    ],
+    [
+      "recall.configure",
+      "Operator approves or disables a read-only selector for this persona and work. Requires separate processing permission, finite limits and an existing priced allowance. Revision zero creates the policy; null disables it."
+    ],
+    [
       "memory.browse",
-      "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts."
+      "Browse your private fragment graph. Null focus lists all owned fragments. Returns short descriptions and directed connections, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts."
     ],
     [
       "history.read",
@@ -9490,12 +10063,6 @@
               "draft": {
                 "$ref": "#/$defs/FragmentDraft"
               },
-              "parent": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "related": {
                 "type": "array",
                 "items": {
@@ -9532,12 +10099,6 @@
               },
               "draft": {
                 "$ref": "#/$defs/FragmentDraft"
-              },
-              "parent": {
-                "type": [
-                  "string",
-                  "null"
-                ]
               },
               "related": {
                 "type": "array",
@@ -10621,7 +11182,97 @@
         "additionalProperties": false
       },
       {
-        "description": "Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
+        "description": "Operator sets the saved Jev connection's total node-wide USD micro-unit ceiling. Retains consumed, reserved and uncertain spending across work allowances and key replacement. Revision zero creates the ceiling; zero blocks new spending.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "provider.budget.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "limit_micro_usd": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "limit_micro_usd",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator approves or disables a read-only selector for this persona and work. Requires separate processing permission, finite limits and an existing priced allowance. Revision zero creates the policy; null disables it.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "recall.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "persona": {
+                "type": "string"
+              },
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "policy": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Policy"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "persona",
+              "work",
+              "revision",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Browse your private fragment graph. Null focus lists all owned fragments. Returns short descriptions and directed connections, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.",
         "type": "object",
         "properties": {
           "kind": {
@@ -10634,7 +11285,7 @@
               "owner": {
                 "type": "string"
               },
-              "branch": {
+              "focus": {
                 "type": [
                   "string",
                   "null"
@@ -13736,6 +14387,91 @@
           "partial_delivered"
         ]
       },
+      "Policy": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "expires": {
+            "type": "string"
+          },
+          "allow_owned_fragments": {
+            "type": "boolean"
+          },
+          "allow_work_observations": {
+            "type": "boolean"
+          },
+          "allow_authored_focus": {
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_request_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_input_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_episode_attempts": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_total_attempts": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "fallback": {
+            "$ref": "#/$defs/Fallback"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model",
+          "expires",
+          "allow_owned_fragments",
+          "allow_work_observations",
+          "allow_authored_focus",
+          "max_candidates",
+          "max_request_bytes",
+          "max_input_tokens",
+          "max_output_tokens",
+          "max_episode_attempts",
+          "max_total_attempts",
+          "timeout_ms",
+          "fallback"
+        ]
+      },
+      "Fallback": {
+        "type": "string",
+        "enum": [
+          "deterministic",
+          "block"
+        ]
+      },
       "ProfileSeed": {
         "type": "object",
         "properties": {
@@ -14107,19 +14843,23 @@
               }
             ]
           },
-          "parent": {
-            "description": "Replace primary parent; null places at root. Node ID or $handle.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "related": {
-            "description": "Replace cross-links. Node IDs or $handles; links do not select their content.",
+            "description": "Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "connections": {
+            "description": "Replace authored conditions. Null preserves them on organization-only edits.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/$defs/ConnectionDraft"
+            },
+            "default": null
           },
           "retire": {
             "type": "boolean"
@@ -14141,6 +14881,291 @@
           "handle",
           "related",
           "retire"
+        ]
+      },
+      "ConnectionDraft": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "description": "Received node ID, @memory alias, or a $handle in this transaction.",
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/$defs/Condition"
+          },
+          "relation": {
+            "$ref": "#/$defs/Relation"
+          },
+          "treatment": {
+            "$ref": "#/$defs/Treatment"
+          },
+          "work": {
+            "description": "Null permits any work in which the source is independently readable.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "explanation",
+          "condition",
+          "relation",
+          "treatment"
+        ]
+      },
+      "Condition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "always"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "work"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "sender"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "received"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "reference"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "situation": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "semantic"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "situation"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Predicate"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "all"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "conditions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/Predicate"
+                }
+              },
+              "kind": {
+                "type": "string",
+                "const": "any"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "conditions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "condition": {
+                "$ref": "#/$defs/Predicate"
+              },
+              "kind": {
+                "type": "string",
+                "const": "not"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "condition"
+            ]
+          }
+        ]
+      },
+      "Predicate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "always"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "work"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "sender"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/VersionRef"
+              },
+              "kind": {
+                "type": "string",
+                "const": "received"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "reference"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "situation": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "semantic"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "situation"
+            ]
+          }
+        ]
+      },
+      "Relation": {
+        "type": "string",
+        "enum": [
+          "association",
+          "correction",
+          "prerequisite",
+          "contradiction"
+        ]
+      },
+      "Treatment": {
+        "type": "string",
+        "enum": [
+          "preview",
+          "full"
         ]
       },
       "Locator": {
@@ -14194,8 +15219,8 @@
               "type": "string"
             }
           },
-          "branch": {
-            "description": "Branch whose short descriptions to show next. Null is the virtual root.",
+          "focus": {
+            "description": "Focus whose connected fragment previews to show next. Null browses all owned nodes.",
             "type": [
               "string",
               "null"
@@ -14216,11 +15241,71 @@
               "null"
             ],
             "default": null
+          },
+          "current_self": {
+            "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "delegation": {
+            "description": "Optional bounded recall authority for this work. Null disables delegated recall.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Delegation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
         "required": [
           "active"
+        ]
+      },
+      "Delegation": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "description": "Exact received source nodes whose conditional connections may select full text.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          },
+          "expires": {
+            "type": "string"
+          },
+          "max_fragments": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "semantic": {
+            "description": "Permit the configured selector to assess unknown semantic conditions.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "sources",
+          "expires",
+          "max_fragments",
+          "max_bytes",
+          "semantic"
         ]
       },
       "Verdict": {

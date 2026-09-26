@@ -38,7 +38,7 @@ const provider = createServer(async (req, res) => {
       { kind: 'environment.update', args: { id: context.environment.id, revision: context.environment.revision, name: 'Observation room', description: 'A synthetic shared test environment.' } },
       { kind: 'exec', args: { command: "printf 'first tool line\\n'; sleep 1; printf 'second tool line\\n'", background: false } },
     ] : [{ kind: 'wait', args: { reason: 'Explicit fixture wait; new outside input is required.' } }];
-    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
+    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
@@ -66,12 +66,12 @@ try {
   app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', resolve(process.env.PERSONAS_UI_DIST || 'dist'), '--unrestricted-test-mode'], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   await until(async () => { if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8')); try { return (await fetch(url + '/health')).ok; } catch { return false; } }, 'node health');
   const allowance = await op('resource.root.create', { limits: { calls: 5, births: 1, max_depth: 0, concurrent_calls: 1 }, closeout_calls: 1, reason: 'Synthetic activity mechanics; no live inference' });
-  const persona = await op('persona.create', { provider: 'fixture', model: 'activity-fixture', resource_root: allowance.id });
+  const persona = await op('persona.create', { provider: 'fixture', model: 'activity-fixture', resource_root: allowance.id, profile_seed: { character: 'I follow this synthetic activity-mechanics fixture.' } });
   const environment = await op('environment.create', {});
   browser = await chromium.launch(); const page = await browser.newPage({ viewport: { width: 1360, height: 1000 } });
   const errors = [], progressReads = []; page.on('pageerror', e => errors.push(e.message)); page.on('request', r => { if (/\/calls\/[^/]+\/progress$/.test(new URL(r.url()).pathname)) progressReads.push(r.url()); });
   await page.goto(url); await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
-  await step('unnamed identities are distinct and no model call is invented by creation', async () => {
+  await step('unnamed identities are distinct and supplied starting character needs no generation call', async () => {
     await page.getByRole('button', { name: 'Personas', exact: true }).click();
     await expect(page.getByRole('button', { name: `Unnamed persona · ${persona.id.slice(0, 8)}`, exact: true })).toBeVisible(); assert.equal(calls, 0);
   });

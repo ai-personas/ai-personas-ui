@@ -121,9 +121,25 @@ try {
     const dialog = page.getByRole('dialog', { name: 'Connect TypeSafe JEV' });
     await dialog.getByLabel('JEV API key').fill(keys[2]); await dialog.getByRole('button', { name: 'Save JEV key' }).click();
     await expect(dialog).toHaveCount(0); await expect(page.getByRole('button', { name: 'Replace JEV API key' })).toBeVisible();
-    const catalog = await get('/inference'); assert(!catalog.models.some(m => m.provider === 'typesafe'));
+    const catalog = await get('/inference'); assert(catalog.models.some(m => m.provider === 'typesafe' && m.capabilities.inference.operations.includes('choice')));
     assert(catalog.decision_models.some(m => m.provider === 'typesafe')); assert.equal(inferences, 0);
     assert.deepEqual((await get('/records?kind=grant')).items, []);
+  });
+  await step('Jev spending ceiling is editable in dollars and survives reload without resetting accounting', async () => {
+    const form=page.locator('.jev-budget');
+    await form.getByLabel('Total Jev limit (USD)', { exact: true }).fill('5');
+    await form.getByLabel('Reason for Jev limit').fill('Explicit five dollar synthetic test ceiling');
+    await form.getByRole('button', { name: 'Save Jev limit' }).click();
+    await expect(form).toContainText('Limit: $5.000000');
+    const budget=(await get('/settings/providers')).typesafe_budget;
+    assert.equal(budget.limit_micro_usd, 5000000); assert.equal(budget.accounted_micro_usd, 0);
+    await form.getByLabel('Total Jev limit (USD)', { exact: true }).fill('2');
+    await form.getByLabel('Reason for Jev limit').fill('Reduce remaining ceiling');
+    await form.getByRole('button', { name: 'Save Jev limit' }).click();
+    await expect(form).toContainText('Limit: $2.000000');
+    await page.reload(); await funding();
+    await expect(page.getByLabel('Total Jev limit (USD)', { exact: true })).toHaveValue('2');
+    assert.equal((await get('/settings/providers')).typesafe_budget.accounted_micro_usd, 0);
   });
   await step('bad key reports an access-safe error and removal clears the saved secret', async () => {
     await page.getByRole('button', { name: 'Edit fixture-responses' }).click();

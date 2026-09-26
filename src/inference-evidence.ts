@@ -42,7 +42,7 @@ export function inferenceEvidence(value: unknown) {
   const breakdown = object(d.context_breakdown);
   const contextParts = breakdown.unit === 'serialized_utf8_bytes' && breakdown.not_token_usage === true ? [
     ['Instructions', 'instructions'], ['Operation descriptions', 'operation_schema'], ['Current work and obligations', 'mandatory_work'],
-    ['Memory branch descriptions', 'memory_descriptions'], ['Selected records', 'selected_records'], ['Selected lessons', 'selected_learning'], ['Action history', 'history'],
+    ['Memory fragment descriptions', 'memory_descriptions'], ['Selected records', 'selected_records'], ['Selected lessons', 'selected_learning'], ['Action history', 'history'],
     ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
   ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {

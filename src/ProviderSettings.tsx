@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { changed, request } from './api';
+import { changed, changes, request } from './api';
 import type { ApiTypes, Connection, HttpModel } from './contract';
 import { useModels } from './Models';
 import Dialog from './Dialog';
+import JevBudget from './JevBudget';
 
 type Settings = ApiTypes['provider_settings'];
 type Change = ApiTypes['provider_settings_change'];
@@ -14,6 +15,11 @@ export function ProviderSettings() {
   const [removing, setRemoving] = useState(''), [busy, setBusy] = useState(false);
   const [typesafe, setTypesafe] = useState(false);
   const models = useModels();
+  useEffect(() => {
+    const refreshBudget = (event: Event) => { if (['provider_budget','budget_charge'].includes((event as CustomEvent).detail?.kind)) setAttempt(n => n + 1); };
+    changes.addEventListener('change', refreshBudget);
+    return () => changes.removeEventListener('change', refreshBudget);
+  }, []);
   useEffect(() => {
     const controller = new AbortController(); setError('');
     request<Settings>('/settings/providers', { signal: controller.signal }).then(setSettings)
@@ -51,6 +57,7 @@ export function ProviderSettings() {
     <article class="operator-card provider-card"><div><h3>TypeSafe.ai JEV</h3><span class="micro">Structured decision API · {settings.typesafe ? 'API key saved ••••••••' : 'Not connected'}</span></div>
       <p>Use JEV alongside the persona’s language model, which prepares its structured requests and interprets the results.</p>
       <p class="micro">API billing. Saving a key makes no evaluation call; account access is checked when used.</p>
+      <JevBudget key={settings.typesafe_budget?.revision} value={settings.typesafe_budget} refresh={() => setAttempt(n => n + 1)}/>
       <div class="button-row"><button class="secondary" onClick={() => setTypesafe(true)}>{settings.typesafe ? 'Replace JEV API key' : 'Connect TypeSafe JEV'}</button>{settings.typesafe && <button class="quiet" onClick={() => setRemoving('typesafe')}>Remove JEV key</button>}</div>
       {removing === 'typesafe' && <div class="notice"><p>Remove the saved JEV key? Recorded decisions and grants remain; further requests using this key will fail until reconnected.</p><button disabled={busy} onClick={async () => { setBusy(true); try { await save({ action: 'remove_typesafe', revision: settings.revision }); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>Remove connection</button><button class="quiet" disabled={busy} onClick={() => setRemoving('')}>Keep connection</button></div>}
     </article>

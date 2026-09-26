@@ -45,7 +45,7 @@ const provider = createServer(async (req, res) => {
       actions = [{ kind: 'wait', args: { reason: 'Explicit synthetic wait for new outside input' } }];
     }
     const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
-      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
     if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',
@@ -145,6 +145,7 @@ try {
     await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(allowance.id);
+    await form.getByLabel('Character', { exact: true }).fill('I follow this synthetic operator-mechanics fixture.');
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     persona = (await get('/records?kind=persona')).items[0]; assert.equal(persona.data.resource_root, allowance.id);
     await page.getByRole('button', { name: 'Environments', exact: true }).click();

@@ -20,7 +20,8 @@ import { humanLabel, recordTitle, actionTitle } from './reading';
 import { timestamp } from './identity';
 import RichText from './RichText';
 import ContextRecovery from './ContextRecovery';
-const MemoryTree = lazy(() => import('./MemoryTree'));
+const MemoryGraph = lazy(() => import('./MemoryGraph'));
+const RecallControls = lazy(() => import('./RecallControls'));
 const EnvironmentTools = lazy(() => import('./EnvironmentTools'));
 const Upload = lazy(() => import('./Upload'));
 const Pick = lazy(() => import('./Create').then(m => ({ default: m.Pick })));
@@ -46,7 +47,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {r.kind === 'environment' && !text(d.name) && <Expand title="Ask participants to name this environment">{() => <><p>Send one request to existing participants. A response uses their current allowances. Create work in this environment first if it has no participants.</p><MessageComposer to={id} environment={id} act={actSafe} open={open} initialText="Please choose a descriptive name and concise description for this shared environment after inspecting its current record. Respect any name already chosen by another participant. An image is optional and must refer to a real published artifact."/></>}</Expand>}
       {['persona', 'environment'].includes(r.kind) && <Expand title="Send a message">{() => <MessageComposer to={id} act={actSafe} open={open}/>}</Expand>}
       {r.kind === 'message' && <MessageReceipt id={id} open={open}/>}
-      {r.kind === 'run' && <><div class="button-row"><button disabled={d.membership === 'removed' || ['queued', 'running'].includes(d.status)} onClick={() => void actSafe('run.resume', { id }).catch(() => {})}>Resume</button><button class="secondary" onClick={() => void actSafe('run.pause', { id }).catch(() => {})}>Pause decisions</button><button class="secondary" onClick={() => void actSafe('run.cancel', { id }).catch(() => {})}>Cancel work</button></div><p class="micro">Pause stops decisions; existing jobs may continue. Cancel cannot undo completed external effects.</p><ContextRecovery run={r} act={actSafe}/></>}
+      {r.kind === 'run' && <><div class="button-row"><button disabled={d.membership === 'removed' || ['queued', 'running'].includes(d.status)} onClick={() => void actSafe('run.resume', { id }).catch(() => {})}>Resume</button><button class="secondary" onClick={() => void actSafe('run.pause', { id }).catch(() => {})}>Pause decisions</button><button class="secondary" onClick={() => void actSafe('run.cancel', { id }).catch(() => {})}>Cancel work</button></div><p class="micro">Pause stops decisions; existing jobs may continue. Cancel cannot undo completed external effects.</p><ContextRecovery run={r} act={actSafe}/><Expand title="Recall permissions">{() => <Suspense fallback={<p>Loading recall controls…</p>}><RecallControls run={r} act={actSafe}/></Suspense>}</Expand></>}
       {r.kind === 'request' && <><ContentReferences ids={recordIDs(d.artifacts)} open={open} artifact={artifact}/><p class="notice">{d.visibility === 'work' ? 'Shared question: you and permitted participants can answer. Your response and attachments are shared with this work. The requesting persona assesses the replies.' : 'Your response and attachments go to the requesting persona.'} An answer does not establish resolution or verified facts.</p><Respond id={id} act={actSafe}/></>}
       {r.kind === 'response' && <><ContentReferences ids={recordIDs(d.artifacts)} open={open} artifact={artifact}/>{isRecordID(d.request) && <button onClick={() => open(d.request)}>Open request</button>}</>}
       {r.kind === 'submission' && <><ContentReferences ids={[...recordIDs(d.documents), ...recordIDs(d.artifacts)]} open={open} artifact={artifact}/>
@@ -60,6 +61,9 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
         <p>{recordIDs(d.checks).length} referenced checks. Command completion alone is not technical validation.</p>{recordIDs(d.checks).map(ref => <Expand key={ref} title={'Check ' + ref.slice(0, 8)}>{() => <ActionRecord id={ref} act={actSafe} open={open}/>}</Expand>)}</>}
       {r.kind === 'call' && <><p>{text(d.actual_model, 'Actual model not recorded')} · {text(d.status)}</p><p>{d.usage?.known ? `${d.usage.input} input · ${d.usage.cached} cached · ${d.usage.output} output tokens` : 'Usage unknown'}</p><p class="micro">Recorded usage is not a currency budget or a host-wide spend measure.</p><p>{d.context_bytes?.toLocaleString()} context bytes · {d.images?.length || 0} selected image inputs</p>
         <p class="micro">Model requests, responses, and provider logs are not archived. Saved work, status, and usage remain available.</p>
+        {d.selector && <p>Recall: {text(d.selector.status).replaceAll('_', ' ')}{d.selector.assessment_call && <> · <button class="text-button" onClick={() => open(d.selector.assessment_call)}>Inspect assessment and spending</button></>}</p>}
+        {d.purpose === 'fragment_recall' && <p>This is read-only preparation. It holds no primary decision authority. {d.latency_ms != null && `${d.latency_ms} ms.`}</p>}
+        {d.recall_manifest?.selected?.map((item: any, i: number) => <p key={i}>{String(item.origin).replaceAll('_', ' ')} · {item.nodes?.length || 0} fragments in the required bundle</p>)}
         {d.error && <p role="alert">{text(d.error)}</p>}</>}
       {r.kind === 'resource_root' && <AllowanceSummary id={id} act={actSafe}/>}
       {['document', 'artifact', 'fragment', 'perspective', 'message'].includes(r.kind) && <ErasePayload record={r} act={actSafe}/>}
@@ -67,7 +71,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
       {tabs.length > 0 && <><nav class="tabs" aria-label="Detail sections">{tabs.map(t => <button key={t} class={current === t ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>)}</nav>
         {current === 'Messages' && r.kind === 'persona' ? <Correspondence key={id} persona={id} open={open}/> : current === 'Actions' || current === 'History' ? <Actions key={current + id} owner={r.kind === 'persona' ? id : ''} run={r.kind === 'run' ? id : ''} act={actSafe} open={open}/>
           : current === 'Tools' && r.kind === 'environment' ? <Suspense fallback={<p>Loading tools…</p>}><EnvironmentTools environment={id} act={actSafe} open={open}/></Suspense>
-          : current === 'Learning' && r.kind === 'persona' ? <Suspense fallback={<p>Loading learning…</p>}><MemoryTree key={id} owner={id} open={open}/></Suspense>
+          : current === 'Learning' && r.kind === 'persona' ? <Suspense fallback={<p>Loading learning…</p>}><MemoryGraph key={id} owner={id} open={open}/></Suspense>
           : <Records key={current + id} kind={({ Activity: 'run', Work: r.kind === 'persona' ? 'run' : 'work', Learning: 'fragment,document', Tools: 'tool,capability', Perspectives: 'perspective', Messages: 'message', 'Model calls': 'call', Submissions: 'submission', Assessments: 'finding,assessment', Requests: 'request', Responses: 'response' } as Record<string, string>)[current]} scope={r.kind === 'persona' ? '' : id} owner={r.kind === 'persona' ? id : ''} open={open}/>}
       </>}
       <Expand title="Version history">{() => <Revisions id={id} open={open}/>}</Expand>

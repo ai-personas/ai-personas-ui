@@ -294,7 +294,6 @@ export type Command =
       kind: "fragment.write";
       args: {
         draft: FragmentDraft;
-        parent?: string | null;
         related: string[];
       };
     }
@@ -303,7 +302,6 @@ export type Command =
       args: {
         node: VersionRef;
         draft: FragmentDraft;
-        parent?: string | null;
         related: string[];
       };
     }
@@ -535,10 +533,28 @@ export type Command =
       };
     }
   | {
+      kind: "provider.budget.configure";
+      args: {
+        revision: number;
+        limit_micro_usd: number;
+        reason: string;
+      };
+    }
+  | {
+      kind: "recall.configure";
+      args: {
+        persona: string;
+        work: string;
+        revision: number;
+        policy?: Policy | null;
+        reason: string;
+      };
+    }
+  | {
       kind: "memory.browse";
       args: {
         owner: string;
-        branch?: string | null;
+        focus?: string | null;
         after?: number | null;
         limit?: number | null;
         query?: string | null;
@@ -1020,9 +1036,64 @@ export type DependencyMode = "final_acceptance" | "version_ready";
 export type CommitmentStatus = "working" | "blocked" | "submitted" | "closed" | "cancelled";
 export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" | "resolved" | "deferred" | "waived";
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
+export type Fallback = "deterministic" | "block";
 export type OrientationDisposition = "adopted" | "deferred";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
 export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
+export type Condition =
+  | {
+      kind: "always";
+    }
+  | {
+      id: string;
+      kind: "work";
+    }
+  | {
+      id: string;
+      kind: "sender";
+    }
+  | {
+      reference: VersionRef;
+      kind: "received";
+    }
+  | {
+      situation: string;
+      kind: "semantic";
+    }
+  | {
+      conditions: Predicate[];
+      kind: "all";
+    }
+  | {
+      conditions: Predicate[];
+      kind: "any";
+    }
+  | {
+      condition: Predicate;
+      kind: "not";
+    };
+export type Predicate =
+  | {
+      kind: "always";
+    }
+  | {
+      id: string;
+      kind: "work";
+    }
+  | {
+      id: string;
+      kind: "sender";
+    }
+  | {
+      reference: VersionRef;
+      kind: "received";
+    }
+  | {
+      situation: string;
+      kind: "semantic";
+    };
+export type Relation = "association" | "correction" | "prerequisite" | "contradiction";
+export type Treatment = "preview" | "full";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type QuestionVisibility = "work" | "private";
@@ -1417,6 +1488,22 @@ export interface ReleaseDraft {
   disposition: ReleaseDisposition;
   limitations: string;
 }
+export interface Policy {
+  provider: string;
+  model: string;
+  expires: string;
+  allow_owned_fragments: boolean;
+  allow_work_observations: boolean;
+  allow_authored_focus: boolean;
+  max_candidates: number;
+  max_request_bytes: number;
+  max_input_tokens: number;
+  max_output_tokens: number;
+  max_episode_attempts: number;
+  max_total_attempts: number;
+  timeout_ms: number;
+  fallback: Fallback;
+}
 export interface ProfileSeed {
   character?: string | null;
   ocean?: Ocean | null;
@@ -1519,18 +1606,33 @@ export interface Change {
    */
   draft?: FragmentDraft | null;
   /**
-   * Replace primary parent; null places at root. Node ID or $handle.
-   */
-  parent?: string | null;
-  /**
-   * Replace cross-links. Node IDs or $handles; links do not select their content.
+   * Replace directed associations. Node IDs or $handles; cycles are valid and links do not select their content.
    */
   related: string[];
+  /**
+   * Replace authored conditions. Null preserves them on organization-only edits.
+   */
+  connections?: ConnectionDraft[] | null;
   retire: boolean;
   /**
    * Replace the optional retrieval utility; null removes it. Versioned with this node.
    */
   locator?: Locator | null;
+}
+export interface ConnectionDraft {
+  /**
+   * Received node ID, @memory alias, or a $handle in this transaction.
+   */
+  target: string;
+  explanation: string;
+  condition: Condition;
+  relation: Relation;
+  treatment: Treatment;
+  /**
+   * Null permits any work in which the source is independently readable.
+   */
+  work?: string | null;
+  expires?: string | null;
 }
 export interface Locator {
   description: string;
@@ -1553,14 +1655,35 @@ export interface Selection2 {
    */
   active: string[];
   /**
-   * Branch whose short descriptions to show next. Null is the virtual root.
+   * Focus whose connected fragment previews to show next. Null browses all owned nodes.
    */
-  branch?: string | null;
+  focus?: string | null;
   after?: number | null;
   /**
    * Your search cue across owned memory descriptions for the next context. Results are previews, never automatically selected full fragments.
    */
   query?: string | null;
+  /**
+   * Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.
+   */
+  current_self?: string[] | null;
+  /**
+   * Optional bounded recall authority for this work. Null disables delegated recall.
+   */
+  delegation?: Delegation | null;
+}
+export interface Delegation {
+  /**
+   * Exact received source nodes whose conditional connections may select full text.
+   */
+  sources: VersionRef[];
+  expires: string;
+  max_fragments: number;
+  max_bytes: number;
+  /**
+   * Permit the configured selector to assess unknown semantic conditions.
+   */
+  semantic: boolean;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
@@ -1674,6 +1797,7 @@ export interface ProviderSettings {
    * Separate choice capability; never a persona's primary chat model.
    */
   typesafe?: KeyStatus | null;
+  typesafe_budget?: Status | null;
   [k: string]: unknown;
 }
 export interface SavedConnection {
@@ -1729,6 +1853,14 @@ export interface HttpModel {
 export interface KeyStatus {
   key_saved: boolean;
   updated: string;
+  [k: string]: unknown;
+}
+export interface Status {
+  revision: number;
+  limit_micro_usd?: number | null;
+  accounted_micro_usd?: number | null;
+  remaining_micro_usd?: number | null;
+  error?: string | null;
   [k: string]: unknown;
 }
 /**

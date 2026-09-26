@@ -1,6 +1,6 @@
 # Generated HTTP contract
 
-Contract: `ai-personas/autonomous-continuity-1`
+Contract: `ai-personas/fragment-graph-1`
 
 Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
 
@@ -8,7 +8,7 @@ Default loopback listeners allow the same-origin local operator workspace withou
 |---|---|---|
 | GET | `/api/personas/{id}/memory/activity?after=0&limit=12` | Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads |
 | GET | `/api/personas/{id}/memory/usage/{fragment}` | Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit |
-| GET | `/api/personas/{id}/memory?branch=&after=0&limit=12` | Private memory tree: bounded short descriptions, breadcrumbs and related branches; full fragments fetched on demand |
+| GET | `/api/personas/{id}/memory?focus=&after=0&limit=12` | Private fragment graph: bounded descriptions and directed connections; full fragments fetched on demand |
 | GET | `/api/work/{id}/files?after=0&limit=12` | Files linked by exact publication/submission receipts; drafts and adopted candidates remain distinct from acceptance |
 | GET | `/api/environment-tools` | Default shared tool catalog; no probes or inference |
 | GET | `/api/attention` | Whole-store counts of unanswered requests and affected work, personas and environments; answered requests are not awaiting user input |
@@ -410,7 +410,6 @@ Author owned retained learning with explicit applicability, limitations and exac
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `draft` | FragmentDraft | Required |  |
-| `parent` | string or null | Optional |  |
 | `related` | string[] | Required |  |
 
 ### `fragment.revise`
@@ -421,7 +420,6 @@ Create an immutable correction to an owned fragment. Earlier content remains ins
 |---|---|---|---|
 | `node` | VersionRef | Required |  |
 | `draft` | FragmentDraft | Required |  |
-| `parent` | string or null | Optional |  |
 | `related` | string[] | Required |  |
 
 ### `perspective.write`
@@ -700,14 +698,36 @@ Execute this exact owned node's retrieval utility with named string arguments en
 | `node` | VersionRef | Required |  |
 | `arguments_json` | string | Required |  |
 
+### `provider.budget.configure`
+
+Operator sets the saved Jev connection's total node-wide USD micro-unit ceiling. Retains consumed, reserved and uncertain spending across work allowances and key replacement. Revision zero creates the ceiling; zero blocks new spending.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `revision` | integer | Required |  |
+| `limit_micro_usd` | integer | Required |  |
+| `reason` | string | Required |  |
+
+### `recall.configure`
+
+Operator approves or disables a read-only selector for this persona and work. Requires separate processing permission, finite limits and an existing priced allowance. Revision zero creates the policy; null disables it.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `persona` | string | Required |  |
+| `work` | string | Required |  |
+| `revision` | integer | Required |  |
+| `policy` | Policy or null | Optional |  |
+| `reason` | string | Required |  |
+
 ### `memory.browse`
 
-Browse your private memory tree. Null branch means root. Returns short descriptions, path and related links, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.
+Browse your private fragment graph. Null focus lists all owned fragments. Returns short descriptions and directed connections, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `owner` | string | Required |  |
-| `branch` | string or null | Optional |  |
+| `focus` | string or null | Optional |  |
 | `after` | integer or null | Optional |  |
 | `limit` | integer or null | Optional |  |
 | `query` | string or null | Optional |  |
