@@ -62,7 +62,7 @@ which prepares structured requests and interprets the returned decisions.
 - **Identity:** inspect a persona’s stable ID, authored character, lifecycle,
   creation provenance, and membership milestones. Creation starts a funded call
   to generate a name and starting character; providing a character skips that
-  call. Optional avatar generation starts alongside it when an eligible image
+  call. Optional avatar generation uses the committed character when an eligible image
   provider and allowance are available. Missing avatar funding or a provider
   does not block work. Use **Request introduction** in existing work, or ask
   participants to name an environment. Portraits appear only when a real image

@@ -11,6 +11,7 @@ import { RunProgress } from './RunProgress';
 import WorkConversation from './WorkConversation';
 import Participants from './Participants';
 import Perspectives from './Perspectives';
+import WorkReadiness from './WorkReadiness';
 import { InputNotice } from './Attention';
 import { inputRequestCount } from './workspace';
 import WorkArtifacts, { ContentReferences } from './ContentCards';
@@ -52,7 +53,6 @@ function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act 
   const d = fields(r.data), draft = fields(d.draft), state = text(d.status) || text(d.disposition);
   const assessment = r.kind === 'finding' || r.kind === 'assessment';
   const isBirth = ['birth', 'birth_link', 'birth_proposal'].includes(r.kind);
-  const isPerspective = r.kind === 'perspective';
   const author = d.author || d.owner || d.persona || d.from;
   const body = text(d.summary) || text(d.description) || text(d.agenda) || text(d.text) || text(d.content) || text(draft.text) || text(draft.description) || text(d.purpose) || text(d.note);
   return <article class={`work-record${inputRequestCount(r) ? ' needs-input' : ''}`} data-kind={r.kind}>
@@ -61,12 +61,11 @@ function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act 
       {state && !assessment && <Badge value={state}/>}</header>
     <InputNotice record={r} open={open}/>
     {r.kind === 'submission' && <QuestionDelivery value={d.peer_delivery} status={d.status}/>}
-    {r.kind === 'run' && isRecordID(author) ? <ActivityPersona id={author} open={open}/> : r.kind !== 'commitment' && <Reference id={author} caption={isPerspective ? 'Perspective by' : 'By'} open={open}/>}
+    {r.kind === 'run' && isRecordID(author) ? <ActivityPersona id={author} open={open}/> : r.kind !== 'commitment' && <Reference id={author} caption="By" open={open}/>}
     {needsContent && !value && !error && <p class="micro" role="status">Loading the update…</p>}
     {needsContent && error && <p class="micro" role="alert">The written update could not be loaded. Open details to try again.</p>}
     {body && r.kind !== 'run' && <p class="record-prose record-excerpt">{body}</p>}
     {r.kind === 'run' && <RunProgress run={r} open={open} act={act}/>}
-    {isPerspective && <><NamedField name="Proposed attention" value={d.priorities}/><NamedField name="Expected contribution" value={d.contribution}/><NamedField name="Concerns" value={d.concerns}/><p class="record-caveat">An individual perspective, not an assignment or a collective decision.</p></>}
     {r.kind === 'commitment' && <>
       <p class="ownership-label">{ownership(r).label}</p><Reference id={ownership(r).id} caption="Persona" open={open}/>
       <NamedField name="Expected outcome" value={d.outcome}/>
@@ -162,6 +161,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
     <section id="workspace-panel" role="tabpanel" aria-labelledby={`workspace-tab-${WORK_TABS.indexOf(tab)}`} tabIndex={0}>
       {tab === 'Overview' && <>
         <WorkConversation key={id} work={id} environment={text(d.environment) || work.scope} open={open}/>
+        <WorkReadiness work={id} open={open}/>
         {section('Persona activity', 'run', 'No participation runs have been recorded.', 'Latest decisions and current stop reasons. Open a run to inspect actions or pause, resume, and cancel participation.')}
         <section class="workspace-section mandate"><span class="field-label">Recorded request · scope is not silently expanded</span><h2>The need</h2><p class="record-prose">{text(d.brief, 'Read the exact record for the retained request.')}</p>
           <p class="record-caveat">The interface does not assign professions, rank personalities, choose a team strategy, or declare a design safe.</p></section>
@@ -172,7 +172,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
         {section('Needs attention', 'request,work_feedback,feedback', 'No requests or consequential feedback are visible on this page. This is not proof that the work has no blockers.', 'Answers, acknowledgements, dispositions and verified repairs are different states.')}
       </>}
       {tab === 'Perspectives' && <>
-        <div class="workspace-intro"><h2>Different people, different approaches</h2><p>Read the perspectives personas have authored for this work. Their views remain separate from shared proposals and accepted responsibilities.</p></div>
+        <div class="workspace-intro"><h2>Different people, different approaches</h2><p>Read each persona’s authored focus and intention for this work, alongside deliberately shared proposals.</p></div>
         <Perspectives key={id} work={id} open={open}/>
         {section('Shared opportunity board', 'proposal,work_entry', 'No proposals are visible. The UI does not generate candidate improvements.', 'Unranked records in server order. Frequency, confidence or group size does not confer authority.')}
       </>}

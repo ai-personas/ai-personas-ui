@@ -10,7 +10,7 @@ export default function AvatarInitialization({ persona, act, open }: { persona: 
   if (!state && isRecordID(d.portrait)) return null;
   return <section class="development-card" aria-label="Avatar generation">
     <h4>{ready ? 'Generated avatar' : 'Persona avatar'}</h4>
-    <p role="status">{ready ? 'Created from this persona’s starting characteristics.' : state === 'running' ? 'Generating an avatar…' : state === 'pending' ? 'Avatar generation is queued alongside character creation.' : state === 'supplied' ? 'An existing portrait is in use.' : 'Avatar generation is available when an image connection and priced allowance are configured.'}</p>
+    <p role="status">{ready ? 'Created from this persona’s starting characteristics.' : state === 'running' ? 'Generating an avatar…' : state === 'pending' ? 'Avatar generation waits for the starting character, then runs without blocking work.' : state === 'supplied' ? 'An existing portrait is in use.' : 'Avatar generation is available when an image connection and priced allowance are configured.'}</p>
     {text(init.model) && <p class="micro">{text(init.provider)} / {text(init.model)} · Low quality, 1024 × 1024</p>}
     {text(init.error) && <p class="notice">{text(init.error)}</p>}
     {ready && init.usage_known === false && <p class="notice">The image arrived without a complete usage receipt. Its reserved spending remains accounted.</p>}

@@ -13,7 +13,7 @@ const documentText = '# A clear plan\n\nA **shared baseline** with readable step
 const records = [
   record(1, 'work', { title: 'Fixture house', brief: 'A fixture need, not a generated house.', personas: [person], activity: { running: 1 }, submissions: 1, assessments: { accepted: 1 }, pending_requests: 1, input_requests: 1, mandate: { id: id(19), revision: 1 }, core: { binding: 'adopted', continuation: { status: 'awaiting_acceptance', owners: [] }, coverage: { outcomes: [], scope_review_current: false, scope_review_required: false }, acceptance: null, blocking_feedback: [{ id: id(25), revision: 1 }], stale_resolutions: [{ id: id(25), revision: 1 }], deferred_feedback: [{ id: id(26), revision: 1 }], stale_assumptions: [{ id: id(27), revision: 1 }], handoff_gaps: [{ commitment: { id: id(28), revision: 1 }, owner: person, continuation: true }] }, last_operation: id(99), participant_ids: [person], runtime_only: { kind: 'INTERNAL_ENVELOPE', schema: 'transport/99' } }, ''),
   record(2, 'persona', { name: 'Mira fixture', character: 'Interested in comparing alternatives.', model: 'fixture-only' }, ''),
-  record(3, 'perspective', { owner: person, draft: { kind: 'agenda', subject: null, content: 'Compare alternatives on a common basis.', limitations: 'This is one authored priority, not a group decision.', sources: [] }, status: 'authored' }),
+  record(3, 'run', { persona: person, status: 'running', continuity: { focus: 'Compare alternatives on a common basis.' }, working_intent: { outcome: 'An explained comparison.', fidelity: 'Comparable room schedules.', collaboration: 'Invite Rowan to challenge my assumptions.' } }),
   record(4, 'commitment', { title: 'Unaccepted offer', status: 'offered', owner: person, offered_to: person, draft: { kind: 'INTERNAL_DRAFT', description: 'Compare two layouts for daylight.', criterion: 'Explain the daylight trade-offs clearly.', internal_flag: 'do-not-display' } }),
   record(5, 'submission', { title: 'Fixture submission', artifacts: [file, badFile, nativeFile], documents: [id(16), id(16)] }),
   record(6, 'finding', { title: 'Historical fixture review', verdict: 'accepted', submission: id(5), checks: [] }),
@@ -25,7 +25,6 @@ const records = [
   record(12, 'working_agreement', { title: 'Same comparison basis', terms: 'Compare equivalent inputs.', endorsements: [] }),
   record(13, 'request', { purpose: 'Fixture clarification', status: 'open', evidence_required: 'An actual answer, not an acknowledgement.', artifacts: [] }),
   record(14, 'fragment', { title: 'A candidate lesson', content: 'Bind analysis to source versions.', applicability: 'When generating derived outputs', limitations: 'Usefulness not demonstrated.' }),
-  record(15, 'run', { persona: person, status: 'running', note: 'Fixture run only.' }),
   record(16, 'document', { title: 'Readable house concept', content: documentText, owner: person, environment: id(17),
     information_sources: [{ id: id(18), revision: 1 }], design_details: { conceptual: true, bedrooms: 4 } }, person),
   record(17, 'environment', { name: 'Shared design room' }, ''),
@@ -33,8 +32,7 @@ const records = [
   record(19, 'work_mandate', { original_need: 'Create a practical comparison.', mandate: { outcomes: [{ key: 'INTERNAL_OUTCOME_KEY', description: 'Two comparable layouts', criterion: 'Show the trade-offs', required: true, evidence: 'user_judgment' }], constraints: ['Keep four bedrooms'], preferences: [], unresolved_inputs: [], completion_agreement: 'User accepts the comparison' }, status: 'adopted', causal_operation: id(99) }),
   record(20, 'request', { purpose: 'Choose a comparison basis', instructions: 'Tell us which priorities matter.', evidence_required: 'Your priorities', status: 'resolved', resolution: { id: id(29), revision: 1 }, owner: person }),
   record(29, 'request_resolution', { request: id(20), resolution: { conclusion: 'Use equal floor areas for both concepts.', evidence: [], request: id(20) }, owner: person }, id(20)),
-  record(22, 'perspective', { owner: person, draft: { kind: 'relationship', subject: id(24), content: 'Ask Rowan to review the comparison.', limitations: 'Rowan has not agreed yet.', sources: [] }, status: 'authored' }),
-  record(23, 'perspective', { owner: person, draft: { kind: 'agenda', subject: null, content: 'OTHER_WORK_PRIVATE_AGENDA', limitations: '', sources: [] } }, id(100)),
+  record(23, 'run', { persona: person, continuity: { focus: 'OTHER_WORK_PRIVATE_INTENTION' } }, id(100)),
   record(24, 'persona', { name: 'Rowan fixture' }, ''),
   record(25, 'work_feedback', { title: 'Check revised dimensions', status: 'resolved' }),
   record(26, 'work_feedback', { title: 'Confirm site access', status: 'deferred' }),
@@ -55,7 +53,7 @@ try {
   await mkdir('.qa', { recursive: true }); await ready();
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_EXECUTABLE ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : {}) });
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
-    const page = await browser.newPage({ viewport }); activePage = page; const errors = [], calls = [], writes = [], externalReads = []; let perspectiveMode = 'normal';
+    const page = await browser.newPage({ viewport }); activePage = page; const errors = [], calls = [], writes = [], externalReads = []; let approachMode = 'normal';
     page.on('request', request => { if (request.url().startsWith('https://example.invalid/')) externalReads.push(request.url()); });
     await page.route('https://example.invalid/**', route => route.abort());
     page.on('pageerror', e => errors.push(e.message));
@@ -63,6 +61,11 @@ try {
       const req = route.request(), u = new URL(req.url()); calls.push(u.pathname + u.search);
       if (u.pathname === '/api/session') return route.fulfill({ json: {} });
       if (u.pathname === '/api/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ': fixture keepalive\n\n' });
+      if (u.pathname === `/api/work/${work}/readiness`) return route.fulfill({ json: {
+        schema: 'work-readiness/1', observed: stamp, funding: { binding: 'unfunded', observed_tokens: { input: 24000, output: 1200 } },
+        jev_budget: { limit_micro_usd: 5000000, accounted_micro_usd: 42, remaining_micro_usd: 4999958 },
+        participants: [{ persona: person, run: id(3), name: 'Mira fixture', status: 'running', provider: 'fixture', model: 'Fixture model', provider_configured: true, model_discovered: true, character_ready: true, avatar: 'unavailable', self_fragments: 1, retained_fragments: 3, selector_policy: 'disabled', last_selector: { call: id(40), result: { status: 'disabled' } }, publications: 0, submissions: 0 }]
+      } });
       if (u.pathname === `/api/work/${work}/files`) return route.fulfill({json:{items:records.filter(r=>[file,badFile,nativeFile,id(16)].includes(r.id)).map(record=>({record,status:'submitted',submissions:[{id:id(5),revision:1}],adopted_in:null,acceptance_established:false})),next:null,sequence:0}});
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-peer', peers: [], addresses: [] } });
       if (/^\/api\/work\/[^/]+\/messages$/.test(u.pathname)) return route.fulfill({ json: { items: [], next: null, sequence: 0 } });
@@ -72,14 +75,14 @@ try {
       if (u.pathname === '/api/operations') { const body = req.postDataJSON(); writes.push(body); return route.fulfill({ json: { request: body, state: 'succeeded', result: {} } }); }
       if (u.pathname === '/api/records') {
         const q = u.searchParams, kinds = (q.get('kind') || '').split(',');
-        const rows = records.filter(r => (perspectiveMode !== 'empty' || r.kind !== 'perspective') && (!q.get('kind') || kinds.includes(r.kind)) && (!q.get('scope') || r.scope === q.get('scope')) && (!q.get('owner') || r.data.owner === q.get('owner') || r.data.persona === q.get('owner')) && (!q.get('status') || r.data.status === q.get('status')) && (!q.get('query') || JSON.stringify(r.data).toLowerCase().includes(q.get('query').toLowerCase())));
+        const rows = records.filter(r => (approachMode !== 'empty' || r.kind !== 'run') && (!q.get('kind') || kinds.includes(r.kind)) && (!q.get('scope') || r.scope === q.get('scope')) && (!q.get('owner') || r.data.owner === q.get('owner') || r.data.persona === q.get('owner')) && (!q.get('status') || r.data.status === q.get('status')) && (!q.get('query') || JSON.stringify(r.data).toLowerCase().includes(q.get('query').toLowerCase())));
         // Real list projections omit authored drafts; detail fetches restore them.
-        const summaries = rows.map(r => ['work_entry', 'commitment', 'perspective'].includes(r.kind) ? { ...r, data: Object.fromEntries(Object.entries(r.data).filter(([key]) => key !== 'draft')) } : r);
+        const summaries = rows.map(r => ['work_entry', 'commitment', 'run'].includes(r.kind) ? { ...r, data: Object.fromEntries(Object.entries(r.data).filter(([key]) => !['draft', 'continuity', 'working_intent'].includes(key))) } : r);
         return route.fulfill({ json: { items: summaries, next: null, sequence: 0 } });
       }
       if (/\/records\/[^/]+\/revisions$/.test(u.pathname)) return route.fulfill({ json: { items: u.pathname.includes(id(16)) ? [records.find(r => r.id === id(16))] : [], next: null, sequence: 0 } });
       if (u.pathname === '/api/actions') return route.fulfill({ json: { items: [sampleAction], next: null, sequence: 0 } });
-      if (perspectiveMode === 'failed' && u.pathname === '/api/records/' + id(3)) return route.fulfill({ status: 503, json: { error: 'Fixture perspective temporarily unavailable' } });
+      if (approachMode === 'failed' && u.pathname === '/api/records/' + id(3)) return route.fulfill({ status: 503, json: { error: 'Fixture participation temporarily unavailable' } });
       if (u.pathname.startsWith('/api/records/')) { const r = records.find(x => x.id === u.pathname.split('/').at(-1)); return route.fulfill({ status: r ? 200 : 404, json: r || { error: 'Missing fixture record' } }); }
       if (u.pathname.startsWith('/api/artifacts/')) return route.fulfill({ contentType: 'text/plain', body: bytes });
       return route.fulfill({ status: 404, json: { error: 'No such fixture endpoint' } });
@@ -91,6 +94,15 @@ try {
       await expect(page.getByLabel('Independent work status')).toContainText('Not established');
       await expect(page.getByText('No allowance is bound.', { exact: false })).toBeVisible();
     });
+    await step(`${viewport.width}: component state distinguishes configuration, usage and useful outputs`, async () => {
+      const state = page.getByLabel('Component status', { exact: true });
+      await expect(state).toContainText('Disabled for this work');
+      await expect(state).toContainText('$5.000000');
+      await expect(state).toContainText('$0.000042');
+      await expect(state).toContainText('24,000 input + 1,200 output tokens');
+      await expect(state).toContainText('0 published versions · 0 submissions');
+      await expect(state).toContainText('does not establish useful work');
+    });
     for (const tab of ['Overview', 'Perspectives', 'Work & outcomes', 'People & agreements', 'Artifacts & evidence', 'Decisions & learning']) {
       await step(`${viewport.width}: ${tab}`, async () => {
         await page.getByRole('tab', { name: tab, exact: true }).click();
@@ -99,38 +111,33 @@ try {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       });
     }
-    await step(`${viewport.width}: real perspective drafts show agendas and relationships separately`, async () => {
+    await step(`${viewport.width}: authored intentions use participation records and respect work scope`, async () => {
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
-      const agendas = page.getByLabel('Individual agendas', { exact: true });
-      await expect(agendas).toContainText('Compare alternatives on a common basis.');
-      await expect(agendas).toContainText('This is one authored priority, not a group decision.');
-      await expect(agendas).toContainText('Mira fixture');
-      await expect(agendas).not.toContainText('Ask Rowan');
-      await expect(page.getByLabel('Relationship notes', { exact: true })).toContainText('Ask Rowan to review the comparison.');
-      await expect(page.getByLabel('Relationship notes', { exact: true })).toContainText('Rowan fixture');
-      await expect(page.locator('#workspace-panel')).not.toContainText('OTHER_WORK_PRIVATE_AGENDA');
-      await agendas.getByRole('button', { name: 'View details ↗', exact: true }).click();
-      const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
-      await expect(detail.locator('.record-reader')).toContainText('Compare alternatives on a common basis.');
-      await expect(detail.getByText('Kind', { exact: true })).toHaveCount(0);
+      const approaches = page.getByLabel('Individual approaches', { exact: true });
+      await expect(approaches).toContainText('Compare alternatives on a common basis.');
+      await expect(approaches).toContainText('An explained comparison.');
+      await expect(approaches).toContainText('Mira fixture');
+      await expect(approaches).toContainText('Invite Rowan to challenge my assumptions.');
+      await expect(page.locator('#workspace-panel')).not.toContainText('OTHER_WORK_PRIVATE_INTENTION');
+      await approaches.getByRole('button', { name: 'View participation', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Record details', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
     });
-    await step(`${viewport.width}: absent agendas explain optional authorship without creating work`, async () => {
-      perspectiveMode = 'empty'; await page.getByRole('tab', { name: 'Overview', exact: true }).click();
+    await step(`${viewport.width}: absent intentions do not invent character or commitments`, async () => {
+      approachMode = 'empty'; await page.getByRole('tab', { name: 'Overview', exact: true }).click();
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
-      await expect(page.getByLabel('Individual agendas', { exact: true })).toContainText('No agendas have been written for this work');
-      await expect(page.getByLabel('Individual agendas', { exact: true })).toContainText('Personas can continue working without one.');
-      await expect(page.getByLabel('Relationship notes', { exact: true })).toHaveCount(0);
-      perspectiveMode = 'normal';
+      await expect(page.getByLabel('Individual approaches', { exact: true })).toContainText('No working intentions recorded on this page');
+      await expect(page.getByLabel('Individual approaches', { exact: true })).toContainText('Trait values and activity do not supply an inferred intention.');
+      approachMode = 'normal';
     });
-    await step(`${viewport.width}: failed perspective reads remain visible and can be retried`, async () => {
-      perspectiveMode = 'failed'; await page.getByRole('tab', { name: 'Overview', exact: true }).click();
+    await step(`${viewport.width}: failed participation reads remain visible and can be retried`, async () => {
+      approachMode = 'failed'; await page.getByRole('tab', { name: 'Overview', exact: true }).click();
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
-      const agendas = page.getByLabel('Individual agendas', { exact: true });
-      await expect(agendas.getByRole('alert')).toContainText('1 perspective could not be loaded.');
-      await expect(agendas).not.toContainText('No agendas');
-      perspectiveMode = 'normal'; await agendas.getByRole('button', { name: 'Try again', exact: true }).click();
-      await expect(agendas).toContainText('Compare alternatives on a common basis.');
+      const approaches = page.getByLabel('Individual approaches', { exact: true });
+      await expect(approaches.getByRole('alert')).toContainText('Some participations could not be loaded.');
+      await expect(approaches).not.toContainText('No working intentions');
+      approachMode = 'normal'; await approaches.getByRole('button', { name: 'Try again', exact: true }).click();
+      await expect(approaches).toContainText('Compare alternatives on a common basis.');
     });
     await step(`${viewport.width}: reconciled completion conditions stay visible`, async () => {
       await page.getByRole('tab', { name: 'Work & outcomes', exact: true }).click();
@@ -293,7 +300,7 @@ try {
       await page.keyboard.press('Escape'); await expect(page.locator('dialog')).toHaveCount(0);
     });
     await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
-    await expect(page.getByLabel('Individual agendas')).toContainText('Compare alternatives');
+    await expect(page.getByLabel('Individual approaches')).toContainText('Compare alternatives');
     await page.screenshot({ path: `.qa/workspace-${viewport.width}.png`, fullPage: true });
     await step(`${viewport.width}: keyboard tabs`, async () => {
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).focus(); await page.keyboard.press('ArrowRight');

@@ -1673,54 +1673,6 @@
             "additionalProperties": false
           },
           {
-            "description": "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created.",
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "perspective.write"
-              },
-              "args": {
-                "type": "object",
-                "properties": {
-                  "work": {
-                    "description": "Omit for a continuing personal interest or relationship. Agendas require work scope.",
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "id": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "revision": {
-                    "type": [
-                      "integer",
-                      "null"
-                    ],
-                    "format": "uint64",
-                    "minimum": 0
-                  },
-                  "draft": {
-                    "$ref": "#/$defs/PerspectiveDraft"
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "draft"
-                ]
-              }
-            },
-            "required": [
-              "kind",
-              "args"
-            ],
-            "additionalProperties": false
-          },
-          {
             "description": "Interpret exact observed evidence without inventing a lesson. Link retained changes only after their writes succeeded. Deferral does not schedule another decision.",
             "type": "object",
             "properties": {
@@ -5678,47 +5630,6 @@
           "receipt_digest"
         ]
       },
-      "PerspectiveDraft": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "$ref": "#/$defs/PerspectiveKind"
-          },
-          "subject": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "content": {
-            "type": "string"
-          },
-          "limitations": {
-            "type": "string"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "kind",
-          "content",
-          "limitations"
-        ]
-      },
-      "PerspectiveKind": {
-        "type": "string",
-        "enum": [
-          "agenda",
-          "relationship",
-          "interest"
-        ]
-      },
       "ReviewDisposition": {
         "type": "string",
         "enum": [
@@ -6272,28 +6183,54 @@
             }
           },
           "memory": {
-            "$ref": "#/$defs/Selection2"
+            "description": "Null preserves the current graph selection and recall delegation. An object replaces them.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Selection2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "records": {
-            "description": "Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.",
-            "type": "array",
+            "description": "Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
-            }
+            },
+            "default": null
           },
           "actions": {
-            "description": "Select received action receipts by current @action alias or exact action ID; these are not record IDs.",
-            "type": "array",
+            "description": "Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
-            }
+            },
+            "default": null
           },
           "retrieval_query": {
-            "type": "string"
+            "description": "Null preserves the tool-search cue; an empty string clears it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           },
           "handoff": {
-            "description": "Compact account for the next decision. Does not remove obligations or source restrictions.",
-            "type": "string"
+            "description": "Null preserves the handoff; a string replaces it. Does not remove obligations or source restrictions.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
@@ -6301,12 +6238,7 @@
           "focus",
           "disposition",
           "learning",
-          "changes",
-          "memory",
-          "records",
-          "actions",
-          "retrieval_query",
-          "handoff"
+          "changes"
         ]
       },
       "Intent": {
@@ -8154,6 +8086,11 @@
   "routes": [
     [
       "GET",
+      "/api/work/{id}/readiness",
+      "Bounded observed component configuration, last recall status, funding and published output counts; no inference or quality verdict"
+    ],
+    [
+      "GET",
       "/api/personas/{id}/memory/activity?after=0&limit=12",
       "Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads"
     ],
@@ -8475,10 +8412,6 @@
     [
       "fragment.revise",
       "Create an immutable correction to an owned fragment. Earlier content remains inspectable and old active selections require explicit reselection."
-    ],
-    [
-      "perspective.write",
-      "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created."
     ],
     [
       "experience.review",
@@ -10194,54 +10127,6 @@
               "node",
               "draft",
               "related"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "args"
-        ],
-        "additionalProperties": false
-      },
-      {
-        "description": "Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created.",
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "perspective.write"
-          },
-          "args": {
-            "type": "object",
-            "properties": {
-              "work": {
-                "description": "Omit for a continuing personal interest or relationship. Agendas require work scope.",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "id": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "revision": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "uint64",
-                "minimum": 0
-              },
-              "draft": {
-                "$ref": "#/$defs/PerspectiveDraft"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "draft"
             ]
           }
         },
@@ -14227,47 +14112,6 @@
           "receipt_digest"
         ]
       },
-      "PerspectiveDraft": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "$ref": "#/$defs/PerspectiveKind"
-          },
-          "subject": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "content": {
-            "type": "string"
-          },
-          "limitations": {
-            "type": "string"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "kind",
-          "content",
-          "limitations"
-        ]
-      },
-      "PerspectiveKind": {
-        "type": "string",
-        "enum": [
-          "agenda",
-          "relationship",
-          "interest"
-        ]
-      },
       "ReviewDisposition": {
         "type": "string",
         "enum": [
@@ -14821,28 +14665,54 @@
             }
           },
           "memory": {
-            "$ref": "#/$defs/Selection2"
+            "description": "Null preserves the current graph selection and recall delegation. An object replaces them.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Selection2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "records": {
-            "description": "Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.",
-            "type": "array",
+            "description": "Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
-            }
+            },
+            "default": null
           },
           "actions": {
-            "description": "Select received action receipts by current @action alias or exact action ID; these are not record IDs.",
-            "type": "array",
+            "description": "Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
-            }
+            },
+            "default": null
           },
           "retrieval_query": {
-            "type": "string"
+            "description": "Null preserves the tool-search cue; an empty string clears it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           },
           "handoff": {
-            "description": "Compact account for the next decision. Does not remove obligations or source restrictions.",
-            "type": "string"
+            "description": "Null preserves the handoff; a string replaces it. Does not remove obligations or source restrictions.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           }
         },
         "additionalProperties": false,
@@ -14850,12 +14720,7 @@
           "focus",
           "disposition",
           "learning",
-          "changes",
-          "memory",
-          "records",
-          "actions",
-          "retrieval_query",
-          "handoff"
+          "changes"
         ]
       },
       "Intent": {

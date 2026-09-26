@@ -92,6 +92,10 @@ try {
     return route.fulfill({ json: { items: after ? [policy] : Array.from({length:24}, (_,i) => ({...policy,id:i.toString(16).padStart(32,'0'),data:{...policy.data,work:i.toString(16).padStart(32,'0')}})), next: after ? null : 24, sequence: 1 } });
   });
   await page.route('**/api/records/' + policy.id, route => route.fulfill({ json: policy }));
+  const sourcePolicy = { id: '1'.repeat(32), kind: 'information_policy', scope: policy.data.work, revision: 3,
+    data: {status:'active',readers:['2'.repeat(32)],allow_export:false,expires:'2026-10-01T00:00:00Z'} };
+  await page.route('**/api/records/' + policy.data.work, route => route.fulfill({ json: {id:policy.data.work,kind:'work',scope:'',revision:4,data:{personas:[owner],information_policy:{id:sourcePolicy.id,revision:3}}} }));
+  await page.route('**/api/records/' + sourcePolicy.id, route => route.fulfill({ json: sourcePolicy }));
   await page.goto(origin + '/memory-details-fixture');
   await page.waitForFunction(() => typeof window.showMemory === 'function');
 
@@ -183,6 +187,19 @@ try {
   await page.getByRole('button', { name: 'Save recall permission' }).click();
   assert.deepEqual(await page.evaluate(() => window.recallAction), { kind: 'recall.configure', args: { persona: owner, work: policy.data.work, revision: 7, reason: 'Retain disabled selector permission', policy: null } });
   console.log('PASS recall: later pages resolve the exact existing policy revision');
+
+  await page.getByLabel('Allow these readers to export this work content').check();
+  await page.getByLabel('Source permission reason').fill('Permit task processing for this comparison');
+  await page.getByRole('button', { name: 'Save task source permission' }).click();
+  assert.deepEqual(await page.evaluate(() => window.recallAction), { kind: 'information.policy', args: {
+    subject: policy.data.work, revision: 4, readers: ['2'.repeat(32), owner], allow_export: true,
+    expires: sourcePolicy.data.expires, reason: 'Permit task processing for this comparison' } });
+  console.log('PASS recall: source export is explicit and preserves existing readers and expiry');
+  sourcePolicy.data.work_readers = ['3'.repeat(32)];
+  await page.evaluate(() => window.invalidate());
+  await expect(page.getByText('This source has a withdrawal or special sharing policy. Inspect that policy before changing its audience.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save task source permission' })).toHaveCount(0);
+  console.log('PASS recall: simple grant cannot overwrite special sharing policy');
 
   await page.evaluate(() => window.showMemory('none'));
   await expect.poll(() => page.evaluate(() => window.listeners)).toBe(0);

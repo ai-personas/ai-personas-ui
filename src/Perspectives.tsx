@@ -3,63 +3,46 @@ import { data, request, type Entity, type Page } from './api';
 import { useRecords } from './hooks';
 import { fields, isRecordID, text } from './workspace';
 import { timestamp } from './identity';
-import { RecordReference, RelatedItems, Story } from './RecordReader';
+import { RecordReference, Story } from './RecordReader';
 
-function perspectiveType(record: Entity): string {
-  const d = data(record);
-  return text(fields(d.draft).kind);
-}
-
-function PerspectiveCard({ record, open }: { record: Entity; open: (id: string) => void }) {
-  const d = data(record), draft = fields(d.draft), kind = perspectiveType(record);
-  return <article class="work-record perspective-card">
-    <header><h3>{text(d.title) || (kind === 'agenda' ? 'What I am focusing on' : kind === 'relationship' ? 'Working relationship' : 'Authored perspective')}</h3></header>
-    <div class="reader-meta">{isRecordID(d.owner) && <span>By <RecordReference id={d.owner} open={open}/></span>}<time dateTime={record.updated}>{timestamp(record.updated)}</time></div>
-    {kind === 'relationship' && isRecordID(draft.subject) && <p class="reader-byline">About working with <RecordReference id={draft.subject} open={open}/></p>}
-    <Story value={draft.content}/>
-    <Story title="Limitations" value={draft.limitations}/>
-    <RelatedItems title="Sources" value={draft.sources} open={open}/>
-    <button class="text-button" onClick={() => open(record.id)}>View details ↗</button>
-  </article>;
-}
-
-/** Work-scoped list rows omit draft content. Fetch just this bounded page, then
- * distinguish authored agendas from relationship notes without inventing either. */
+/** Working intentions are authored in ordinary decisions. Cognitive interests
+ * and relationships live in the persona's fragment graph, not a second store. */
 export default function Perspectives({ work, open }: { work: string; open: (id: string) => void }) {
   const [cursors, setCursors] = useState([0]);
-  const { value: page, error, loading, retry } = useRecords('perspective', work, '', '', cursors.at(-1)!);
+  const { value: page, error, loading, retry } = useRecords('run', work, '', '', cursors.at(-1)!);
   const [details, setDetails] = useState<{ page: Page<Entity>; rows: Entity[]; failures: number }>();
   useEffect(() => {
     if (!page) return;
     const controller = new AbortController();
     void Promise.allSettled(page.items.map(async summary => {
       const record = await request<Entity>('/records/' + summary.id, { signal: controller.signal });
-      if (record.id !== summary.id || record.kind !== 'perspective' || record.scope !== work) throw new Error('Unexpected perspective');
+      if (record.id !== summary.id || record.kind !== 'run' || record.scope !== work) throw new Error('Unexpected participation');
       return record;
     })).then(results => {
-      if (controller.signal.aborted) return;
-      setDetails({ page, rows: results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []), failures: results.filter(result => result.status === 'rejected').length });
+      if (!controller.signal.aborted) setDetails({ page, rows: results.flatMap(r => r.status === 'fulfilled' ? [r.value] : []), failures: results.filter(r => r.status === 'rejected').length });
     });
     return () => controller.abort();
   }, [page, work]);
-  const ready = page && details?.page === page, rows = ready ? details.rows : [];
-  const agendas = rows.filter(r => perspectiveType(r) === 'agenda');
-  const relationships = rows.filter(r => perspectiveType(r) === 'relationship');
-  const other = rows.filter(r => !['agenda', 'relationship'].includes(perspectiveType(r)));
-  return <>
-    <section class="workspace-section" aria-label="Individual agendas" aria-busy={loading || !ready}>
-      <header class="section-heading"><div><h2>Individual agendas</h2><p>Each persona’s written priorities for this work. Writing an agenda is optional; it is separate from accepting responsibilities or submitting results.</p></div></header>
-      {error && <p role="alert">Agendas could not be refreshed. <button class="text-button" onClick={retry}>Try again</button></p>}
-      {!ready && !error && <p role="status">Loading authored perspectives…</p>}
-      {ready && details.failures > 0 && <p role="alert">{details.failures} {details.failures === 1 ? 'perspective could' : 'perspectives could'} not be loaded. <button class="text-button" onClick={retry}>Try again</button></p>}
-      {ready && !error && !details.failures && !agendas.length && <div class="workspace-empty"><strong>{cursors.length === 1 && page.next == null && !rows.length ? 'No agendas have been written for this work' : 'No agendas on this page'}</strong><p>Personas can continue working without one. Use Message participants if you want them to describe their priorities. Their activity and character do not automatically become an agenda.</p></div>}
-      <div class="work-records">{agendas.map(record => <PerspectiveCard key={record.id} record={record} open={open}/>)}</div>
-    </section>
-    {!!relationships.length && <section class="workspace-section" aria-label="Relationship notes"><header class="section-heading"><div><h2>Relationship notes</h2><p>Individual observations about working with another persona. These do not establish the other person’s agreement.</p></div></header><div class="work-records">{relationships.map(record => <PerspectiveCard key={record.id} record={record} open={open}/>)}</div></section>}
-    {!!other.length && <section class="workspace-section" aria-label="Other authored perspectives"><h2>Other authored perspectives</h2><div class="work-records">{other.map(record => <PerspectiveCard key={record.id} record={record} open={open}/>)}</div></section>}
-    {page && (cursors.length > 1 || page.next != null) && <nav class="record-pagination" aria-label="Perspective pages"><span>Agendas and relationship notes on this page</span><div>
-      <button class="secondary" disabled={loading || cursors.length === 1} onClick={() => setCursors(cursors.slice(0, -1))}>Previous perspectives</button>
-      <button class="secondary" disabled={loading || page.next == null} onClick={() => page.next != null && setCursors([...cursors, page.next])}>Next perspectives</button>
+  const ready = page && details?.page === page;
+  const rows = ready ? details.rows.filter(r => text(fields(data(r).continuity).focus) || Object.values(fields(data(r).working_intent)).some(Boolean)) : [];
+  return <section class="workspace-section" aria-label="Individual approaches" aria-busy={loading || !ready}>
+    <header class="section-heading"><div><h2>Individual approaches</h2><p>Each persona’s recorded focus and working intention. These are proposals, not accepted responsibilities or evidence of completion. Interests and relationship interpretations remain in each persona’s learning graph.</p></div></header>
+    {error && <p role="alert">Approaches could not be refreshed. <button class="text-button" onClick={retry}>Try again</button></p>}
+    {!ready && !error && <p role="status">Loading authored approaches…</p>}
+    {ready && details.failures > 0 && <p role="alert">Some participations could not be loaded. <button class="text-button" onClick={retry}>Try again</button></p>}
+    {ready && !error && !details.failures && !rows.length && <div class="workspace-empty"><strong>No working intentions recorded on this page</strong><p>Approaches appear when personas author them during their decisions. Trait values and activity do not supply an inferred intention.</p></div>}
+    <div class="work-records">{rows.map(record => {
+      const d = data(record), intent = fields(d.working_intent), continuity = fields(d.continuity);
+      return <article class="work-record perspective-card" key={record.id}>
+        <header><h3>{isRecordID(d.persona) ? <RecordReference id={d.persona} open={open}/> : 'Persona approach'}</h3><time dateTime={record.updated}>{timestamp(record.updated)}</time></header>
+        <Story title="Current focus" value={continuity.focus}/><Story title="Intended outcome" value={intent.outcome}/>
+        <Story title="Level of detail" value={intent.fidelity}/><Story title="Working with others" value={intent.collaboration}/>
+        <button class="text-button" onClick={() => open(record.id)}>View participation</button>
+      </article>;
+    })}</div>
+    {page && (cursors.length > 1 || page.next != null) && <nav class="record-pagination" aria-label="Approach pages"><div>
+      <button class="secondary" disabled={loading || cursors.length === 1} onClick={() => setCursors(cursors.slice(0, -1))}>Previous approaches</button>
+      <button class="secondary" disabled={loading || page.next == null} onClick={() => page.next != null && setCursors([...cursors, page.next])}>Next approaches</button>
     </div></nav>}
-  </>;
+  </section>;
 }

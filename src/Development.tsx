@@ -28,7 +28,7 @@ function DevelopmentRecords({ kind, persona, open, act }: { kind: string; person
   const { value, error, loading } = useRecords(kind, '', persona, '', cursors.at(-1));
   const rows = kind === 'call' ? value?.items.filter(r => Number(data(r).learning_inclusion_count) > 0) : value?.items;
   return <section aria-busy={loading}>{error && <p role="alert">{error}</p>}{!value && !error && <p>Loading recorded experience…</p>}
-    {rows?.map(r => <article class="development-card" key={r.id}><h4>{kind === 'call' ? 'Lesson included in a later decision' : recordTitle(r)}</h4><p class="micro">{timestamp(r.created)}{r.kind === 'perspective' ? r.scope === persona ? ' · Across work' : ' · Scoped to one work' : ''}</p>
+    {rows?.map(r => <article class="development-card" key={r.id}><h4>{kind === 'call' ? 'Lesson included in a later decision' : recordTitle(r)}</h4><p class="micro">{timestamp(r.created)}</p>
       <p>{excerpt(data(r).interpretation || data(r).question || fields(data(r).draft).content || data(r).summary)}</p>
       <button class="text-button" aria-expanded={expanded === r.id} onClick={() => setExpanded(expanded === r.id ? '' : r.id)}>{expanded === r.id ? 'Close details' : 'Read the recorded evidence'}</button>
       {expanded === r.id && <RecordDetails id={r.id} open={open} act={act}/>}
@@ -45,8 +45,8 @@ function Trials({ persona, open }: { persona: string; open: (id: string) => void
     <Pagination previous={cursors.length>1} next={value?.next} onPrevious={() => {setExpanded('');setCursors(cursors.slice(0,-1));}} onNext={() => {if(value?.next!=null){setExpanded('');setCursors([...cursors,value.next]);}}}/></section>;
 }
 export default function Development({ persona, open, act }: { persona: Entity; open: (id: string) => void; act: Act }) {
-  const [tab,setTab]=useState('Interests and relationships');
-  const kinds:Record<string,string>={'Interests and relationships':'perspective','Retained lessons':'fragment','Interpretations':'experience_review','Later decisions':'call','Exploration activity':'exploration_opportunity'};
+  const [tab,setTab]=useState('Authored fragments');
+  const kinds:Record<string,string>={'Authored fragments':'fragment','Interpretations':'experience_review','Later decisions':'call','Exploration activity':'exploration_opportunity'};
   return <section class="development-panel" aria-label="Experience and exploration"><h3>Experience and exploration</h3>
     <p>Tried, retained and included in later decisions are separate steps. Benefit needs an outcome assessment; it cannot be established by counting notes, tools or trait changes.</p>
     <nav class="development-tabs" aria-label="Development views">{[...Object.keys(kinds),'Tool trials','Exploration settings'].map(name => <button class={tab===name?'':'secondary'} aria-pressed={tab===name} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav>

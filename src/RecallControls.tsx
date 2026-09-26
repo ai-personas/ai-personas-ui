@@ -4,6 +4,7 @@ import { useObservation, useResource } from './hooks';
 import { readRecallPolicy } from './recallPolicy';
 import type { Act } from './main';
 import { localExpiry, expiryInput } from './explorationPolicy';
+import RecallSourceAccess from './RecallSourceAccess';
 
 function Form({ run, policy, act, blocked }: { run: Entity; policy?: Entity; act: Act; blocked: boolean }) {
   const d = policy ? data(policy) : {}, p = d.policy || {};
@@ -47,6 +48,6 @@ export default function RecallControls({ run, act }: { run: Entity; act: Act }) 
   return <section aria-busy={loading}>
     {error && <p role="alert">Could not load recall permission. {error} <button onClick={retry}>Retry recall permission</button></p>}
     {loading && <p role="status">{value === undefined ? 'Loading recall permission…' : 'Checking current permission; saving is disabled until this finishes.'}</p>}
-    {value !== undefined && <Form key={value?.revision ?? 0} run={run} policy={value ?? undefined} act={act} blocked={loading || Boolean(error)}/>}
+    {value !== undefined && <><Form key={value?.revision ?? 0} run={run} policy={value ?? undefined} act={act} blocked={loading || Boolean(error)}/><RecallSourceAccess run={run} act={act}/></>}
   </section>;
 }

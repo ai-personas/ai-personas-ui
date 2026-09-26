@@ -6,6 +6,7 @@ Default loopback listeners allow the same-origin local operator workspace withou
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/work/{id}/readiness` | Bounded observed component configuration, last recall status, funding and published output counts; no inference or quality verdict |
 | GET | `/api/personas/{id}/memory/activity?after=0&limit=12` | Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads |
 | GET | `/api/personas/{id}/memory/usage/{fragment}` | Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit |
 | GET | `/api/personas/{id}/memory?focus=&after=0&limit=12` | Private fragment graph: bounded descriptions and directed connections; full fragments fetched on demand |
@@ -421,17 +422,6 @@ Create an immutable correction to an owned fragment. Earlier content remains ins
 | `node` | VersionRef | Required |  |
 | `draft` | FragmentDraft | Required |  |
 | `related` | string[] | Required |  |
-
-### `perspective.write`
-
-Author your own work-scoped agenda or directional relationship interpretation. No shared priority score or automatic role assignment is created.
-
-| Argument | Type | Presence | Meaning |
-|---|---|---|---|
-| `work` | string or null | Optional | Omit for a continuing personal interest or relationship. Agendas require work scope. |
-| `id` | string or null | Optional |  |
-| `revision` | integer or null | Optional |  |
-| `draft` | PerspectiveDraft | Required |  |
 
 ### `experience.review`
 

@@ -306,18 +306,6 @@ export type Command =
       };
     }
   | {
-      kind: "perspective.write";
-      args: {
-        /**
-         * Omit for a continuing personal interest or relationship. Agendas require work scope.
-         */
-        work?: string | null;
-        id?: string | null;
-        revision?: number | null;
-        draft: PerspectiveDraft;
-      };
-    }
-  | {
       kind: "experience.review";
       args: {
         observations: EvidenceRef[];
@@ -1032,7 +1020,6 @@ export type Command =
 export type Capability = "persona_decision" | "choice" | "knowledge";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
 export type EvidenceRef = VersionRef | ActionEvidence;
-export type PerspectiveKind = "agenda" | "relationship" | "interest";
 export type ReviewDisposition = "retain" | "revise" | "no_change" | "defer";
 export type ExplorationOutcome = "trial_complete" | "unpromising" | "partial";
 export type EntryKind = "observation" | "opportunity" | "decision" | "assumption";
@@ -1449,13 +1436,6 @@ export interface ActionEvidence {
   action: string;
   receipt_digest: string;
 }
-export interface PerspectiveDraft {
-  kind: PerspectiveKind;
-  subject?: string | null;
-  content: string;
-  limitations: string;
-  sources?: EvidenceRef[];
-}
 export interface EntryDraft {
   kind: EntryKind;
   text: string;
@@ -1569,20 +1549,26 @@ export interface Continuity {
    */
   deferred?: DeferredLearning[];
   changes: Change[];
-  memory: Selection2;
   /**
-   * Replace ordinary record selection; include still-needed IDs or current @record aliases. Never put fragment IDs here: select lessons through memory.active using @memory aliases or memory_view node IDs.
+   * Null preserves the current graph selection and recall delegation. An object replaces them.
    */
-  records: string[];
+  memory?: Selection2 | null;
   /**
-   * Select received action receipts by current @action alias or exact action ID; these are not record IDs.
+   * Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.
    */
-  actions: string[];
-  retrieval_query: string;
+  records?: string[] | null;
   /**
-   * Compact account for the next decision. Does not remove obligations or source restrictions.
+   * Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.
    */
-  handoff: string;
+  actions?: string[] | null;
+  /**
+   * Null preserves the tool-search cue; an empty string clears it.
+   */
+  retrieval_query?: string | null;
+  /**
+   * Null preserves the handoff; a string replaces it. Does not remove obligations or source restrictions.
+   */
+  handoff?: string | null;
 }
 export interface Intent {
   outcome: string;

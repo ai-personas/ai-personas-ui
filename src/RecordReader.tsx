@@ -126,10 +126,6 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <Story title="Possible drawbacks" value={draft.possible_regressions}/><Story title="How to check" value={draft.check}/><Story title="Reconsider when" value={draft.reconsider_if}/>
       <RelatedItems title="Sources" value={draft.sources} open={open}/>
     </>;
-    case 'perspective': return <>
-      {draft.kind === 'relationship' && isRecordID(draft.subject) && <p class="reader-byline">About working with <RecordReference id={draft.subject} open={open}/></p>}
-      <Story value={draft.content}/><Story title="Limitations" value={draft.limitations}/><RelatedItems title="Sources" value={draft.sources} open={open}/>
-    </>;
     case 'experience_review': return <><p>{{retain:'Retained change',revise:'Revised prior learning',no_change:'No lasting change',defer:'Interpretation deferred'}[text(d.disposition)] || 'Recorded interpretation'}</p><Story value={d.interpretation}/><RelatedItems title="Observed evidence" value={d.observations} open={open}/><RelatedItems title="Committed changes" value={d.changes} open={open}/><p class="record-caveat">This is the persona’s interpretation. A retained change does not establish later benefit.</p></>;
     case 'exploration_opportunity': return <><Story title="Question to investigate" value={d.question}/><Story title="Stopping condition" value={d.stopping_condition}/><p>{d.status === 'scheduled' ? `Scheduled no earlier than ${timestamp(d.not_before)}` : `Episode ${text(d.status, 'status not recorded')}`}</p><Story title="Outcome or limitation" value={d.reason}/><RelatedItems title="Observations" value={d.observations} open={open}/>{isRecordID(d.work) && <p>Episode work <RecordReference id={d.work} open={open}/></p>}</>;
     case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
@@ -160,7 +156,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
 
 export default function RecordReader({ record, open, historical = false }: { record: Entity; open: Open; historical?: boolean }) {
   const d = data(record);
-  const author = ['document', 'fragment', 'perspective', 'submission', 'work_entry', 'finding', 'assessment'].includes(record.kind) ? d.author || d.owner : record.kind === 'request' ? d.owner : undefined;
+  const author = ['document', 'fragment', 'submission', 'work_entry', 'finding', 'assessment'].includes(record.kind) ? d.author || d.owner : record.kind === 'request' ? d.owner : undefined;
   return <article class="record-reader" aria-label={`${humanLabel(record.kind)} content`}>
     <div class="reader-meta">
       {isRecordID(author) && <span class="reader-byline">{record.kind === 'request' ? 'Asked by' : 'By'} <Person id={author} open={open}/></span>}

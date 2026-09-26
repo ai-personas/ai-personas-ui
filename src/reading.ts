@@ -26,7 +26,6 @@ export function recordTitle(record: Entity): string {
   if (record.kind === 'experience_review') return ({ retain:'Retained learning', revise:'Reconsidered learning', no_change:'Observation without lasting change', defer:'Interpretation deferred' } as Record<string,string>)[text(d.disposition)] || 'Experience interpretation';
   if (record.kind === 'exploration_opportunity') return excerpt(d.question, 100) || 'Personal exploration';
   if (record.kind === 'exploration_policy') return 'Exploration permission';
-  if (record.kind === 'perspective') return ({ interest:'Continuing interest', relationship:'Relationship interpretation', agenda:'Work agenda' } as Record<string,string>)[text(draft.kind)] || 'Authored perspective';
   const title = label(record);
   return title === record.kind ? humanLabel(record.kind) : title;
 }
@@ -41,10 +40,10 @@ export function actionTitle(kind: string): string {
     'submission.create': 'Submit work', 'work.submit': 'Submit work', 'work.entry.create': 'Propose a work update', 'work.entry.append': 'Add a work update',
     'commitment.offer': 'Offer responsibility', 'commitment.accept': 'Accept responsibility', 'commitment.update': 'Update a responsibility',
     'invitation.respond': 'Respond to an invitation', 'work.invitation.respond': 'Respond to an invitation',
-    'perspective.create': 'Share a perspective', 'model.choose': 'Choose a model', 'context.compact': 'Update retained context', 'context.advance': 'Choose learning and next focus',
+    'model.choose': 'Choose a model', 'context.compact': 'Update retained context', 'context.advance': 'Choose learning and next focus',
     'exec': 'Run a tool', 'job.read': 'Read tool output', 'job.cancel': 'Stop a tool', 'image.observe': 'Inspect an image',
     'run.pause': 'Pause decisions', 'run.resume': 'Resume work', 'run.cancel': 'Cancel work',
-    'document.write': 'Write a document', 'fragment.write': 'Save a learning note', 'perspective.write': 'Share a perspective',
+    'document.write': 'Write a document', 'fragment.write': 'Save a learning note',
     'submit': 'Submit work', 'assess': 'Record an assessment', 'review.start': 'Request a review', 'wait': 'Wait for input',
     'input.acknowledge': 'Acknowledge new input', 'context.select': 'Select context for future work', 'context.discard': 'Discard retained context',
     'work.create': 'Start work', 'work.amend': 'Update the work scope', 'work.archive': 'Archive work', 'work.summary': 'Check work progress', 'work.mandate.adopt': 'Adopt the work scope',

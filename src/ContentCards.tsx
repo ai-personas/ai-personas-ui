@@ -6,6 +6,7 @@ import { timestamp } from './identity';
 import { excerpt, fileFormat, fileSize, recordExcerpt, recordTitle } from './reading';
 import { RecordReference } from './RecordReader';
 import Icon from './Icon';
+import QuestionDelivery from './QuestionDelivery';
 import { learningKind } from './inference-evidence';
 
 type Links = { open: (id: string) => void; artifact?: (id: string) => void };
@@ -21,6 +22,7 @@ export function ContentCard({ record, open, artifact, summary, footer }: { recor
         {isFile && <span>{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</span>}
         {text(d.status) && <span class={'state-badge tone-' + stateTone(d.status)}>{d.status.replaceAll('_', ' ')}</span>}
       </div>
+      <QuestionDelivery value={d.peer_delivery} status={d.status}/>
     </div><div class="content-actions"><button class="text-button card-open" onClick={read}>{isFile ? 'Open file' : record.kind === 'fragment' ? 'Read note' : 'Read document'} ↗</button>
       {isFile && <button class="text-button" onClick={() => open(record.id)}>File details</button>}</div>
   </article>;
