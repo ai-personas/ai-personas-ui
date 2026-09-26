@@ -28,3 +28,18 @@ Tests that required a `branch` alias, singleton ancestor path, legacy parent
 connections, or rejection of all conditional/full treatments have been removed
 or replaced by current-contract checks. Runtime permission, accounting,
 cancellation and recovery regressions remain relevant and are retained.
+
+The Identity panel verifies the current self-model's exact node and fragment
+versions before displaying its projected character, and can inspect each source.
+An invalidated, inaccessible or mismatched source withholds that projection.
+Profile edits keep their original revision and draft, with saving disabled after
+an intervening change. Recall permission lookup follows all policy pages and
+never interprets a failed later page as permission to create a new policy.
+
+Persona avatars are optional presentation alongside creation. Identity shows
+queued/running/unavailable/completed state, independent cancel/retry controls,
+and the actual image-call receipt. Provider settings expose supported image
+models independently of primary text models; image-only connections are allowed.
+Funding can add their reviewed prices to an editable shared allowance. A missing
+image connection or allowance leaves character readiness independent. Generated
+portraits refer to preserved image artifacts and do not change self-fragments.

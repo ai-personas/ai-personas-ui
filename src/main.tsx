@@ -40,7 +40,7 @@ function BoundedPortrait({ id, name }: { id: string; name: string }) {
   const [failed, setFailed] = useState(false), d = r ? data(r) : {};
   // No thumbnail endpoint exists in v1. Do not fetch multi-megabyte originals for a list avatar.
   const safe = !failed && r?.kind === 'artifact' && Number.isSafeInteger(d.size) && d.size >= 0 && d.size <= 512_000 && ['image/png', 'image/jpeg', 'image/webp'].includes(d.media_type);
-  return safe ? <img class="portrait" src={fileURL(id)} loading="lazy" width="42" height="42" alt={name + ', authored image'} onError={() => setFailed(true)}/>
+  return safe ? <img class="portrait" src={fileURL(id)} loading="lazy" width="42" height="42" alt={name + ', persona portrait'} onError={() => setFailed(true)}/>
     : <span class="portrait placeholder" aria-label="Portrait preview unavailable; inspect the original in details">◌</span>;
 }
 export { default as Pagination } from './Pagination';

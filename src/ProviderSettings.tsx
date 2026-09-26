@@ -36,7 +36,7 @@ export function ProviderSettings() {
   const saved = settings.connections;
   const open = (connection: Connection, exists: boolean, custom: boolean) => { setNotice(''); setEditing({ connection, exists, custom }); };
   return <section class="provider-settings"><header class="page-heading"><div><h2>Provider connections</h2><p>Connect models with an API key, or use the node’s Codex login.</p></div>
-    <button class="secondary" onClick={() => open({ provider: '', protocol: 'responses', config: { ...settings.templates[0].config, endpoint: '', models: [] } }, false, true)}>Add custom provider</button></header>
+    <button class="secondary" onClick={() => open({ provider: '', protocol: 'responses', avatar_models: [], config: { ...settings.templates[0].config, endpoint: '', models: [] } }, false, true)}>Add custom provider</button></header>
     <p class="micro">Keys are saved only on this node, in an owner-only file. Saved keys are never sent back to the browser or included in persona context. Provider access and task funding are separate.</p>
     {notice && <p class="notice" role="status">{notice}</p>}
     {error && <p role="alert">{error} <button class="text-button" onClick={() => setAttempt(n => n + 1)}>Reload settings</button></p>}
@@ -48,7 +48,7 @@ export function ProviderSettings() {
         return <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">API key saved <span aria-hidden="true">••••••••</span></span></div>
           <p class="provider-endpoint">{connection.config.endpoint}</p>
           <p role="status">{models.loading ? 'Checking connection…' : status?.available ? `${available.length} available ${available.length === 1 ? 'model' : 'models'}` : status?.message || 'Refresh models to check this connection.'}</p>
-          {available.length > 0 && <details><summary>Available models</summary><ul>{available.map(m => <li key={m.id}>{m.name || m.id}</li>)}</ul></details>}
+          {available.length > 0 && <details><summary>Available models</summary><ul>{available.map(m => <li key={m.id}>{m.name || m.id}{(m.capabilities as any)?.avatar_generation && ' · Avatar generation'}</li>)}</ul></details>}
           <p class="micro">Saved {new Date(updated).toLocaleString()}</p>
           <div class="button-row"><button class="secondary" onClick={() => open(connection, true, !settings.templates.some(t => t.provider === id))}>Edit {title(id)}</button><button class="quiet" onClick={() => setRemoving(id)}>Remove {title(id)}</button></div>
           {removing === id && <div class="notice"><p>Remove this saved connection and key? Calls already in progress may finish. Existing personas, allowances, and recorded work stay available.</p><div class="button-row"><button disabled={busy} onClick={async () => { setBusy(true); try { await save({ action: 'remove', revision: settings.revision, provider: id }); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>Remove connection</button><button class="quiet" disabled={busy} onClick={() => setRemoving('')}>Keep connection</button></div></div>}
@@ -64,7 +64,7 @@ export function ProviderSettings() {
       {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p></article>)}
     </div>
     <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
-    <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. All saved API-key connections currently support text input. Add each model’s price and allowance before starting work with it.</p>
+    <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. OpenAI Images-compatible connections can also generate persona avatars from starting characteristics. Add each model’s price and allowance before using it.</p>
     {editing && <ConnectionEditor key={editing.connection.provider + editing.exists} initial={editing.connection} exists={editing.exists} custom={editing.custom} revision={settings.revision} save={save} close={() => setEditing(undefined)}/>}
     {typesafe && <TypesafeKey revision={settings.revision} save={save} close={() => setTypesafe(false)}/>}
   </section>;
@@ -95,6 +95,7 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
 }) {
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const next = useRef(initial.config.models.length);
+  const [protocol, setProtocol] = useState(initial.protocol);
   const [rows, setRows] = useState(() => initial.config.models.map((model, id) => ({ id, model })));
   const add = () => setRows(rows => [...rows, { id: next.current++, model: { id: '', context_window_tokens: 0, max_output_tokens: 0, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 4096, vision: false, image_token_upper_bound: null, allowed_reasoning_efforts: [] } }]);
   const [baseRevision] = useState(revision);
@@ -108,10 +109,11 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
         context_window_tokens: whole(f, `model.${id}.context`), max_output_tokens: whole(f, `model.${id}.output`),
         input_tokens_per_utf8_byte_upper_bound: whole(f, `model.${id}.token_bound`), framing_token_allowance: whole(f, `model.${id}.framing`),
         allowed_reasoning_efforts: String(f.get(`model.${id}.reasoning`) || '').split(',').map(s => s.trim()).filter(Boolean) }));
-      if (!models.length) throw Error('Add at least one exact model and its documented limits.');
+      const avatar_models = protocol === 'responses' ? f.getAll('avatar_model').map(String) : [];
+      if (!models.length && !avatar_models.length) throw Error('Enable at least one text or avatar model.');
       if (models.some(m => !m.id || m.context_window_tokens <= m.max_output_tokens)) throw Error('Each model needs an ID and a context limit larger than its output limit.');
       const api_key = key.value.trim();
-      await save({ action: 'save', revision: baseRevision, connection: { provider: String(f.get('provider')).trim(), protocol: String(f.get('protocol')) as Connection['protocol'], config: { ...initial.config,
+      await save({ action: 'save', revision: baseRevision, connection: { provider: String(f.get('provider')).trim(), protocol, avatar_models, config: { ...initial.config,
         endpoint: String(f.get('endpoint')).trim(), api_key_env: null, trust_loopback_http: f.has('loopback'), models } }, api_key: api_key || null });
       key.value = ''; close();
     } catch (e) { setError((e as Error).message); } finally { key.value = ''; setBusy(false); }
@@ -119,11 +121,14 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
     <div class="form-body">
       {error && <p role="alert">{error}</p>}{stale && <p role="alert">Settings changed while this form was open. Close it and open the current connection before saving.</p>}
       <label>Provider ID<input name="provider" required pattern="[A-Za-z0-9_-]{1,64}" maxLength={64} defaultValue={initial.provider} readOnly={exists || !custom}/></label>
-      {custom ? <label>API protocol<select name="protocol" aria-label="API protocol" defaultValue={initial.protocol}><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Google Gemini</option></select></label> : <input type="hidden" name="protocol" value={initial.protocol}/>}
+      {custom ? <label>API protocol<select name="protocol" aria-label="API protocol" value={protocol} onChange={e => setProtocol(e.currentTarget.value as Connection['protocol'])}><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Google Gemini</option></select></label> : <input type="hidden" name="protocol" value={initial.protocol}/>}
       <label>API endpoint<input name="endpoint" type="url" required defaultValue={initial.config.endpoint} readOnly={!custom} placeholder="https://provider.example/v1/responses"/></label>
       {custom && <small>Use the exact /responses or /messages endpoint, or Gemini’s /v1beta/models base endpoint.</small>}
       <label>{exists ? 'Replace API key' : 'API key'}<input name="api_key" type="password" required={!exists} maxLength={8192} autoComplete="new-password" spellcheck={false}/></label>
       <small>{exists ? 'Leave blank to keep the saved key. Changing the endpoint requires a new key.' : 'The node stores this key; the browser cannot retrieve it after saving.'}</small>
+      {protocol === 'responses' && <fieldset><legend>Automatic persona avatars</legend><p class="micro">Enable models that this API connection supports through its /images/generations endpoint. The node checks account availability and chooses the lowest reserved cost among these models priced in the persona’s allowance. Only starting characteristics are sent. One low-quality 1024 × 1024 PNG per attempt.</p>
+        {['gpt-image-1-mini', 'gpt-image-1.5', 'gpt-image-1'].map(id => <label class="check" key={id}><input type="checkbox" name="avatar_model" value={id} defaultChecked={initial.avatar_models?.includes(id)}/>{id}</label>)}
+        <p class="micro">Image API usage is separate from Codex subscription usage and the Jev spending ceiling. Enable only the models you want used for avatars; add their prices and budget in Funding.</p></fieldset>}
       <details open={custom}><summary>Model limits</summary><p class="micro">Only these exact models are enabled, after checking the provider’s model list. Use documented limits; prices and spending limits belong to the allowance.</p>
         {rows.map(({ id, model }) => <fieldset key={id}><legend>Model {rows.findIndex(row => row.id === id) + 1}</legend>
           <label>Model ID<input name={`model.${id}.id`} defaultValue={model.id} required maxLength={256}/></label>

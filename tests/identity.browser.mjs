@@ -127,6 +127,22 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.evaluate(persona => window.showPersona(persona), { ...revisions[0], data: { ...revisions[0].data, character_initialization: { status: 'ready' } } });
   await expect(page.getByRole('status', { name: 'Character initialization' })).toHaveCount(0);
+  await page.evaluate(persona => window.showPersona(persona), revision(5, { character_initialization: { status: 'ready' }, avatar_initialization: { status: 'running', model: 'gpt-image-1-mini', provider: 'images' } }));
+  const avatar = page.getByRole('region', { name: 'Avatar generation', exact: true });
+  await expect(avatar).toContainText('Generating an avatar');
+  await expect(page.getByRole('button', { name: 'Edit character and authorship' })).toBeEnabled();
+  await avatar.getByRole('button', { name: 'Cancel avatar generation' }).click();
+  assert.deepEqual(await page.evaluate(() => window.initializationAction), { kind: 'persona.avatar.cancel', args: { id, revision: 5 } });
+  await page.evaluate(persona => window.showPersona(persona), revision(6, { character_initialization: { status: 'ready' }, avatar_initialization: { status: 'unavailable', error: 'No funded image provider' } }));
+  await expect(avatar).toContainText('No funded image provider');
+  await avatar.getByRole('button', { name: 'Generate avatar' }).click();
+  assert.deepEqual(await page.evaluate(() => window.initializationAction), { kind: 'persona.avatar.retry', args: { id, revision: 6 } });
+  await page.evaluate(persona => window.showPersona(persona), revision(7, { portrait: selfFragment, avatar_initialization: { status: 'ready', usage_known: false, call: operation } }));
+  await expect(avatar).toContainText('reserved spending remains accounted');
+  await expect(avatar.getByRole('button', { name: 'Generate avatar', exact: true })).toHaveCount(0);
+  await avatar.getByRole('button', { name: 'Inspect image generation call' }).click();
+  assert.equal(await page.evaluate(() => window.opened), operation);
+  console.log('PASS avatar: independent status, exact revision cancellation/retry, retained unknown spending and call inspection');
   assert.deepEqual(errors, []);
   console.log('Identity production-component browser checks passed: missing scores, signed values, history, pagination, attribution, failure/retry, wrong-persona rejection, responsive layout, identity switching and read-only observation.');
 } finally {

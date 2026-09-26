@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { deflateSync, crc32 } from 'node:zlib';
 import assert from 'node:assert/strict';
 
 const root = mkdtempSync(join(tmpdir(), 'personas-settings-'));
@@ -15,13 +16,26 @@ const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/
 const keys = ['fixture-key-one', 'fixture-key-two', 'fixture-jev-key'];
 let app, browser, page, port, url, checks = 0, discovery = 0, inferences = 0;
 const errors = [], captured = [];
+// Synthetic blank pixels exercise the real decoder and portrait path, not quality.
+function pngChunk(type, data) {
+  const content = Buffer.concat([Buffer.from(type), data]), length = Buffer.alloc(4), crc = Buffer.alloc(4);
+  length.writeUInt32BE(data.length); crc.writeUInt32BE(crc32(content)); return Buffer.concat([length, content, crc]);
+}
+const dimensions = Buffer.alloc(13); dimensions.writeUInt32BE(1024, 0); dimensions.writeUInt32BE(1024, 4); dimensions[8] = 8; dimensions[9] = 2;
+const avatarPNG = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk('IHDR', dimensions), pngChunk('IDAT', deflateSync(Buffer.alloc(1024 * (1 + 1024 * 3)))), pngChunk('IEND', Buffer.alloc(0))]);
 const provider = createServer(async (req, res) => {
+  if (req.url === '/images/generations') {
+    inferences++; const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks)); assert.equal(input.model, 'gpt-image-1-mini'); assert.equal(input.quality, 'low'); assert.equal(input.size, '1024x1024');
+    assert(input.prompt.includes('synthetic avatar integration'));
+    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ data: [{ b64_json: avatarPNG.toString('base64') }], usage: { input_tokens: 100, output_tokens: 272, total_tokens: 372, input_tokens_details: { text_tokens: 100, image_tokens: 0 } } })); return;
+  }
   if (!req.url.startsWith('/models')) { inferences++; res.writeHead(400); res.end('{}'); return; }
   discovery++; captured.push(req.headers);
   res.setHeader('Content-Type', 'application/json');
   if (req.headers.authorization === 'Bearer rejected-key') { res.writeHead(401); res.end(JSON.stringify({ error: 'PRIVATE_AUTH_ECHO' })); return; }
   res.end(JSON.stringify(req.headers['x-goog-api-key'] ? { models: [{ name: 'models/fixture-model', supportedGenerationMethods: ['generateContent'] }] }
-    : { data: [{ id: 'fixture-model' }], has_more: false }));
+    : { data: [{ id: 'fixture-model' }, { id: 'gpt-image-1-mini' }], has_more: false }));
 });
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn) { for (let i = 0; i < 150; i++) { if (await fn()) return; await delay(100); } throw Error('Node did not become ready'); }
@@ -166,6 +180,25 @@ try {
     await card.getByRole('button', { name: 'Remove fixture-responses' }).click(); await card.getByRole('button', { name: 'Remove connection' }).click();
     await expect(card).toHaveCount(0); assert(!readFileSync(join(root, 'node/secrets/inference.json'), 'utf8').includes('rejected-key'));
   });
+  await step('an image-only connection exposes enabled avatars without making an image call', async () => {
+    await page.getByRole('button', { name: 'Add custom provider' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Connect provider' });
+    await dialog.getByLabel('Provider ID', { exact: true }).fill('fixture-images');
+    await dialog.getByLabel('API endpoint', { exact: true }).fill(`http://127.0.0.1:${provider.address().port}/responses`);
+    await dialog.getByLabel('API key', { exact: true }).fill(keys[0]);
+    await dialog.getByLabel('gpt-image-1-mini', { exact: true }).check();
+    await dialog.getByLabel('Allow HTTP', { exact: false }).check();
+    await dialog.getByRole('button', { name: 'Save connection', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const connection = (await get('/settings/providers')).connections.find(c => c.connection.provider === 'fixture-images').connection;
+    assert.deepEqual(connection.avatar_models, ['gpt-image-1-mini']); assert.deepEqual(connection.config.models, []);
+    const model = (await get('/inference')).models.find(m => m.provider === 'fixture-images');
+    assert.equal(model.id, 'gpt-image-1-mini'); assert.deepEqual(model.capabilities.inference.operations, []);
+    assert.equal(model.capabilities.avatar_generation.output_units_per_million, 8000000); assert.equal(inferences, 0);
+    await page.getByRole('button', { name: 'Edit fixture-images' }).click();
+    await expect(page.getByRole('dialog').getByLabel('gpt-image-1-mini', { exact: true })).toBeChecked();
+    await page.getByRole('dialog').getByRole('button', { name: 'Close form' }).click();
+  });
   await step('settings fits a narrow screen and observers create no work or model calls', async () => {
     await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: join(evidence, 'settings-mobile.png'), fullPage: true });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -173,6 +206,38 @@ try {
     await expect(page.getByRole('dialog').getByRole('button', { name: 'Save JEV key' })).toBeInViewport();
     await page.getByRole('dialog').getByRole('button', { name: 'Close form' }).click();
     assert.equal(inferences, 0); assert.equal((await get('/records?kind=call')).items.length, 0); assert.deepEqual(errors, []);
+  });
+  await step('persona creation attaches and displays a funded generated avatar through the real server', async () => {
+    const op = async (kind, args) => {
+      const response = await fetch(url + '/api/operations', { method: 'POST', headers: { 'X-Personas-Client': 'workspace', 'Content-Type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID().replaceAll('-', ''), kind, args, actor: '', run: '' }) });
+      const receipt = await response.json(); assert(response.ok); assert.equal(receipt.state, 'succeeded', JSON.stringify(receipt)); return receipt.result;
+    };
+    const root = await op('resource.root.create', { limits: { calls: 10, births: 2, max_depth: 1, concurrent_calls: 2 }, closeout_calls: 1, reason: 'Synthetic avatar integration' });
+    await op('resource.bounds.configure', { root: root.id, revision: root.revision, bounds: {
+      expires: new Date(Date.now() + 86400000).toISOString(), tokens: 1000000, closeout_tokens: 1000, cost_units: 1000000, closeout_cost_units: 100, currency: 'USD',
+      prices: [{ provider: 'fixture-images', model: 'gpt-image-1-mini', input_units_per_million: 2000000, output_units_per_million: 8000000, evidence: 'Synthetic image usage at documented rates' }],
+      remote_calls: 2, retained_payload_bytes: 10000000, cpu_seconds: 20, effect_operations: 0, concurrent_memory_bytes: 10000000, births_per_window: 2, birth_window_seconds: 60, reason: 'Synthetic avatar integration'
+    } });
+    await page.getByRole('button', { name: 'Personas', exact: true }).click();
+    await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
+    const form = page.getByRole('dialog', { name: 'Create', exact: true });
+    assert((await form.getByLabel('Starting model').locator('option').allTextContents()).every(label => !label.includes('gpt-image')));
+    await form.getByLabel('Funding allowance', { exact: true }).selectOption(root.id);
+    await form.getByLabel('Character', { exact: true }).fill('I support this synthetic avatar integration with careful comparisons.');
+    await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
+    let persona;
+    await until(async () => { const summary = (await get('/records?kind=persona')).items[0]; persona = summary && await get('/records/' + summary.id); return persona?.data.avatar_initialization?.status === 'ready'; });
+    assert.equal(persona.data.character_initialization.status, 'ready'); assert.equal(inferences, 1);
+    await page.getByRole('button', { name: 'Open details ↗', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await expect(detail.getByRole('region', { name: 'Avatar generation', exact: true })).toContainText('Generated avatar');
+    const portrait = detail.locator('img.portrait'); await expect(portrait).toHaveCount(1);
+    await expect(portrait).toHaveJSProperty('naturalWidth', 1024);
+    const call = await get('/records/' + persona.data.avatar_initialization.call);
+    assert.equal(call.data.requested_model, 'gpt-image-1-mini'); assert.equal(call.data.usage.known, true); assert.equal(call.data.artifact, persona.data.portrait);
+    const charge = await get('/records/' + call.data.budget_charge); assert.equal(charge.data.accounted.cost, 2376);
+    assert.equal((await get('/records?kind=call')).items.length, 1); assert.deepEqual(errors, []);
+    await page.screenshot({ path: join(evidence, 'generated-avatar-mobile.png'), fullPage: true });
   });
   writeFileSync(join(evidence, 'report.json'), JSON.stringify({ checks, discovery, inferences, errors, fixtureOnly: true }, null, 2));
   console.log(JSON.stringify({ checks, evidence }));

@@ -3121,6 +3121,72 @@
             "additionalProperties": false
           },
           {
+            "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.avatar.retry"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Cancel queued or running avatar generation without blocking character generation or work. Dispatched usage may remain uncertain.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "persona.avatar.cancel"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "revision"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority.",
             "type": "object",
             "properties": {
@@ -7431,6 +7497,14 @@
           },
           "config": {
             "$ref": "#/$defs/HttpConfig"
+          },
+          "avatar_models": {
+            "description": "Explicit image generation permission on the same API connection.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -8541,6 +8615,14 @@
     [
       "persona.initialization.cancel",
       "Cancel pending creation inference. A dispatched call may still incur usage."
+    ],
+    [
+      "persona.avatar.retry",
+      "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted."
+    ],
+    [
+      "persona.avatar.cancel",
+      "Cancel queued or running avatar generation without blocking character generation or work. Dispatched usage may remain uncertain."
     ],
     [
       "persona.profile.configure",
@@ -11543,6 +11625,72 @@
           "kind": {
             "type": "string",
             "const": "persona.initialization.cancel"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.avatar.retry"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "revision"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Cancel queued or running avatar generation without blocking character generation or work. Dispatched usage may remain uncertain.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "persona.avatar.cancel"
           },
           "args": {
             "type": "object",

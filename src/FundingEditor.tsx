@@ -70,6 +70,7 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
   const available = models.filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
   const chosen = available.find(m => modelKey(m) === selected);
   const subscription = (chosen?.capabilities as any)?.billing === 'chatgpt_subscription';
+  const imagePrice = (chosen?.capabilities as any)?.avatar_generation;
   if (!bounds || d.status !== 'active') return <div class="operator-form"><h2>Allowance cannot be edited</h2><p role="alert">{!bounds ? 'Configure the initial limits before editing this allowance.' : 'This allowance is closed. Its history and spending remain retained.'}</p><button onClick={close}>Close form</button></div>;
   return <form class="operator-form allowance-form" onInvalidCapture={e => {
     const details = (e.target as HTMLElement).closest('details'); if (details) details.open = true;
@@ -117,12 +118,13 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
         </div><label>Price source and date — {price.model}<input name={`price.${i}.evidence`} required defaultValue={price.evidence}/></label></fieldset>)}
         <label>Add price policy for model<select value={selected} onChange={e => { setSelected(e.currentTarget.value); setIncluded(false); }}><option value="">Choose a model to add</option>{available.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select></label>
         <ModelStatus {...modelState} models={models}/>
+        {imagePrice && <p class="notice">Avatar image model. Adding its reviewed price permits automatic avatar attempts for personas funded by this allowance. The total budget and call limits above still apply. Review the prices before saving.</p>}
         {subscription && <label class="check"><input type="checkbox" checked={included} onChange={e => setIncluded(e.currentTarget.checked)}/>Use included subscription usage for this model</label>}
         <button type="button" class="secondary" disabled={!chosen} onClick={() => {
           if (!chosen) return;
           // Existing fields remain mounted; adding a row preserves their draft.
-          setPrices(p => [...p, { provider: chosen.provider, model: chosen.id, input_units_per_million: 0, output_units_per_million: 0,
-            evidence: subscription && included ? `Operator chose included subscription usage on ${new Date().toISOString().slice(0,10)}. Plan limits still apply.` : '' }]);
+          setPrices(p => [...p, { provider: chosen.provider, model: chosen.id, input_units_per_million: imagePrice?.input_units_per_million ?? 0, output_units_per_million: imagePrice?.output_units_per_million ?? 0,
+            evidence: imagePrice?.evidence || (subscription && included ? `Operator chose included subscription usage on ${new Date().toISOString().slice(0,10)}. Plan limits still apply.` : '') }]);
           setSelected(''); setIncluded(false);
         }}>Add model policy</button>
       </fieldset>

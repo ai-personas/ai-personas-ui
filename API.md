@@ -792,6 +792,24 @@ Cancel pending creation inference. A dispatched call may still incur usage.
 | `id` | string | Required |  |
 | `revision` | integer | Required |  |
 
+### `persona.avatar.retry`
+
+Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
+
+### `persona.avatar.cancel`
+
+Cancel queued or running avatar generation without blocking character generation or work. Dispatched usage may remain uncertain.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `id` | string | Required |  |
+| `revision` | integer | Required |  |
+
 ### `persona.profile.configure`
 
 Operator-attributed changes to a persona's current profile or authorship policy. Never rewrites its starting profile or grants execution authority.

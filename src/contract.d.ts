@@ -615,6 +615,20 @@ export type Command =
       };
     }
   | {
+      kind: "persona.avatar.retry";
+      args: {
+        id: string;
+        revision: number;
+      };
+    }
+  | {
+      kind: "persona.avatar.cancel";
+      args: {
+        id: string;
+        revision: number;
+      };
+    }
+  | {
       kind: "persona.profile.configure";
       args: {
         id: string;
@@ -1810,6 +1824,10 @@ export interface Connection {
   provider: string;
   protocol: Protocol;
   config: HttpConfig;
+  /**
+   * Explicit image generation permission on the same API connection.
+   */
+  avatar_models?: string[];
 }
 export interface HttpConfig {
   /**

@@ -1,3 +1,4 @@
+import AvatarInitialization from './AvatarInitialization';
 import CharacterInitialization from './CharacterInitialization';
 import CurrentSelf from './CurrentSelf';
 import { useEffect, useState } from 'preact/hooks';
@@ -25,7 +26,7 @@ export default function Identity({ persona, open, act }: { persona: Entity; act:
       catch { setCopied(false); setCopyError('Clipboard unavailable. Select and copy the identity above.'); }
     }}>{copied ? 'ID copied' : 'Copy ID'}</button></div>
     {copyError && <p role="status" class="micro">{copyError}</p>}
-    <CharacterInitialization persona={persona} act={act}/>
+    <CharacterInitialization persona={persona} act={act}/><AvatarInitialization key={persona.id} persona={persona} act={act} open={open}/>
     <h4>Current character</h4><CurrentSelf key={persona.id} persona={persona} open={open}/>
     {!text(d.name) && <p class="notice">No display name has been chosen. The short ID identifies this persona until it chooses one.</p>}
     <dl class="identity-milestones">{[['Created', milestones.created || persona.created], ['Oriented', milestones.oriented], ['Joined work', milestones.joined], ['Accepted responsibility', milestones.committed]].map(([label, value]) => <div key={String(label)}><dt>{String(label)}</dt><dd>{typeof value === 'string' && value ? <time dateTime={value}>{timestamp(value)}</time> : 'Not recorded'}</dd></div>)}</dl>
