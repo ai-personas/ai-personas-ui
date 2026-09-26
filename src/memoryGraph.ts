@@ -6,6 +6,8 @@ export type MemoryCard = {
   fragment: MemoryRef;
   title: string;
   short_description: string;
+  applicability: string;
+  limitations: string;
   basis?: string;
   locator?: { description: string } | null;
 };
@@ -45,7 +47,7 @@ function object(value: unknown): Record<string, unknown> {
 function reference(value: unknown): MemoryRef {
   const ref = object(value);
   requireValue(typeof ref.id === 'string' && /^[0-9a-f]{32}$/i.test(ref.id));
-  requireValue(typeof ref.revision === 'number' && Number.isSafeInteger(ref.revision) && ref.revision >= 0);
+  requireValue(typeof ref.revision === 'number' && Number.isSafeInteger(ref.revision) && ref.revision > 0);
   return { id: ref.id, revision: ref.revision };
 }
 function same(a: MemoryRef, b: MemoryRef): boolean {
@@ -62,7 +64,7 @@ function predicate(value: unknown): Predicate {
     case 'work': case 'sender': return { kind: p.kind, id: identity(p.id) };
     case 'received': return { kind: p.kind, reference: reference(p.reference) };
     case 'semantic':
-      requireValue(typeof p.situation === 'string' && p.situation.trim() && p.situation.length <= 1024);
+      requireValue(typeof p.situation === 'string' && p.situation.trim() && new TextEncoder().encode(p.situation).length <= 1024);
       return { kind: p.kind, situation: p.situation };
     default: requireValue(false);
   }
@@ -86,6 +88,7 @@ function card(value: unknown): MemoryCard {
   return {
     node: reference(item.node), fragment: reference(item.fragment),
     title: text(item.title), short_description: text(item.short_description),
+    applicability: text(item.applicability), limitations: text(item.limitations),
     basis: text(item.basis),
     locator: locator ? { description: text(locator.description) } : null,
   };
@@ -134,7 +137,7 @@ export function readMemoryGraph(value: unknown, request: MemoryGraphRequest): Me
     }
     requireValue(edge.origin === 'authored_condition' && (edge.mode === 'preview' || edge.mode === 'full'));
     requireValue(edge.relation === 'association' || edge.relation === 'correction' || edge.relation === 'prerequisite' || edge.relation === 'contradiction');
-    requireValue(typeof edge.explanation === 'string' && edge.explanation.trim() && edge.explanation.length <= 2048);
+    requireValue(typeof edge.explanation === 'string' && edge.explanation.trim() && new TextEncoder().encode(edge.explanation).length <= 2048);
     requireValue(edge.expires === null || (typeof edge.expires === 'string' && Number.isFinite(Date.parse(edge.expires))));
     return { ...endpoints, origin: edge.origin, mode: edge.mode, relation: edge.relation,
       explanation: edge.explanation, condition: condition(edge.condition),

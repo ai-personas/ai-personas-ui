@@ -12,7 +12,7 @@ const Activity = lazy(() => import('./MemoryActivity'));
 function Lesson({ item, owner, open, navigate }: { item: Card; owner: string; open: (id: string) => void; navigate: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false), [utility, setUtility] = useState(false);
   return <li class="memory-graph-item"><article class="memory-card">
-    <p class="field-label">{{tentative: 'Idea to test', observed: 'From experience', reported: 'Reported by others'}[item.basis || 'tentative']}</p><h4>{item.title || 'Retained learning'}</h4><Story value={item.short_description}/>
+    <p class="field-label">{{tentative: 'Idea to test', observed: 'From experience', reported: 'Reported by others'}[item.basis || 'tentative']}</p><h4>{item.title || 'Retained learning'}</h4><Story value={item.short_description}/>{item.applicability && <p class="micro">Applies to: {item.applicability}</p>}{item.limitations && <p class="record-caveat">Limits: {item.limitations}</p>}
     <div class="memory-actions">
       <button class="text-button" onClick={() => navigate(item.node.id)}>Explore connections</button><button class="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Close fragment' : 'Read fragment'}</button>{item.locator && <button class="text-button" aria-expanded={utility} onClick={() => setUtility(!utility)}>{utility ? 'Close retrieval utility' : 'How this finds lessons'}</button>}
     </div>
