@@ -22,10 +22,15 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
         const latest = fields(p.last_selector), selected = fields(latest.result), delegation = fields(p.delegation);
         const diagnostic = fields(selected.diagnostic), quoted = fields(diagnostic.quoted_tokens), approved = fields(diagnostic.approved_tokens);
         const counts = fields(selected.counts);
+        const activity = fields(p.activity);
+        const activityLabel = activity.state === 'model_call' ? `Model call in progress${p.status && p.status !== 'running' ? ` · participation ${text(p.status)}` : ''}`
+          : activity.state === 'waiting_capacity' ? 'Waiting for shared capacity · no model call active'
+          : activity.state === 'between_calls' ? 'Working between model calls'
+          : text(activity.state, text(p.status, 'Activity not reported')).replaceAll('_', ' ');
         const selector = p.selector_policy === 'enabled' ? (delegation.semantic === true && p.delegation_current === true ? 'Enabled; current persona semantic delegation' : delegation.semantic === true ? 'Enabled; persona delegation expired or unverified' : 'Enabled; awaiting persona semantic delegation') : p.selector_policy === 'expired' ? 'Expired for this work' : 'Disabled for this work';
         return <article class="work-record" key={text(p.run)}>
           <h3>{text(p.name, 'Unnamed persona')}</h3>
-          <p>{text(p.model, 'No model recorded')} · {p.model_discovered ? 'Model discovered' : p.provider_configured ? 'Model availability not confirmed' : 'Provider unavailable'} · {text(p.status).replaceAll('_', ' ')}</p>
+          <p>{text(p.model, 'No model recorded')} · {p.model_discovered ? 'Model discovered' : p.provider_configured ? 'Model availability not confirmed' : 'Provider unavailable'} · {activityLabel}</p>
           <p>Character: {p.character_ready ? 'Ready' : text(p.character_initialization, 'Pending')} · Avatar: {text(p.avatar, p.character_ready ? 'Not requested' : 'Waiting for character').replaceAll('_', ' ')}</p>
           <p>{typeof p.self_fragments === 'number' ? p.self_fragments : 'Unknown'} current self fragments · {typeof p.retained_fragments === 'number' ? p.retained_fragments : 'Unknown'} retained fragments</p>
           <p>Recall selector: <strong>{selector}</strong></p>

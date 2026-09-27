@@ -65,7 +65,7 @@ try {
         schema: 'work-readiness/1', observed: stamp, funding: { binding: 'unfunded', observed_tokens: { input: 24000, output: 1200 } },
         work_usage: { calls: 4, running: 0, uncertain: 1, observed_tokens: { input: 9000, output: 600 } },
         jev_budget: { limit_micro_usd: 5000000, accounted_micro_usd: 42, remaining_micro_usd: 4999958 },
-        participants: [{ persona: person, run: id(3), name: 'Mira fixture', status: 'running', provider: 'fixture', model: 'Fixture model', provider_configured: true, model_discovered: true, character_ready: true, avatar: 'unavailable', self_fragments: 1, retained_fragments: 3, selector_policy: 'disabled', last_selector: { call: id(40), result: { status: 'deterministic_fallback', diagnostic: { stage: 'exposure_check', attempt_admitted: false, quoted_tokens: { input: 65536, output: 65536 }, approved_tokens: { input: 64000, output: 8192 } } } }, publications: 0, submissions: 0 }, { persona: id(42), run: id(43), name: 'Unknown assessment fixture', last_selector: { result: { status: 'validated', counts: { match: 0, no_match: 0, unknown: 1 } } } }]
+        participants: [{ persona: person, run: id(3), name: 'Mira fixture', status: 'running', activity: { state: 'waiting_capacity', active_calls: 0 }, provider: 'fixture', model: 'Fixture model', provider_configured: true, model_discovered: true, character_ready: true, avatar: 'unavailable', self_fragments: 1, retained_fragments: 3, selector_policy: 'disabled', last_selector: { call: id(40), result: { status: 'deterministic_fallback', diagnostic: { stage: 'exposure_check', attempt_admitted: false, quoted_tokens: { input: 65536, output: 65536 }, approved_tokens: { input: 64000, output: 8192 } } } }, publications: 0, submissions: 0 }, { persona: id(42), run: id(43), name: 'Unknown assessment fixture', status: 'running', activity: { state: 'model_call', active_calls: 1 }, last_selector: { result: { status: 'validated', counts: { match: 0, no_match: 0, unknown: 1 } } } }, { persona: id(44), run: id(45), name: 'Local work fixture', status: 'running', activity: { state: 'between_calls', active_calls: 0 } }]
       } });
       if (u.pathname === `/api/work/${work}/files`) return route.fulfill({json:{items:records.filter(r=>[file,badFile,nativeFile,id(16)].includes(r.id)).map(record=>({record,status:'submitted',submissions:[{id:id(5),revision:1}],adopted_in:null,acceptance_established:false})),next:null,sequence:0}});
       if (u.pathname === '/api/network') return route.fulfill({ json: { id: 'fixture-peer', peers: [], addresses: [] } });
@@ -110,6 +110,9 @@ try {
     await step(`${viewport.width}: component state distinguishes configuration, usage and useful outputs`, async () => {
       const state = page.getByLabel('Component status', { exact: true });
       await expect(state).toContainText('Disabled for this work');
+      await expect(state).toContainText('Waiting for shared capacity · no model call active');
+      await expect(state).toContainText('Model call in progress');
+      await expect(state).toContainText('Working between model calls');
       await expect(state).toContainText('Selector was not called: deployment needs 65536 input + 65536 output token reservations');
       await expect(state).toContainText('Latest selector assessment: 0 match · 0 no match · 1 unknown');
       await expect(state).toContainText('$5.000000');
