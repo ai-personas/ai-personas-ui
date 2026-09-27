@@ -24,6 +24,7 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
   const d = data(run), call = fields(d.latest_call), latest = fields(call.data);
   const input = fields(d.latest_user_input), inputRecord = fields(input.record);
   const active = ['queued', 'running'].includes(text(d.status));
+  const execution = ({ queued: 'Ready for a decision; waiting for an execution slot.', running: 'Participation active.', paused: 'Participation paused.', waiting: 'Participation waiting for a trigger.', cancelled: 'Participation cancelled.' } as Record<string, string>)[text(d.status)] || `Participation status: ${text(d.status) || 'unavailable'}.`;
   const canReply = isRecordID(d.persona) && isRecordID(run.scope) && d.historical !== true && d.imported_history !== true
     && !['removed', 'declined', 'cancelled'].includes(text(d.membership)) && !['cancelled', 'paused'].includes(text(d.status));
   return <div class="run-progress">
@@ -32,8 +33,8 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
       <button class="text-button" onClick={() => open(text(inputRecord.id))}>View your input and delivery</button>
     </div>}
     <ProviderRecovery value={d.provider_recovery}/>
-    {active ? <p role="status">{d.status === 'queued' ? 'Ready for a decision; waiting for an execution slot.' : 'Decision in progress.'}</p>
-      : !fields(d.provider_recovery).status && text(d.note) && <div class="current-wait"><p class="field-label">{({outside_dependency:'Awaiting an outside observation',peer_dependency:'Awaiting an accepted peer contribution',scheduled:'Personal exploration scheduled',voluntary_yield:'Persona chose to yield',partial_delivery:'Partial delivery with remaining gaps',completion:'Checked delivery recorded',blocked:'A limitation stopped this decision'} as Record<string,string>)[text((d.stop_disposition as any)?.authored?.kind || (d.stop_disposition as any)?.classification)] || 'Current stop reason'} · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
+    <p role="status">{execution}{latest.status === 'running' && ' Model call in progress.'}</p>
+    {!active && !fields(d.provider_recovery).status && text(d.note) && <div class="current-wait"><p class="field-label">{({outside_dependency:'Awaiting an outside observation',peer_dependency:'Awaiting an accepted peer contribution',scheduled:'Personal exploration scheduled',voluntary_yield:'Persona chose to yield',partial_delivery:'Partial delivery with remaining gaps',completion:'Checked delivery recorded',blocked:'A limitation stopped this decision'} as Record<string,string>)[text((d.stop_disposition as any)?.authored?.kind || (d.stop_disposition as any)?.classification)] || 'Current stop reason'} · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
     {fields(d.information_recovery).status === 'recovering_permissions' && <p class="notice" role="status">Recovering access to context. Other participants can continue with information available to them.</p>}
     {fields(d.information_recovery).status === 'waiting_on_permissions' && <p class="notice">Waiting for a sharing decision. The source owner can change access; unrelated work can continue.</p>}
     <ContinuityView key={run.id} value={d.continuity} open={open}/>

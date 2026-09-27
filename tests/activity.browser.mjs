@@ -81,6 +81,8 @@ try {
   const work = await op('work.create', { title: 'Live activity fixture', brief: 'Synthetic software mechanics only.', environment: environment.id, personas: [persona.id], resource_root: allowance.id });
   await page.getByRole('button', { name: 'Work', exact: true }).click(); await page.getByRole('button', { name: 'Live activity fixture', exact: true }).click();
   await step('public progress appears before any action executes', async () => {
+    await expect(page.locator('.connection-state')).toContainText('Display connection: Connected');
+    await expect(page.locator('.run-progress').getByRole('status')).toHaveText('Participation active. Model call in progress.');
     await page.getByLabel('Live progress and actions').scrollIntoViewIfNeeded();
     await expect(page.getByLabel('Live progress and actions')).toContainText('Checking fixture inputs for decision 1.');
     await expect(page.getByLabel('Live progress and actions')).toContainText('Reading the current profile.');
@@ -123,6 +125,7 @@ try {
     await expect(page.getByLabel('Tool output')).toContainText('second tool line');
     await expect(page.getByLabel('Live progress and actions')).toContainText('Run a tool');
     await until(async () => (await get('/records?kind=run&scope=' + work.id)).items[0]?.data.status === 'waiting', 'explicit wait');
+    await expect(page.locator('.run-progress').getByRole('status')).toHaveText('Participation waiting for a trigger.');
     assert.equal(calls, 6);
   });
   await step('identity includes persistent ID, authored character and separate milestones', async () => {
