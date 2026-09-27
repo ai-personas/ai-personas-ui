@@ -5,7 +5,7 @@ import {chromium,expect} from '@playwright/test';
 import { owner, first as node, second as neighbor, fragment as lesson, later as other, card, edge, conditional, page as graphPage } from './memory-graph.fixture.mjs';
 const port=5198,origin=`http://127.0.0.1:${port}`;
 const focusCard=card(node,'Check representations'), neighborCard=card(neighbor,'Compare exports');
-const root=graphPage({items:[focusCard],next:12});
+const root=graphPage({items:[focusCard],next:12,connections:[conditional(focusCard,focusCard,{relation:'association',condition:{kind:'semantic',situation:'A question concerns the method in this fragment.'}})]});
 const graph=graphPage({focus:focusCard,items:[neighborCard],connections:[edge(focusCard,neighborCard),conditional(focusCard,neighborCard)]});
 let failGraph=false, unsupportedGraph=false;
 await mkdir('.qa',{recursive:true});const harness='.qa/memory-harness.tsx';
@@ -28,6 +28,7 @@ try{
  await page.route('**/api/records/'+lesson,r=>r.fulfill({json:{id:lesson,kind:'fragment',scope:owner,revision:1,created:'2026-09-24T00:00:00Z',updated:'2026-09-24T00:00:00Z',data:{owner,title:'Check representations',content:'## My check\n\nI compare the exact **published source** with its preview.\n\n<script>window.injected=true</script>',draft:{applicability:'When exporting related outputs',limitations:'This is a synthetic fixture.'},status:'retained'}}}));
  await page.goto(origin+'/memory-fixture');assert(!requests.some(u=>u.includes('MemoryGraph.tsx')));
  await page.getByRole('button',{name:'Open learning',exact:true}).click();await expect(page.getByRole('heading',{name:'Check representations'})).toBeVisible();assert(!requests.some(u=>u.includes('MemoryFragment.tsx')));assert(!requests.some(u=>u.includes('/api/records/'+lesson)));assert(!requests.some(u=>u.includes('MemoryLocator.tsx')));await expect(page.getByText('Idea to test',{exact:true})).toBeVisible();
+ await expect(page.getByText('Check representations → Check representations',{exact:true})).toBeVisible();await expect(page.getByText('association · Full text under delegation · Applicability not evaluated',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'How this finds lessons',exact:true}).click();await expect(page.getByRole('region',{name:'Retrieval utility',exact:true})).toBeVisible();await page.getByText(`View utility code · revision ${focusCard.node.revision}`,{exact:true}).click();await expect(page.locator('.memory-code')).toContainText('def locate');await page.getByRole('button',{name:'Close retrieval utility',exact:true}).click();await expect(page.locator('.memory-locator')).toHaveCount(0);
  await page.getByRole('button',{name:'Read fragment',exact:true}).click();await expect(page.getByRole('heading',{name:'My check',exact:true})).toBeVisible();await expect(page.getByText('Selected in 1 participation.',{exact:true})).toBeVisible();assert.equal(await page.evaluate(()=>window.injected),undefined);
  const expandedListeners=await page.evaluate(()=>window.listeners);

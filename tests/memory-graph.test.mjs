@@ -76,9 +76,14 @@ test('connection versions must equal the visible node versions', () => {
   const raw = focused(); raw.connections[0] = { ...raw.connections[0], target: { id: second, revision: 2 } };
   reject(raw, request({ focus: first }));
 });
-test('duplicate directed connections and self-edges are rejected', () => {
+test('conditional self-connections are valid; duplicate connections and plain self-edges are rejected', () => {
   reject(page({ items: [a, b], connections: [edge(a, b), edge(a, b)] }));
   reject(page({ items: [a], connections: [edge(a, a)] }));
+  const self = conditional(a, a, { relation: 'association', condition: { kind: 'semantic', situation: 'This procedure fits the current question.' } });
+  assert.deepEqual(readMemoryGraph(page({ items: [a], connections: [self] }), request()).connections, [self]);
+  assert.deepEqual(readMemoryGraph(page({ focus: a, connections: [self] }), request({ focus: first })).connections, [self]);
+  reject(page({ items: [a], connections: [self, self] }));
+  reject(page({ items: [a], connections: [{ ...self, target: { ...a.node, revision: 2 } }] }));
 });
 test('browsing cannot claim applicability or full inclusion from a plain association', () => {
   for (const change of [{ origin: 'unknown' }, { mode: 'full' }, { applicability: 'match' }]) {

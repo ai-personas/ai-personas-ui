@@ -125,14 +125,14 @@ export function readMemoryGraph(value: unknown, request: MemoryGraphRequest): Me
   const connections: MemoryConnection[] = page.connections.map(value => {
     const edge = object(value), source = reference(edge.source), target = reference(edge.target);
     const from = visible.get(source.id), to = visible.get(target.id);
-    requireValue(from && to && same(from, source) && same(to, target) && source.id !== target.id);
+    requireValue(from && to && same(from, source) && same(to, target));
     // A plain association and a conditional connection can share endpoints.
     const key = `${source.id}:${target.id}:${edge.origin}`;
     requireValue(!seen.has(key)); seen.add(key);
     requireValue(edge.applicability === 'not_evaluated');
     const endpoints: ConnectionEndpoints = { source, target, applicability: 'not_evaluated' };
     if (edge.origin === 'authored_related') {
-      requireValue(edge.mode === 'preview_only');
+      requireValue(edge.mode === 'preview_only' && source.id !== target.id);
       return { ...endpoints, origin: edge.origin, mode: edge.mode };
     }
     requireValue(edge.origin === 'authored_condition' && (edge.mode === 'preview' || edge.mode === 'full'));
