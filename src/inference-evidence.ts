@@ -28,6 +28,7 @@ export function inferenceEvidence(value: unknown) {
   const questions = receipt(d.question_context, 'question-context-receipt/1');
   const offered = discovery ? references(discovery.offered, 'version') : undefined;
   const active = learning ? references(learning.active, 'fragment') : undefined;
+  const memoryOffered = memory ? references(memory.offered, 'node') : undefined;
   const corrections = learning ? references(learning.correction_notices) : undefined;
   const admission = object(d.context_admission);
   const exposure = admission.measured_usage === false && admission.byte_count_is_token_count === false
@@ -57,7 +58,8 @@ export function inferenceEvidence(value: unknown) {
       retention: count(recovery.omitted_retention_opportunities),
       originalBytes: count(recovery.original_request_bytes),
     } : undefined,
-    memory: memory ? { offered: references(memory.offered, 'node') } : undefined,
+    memory: memory ? { offered: memoryOffered,
+      previewsSuspended: memory.preview_status === 'suspended_by_persona' && memory.preview_limit === 0 && memoryOffered?.length === 0 } : undefined,
     discovery: discovery ? { offered } : undefined,
     learning: learning ? { active, corrections } : undefined,
     questions: questions ? { references: questionRefs, replies: replyCount !== undefined && Number.isSafeInteger(replyCount) ? replyCount : undefined } : undefined,

@@ -6755,6 +6755,17 @@
             ],
             "default": null
           },
+          "preview_limit": {
+            "description": "Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0,
+            "maximum": 24,
+            "default": null
+          },
           "current_self": {
             "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
             "type": [
@@ -15233,6 +15244,17 @@
               "string",
               "null"
             ],
+            "default": null
+          },
+          "preview_limit": {
+            "description": "Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0,
+            "maximum": 24,
             "default": null
           },
           "current_self": {

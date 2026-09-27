@@ -1656,6 +1656,10 @@ export interface Selection2 {
    */
   query?: string | null;
   /**
+   * Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.
+   */
+  preview_limit?: number | null;
+  /**
    * Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.
    */
   current_self?: string[] | null;

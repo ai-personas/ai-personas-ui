@@ -93,11 +93,13 @@ try {
     const stage = {stage:'admitted_request',transport_boundary:'pre_dispatch'};
     await page.evaluate(value => window.mountEvidence(value),{status:'completed',context_bytes:40000,usage:{known:true,input:5000,cached:0,output:100},
       discovery_context:{schema:'discovery-context/1',...stage,offered:[{version:{id:'a'.repeat(32),revision:2}}]},
+      memory_context:{schema:'memory-context/1',...stage,offered:[],preview_limit:0,preview_status:'suspended_by_persona'},
       learning_context:{schema:'learning-context/1',...stage,active:[],correction_notices:[]},
       context_recovery:{schema:'context-recovery/1',omitted_history:[{}],projected_commands:[],projected_diagnostics:[{}],omitted_discovery_candidates:2,omitted_retention_opportunities:0,original_request_bytes:90000}});
     await expect(page.getByRole('heading',{name:'Discovery previews admitted',exact:true})).toBeVisible();
     await expect(page.getByRole('heading',{name:'Selected learning admitted',exact:true})).toBeVisible();
     await expect(page.getByText('0 active lesson references; 0 correction notices.',{exact:true})).toBeVisible();
+    await expect(page.getByText('The persona suspended automatic memory previews. Full selections and required qualifications are still compiled separately; the graph remains available to browse.',{exact:true})).toBeVisible();
     await expect(page.getByText(/do not by themselves prove model receipt/)).toBeVisible();
     assert.deepEqual(await page.evaluate(() => window.opened),[]);
     await page.getByRole('button',{name:'Show exact references',exact:true}).click();

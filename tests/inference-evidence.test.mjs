@@ -15,6 +15,11 @@ test('discovery and selected learning have distinct exact references', () => {
   assert.deepEqual(facts.discovery.offered, [ref]);
   assert.deepEqual(facts.learning.active, []);
   assert.deepEqual(facts.learning.corrections, [ref]);
+  const memory = {schema:'memory-context/1',stage:'admitted_request',transport_boundary:'pre_dispatch',offered:[],preview_limit:0,preview_status:'suspended_by_persona'};
+  assert.equal(inferenceEvidence({memory_context:memory}).memory.previewsSuspended, true);
+  for (const change of [{preview_limit:null},{preview_limit:1},{preview_status:'unknown'},{offered:[{node:ref}]},{offered:null}]) {
+    assert.equal(inferenceEvidence({memory_context:{...memory,...change}}).memory.previewsSuspended, false);
+  }
 });
 test('active lesson references use the actual fragment field', () => {
   assert.deepEqual(inferenceEvidence({learning_context:{schema:'learning-context/1',stage:'admitted_request',transport_boundary:'pre_dispatch',active:[{fragment:ref}],correction_notices:[]}}).learning.active, [ref]);
