@@ -5601,7 +5601,9 @@
             "type": "string"
           },
           "receipt_digest": {
-            "type": "string"
+            "description": "Exact SHA-256 of the received action receipt; never explanatory prose.",
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
         "additionalProperties": false,
@@ -14079,7 +14081,9 @@
             "type": "string"
           },
           "receipt_digest": {
-            "type": "string"
+            "description": "Exact SHA-256 of the received action receipt; never explanatory prose.",
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
         "additionalProperties": false,

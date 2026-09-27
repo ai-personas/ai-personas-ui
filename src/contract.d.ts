@@ -1418,6 +1418,9 @@ export interface FragmentDraft {
 }
 export interface ActionEvidence {
   action: string;
+  /**
+   * Exact SHA-256 of the received action receipt; never explanatory prose.
+   */
   receipt_digest: string;
 }
 export interface EntryDraft {
