@@ -456,6 +456,7 @@ try {
   await step('malformed output is visible, charged, bounded, and recoverable through explicit resume', async () => {
     scenario = 'malformed'; const before = await get('/resources/' + allowance.id);
     await op('run.resume', { id: run.id });
+    await until(async () => (await get('/records/' + run.id)).data.latest_call?.data.status === 'failed', 'malformed decision settled');
     await expect(page.getByLabel('Persona activity')).toContainText('decision_json');
     const failed = await get('/records/' + run.id);
     assert.equal(failed.data.latest_call.data.status, 'failed');
