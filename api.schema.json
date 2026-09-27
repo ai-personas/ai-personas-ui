@@ -6144,8 +6144,8 @@
             "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
             "$ref": "#/$defs/LearningDisposition"
           },
-          "learning": {
-            "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
+          "change_reason": {
+            "description": "Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.",
             "type": "string"
           },
           "deferred": {
@@ -6217,7 +6217,7 @@
         "required": [
           "focus",
           "disposition",
-          "learning",
+          "change_reason",
           "changes"
         ]
       },
@@ -14622,8 +14622,8 @@
             "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
             "$ref": "#/$defs/LearningDisposition"
           },
-          "learning": {
-            "description": "Brief reason for retaining, revising, organizing, deferring or making no change.",
+          "change_reason": {
+            "description": "Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.",
             "type": "string"
           },
           "deferred": {
@@ -14695,7 +14695,7 @@
         "required": [
           "focus",
           "disposition",
-          "learning",
+          "change_reason",
           "changes"
         ]
       },

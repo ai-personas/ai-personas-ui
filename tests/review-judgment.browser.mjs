@@ -57,9 +57,11 @@ try{
  await expect(page.getByText('Referenced version 3',{exact:true})).toBeVisible();
  await expect(page.locator('table')).toHaveCount(0);
  await expect(page.getByText('retrieval_cues',{exact:true})).toHaveCount(0);
- await page.evaluate(()=>window.continuity({focus:'Compare editable representations',disposition:'no_change',learning:'I need an observation before retaining a lesson.',changes:[],selected:['e'.repeat(32)]}));
+ await page.evaluate(()=>window.continuity({focus:'Compare editable representations',disposition:'no_change',change_reason:'I need an observation before retaining a lesson.',changes:[],selected:['e'.repeat(32)]}));
  await expect(page.getByRole('heading',{name:'Current focus',exact:true})).toBeVisible();
  await expect(page.getByText('No fragment written',{exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Reason for graph choice',exact:true})).toBeVisible();
+ await expect(page.getByText('I need an observation before retaining a lesson.',{exact:true})).toBeVisible();
  await expect(page.locator('.continuity-details')).toHaveCount(0);
  await page.getByRole('button',{name:'View learning and next context'}).click();
  await expect(page.getByRole('heading',{name:'Selected for the next decision',exact:true})).toBeVisible();

@@ -49,7 +49,7 @@ const provider = createServer(async (req, res) => {
     // Follow the same contract discovery path available to real generation.
     // A canonical command can still be absent from this call's loaded schema.
     actions = offeredActions(input, actions);
-    const continuity = { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
+    const continuity = { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
     if (scenario === 'learn' && !retainedGraph) {
       const lesson = (handle, title) => ({ handle, node: null, draft: { title, short_description: title, content: 'Synthetic graph fixture text.', applicability: 'Browser contract verification', limitations: 'No behavioral claim', sources: [], counterevidence: [] }, related: [], connections: [], retire: false, locator: null });
       const correction = lesson('correction', 'Graph fixture correction'), method = lesson('method', 'Graph fixture method');

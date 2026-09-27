@@ -1530,9 +1530,9 @@ export interface Continuity {
    */
   disposition: "retain" | "revise" | "organize" | "no_change" | "defer";
   /**
-   * Brief reason for retaining, revising, organizing, deferring or making no change.
+   * Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.
    */
-  learning: string;
+  change_reason: string;
   /**
    * Add or update pending opportunities. Omission preserves earlier opportunities; use learning_resolutions for an explicit disposition.
    */

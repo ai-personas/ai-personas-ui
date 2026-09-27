@@ -41,7 +41,7 @@ const provider = createServer(async (req, res) => {
       { kind: 'exec', args: { command: "printf 'first tool line\\n'; sleep 1; printf 'second tool line\\n'", background: false } },
     ] : [{ kind: 'wait', args: { reason: 'Explicit fixture wait; new outside input is required.' } }];
     actions = offeredActions(input, actions);
-    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
+    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
