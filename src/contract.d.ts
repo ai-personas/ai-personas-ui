@@ -1514,7 +1514,7 @@ export interface Continuity {
    */
   learning_resolutions?: LearningResolution[];
   /**
-   * Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.
+   * Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.
    */
   next?: "continue" | "wait";
   /**

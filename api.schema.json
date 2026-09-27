@@ -6123,7 +6123,7 @@
             "default": []
           },
           "next": {
-            "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
+            "description": "Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.",
             "$ref": "#/$defs/NextDecision",
             "default": "wait"
           },
@@ -14592,7 +14592,7 @@
             "default": []
           },
           "next": {
-            "description": "Continue requests another funded decision even with no actions (e.g. navigate memory). Wait yields when this response has no actions; an explicit wait action always stops its batch.",
+            "description": "Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.",
             "$ref": "#/$defs/NextDecision",
             "default": "wait"
           },
