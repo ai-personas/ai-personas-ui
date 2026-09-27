@@ -92,14 +92,25 @@ try {
     await step(`${viewport.width}: work opens with its delivered files even without a message`, async () => {
       await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible();
+      expect(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('work')).toBe(work);
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByLabel('Work conversation', { exact: true })).toContainText('No messages or questions yet.');
       const library = page.getByLabel('Documents & files', { exact: true });
       await library.getByRole('article', { name: 'Readable house concept', exact: true }).getByRole('button', { name: 'Read document', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Record details', exact: true }).getByRole('heading', { name: 'A clear plan', exact: true })).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole('dialog', { name: 'Record details', exact: true }).getByRole('heading', { name: 'A clear plan', exact: true })).toBeVisible();
+      await page.goBack(); await expect(page.getByRole('dialog', { name: 'Record details', exact: true })).toHaveCount(0);
+      await page.goForward(); await expect(page.getByRole('dialog', { name: 'Record details', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await library.getByRole('article', { name: 'verified.txt', exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true }).locator('.file-source')).toContainText('Exact fixture bytes');
+      await page.reload();
+      await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true }).locator('.file-source')).toContainText('Exact fixture bytes');
+      await page.goBack(); await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true })).toHaveCount(0);
+      await page.goForward(); await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
     });
     await expect(page.getByRole('button', { name: 'Manage personas', exact: true })).toHaveCount(0);
@@ -127,6 +138,11 @@ try {
       await step(`${viewport.width}: ${tab}`, async () => {
         await page.getByRole('tab', { name: tab, exact: true }).click();
         await expect(page.getByRole('tab', { name: tab, exact: true })).toHaveAttribute('aria-selected', 'true');
+        if (tab === 'Artifacts & evidence') {
+          await page.reload(); await expect(page.getByRole('tab', {name:tab,exact:true})).toHaveAttribute('aria-selected','true');
+          await page.goBack(); await expect(page.getByRole('tab', {name:'People & agreements',exact:true})).toHaveAttribute('aria-selected','true');
+          await page.goForward(); await expect(page.getByRole('tab', {name:tab,exact:true})).toHaveAttribute('aria-selected','true');
+        }
         await expect(page.locator('#workspace-panel')).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       });
@@ -348,6 +364,9 @@ try {
       await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('Creating starts a funded call');
       await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toContainText('Providing your own character skips generation');
       await page.keyboard.press('Escape');
+      await page.reload(); await expect(page.getByRole('heading', { name:'Personas',exact:true })).toBeVisible();
+      await page.goBack(); await expect(page.getByRole('heading', { name:'Tools',exact:true })).toBeVisible();
+      await page.goForward(); await expect(page.getByRole('heading', { name:'Personas',exact:true })).toBeVisible();
     });
     await step(`${viewport.width}: no invented writes, token storage or page errors`, async () => {
       expect(writes).toEqual([]); expect(await page.evaluate(() => sessionStorage.getItem('personas-token'))).toBe(null); expect(errors).toEqual([]);

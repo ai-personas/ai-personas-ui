@@ -8,7 +8,7 @@ import { useRecords, useResource } from './hooks';
 import { text, isRecordID, recordIDs, workFacts, stateTone, inputRequestCount } from './workspace';
 import type { ApiTypes } from './contract';
 import { InputNotice } from './Attention';
-import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, type View, type WorkFilter } from './presentation';
+import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, readNavigation, navigationHash, type Navigation, type View, type WorkFilter } from './presentation';
 import Icon from './Icon';
 import SearchInput from './SearchInput';
 import { ContentCard } from './ContentCards';
@@ -85,11 +85,34 @@ function Connection({ onConnected, local, retryLocal, message }: { onConnected: 
 function App() {
   const [connected, setConnected] = useState(!!token), [connection, setConnection] = useState('Connecting…');
   const [opening, setOpening] = useState(true), [attempt, setAttempt] = useState(0), [local, setLocal] = useState(true), [openError, setOpenError] = useState('');
-  const [page, setPage] = useState<View>('Work'), [selected, setSelected] = useState<string>(), [artifact, setArtifact] = useState<string>();
-  const [work, setWork] = useState<string>(), [create, setCreate] = useState<string>(), [brief, setBrief] = useState(''), [error, setError] = useState('');
+  const [route, setRoute] = useState<Navigation>(() => readNavigation(location.hash));
+  const currentRoute = useRef(route);
+  const { page, work, tab = 'Overview', record: selected, artifact } = route;
+  const [create, setCreate] = useState<string>(), [brief, setBrief] = useState(''), [error, setError] = useState('');
+  const changeRoute = (next: Navigation) => {
+    if (navigationHash(next) !== navigationHash(currentRoute.current)) {
+      history.pushState(null, '', navigationHash(next));
+      currentRoute.current = next; setRoute(next);
+    }
+    setCreate(undefined);
+  };
+  const setSelected = (record?: string) => changeRoute({ ...currentRoute.current, record });
+  const setArtifact = (artifact?: string) => changeRoute({ ...currentRoute.current, artifact });
+  const setWork = (work?: string) => changeRoute({ page: 'Work', work });
   const content = useRef<HTMLElement>(null);
   const attention = useResource<ApiTypes['attention']>('/attention', e => ['request', 'response', 'work', 'run'].includes(e.kind), connected);
   const counts: Record<string, number> = { Work: attention.value?.work || 0, Personas: attention.value?.personas || 0, Environments: attention.value?.environments || 0 };
+  useEffect(() => {
+    const restore = () => {
+      const next = readNavigation(location.hash);
+      if (navigationHash(next) !== navigationHash(currentRoute.current)) {
+        currentRoute.current = next; setRoute(next);
+      }
+      setCreate(undefined);
+    };
+    addEventListener('popstate', restore); addEventListener('hashchange', restore);
+    return () => { removeEventListener('popstate', restore); removeEventListener('hashchange', restore); };
+  }, []);
   useEffect(() => {
     const controller = new AbortController(); let active = true;
     const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -112,7 +135,7 @@ function App() {
   }, [connected]);
   const act: Act = (kind, args, actor = '', run = '') => operate(kind, args, actor, run);
   const navigate = (name: View) => {
-    setPage(name); setWork(undefined); setSelected(undefined); setArtifact(undefined); setCreate(undefined);
+    changeRoute({ page: name });
     requestAnimationFrame(() => content.current?.focus());
   };
   const disconnect = () => { connect(''); setConnected(false); navigate('Work'); setConnection('Disconnected'); };
@@ -131,7 +154,7 @@ function App() {
     <main id="main-content" class="main" tabIndex={-1} ref={content}>
       <div class="app-topbar"><span>Workspace <span aria-hidden="true">/</span> <strong>{page}</strong>{work && ' / Detail'}</span><span class="runtime-label"><Icon name="Shield"/>Runtime records</span></div>
       <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection.startsWith('Reconnecting') ? connection : `${connection}. Displayed records may be stale.`}</p>}{error && <p role="alert">{error}</p>}
-        {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact} act={act}/></Suspense> : page === 'Funding' ? <Suspense fallback={<p>Loading funding…</p>}><Funding act={act}/></Suspense> : <>
+        {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} tab={tab} setTab={tab => changeRoute({ ...currentRoute.current, tab })} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact} act={act}/></Suspense> : page === 'Funding' ? <Suspense fallback={<p>Loading funding…</p>}><Funding act={act}/></Suspense> : <>
           <header class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>{page}</h1><p>{meta.description}</p></div>{meta.create && <button onClick={start}>+ {meta.create}</button>}</header>
           {['Work', 'Personas', 'Environments'].includes(page) && <Requests open={setSelected}/>}
           {page === 'Environments' && <Starters choose={b => { setBrief(b); setCreate('Work'); }}/>}

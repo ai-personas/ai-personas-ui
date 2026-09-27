@@ -129,9 +129,8 @@ function RecordsSection({ title, description, kinds, work, empty, open, artifact
         <button class="secondary" disabled={page.next == null || loading} onClick={() => { if (page.next != null) setCursors([...cursors, page.next]); }}>Next</button></div></div>}
   </section>;
 }
-export default function Workspace({ id, open, artifact, back, act }: { id: string; back: () => void; act: Act } & Links) {
+export default function Workspace({ id, tab, setTab, open, artifact, back, act }: { id: string; tab: WorkTab; setTab: (tab: WorkTab) => void; back: () => void; act: Act } & Links) {
   const { value: work, error, loading } = useResource<Entity>('/records/' + id, e => matchesWork(e, id));
-  const [tab, setTab] = useState<WorkTab>('Overview');
   const [submissionHistory, setSubmissionHistory] = useState(false);
   const tabs = useRef<HTMLDivElement>(null);
   if (error && !work) return <section><button class="text-button" onClick={back}>← All work</button><p role="alert">{error}</p></section>;

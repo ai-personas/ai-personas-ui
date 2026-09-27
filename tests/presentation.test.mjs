@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter } from '../src/presentation.ts';
+import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, readNavigation, navigationHash } from '../src/presentation.ts';
 
 test('canonical navigation keeps Tools first-class and Network advanced', () => {
   assert.deepEqual(PAGES, ['Work', 'Personas', 'Environments', 'Learning', 'Tools']);
   assert.equal(VIEW_META.Network.kind, 'transfer');
   assert.equal(PAGES.includes('Network'), false);
+  for (const page of [...PAGES, 'Network', 'Funding']) assert.equal(readNavigation(navigationHash({page})).page, page);
+  const route = {page:'Work',work:'a'.repeat(32),tab:'Artifacts & evidence',record:'b'.repeat(32),artifact:'c'.repeat(32)};
+  assert.deepEqual(readNavigation(navigationHash(route)), route);
+  assert.equal(navigationHash({...route,token:'never-in-url',command:'run.resume'}), navigationHash(route));
+  for (const hash of ['', '#main-content', '#/unknown', '#/work?' + 'x'.repeat(1024)]) assert.deepEqual(readNavigation(hash), {page:'Work'});
+  for (const query of ['work=../../private', 'work=javascript:alert(1)', 'work='+route.work+'&work='+route.work]) assert.equal(readNavigation('#/work?'+query).work, undefined);
+  assert.equal(readNavigation('#/personas?work='+route.work).work, undefined);
+  assert.equal(readNavigation('#/work?tab=Perspectives').tab, undefined);
+  assert.equal(readNavigation('#/work?work='+route.work+'&tab=Unknown').tab, undefined);
 });
 test('every destination explains its empty state without inserting fixture records', () => {
   for (const view of [...PAGES, 'Network']) {

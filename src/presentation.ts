@@ -1,6 +1,32 @@
 /** Presentation vocabulary only. No operations, sample records, or authority decisions. */
+import { isRecordID, WORK_TABS, type WorkTab } from './workspace.ts';
 export const PAGES = ['Work', 'Personas', 'Environments', 'Learning', 'Tools'] as const;
 export type View = typeof PAGES[number] | 'Network' | 'Funding';
+export type Navigation = { page: View; work?: string; tab?: WorkTab; record?: string; artifact?: string };
+
+/** URLs identify views only. Credentials, form values and actions never belong here. */
+export function readNavigation(hash: string): Navigation {
+  if (hash.length > 1024) return { page: 'Work' };
+  const [path, query = ''] = hash.replace(/^#/, '').split('?');
+  const page = ([...PAGES, 'Network', 'Funding'] as const).find(name => path === '/' + name.toLowerCase());
+  if (!page) return { page: 'Work' };
+  const args = new URLSearchParams(query);
+  const one = (name: string) => args.getAll(name).length === 1 ? args.get(name) : undefined;
+  const reference = (name: string) => { const id = one(name); return isRecordID(id) ? id : undefined; };
+  const work = page === 'Work' ? reference('work') : undefined;
+  const tab = work ? WORK_TABS.find(name => name === one('tab')) : undefined;
+  return { page, work, tab, record: reference('record'), artifact: reference('artifact') };
+}
+
+export function navigationHash(route: Navigation): string {
+  const args = new URLSearchParams();
+  if (route.page === 'Work' && isRecordID(route.work)) {
+    args.set('work', route.work);
+    if (route.tab && route.tab !== 'Overview' && WORK_TABS.includes(route.tab)) args.set('tab', route.tab);
+  }
+  for (const field of ['record', 'artifact'] as const) if (isRecordID(route[field])) args.set(field, route[field]);
+  return '#/' + route.page.toLowerCase() + (args.size ? '?' + args : '');
+}
 export type WorkFilter = 'all' | 'active' | 'needs-input' | 'archived';
 export const WORK_FILTERS: readonly { value: WorkFilter; label: string }[] = [
   { value: 'all', label: 'Current work' },
