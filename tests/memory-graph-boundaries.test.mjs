@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readMemoryGraph } from '../src/memoryGraph.ts';
-const owner = 'a'.repeat(32), first = 'b'.repeat(32), second = 'c'.repeat(32);
+import { owner, first, second, card, conditional, page as graphPage } from './memory-graph.fixture.mjs';
 const request = { owner, focus: '', after: 0, query: '' };
-const card = id => ({ node: { id, revision: 1 }, fragment: { id, revision: 1 }, title: 'Method', short_description: 'A scoped method' });
-const page = () => ({ schema: 'memory-graph/1', owner, after: 0, limit: 12, query: null, view: 'all_owned', focus: null, focus_card: null, items: [card(first), card(second)], connections: [], next: null, automatic_selection: false, requires_root: false, requires_functional_groups: false });
+const page = () => graphPage({ items: [card(first, 'Method'), card(second, 'Other method')] });
 const connected = (change = {}) => {
-  const p = page(); p.connections = [{ source: p.items[0].node, target: p.items[1].node, origin: 'authored_condition', mode: 'full', relation: 'correction', explanation: 'Keep the exception.', condition: { kind: 'always' }, work: null, expires: null, applicability: 'not_evaluated', ...change }];
+  const p = page(); p.connections = [conditional(p.items[0], p.items[1], change)];
   return p;
 };
 const rejects = p => assert.throws(() => readMemoryGraph(p, request), /supported memory-graph\/1 contract/);
@@ -42,14 +41,6 @@ test('valid multilingual text at exact byte limits is preserved', () => {
 test('compound conditions retain exact positive evidence revisions', () => {
   const condition = { kind: 'all', conditions: [{ kind: 'received', reference: { id: first, revision: 1 } }, { kind: 'sender', id: owner }] };
   assert.deepEqual(readMemoryGraph(connected({ condition }), request).connections[0].condition, condition);
-});
-test('plain and conditional edges can still share exact endpoints', () => {
-  const p = connected(); p.connections.push({ source: p.items[0].node, target: p.items[1].node, origin: 'authored_related', mode: 'preview_only', applicability: 'not_evaluated' });
-  assert.equal(readMemoryGraph(p, request).connections.length, 2);
-});
-test('full authored treatment does not become an applicability verdict', () => {
-  const edge = readMemoryGraph(connected(), request).connections[0];
-  assert.equal(edge.mode, 'full'); assert.equal(edge.applicability, 'not_evaluated');
 });
 test('existing expiry validation is preserved', () => {
   rejects(connected({ expires: 'not a date' }));

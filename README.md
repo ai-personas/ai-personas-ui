@@ -166,6 +166,9 @@ do not qualify the current graph UI. The old image-only `test:live` harness was
 removed: its required environment imagery, fixed navigation and preview limits
 do not describe current acceptance. Live observations use declared work cases
 and exact installed revisions, separately from synthetic browser checks.
+Graph unit checks share `tests/memory-graph.fixture.mjs`. The main graph suite
+owns connection identity and display semantics; the boundary suite covers exact
+versions, qualification text and byte limits without duplicating those cases.
 `test:participants` uses a disposable restricted node and synthetic inference to
 check roster changes, re-invitations, request highlights, private and group replies,
 peer answers to shared questions, visible replies to the user, mobile layouts,
