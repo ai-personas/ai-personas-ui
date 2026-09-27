@@ -11,6 +11,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { decisionContext, offeredActions } from './decision-fixture.mjs';
 
 const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas');
 const root = mkdtempSync(join(tmpdir(), 'personas-operator-'));
@@ -23,7 +24,7 @@ const errors = [], providerErrors = [];
 const provider = createServer(async (req, res) => {
   try {
     let body = ''; for await (const chunk of req) body += chunk;
-    const input = JSON.parse(body), context = JSON.parse(input.input[0].content[0].text);
+    const input = JSON.parse(body), context = decisionContext(input);
     calls++;
     assert.equal(context.run.data.note || '', '', 'a fresh decision inherited an obsolete stop reason');
     let actions;
@@ -47,12 +48,8 @@ const provider = createServer(async (req, res) => {
     }
     // Follow the same contract discovery path available to real generation.
     // A canonical command can still be absent from this call's loaded schema.
-    const loaded = context.run.data.operation_catalog?.loaded;
-    if (loaded) {
-      const missing = [...new Set(actions.map(action => action.kind).filter(kind => !loaded.includes(kind)))];
-      if (missing.length) actions = missing.map(operation => ({ kind: 'operation.describe', args: { operation } }));
-    }
-    const continuity = { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
+    actions = offeredActions(input, actions);
+    const continuity = { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' };
     if (scenario === 'learn' && !retainedGraph) {
       const lesson = (handle, title) => ({ handle, node: null, draft: { title, short_description: title, content: 'Synthetic graph fixture text.', applicability: 'Browser contract verification', limitations: 'No behavioral claim', sources: [], counterevidence: [] }, related: [], connections: [], retire: false, locator: null });
       const correction = lesson('correction', 'Graph fixture correction'), method = lesson('method', 'Graph fixture method');
@@ -329,7 +326,7 @@ try {
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
   });
   await step('run controls and direct persona messaging stay attributable', async () => {
-    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: 'Pause decisions', exact: true }).click();
     await until(async () => (await get('/records/' + run.id)).data.status === 'paused', 'pause');
@@ -447,7 +444,7 @@ try {
     assert.equal(after.calls.charged, before.calls.charged + 1, 'failed output must retain its charge');
     const observed = calls; await delay(500); assert.equal(calls, observed, 'invalid output caused an automatic retry');
     await expect(page.getByLabel('Persona activity')).not.toContainText('PRIVATE_INVALID_OUTPUT');
-    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     scenario = 'commentary';
     await details.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -516,7 +513,7 @@ try {
     const before = await get('/actions?scope=' + run.id + '&limit=100');
     const documents = (await get('/records?kind=document')).items.map(r => r.id);
     const callsBefore = calls;
-    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details ↗', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: 'Reduce active context', exact: true }).click();
     await details.getByLabel('Handoff note').fill('Operator handoff: prior synthetic output stays retained; inspect saved evidence before continuing.');

@@ -158,7 +158,7 @@ const WorkRow = memo(function WorkRow({ r, open, openRequest }: { r: Entity; ope
     <div class="work-fact"><span class="field-label">Activity</span><strong>{f.activity}</strong><small>Execution, not accomplishment</small></div>
     <div class="work-fact"><span class="field-label">Participants</span><strong>{people === undefined ? 'Not reported' : `${people} selected`}</strong><small>Selection is not a commitment</small></div>
     <div class="work-fact"><span class="field-label">Evidence</span><strong>{f.submissions === undefined ? 'Versions not reported' : `${f.submissions} preserved ${f.submissions === 1 ? 'submission' : 'submissions'}`}</strong><small>Acceptance not established</small></div>
-    <button class="text-button work-open" onClick={() => open(r.id)}>Open workspace ↗</button>
+    <button class="text-button work-open" onClick={() => open(r.id)}>Open workspace <Icon name="Open"/></button>
   </article>;
 });
 function List(props: Parameters<typeof RecordList>[0]) {
@@ -196,7 +196,7 @@ function RecordList({ view, open, openWork, artifact, act, start, navigate }: {
           {r.kind === 'fragment' && <p class="micro">Retained interpretation · later usefulness needs evidence</p>}
           {['tool', 'capability'].includes(r.kind) && <p class="micro">Availability and registration do not establish competence</p>}
           {r.kind === 'transfer' && <><progress aria-label="Recorded transfer bytes" value={d.bytes} max={d.total || 1}/><p class="micro">{d.bytes?.toLocaleString()} / {d.total?.toLocaleString()} bytes</p>{d.status === 'running' && <button class="quiet" onClick={() => act('transfer.cancel', { id: r.id }).catch(e => setFailure(e.message))}>Cancel transfer</button>}{isRecordID(d.received_artifact) && <button onClick={() => artifact(d.received_artifact)}>Open artifact</button>}</>}
-        </div><button class="text-button card-open" onClick={() => open(r.id)}>Open details ↗</button>
+        </div><button class="text-button card-open" onClick={() => open(r.id)}>Open details <Icon name="Open"/></button>
       </article>; })}</div>}
     {page && <Pagination next={page.next} previous={cursors.length > 1} disabled={busy} onNext={() => { if (!busy && page.next != null) setCursors([...cursors, page.next]); }} onPrevious={() => setCursors(cursors.slice(0, -1))}/>}
   </section>;

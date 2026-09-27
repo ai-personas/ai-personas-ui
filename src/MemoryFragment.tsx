@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useResource } from './hooks';
 import { currentRead, readMemoryDetail, readMemoryUsage } from './memoryDetails';
 import RecordReader from './RecordReader';
@@ -14,7 +15,7 @@ export default function MemoryFragment({ id, revision, owner, open }: { id: stri
       {usage.loading && <p role="status">Loading usage evidence…</p>}
       {usage.value && <><p>Selected in {usage.value.selected_participations} participation{usage.value.selected_participations === 1 ? '' : 's'}.</p><p>Included in {usage.value.admitted_calls} admitted model call{usage.value.admitted_calls === 1 ? '' : 's'}. Admission records the supplied context; application and benefit need further evidence.</p>
         <p class="micro">These counts span retained revisions of this fragment, not only the displayed revision.</p>
-        {usage.value.recent_calls.length > 0 && <button class="text-button" onClick={() => open(usage.value!.recent_calls[0])}>Inspect recorded inclusion ↗</button>}</>}
+        {usage.value.recent_calls.length > 0 && <button class="text-button" onClick={() => open(usage.value!.recent_calls[0])}>Inspect recorded inclusion <Icon name="Open"/></button>}</>}
     </>}
   </div>;
 }

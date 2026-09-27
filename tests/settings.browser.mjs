@@ -228,7 +228,7 @@ try {
     let persona;
     await until(async () => { const summary = (await get('/records?kind=persona')).items[0]; persona = summary && await get('/records/' + summary.id); return persona?.data.avatar_initialization?.status === 'ready'; });
     assert.equal(persona.data.character_initialization.status, 'ready'); assert.equal(inferences, 1);
-    await page.getByRole('button', { name: 'Open details ↗', exact: true }).click();
+    await page.getByRole('button', { name: 'Open details', exact: true }).click();
     const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
     await expect(detail.getByRole('region', { name: 'Avatar generation', exact: true })).toContainText('Generated avatar');
     const portrait = detail.locator('img.portrait'); await expect(portrait).toHaveCount(1);

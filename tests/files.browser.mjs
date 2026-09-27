@@ -41,7 +41,7 @@ async function zip(entries) {
 async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name); }
 const dialog = () => page.getByRole('dialog', { name: 'Artifact viewer', exact: true });
 async function open(name) {
-  await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name, exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
+  await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name, exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
   await expect(dialog()).toBeVisible();
 }
 async function close() { await dialog().getByRole('button', { name: 'Close viewer', exact: true }).click(); await expect(dialog()).toHaveCount(0); await expect.poll(() => page.evaluate(() => [window.fileProbe.urls.size, window.fileProbe.workers.size])).toEqual([0, 0]); }
@@ -80,11 +80,11 @@ try {
     ['sound.wav', 'audio/wav', wav], ['drawing.pdf', 'application/pdf', pdf], ['large.md', 'text/markdown', '# Long document\n\n' + 'Fixture paragraph.\n\n'.repeat(15000)],
     ['tampered.txt', 'text/plain', 'Tamper-check original'], ['slow.txt', 'text/plain', 'A slow fixture download'],
   ]) ids.push(await upload(name, media, bytes));
-  const persona = await op('persona.create', { provider: 'fixture', model: 'file-fixture' }), environment = await op('environment.create', {});
+  const persona = await op('persona.create', { provider: 'fixture', model: 'file-fixture', profile_seed: { name: 'File fixture', character: 'I exercise supplied files in a synthetic browser check.' } }), environment = await op('environment.create', {});
   const work = await op('work.create', { title: 'File viewer fixture', brief: 'Wait while the supplied files are read.', environment: environment.id, personas: [persona.id] });
   const run = (await get('/records?kind=run&scope=' + work.id)).items[0];
+  await op('submit', { summary: 'Authored file fixtures for browser verification.', artifacts: ids, documents: [] }, persona.id, run.id);
   await op('run.pause', { id: run.id });
-  await op('submit', { summary: 'Authored file fixtures for browser verification.', artifacts: ids, documents: [] }, '', run.id);
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); page = await context.newPage(); page.setDefaultTimeout(15000);
   await page.addInitScript(() => {

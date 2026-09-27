@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import QuestionDelivery from './QuestionDelivery';
 import { WorkControls, AllowanceSummary, CurrentMandate, WorkState } from './Operator';
 import type { Act } from './main';
@@ -42,7 +43,7 @@ function NamedField({ name, value }: { name: string; value: unknown }) {
 }
 function ActivityPersona({ id, open }: { id: string; open: Open }) {
   const { value } = useResource<Entity>('/records/' + id, e => e.entity === id);
-  return <button class="reference-link activity-persona" onClick={() => open(id)}>{value ? text(data(value).name) || 'Unnamed persona' : 'Persona'} <code>{id.slice(0, 8)}</code> <span aria-hidden="true">↗</span></button>;
+  return <button class="reference-link activity-persona" onClick={() => open(id)}>{value ? text(data(value).name) || 'Unnamed persona' : 'Persona'} <code>{id.slice(0, 8)}</code> <Icon name="Open"/></button>;
 }
 function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act } & Links) {
   // Work-list projections omit authored drafts. Load the visible card's content
@@ -99,7 +100,7 @@ function RecordCard({ record, open, artifact, act }: { record: Entity; act: Act 
     {r.kind === 'budget' && <><NamedField name="Allowance" value={d.allowance_summary}/><NamedField name="Protected closeout" value={d.closeout_summary}/><p class="record-caveat">Call, token, currency and population limits are separate. No balance is inferred from activity.</p></>}
     {['work_release', 'release'].includes(r.kind) && <><Reference id={d.submission} caption="Sealed submission" open={open}/><NamedField name="Seal / conflict" value={d.seal_status}/><p class="record-caveat">A release refers to an exact historical state, never automatically to the latest files.</p></>}
     {r.kind === 'fragment' && <><NamedField name="Applies when" value={d.applicability}/><NamedField name="Limitations / contrary evidence" value={d.limitations}/><References ids={d.sources} caption="Experience / source" open={open}/><p class="record-caveat">Retained learning is an authored interpretation; later usefulness needs evidence.</p></>}
-    <button class="text-button" onClick={() => open(r.id)}>View details ↗</button>
+    <button class="text-button" onClick={() => open(r.id)}>View details <Icon name="Open"/></button>
   </article>;
 }
 function Assessment({ record, open }: { record: Entity; open: Open }) {
@@ -140,7 +141,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
   const section = (title: string, kinds: string, empty: string, description?: string) =>
     <RecordsSection key={tab + ':' + kinds + ':' + id} title={title} kinds={kinds} work={id} empty={empty} description={description} open={open} artifact={artifact} act={act}/>;
   return <div class="workspace">
-    <div class="workspace-trail"><button class="text-button" onClick={back}>← All work</button><span>Workspace</span><button class="text-button" onClick={() => open(id)}>Work details & activity ↗</button></div>
+    <div class="workspace-trail"><button class="text-button" onClick={back}>← All work</button><span>Workspace</span><button class="text-button" onClick={() => open(id)}>Work details & activity <Icon name="Open"/></button></div>
     <header class="workspace-heading"><div><p class="eyebrow">ONE NEED. DIFFERENT PERSPECTIVES.</p><h1>{label(work)}</h1><p class="workspace-subtitle">Individual priorities. Negotiated commitments. Inspectable evidence.</p></div><span class="revision-tag">Work revision {work.revision}</span></header>
     {(loading || error) && <p class="notice" role={error ? 'alert' : 'status'}>{error ? `Refresh failed: ${error}. Displayed data may be stale.` : 'Refreshing work state. Displayed values are not a new confirmation.'}</p>}
     <WorkControls work={work} act={act} open={open}/>

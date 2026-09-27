@@ -12,6 +12,7 @@ const paths = {
   Search: 'M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16 M17 17l5 5',
   Attention: 'M12 3l10 18H2z M12 9v5 M12 17v1',
   Arrow: 'M5 12h14 M13 6l6 6-6 6',
+  Open: 'M7 17L17 7 M7 7h10v10',
   Shield: 'M12 2l9 4v6c0 5-9 10-9 10S3 17 3 12V6z M8 12l3 3 5-6',
 } as const;
 export default function Icon({ name }: { name: keyof typeof paths }) {

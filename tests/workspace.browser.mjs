@@ -89,7 +89,7 @@ try {
       return route.fulfill({ status: 404, json: { error: 'No such fixture endpoint' } });
     });
     await page.goto(origin); await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible(); await expect(page.getByLabel('Node token')).toHaveCount(0);
-    await step(`${viewport.width}: work opens in workspace`, async () => { await page.getByRole('button', { name: 'Open workspace ↗', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible(); });
+    await step(`${viewport.width}: work opens in workspace`, async () => { await page.getByRole('button', { name: 'Open workspace', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible(); });
     await expect(page.getByRole('button', { name: 'Manage personas', exact: true })).toHaveCount(0);
     await step(`${viewport.width}: no invented acceptance or balance`, async () => {
       await expect(page.getByLabel('Independent work status')).toContainText('Not established');
@@ -171,20 +171,20 @@ try {
       await expect(page.getByLabel('Assessments & applicability').locator('.tone-neutral')).toContainText('accepted');
     });
     await step(`${viewport.width}: verified preview and focus return`, async () => {
-      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'verified.txt', exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
+      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'verified.txt', exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Artifact viewer', exact: true });
       await expect(dialog).toContainText('File loaded · bytes verified'); await expect(dialog.locator('.file-source')).toContainText('Exact fixture bytes');
       await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
       expect(await page.evaluate(() => document.activeElement?.textContent?.includes('Open file'))).toBe(true);
     });
     await step(`${viewport.width}: tampered bytes never render`, async () => {
-      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'tampered.txt', exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
+      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'tampered.txt', exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Artifact viewer', exact: true });
       await expect(dialog.getByRole('alert')).toContainText('digest mismatch'); await expect(dialog.locator('pre')).toHaveCount(0); await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: native preview is not fetched`, async () => {
       const before = calls.filter(c => c === '/api/artifacts/' + nativeFile).length;
-      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'large-native.cad', exact: true }).getByRole('button', { name: 'Open file ↗', exact: true }).click();
+      await page.getByLabel('Documents & files', { exact: true }).getByRole('article', { name: 'large-native.cad', exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true })).toContainText('Preview unavailable');
       expect(calls.filter(c => c === '/api/artifacts/' + nativeFile).length).toBe(before); await page.keyboard.press('Escape');
     });
@@ -193,7 +193,7 @@ try {
       await expect(library.locator('.compact-records > .content-card')).toHaveCount(4);
       const card = library.getByRole('article', { name: 'Readable house concept', exact: true });
       await expect(card).toContainText('Mira fixture'); await expect(card).toContainText('A shared baseline');
-      await card.getByRole('button', { name: 'Read document ↗', exact: true }).click();
+      await card.getByRole('button', { name: 'Read document', exact: true }).click();
       const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail.getByRole('heading', { name: 'A clear plan', exact: true })).toBeVisible();
       await expect(detail.locator('strong').filter({ hasText: 'shared baseline' })).toBeVisible();
@@ -227,7 +227,7 @@ try {
     });
     await step(`${viewport.width}: assumptions show the explanation without backend fields`, async () => {
       await page.getByRole('tab', { name: 'Work & outcomes', exact: true }).click();
-      await page.getByLabel('Conditional assumptions').getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await page.getByLabel('Conditional assumptions').getByRole('button', { name: 'View details', exact: true }).click();
       const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail.locator('.record-reader')).toContainText('Not a confirmed site fact.');
       await expect(detail.getByRole('button', { name: 'Technical details +', exact: true })).toHaveAttribute('aria-expanded', 'false');
@@ -235,7 +235,7 @@ try {
       await page.getByRole('tab', { name: 'Artifacts & evidence', exact: true }).click();
     });
     await step(`${viewport.width}: work details show only useful progress and controls`, async () => {
-      await page.getByRole('button', { name: 'Work details & activity ↗', exact: true }).click();
+      await page.getByRole('button', { name: 'Work details & activity', exact: true }).click();
       const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail.getByRole('heading', { name: 'Your request', exact: true })).toBeVisible();
       await expect(detail.locator('.reader-stats')).toContainText('Submitted work');
@@ -245,7 +245,7 @@ try {
       await expect(detail.locator('.reader-fields, .reader-properties')).toHaveCount(0);
       await detail.getByRole('button', { name: 'Technical details +', exact: true }).click();
       await expect(detail.locator('pre')).toContainText('INTERNAL_ENVELOPE');
-      await detail.getByRole('button', { name: 'Read the agreed scope ↗', exact: true }).click();
+      await detail.getByRole('button', { name: 'Read the agreed scope', exact: true }).click();
       await expect(detail).toContainText('Two comparable layouts');
       await expect(detail).toContainText('Show the trade-offs');
       await expect(detail).not.toContainText('INTERNAL_OUTCOME_KEY');
@@ -256,9 +256,9 @@ try {
       await page.getByRole('tab', { name: 'Perspectives', exact: true }).click();
       await expect(page.getByLabel('Shared opportunity board')).toContainText('Compare daylight before choosing a layout.');
       const update = page.getByLabel('Shared opportunity board').locator('.work-record').filter({ hasText: 'Compare daylight before choosing a layout.' });
-      const byline = await update.locator('.work-reference').boundingBox(), readAction = await update.getByRole('button', { name: 'View details ↗', exact: true }).boundingBox();
+      const byline = await update.locator('.work-reference').boundingBox(), readAction = await update.getByRole('button', { name: 'View details', exact: true }).boundingBox();
       expect(readAction.y).toBeGreaterThan(byline.y + byline.height);
-      await update.getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await update.getByRole('button', { name: 'View details', exact: true }).click();
       let detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail).toContainText('Compare daylight before choosing a layout.');
       await expect(detail.getByRole('heading', { name: 'Possible drawbacks', exact: true })).toBeVisible();
@@ -267,7 +267,7 @@ try {
       await expect(detail).not.toContainText('INTERNAL_ENVELOPE');
       await page.keyboard.press('Escape');
       await page.getByRole('tab', { name: 'Work & outcomes', exact: true }).click();
-      await page.getByLabel('Responsibilities & dependencies').locator('.work-record').filter({ hasText: 'Unaccepted offer' }).getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await page.getByLabel('Responsibilities & dependencies').locator('.work-record').filter({ hasText: 'Unaccepted offer' }).getByRole('button', { name: 'View details', exact: true }).click();
       detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail).toContainText('Compare two layouts for daylight.');
       await expect(detail).toContainText('Explain the daylight trade-offs clearly.');
@@ -275,7 +275,7 @@ try {
       await page.keyboard.press('Escape');
     });
     await step(`${viewport.width}: a resolved question shows its conclusion`, async () => {
-      await page.getByRole('button', { name: 'Work details & activity ↗', exact: true }).click();
+      await page.getByRole('button', { name: 'Work details & activity', exact: true }).click();
       let detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await detail.getByRole('button', { name: 'Requests', exact: true }).click();
       await detail.getByRole('button', { name: /Choose a comparison basis/ }).click();
@@ -288,7 +288,7 @@ try {
     });
     await step(`${viewport.width}: action details explain content and result without JSON tables`, async () => {
       await page.getByRole('tab', { name: 'Overview', exact: true }).click();
-      await page.getByLabel('Persona activity', { exact: true }).getByRole('button', { name: 'View details ↗', exact: true }).click();
+      await page.getByLabel('Persona activity', { exact: true }).getByRole('button', { name: 'View details', exact: true }).click();
       const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await detail.getByRole('button', { name: 'Send a message · succeeded +', exact: true }).click();
       await expect(detail.locator('.action-reader')).toContainText('The comparison is ready to read.');

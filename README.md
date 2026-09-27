@@ -173,6 +173,13 @@ corrupt/encrypted entries, lazy asset requests, mobile layout and resource clean
 Tampered and interrupted downloads are explicitly injected browser network faults.
 No model calls or changes to the real workspace are required.
 
+Synthetic browser providers decode exact-value context sharing and read offered
+commands from the response schema through `tests/decision-fixture.mjs`. Multi-step
+fixtures explicitly request continuation; they must not depend on retired wire
+metadata or implicit extra calls. File contributions use their actual persona
+and work run. Decorative navigation arrows are SVGs and are excluded from
+accessible button names, so interaction checks use the visible action labels.
+
 For hot reload, `npm run dev` proxies API requests to the node on port 19000.
 For a source launch using this checkout, run
 `PERSONAS_UI_DIR=../ai-personas-ui ./start` from the runtime repository.

@@ -7,6 +7,7 @@ import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { decisionContext, offeredActions } from './decision-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'personas-participants-'));
 const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas');
@@ -16,7 +17,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 const provider = createServer(async (req, res) => {
   try {
     let body = ''; for await (const chunk of req) body += chunk;
-    const input = JSON.parse(body), context = JSON.parse(input.input[0].content[0].text);
+    const input = JSON.parse(body), context = decisionContext(input);
     calls++;
     let actions;
     const sharedQuestion = context.selected_records.find(r => r.kind === 'request' && r.data.purpose === 'Shared fixture question');
@@ -43,9 +44,10 @@ const provider = createServer(async (req, res) => {
     if (context.inputs.through && actions[0].kind !== 'invitation.respond') {
       actions.unshift({ kind: 'input.acknowledge', args: { through: context.inputs.through } });
     }
+    actions = offeredActions(input, actions);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', model: 'roster-fixture',
-      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', actions }) }] }],
+      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', actions }) }] }],
       usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, input_tokens_details: { cached_tokens: 0 } } }));
   } catch (e) { providerErrors.push(String(e)); res.writeHead(500); res.end('{}'); }
 });
@@ -194,7 +196,7 @@ try {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await card.locator('.run-reply').screenshot({ path: join(root, 'waiting-reply-mobile.png') });
     await card.getByRole('button', { name: 'Close reply', exact: true }).click();
-    await card.getByRole('button', { name: 'View details ↗', exact: true }).click();
+    await card.getByRole('button', { name: 'View details', exact: true }).click();
     await expect(details.getByRole('button', { name: 'Reply to persona', exact: true })).toBeVisible();
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
     await card.locator('.activity-persona').click();

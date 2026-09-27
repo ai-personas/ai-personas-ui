@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { decisionContext, offeredActions } from './decision-fixture.mjs';
 const root = mkdtempSync(join(tmpdir(), 'personas-activity-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence'); mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -18,7 +19,7 @@ const gate = new Promise(r => { releaseFirst = r; });
 const provider = createServer(async (req, res) => {
   try {
     let bytes = ''; for await (const chunk of req) bytes += chunk;
-    const input = JSON.parse(bytes), context = JSON.parse(input.input[0].content[0].text), turn = calls++;
+    const input = JSON.parse(bytes), context = decisionContext(input), turn = calls++;
     assert.equal(input.stream, true);
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const emit = value => res.write('data: ' + JSON.stringify(value) + '\n\n');
@@ -32,13 +33,15 @@ const provider = createServer(async (req, res) => {
       const updates = setInterval(() => emit({ type: 'response.output_text.delta', output_index: 0, item_id: publicMessage.id, delta: ' · Observing fixture' }), 180);
       try { await gate; } finally { clearInterval(updates); }
     }
-    const actions = turn === 0 ? [
+    let actions = !context.history.some(a => a.request.kind === 'persona.update') ? [
       { kind: 'persona.update', args: { revision: context.persona.revision, name: 'Mira', character: 'I prefer explicit evidence and concise explanations.', reason: 'Synthetic first orientation choice; no human biography.' } },
-    ] : turn === 1 ? [
+    ] : !context.environment.data.name ? [
       { kind: 'environment.update', args: { id: context.environment.id, revision: context.environment.revision, name: 'Observation room', description: 'A synthetic shared test environment.' } },
+    ] : !context.history.some(a => a.request.kind === 'exec') ? [
       { kind: 'exec', args: { command: "printf 'first tool line\\n'; sleep 1; printf 'second tool line\\n'", background: false } },
     ] : [{ kind: 'wait', args: { reason: 'Explicit fixture wait; new outside input is required.' } }];
-    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
+    actions = offeredActions(input, actions);
+    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', learning: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
@@ -65,7 +68,7 @@ try {
   const fd = openSync(join(root, 'node.log'), 'a');
   app = spawn(process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas'), ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', resolve(process.env.PERSONAS_UI_DIST || 'dist'), '--unrestricted-test-mode'], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   await until(async () => { if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8')); try { return (await fetch(url + '/health')).ok; } catch { return false; } }, 'node health');
-  const allowance = await op('resource.root.create', { limits: { calls: 5, births: 1, max_depth: 0, concurrent_calls: 1 }, closeout_calls: 1, reason: 'Synthetic activity mechanics; no live inference' });
+  const allowance = await op('resource.root.create', { limits: { calls: 8, births: 1, max_depth: 0, concurrent_calls: 1 }, closeout_calls: 1, reason: 'Synthetic activity mechanics including contract discovery; no live inference' });
   const persona = await op('persona.create', { provider: 'fixture', model: 'activity-fixture', resource_root: allowance.id, profile_seed: { character: 'I follow this synthetic activity-mechanics fixture.' } });
   const environment = await op('environment.create', {});
   browser = await chromium.launch(); const page = await browser.newPage({ viewport: { width: 1360, height: 1000 } });
@@ -109,7 +112,7 @@ try {
   releaseFirst();
   await step('profile and environment choices update the UI from real action receipts', async () => {
     await until(async () => (await get('/records/' + persona.id)).data.name === 'Mira', 'persona name');
-    await expect(page.locator('.activity-persona')).toHaveText(`Mira ${persona.id.slice(0, 8)} ↗`);
+    await expect(page.locator('.activity-persona')).toHaveText(`Mira ${persona.id.slice(0, 8)}`);
     await until(async () => (await get('/records/' + environment.id)).data.name === 'Observation room', 'environment name from the fresh decision');
     const actions = (await get('/actions?owner=' + persona.id)).items;
     assert.notEqual(actions.find(a => a.request.kind === 'persona.update').request.source, actions.find(a => a.request.kind === 'environment.update').request.source, 'a profile change requires a fresh decision before effects');
@@ -120,7 +123,7 @@ try {
     await expect(page.getByLabel('Tool output')).toContainText('second tool line');
     await expect(page.getByLabel('Live progress and actions')).toContainText('Run a tool');
     await until(async () => (await get('/records?kind=run&scope=' + work.id)).items[0]?.data.status === 'waiting', 'explicit wait');
-    assert.equal(calls, 3);
+    assert.equal(calls, 6);
   });
   await step('identity includes persistent ID, authored character and separate milestones', async () => {
     await page.locator('.activity-persona').click();
@@ -137,7 +140,7 @@ try {
     await form.getByRole('button', { name: 'Send to participants', exact: true }).click();
     await until(async () => (await get('/records?kind=call')).items.some(c => c.data.status === 'failed'), 'failed decision');
     await expect(page.getByRole('dialog', { name: 'Record details' })).toContainText('Decision needs attention');
-    assert.equal(calls, 4); assert.equal((await get('/records/' + persona.id)).data.name, 'Mira');
+    assert.equal(calls, 7); assert.equal((await get('/records/' + persona.id)).data.name, 'Mira');
     assert(!(await page.locator('body').innerText()).includes('INVALID_FINAL_NEVER_ADOPT'));
     assert.equal((await get('/actions?owner=' + persona.id)).items.filter(a => a.request.kind === 'exec').length, 1);
   });

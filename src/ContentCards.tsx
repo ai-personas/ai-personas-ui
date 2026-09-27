@@ -23,7 +23,7 @@ export function ContentCard({ record, open, artifact, summary, footer }: { recor
         {text(d.status) && <span class={'state-badge tone-' + stateTone(d.status)}>{d.status.replaceAll('_', ' ')}</span>}
       </div>
       <QuestionDelivery value={d.peer_delivery} status={d.status}/>
-    </div><div class="content-actions"><button class="text-button card-open" onClick={read}>{isFile ? 'Open file' : record.kind === 'fragment' ? 'Read note' : 'Read document'} ↗</button>
+    </div><div class="content-actions"><button class="text-button card-open" onClick={read}>{isFile ? 'Open file' : record.kind === 'fragment' ? 'Read note' : 'Read document'} <Icon name="Open"/></button>
       {isFile && <button class="text-button" onClick={() => open(record.id)}>File details</button>}</div>
   </article>;
 }

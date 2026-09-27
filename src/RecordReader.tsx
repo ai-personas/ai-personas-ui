@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import QuestionDelivery from './QuestionDelivery';
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
@@ -18,7 +19,7 @@ export function RecordReference({ id, open, fallback = 'Related item' }: { id: s
   const { value, error } = useResource<Entity>('/records/' + id, e => e.entity === id);
   return <button class="text-button reader-reference" onClick={() => open(id)}>
     {value ? recordTitle(value) : error ? `${fallback} unavailable` : `Loading ${fallback.toLowerCase()}…`}
-    <span aria-hidden="true"> ↗</span>
+    <Icon name="Open"/>
   </button>;
 }
 
@@ -94,8 +95,8 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
         <ReadingStats items={[["Activity", f.activity], ["Submitted work", f.submissions === undefined ? 'Not reported' : `${f.submissions} submitted versions`], ["Evidence for the requested results", f.coverage], ["Acceptance", f.acceptance]]}/>
         <FeedbackConditions value={d.core} open={open}/>
         <div class="reader-context-links">{isRecordID(d.environment) && <span>In <RecordReference id={d.environment} open={open}/></span>}
-          {isRecordID(fields(d.mandate).id) && <button class="text-button" onClick={() => open(text(fields(d.mandate).id))}>Read the agreed scope ↗</button>}
-          {isRecordID(d.resource_root) && <button class="text-button" onClick={() => open(d.resource_root)}>View funding ↗</button>}
+          {isRecordID(fields(d.mandate).id) && <button class="text-button" onClick={() => open(text(fields(d.mandate).id))}>Read the agreed scope <Icon name="Open"/></button>}
+          {isRecordID(d.resource_root) && <button class="text-button" onClick={() => open(d.resource_root)}>View funding <Icon name="Open"/></button>}
         </div></>;
     }
     case 'observation': return <><Story title="Why this image was selected" value={d.purpose}/><RelatedItems title="Image selected for inspection" value={d.artifact_version || d.artifact} open={open}/><p class="record-caveat">An image selection records what to inspect. It does not by itself establish a visual finding.</p></>;
