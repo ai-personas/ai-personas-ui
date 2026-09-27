@@ -161,6 +161,7 @@ export default function Workspace({ id, open, artifact, back, act }: { id: strin
         aria-controls="workspace-panel" tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)}>{name}</button>)}</div>
     <section id="workspace-panel" role="tabpanel" aria-labelledby={`workspace-tab-${WORK_TABS.indexOf(tab)}`} tabIndex={0}>
       {tab === 'Overview' && <>
+        <WorkArtifacts key={id} work={id} open={open} artifact={artifact}/>
         <WorkConversation key={id} work={id} environment={text(d.environment) || work.scope} open={open}/>
         <WorkReadiness work={id} open={open}/>
         {section('Persona activity', 'run', 'No participation runs have been recorded.', 'Latest decisions and current stop reasons. Open a run to inspect actions or pause, resume, and cancel participation.')}

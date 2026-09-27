@@ -89,7 +89,19 @@ try {
       return route.fulfill({ status: 404, json: { error: 'No such fixture endpoint' } });
     });
     await page.goto(origin); await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible(); await expect(page.getByLabel('Node token')).toHaveCount(0);
-    await step(`${viewport.width}: work opens in workspace`, async () => { await page.getByRole('button', { name: 'Open workspace', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible(); });
+    await step(`${viewport.width}: work opens with its delivered files even without a message`, async () => {
+      await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Fixture house', exact: true })).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByLabel('Work conversation', { exact: true })).toContainText('No messages or questions yet.');
+      const library = page.getByLabel('Documents & files', { exact: true });
+      await library.getByRole('article', { name: 'Readable house concept', exact: true }).getByRole('button', { name: 'Read document', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Record details', exact: true }).getByRole('heading', { name: 'A clear plan', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await library.getByRole('article', { name: 'verified.txt', exact: true }).getByRole('button', { name: 'Open file', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Artifact viewer', exact: true }).locator('.file-source')).toContainText('Exact fixture bytes');
+      await page.keyboard.press('Escape');
+    });
     await expect(page.getByRole('button', { name: 'Manage personas', exact: true })).toHaveCount(0);
     await step(`${viewport.width}: no invented acceptance or balance`, async () => {
       await expect(page.getByLabel('Independent work status')).toContainText('Not established');
