@@ -902,6 +902,8 @@ export type Command =
         summary: string;
         artifacts: string[];
         documents: string[];
+        drafts?: SubmissionDocument[] | null;
+        message?: string | null;
       };
     }
   | {
@@ -1669,6 +1671,10 @@ export interface Delegation {
    * Permit the configured selector to assess unknown semantic conditions.
    */
   semantic: boolean;
+}
+export interface SubmissionDocument {
+  title: string;
+  content: string;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.

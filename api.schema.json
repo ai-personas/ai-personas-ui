@@ -4345,7 +4345,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.",
+            "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4369,6 +4369,21 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "drafts": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "$ref": "#/$defs/SubmissionDocument"
+                    }
+                  },
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -6795,6 +6810,22 @@
           "semantic"
         ]
       },
+      "SubmissionDocument": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content"
+        ]
+      },
       "Verdict": {
         "type": "string",
         "enum": [
@@ -8631,7 +8662,7 @@
     ],
     [
       "submit",
-      "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance."
+      "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility."
     ],
     [
       "review.start",
@@ -12765,7 +12796,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.",
+        "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
         "type": "object",
         "properties": {
           "kind": {
@@ -12789,6 +12820,21 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "drafts": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/$defs/SubmissionDocument"
+                }
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -15231,6 +15277,22 @@
           "max_fragments",
           "max_bytes",
           "semantic"
+        ]
+      },
+      "SubmissionDocument": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content"
         ]
       },
       "Verdict": {

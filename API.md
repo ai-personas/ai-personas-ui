@@ -1099,13 +1099,15 @@ Preserve exact file bytes and digest.
 
 ### `submit`
 
-Preserve exact evidence chosen by the persona. documents takes document.write result.id, never document_group or action request.id. A dependent submission is chosen after inspecting the write receipt. This does not end ownership or declare acceptance.
+Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `summary` | string | Required |  |
 | `artifacts` | string[] | Required |  |
 | `documents` | string[] | Required |  |
+| `drafts` | array or null | Optional |  |
+| `message` | string or null | Optional |  |
 
 ### `review.start`
 
