@@ -714,7 +714,7 @@ Operator approves or disables a read-only selector for this persona and work. Re
 
 ### `memory.browse`
 
-Browse your private fragment graph. Null focus lists all owned fragments. Returns short descriptions and directed connections, not full fragments. Use next for pagination; select node IDs in continuity.memory.active for the next call's full prompt parts.
+Browse your private fragment graph. Null focus lists owned fragments. Query matches title/description words, not full text. Returns descriptions and directed connections. next:null ends this query; change or clear it for other descriptions. Select node IDs in continuity.memory.active for next-call full text.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
