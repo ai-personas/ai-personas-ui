@@ -18,7 +18,7 @@ const root = mkdtempSync(join(tmpdir(), 'personas-operator-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence');
 mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
-let calls = 0, app, browser, page, url, port, checks = 0, scenario = 'wait';
+let calls = 0, app, browser, page, url, port, checks = 0, scenario = 'wait', settledFunding, settledCalls;
 let retainedGraph = false;
 const errors = [], providerErrors = [];
 const provider = createServer(async (req, res) => {
@@ -603,6 +603,16 @@ try {
     assert.equal((await get('/records/' + work.id)).data.status, 'archived');
     assert.equal((await get('/records/' + run.id)).data.status, 'cancelled');
     const before = calls; await delay(1200); assert.equal(calls, before);
+    // Scope changes, permission changes, replies and explicit resumes can each
+    // wake the waiting fixture. Their coalescing depends on request timing, so
+    // validate the actual allowance and accounting instead of a historical
+    // whole-suite call count. The checks above still forbid idle/UI-only calls.
+    settledCalls = calls;
+    settledFunding = await get('/resources/' + allowance.id);
+    assert(settledFunding.calls.charged >= calls, 'fixture dispatch escaped accounting');
+    assert.equal(settledFunding.calls.reserved, 0, 'archived work retained an active call reservation');
+    assert(settledFunding.calls.charged <= settledFunding.limits.calls - settledFunding.closeout_calls,
+      'fixture spent beyond its production allowance');
     await connect(); await page.getByRole('button', { name: 'Archived', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Amended browser task', exact: true })).toBeVisible();
     assert.equal(await page.evaluate(() => sessionStorage.getItem('personas-token')), null);
@@ -617,8 +627,9 @@ try {
     await page.getByRole('button', { name: 'Connect to node', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
   });
-  assert.deepEqual(errors, []); assert.deepEqual(providerErrors, []); assert(calls < 25, 'unexpected unbounded fixture inference');
-  writeFileSync(join(evidence, 'report.json'), JSON.stringify({ scope: 'Real Rust API/SQLite and production browser; synthetic HTTP decisions, no live-model or process-kill claim', checks, calls, pageErrors: errors, providerErrors }, null, 2));
+  assert.deepEqual(errors, []); assert.deepEqual(providerErrors, []);
+  assert.equal(calls, settledCalls, 'connection UI resumed archived work');
+  writeFileSync(join(evidence, 'report.json'), JSON.stringify({ scope: 'Real Rust API/SQLite and production browser; synthetic HTTP decisions, no live-model or process-kill claim', checks, calls, settledFunding, pageErrors: errors, providerErrors }, null, 2));
   console.log(JSON.stringify({ checks, calls, evidence }));
 } catch (error) {
   if (page) { await page.screenshot({ path: join(evidence, 'failure.png'), fullPage: true }).catch(() => {}); writeFileSync(join(evidence, 'failure.json'), JSON.stringify({ error: String(error), body: await page.locator('body').innerText().catch(() => ''), errors, providerErrors }, null, 2)); }
