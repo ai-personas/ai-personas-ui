@@ -115,6 +115,8 @@ try {
       assert.equal(bounds.retained_payload_bytes, null, 'storage must have no default ceiling');
       assert.equal(bounds.prices[0].input_units_per_million, 0); assert.match(bounds.prices[0].evidence, /Operator chose included/);
       assert(bounds.tokens > bounds.closeout_tokens && bounds.closeout_tokens > 0); assert.equal(bounds.effect_operations, 0);
+      await expect(page.getByLabel('Allowance usage').last()).toContainText('Unknown tokens charged or reserved');
+      await expect(page.getByLabel('Allowance usage').last()).toContainText('This total includes measured usage and tokens held for running or uncertain calls.');
     });
     await step(`${viewport.width}: failed discovery has actionable status and can recover without restart`, async () => {
       catalog = { ...catalog, models: [], providers: [{ provider: 'codex', available: false, models: 0, message: 'Run codex login on the node host, then refresh models.' }] };
