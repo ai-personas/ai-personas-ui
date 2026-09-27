@@ -55,8 +55,8 @@ export default function LiveActivity({ run, call, open }: { run: string; call?: 
   useEffect(() => { if (following.current && list.current) list.current.scrollTop = list.current.scrollHeight; }, [actions]);
   const followed = actions?.filter(a => a.kind === 'exec').slice(-2).map(a => a.id) || [];
   return <section ref={section} class="live-activity" aria-label="Live progress and actions">
-    <div class="activity-heading"><h4>Live activity</h4><button class="text-button" onClick={() => setPaused(!paused)}>{paused ? 'Follow live activity' : 'Pause live view'}</button></div>
-    {paused && <p class="micro">Display paused. The persona’s work continues.</p>}
+    <div class="activity-heading"><h4>Activity updates</h4><button class="text-button" onClick={() => setPaused(!paused)}>{paused ? 'Resume display updates' : 'Pause display updates'}</button></div>
+    <p class="micro">{paused ? 'Display updates paused.' : 'Display updates enabled.'} Updating this view does not invoke a model or change the persona’s execution state. Use participation settings to pause or cancel work.</p>
     {call && <CallMessages id={call} visible={visible}/>}
     {error && <p role="alert">Recent actions unavailable: {error}</p>}
     {actions?.length === 0 && <p class="micro">No actions recorded for this participation yet.</p>}

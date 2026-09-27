@@ -103,10 +103,10 @@ try {
     console.log(JSON.stringify({ typingCPUThrottle: 4, eventTimingP95Ms: p95, eventTimingMinimumMs: 16 }));
   });
   await step('pausing the view does not pause the persona or spend a call', async () => {
-    await page.getByRole('button', { name: 'Pause live view', exact: true }).click();
-    await expect(page.getByText('Display paused. The persona’s work continues.')).toBeVisible(); assert.equal(calls, 1);
+    await page.getByRole('button', { name: 'Pause display updates', exact: true }).click();
+    await expect(page.getByLabel('Live progress and actions')).toContainText('Display updates paused. Updating this view does not invoke a model or change the persona’s execution state.'); assert.equal(calls, 1);
     const run = (await get('/records?kind=run&scope=' + work.id)).items[0]; assert.equal(run.data.status, 'running');
-    await page.getByRole('button', { name: 'Follow live activity', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume display updates', exact: true }).click();
     await expect(page.getByLabel('Live progress and actions')).toContainText('Checking fixture inputs');
   });
   releaseFirst();
