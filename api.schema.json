@@ -6767,7 +6767,7 @@
             "default": null
           },
           "delegation": {
-            "description": "Optional bounded recall authority for this work. Null disables delegated recall.",
+            "description": "Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.",
             "anyOf": [
               {
                 "$ref": "#/$defs/Delegation"
@@ -6788,7 +6788,7 @@
         "type": "object",
         "properties": {
           "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
+            "description": "Exact received source nodes whose conditional connections may select full text.\nReceived node cards suffice; reading their full fragments first is not required.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -15247,7 +15247,7 @@
             "default": null
           },
           "delegation": {
-            "description": "Optional bounded recall authority for this work. Null disables delegated recall.",
+            "description": "Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.",
             "anyOf": [
               {
                 "$ref": "#/$defs/Delegation"
@@ -15268,7 +15268,7 @@
         "type": "object",
         "properties": {
           "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
+            "description": "Exact received source nodes whose conditional connections may select full text.\nReceived node cards suffice; reading their full fragments first is not required.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"

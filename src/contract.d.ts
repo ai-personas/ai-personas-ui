@@ -1660,13 +1660,14 @@ export interface Selection2 {
    */
   current_self?: string[] | null;
   /**
-   * Optional bounded recall authority for this work. Null disables delegated recall.
+   * Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.
    */
   delegation?: Delegation | null;
 }
 export interface Delegation {
   /**
    * Exact received source nodes whose conditional connections may select full text.
+   * Received node cards suffice; reading their full fragments first is not required.
    * For a source created OR edited in this transaction, use its $handle with
    * revision 0 to bind the committed version, not its old ID or @memory alias.
    */
