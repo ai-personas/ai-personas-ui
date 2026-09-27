@@ -2,9 +2,9 @@
 
 `ai-personas/ai-personas-ui:rewrite/design-first` owns production Preact source,
 UI components, screens, styles, frontend schemas, browser tests and standalone
-screen fixtures. `design/` is an illustrative preview, not a Rust runtime or
-production backend integration. Keep its CommonJS test boundary separate from
-the production ESM package.
+screen fixtures. `design/` retains historical screen provenance only. Test the
+production ESM application; do not restore the retired standalone prototype or
+its separate state model and CommonJS test suite.
 
 Actual Rust runtime implementation and runtime tests belong to
 `ai-personas/ai-personas:rewrite/design-first`. Normative design documents belong

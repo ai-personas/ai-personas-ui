@@ -160,8 +160,10 @@ establish live model quality or engineering acceptance. `test:memory` checks
 graph navigation and authored connections with synthetic API pages; the operator
 suite also checks the graph against the real runtime. The obsolete flat-document
 Learning load campaign was removed. Its historical timing and heap measurements
-do not qualify the current graph UI. `test:live` observes an existing campaign
-read-only and requires completed imagery; it does not initiate model calls.
+do not qualify the current graph UI. The old image-only `test:live` harness was
+removed: its required environment imagery, fixed navigation and preview limits
+do not describe current acceptance. Live observations use declared work cases
+and exact installed revisions, separately from synthetic browser checks.
 `test:participants` uses a disposable restricted node and synthetic inference to
 check roster changes, re-invitations, request highlights, private and group replies,
 peer answers to shared questions, visible replies to the user, mobile layouts,
@@ -187,6 +189,6 @@ For a source launch using this checkout, run
 [API.md](API.md), [api.schema.json](api.schema.json), and
 [src/contract.d.ts](src/contract.d.ts) are generated from Rust. Normative requirements
 belong in the [design handbook](https://github.com/ai-personas/ai-personas-design/tree/rewrite/design-first).
-The standalone [design preview](design/README.md) is separate from the production application.
+The retired prototype's [screen provenance](design/README.md) remains available.
 
 Licensed under [Apache-2.0](LICENSE).

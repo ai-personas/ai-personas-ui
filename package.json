@@ -11,7 +11,6 @@
     "test:identity": "node tests/identity.browser.mjs",
     "test:workspace": "node tests/workspace.browser.mjs && node tests/design-first.browser.mjs",
     "test:files": "node tests/files.browser.mjs",
-    "test:live": "node tests/live.mjs",
     "test:operator": "node tests/operator.browser.mjs",
     "test:activity": "node tests/activity.browser.mjs",
     "test:settings": "node tests/settings.browser.mjs",

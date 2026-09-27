@@ -1,7 +1,7 @@
 # Production UI / design-first alignment
 
-This change updates `src/`, not the illustrative application under `design/`.
-The reference fixtures remain independent and unchanged.
+The production application lives in `src/`. The earlier standalone prototype
+and its fixture suites have been retired; screen provenance remains in `design/`.
 
 ## Sources and scope
 
@@ -9,7 +9,7 @@ The normative experience is described in
 [Human experience and society](https://github.com/ai-personas/ai-personas-design/blob/rewrite/design-first/design/07-experience-and-society.md):
 Work, Personas, Environments, Learning, and Tools; attributable perspectives;
 meaningful human decisions; accessible empty and failure states; and independent
-activity, evidence, and acceptance. The relocated [visual reference](../design/README.md)
+activity, evidence, and acceptance. The historical [visual reference](../design/README.md)
 provides the sage palette, compact Work composition, persona cards, and request
 banner. These are design references, not sample data to inject into production.
 
@@ -65,6 +65,6 @@ mobile overflow, and absence of invented writes.
 
 Screenshots and machine-readable results are emitted to `.qa/` and collected by
 the existing read-only GitHub Actions workflow. Browser data is explicitly
-synthetic. These checks are separate from the unmodified `design/` fixture suites
-and from Rust-backed/live integration; they do not establish runtime behavior,
+synthetic. These checks are separate from Rust-backed/live integration; they do
+not establish runtime behavior,
 full accessibility conformance, or pixel-identical reproduction of source images.
