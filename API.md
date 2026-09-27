@@ -919,6 +919,7 @@ Create funded work and invite participants to bounded orientation. Restricted no
 | `personas` | string[] | Required |  |
 | `mandate` | Mandate or null | Optional | Optional operator-authored initial scope, adopted atomically before invitations can run. |
 | `resource_root` | string or null | Optional | Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it. |
+| `start_paused` | boolean or null | Optional | Pause all initial participants before any decisions start, so permissions can be configured. Resume each participation when ready. |
 
 ### `participants.add`
 

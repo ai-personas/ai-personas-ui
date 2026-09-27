@@ -77,8 +77,8 @@ try {
   allowance = await op('resource.bounds.configure', { root: allowance.id, revision: allowance.revision, bounds });
   const people = [];
   for (const name of ['Ada fixture', 'Bo fixture']) {
-    let person = await op('persona.create', { provider: 'fixture', model: 'roster-fixture', resource_root: allowance.id, profile_seed: { character: 'I follow this synthetic browser fixture.' } });
-    person = await op('persona.update', { revision: person.revision, name, reason: 'Fixture identity' }, person.id); people.push(person);
+    const person = await op('persona.create', { provider: 'fixture', model: 'roster-fixture', resource_root: allowance.id, profile_seed: { name, character: 'I follow this synthetic browser fixture.' } });
+    people.push(person);
   }
   let environment = await op('environment.create', {});
   environment = await op('environment.update', { id: environment.id, revision: environment.revision, name: 'Roster environment' });

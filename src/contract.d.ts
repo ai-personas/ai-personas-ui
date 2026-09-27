@@ -727,6 +727,10 @@ export type Command =
          * Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it.
          */
         resource_root?: string | null;
+        /**
+         * Pause all initial participants before any decisions start, so permissions can be configured. Resume each participation when ready.
+         */
+        start_paused?: boolean | null;
       };
     }
   | {

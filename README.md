@@ -37,6 +37,8 @@ which prepares structured requests and interprets the returned decisions.
   and model prices without resetting spending or reservations.
 - **Work:** create a funded task, amend its scope, message participants, inspect
   missing owners and evidence, or archive it. Original instructions remain in history.
+  Select **Start paused** to configure recall permissions before the first task
+  decision. Open each participant’s activity details and select **Resume** when ready.
 - **Conversation:** see user messages, persona replies and shared questions in
   the work overview. **Reply to persona** beside waiting activity defaults to
   **All participants in this work**; choose **Only this persona** for a private

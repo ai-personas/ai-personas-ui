@@ -3641,6 +3641,13 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "start_paused": {
+                    "description": "Pause all initial participants before any decisions start, so permissions can be configured. Resume each participation when ready.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -12090,6 +12097,13 @@
                 "description": "Optional operator-selected shared allowance. Persona-created work inherits its controlling root automatically; descendants cannot escape it.",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "start_paused": {
+                "description": "Pause all initial participants before any decisions start, so permissions can be configured. Resume each participation when ready.",
+                "type": [
+                  "boolean",
                   "null"
                 ]
               }

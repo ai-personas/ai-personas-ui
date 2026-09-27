@@ -50,7 +50,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
         let environment = env[0];
         if (!environment && brief) { const r = await act('environment.create', { tools }); environment = (r.result as any).id; setEnv([environment]); }
         if (!environment) throw new Error('Choose an environment');
-        await act('work.create', { title: String(f.get('title')), brief: String(f.get('brief')), environment, personas: people, ...(root ? { resource_root: root } : {}), mandate: initialMandate(String(f.get('brief')), String(f.get('criterion')), f.has('assembly_permission') ? people : []) });
+        await act('work.create', { title: String(f.get('title')), brief: String(f.get('brief')), environment, personas: people, start_paused: f.has('start_paused'), ...(root ? { resource_root: root } : {}), mandate: initialMandate(String(f.get('brief')), String(f.get('criterion')), f.has('assembly_permission') ? people : []) });
       }
       close();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -62,6 +62,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
       : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}{env[0] && <EnvironmentPersonas id={env[0]} choose={setPeople}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
     {kind === 'Work' && <fieldset><legend>Decision permission</legend><label class="check"><input type="checkbox" name="assembly_permission" defaultChecked/>Allow selected personas to choose proposals and assemble a result</label><p class="micro">Within this task’s scope and allowance, they may select proposals and assemble submissions for review. Final acceptance stays with you. This grants permission; each persona still chooses whether to take responsibility.</p></fieldset>}
     {createsEnvironment && <ToolChoices value={tools} onChange={setTools}/>}
+    {kind === 'Work' && <><label class="check"><input type="checkbox" name="start_paused"/>Start paused</label><p class="micro">Configure recall permissions and review each participant’s settings before any task decisions start. Open their activity details and select Resume when ready.</p></>}
     {['Personas', 'Work'].includes(kind) && <FundingChoice value={root} onChange={setRoot} required={deployment?.funding_required !== false}/>}
     <button disabled={busy || createsEnvironment && tools === undefined || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
   </form></Dialog>;

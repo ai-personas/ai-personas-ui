@@ -171,7 +171,7 @@ try {
     await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toHaveCount(0);
     environment = (await get('/records?kind=environment')).items[0];
   });
-  await step('create task with atomic scope and persona-owned invitation response', async () => {
+  await step('create paused task, configure recall before inference, then resume its invitation', async () => {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.locator('.page-heading').getByRole('button', { name: '+ New work', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
@@ -179,10 +179,30 @@ try {
     await form.getByLabel('Your instructions').fill('Original synthetic request remains intact.');
     await form.getByRole('radio').check(); await form.getByRole('group', { name: 'Choose personas', exact: true }).getByRole('checkbox').check();
     await expect(form.getByLabel('Allow selected personas to choose proposals and assemble a result')).toBeChecked();
+    await expect(form.getByLabel('Start paused', { exact: true })).not.toBeChecked();
+    await form.getByLabel('Start paused', { exact: true }).check();
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(allowance.id);
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     work = (await get('/records?kind=work')).items[0];
+    run = (await get('/records?kind=run&scope=' + work.id)).items[0];
+    assert.equal(run.data.status, 'paused'); assert.equal(run.data.membership, 'invited');
+    assert.equal(calls, 0);
+    // A real restart and settings save must not dispatch the paused invitation.
+    await stopNode(); await startNode(); await connect();
     await page.getByRole('button', { name: 'Operator browser task', exact: true }).click();
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await details.getByRole('button', { name: /^Recall permissions/ }).click();
+    await details.getByLabel('Reason', { exact: true }).fill('Explicitly retain deterministic recall before the first task call.');
+    await details.getByRole('button', { name: 'Save recall permission', exact: true }).click();
+    await expect(details).toContainText('Recall permission saved.');
+    const policies = (await get('/records?kind=recall_policy&scope=' + persona.id)).items;
+    assert(policies.some(p => p.data.work === work.id && p.data.status === 'disabled'));
+    assert.equal((await get('/records/' + run.id)).data.status, 'paused');
+    assert.equal((await get('/records?kind=call&scope=' + run.id)).items.length, 0);
+    assert.equal(calls, 0);
+    await details.getByRole('button', { name: 'Resume', exact: true }).click();
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
     await until(async () => { const r = (await get('/records?kind=run&scope=' + work.id)).items[0]; return r?.data.status === 'waiting' && r; }, 'accepted participant yields');
     run = (await get('/records?kind=run&scope=' + work.id)).items[0];
     const current = await get('/records/' + work.id);
