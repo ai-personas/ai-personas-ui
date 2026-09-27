@@ -208,6 +208,11 @@ try {
       await card.getByRole('button', { name: 'Read document', exact: true }).click();
       const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
       await expect(detail.getByRole('heading', { name: 'A clear plan', exact: true })).toBeVisible();
+      await detail.getByRole('button', { name: 'Show original text', exact: true }).click();
+      expect(await detail.getByLabel('Original document text', { exact: true }).textContent()).toBe(documentText);
+      await expect(detail.getByLabel('Original document text', { exact: true }).locator('script, img')).toHaveCount(0);
+      expect(await detail.locator('.drawer-body').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await detail.getByRole('button', { name: 'Show formatted text', exact: true }).click();
       await expect(detail.locator('strong').filter({ hasText: 'shared baseline' })).toBeVisible();
       await expect(detail.getByRole('columnheader', { name: 'Room', exact: true })).toBeVisible();
       await expect(detail.locator('.reader-prose li').filter({ hasText: 'Four bedrooms' })).toBeVisible();

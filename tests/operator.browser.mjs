@@ -38,7 +38,7 @@ const provider = createServer(async (req, res) => {
     } else if (!context.history.some(a => a.request.kind === 'request.create')) {
       actions = [{ kind: 'request.create', args: { audience: 'user', purpose: 'Operator fixture question', instructions: 'Provide an observation through the UI.', evidence_required: 'A text response; no physical evidence is claimed.', artifacts: [] } }];
     } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'document.write')) {
-      actions = [{ kind: 'document.write', args: { title: 'Observed fixture document', content: 'Exact synthetic document, not task quality evidence.' } }];
+      actions = [{ kind: 'document.write', args: { title: 'Observed fixture document', content: 'Exact synthetic document, not task quality evidence.\n\ndef check():\n    return "<tag> & [literal]"\n' } }];
     } else if (scenario === 'produce' && !context.history.some(a => a.request.kind === 'submit')) {
       const written = context.history.find(a => a.request.kind === 'document.write' && a.state === 'succeeded');
       assert(written, 'synchronous document receipt missing from next decision');
@@ -489,6 +489,15 @@ try {
     await page.getByRole('button', { name: /Read document/ }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await expect(details).toContainText('Exact synthetic document, not task quality evidence.');
+    const beforeReading = calls;
+    const written = (await get('/records?kind=document')).items.find(record => record.data.title === 'Observed fixture document');
+    const saved = await get('/records/' + written.id);
+    await details.getByRole('button', { name: 'Show original text', exact: true }).click();
+    assert.equal(await details.getByLabel('Original document text', { exact: true }).textContent(), saved.data.content);
+    await expect(details.getByLabel('Original document text', { exact: true }).locator('tag')).toHaveCount(0);
+    await details.getByRole('button', { name: 'Show formatted text', exact: true }).click();
+    await expect(details.getByLabel('Original document text', { exact: true })).toHaveCount(0);
+    assert.equal(calls, beforeReading, 'Reading original text must not invoke a model');
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
     await page.getByRole('tab', { name: 'Overview', exact: true }).click(); scenario = 'wait';
   });

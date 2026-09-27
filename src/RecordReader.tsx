@@ -78,6 +78,14 @@ function ScopeStory({ value }: { value: unknown }) {
   </>;
 }
 
+function DocumentText({ content, title }: { content: string; title?: string }) {
+  const [original, setOriginal] = useState(false);
+  return <>
+    <button class="text-button" aria-pressed={original} onClick={() => setOriginal(!original)}>{original ? 'Show formatted text' : 'Show original text'}</button>
+    {original ? <pre class="reader-source" tabIndex={0} aria-label="Original document text"><code>{content}</code></pre> : <RichText text={content} title={title}/>}
+  </>;
+}
+
 /** Deliberately selected presentations: adding backend fields cannot accidentally
  * expose transport metadata or turn the reader into a JSON inspector. */
 function Content({ record, open, historical }: { record: Entity; open: Open; historical: boolean }) {
@@ -86,7 +94,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'environment_tool': return <><Story value={d.description}/><p>{d.enabled ? 'Enabled for accepted participants in this environment.' : 'Removed from this environment.'}</p><Story title="Observed availability" value={d.availability_basis}/><p class="reader-muted">Shared access does not share private memory or credentials. Availability is separate from correctness or demonstrated experience.</p></>;
     case 'document': return <>
       <p class="record-caveat">{learningKind(record.kind)}. Saving or submitting a document does not establish lesson retention or later use.</p>
-      {text(d.content) ? <RichText text={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
+      {text(d.content) ? <DocumentText key={`${record.id}:${record.revision}`} content={d.content} title={historical ? undefined : recordTitle(record)}/> : <p class="reader-muted">This document has no available text.</p>}
     </>;
     case 'artifact': return <>{d.sharing === 'work_members_with_source_restrictions' && <p class="record-caveat">Shared with this work’s participants, subject to source permissions.</p>}<p class="reader-file-info">{fileFormat(d.media_type, d.name)} · {fileSize(d.size)}</p><Story value={d.description}/></>;
     case 'work': {
