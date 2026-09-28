@@ -644,7 +644,7 @@ Read authoritative independent activity, ownership, adopted-outcome coverage, ca
 
 ### `record.read`
 
-Read a complete record by exact ID or current @record alias. A current @memory alias reads its bound fragment; this does not select its qualification bundle. For an action receipt use action.read.
+Read a complete record by exact ID or current @record alias. A current @memory alias reads its bound fragment. Current owned fragment reads bring their required corrections/prerequisites into the next decision together, without changing persistent memory selection. For an action receipt use action.read.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
