@@ -5533,65 +5533,141 @@
         ]
       },
       "FragmentDraft": {
-        "type": "object",
-        "properties": {
-          "basis": {
-            "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
-            "$ref": "#/$defs/LearningBasis",
-            "default": "tentative"
-          },
-          "title": {
-            "type": "string"
-          },
-          "short_description": {
-            "description": "Your concise description of this prompt part, in your own voice.",
-            "type": "string"
-          },
-          "content": {
-            "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
-            "type": "string"
-          },
-          "applicability": {
-            "type": "string"
-          },
-          "limitations": {
-            "type": "string"
-          },
-          "procedural_reuse": {
-            "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
-            "type": "boolean",
-            "default": false
-          },
-          "retrieval_cues": {
-            "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
-            "type": "array",
-            "items": {
-              "type": "string"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "basis": {
+                "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+                "type": "string",
+                "default": "tentative",
+                "enum": [
+                  "tentative"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "short_description": {
+                "description": "Your concise description of this prompt part, in your own voice.",
+                "type": "string"
+              },
+              "content": {
+                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "type": "string"
+              },
+              "applicability": {
+                "type": "string"
+              },
+              "limitations": {
+                "type": "string"
+              },
+              "procedural_reuse": {
+                "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
+                "type": "boolean",
+                "default": false
+              },
+              "retrieval_cues": {
+                "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "sources": {
+                "description": "Received exact references; observed and reported fragments need at least one.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              },
+              "counterevidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              }
             },
-            "default": []
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "short_description",
+              "content",
+              "applicability",
+              "limitations"
+            ]
           },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
+          {
+            "type": "object",
+            "properties": {
+              "basis": {
+                "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "reported"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "short_description": {
+                "description": "Your concise description of this prompt part, in your own voice.",
+                "type": "string"
+              },
+              "content": {
+                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "type": "string"
+              },
+              "applicability": {
+                "type": "string"
+              },
+              "limitations": {
+                "type": "string"
+              },
+              "procedural_reuse": {
+                "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
+                "type": "boolean",
+                "default": false
+              },
+              "retrieval_cues": {
+                "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "sources": {
+                "description": "Received exact references; observed and reported fragments need at least one.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "minItems": 1
+              },
+              "counterevidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              }
             },
-            "default": []
-          },
-          "counterevidence": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "short_description",
+              "content",
+              "applicability",
+              "limitations",
+              "basis",
+              "sources"
+            ]
           }
-        },
-        "additionalProperties": false,
-        "required": [
-          "title",
-          "short_description",
-          "content",
-          "applicability",
-          "limitations"
         ]
       },
       "LearningBasis": {
@@ -14046,65 +14122,141 @@
         ]
       },
       "FragmentDraft": {
-        "type": "object",
-        "properties": {
-          "basis": {
-            "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
-            "$ref": "#/$defs/LearningBasis",
-            "default": "tentative"
-          },
-          "title": {
-            "type": "string"
-          },
-          "short_description": {
-            "description": "Your concise description of this prompt part, in your own voice.",
-            "type": "string"
-          },
-          "content": {
-            "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
-            "type": "string"
-          },
-          "applicability": {
-            "type": "string"
-          },
-          "limitations": {
-            "type": "string"
-          },
-          "procedural_reuse": {
-            "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
-            "type": "boolean",
-            "default": false
-          },
-          "retrieval_cues": {
-            "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
-            "type": "array",
-            "items": {
-              "type": "string"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "basis": {
+                "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+                "type": "string",
+                "default": "tentative",
+                "enum": [
+                  "tentative"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "short_description": {
+                "description": "Your concise description of this prompt part, in your own voice.",
+                "type": "string"
+              },
+              "content": {
+                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "type": "string"
+              },
+              "applicability": {
+                "type": "string"
+              },
+              "limitations": {
+                "type": "string"
+              },
+              "procedural_reuse": {
+                "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
+                "type": "boolean",
+                "default": false
+              },
+              "retrieval_cues": {
+                "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "sources": {
+                "description": "Received exact references; observed and reported fragments need at least one.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              },
+              "counterevidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              }
             },
-            "default": []
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "short_description",
+              "content",
+              "applicability",
+              "limitations"
+            ]
           },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
+          {
+            "type": "object",
+            "properties": {
+              "basis": {
+                "description": "Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "reported"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "short_description": {
+                "description": "Your concise description of this prompt part, in your own voice.",
+                "type": "string"
+              },
+              "content": {
+                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "type": "string"
+              },
+              "applicability": {
+                "type": "string"
+              },
+              "limitations": {
+                "type": "string"
+              },
+              "procedural_reuse": {
+                "description": "Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.",
+                "type": "boolean",
+                "default": false
+              },
+              "retrieval_cues": {
+                "description": "Owner-authored situations, questions or search terms that should recall this prompt fragment.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "sources": {
+                "description": "Received exact references; observed and reported fragments need at least one.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "minItems": 1
+              },
+              "counterevidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                },
+                "default": []
+              }
             },
-            "default": []
-          },
-          "counterevidence": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "short_description",
+              "content",
+              "applicability",
+              "limitations",
+              "basis",
+              "sources"
+            ]
           }
-        },
-        "additionalProperties": false,
-        "required": [
-          "title",
-          "short_description",
-          "content",
-          "applicability",
-          "limitations"
         ]
       },
       "LearningBasis": {

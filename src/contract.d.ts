@@ -1034,6 +1034,69 @@ export type Command =
 export type Capability = "persona_decision" | "choice" | "knowledge";
 export type OrientationDisposition = "adopted" | "deferred";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
+export type FragmentDraft =
+  | {
+      /**
+       * Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.
+       */
+      basis?: "tentative";
+      title: string;
+      /**
+       * Your concise description of this prompt part, in your own voice.
+       */
+      short_description: string;
+      /**
+       * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
+       */
+      content: string;
+      applicability: string;
+      limitations: string;
+      /**
+       * Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.
+       */
+      procedural_reuse?: boolean;
+      /**
+       * Owner-authored situations, questions or search terms that should recall this prompt fragment.
+       */
+      retrieval_cues?: string[];
+      /**
+       * Received exact references; observed and reported fragments need at least one.
+       */
+      sources?: EvidenceRef[];
+      counterevidence?: EvidenceRef[];
+    }
+  | {
+      /**
+       * Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.
+       */
+      basis: "observed" | "reported";
+      title: string;
+      /**
+       * Your concise description of this prompt part, in your own voice.
+       */
+      short_description: string;
+      /**
+       * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
+       */
+      content: string;
+      applicability: string;
+      limitations: string;
+      /**
+       * Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.
+       */
+      procedural_reuse?: boolean;
+      /**
+       * Owner-authored situations, questions or search terms that should recall this prompt fragment.
+       */
+      retrieval_cues?: string[];
+      /**
+       * Received exact references; observed and reported fragments need at least one.
+       *
+       * @minItems 1
+       */
+      sources: [EvidenceRef, ...EvidenceRef[]];
+      counterevidence?: EvidenceRef[];
+    };
 export type EvidenceRef = VersionRef | ActionEvidence;
 export type ReviewDisposition = "retain" | "revise" | "no_change" | "defer";
 export type ExplorationOutcome = "trial_complete" | "unpromising" | "partial";
@@ -1395,33 +1458,6 @@ export interface Outcome {
   evidence: EvidenceRequirement;
   conditional_allowed: boolean;
   outside_validation_required: boolean;
-}
-export interface FragmentDraft {
-  /**
-   * Tentative: useful untested abstraction; observed: own received trial; reported: attributed outside/peer account. None certifies truth.
-   */
-  basis?: "tentative" | "observed" | "reported";
-  title: string;
-  /**
-   * Your concise description of this prompt part, in your own voice.
-   */
-  short_description: string;
-  /**
-   * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
-   */
-  content: string;
-  applicability: string;
-  limitations: string;
-  /**
-   * Request procedural use in later shared work without sharing this private memory record. Retention can succeed while source restrictions prevent reuse; current access is always rechecked.
-   */
-  procedural_reuse?: boolean;
-  /**
-   * Owner-authored situations, questions or search terms that should recall this prompt fragment.
-   */
-  retrieval_cues?: string[];
-  sources?: EvidenceRef[];
-  counterevidence?: EvidenceRef[];
 }
 export interface ActionEvidence {
   action: string;
