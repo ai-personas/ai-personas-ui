@@ -39,8 +39,13 @@ const records = [
   record(27, 'work_entry', { title: 'Site observation changed', entry_kind: 'assumption', status: 'confirmed_by_evidence' }),
   record(28, 'commitment', { title: 'Carry the comparison forward', status: 'blocked', owner: person }),
   record(21, 'message', { from: person, to: 'user', text: 'The comparison is ready to read.', origin: { kind: 'INTERNAL_ORIGIN' } }),
+  record(72, 'invitation', { status: 'accepted', membership: 'accepted', commitment: 'not_accepted', preview: 'Compare the supplied concepts.' }),
 ];
 const sampleAction = { request: { id: id(40), kind: 'message.send', args: { to: 'user', text: 'The comparison is ready to read.', internal_flag: 'do-not-display' } }, state: 'succeeded', result: records.find(r => r.id === id(21)) };
+const transitionActions = [
+  { request: { id: id(70), kind: 'wait', actor: person, run: id(3), args: { reason: 'Await the next input.' } }, state: 'succeeded', result: { schema: 'wait-receipt/1', run: { id: id(3), revision: 7 }, status: 'waiting', wait: { condition: null, registration: 'pending' }, disposition: null, note: 'Await the next input.' } },
+  { request: { id: id(71), kind: 'invitation.respond', actor: person, run: id(3), args: { id: id(72), revision: 1, accept: true, reason: 'I can contribute to this comparison.' } }, state: 'succeeded', result: { schema: 'invitation-response/1', invitation: { id: id(72), revision: 2 }, status: 'accepted', membership: 'accepted', commitment: 'not_accepted' } },
+];
 let serverLog = '', browser, checks = 0, activePage;
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
 server.stdout.on('data', b => { serverLog += b; }); server.stderr.on('data', b => { serverLog += b; });
@@ -82,7 +87,7 @@ try {
         return route.fulfill({ json: { items: summaries, next: null, sequence: 0 } });
       }
       if (/\/records\/[^/]+\/revisions$/.test(u.pathname)) return route.fulfill({ json: { items: u.pathname.includes(id(16)) ? [records.find(r => r.id === id(16))] : [], next: null, sequence: 0 } });
-      if (u.pathname === '/api/actions') return route.fulfill({ json: { items: [sampleAction], next: null, sequence: 0 } });
+      if (u.pathname === '/api/actions') return route.fulfill({ json: { items: [sampleAction, ...transitionActions], next: null, sequence: 0 } });
       if (approachMode === 'failed' && u.pathname === '/api/records/' + id(3)) return route.fulfill({ status: 503, json: { error: 'Fixture participation temporarily unavailable' } });
       if (u.pathname.startsWith('/api/records/')) { const r = records.find(x => x.id === u.pathname.split('/').at(-1)); return route.fulfill({ status: r ? 200 : 404, json: r || { error: 'Missing fixture record' } }); }
       if (u.pathname.startsWith('/api/artifacts/')) return route.fulfill({ contentType: 'text/plain', body: bytes });
@@ -332,6 +337,17 @@ try {
       await expect(detail.getByText('Kind', { exact: true })).toHaveCount(0);
       await expect(detail.locator('.action-reader')).not.toContainText('do-not-display');
       await expect(detail.getByRole('button', { name: 'Technical action details +', exact: true })).toHaveAttribute('aria-expanded', 'false');
+      await detail.getByRole('button', { name: 'Send a message · succeeded −', exact: true }).click();
+      await detail.getByRole('button', { name: 'Wait for input · succeeded +', exact: true }).click();
+      await expect(detail.locator('.action-reader')).toContainText('Recorded participation status: Waiting');
+      await expect(detail.locator('.action-reader')).toContainText('This receipt refers to revision 7.');
+      await expect(detail.locator('.action-reader').getByRole('button')).toHaveCount(1);
+      await detail.getByRole('button', { name: 'Wait for input · succeeded −', exact: true }).click();
+      await detail.getByRole('button', { name: 'Respond to an invitation · succeeded +', exact: true }).click();
+      await expect(detail.locator('.action-reader')).toContainText('Recorded membership: Accepted');
+      await expect(detail.locator('.action-reader')).toContainText('Responsibility has not been accepted');
+      await expect(detail.locator('.action-reader')).toContainText('This receipt refers to revision 2.');
+      await expect(detail.locator('.action-reader').getByRole('button', { name: 'Invitation', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await page.getByRole('tab', { name: 'Artifacts & evidence', exact: true }).click();
     });
