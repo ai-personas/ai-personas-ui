@@ -27,7 +27,7 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
           : activity.state === 'waiting_capacity' ? 'Waiting for shared capacity · no model call active'
           : activity.state === 'between_calls' ? 'Working between model calls'
           : text(activity.state, text(p.status, 'Activity not reported')).replaceAll('_', ' ');
-        const selector = p.selector_policy === 'enabled' ? (delegation.semantic === true && p.delegation_current === true ? 'Enabled; current persona semantic delegation' : delegation.semantic === true ? 'Enabled; persona delegation expired or unverified' : 'Enabled; awaiting persona semantic delegation') : p.selector_policy === 'expired' ? 'Expired for this work' : 'Disabled for this work';
+        const selector = p.selector_policy === 'enabled' ? (delegation.semantic === true && p.delegation_current === true ? 'Enabled; current persona semantic delegation' : delegation.semantic === true ? 'Enabled; persona delegation expired or unverified' : 'Enabled; no current semantic delegation') : p.selector_policy === 'expired' ? 'Expired for this work' : 'Disabled for this work';
         return <article class="work-record" key={text(p.run)}>
           <h3>{text(p.name, 'Unnamed persona')}</h3>
           <p>{text(p.model, 'No model recorded')} · {p.model_discovered ? 'Model discovered' : p.provider_configured ? 'Model availability not confirmed' : 'Provider unavailable'} · {activityLabel}</p>
