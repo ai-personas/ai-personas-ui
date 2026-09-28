@@ -116,10 +116,9 @@ export type Command =
         accept: boolean;
         reason: string;
         /**
-         * Optional initial approach recorded atomically with this membership choice. Supply approach too; neither choice accepts a commitment.
+         * Optional complete initial approach recorded atomically with this membership choice; neither choice accepts a commitment.
          */
-        orientation?: OrientationDisposition | null;
-        approach?: string | null;
+        orientation?: InitialApproach | null;
       };
     }
   | {
@@ -1322,6 +1321,10 @@ export interface Price {
   input_units_per_million: number;
   output_units_per_million: number;
   evidence: string;
+}
+export interface InitialApproach {
+  disposition: OrientationDisposition;
+  approach: string;
 }
 export interface Destination {
   endpoint: string;

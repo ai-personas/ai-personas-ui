@@ -188,8 +188,7 @@ Accept or decline your exact invitation; commitment acceptance remains a separat
 | `revision` | integer | Required |  |
 | `accept` | boolean | Required |  |
 | `reason` | string | Required |  |
-| `orientation` | OrientationDisposition or null | Optional | Optional initial approach recorded atomically with this membership choice. Supply approach too; neither choice accepts a commitment. |
-| `approach` | string or null | Optional |  |
+| `orientation` | InitialApproach or null | Optional | Optional complete initial approach recorded atomically with this membership choice; neither choice accepts a commitment. |
 
 ### `invitation.extend`
 
