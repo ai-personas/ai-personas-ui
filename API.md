@@ -713,7 +713,7 @@ Operator approves or disables a read-only selector for this persona and work. Re
 
 ### `memory.browse`
 
-Browse your private fragment graph. Null focus lists owned fragments. Query matches title/description words, not full text. Returns descriptions and directed connections. next:null ends this query; change or clear it for other descriptions. Select node IDs in continuity.memory.active for next-call full text.
+Browse private fragment cards and connections. Null focus and query list owned cards in bounded pages. Every query word must match the same card's title/description (AND); unrelated subjects need separate queries or null. next:null ends this query. Cards suffice for continuity.memory.delegation.sources or active selection; full text arrives next call.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

@@ -1662,7 +1662,7 @@ export interface Selection2 {
    */
   after?: number | null;
   /**
-   * Search owned titles/descriptions in the next graph page and cue indexed retrieval. Results are previews, never automatically selected full fragments.
+   * Graph-page search requires every word in the same title/description (AND), not full text. Null query with after:0 browses owned cards. Also cues indexed discovery; neither route selects full text.
    */
   query?: string | null;
   /**
