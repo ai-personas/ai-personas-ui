@@ -21,7 +21,7 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
       <div class="work-records">{people.map(p => {
         const latest = fields(p.last_selector), selected = fields(latest.result), delegation = fields(p.delegation);
         const diagnostic = fields(selected.diagnostic), quoted = fields(diagnostic.quoted_tokens), approved = fields(diagnostic.approved_tokens);
-        const counts = fields(selected.counts);
+        const counts = fields(selected.counts), completion = fields(selected.completion);
         const activity = fields(p.activity);
         const activityLabel = activity.state === 'model_call' ? `Model call in progress${p.status && p.status !== 'running' ? ` · participation ${text(p.status)}` : ''}`
           : activity.state === 'waiting_capacity' ? 'Waiting for shared capacity · no model call active'
@@ -36,6 +36,9 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
           <p>Recall selector: <strong>{selector}</strong></p>
           {delegation.direct_search === true && <p>Recall scope includes indexed owned fragments. Processing permission, expiry and limits still apply.</p>}
           {typeof counts.match === 'number' && <p>Latest selector assessment: {String(counts.match)} match · {String(counts.no_match)} no match · {String(counts.unknown)} unknown. Matches recommend recall candidates; the persona can also select fragments directly.</p>}
+          {completion.assessment_finished === true && completion.followup_pending === false && <p>Assessment finished. No follow-up result is pending; unknown judgments are completed assessments.</p>}
+          {typeof completion.full_fragments_added === 'number' && typeof completion.bundle_omissions === 'number' && <p>Recall added {completion.full_fragments_added} full fragments · {completion.bundle_omissions} required bundles omitted. Other selected fragments are counted separately.</p>}
+          {typeof completion.remaining_total_attempts === 'number' && <p>{completion.remaining_total_attempts} new selector attempts remain under this policy. Exact cached input may still be reused.{completion.remaining_total_attempts === 0 && completion.fallback === 'block' && ' An uncached assessment blocks further model calls until the persona changes its recall choice or the policy changes.'}</p>}
           {typeof selected.omitted_candidates === 'number' && selected.omitted_candidates > 0 && <p>{selected.omitted_candidates} recall candidates were not assessed because of the request size limit. No follow-up selector call is pending for them.</p>}
           {p.selector_policy === 'enabled' && <p>Original task source: {p.work_export_allowed === true ? 'May be exported; processing permission also required' : 'Export not permitted; excluded from selector context'}</p>}
           <p>Last observed recall: {text(selected.status, 'No decision recorded').replaceAll('_', ' ')}{isRecordID(latest.call) && <> · <button class="text-button" onClick={() => open(latest.call as string)}>Inspect recall receipt</button></>}</p>
