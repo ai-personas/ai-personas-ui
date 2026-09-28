@@ -6904,8 +6904,13 @@
             "items": {
               "$ref": "#/$defs/VersionRef"
             },
-            "minItems": 1,
+            "minItems": 0,
             "maxItems": 16
+          },
+          "direct_search": {
+            "description": "Explicitly permit relevance-only selection from indexed owned fragments,\nusing only the selector's approved need/observations/focus. Off by default.\nNeeds semantic:true; sources may be empty. Preview suspension is separate.",
+            "type": "boolean",
+            "default": false
           },
           "expires": {
             "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",
@@ -15502,8 +15507,13 @@
             "items": {
               "$ref": "#/$defs/VersionRef"
             },
-            "minItems": 1,
+            "minItems": 0,
             "maxItems": 16
+          },
+          "direct_search": {
+            "description": "Explicitly permit relevance-only selection from indexed owned fragments,\nusing only the selector's approved need/observations/focus. Off by default.\nNeeds semantic:true; sources may be empty. Preview suspension is separate.",
+            "type": "boolean",
+            "default": false
           },
           "expires": {
             "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",

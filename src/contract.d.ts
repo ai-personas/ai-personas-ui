@@ -1739,10 +1739,11 @@ export interface Delegation {
    * For a source created OR edited in this transaction, use its $handle with
    * revision 0 to bind the committed version, not its old ID or @memory alias.
    *
-   * @minItems 1
+   * @minItems 0
    * @maxItems 16
    */
   sources:
+    | []
     | [VersionRef]
     | [VersionRef, VersionRef]
     | [VersionRef, VersionRef, VersionRef]
@@ -1857,6 +1858,12 @@ export interface Delegation {
         VersionRef,
         VersionRef
       ];
+  /**
+   * Explicitly permit relevance-only selection from indexed owned fragments,
+   * using only the selector's approved need/observations/focus. Off by default.
+   * Needs semantic:true; sources may be empty. Preview suspension is separate.
+   */
+  direct_search?: boolean;
   /**
    * Your chosen future RFC3339 expiry for this recall choice. Permission and
    * funding expiration still apply independently.
