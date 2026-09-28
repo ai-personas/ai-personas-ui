@@ -17,7 +17,7 @@ try {
   const page = await browser.newPage({viewport:{width:390,height:900}}), reads=[], errors=[];
   page.on('pageerror', e=>errors.push(e.message));
   await page.route('**/review-fixture', r=>r.fulfill({contentType:'text/html',body:'<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main id="test" style="padding:12px"></main><script type="module" src="/.qa/review-continuity-harness.tsx"></script></body></html>'}));
-  await page.route('**/api/records/*', r=>{ reads.push(r.request().url()); const id=r.request().url().split('/').at(-1); return r.fulfill({json:{id,kind:'fragment',scope:'',revision:8,created:'2026-09-23T00:00:00Z',updated:'2026-09-23T00:00:00Z',data:{title:'Current record',content:'Current content'}}}); });
+  await page.route('**/api/records/*', r=>{ reads.push(r.request().url()); const id=r.request().url().split('/').at(-1); return r.fulfill({json:{id,kind:'fragment',scope:'',revision:8,created:'2026-09-23T00:00:00Z',updated:'2026-09-23T00:00:00Z',data:{draft:{title:'Current record',content:'Current content'}}}}); });
   await page.goto(origin+'/review-fixture');
   await expect(page.getByRole('region',{name:'Review continuity',exact:true})).toHaveCount(1);
   await expect(page.getByText('This concludes an earlier deferral.',{exact:false})).toBeVisible();

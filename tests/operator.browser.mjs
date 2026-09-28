@@ -80,9 +80,9 @@ async function until(test, label) {
   for (let i = 0; i < 160; i++) { const value = await test(); if (value) return value; await delay(100); }
   throw Error('Timed out: ' + label);
 }
-async function startNode(requireToken = false) {
+async function startNode(requireToken = false, hostTools) {
   const fd = openSync(join(root, 'node.log'), 'a');
-  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', process.env.PERSONAS_UI_DIST || resolve('dist'), ...(requireToken ? ['--require-token'] : [])], { stdio: ['ignore', fd, fd] }); closeSync(fd);
+  app = spawn(binary, ['serve', '--root', join(root, 'node'), '--listen', `127.0.0.1:${port}`, '--http-providers', join(root, 'providers.json'), '--ui', process.env.PERSONAS_UI_DIST || resolve('dist'), ...(requireToken ? ['--require-token'] : []), ...(hostTools === undefined ? [] : ['--host-tools', String(hostTools)])], { stdio: ['ignore', fd, fd] }); closeSync(fd);
   url = `http://127.0.0.1:${port}`;
   await until(async () => {
     if (app.exitCode !== null) throw Error(readFileSync(join(root, 'node.log'), 'utf8'));
@@ -188,7 +188,10 @@ try {
     assert.equal(run.data.status, 'paused'); assert.equal(run.data.membership, 'invited');
     assert.equal(calls, 0);
     // A real restart and settings save must not dispatch the paused invitation.
-    await stopNode(); await startNode(); await connect();
+    // Isolation is selected on each launch; a saved disabled setting does not
+    // override the normal host default after restart.
+    await stopNode(); await startNode(false, false); await connect();
+    assert.equal((await get('/deployment')).host_execution, false);
     await page.getByRole('button', { name: 'Operator browser task', exact: true }).click();
     await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });

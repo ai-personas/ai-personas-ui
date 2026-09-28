@@ -19,9 +19,9 @@ export async function readCurrentSelf(persona: Entity, signal: AbortSignal) {
     const [nodeValue, fragmentValue] = await Promise.all([node, fragment].map(ref => resourceRequest<unknown>('/records/' + ref.id, signal)));
     readMemoryDetail(nodeValue, { ...node, owner: persona.id, kind: 'memory_node', fragment });
     const record = readMemoryDetail(fragmentValue, { ...fragment, owner: persona.id, kind: 'fragment' });
-    const value = data(record), content = value.draft?.content ?? value.content;
+    const value = data(record), content = value.draft?.content;
     if (typeof content !== 'string') return fail();
-    return { node, fragment, content, title: String(value.draft?.title ?? value.title ?? 'Self-fragment') };
+    return { node, fragment, content, title: String(value.draft?.title ?? 'Self-fragment') };
   }));
   const character = parts.map(p => p.content).join('\n\n');
   if (character !== d.character) return fail();

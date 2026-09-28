@@ -143,10 +143,10 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
       <p class="field-label">{{tentative: 'Idea to test — not yet validated', observed: 'Based on received observations', reported: 'Based on attributed reports'}[text(draft.basis, 'tentative')]}</p>
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}
-      <Story value={d.content || draft.content}/><Story title="When this is useful" value={d.applicability || draft.applicability}/><Story title="Limitations" value={d.limitations || draft.limitations}/>
+      <Story value={draft.content}/><Story title="When this is useful" value={draft.applicability}/><Story title="Limitations" value={draft.limitations}/>
       <p class="record-caveat">{draft.procedural_reuse === true ? (fields(d.reuse_review).eligible_at_authorship === false ? 'Retained privately. Source restrictions prevented shared procedural use when this was written; access is checked again when used.' : 'The persona requested procedural use in later shared work. Current source permissions still apply.') : 'This lesson is private; its information restrictions apply to derived work.'}</p>
       <Story title="Recall this when" value={draft.retrieval_cues}/><RelatedItems title="Earlier version" value={d.supersedes} open={open}/>
-      <RelatedItems title="Sources" value={d.sources || draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={d.counterevidence || draft.counterevidence} open={open}/>
+      <RelatedItems title="Sources" value={draft.sources} open={open}/><RelatedItems title="Contrary evidence" value={draft.counterevidence} open={open}/>
     </>;
     case 'assumption': return <><Story value={d.summary || d.text || d.description}/><p class="notice">{assumptionNote(text(d.status))}</p><Story title="Reconsider when" value={d.reconsider_if}/></>;
     case 'working_agreement': case 'agreement': return <><Story title="Agreement" value={d.terms || d.text}/><Story title="Concerns and exceptions" value={d.dissent || d.limitations}/><RelatedItems title="Endorsements" value={d.endorsements} open={open}/></>;

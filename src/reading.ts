@@ -68,6 +68,7 @@ export function excerpt(value: unknown, limit = 260): string {
 }
 export function recordExcerpt(record: Entity): string {
   const d = data(record), draft = fields(d.draft);
+  if (record.kind === 'fragment') return excerpt(draft.short_description || draft.content);
   return excerpt([d.summary, d.description, d.content, d.text, draft.text, draft.description, d.brief, d.purpose, d.note].find(v => typeof v === 'string' && v.trim()));
 }
 export function fileSize(bytes: unknown): string {

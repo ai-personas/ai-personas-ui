@@ -9,8 +9,8 @@ const owner = 'a'.repeat(32), fragment = 'b'.repeat(32), node = 'c'.repeat(32);
 const validFragment = {
   id: fragment, kind: 'fragment', revision: 1, scope: owner,
   created: '2026-09-26T00:00:00Z', updated: '2026-09-26T00:00:00Z',
-  data: { owner, status: 'retained', title: 'Exact memory',
-    content: '## Exact lesson\n\nPERMITTED_FRAGMENT_TEXT', draft: {} },
+  data: { owner, status: 'retained', draft: { title: 'Exact memory',
+    content: '## Exact lesson\n\nPERMITTED_FRAGMENT_TEXT' } },
 };
 const validNode = {
   id: node, kind: 'memory_node', revision: 2, scope: owner,

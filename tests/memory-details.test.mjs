@@ -17,6 +17,9 @@ const rejected = (read, value, request) => assert.throws(() => read(value, reque
 
 test('exact owned retained fragment preserves its original authored record', () => {
   const value = fragment(); assert.equal(readMemoryDetail(value, expected), value);
+  value.data.content = value.data.draft.content;
+  delete value.data.draft.content;
+  rejected(readMemoryDetail, value, expected);
 });
 for (const version of [0, 1, 2, 4, -1, 3.5, '3', null, Number.MAX_SAFE_INTEGER + 1]) {
   test(`fragment revision ${version} cannot replace the graph card's exact revision`, () => {

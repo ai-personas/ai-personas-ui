@@ -57,6 +57,8 @@ export function readMemoryDetail(value: unknown, expected: MemoryDetailRequest):
     const binding = object(data.fragment);
     requireDetail(expected.fragment && identity(expected.fragment.id) && revision(expected.fragment.revision));
     requireDetail(binding.id === expected.fragment.id && binding.revision === expected.fragment.revision);
+  } else {
+    requireDetail(typeof object(data.draft).content === 'string');
   }
   return value as Entity;
 }

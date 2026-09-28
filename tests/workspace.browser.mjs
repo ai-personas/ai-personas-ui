@@ -24,7 +24,7 @@ const records = [
   record(11, 'birth', { title: 'Proposed peer', status: 'proposed', reason: 'Investigate uncertainty', parent: person, initialization_status: 'pending', membership_status: 'invited' }),
   record(12, 'working_agreement', { title: 'Same comparison basis', terms: 'Compare equivalent inputs.', endorsements: [] }),
   record(13, 'request', { purpose: 'Fixture clarification', status: 'open', evidence_required: 'An actual answer, not an acknowledgement.', artifacts: [] }),
-  record(14, 'fragment', { title: 'A candidate lesson', content: 'Bind analysis to source versions.', applicability: 'When generating derived outputs', limitations: 'Usefulness not demonstrated.' }),
+  record(14, 'fragment', { draft: { title: 'A candidate lesson', content: 'Bind analysis to source versions.', applicability: 'When generating derived outputs', limitations: 'Usefulness not demonstrated.' } }),
   record(16, 'document', { title: 'Readable house concept', content: documentText, owner: person, environment: id(17),
     information_sources: [{ id: id(18), revision: 1 }], design_details: { conceptual: true, bedrooms: 4 } }, person),
   record(17, 'environment', { name: 'Shared design room' }, ''),

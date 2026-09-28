@@ -49,8 +49,8 @@ try{
  await page.evaluate(r=>window.show(r),{...question,data:{...question.data,peer_delivery:{schema:'question-delivery/1',readable_peers:2,restricted_peers:0}}});
  await expect(page.getByText('Peers cannot read this question.',{exact:true})).toHaveCount(0);
  const persona='d'.repeat(32);
- await page.route('**/api/records/*',route=>{const id=route.request().url().split('/').at(-1);return route.fulfill({json:{...record({name:'Mira',title:'Check the receiving surface'}),id,kind:id===persona?'persona':'fragment'}});});
- await page.evaluate(r=>window.show(r),{...record({owner:persona,content:'I trust a tidy diagram only after checking where the water actually goes.',draft:{applicability:'When tracing drainage',limitations:'A concept still needs a site survey.',retrieval_cues:['A drain route looks too easy']},authorship:{origin:'persona_decision',character_profile:{id:persona,revision:3}}}),kind:'fragment'});
+ await page.route('**/api/records/*',route=>{const id=route.request().url().split('/').at(-1);return route.fulfill({json:{...record({name:'Mira',draft:{title:'Check the receiving surface'}}),id,kind:id===persona?'persona':'fragment'}});});
+ await page.evaluate(r=>window.show(r),{...record({owner:persona,draft:{content:'I trust a tidy diagram only after checking where the water actually goes.',applicability:'When tracing drainage',limitations:'A concept still needs a site survey.',retrieval_cues:['A drain route looks too easy']},authorship:{origin:'persona_decision',character_profile:{id:persona,revision:3}}}),kind:'fragment'});
  await expect(page.getByText('Written by this persona using its character at the time.',{exact:true})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Recall this when',exact:true})).toBeVisible();
  await expect(page.getByText('A drain route looks too easy',{exact:true})).toBeVisible();
