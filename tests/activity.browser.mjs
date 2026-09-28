@@ -161,6 +161,9 @@ try {
     await latest.getByRole('button', {name:'Inspect latest decision',exact:true}).click();
     const details = page.getByRole('dialog', {name:'Record details',exact:true});
     await expect(details.getByLabel('Decision action outcome')).toContainText('Action failed');
+    const transport = details.getByRole('region', {name:'Provider transport',exact:true});
+    await expect(transport).toContainText('Attempted');
+    await expect(transport).toContainText('200');
     await details.getByText('Inspect action receipt',{exact:true}).click();
     await expect(details.locator('.action-reader')).toContainText('SCOPE_DENIED');
     await details.getByRole('button',{name:'Close details',exact:true}).click();

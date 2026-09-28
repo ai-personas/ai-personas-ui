@@ -6,7 +6,7 @@ test('missing receipts and measurements are unknown rather than zero', () => {
   for (const value of [null, undefined, 3, [], {}]) {
     const facts = inferenceEvidence(value);
     assert.equal(facts.measured, undefined);
-    for (const key of ['recovery', 'learning', 'discovery', 'questions', 'contextBytes']) assert.equal(facts[key], undefined);
+    for (const key of ['recovery', 'learning', 'discovery', 'questions', 'contextBytes', 'transport']) assert.equal(facts[key], undefined);
   }
 });
 test('discovery and selected learning have distinct exact references', () => {
@@ -46,6 +46,18 @@ test('provider usage requires coherent known numbers and cached input consistenc
   for (const change of [{known:false},{known:1},{cached:21},{input:-1},{output:NaN},{input:Number.MAX_SAFE_INTEGER,output:1},{cached:null}]) {
     assert.equal(inferenceEvidence({usage:{...usage,...change}}).measured, undefined);
   }
+  const call = {provider:'fixture',requested_model:'choice-fixture',usage:{known:false}};
+  const observation = {schema:'provider-observation/1',source:'adapter_transport_receipt',raw_payload_retained:false,
+    provider:'fixture',requested_model:'choice-fixture',http_status:401,dispatched:true,outcome:'failed',error_category:'authentication',response_body:'PRIVATE_RESPONSE',remote_error:'PRIVATE_ERROR'};
+  const facts = inferenceEvidence({...call,provider_observation:observation});
+  assert.deepEqual(facts.transport, {status:401,dispatched:true,outcome:'Failed',category:'Authentication rejected'});
+  assert.equal(facts.measured, undefined);
+  assert(!JSON.stringify(facts).includes('PRIVATE_'));
+  for (const change of [{schema:'old-schema'},{source:'not_available'},{raw_payload_retained:true},{provider:'other'},{requested_model:'other'}]) {
+    assert.equal(inferenceEvidence({...call,provider_observation:{...observation,...change}}).transport, undefined);
+  }
+  const invalid = inferenceEvidence({...call,provider_observation:{...observation,http_status:600,dispatched:'true',outcome:'PRIVATE_RESPONSE',error_category:'constructor'}}).transport;
+  assert.deepEqual(invalid, {status:undefined,dispatched:undefined,outcome:undefined,category:undefined});
 });
 test('recovery distinguishes old receipt omissions, command references and log excerpts', () => {
   const r = inferenceEvidence({context_recovery:{schema:'context-recovery/1',omitted_history:[{}],projected_commands:[{},{}],projected_diagnostics:[{},{},{}],omitted_discovery_candidates:4,original_request_bytes:9000}}).recovery;

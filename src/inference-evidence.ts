@@ -31,6 +31,19 @@ function receipt(value: unknown, schema: string): ObjectValue | undefined {
   const stage = schema === 'context-recovery/1' || (v.stage === 'admitted_request' && v.transport_boundary === 'pre_dispatch');
   return v.schema === schema && stage ? v : undefined;
 }
+function transport(value: unknown, call: ObjectValue) {
+  const v = object(value);
+  if (v.schema !== 'provider-observation/1' || v.source !== 'adapter_transport_receipt' || v.raw_payload_retained !== false
+    || typeof call.provider !== 'string' || !call.provider || v.provider !== call.provider
+    || typeof call.requested_model !== 'string' || !call.requested_model || v.requested_model !== call.requested_model) return undefined;
+  const categories: Record<string, string> = { authentication: 'Authentication rejected', rate_limit: 'Rate limited', unavailable: 'Provider unavailable', http_failure: 'HTTP request failed', transport: 'Connection interrupted or unavailable', response_limit: 'Response exceeded the configured limit', malformed_output: 'Response did not satisfy the required format', cancelled: 'Call cancelled' };
+  const outcomes: Record<string, string> = { not_dispatched: 'Not dispatched', in_flight: 'Awaiting a complete response when recorded', completed: 'Response validated', failed: 'Failed' };
+  const status = count(v.http_status);
+  return { dispatched: typeof v.dispatched === 'boolean' ? v.dispatched : undefined,
+    status: status !== undefined && status >= 100 && status <= 599 ? status : undefined,
+    category: typeof v.error_category === 'string' && Object.hasOwn(categories, v.error_category) ? categories[v.error_category] : undefined,
+    outcome: typeof v.outcome === 'string' && Object.hasOwn(outcomes, v.outcome) ? outcomes[v.outcome] : undefined };
+}
 export function inferenceEvidence(value: unknown) {
   const d = object(value), recovery = receipt(d.context_recovery, 'context-recovery/1');
   const discovery = receipt(d.discovery_context, 'discovery-context/1');
@@ -58,6 +71,7 @@ export function inferenceEvidence(value: unknown) {
     ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
   ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {
+    transport: transport(d.provider_observation, d),
     contextParts, maintenance: d.decision_mode === 'context_maintenance',
     state: typeof d.status === 'string' ? d.status.slice(0, 96) : 'Not recorded',
     contextBytes: count(d.context_bytes) ?? exposure?.bytes, measured, exposure,

@@ -17,6 +17,12 @@ export default function InferenceEvidence({ value, open }: { value: unknown; ope
   const facts = inferenceEvidence(value);
   return <section class="reader-section" aria-label="Inference evidence"><h3>Inference evidence</h3>
     <p>Call status: {facts.state.replaceAll('_', ' ')}. Status is not a verdict on the work.</p>
+    {facts.transport ? <section aria-label="Provider transport"><h4>Provider transport</h4><dl>
+      <dt>Request dispatch</dt><dd>{facts.transport.dispatched === true ? 'Attempted' : facts.transport.dispatched === false ? 'Not dispatched' : 'Not recorded'}</dd>
+      <dt>HTTP status</dt><dd>{facts.transport.status ?? 'Not recorded'}</dd>
+      <dt>Last transport observation</dt><dd>{facts.transport.outcome ?? 'Not recorded'}</dd>
+      {facts.transport.category && <><dt>Provider failure</dt><dd>{facts.transport.category}</dd></>}
+    </dl></section> : facts.state === 'evaluation_failed' && <p>Provider transport details were not recorded for this failed evaluation.</p>}
     <dl><dt>Serialized context bytes</dt><dd>{number(facts.contextBytes)} — not a token count</dd>
       <dt>Measured provider usage</dt><dd>{facts.measured ? `${number(facts.measured.input)} input, ${number(facts.measured.output)} output; ${number(facts.measured.cached)} cached input tokens` : 'Unknown or not coherently recorded; do not assume this call was free.'}</dd></dl>
     {facts.maintenance && <p class="notice">This call was the funded context-maintenance attempt. It uses the same assigned model and allowance.</p>}
