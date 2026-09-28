@@ -8,6 +8,7 @@ import LiveActivity from './LiveActivity';
 import { MessageComposer } from './MessageComposer';
 import { useResource } from './hooks';
 import { timestamp } from './identity';
+import StoppedAction from './StoppedAction';
 
 function WorkReply({ run, open, act }: { run: Entity; open: (id: string) => void; act: Act }) {
   const { value, error } = useResource<Entity>('/records/' + run.scope, e => e.entity === run.scope);
@@ -43,7 +44,8 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
       <button class="secondary" aria-expanded={reply} onClick={() => setReply(!reply)}>{reply ? 'Close reply' : 'Reply to persona'}</button>
       {reply && <WorkReply key={run.id} run={run} act={act} open={open}/>}
     </section>}
-    {isRecordID(call.id) && <div class="latest-decision"><p class="field-label">Latest decision · {text(latest.status)} · <time dateTime={text(call.updated)}>{timestamp(text(call.updated))}</time></p>
+    {isRecordID(call.id) && <div class="latest-decision"><p class="field-label">Latest model call · {text(latest.status)} · <time dateTime={text(call.updated)}>{timestamp(text(call.updated))}</time></p>
+      <StoppedAction call={call} open={open}/>
       {text(latest.summary) && <p class="record-prose">{text(latest.summary)}</p>}
       {text(latest.error) && <p role="alert">{text(latest.error)}</p>}
       {fields(latest.continuity_failure).committed === false && <p class="notice">The next focus or learning update could not be saved. Inspect the decision for details.</p>}

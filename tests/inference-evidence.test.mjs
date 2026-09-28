@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inferenceEvidence, learningKind } from '../src/inference-evidence.ts';
+import { actionBelongsToCall, inferenceEvidence, learningKind, stoppedActionReference } from '../src/inference-evidence.ts';
 const ref = { id: 'a'.repeat(32), revision: 2 };
 test('missing receipts and measurements are unknown rather than zero', () => {
   for (const value of [null, undefined, 3, [], {}]) {
@@ -27,6 +27,13 @@ test('active lesson references use the actual fragment field', () => {
 test('unsupported receipt schemas do not become evidence', () => {
   const facts = inferenceEvidence({ discovery_context:{schema:'different',offered:[]}, context_recovery:{schema:'different',omitted_history:[]}});
   assert.equal(facts.discovery, undefined); assert.equal(facts.recovery, undefined);
+  const call = { id: 'a'.repeat(32), kind: 'call', scope: 'b'.repeat(32), data: { owner: 'c'.repeat(32), stopped_after: 'd'.repeat(32), status: 'completed' } };
+  const stopped = stoppedActionReference(call);
+  assert.deepEqual(stopped, { id: 'd'.repeat(32), call: call.id, run: call.scope, actor: call.data.owner });
+  const request = { id: stopped.id, run: stopped.run, actor: stopped.actor, source: 'call:' + stopped.call };
+  assert.equal(actionBelongsToCall({request,state:'failed'}, stopped), true);
+  for (const field of ['id','run','actor','source']) assert.equal(actionBelongsToCall({request:{...request,[field]:'e'.repeat(32)}}, stopped), false);
+  for (const value of [null, {}, {...call,kind:'run'}, {...call,data:{...call.data,stopped_after:'invalid'}}, {...call,data:{...call.data,owner:null}}]) assert.equal(stoppedActionReference(value), undefined);
 });
 test('invalid references are not counted as a partial successful list', () => {
   for (const invalid of [{id:'../path',revision:1}, {id:ref.id,revision:0}, {id:ref.id,revision:2.1}, {id:ref.id,revision:Number.MAX_SAFE_INTEGER+1}]) {

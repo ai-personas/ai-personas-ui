@@ -14,9 +14,9 @@ import { decisionContext, offeredActions } from './decision-fixture.mjs';
 const root = mkdtempSync(join(tmpdir(), 'personas-activity-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence'); mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
-let calls = 0, releaseFirst, releaseMalformed, app, browser, malformed = false, checks = 0;
+let calls = 0, releaseFirst, releaseFailure, app, browser, failedAction = false, checks = 0;
 const gate = new Promise(r => { releaseFirst = r; });
-const malformedGate = new Promise(r => { releaseMalformed = r; });
+const failureGate = new Promise(r => { releaseFailure = r; });
 const provider = createServer(async (req, res) => {
   try {
     let bytes = ''; for await (const chunk of req) bytes += chunk;
@@ -28,7 +28,7 @@ const provider = createServer(async (req, res) => {
     emit({ type: 'response.output_item.added', output_index: 0, item: publicMessage });
     emit({ type: 'response.output_text.delta', output_index: 0, item_id: publicMessage.id, delta: `Checking fixture inputs for decision ${turn + 1}.` });
     emit({ type: 'response.reasoning_text.delta', output_index: 1, item_id: 'private', delta: 'PRIVATE_REASONING_NEVER_RENDER' });
-    if (malformed) await malformedGate;
+    if (failedAction) await failureGate;
     if (turn === 0) {
       await delay(200);
       emit({ type: 'response.output_text.delta', output_index: 0, item_id: publicMessage.id, delta: ' Reading the current profile.' });
@@ -43,7 +43,8 @@ const provider = createServer(async (req, res) => {
       { kind: 'exec', args: { command: "printf 'first tool line\\n'; sleep 1; printf 'second tool line\\n'", background: false } },
     ] : [{ kind: 'wait', args: { reason: 'Explicit fixture wait; new outside input is required.' } }];
     actions = offeredActions(input, actions);
-    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, reply: null, actions });
+    if (failedAction) actions = [{ kind: 'record.read', args: { id: '0'.repeat(32) } }];
+    const answer = JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, reply: null, actions });
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
@@ -137,8 +138,8 @@ try {
     await expect(profile).toContainText('Created'); await expect(profile).toContainText('Accepted responsibility');
     await expect(profile.getByText('Inference configuration')).toBeVisible();
   });
-  await step('an introduction request is explicit and a malformed reply shows its failure without actions', async () => {
-    malformed = true;
+  await step('a completed introduction call shows its failed action in the task and inspector', async () => {
+    failedAction = true;
     await page.getByRole('dialog', { name: 'Record details' }).getByRole('button', { name: 'Request introduction', exact: true }).click();
     const form = page.locator('.introduction-request');
     const draft = form.getByRole('textbox'); await draft.fill('Please keep the identity I already know and introduce your current preferences.');
@@ -150,14 +151,22 @@ try {
     await progress.getByRole('button', { name: 'Pause display updates', exact: true }).click();
     await expect(progress).toContainText('Last observed progress');
     await expect(progress).not.toContainText('Decision still in progress.');
-    releaseMalformed();
-    await until(async () => (await get('/records?kind=call')).items.some(c => c.data.status === 'failed'), 'failed decision');
-    await expect(progress).toContainText('Decision failed.');
+    releaseFailure();
+    await until(async () => (await get('/records?kind=call')).items.some(c => c.data.stop_reason === 'receipt_requires_fresh_decision'), 'failed action in completed call');
+    await expect(progress).toContainText('Model call completed.');
+    const latest = page.locator('.latest-decision');
+    await expect(latest).toContainText('Latest model call · completed');
+    await expect(latest.getByLabel('Decision action outcome')).toContainText('Action failed');
+    await expect(latest).toContainText('SCOPE_DENIED');
+    await latest.getByRole('button', {name:'Inspect latest decision',exact:true}).click();
+    const details = page.getByRole('dialog', {name:'Record details',exact:true});
+    await expect(details.getByLabel('Decision action outcome')).toContainText('Action failed');
+    await details.getByText('Inspect action receipt',{exact:true}).click();
+    await expect(details.locator('.action-reader')).toContainText('SCOPE_DENIED');
+    await details.getByRole('button',{name:'Close details',exact:true}).click();
     await expect(progress).not.toContainText('Decision still in progress.');
     await page.locator('.activity-persona').click();
-    await expect(page.getByRole('dialog', { name: 'Record details' })).toContainText('Decision needs attention');
     assert.equal(calls, 7); assert.equal((await get('/records/' + persona.id)).data.name, 'Mira');
-    assert(!(await page.locator('body').innerText()).includes('INVALID_FINAL_NEVER_ADOPT'));
     assert.equal((await get('/actions?owner=' + persona.id)).items.filter(a => a.request.kind === 'exec').length, 1);
   });
   await page.locator('.drawer-body').evaluate(el => { el.scrollTop = 0; });
@@ -172,7 +181,7 @@ try {
   writeFileSync(join(evidence, 'report.json'), JSON.stringify({ checks, calls, progressConnections: progressReads.length, errors, evidence: 'Real disposable Node + production UI; synthetic provider; harmless local tool fixture' }, null, 2));
   console.log(JSON.stringify({ checks, calls, evidence }));
 } finally {
-  releaseFirst?.(); releaseMalformed?.(); await browser?.close();
+  releaseFirst?.(); releaseFailure?.(); await browser?.close();
   if (app && app.exitCode === null) { const exited = once(app, 'exit'); app.kill('SIGTERM'); await exited; }
   provider.closeAllConnections(); await new Promise(r => provider.close(r));
 }

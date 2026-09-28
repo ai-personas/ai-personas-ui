@@ -5,6 +5,17 @@ const object = (value: unknown): ObjectValue => value !== null && typeof value =
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const list = (value: unknown): unknown[] | undefined => Array.isArray(value) && value.length <= 512 ? value : undefined;
 export type EvidenceReference = { id: string; revision: number };
+export type StoppedActionReference = { id: string; call: string; run: string; actor: string };
+export function stoppedActionReference(value: unknown): StoppedActionReference | undefined {
+  const call = object(value), d = object(call.data);
+  const ids = [d.stopped_after, call.id, call.scope, d.owner];
+  return call.kind === 'call' && ids.every(id => typeof id === 'string' && /^[a-fA-F0-9]{32}$/.test(id))
+    ? { id: ids[0] as string, call: ids[1] as string, run: ids[2] as string, actor: ids[3] as string } : undefined;
+}
+export function actionBelongsToCall(value: unknown, ref: StoppedActionReference): boolean {
+  const action = object(value), request = object(action.request);
+  return request.id === ref.id && request.run === ref.run && request.actor === ref.actor && request.source === 'call:' + ref.call;
+}
 function reference(value: unknown): EvidenceReference | undefined {
   const v = object(value), revision = count(v.revision);
   return typeof v.id === 'string' && /^[a-fA-F0-9]{32}$/.test(v.id) && revision !== undefined && revision > 0

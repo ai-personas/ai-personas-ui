@@ -18,7 +18,7 @@ function CallMessages({ id, visible, status }: { id: string; visible: boolean; s
   return <div class="progress-messages">
     {error && <p role="alert">{error}</p>}
     {snapshot?.messages.map(m => <div class="progress-message" key={m.index}><span class="field-label">{m.kind === 'summary' ? 'Provisional decision summary' : 'Progress message'}</span><p class="record-prose">{m.text}</p></div>)}
-    {finished ? <p class="micro">Decision {finished}. Progress messages are reported activity; action receipts show what actually ran.</p>
+    {finished ? <p class="micro">Model call {finished}. Progress messages are reported activity; action receipts show what actually ran.</p>
       : snapshot && (stale ? <p class="micro">Last observed progress; display updates are suspended or reconnecting. This preview does not establish current execution.</p>
         : <p class="micro">{snapshot.messages.length ? 'Decision still in progress.' : 'The model is responding. No public progress message has arrived yet.'} Progress messages are reported activity; action receipts show what actually ran.</p>)}
     {snapshot?.truncated && <p class="micro">Progress preview reached its size limit. Saved work and action receipts remain available after the call.</p>}
