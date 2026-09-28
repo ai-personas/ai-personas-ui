@@ -14,8 +14,9 @@ import { decisionContext, offeredActions } from './decision-fixture.mjs';
 const root = mkdtempSync(join(tmpdir(), 'personas-activity-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence'); mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
-let calls = 0, releaseFirst, app, browser, malformed = false, checks = 0;
+let calls = 0, releaseFirst, releaseMalformed, app, browser, malformed = false, checks = 0;
 const gate = new Promise(r => { releaseFirst = r; });
+const malformedGate = new Promise(r => { releaseMalformed = r; });
 const provider = createServer(async (req, res) => {
   try {
     let bytes = ''; for await (const chunk of req) bytes += chunk;
@@ -27,6 +28,7 @@ const provider = createServer(async (req, res) => {
     emit({ type: 'response.output_item.added', output_index: 0, item: publicMessage });
     emit({ type: 'response.output_text.delta', output_index: 0, item_id: publicMessage.id, delta: `Checking fixture inputs for decision ${turn + 1}.` });
     emit({ type: 'response.reasoning_text.delta', output_index: 1, item_id: 'private', delta: 'PRIVATE_REASONING_NEVER_RENDER' });
+    if (malformed) await malformedGate;
     if (turn === 0) {
       await delay(200);
       emit({ type: 'response.output_text.delta', output_index: 0, item_id: publicMessage.id, delta: ' Reading the current profile.' });
@@ -41,7 +43,7 @@ const provider = createServer(async (req, res) => {
       { kind: 'exec', args: { command: "printf 'first tool line\\n'; sleep 1; printf 'second tool line\\n'", background: false } },
     ] : [{ kind: 'wait', args: { reason: 'Explicit fixture wait; new outside input is required.' } }];
     actions = offeredActions(input, actions);
-    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, actions });
+    const answer = malformed ? 'INVALID_FINAL_NEVER_ADOPT' : JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: `Fixture decision ${turn + 1}`, reply: null, actions });
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
@@ -141,7 +143,18 @@ try {
     const form = page.locator('.introduction-request');
     const draft = form.getByRole('textbox'); await draft.fill('Please keep the identity I already know and introduce your current preferences.');
     await form.getByRole('button', { name: 'Send to participants', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Record details' }).getByRole('button', { name: 'Close details', exact: true }).click();
+    const progress = page.getByLabel('Live progress and actions');
+    await progress.scrollIntoViewIfNeeded();
+    await expect(progress).toContainText('Checking fixture inputs for decision 7.');
+    await progress.getByRole('button', { name: 'Pause display updates', exact: true }).click();
+    await expect(progress).toContainText('Last observed progress');
+    await expect(progress).not.toContainText('Decision still in progress.');
+    releaseMalformed();
     await until(async () => (await get('/records?kind=call')).items.some(c => c.data.status === 'failed'), 'failed decision');
+    await expect(progress).toContainText('Decision failed.');
+    await expect(progress).not.toContainText('Decision still in progress.');
+    await page.locator('.activity-persona').click();
     await expect(page.getByRole('dialog', { name: 'Record details' })).toContainText('Decision needs attention');
     assert.equal(calls, 7); assert.equal((await get('/records/' + persona.id)).data.name, 'Mira');
     assert(!(await page.locator('body').innerText()).includes('INVALID_FINAL_NEVER_ADOPT'));
@@ -159,7 +172,7 @@ try {
   writeFileSync(join(evidence, 'report.json'), JSON.stringify({ checks, calls, progressConnections: progressReads.length, errors, evidence: 'Real disposable Node + production UI; synthetic provider; harmless local tool fixture' }, null, 2));
   console.log(JSON.stringify({ checks, calls, evidence }));
 } finally {
-  releaseFirst?.(); await browser?.close();
+  releaseFirst?.(); releaseMalformed?.(); await browser?.close();
   if (app && app.exitCode === null) { const exited = once(app, 'exit'); app.kill('SIGTERM'); await exited; }
   provider.closeAllConnections(); await new Promise(r => provider.close(r));
 }

@@ -889,6 +889,10 @@ export type Command =
         work?: string | null;
         text: string;
         environment?: string | null;
+        /**
+         * True requires this decision's atomic continuity update to have succeeded before delivery. Use for messages depending on same-response graph changes. Null/false permits independently valid correspondence from the admitted context.
+         */
+        after_continuity?: boolean | null;
       };
     }
   | {
@@ -1667,8 +1671,20 @@ export interface Selection2 {
   preview_limit?: number | null;
   /**
    * Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.
+   *
+   * @minItems 1
+   * @maxItems 8
    */
-  current_self?: string[] | null;
+  current_self?:
+    | [string]
+    | [string, string]
+    | [string, string, string]
+    | [string, string, string, string]
+    | [string, string, string, string, string]
+    | [string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string]
+    | null;
   /**
    * Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.
    */

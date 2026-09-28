@@ -1086,6 +1086,7 @@ Deliver durable correspondence. Use to="user" to reply to the human, a persona I
 | `work` | string or null | Optional |  |
 | `text` | string | Required |  |
 | `environment` | string or null | Optional |  |
+| `after_continuity` | boolean or null | Optional | True requires this decision's atomic continuity update to have succeeded before delivery. Use for messages depending on same-response graph changes. Null/false permits independently valid correspondence from the admitted context. |
 
 ### `artifact.publish`
 

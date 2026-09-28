@@ -49,6 +49,6 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
       {fields(latest.continuity_failure).committed === false && <p class="notice">The next focus or learning update could not be saved. Inspect the decision for details.</p>}
       <button class="text-button" onClick={() => open(text(call.id))}>Inspect latest decision</button>
     </div>}
-    <LiveActivity run={run.id} call={isRecordID(call.id) ? call.id : undefined} open={open}/>
+    <LiveActivity run={run.id} call={isRecordID(call.id) ? call.id : undefined} callStatus={text(latest.status)} open={open}/>
   </div>;
 }

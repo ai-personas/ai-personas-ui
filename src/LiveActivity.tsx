@@ -9,15 +9,18 @@ import { actionTitle } from './reading';
 
 type Receipt = ApiTypes['action_activity'][number];
 
-function CallMessages({ id, visible }: { id: string; visible: boolean }) {
+function CallMessages({ id, visible, status }: { id: string; visible: boolean; status?: string }) {
   const [snapshot, setSnapshot] = useState<Progress>(), [error, setError] = useState('');
   useEffect(() => { setSnapshot(undefined); setError(''); }, [id]);
   useEffect(() => visible ? followProgress(id, (value, error) => { setSnapshot(value); setError(error); }) : undefined, [id, visible]);
+  const finished = status && status !== 'running' ? status : snapshot?.done ? snapshot.status : undefined;
+  const stale = !visible || !!error;
   return <div class="progress-messages">
     {error && <p role="alert">{error}</p>}
     {snapshot?.messages.map(m => <div class="progress-message" key={m.index}><span class="field-label">{m.kind === 'summary' ? 'Provisional decision summary' : 'Progress message'}</span><p class="record-prose">{m.text}</p></div>)}
-    {snapshot && !snapshot.done && !snapshot.messages.length && <p class="micro">The model is responding. No public progress message has arrived yet.</p>}
-    {snapshot && snapshot.messages.length > 0 && <p class="micro">{snapshot.done ? `Decision ${snapshot.status}.` : 'Decision still in progress.'} Progress messages are reported activity; action receipts show what actually ran.</p>}
+    {finished ? <p class="micro">Decision {finished}. Progress messages are reported activity; action receipts show what actually ran.</p>
+      : snapshot && (stale ? <p class="micro">Last observed progress; display updates are suspended or reconnecting. This preview does not establish current execution.</p>
+        : <p class="micro">{snapshot.messages.length ? 'Decision still in progress.' : 'The model is responding. No public progress message has arrived yet.'} Progress messages are reported activity; action receipts show what actually ran.</p>)}
     {snapshot?.truncated && <p class="micro">Progress preview reached its size limit. Saved work and action receipts remain available after the call.</p>}
   </div>;
 }
@@ -39,7 +42,7 @@ function ActionItem({ action, follow, visible, open }: { action: Receipt; follow
   </li>;
 }
 
-export default function LiveActivity({ run, call, open }: { run: string; call?: string; open: (id: string) => void }) {
+export default function LiveActivity({ run, call, callStatus, open }: { run: string; call?: string; callStatus?: string; open: (id: string) => void }) {
   const section = useRef<HTMLElement>(null);
   const list = useRef<HTMLOListElement>(null), following = useRef(true);
   const [onScreen, setOnScreen] = useState(false), [tabVisible, setTabVisible] = useState(!document.hidden), [paused, setPaused] = useState(false);
@@ -57,7 +60,7 @@ export default function LiveActivity({ run, call, open }: { run: string; call?: 
   return <section ref={section} class="live-activity" aria-label="Live progress and actions">
     <div class="activity-heading"><h4>Activity updates</h4><button class="text-button" onClick={() => setPaused(!paused)}>{paused ? 'Resume display updates' : 'Pause display updates'}</button></div>
     <p class="micro">{paused ? 'Display updates paused.' : 'Display updates enabled.'} Updating this view does not invoke a model or change the persona’s execution state. Use participation settings to pause or cancel work.</p>
-    {call && <CallMessages id={call} visible={visible}/>}
+    {call && <CallMessages key={call} id={call} visible={visible} status={callStatus}/>}
     {error && <p role="alert">Recent actions unavailable: {error}</p>}
     {actions?.length === 0 && <p class="micro">No actions recorded for this participation yet.</p>}
     <ol ref={list} class="activity-actions" onScroll={e => { const el = e.currentTarget; following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{actions?.map(action => <ActionItem key={action.id} action={action} follow={followed.includes(action.id)} visible={visible} open={open}/>)}</ol>

@@ -4293,6 +4293,13 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "after_continuity": {
+                    "description": "True requires this decision's atomic continuity update to have succeeded before delivery. Use for messages depending on same-response graph changes. Null/false permits independently valid correspondence from the admitted context.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 },
                 "additionalProperties": false,
@@ -6788,6 +6795,8 @@
             "items": {
               "type": "string"
             },
+            "minItems": 1,
+            "maxItems": 8,
             "default": null
           },
           "delegation": {
@@ -12779,6 +12788,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "after_continuity": {
+                "description": "True requires this decision's atomic continuity update to have succeeded before delivery. Use for messages depending on same-response graph changes. Null/false permits independently valid correspondence from the admitted context.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               }
             },
             "additionalProperties": false,
@@ -15292,6 +15308,8 @@
             "items": {
               "type": "string"
             },
+            "minItems": 1,
+            "maxItems": 8,
             "default": null
           },
           "delegation": {
