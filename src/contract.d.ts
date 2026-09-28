@@ -1650,12 +1650,15 @@ export interface Selection2 {
    */
   active: string[];
   /**
-   * Focus whose connected fragment previews to show next. Null browses all owned nodes.
+   * Optional graph focus for the next decision. Without focus, query or after, indexed discovery supplies task-relevant previews.
    */
   focus?: string | null;
+  /**
+   * Visible offset for an explicit graph page; zero requests the first page, including all owned nodes when focus/query are null.
+   */
   after?: number | null;
   /**
-   * Your search cue across owned memory descriptions for the next context. Results are previews, never automatically selected full fragments.
+   * Search owned titles/descriptions in the next graph page and cue indexed retrieval. Results are previews, never automatically selected full fragments.
    */
   query?: string | null;
   /**
