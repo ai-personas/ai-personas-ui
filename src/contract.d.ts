@@ -1726,16 +1726,150 @@ export interface Selection2 {
    */
   delegation?: Delegation | null;
 }
+/**
+ * Your bounded retrieval choice: choose the expiry and size limits yourself.
+ * Invitations establish participation; they do not supply hidden delegation
+ * parameters. Current processing/export permission and funding are separate
+ * runtime checks. This choice cannot extend those permissions or resources.
+ */
 export interface Delegation {
   /**
    * Exact received source nodes whose conditional connections may select full text.
    * Received node cards suffice; reading their full fragments first is not required.
    * For a source created OR edited in this transaction, use its $handle with
    * revision 0 to bind the committed version, not its old ID or @memory alias.
+   *
+   * @minItems 1
+   * @maxItems 16
    */
-  sources: VersionRef[];
+  sources:
+    | [VersionRef]
+    | [VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ];
+  /**
+   * Your chosen future RFC3339 expiry for this recall choice. Permission and
+   * funding expiration still apply independently.
+   */
   expires: string;
+  /**
+   * Your maximum full-fragment count, including required corrections and
+   * prerequisites. Whole required bundles must fit; they are never truncated.
+   */
   max_fragments: number;
+  /**
+   * Your maximum serialized full-fragment bytes in this preparation.
+   */
   max_bytes: number;
   /**
    * Permit the configured selector to assess unknown semantic conditions.

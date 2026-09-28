@@ -6895,6 +6895,7 @@
         ]
       },
       "Delegation": {
+        "description": "Your bounded retrieval choice: choose the expiry and size limits yourself.\nInvitations establish participation; they do not supply hidden delegation\nparameters. Current processing/export permission and funding are separate\nruntime checks. This choice cannot extend those permissions or resources.",
         "type": "object",
         "properties": {
           "sources": {
@@ -6902,20 +6903,27 @@
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
-            }
+            },
+            "minItems": 1,
+            "maxItems": 16
           },
           "expires": {
+            "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",
             "type": "string"
           },
           "max_fragments": {
+            "description": "Your maximum full-fragment count, including required corrections and\nprerequisites. Whole required bundles must fit; they are never truncated.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 32
           },
           "max_bytes": {
+            "description": "Your maximum serialized full-fragment bytes in this preparation.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 65536
           },
           "semantic": {
             "description": "Permit the configured selector to assess unknown semantic conditions.",
@@ -15485,6 +15493,7 @@
         ]
       },
       "Delegation": {
+        "description": "Your bounded retrieval choice: choose the expiry and size limits yourself.\nInvitations establish participation; they do not supply hidden delegation\nparameters. Current processing/export permission and funding are separate\nruntime checks. This choice cannot extend those permissions or resources.",
         "type": "object",
         "properties": {
           "sources": {
@@ -15492,20 +15501,27 @@
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
-            }
+            },
+            "minItems": 1,
+            "maxItems": 16
           },
           "expires": {
+            "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",
             "type": "string"
           },
           "max_fragments": {
+            "description": "Your maximum full-fragment count, including required corrections and\nprerequisites. Whole required bundles must fit; they are never truncated.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 32
           },
           "max_bytes": {
+            "description": "Your maximum serialized full-fragment bytes in this preparation.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 65536
           },
           "semantic": {
             "description": "Permit the configured selector to assess unknown semantic conditions.",
