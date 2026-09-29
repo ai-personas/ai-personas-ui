@@ -33,15 +33,21 @@ export function Facts({ r }: { r: Entity }) {
     {f.pendingRequests !== undefined && f.pendingRequests > 0 && <span class="needs">{f.pendingRequests} unresolved outside requests</span>}</div>;
 }
 export function Portrait({ id, name }: { id?: string; name: string }) {
-  return isRecordID(id) ? <BoundedPortrait key={id} id={id} name={name}/> : <span class="portrait placeholder" aria-label="Image not authored">◌</span>;
+  return isRecordID(id) ? <BoundedPortrait key={id} id={id} name={name}/> : <PortraitPlaceholder label="Image not authored"/>;
+}
+function PortraitPlaceholder({ label }: { label: string }) {
+  return <span class="portrait placeholder" aria-label={label}><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="1 3"/></svg></span>;
 }
 function BoundedPortrait({ id, name }: { id: string; name: string }) {
   const { value: r } = useResource<Entity>('/records/' + id, e => e.entity === id);
   const [failed, setFailed] = useState(false), d = r ? data(r) : {};
-  // No thumbnail endpoint exists in v1. Do not fetch multi-megabyte originals for a list avatar.
-  const safe = !failed && r?.kind === 'artifact' && Number.isSafeInteger(d.size) && d.size >= 0 && d.size <= 512_000 && ['image/png', 'image/jpeg', 'image/webp'].includes(d.media_type);
-  return safe ? <img class="portrait" src={fileURL(id)} loading="lazy" width="42" height="42" alt={name + ', persona portrait'} onError={() => setFailed(true)}/>
-    : <span class="portrait placeholder" aria-label="Portrait preview unavailable; inspect the original in details">◌</span>;
+  // Generated avatars carry decoded dimensions and are bounded by the runtime.
+  // Retain the smaller cap for arbitrary uploaded portraits without that record.
+  const image = d.generation?.image;
+  const generated = isRecordID(d.generation?.call) && image?.mime === d.media_type && ['width', 'height'].every(k => Number.isSafeInteger(image?.[k]) && image[k] >= 64 && image[k] <= 2048);
+  const safe = !failed && r?.kind === 'artifact' && Number.isSafeInteger(d.size) && d.size >= 0 && d.size <= (generated ? 8 * 1024 * 1024 : 512_000) && ['image/png', 'image/jpeg', 'image/webp'].includes(d.media_type);
+  return safe ? <img class="portrait" src={fileURL(id)} loading="lazy" decoding="async" width="42" height="42" alt={name + ', persona portrait'} onError={() => setFailed(true)}/>
+    : <PortraitPlaceholder label="Portrait preview unavailable; inspect the original in details"/>;
 }
 export { default as Pagination } from './Pagination';
 export type Act = (kind: Command['kind'], args: unknown, actor?: string, run?: string) => ReturnType<typeof operate>;

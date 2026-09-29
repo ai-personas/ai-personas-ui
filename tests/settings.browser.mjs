@@ -16,13 +16,21 @@ const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/
 const keys = ['fixture-key-one', 'fixture-key-two', 'fixture-jev-key'];
 let app, browser, page, port, url, checks = 0, discovery = 0, inferences = 0;
 const errors = [], captured = [];
-// Synthetic blank pixels exercise the real decoder and portrait path, not quality.
+// Synthetic textured pixels exercise realistic file size and the real portrait
+// path, not image quality. Blank pixels hid the old 512 KB preview cutoff.
 function pngChunk(type, data) {
   const content = Buffer.concat([Buffer.from(type), data]), length = Buffer.alloc(4), crc = Buffer.alloc(4);
   length.writeUInt32BE(data.length); crc.writeUInt32BE(crc32(content)); return Buffer.concat([length, content, crc]);
 }
 const dimensions = Buffer.alloc(13); dimensions.writeUInt32BE(1024, 0); dimensions.writeUInt32BE(1024, 4); dimensions[8] = 8; dimensions[9] = 2;
-const avatarPNG = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk('IHDR', dimensions), pngChunk('IDAT', deflateSync(Buffer.alloc(1024 * (1 + 1024 * 3)))), pngChunk('IEND', Buffer.alloc(0))]);
+const avatarPixels = Buffer.alloc(1024 * (1 + 1024 * 3));
+let pixelSeed = 104729;
+for (let row = 0; row < 1024; row++) for (let column = 1; column <= 1024 * 3; column++) {
+  pixelSeed ^= pixelSeed << 13; pixelSeed ^= pixelSeed >>> 17; pixelSeed ^= pixelSeed << 5;
+  avatarPixels[row * (1 + 1024 * 3) + column] = pixelSeed & 255;
+}
+const avatarPNG = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk('IHDR', dimensions), pngChunk('IDAT', deflateSync(avatarPixels)), pngChunk('IEND', Buffer.alloc(0))]);
+assert(avatarPNG.length > 512_000 && avatarPNG.length < 8 * 1024 * 1024);
 const provider = createServer(async (req, res) => {
   if (req.url === '/images/generations') {
     inferences++; const chunks = []; for await (const chunk of req) chunks.push(chunk);

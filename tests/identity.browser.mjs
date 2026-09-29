@@ -141,7 +141,7 @@ try {
   await avatar.getByRole('button', { name: 'Generate avatar' }).click();
   assert.deepEqual(await page.evaluate(() => window.initializationAction), { kind: 'persona.avatar.retry', args: { id, revision: 6 } });
   await page.evaluate(persona => window.showPersona(persona), revision(7, { portrait: selfFragment, avatar_initialization: { status: 'ready', usage_known: false, call: operation, result: { actual_model: 'reported-controller', image_model: 'reported-image-model', image: { format: 'webp', width: 320, height: 480 } } } }));
-  await expect(avatar).toContainText('reserved spending remains accounted');
+  await expect(avatar).toContainText('The full admitted reservation remains accounted');
   await expect(avatar).toContainText('Provider-reported model: reported-controller · Image model: reported-image-model');
   await expect(avatar).toContainText('WEBP · 320 × 480');
   await expect(avatar.getByRole('button', { name: 'Generate avatar', exact: true })).toHaveCount(0);
