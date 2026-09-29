@@ -1217,6 +1217,17 @@ export type StopDisposition =
 export type Blockage = "resource" | "tool" | "runtime";
 export type Outcome2 = "succeeded" | "failed" | "unknown";
 export type Protocol = "responses" | "anthropic" | "gemini";
+export type Billing = "api" | "subscription";
+export type Route =
+  | {
+      endpoint: string;
+      kind: "native_images";
+    }
+  | {
+      image_model: string;
+      max_text_output_tokens: number;
+      kind: "responses_tool";
+    };
 /**
  * This body is write-only and must never enter the action journal or logs.
  */
@@ -2015,7 +2026,7 @@ export interface Connection {
   /**
    * Explicit image generation permission on the same API connection.
    */
-  avatar_models?: string[];
+  images?: HttpConfig2[];
 }
 export interface HttpConfig {
   /**
@@ -2055,6 +2066,28 @@ export interface HttpModel {
    */
   image_token_upper_bound?: number | null;
   allowed_reasoning_efforts?: string[];
+}
+export interface HttpConfig2 {
+  model: ModelSpec;
+  route: Route;
+  size: string;
+  quality?: string | null;
+}
+/**
+ * An adapter-owned offer, not a global registry of image model names. Pricing
+ * is a conservative USD micro-unit rate for all usage in this route; Responses
+ * offers include both controller and image output. Subscription zero API charge
+ * never claims zero included-limit or credit consumption.
+ */
+export interface ModelSpec {
+  id: string;
+  billing: Billing;
+  input_units_per_million: number;
+  output_units_per_million: number;
+  input_framing_tokens: number;
+  output_tokens: number;
+  timeout_ms: number;
+  evidence: string;
 }
 export interface KeyStatus {
   key_saved: boolean;

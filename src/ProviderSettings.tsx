@@ -36,7 +36,7 @@ export function ProviderSettings() {
   const saved = settings.connections;
   const open = (connection: Connection, exists: boolean, custom: boolean) => { setNotice(''); setEditing({ connection, exists, custom }); };
   return <section class="provider-settings"><header class="page-heading"><div><h2>Provider connections</h2><p>Connect models with an API key, or use the node’s Codex login.</p></div>
-    <button class="secondary" onClick={() => open({ provider: '', protocol: 'responses', avatar_models: [], config: { ...settings.templates[0].config, endpoint: '', models: [] } }, false, true)}>Add custom provider</button></header>
+    <button class="secondary" onClick={() => open({ provider: '', protocol: 'responses', images: [], config: { ...settings.templates[0].config, endpoint: '', models: [] } }, false, true)}>Add custom provider</button></header>
     <p class="micro">Keys are saved only on this node, in an owner-only file. Saved keys are never sent back to the browser or included in persona context. Provider access and task funding are separate.</p>
     {notice && <p class="notice" role="status">{notice}</p>}
     {error && <p role="alert">{error} <button class="text-button" onClick={() => setAttempt(n => n + 1)}>Reload settings</button></p>}
@@ -64,7 +64,7 @@ export function ProviderSettings() {
       {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p></article>)}
     </div>
     <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
-    <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. OpenAI Images-compatible connections can also generate persona avatars from starting characteristics. Add each model’s price and allowance before using it.</p>
+    <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. Responses connections can generate persona avatars through configured image routes. Add each model’s price and allowance before using it.</p>
     {editing && <ConnectionEditor key={editing.connection.provider + editing.exists} initial={editing.connection} exists={editing.exists} custom={editing.custom} revision={settings.revision} save={save} close={() => setEditing(undefined)}/>}
     {typesafe && <TypesafeKey revision={settings.revision} save={save} close={() => setTypesafe(false)}/>}
   </section>;
@@ -98,6 +98,12 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
   const [protocol, setProtocol] = useState(initial.protocol);
   const [rows, setRows] = useState(() => initial.config.models.map((model, id) => ({ id, model })));
   const add = () => setRows(rows => [...rows, { id: next.current++, model: { id: '', context_window_tokens: 0, max_output_tokens: 0, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 4096, vision: false, image_token_upper_bound: null, allowed_reasoning_efforts: [] } }]);
+  const nextImage = useRef(initial.images?.length || 0);
+  const [images, setImages] = useState(() => (initial.images || []).map((image, id) => ({ id, image })));
+  const addImage = () => setImages(rows => [...rows, { id: nextImage.current++, image: initial.images?.[0] || {
+    model: { id: '', billing: 'api' as const, input_units_per_million: 0, output_units_per_million: 0, input_framing_tokens: 4096, output_tokens: 4096, timeout_ms: 120000, evidence: '' },
+    route: { kind: 'native_images' as const, endpoint: '' }, size: '1024x1024', quality: 'low'
+  } }]);
   const [baseRevision] = useState(revision);
   const stale = baseRevision !== revision;
   return <Dialog label={exists ? 'Edit provider connection' : 'Connect provider'} close={() => { if (!busy) close(); }}><form class="operator-form allowance-form provider-form" onInvalidCapture={e => { const details = (e.target as HTMLElement).closest('details'); if (details) details.open = true; }} onSubmit={async e => {
@@ -109,11 +115,24 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
         context_window_tokens: whole(f, `model.${id}.context`), max_output_tokens: whole(f, `model.${id}.output`),
         input_tokens_per_utf8_byte_upper_bound: whole(f, `model.${id}.token_bound`), framing_token_allowance: whole(f, `model.${id}.framing`),
         allowed_reasoning_efforts: String(f.get(`model.${id}.reasoning`) || '').split(',').map(s => s.trim()).filter(Boolean) }));
-      const avatar_models = protocol === 'responses' ? f.getAll('avatar_model').map(String) : [];
-      if (!models.length && !avatar_models.length) throw Error('Enable at least one text or avatar model.');
+      const imageConfigs: NonNullable<Connection['images']> = protocol === 'responses' ? images.map(({ id, image }) => {
+        const value = (name: string) => String(f.get(`image.${id}.${name}`) || '').trim();
+        const numeric = (name: string, min = 1) => whole(f, `image.${id}.${name}`, min);
+        const route: typeof image.route = image.route.kind === 'native_images'
+          ? { kind: 'native_images', endpoint: value('endpoint') }
+          : { kind: 'responses_tool', image_model: value('image_model'), max_text_output_tokens: numeric('text_output') };
+        const output_tokens = numeric('output');
+        if (!numeric('input_price', 0) && !numeric('output_price', 0)) throw Error('Enter a positive image input or output rate.');
+        const size = value('size').split('x').map(Number);
+        if (size.length !== 2 || size.some(n => !Number.isInteger(n) || n < 64 || n > 2048)) throw Error('Image width and height must each be between 64 and 2048.');
+        if (route.kind === 'native_images' && new URL(route.endpoint).origin !== new URL(String(f.get('endpoint'))).origin) throw Error('Image endpoint must use the connection’s origin.');
+        if (route.kind === 'responses_tool' && route.max_text_output_tokens >= output_tokens) throw Error('Combined output reservation must exceed the text output limit.');
+        return { model: { id: value('id'), billing: 'api', input_units_per_million: numeric('input_price', 0), output_units_per_million: numeric('output_price', 0), input_framing_tokens: numeric('framing'), output_tokens, timeout_ms: numeric('timeout'), evidence: value('evidence') }, route, size: value('size'), quality: value('quality') || null };
+      }) : [];
+      if (!models.length && !imageConfigs.length) throw Error('Enable at least one text or avatar model.');
       if (models.some(m => !m.id || m.context_window_tokens <= m.max_output_tokens)) throw Error('Each model needs an ID and a context limit larger than its output limit.');
       const api_key = key.value.trim();
-      await save({ action: 'save', revision: baseRevision, connection: { provider: String(f.get('provider')).trim(), protocol, avatar_models, config: { ...initial.config,
+      await save({ action: 'save', revision: baseRevision, connection: { provider: String(f.get('provider')).trim(), protocol, images: imageConfigs, config: { ...initial.config,
         endpoint: String(f.get('endpoint')).trim(), api_key_env: null, trust_loopback_http: f.has('loopback'), models } }, api_key: api_key || null });
       key.value = ''; close();
     } catch (e) { setError((e as Error).message); } finally { key.value = ''; setBusy(false); }
@@ -126,9 +145,19 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
       {custom && <small>Use the exact /responses or /messages endpoint, or Gemini’s /v1beta/models base endpoint.</small>}
       <label>{exists ? 'Replace API key' : 'API key'}<input name="api_key" type="password" required={!exists} maxLength={8192} autoComplete="new-password" spellcheck={false}/></label>
       <small>{exists ? 'Leave blank to keep the saved key. Changing the endpoint requires a new key.' : 'The node stores this key; the browser cannot retrieve it after saving.'}</small>
-      {protocol === 'responses' && <fieldset><legend>Automatic persona avatars</legend><p class="micro">Enable models that this API connection supports through its /images/generations endpoint. The node checks account availability and chooses the lowest reserved cost among these models priced in the persona’s allowance. Only starting characteristics are sent. One low-quality 1024 × 1024 PNG per attempt.</p>
-        {['gpt-image-1-mini', 'gpt-image-1.5', 'gpt-image-1'].map(id => <label class="check" key={id}><input type="checkbox" name="avatar_model" value={id} defaultChecked={initial.avatar_models?.includes(id)}/>{id}</label>)}
-        <p class="micro">Image API usage is separate from Codex subscription usage and the Jev spending ceiling. Enable only the models you want used for avatars; add their prices and budget in Funding.</p></fieldset>}
+      {protocol === 'responses' && <fieldset><legend>Automatic persona avatars</legend><p class="micro">Configure image routes supported by this connection. Only starting characteristics are sent. Add matching prices and budget in Funding before generation can run.</p>
+        {images.map(({ id, image }) => <fieldset key={id}><legend>Image route {images.findIndex(row => row.id === id) + 1}</legend>
+          <label>Avatar model ID<input name={`image.${id}.id`} defaultValue={image.model.id} required maxLength={256}/></label>
+          <small>For Responses tools, this is the outer model. It can also be enabled as a text model.</small>
+          <label>Image route<select aria-label="Image route" value={image.route.kind} onChange={e => setImages(rows => rows.map(row => row.id !== id ? row : { ...row, image: { ...row.image, route: e.currentTarget.value === 'native_images' ? { kind: 'native_images', endpoint: '' } : { kind: 'responses_tool', image_model: '', max_text_output_tokens: 256 } } }))}><option value="native_images">Native Images API</option><option value="responses_tool">Responses image tool</option></select></label>
+          {image.route.kind === 'native_images' ? <><label>Image API endpoint<input name={`image.${id}.endpoint`} type="url" required defaultValue={image.route.endpoint} placeholder="https://provider.example/v1/images/generations"/></label><small>Enter the exact endpoint on the same origin as the connection.</small></> : <><p class="micro">Uses the connection’s Responses endpoint.</p><label>Tool image model ID<input name={`image.${id}.image_model`} defaultValue={image.route.image_model} required maxLength={256}/></label><label>Maximum text output tokens<input name={`image.${id}.text_output`} type="number" min={1} step={1} required defaultValue={image.route.max_text_output_tokens}/></label></>}
+          <div class="operator-grid"><label>Image size<input name={`image.${id}.size`} defaultValue={image.size} required pattern="[0-9]+x[0-9]+" placeholder="1024x1024"/></label><label>Image quality<input name={`image.${id}.quality`} defaultValue={image.quality || ''} maxLength={32} pattern="[A-Za-z0-9_]+" placeholder="Optional"/></label></div>
+          <details open><summary>Image price and reservation</summary><p class="micro">Enter conservative rates in USD micro-units per million tokens. Responses rates must cover both the outer model and image tool.</p>
+            <div class="operator-grid"><label>Image input rate<input name={`image.${id}.input_price`} type="number" min={0} step={1} required defaultValue={image.model.input_units_per_million}/></label><label>Image output rate<input name={`image.${id}.output_price`} type="number" min={0} step={1} required defaultValue={image.model.output_units_per_million}/></label><label>Image framing tokens<input name={`image.${id}.framing`} type="number" min={1} max={262144} step={1} required defaultValue={image.model.input_framing_tokens}/></label><label>Combined output reservation tokens<input name={`image.${id}.output`} type="number" min={1} max={1048576} step={1} required defaultValue={image.model.output_tokens}/></label><label>Image timeout (ms)<input name={`image.${id}.timeout`} type="number" min={1000} max={180000} step={1} required defaultValue={image.model.timeout_ms}/></label></div>
+            <label>Image pricing evidence<input name={`image.${id}.evidence`} required maxLength={2048} defaultValue={image.model.evidence}/></label>
+          </details><button class="text-button" type="button" onClick={() => setImages(rows => rows.filter(row => row.id !== id))}>Remove image route</button>
+        </fieldset>)}<button class="secondary" type="button" onClick={addImage}>Add image route</button>
+      </fieldset>}
       <details open={custom}><summary>Model limits</summary><p class="micro">Only these exact models are enabled, after checking the provider’s model list. Use documented limits; prices and spending limits belong to the allowance.</p>
         {rows.map(({ id, model }) => <fieldset key={id}><legend>Model {rows.findIndex(row => row.id === id) + 1}</legend>
           <label>Model ID<input name={`model.${id}.id`} defaultValue={model.id} required maxLength={256}/></label>

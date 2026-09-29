@@ -4,6 +4,7 @@ export const owner = 'a'.repeat(32), first = 'b'.repeat(32), second = 'c'.repeat
 export const card = (id, title, revision = 1) => ({
   node: { id, revision }, fragment: { id: fragment, revision: 1 },
   title, basis: 'tentative',
+  full_context: { schema: 'qualified-memory-choice/1', status: 'available', select_with: 'continuity.memory.active', reference_kind: 'memory', fragments: 1, full_text_in_card: false },
   locator: { description: 'Find a relevant method', parameters: [], script_available: true },
   short_description: 'I check the **published pair** before relying on it.',
 });

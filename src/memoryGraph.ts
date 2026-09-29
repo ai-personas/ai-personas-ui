@@ -1,6 +1,10 @@
 /** Display projection of the current rootless graph. Browsing never selects context. */
 import type { Condition, Predicate, Relation, Treatment } from './contract';
 export type MemoryRef = { id: string; revision: number };
+type QualifiedContext = {
+  status: 'available' | 'required_context_unavailable' | 'required_context_stale' | 'required_context_too_large';
+  fragments: number | null;
+};
 export type MemoryCard = {
   node: MemoryRef;
   fragment: MemoryRef;
@@ -8,6 +12,7 @@ export type MemoryCard = {
   short_description: string;
   applicability: string;
   limitations: string;
+  full_context: QualifiedContext;
   basis?: string;
   locator?: { description: string } | null;
 };
@@ -85,10 +90,18 @@ function text(value: unknown): string {
 function card(value: unknown): MemoryCard {
   const item = object(value);
   const locator = item.locator == null ? null : object(item.locator);
+  const context = object(item.full_context);
+  requireValue(context.schema === 'qualified-memory-choice/1' && context.select_with === 'continuity.memory.active'
+    && context.reference_kind === 'memory' && context.full_text_in_card === false);
+  requireValue(['available', 'required_context_unavailable', 'required_context_stale', 'required_context_too_large'].includes(String(context.status)));
+  requireValue(context.status === 'available'
+    ? typeof context.fragments === 'number' && Number.isSafeInteger(context.fragments) && context.fragments > 0
+    : context.fragments === null);
   return {
     node: reference(item.node), fragment: reference(item.fragment),
     title: text(item.title), short_description: text(item.short_description),
     applicability: text(item.applicability), limitations: text(item.limitations),
+    full_context: { status: context.status as QualifiedContext['status'], fragments: context.fragments as number | null },
     basis: text(item.basis),
     locator: locator ? { description: text(locator.description) } : null,
   };

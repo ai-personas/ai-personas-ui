@@ -105,6 +105,18 @@ try {
     await page.getByRole('button',{name:'Show exact references',exact:true}).click();
     await page.getByRole('button',{name:/referenced revision 2/}).click();
     assert.deepEqual(await page.evaluate(() => window.opened),['a'.repeat(32)]);
+    await page.evaluate(value => window.mountEvidence(value), {status:'completed',provider:'fixture-subscription',requested_model:'fixture-controller',image_capability:{billing:'subscription'},usage:{known:false},
+      provider_observation:{schema:'provider-observation/1',source:'adapter_transport_receipt',raw_payload_retained:false,provider:'fixture-subscription',requested_model:'fixture-controller',dispatched:true,outcome:'completed',controller_usage:{known:true,input:100,cached:20,output:10}}});
+    await expect(page.getByText(/Subscription image generation: \$0 incremental API charge/)).toBeVisible();
+    await expect(page.getByText(/Complete image usage is unknown; the full admitted reservation remains accounted/)).toBeVisible();
+    await expect(page.getByText(/Measured controller usage only: 100 input, 10 output; 20 cached input tokens/)).toBeVisible();
+    await expect(page.getByText(/This partial receipt excludes image generation usage/)).toBeVisible();
+    await page.evaluate(value => window.mountAvatar(value), {avatar_initialization:{status:'ready',usage_known:false,result:{billing:'subscription',controller_usage:{known:true,input:100,cached:20,output:10}}}});
+    await expect(page.getByRole('region',{name:'Avatar generation'})).toContainText('$0 incremental API charge');
+    await expect(page.getByRole('region',{name:'Avatar generation'})).toContainText('possible credit consumption are unknown');
+    await expect(page.getByRole('region',{name:'Avatar generation'})).toContainText('full admitted reservation remains accounted');
+    await expect(page.getByRole('region',{name:'Avatar generation'})).toContainText('partial controller usage receipt');
+
   });
   await step('Learning cards distinguish ordinary documents from lesson fragments',async () => {
     await page.evaluate(() => window.mountCards());

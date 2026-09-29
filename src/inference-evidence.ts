@@ -37,12 +37,23 @@ function transport(value: unknown, call: ObjectValue) {
     || typeof call.provider !== 'string' || !call.provider || v.provider !== call.provider
     || typeof call.requested_model !== 'string' || !call.requested_model || v.requested_model !== call.requested_model) return undefined;
   const categories: Record<string, string> = { authentication: 'Authentication rejected', rate_limit: 'Rate limited', unavailable: 'Provider unavailable', http_failure: 'HTTP request failed', transport: 'Connection interrupted or unavailable', response_limit: 'Response exceeded the configured limit', malformed_output: 'Response did not satisfy the required format', cancelled: 'Call cancelled' };
-  const outcomes: Record<string, string> = { not_dispatched: 'Not dispatched', in_flight: 'Awaiting a complete response when recorded', completed: 'Response validated', failed: 'Failed' };
+  const outcomes: Record<string, string> = { not_started: 'Not dispatched', not_dispatched: 'Not dispatched', in_flight: 'Awaiting a complete response when recorded', completed: 'Response validated', not_adopted: 'Response not adopted', failed: 'Failed' };
   const status = count(v.http_status);
+  const omissions = list(v.diagnostic_omissions)?.map(object).filter(item =>
+    ['wire_breakdown', 'input_media'].includes(String(item.field))
+    && ['diagnostic_size_limit', 'receipt_size_limit'].includes(String(item.reason))
+    && ['none', 'without_omitted_runtime_notes'].includes(String(item.retained)))
+    .map(item => item.field === 'wire_breakdown' ? 'Request size diagnostics' : 'Input media diagnostics');
   return { dispatched: typeof v.dispatched === 'boolean' ? v.dispatched : undefined,
+    ...(omissions?.length ? { omittedDiagnostics: [...new Set(omissions)] } : {}),
     status: status !== undefined && status >= 100 && status <= 599 ? status : undefined,
     category: typeof v.error_category === 'string' && Object.hasOwn(categories, v.error_category) ? categories[v.error_category] : undefined,
     outcome: typeof v.outcome === 'string' && Object.hasOwn(outcomes, v.outcome) ? outcomes[v.outcome] : undefined };
+}
+export function measuredUsage(value: unknown) {
+  const usage = object(value), input = count(usage.input), output = count(usage.output), cached = count(usage.cached);
+  return usage.known === true && input !== undefined && output !== undefined && cached !== undefined
+    && cached <= input && Number.isSafeInteger(input + output) ? { input, output, cached } : undefined;
 }
 export function inferenceEvidence(value: unknown) {
   const d = object(value), recovery = receipt(d.context_recovery, 'context-recovery/1');
@@ -57,9 +68,11 @@ export function inferenceEvidence(value: unknown) {
   const admission = object(d.context_admission);
   const exposure = admission.measured_usage === false && admission.byte_count_is_token_count === false
     ? { input: count(admission.input_exposure_upper_tokens), output: count(admission.output_exposure_upper_tokens), bytes: count(admission.request_bytes) } : undefined;
-  const usage = object(d.usage), input = count(usage.input), output = count(usage.output), cached = count(usage.cached);
-  const measured = usage.known === true && input !== undefined && output !== undefined && cached !== undefined
-    && cached <= input && Number.isSafeInteger(input + output) ? { input, output, cached } : undefined;
+  const measured = measuredUsage(d.usage);
+  const providerTransport = transport(d.provider_observation, d);
+  const imageCapability = object(d.image_capability);
+  const imageBilling = ['api', 'subscription'].includes(String(imageCapability.billing)) ? imageCapability.billing as 'api' | 'subscription' : undefined;
+  const controllerUsage = imageBilling && providerTransport ? measuredUsage(object(d.provider_observation).controller_usage) : undefined;
   const questionList = questions ? list(questions.questions) : undefined;
   const questionRefs = questionList ? references(questionList, 'question') : undefined;
   const replies = questionList?.map(q => count(object(q).visible_reply_count));
@@ -71,7 +84,7 @@ export function inferenceEvidence(value: unknown) {
     ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
   ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {
-    transport: transport(d.provider_observation, d),
+    transport: providerTransport, imageBilling, controllerUsage,
     contextParts, maintenance: d.decision_mode === 'context_maintenance',
     state: typeof d.status === 'string' ? d.status.slice(0, 96) : 'Not recorded',
     contextBytes: count(d.context_bytes) ?? exposure?.bytes, measured, exposure,

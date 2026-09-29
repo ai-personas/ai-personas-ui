@@ -58,7 +58,7 @@ const provider = createServer(async (req, res) => {
       continuity.disposition = 'retain'; continuity.changes = [correction, method]; retainedGraph = true;
     }
     const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
-      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity, summary: 'Synthetic operator decision ' + calls, actions }) }] }];
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity, summary: 'Synthetic operator decision ' + calls, reply: null, actions }) }] }];
     if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',

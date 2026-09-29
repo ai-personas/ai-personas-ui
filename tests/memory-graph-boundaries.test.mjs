@@ -13,6 +13,16 @@ test('authored applicability and limits survive the card projection', () => {
   const p = page(); p.items[0].applicability = 'Only for identical source versions'; p.items[0].limitations = 'Check rounding separately';
   const result = readMemoryGraph(p, request).items[0];
   assert.equal(result.applicability, p.items[0].applicability); assert.equal(result.limitations, p.items[0].limitations);
+  assert.deepEqual(result.full_context, { status: 'available', fragments: 1 });
+  for (const status of ['required_context_unavailable', 'required_context_stale', 'required_context_too_large']) {
+    p.items[0].full_context = { ...p.items[0].full_context, status, fragments: null };
+    assert.deepEqual(readMemoryGraph(p, request).items[0].full_context, { status, fragments: null });
+  }
+  for (const change of [{ status: 'available', fragments: 0 }, { status: 'required_context_stale', fragments: 1 },
+    { status: 'assumed_available' }, { schema: 'old-schema' }, { full_text_in_card: true }]) {
+    const invalid = page(); invalid.items[0].full_context = { ...invalid.items[0].full_context, ...change }; rejects(invalid);
+  }
+  const missing = page(); delete missing.items[0].full_context; rejects(missing);
 });
 test('absent or null qualification text stays empty rather than invented', () => {
   const p = page(); p.items[0].applicability = null; p.items[0].limitations = null;

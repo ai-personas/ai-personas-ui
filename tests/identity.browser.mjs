@@ -130,6 +130,9 @@ try {
   await page.evaluate(persona => window.showPersona(persona), revision(5, { character_initialization: { status: 'ready' }, avatar_initialization: { status: 'running', model: 'gpt-image-1-mini', provider: 'images' } }));
   const avatar = page.getByRole('region', { name: 'Avatar generation', exact: true });
   await expect(avatar).toContainText('Generating an avatar');
+  await expect(avatar).toContainText('Requested model: images / gpt-image-1-mini');
+  await expect(avatar).not.toContainText('Low quality');
+  await expect(avatar).not.toContainText('1024 × 1024');
   await expect(page.getByRole('button', { name: 'Edit character and authorship' })).toBeEnabled();
   await avatar.getByRole('button', { name: 'Cancel avatar generation' }).click();
   assert.deepEqual(await page.evaluate(() => window.initializationAction), { kind: 'persona.avatar.cancel', args: { id, revision: 5 } });
@@ -137,8 +140,10 @@ try {
   await expect(avatar).toContainText('No funded image provider');
   await avatar.getByRole('button', { name: 'Generate avatar' }).click();
   assert.deepEqual(await page.evaluate(() => window.initializationAction), { kind: 'persona.avatar.retry', args: { id, revision: 6 } });
-  await page.evaluate(persona => window.showPersona(persona), revision(7, { portrait: selfFragment, avatar_initialization: { status: 'ready', usage_known: false, call: operation } }));
+  await page.evaluate(persona => window.showPersona(persona), revision(7, { portrait: selfFragment, avatar_initialization: { status: 'ready', usage_known: false, call: operation, result: { actual_model: 'reported-controller', image_model: 'reported-image-model', image: { format: 'webp', width: 320, height: 480 } } } }));
   await expect(avatar).toContainText('reserved spending remains accounted');
+  await expect(avatar).toContainText('Provider-reported model: reported-controller · Image model: reported-image-model');
+  await expect(avatar).toContainText('WEBP · 320 × 480');
   await expect(avatar.getByRole('button', { name: 'Generate avatar', exact: true })).toHaveCount(0);
   await avatar.getByRole('button', { name: 'Inspect image generation call' }).click();
   assert.equal(await page.evaluate(() => window.opened), operation);

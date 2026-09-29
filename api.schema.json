@@ -7551,11 +7551,11 @@
           "config": {
             "$ref": "#/$defs/HttpConfig"
           },
-          "avatar_models": {
+          "images": {
             "description": "Explicit image generation permission on the same API connection.",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/HttpConfig2"
             },
             "default": []
           }
@@ -7692,6 +7692,134 @@
           "max_output_tokens",
           "input_tokens_per_utf8_byte_upper_bound",
           "framing_token_allowance"
+        ]
+      },
+      "HttpConfig2": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/$defs/ModelSpec"
+          },
+          "route": {
+            "$ref": "#/$defs/Route"
+          },
+          "size": {
+            "type": "string"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "model",
+          "route",
+          "size"
+        ]
+      },
+      "ModelSpec": {
+        "description": "An adapter-owned offer, not a global registry of image model names. Pricing\nis a conservative USD micro-unit rate for all usage in this route; Responses\noffers include both controller and image output. Subscription zero API charge\nnever claims zero included-limit or credit consumption.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "billing": {
+            "$ref": "#/$defs/Billing"
+          },
+          "input_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "input_framing_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "billing",
+          "input_units_per_million",
+          "output_units_per_million",
+          "input_framing_tokens",
+          "output_tokens",
+          "timeout_ms",
+          "evidence"
+        ]
+      },
+      "Billing": {
+        "type": "string",
+        "enum": [
+          "api",
+          "subscription"
+        ]
+      },
+      "Route": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "endpoint": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "native_images"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "endpoint"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "image_model": {
+                "type": "string"
+              },
+              "max_text_output_tokens": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "const": "responses_tool"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "image_model",
+              "max_text_output_tokens"
+            ]
+          }
         ]
       },
       "KeyStatus": {

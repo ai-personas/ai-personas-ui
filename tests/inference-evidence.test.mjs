@@ -51,6 +51,13 @@ test('provider usage requires coherent known numbers and cached input consistenc
     provider:'fixture',requested_model:'choice-fixture',http_status:401,dispatched:true,outcome:'failed',error_category:'authentication',response_body:'PRIVATE_RESPONSE',remote_error:'PRIVATE_ERROR'};
   const facts = inferenceEvidence({...call,provider_observation:observation});
   assert.deepEqual(facts.transport, {status:401,dispatched:true,outcome:'Failed',category:'Authentication rejected'});
+  const shortened = inferenceEvidence({...call, provider_observation:{...observation, outcome:'not_adopted', diagnostic_omissions:[
+    {field:'wire_breakdown', reason:'diagnostic_size_limit', retained:'without_omitted_runtime_notes'},
+    {field:'input_media', reason:'receipt_size_limit', retained:'none'},
+    {field:'PRIVATE_DIAGNOSTIC', reason:'receipt_size_limit', retained:'none'}]}}).transport;
+  assert.equal(shortened.status, 401); assert.equal(shortened.dispatched, true); assert.equal(shortened.outcome, 'Response not adopted');
+  assert.deepEqual(shortened.omittedDiagnostics, ['Request size diagnostics', 'Input media diagnostics']);
+  assert(!JSON.stringify(shortened).includes('PRIVATE_'));
   assert.equal(facts.measured, undefined);
   assert(!JSON.stringify(facts).includes('PRIVATE_'));
   for (const change of [{schema:'old-schema'},{source:'not_available'},{raw_payload_retained:true},{provider:'other'},{requested_model:'other'}]) {
@@ -88,4 +95,17 @@ test('quoted upper bounds are separated from measured provider usage', () => {
   assert.equal(facts.contextBytes, 240000);
   assert.deepEqual(facts.exposure, {input:280000,output:4096,bytes:240000});
   assert.equal(facts.measured.input, 65000);
+});
+
+test('subscription images keep partial controller usage separate from unknown aggregate consumption', () => {
+  const value = { provider:'fixture-subscription', requested_model:'fixture-controller', image_capability:{billing:'subscription'}, usage:{known:false},
+    provider_observation:{schema:'provider-observation/1',source:'adapter_transport_receipt',raw_payload_retained:false,provider:'fixture-subscription',requested_model:'fixture-controller',outcome:'completed',dispatched:true,controller_usage:{known:true,input:100,cached:20,output:10}} };
+  const facts = inferenceEvidence(value);
+  assert.equal(facts.imageBilling, 'subscription'); assert.equal(facts.measured, undefined);
+  assert.deepEqual(facts.controllerUsage, {input:100,cached:20,output:10});
+  for (const controller_usage of [{known:false,input:100,cached:20,output:10},{known:true,input:100,cached:101,output:10}]) {
+    assert.equal(inferenceEvidence({...value,provider_observation:{...value.provider_observation,controller_usage}}).controllerUsage, undefined);
+  }
+  assert.equal(inferenceEvidence({...value,provider_observation:{...value.provider_observation,provider:'other'}}).controllerUsage, undefined);
+  assert.equal(inferenceEvidence({...value,image_capability:{billing:'unknown'}}).imageBilling, undefined);
 });
