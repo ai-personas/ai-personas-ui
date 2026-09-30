@@ -1600,7 +1600,7 @@ export interface Continuity {
    */
   intent?: Intent | null;
   /**
-   * Explicitly dispose prior opportunities. Omitted opportunities stay pending; no_change dismisses one with a reason.
+   * Resolve and remove prior pending opportunities. An empty array keeps them pending; omitted opportunity IDs stay pending. retain/revise/organize require corresponding committed changes; no_change dismisses with a reason. To update a pending cue without resolving it, use deferred with its same ID.
    */
   learning_resolutions?: LearningResolution[];
   /**
@@ -1620,7 +1620,7 @@ export interface Continuity {
    */
   change_reason: string;
   /**
-   * Add or update pending opportunities. Omission preserves earlier opportunities; use learning_resolutions for an explicit disposition.
+   * Add or update pending opportunities without resolving them. Reuse the supplied pending ID to update a cue; use null or omit the ID when adding a cue. Omission preserves earlier opportunities. Use learning_resolutions only to resolve and remove an opportunity.
    */
   deferred?: DeferredLearning[];
   changes: Change[];
@@ -1652,6 +1652,9 @@ export interface Intent {
   next_evidence: string;
   collaboration: string;
 }
+/**
+ * retain requires a committed new fragment; revise requires a committed fragment revision; organize requires a committed graph-only change. no_change dismisses the opportunity with a reason. defer is not a resolution; keep the cue pending by omitting its resolution or updating it through deferred.
+ */
 export interface LearningResolution {
   id: string;
   disposition: LearningDisposition;
@@ -1659,7 +1662,7 @@ export interface LearningResolution {
 }
 export interface DeferredLearning {
   /**
-   * Reuse the supplied opportunity identity when reconsidering an earlier idea; omit for a new cue.
+   * Reuse the supplied pending opportunity ID to update that cue without resolving it; use null or omit the ID when adding a cue.
    */
   id?: string | null;
   cue: string;
