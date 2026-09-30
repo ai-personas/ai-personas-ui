@@ -8,6 +8,8 @@ import { memoryGraphPath, readMemoryGraph, type MemoryCard as Card, type MemoryG
 const Locator = lazy(() => import('./MemoryLocator'));
 const Fragment = lazy(() => import('./MemoryFragment'));
 const Activity = lazy(() => import('./MemoryActivity'));
+const Tree = lazy(() => import('./MemoryTree'));
+import './persona-navigation.css';
 
 function Lesson({ item, owner, open, navigate }: { item: Card; owner: string; open: (id: string) => void; navigate: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false), [utility, setUtility] = useState(false);
@@ -28,6 +30,7 @@ function Lesson({ item, owner, open, navigate }: { item: Card; owner: string; op
 }
 export default function MemoryGraph({ owner, open }: { owner: string; open: (id: string) => void }) {
   const [focus, setFocus] = useState(''), [pages, setPages] = useState([0]), [query, setQuery] = useState(''), [search, setSearch] = useState(''), [activity, setActivity] = useState(false);
+  const [view, setView] = useState<'tree' | 'cards'>('tree');
   const navigate = (id: string) => { setFocus(id); setPages([0]); setQuery(''); setSearch(''); };
   const request = { owner, focus, after: pages.at(-1)!, query };
   const path = memoryGraphPath(request);
@@ -49,7 +52,10 @@ export default function MemoryGraph({ owner, open }: { owner: string; open: (id:
       <nav class="memory-focus" aria-label="Graph navigation"><button class="text-button" onClick={() => navigate('')}>All learning</button>{value?.focus_card && <span aria-current="location">{value.focus_card.title}</span>}</nav>
       {graphError && <p role="alert">Could not load this graph. {graphError} <button class="text-button" onClick={retry}>Try again</button></p>}
       {loading && <p role="status">Loading learning…</p>}
-      {value && <>{value.focus_card && cards([value.focus_card])}<h3>{query ? 'Matching lessons' : focus ? 'Connected fragments' : 'All fragments'}</h3>{cards(value.items)}{!value.items.length && <p>{query ? 'No matching titles or descriptions on this page.' : focus ? 'No available connections here.' : 'No lessons retained yet.'}</p>}
+      {value && <><div class="memory-view-toolbar"><div><h3>{query ? 'Matching lessons' : focus ? 'Connected fragments' : 'All fragments'}</h3><p class="micro">{value.items.length + (value.focus_card ? 1 : 0)} fragments · {value.connections.length} connections on this page</p></div>
+          <div class="memory-view-switch" role="group" aria-label="Fragment display"><button aria-pressed={view === 'tree'} onClick={() => setView('tree')}>Tree</button><button aria-pressed={view === 'cards'} onClick={() => setView('cards')}>Cards</button></div></div>
+        {view === 'tree' ? <><p class="record-caveat">Tree branches follow authored connections on this page, not a fixed hierarchy. Shared fragments and cycles appear as links. Other connections may be on another page.</p><Suspense fallback={<p role="status">Loading fragment tree…</p>}><Tree key={path} graph={value} renderCard={item => cards([item])}/></Suspense></>
+          : <>{value.focus_card && cards([value.focus_card])}{cards(value.items)}</>}{!value.items.length && <p>{query ? 'No matching titles or descriptions on this page.' : focus ? 'No available connections here.' : 'No lessons retained yet.'}</p>}
         {query && value.next === null && <p class="record-caveat">End of results for this query. Full fragment text was not searched. Change the search terms or clear the search to browse available descriptions.</p>}
         <Pagination disabled={loading} previous={pages.length > 1} next={value.next} onPrevious={() => setPages(pages.slice(0, -1))} onNext={() => { if (value.next !== null) setPages([...pages, value.next]); }}/>
         {!!value.connections.length && <section aria-label="Authored connections"><h3>Authored connections</h3><p class="micro">Only connections between fragments on this page are shown. Browsing does not select context or establish usefulness.</p>{value.connections.map(edge => {
