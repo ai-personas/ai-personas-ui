@@ -11,6 +11,7 @@ import { InputNotice } from './Attention';
 import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, readNavigation, navigationHash, type Navigation, type View, type WorkFilter } from './presentation';
 import Icon from './Icon';
 import SearchInput from './SearchInput';
+import RecentPersonas, { useRecentPersonas } from './RecentPersonas';
 import { ContentCard } from './ContentCards';
 import './style.css';
 import './workspace.css';
@@ -94,6 +95,7 @@ function App() {
   const [route, setRoute] = useState<Navigation>(() => readNavigation(location.hash));
   const currentRoute = useRef(route);
   const { page, work, tab = 'Overview', record: selected, artifact } = route;
+  const recentPersonas = useRecentPersonas(selected, connected);
   const [create, setCreate] = useState<string>(), [brief, setBrief] = useState(''), [error, setError] = useState('');
   const changeRoute = (next: Navigation) => {
     if (navigationHash(next) !== navigationHash(currentRoute.current)) {
@@ -162,6 +164,7 @@ function App() {
       <div class="page-content">{connection !== 'Connected' && <p class="connection-warning" role="status">{connection.startsWith('Reconnecting') ? connection : `${connection}. Displayed records may be stale.`}</p>}{error && <p role="alert">{error}</p>}
         {work ? <Suspense fallback={<p role="status">Opening workspace…</p>}><Workspace key={work} id={work} tab={tab} setTab={tab => changeRoute({ ...currentRoute.current, tab })} back={() => setWork(undefined)} open={setSelected} artifact={setArtifact} act={act}/></Suspense> : page === 'Funding' ? <Suspense fallback={<p>Loading funding…</p>}><Funding act={act}/></Suspense> : <>
           <header class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>{page}</h1><p>{meta.description}</p></div>{meta.create && <button onClick={start}>+ {meta.create}</button>}</header>
+          {page === 'Personas' && <RecentPersonas ids={recentPersonas.ids} clear={recentPersonas.clear} open={setSelected}/>}
           {['Work', 'Personas', 'Environments'].includes(page) && <Requests open={setSelected}/>}
           {page === 'Environments' && <Starters choose={b => { setBrief(b); setCreate('Work'); }}/>}
           {page === 'Network' && <Network/>}
@@ -205,7 +208,7 @@ function RecordList({ view, open, openWork, artifact, act, start, navigate }: {
   const rows = (page?.items || []).filter(r => view !== 'Work' || matchesWorkFilter(r.data, filter));
   const clear = () => { setQuery(''); setFilter('all'); setCursors([0]); search.current?.focus(); };
   return <section class="browse-section" aria-label={`${view} records`}>
-    <div class="browse-toolbar">{view === 'Work' ? <div class="browse-filters" role="group" aria-label="Filter work on this page">{WORK_FILTERS.map(item => <button key={item.value} class="filter-button" aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}</div> : <h2 class="browse-title">{view === 'Personas' ? 'Continuing individuals' : 'Recorded collection'}</h2>}
+    <div class="browse-toolbar">{view === 'Work' ? <div class="browse-filters" role="group" aria-label="Filter work on this page">{WORK_FILTERS.map(item => <button key={item.value} class="filter-button" aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>{item.label}</button>)}</div> : <h2 class="browse-title">{view === 'Personas' ? 'All personas' : 'Recorded collection'}</h2>}
       <div class="search-field"><Icon name="Search"/><SearchInput inputRef={search} label="Search records" placeholder={`Search ${view.toLowerCase()}…`} value={query} onSearch={q => { setCursors([0]); setQuery(q); }}/></div>
     </div>
     <div class="browse-caption"><span role="status">{busy ? (page ? 'Refreshing records…' : 'Loading records…') : page ? `${rows.length} shown · ${page.items.length} loaded on page ${cursors.length}` : 'Records unavailable'}</span>{view === 'Work' && <span>Filters apply to this page, not all work.</span>}</div>

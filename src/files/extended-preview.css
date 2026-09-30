@@ -1,0 +1,16 @@
+.model-preview,.table-preview{min-width:0}
+.model-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.75rem;border:1px solid var(--border,#ccd5d3);border-radius:.75rem .75rem 0 0}
+.model-toolbar button{min-width:2.75rem;min-height:2.75rem}
+.model-toolbar output{min-width:3.5rem;text-align:center;font-variant-numeric:tabular-nums}
+.model-toolbar label{display:inline-flex;align-items:center;gap:.45rem;margin-left:auto}
+.model-scene canvas{display:block;box-sizing:border-box;width:100%;height:clamp(240px,48vh,560px);background:#0e131a;border:1px solid var(--border,#ccd5d3);border-radius:0 0 .75rem .75rem;touch-action:none;cursor:grab}
+.model-scene canvas:active{cursor:grabbing}
+.model-scene canvas:focus-visible,.file-table-scroll:focus-visible{outline:3px solid var(--accent,#327f91);outline-offset:3px}
+.model-caption{font-size:.875rem;line-height:1.5;opacity:.8}
+.file-table-scroll{max-height:60vh;max-width:100%;overflow:auto;border:1px solid var(--border,#ccd5d3);border-radius:.5rem;margin-top:.75rem}
+.file-table-scroll table{width:100%;border-collapse:separate;border-spacing:0;font-size:.875rem}
+.file-table-scroll caption{text-align:left;padding:.75rem;font-weight:500}
+.file-table-scroll th,.file-table-scroll td{padding:.5rem .75rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--border,#ccd5d3);white-space:pre-wrap;overflow-wrap:anywhere;min-width:6rem;max-width:28rem}
+.file-table-scroll thead th{position:sticky;top:0;background:var(--surface,#f5f7f5);color:var(--text,#182e29);z-index:1}
+.file-table-scroll tbody th{font-variant-numeric:tabular-nums;min-width:3rem}
+@media(max-width:520px){.model-toolbar label{margin-left:0}.model-scene canvas{height:280px}}
