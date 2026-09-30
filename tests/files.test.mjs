@@ -8,7 +8,7 @@ test('file previews recognize generic uploads, MIME parameters, uppercase extens
     ['download', 'Text/Markdown; charset=UTF-8', 'markdown'], ['house.ZIP', '', 'archive'],
     ['download', 'application/x-zip-compressed', 'archive'], ['plan.png', '', 'image'],
     ['notes.txt', 'text/plain', 'text'], ['preview.html', 'text/html', 'text'],
-    ['source.py', '', 'text'], ['toolpath.nc', '', 'text'], ['geometry.json', '', 'text'],
+    ['source.py', '', 'text'], ['toolpath.nc', '', 'engineering'], ['geometry.json', '', 'text'],
     ['model.blend', 'application/octet-stream', 'unsupported'], ['README', '', 'text'],
     ['constructor', '', 'unsupported'], ['file.__proto__', '', 'unsupported'],
     ['sound.wav', '', 'audio'], ['movie.webm', '', 'video'], ['drawing.pdf', '', 'pdf'],
