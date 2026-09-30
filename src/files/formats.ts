@@ -1,4 +1,5 @@
-export type FileKind = 'markdown' | 'image' | 'text' | 'pdf' | 'audio' | 'video' | 'archive' | 'model' | 'table' | 'unsupported';
+import { engineeringFormat, engineeringLabels, ENGINEERING_BYTES } from './engineering.ts';
+export type FileKind = 'markdown' | 'image' | 'text' | 'pdf' | 'audio' | 'video' | 'archive' | 'model' | 'table' | 'engineering' | 'unsupported';
 export type FileFormat = { kind: FileKind; media: string; label: string };
 export type PreviewFile = { name: string; blob: Blob; media: string };
 
@@ -33,6 +34,8 @@ export function fileFormat(name: string, media = ''): FileFormat {
   const ext = name.split('.').at(-1)?.toLowerCase() || '';
   const known = Object.hasOwn(extensions, ext) ? extensions[ext] : undefined;
   if (known) return { kind: known[0], media: known[1], label: known[2] };
+  const engineering = engineeringFormat(name);
+  if (engineering) return { kind: 'engineering', media: 'text/plain', label: engineeringLabels[engineering] };
   const alias = Object.hasOwn(modelAliases, mime) ? extensions[modelAliases[mime]] : undefined;
   if (alias) return { kind: alias[0], media: alias[1], label: alias[2] };
   const byMime = Object.values(extensions).find(row => row[1] === mime);
@@ -52,7 +55,7 @@ export const TEXT_PREVIEW_BYTES = 128 * 1024;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
 export const MAX_ARCHIVE_DEPTH = 4;
 export function previewLimit(kind: FileKind, media = ''): number {
-  return kind === 'unsupported' ? 0 : kind === 'model' ? 16 * 1024 * 1024 : media === 'image/svg+xml' ? 2 * 1024 * 1024 : kind === 'image' ? 32 * 1024 * 1024 : MAX_PREVIEW_BYTES;
+  return kind === 'unsupported' ? 0 : kind === 'engineering' ? ENGINEERING_BYTES : kind === 'model' ? 16 * 1024 * 1024 : media === 'image/svg+xml' ? 2 * 1024 * 1024 : kind === 'image' ? 32 * 1024 * 1024 : MAX_PREVIEW_BYTES;
 }
 
 export function archivePath(value: string): string {

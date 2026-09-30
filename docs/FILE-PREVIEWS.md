@@ -26,8 +26,10 @@ External buffers are never fetched. OBJ material references are never loaded.
 
 This is not a claim to render every file format. Blender, FBX, USD, native CAD,
 Office documents and other unsupported binary formats retain the existing
-explicit download/open-in-application fallback. STEP/DXF and other recognized
-source formats remain source text rather than pretending to be CAD renderings.
+explicit download/open-in-application fallback, now with native-format export
+guidance. STEP and other recognized native source formats retain source text.
+For the subsequently added DXF, G-code and KiCad sketches, their deliberately
+limited coverage, and validation, see [Engineering previews](ENGINEERING-PREVIEWS.md).
 
 ## Interaction and resource boundaries
 
