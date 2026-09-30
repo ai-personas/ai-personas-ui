@@ -68,3 +68,28 @@ export function connectionLabel(edge?: MemoryConnection): string {
   if (!edge) return 'Browsing anchor';
   return edge.origin === 'authored_related' ? 'Association' : edge.relation.replace(/^./, letter => letter.toUpperCase());
 }
+
+/** A hidden selection falls back within its branch, not to an unrelated root. */
+export function selectedMemoryTreeRow(rows: readonly MemoryTreeRow[], selected: string): MemoryTreeRow | undefined {
+  let ancestor: MemoryTreeRow | undefined;
+  for (const row of rows) {
+    if (row.key === selected) return row;
+    if (selected.startsWith(`${row.key}/`) && (!ancestor || row.level > ancestor.level)) ancestor = row;
+  }
+  return ancestor || rows[0];
+}
+
+/** Repeated letters cycle; extending a prefix keeps the current match first. */
+export function memoryTreeTypeahead(rows: readonly MemoryTreeRow[], selected: string, value: string): MemoryTreeRow | undefined {
+  if (!rows.length || !value.trim()) return undefined;
+  const letters = Array.from(value.toLocaleLowerCase());
+  const repeated = letters.every(letter => letter === letters[0]);
+  const query = repeated ? letters[0] : letters.join('');
+  const index = rows.findIndex(row => row.key === selected);
+  const start = index < 0 ? 0 : index + (repeated ? 1 : 0);
+  for (let offset = 0; offset < rows.length; offset++) {
+    const row = rows[(start + offset) % rows.length];
+    if ((row.card.title || 'Retained learning').toLocaleLowerCase().startsWith(query)) return row;
+  }
+  return undefined;
+}

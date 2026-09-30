@@ -1,7 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useId, useMemo, useRef, useState } from 'preact/hooks';
 import type { MemoryCard, MemoryGraph } from './memoryGraph';
-import { connectionLabel, memoryForest, memoryTreeRows, type MemoryTreeRow } from './memoryTree';
+import { connectionLabel, memoryForest, memoryTreeRows, selectedMemoryTreeRow, memoryTreeTypeahead, type MemoryTreeRow } from './memoryTree';
 import './persona-navigation.css';
 
 export default function MemoryTree({ graph, renderCard }: {
@@ -12,8 +12,10 @@ export default function MemoryTree({ graph, renderCard }: {
   const [selected, setSelected] = useState('');
   const tree = useRef<HTMLDivElement>(null), help = useId();
   const typing = useRef({ value: '', at: 0 });
-  const rows = memoryTreeRows(forest, collapsed);
-  const active = rows.find(row => row.key === selected) || rows[0];
+  const allRows = useMemo(() => memoryTreeRows(forest), [forest]);
+  const rows = useMemo(() => memoryTreeRows(forest, collapsed), [forest, collapsed]);
+  const active = selectedMemoryTreeRow(rows, selected);
+  const trail = active ? allRows.filter(row => active.key === row.key || active.key.startsWith(`${row.key}/`)) : [];
   const toggle = (row: MemoryTreeRow) => setCollapsed(previous => {
     const next = new Set(previous);
     if (next.has(row.key)) next.delete(row.key); else next.add(row.key);
@@ -25,7 +27,7 @@ export default function MemoryTree({ graph, renderCard }: {
     tree.current?.querySelector<HTMLElement>(`[data-tree-key="${row.key}"]`)?.focus();
   };
   const keydown = (event: JSX.TargetedKeyboardEvent<HTMLDivElement>, row: MemoryTreeRow) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
     const index = rows.findIndex(item => item.key === row.key);
     switch (event.key) {
       case 'ArrowDown': focus(rows[Math.min(index + 1, rows.length - 1)]); break;
@@ -50,20 +52,26 @@ export default function MemoryTree({ graph, renderCard }: {
         const now = Date.now();
         const value = (now - typing.current.at < 700 ? typing.current.value : '') + event.key.toLocaleLowerCase();
         typing.current = { value, at: now };
-        const ordered = [...rows.slice(index + 1), ...rows.slice(0, index + 1)];
-        focus(ordered.find(item => item.card.title.toLocaleLowerCase().startsWith(value)));
+        focus(memoryTreeTypeahead(rows, row.key, value));
+        event.preventDefault();
+        return;
       }
     }
+    typing.current = { value: '', at: 0 };
     event.preventDefault();
   };
   if (!active) return null;
   return <div class="memory-tree-layout">
     <div class="memory-tree-navigation">
       <div class="memory-tree-toolbar"><span class="field-label">ON THIS PAGE</span><div>
-        <button class="text-button" disabled={!collapsed.size} onClick={() => setCollapsed(new Set())}>Expand all</button>
-        <button class="text-button" disabled={!rows.some(row => row.children.length && !collapsed.has(row.key))} onClick={() => setCollapsed(new Set(memoryTreeRows(forest).filter(row => row.children.length).map(row => row.key)))}>Collapse all</button>
+        <button type="button" class="text-button" disabled={!collapsed.size} onClick={() => setCollapsed(new Set())}>Expand all</button>
+        <button type="button" class="text-button" disabled={!rows.some(row => row.children.length && !collapsed.has(row.key))} onClick={() => setCollapsed(new Set(allRows.filter(row => row.children.length).map(row => row.key)))}>Collapse all</button>
       </div></div>
-      <p id={help} class="micro">Arrow keys navigate and expand. Home / End jump. Type a title to find it.</p>
+      <p class="memory-tree-summary" role="status" aria-atomic="true">
+        <strong>{allRows.filter(row => !row.reference).length} fragments</strong>
+        <span>{rows.length} of {allRows.length} entries shown</span>
+      </p>
+      <p id={help} class="micro memory-tree-help">Arrow keys navigate and expand. <kbd>Home</kbd> / <kbd>End</kbd> jump. Type a title, or repeat a letter to cycle. Entries include shared and cycle links.</p>
       <div class="memory-tree" role="tree" aria-label="Persona fragment tree" aria-describedby={help} ref={tree}>
         {rows.map(row => <div key={row.key} role="treeitem" data-tree-key={row.key}
           class={`memory-tree-row${row.reference ? ' memory-tree-reference' : ''}`}
@@ -84,6 +92,14 @@ export default function MemoryTree({ graph, renderCard }: {
       </div>
     </div>
     <section class="memory-tree-reader" aria-label="Selected fragment preview">
+      <nav class="memory-tree-path" aria-label="Selected fragment path">
+        <ol>{trail.map((row, index) => <li key={row.key}>
+          {index > 0 && <span class="memory-tree-path-separator" aria-hidden="true">/</span>}
+          {row.key === active.key
+            ? <span aria-current="location">{row.card.title || 'Retained learning'}</span>
+            : <button type="button" class="text-button" onClick={() => focus(row)}>{row.card.title || 'Retained learning'}</button>}
+        </li>)}</ol>
+      </nav>
       <p class="field-label">FRAGMENT PREVIEW · {connectionLabel(active.connection)}</p>
       {active.reference && <p class="micro">{active.reference === 'cycle' ? 'This connection returns to a fragment already in this branch.' : 'This fragment also appears in another branch.'} It is shown once in full; the link is not a duplicate fragment.</p>}
       {renderCard(active.card)}

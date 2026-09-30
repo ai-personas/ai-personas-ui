@@ -41,6 +41,17 @@ button.recent-persona:hover { background: var(--tint, #e9f0e4); border-color: va
 .memory-tree-reader .memory-fragments { margin: 0; padding: 0; list-style: none; }
 .memory-tree-reader .memory-card { margin: 0; }
 .memory-tree-reader .memory-actions { flex-wrap: wrap; }
+/* Context stays readable when the tree folds or the reader moves below it. */
+.memory-tree-summary { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; margin: 8px 0 12px; padding: 10px; border-radius: 7px; background: var(--bg, #f5f7f2); color: var(--muted, #617267); font-size: .72rem; line-height: 1.5; }
+.memory-tree-summary strong { color: var(--ink, #263e34); }
+.memory-tree-help kbd { padding: 1px 4px; border: 1px solid var(--line, #dbe3d6); border-radius: 4px; background: var(--bg, #f5f7f2); color: var(--ink, #263e34); font: inherit; }
+.memory-tree-path { margin: 0 0 12px; padding: 0 0 10px; border-bottom: 1px solid var(--line, #dbe3d6); }
+.memory-tree-path ol { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; list-style: none; margin: 0; padding: 0; }
+.memory-tree-path li { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; font-size: .75rem; line-height: 1.5; }
+.memory-tree-path button { min-height: 44px; min-width: 0; padding: 6px 2px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.memory-tree-path button:focus-visible { outline: 3px solid #a86a0b; outline-offset: 1px; border-radius: 4px; }
+.memory-tree-path [aria-current] { padding: 6px 0; color: var(--ink, #263e34); font-weight: 600; overflow-wrap: anywhere; }
+.memory-tree-path-separator { flex-shrink: 0; color: var(--muted, #617267); }
 @media (max-width: 1100px) { .recent-persona-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .memory-tree-layout { grid-template-columns: minmax(0, 1fr); }
