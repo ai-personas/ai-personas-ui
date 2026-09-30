@@ -307,6 +307,20 @@ export type Command =
       };
     }
   | {
+      kind: "work.pause";
+      args: {
+        work: string;
+        revision: number;
+      };
+    }
+  | {
+      kind: "work.resume";
+      args: {
+        work: string;
+        revision: number;
+      };
+    }
+  | {
       kind: "work.amend";
       args: {
         work: string;

@@ -46,7 +46,7 @@ export function actionTitle(kind: string): string {
     'document.write': 'Write a document', 'fragment.write': 'Save a learning note',
     'submit': 'Submit work', 'assess': 'Record an assessment', 'review.start': 'Request a review', 'wait': 'Wait for input',
     'input.acknowledge': 'Acknowledge new input', 'context.select': 'Select context for future work', 'context.discard': 'Discard retained context',
-    'work.create': 'Start work', 'work.amend': 'Update the work scope', 'work.archive': 'Archive work', 'work.summary': 'Check work progress', 'work.mandate.adopt': 'Adopt the work scope',
+    'work.create': 'Start work', 'work.pause': 'Pause work', 'work.resume': 'Resume work', 'work.amend': 'Update scope and resume work', 'work.archive': 'Archive work', 'work.summary': 'Check work progress', 'work.mandate.adopt': 'Adopt the work scope',
     'work.entry.dispose': 'Respond to a work update', 'commitment.respond': 'Respond to a responsibility offer',
     'commitment.handoff.offer': 'Offer a handoff', 'commitment.handoff.respond': 'Respond to a handoff',
     'agreement.propose': 'Propose an agreement', 'agreement.endorse': 'Endorse an agreement', 'feedback.open': 'Give feedback', 'feedback.dispose': 'Respond to feedback',

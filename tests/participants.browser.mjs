@@ -7,7 +7,7 @@ import { resolve, join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
-import { decisionContext, offeredActions } from './decision-fixture.mjs';
+import { decisionContext, decisionOutput, offeredActions } from './decision-fixture.mjs';
 
 const root = mkdtempSync(join(tmpdir(), 'personas-participants-'));
 const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas');
@@ -47,7 +47,7 @@ const provider = createServer(async (req, res) => {
     actions = offeredActions(input, actions);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', model: 'roster-fixture',
-      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', reply: null, actions }) }] }],
+      output: [decisionOutput(input, JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'Synthetic roster decision', reply: null, actions }), 'roster-decision-' + calls)],
       usage: { input_tokens: 100, output_tokens: 25, total_tokens: 125, input_tokens_details: { cached_tokens: 0 } } }));
   } catch (e) { providerErrors.push(String(e)); res.writeHead(500); res.end('{}'); }
 });

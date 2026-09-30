@@ -1,5 +1,7 @@
 .operator-controls { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--border, #d8dfda); border-radius: 12px; }
 .operator-controls .button-row { display: flex; flex-wrap: wrap; gap: .6rem; }
+.execution-receipt { padding: .75rem 1rem; margin: 1rem 0; border: 1px solid var(--line, #dbe3d6); border-radius: 8px; overflow-wrap: anywhere; }
+.execution-receipt ul { padding-left: 1.25rem; }
 .operator-form { width: min(760px, 100%); min-width: 0; padding: 1.5rem; max-height: calc(100dvh - 40px); overflow: auto; overscroll-behavior: contain; background: var(--paper, #fff); color: var(--ink, #263e34); border: 1px solid var(--line, #dbe3d6); border-radius: 16px; box-shadow: 0 24px 80px #10251c33; }
 .operator-form header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .operator-form label, .operator-controls form label, .retention-control label { display: grid; gap: .35rem; margin: .8rem 0; }

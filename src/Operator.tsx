@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { data, label, request, type Entity, type Model } from './api';
+import { data, label, request, type Action, type Entity, type Model } from './api';
 import { useRecords, useResource } from './hooks';
 import type { Act } from './main';
 import Pagination from './Pagination';
@@ -8,7 +8,7 @@ import './operator.css';
 import { modelKey, fundingModels, ModelStatus, useModels } from './Models';
 import { EditAllowance } from './FundingEditor';
 import { MessageComposer } from './Messages';
-import { matchesAllowance, recordIDs } from './workspace';
+import { fields, isRecordID, matchesAllowance, recordIDs, text } from './workspace';
 import { ProviderSettings } from './ProviderSettings';
 import { FeedbackConditions } from './RecordReader';
 import ToolAccess from './ToolAccess';
@@ -220,20 +220,21 @@ function AssemblyEditor({ id, selected }: { id: string; selected: boolean }) {
   const { value, error } = useResource<Entity>('/records/' + id, e => e.entity === id);
   return <label class="check"><input type="checkbox" name="assembly_editor" value={id} defaultChecked={selected}/>{value ? label(value) : `Persona ${id.slice(0, 8)}`}{error && <small>Identity unavailable; the saved permission is still shown.</small>}</label>;
 }
-function Amend({ work, act, close }: { work: Entity; act: Act; close: () => void }) {
+function Amend({ work, act, close, saved, unavailable }: { work: Entity; act: Act; close: () => void; saved: (action: Action) => void; unavailable: boolean }) {
   // Keep the edited mandate and its revision from the same opening snapshot.
   // An event refresh must not silently bless an old form with a newer revision.
   const [base] = useState(work);
   const form = useRef<HTMLFormElement>(null);
   const [mandate, setMandate] = useState<any>(), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const dismiss = () => { if (!busy) close(); };
   useEffect(() => { const c = new AbortController(), ref = data(base).mandate?.id;
     if (ref) request<Entity>('/records/' + ref, { signal: c.signal }).then(r => setMandate(data(r).mandate)).catch(e => !c.signal.aborted && setError(e.message));
     else setMandate(initialMandate(data(base).brief || '', 'Meets the request and stated constraints'));
     return () => c.abort();
   }, [base.id]);
-  return <Dialog label="Amend task" close={close}><form class="operator-form" ref={form} onSubmit={async e => { e.preventDefault(); if (busy || !mandate) return; const f = new FormData(e.currentTarget); setBusy(true); setError('');
-    try { await act('work.amend', { work: base.id, revision: base.revision, title: String(f.get('title')), mandate: editedMandate(mandate, f) }); close(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }}><header><h2>Amend task</h2><button type="button" class="quiet" onClick={close}>Close form</button></header><p>Adopt a new scope. The original request and earlier decisions remain in history.</p>
+  return <Dialog label="Amend task" close={dismiss}><form class="operator-form" ref={form} onSubmit={async e => { e.preventDefault(); if (busy || !mandate || unavailable || work.revision !== base.revision) return; const f = new FormData(e.currentTarget); setBusy(true); setError('');
+    try { saved(await act('work.amend', { work: base.id, revision: base.revision, title: String(f.get('title')), mandate: editedMandate(mandate, f) })); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }}><header><h2>Amend task</h2><button type="button" class="quiet" disabled={busy} onClick={dismiss}>Close form</button></header><p>Save the new scope, clear the task pause, and resume eligible participants, including individually paused participation. Funding, permissions, and other blockers still apply. The original request and earlier decisions remain in history.</p>
     {error && <p role="alert">{error}</p>}{work.revision !== base.revision && <p role="alert">This task changed while you were editing. Close and reopen the form to review the current scope.</p>}<label>Title<input name="title" required defaultValue={data(base).title}/></label>
     {mandate && <><label>Clarifications and updated instructions<textarea rows={4} name="clarifications" defaultValue={mandate.clarifications.join('\n')}/></label>
       {mandate.outcomes.map((o: any, index: number) => <fieldset key={o.key}><legend>Outcome {index + 1}</legend>
@@ -249,22 +250,77 @@ function Amend({ work, act, close }: { work: Entity; act: Act; close: () => void
         {[...new Set([...recordIDs(data(base).personas), ...recordIDs(mandate.assembly_editors)])].map(id => <AssemblyEditor key={id} id={id} selected={mandate.assembly_editors.includes(id)}/>)}
       </fieldset>
       {(['non_contributor_review', 'scope_coverage_review_required'] as const).map(key => <label class="check" key={key}><input type="checkbox" name={key} defaultChecked={mandate[key]}/>{key.replaceAll('_', ' ')}</label>)}
-    </>}<button disabled={busy || !mandate || work.revision !== base.revision}>{busy ? 'Saving…' : 'Adopt amendment'}</button></form></Dialog>;
+    </>}<button disabled={busy || !mandate || unavailable || work.revision !== base.revision}>{busy ? 'Saving…' : 'Save and resume'}</button></form></Dialog>;
 }
 
-export function WorkControls({ work, act, open }: { work: Entity; act: Act; open: (id: string) => void }) {
+function ExecutionReceipt({ action, open }: { action: Action; open: (id: string) => void }) {
+  const result = fields(action.result), runs = Array.isArray(result.runs) ? result.runs.map(fields) : undefined;
+  const dispositions: Record<string, string> = { paused: 'Paused', queued: 'Queued for a decision', already_active: 'Already active', skipped: 'Skipped', blocked: 'Blocked' };
+  return <section class="execution-receipt" aria-label="Task control result" role="status">
+    <p><strong>{action.request.kind === 'work.amend' ? 'Amendment saved.' : action.request.kind === 'work.pause' ? 'Work paused.' : 'Work resume processed.'}</strong> {runs ? 'Participant outcomes from this operation:' : 'Participant outcomes were not reported. Inspect the action receipt.'}</p>
+    {runs && (runs.length ? <ul>{runs.map((run, i) => <li key={text(run.run, String(i))}>
+      {isRecordID(run.run) && <button class="text-button" onClick={() => open(text(run.run))}>Participant {run.run.slice(0, 8)}</button>}{' · '}{dispositions[text(run.disposition)] || text(run.disposition, 'Outcome unavailable')}{text(run.reason) && `: ${run.reason}`}
+    </li>)}</ul> : <p>No participant outcomes were reported.</p>)}
+    {action.request.kind !== 'work.pause' && <p class="micro">Queued participation still needs an execution slot and successful admission. These outcomes do not confirm a completed decision.</p>}
+    <details><summary>Inspect action receipt</summary><pre>{JSON.stringify(action, null, 2)}</pre></details>
+  </section>;
+}
+
+export function WorkControls({ work, act, open, stale = false }: { work: Entity; act: Act; open: (id: string) => void; stale?: boolean }) {
   const [mode, setMode] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [root, setRoot] = useState('');
-  const d = data(work), archived = d.status === 'archived';
+  const [receipt, setReceipt] = useState<Action>();
+  const [executing, setExecuting] = useState('');
+  const { value: seals, error: sealError, loading: sealLoading } = useRecords('research_stage_seal', work.id);
+  const d = data(work), archived = d.status === 'archived', paused = d.execution_paused === true, sealed = !!seals?.items.length;
+  const unavailable = busy || stale || sealLoading || !!sealError || archived || sealed;
+  async function execution(kind: 'work.pause' | 'work.resume') {
+    if (unavailable) return;
+    setBusy(true); setExecuting(kind); setError(''); setReceipt(undefined);
+    try { setReceipt(await act(kind, { work: work.id, revision: work.revision })); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); setExecuting(''); }
+  }
   return <section class="operator-controls" aria-label="Task controls"><div class="button-row">
-    {!archived && <><button class="secondary" onClick={() => setMode('amend')}>Amend task</button><button class="secondary" onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" onClick={() => setMode('tools')}>Tool access</button><button class="secondary" onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" onClick={() => setMode('archive')}>Archive task</button></>}
+    {!archived && <><button class="secondary" disabled={unavailable || paused} onClick={() => void execution('work.pause')}>{executing === 'work.pause' ? 'Pausing…' : 'Pause work'}</button><button disabled={unavailable} onClick={() => void execution('work.resume')}>{executing === 'work.resume' ? 'Resuming…' : 'Resume work'}</button><button class="secondary" disabled={unavailable} onClick={() => { setError(''); setMode('amend'); }}>Amend task</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" disabled={busy} onClick={() => setMode('tools')}>Tool access</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" disabled={busy || stale} onClick={() => setMode('archive')}>Archive task</button></>}
     {archived && <p role="status">Archived. Participation was cancelled; historical results, spending, and late effects remain inspectable. Open a document, artifact, or message to erase a selected payload.</p>}
-  </div>{error && <p role="alert">{error}</p>}
-    {mode === 'amend' && <Amend work={work} act={act} close={() => setMode('')}/>}
+  </div><p aria-label="Task execution"><strong>{paused ? 'Task decisions paused' : 'Task pause is off'}</strong></p>
+    <p class="micro">Pause work stops model decisions. Existing tool jobs may finish. Resume work includes eligible individually paused and waiting participants; funding and other blockers still apply.</p>
+    {sealed && <p class="notice">This work is sealed. Further decisions and amendments are unavailable; preserved results remain inspectable.</p>}
+    {sealError && <p role="alert">Could not verify the work seal: {sealError}. Refresh before changing task execution.</p>}
+    {error && <p role="alert">{error}</p>}
+    {receipt && <ExecutionReceipt action={receipt} open={open}/>}
+    {mode === 'amend' && <Amend work={work} act={act} close={() => setMode('')} unavailable={unavailable} saved={action => { setReceipt(action); setError(''); setMode(''); }}/>}
     {mode === 'tools' && <ToolAccess work={work} act={act} open={open} close={() => setMode('')}/>}
     {mode === 'fund' && (d.resource_root ? <AllowanceSummary id={d.resource_root} act={act}/> : <form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); try { await act('resource.bind', { work: work.id, revision: work.revision, root, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><FundingChoice value={root} onChange={setRoot}/><label>Funding reason<input name="reason" required/></label><button disabled={busy}>Fund task</button></form>)}
     {mode === 'message' && <MessageComposer to={d.environment} environment={d.environment} work={work.id} act={act} open={open}/>}
     {mode === 'archive' && <Dialog label="Archive task" close={() => setMode('')}><form class="operator-form" onSubmit={async e => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await act('work.archive', { work: work.id, revision: work.revision, reason: String(new FormData(e.currentTarget).get('reason')) }); setMode(''); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><h2>Archive {label(work)}</h2><p>This cancels task participation and outstanding responsibilities, requests stopping of tracked jobs, and removes the task from the current list. Completed effects and accounting remain recorded.</p><label>Reason<textarea name="reason" required/></label>{error && <p role="alert">{error}</p>}<button disabled={busy}>Cancel participation and archive</button><button type="button" class="quiet" onClick={() => setMode('')}>Keep task</button></form></Dialog>}
     {d.resource_root && <button class="text-button" onClick={() => open(d.resource_root)}>Inspect funding record</button>}
+  </section>;
+}
+
+export function RunControls({ run, act, stale = false }: { run: Entity; act: Act; stale?: boolean }) {
+  const { value: work, error: workError, loading: workLoading } = useResource<Entity>('/records/' + run.scope, e => e.entity === run.scope);
+  const { value: seals, error: sealError, loading: sealLoading } = useRecords('research_stage_seal', run.scope);
+  const [busy, setBusy] = useState(''), [error, setError] = useState('');
+  const d = data(run), paused = !!work && data(work).execution_paused === true, archived = !!work && data(work).status === 'archived';
+  const stopped = ['removed', 'declined', 'cancelled'].includes(text(d.membership)) || d.status === 'cancelled' || d.historical === true || d.imported_history === true;
+  const sealed = !!seals?.items.length, refreshing = stale || workLoading || sealLoading;
+  const resumeReason = paused ? 'This task is paused. Use Resume work in the task controls to resume eligible participants.'
+    : archived ? 'This task is archived. Participation cannot be resumed.'
+    : sealed ? 'This work is sealed. Further decisions cannot be resumed.'
+    : stopped ? 'This participation is no longer eligible to resume.' : '';
+  async function execute(kind: 'run.pause' | 'run.resume' | 'run.cancel') {
+    if (busy || refreshing || (kind === 'run.resume' && (resumeReason || !work || workError || sealError))) return;
+    setBusy(kind); setError('');
+    try { await act(kind, { id: run.id }); } catch (e) { setError((e as Error).message); } finally { setBusy(''); }
+  }
+  return <section aria-label="Participant controls">
+    <div class="button-row"><button disabled={!!busy || refreshing || !work || !!workError || !!sealError || !!resumeReason || ['queued', 'running'].includes(d.status)} onClick={() => void execute('run.resume')}>{busy === 'run.resume' ? 'Resuming…' : 'Resume'}</button>
+      <button class="secondary" disabled={!!busy || refreshing || stopped || d.status === 'paused'} onClick={() => void execute('run.pause')}>{busy === 'run.pause' ? 'Pausing…' : 'Pause decisions'}</button>
+      <button class="secondary" disabled={!!busy || refreshing || stopped} onClick={() => void execute('run.cancel')}>{busy === 'run.cancel' ? 'Cancelling…' : 'Cancel work'}</button></div>
+    {resumeReason && <p class="notice">{resumeReason}</p>}
+    {(error || workError || sealError) && <p role="alert">{error || `Could not verify task execution: ${workError || sealError}. Refresh before resuming participation.`}</p>}
+    {refreshing && <p class="micro" role="status">Checking current task execution…</p>}
+    <p class="micro">Pause stops this participant’s decisions; existing jobs may continue. Cancel cannot undo completed external effects.</p>
   </section>;
 }
 

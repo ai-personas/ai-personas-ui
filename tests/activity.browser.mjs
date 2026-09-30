@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
-import { decisionContext, offeredActions } from './decision-fixture.mjs';
+import { decisionContext, decisionOutput, offeredActions } from './decision-fixture.mjs';
 const root = mkdtempSync(join(tmpdir(), 'personas-activity-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence'); mkdirSync(evidence, { recursive: true });
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -48,7 +48,7 @@ const provider = createServer(async (req, res) => {
     emit({ type: 'response.completed', response: { id: 'response-' + turn, object: 'response', model: 'activity-fixture', status: 'completed', error: null,
       usage: { input_tokens: 100, output_tokens: 40 }, output: [
         { ...publicMessage, status: 'completed', content: [{ type: 'output_text', text: `Checking fixture inputs for decision ${turn + 1}.` }] },
-        { type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: answer }] },
+        decisionOutput(input, answer, 'activity-decision-' + turn),
       ] } });
     res.end();
   } catch (e) { res.writeHead(500); res.end(String(e)); }

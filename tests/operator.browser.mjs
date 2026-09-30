@@ -11,7 +11,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
-import { decisionContext, offeredActions } from './decision-fixture.mjs';
+import { decisionContext, decisionOutput, offeredActions } from './decision-fixture.mjs';
 
 const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas');
 const root = mkdtempSync(join(tmpdir(), 'personas-operator-'));
@@ -57,8 +57,8 @@ const provider = createServer(async (req, res) => {
       method.connections = [{ target: '$correction', explanation: 'Keep this correction with the method.', condition: { kind: 'always' }, relation: 'correction', treatment: 'full', work: null, expires: null }];
       continuity.disposition = 'retain'; continuity.changes = [correction, method]; retainedGraph = true;
     }
-    const output = [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: scenario === 'malformed'
-      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity, summary: 'Synthetic operator decision ' + calls, reply: null, actions }) }] }];
+    const output = [decisionOutput(input, scenario === 'malformed'
+      ? 'PRIVATE_INVALID_OUTPUT' : JSON.stringify({ continuity, summary: 'Synthetic operator decision ' + calls, reply: null, actions }), 'operator-decision-' + calls)];
     if (scenario === 'commentary') output.unshift({ type: 'message', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: 'PRIVATE_PREAMBLE should not be an executable decision.' }] });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ id: 'fixture-' + calls, object: 'response', status: 'completed', error: null, model: 'operator-fixture',
@@ -171,7 +171,7 @@ try {
     await expect(page.getByRole('dialog', { name: 'Create', exact: true })).toHaveCount(0);
     environment = (await get('/records?kind=environment')).items[0];
   });
-  await step('create paused task, configure recall before inference, then resume its invitation', async () => {
+  await step('create paused task, configure recall before inference, then resume the work', async () => {
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.locator('.page-heading').getByRole('button', { name: '+ New work', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
@@ -185,6 +185,7 @@ try {
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     work = (await get('/records?kind=work')).items[0];
     run = (await get('/records?kind=run&scope=' + work.id)).items[0];
+    assert.equal(work.data.execution_paused, true);
     assert.equal(run.data.status, 'paused'); assert.equal(run.data.membership, 'invited');
     assert.equal(calls, 0);
     // A real restart and settings save must not dispatch the paused invitation.
@@ -193,6 +194,7 @@ try {
     await stopNode(); await startNode(false, false); await connect();
     assert.equal((await get('/deployment')).host_execution, false);
     await page.getByRole('button', { name: 'Operator browser task', exact: true }).click();
+    await expect(page.getByLabel('Task execution')).toHaveText('Task decisions paused');
     await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: /^Recall permissions/ }).click();
@@ -204,11 +206,16 @@ try {
     assert.equal((await get('/records/' + run.id)).data.status, 'paused');
     assert.equal((await get('/records?kind=call&scope=' + run.id)).items.length, 0);
     assert.equal(calls, 0);
-    await details.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(details.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+    await expect(details.getByLabel('Participant controls')).toContainText('Use Resume work in the task controls');
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true }).click();
+    await expect(page.getByLabel('Task control result')).toContainText('Queued for a decision');
+    await expect(page.getByLabel('Task execution')).toHaveText('Task pause is off');
     await until(async () => { const r = (await get('/records?kind=run&scope=' + work.id)).items[0]; return r?.data.status === 'waiting' && r; }, 'accepted participant yields');
     run = (await get('/records?kind=run&scope=' + work.id)).items[0];
     const current = await get('/records/' + work.id);
+    assert.equal(current.data.execution_paused, false);
     assert(current.data.mandate.id); assert.deepEqual(current.data.personas, [persona.id]);
     const mandate = await get('/records/' + current.data.mandate.id);
     assert.deepEqual(mandate.data.mandate.assembly_editors, [persona.id]);
@@ -294,9 +301,64 @@ try {
       await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'persona observes host job');
     } finally { await new Promise(resolve => source.close(resolve)); }
   });
-  await step('amend scope through UI while preserving original request', async () => {
+  await step('task execution controls stay busy and expose real stale-revision errors', async () => {
+    let releasePause, capturedPause, pauseRequests = 0;
+    const pauseGate = new Promise(resolve => { releasePause = resolve; });
+    const pauseCaptured = new Promise(resolve => { capturedPause = resolve; });
+    const holdPause = async route => {
+      const command = route.request().postDataJSON();
+      if (command.kind === 'work.pause') { pauseRequests++; capturedPause(); await pauseGate; }
+      await route.continue();
+    };
+    // Delay transport only; every operation still executes against the real Rust node.
+    await page.route('**/api/operations', holdPause);
+    try {
+      await page.getByLabel('Task controls').getByRole('button', { name: 'Pause work', exact: true }).click();
+      await pauseCaptured;
+      await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Pausing…', exact: true })).toBeDisabled();
+      await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true })).toBeDisabled();
+      await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Amend task', exact: true })).toBeDisabled();
+      const current = await get('/records/' + work.id), mandate = await get('/records/' + current.data.mandate.id);
+      await op('work.amend', { work: work.id, revision: current.revision, title: current.data.title, mandate: mandate.data.mandate });
+      releasePause();
+      await expect(page.getByLabel('Task controls').getByRole('alert')).toContainText('REVISION_CONFLICT');
+      assert.equal(pauseRequests, 1);
+      assert.equal((await get('/records/' + work.id)).data.execution_paused, false);
+    } finally { releasePause(); await page.unroute('**/api/operations', holdPause); }
+  });
+  await step('pause work survives messages, refresh and restart and explains individual resume', async () => {
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'participant waits before task pause');
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Pause work', exact: true }).click();
+    await expect(page.getByLabel('Task execution')).toHaveText('Task decisions paused');
+    await expect(page.getByLabel('Task control result')).toContainText('Paused');
+    assert.equal((await get('/records/' + work.id)).data.execution_paused, true);
+    const before = calls;
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Message participants', exact: true }).click();
+    await page.getByLabel('Message for this task').fill('Direction retained while the whole task is paused.');
+    await page.getByRole('button', { name: 'Send to participants', exact: true }).click();
+    await expect(page.getByLabel('Task controls')).toContainText('Message saved.');
+    await delay(500); assert.equal(calls, before, 'a participant message bypassed the task pause');
+    await page.reload();
+    await expect(page.getByLabel('Task execution')).toHaveText('Task decisions paused');
+    await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
+    const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await expect(details.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+    await expect(details.getByLabel('Participant controls')).toContainText('Use Resume work in the task controls');
+    await details.getByRole('button', { name: /^Recall permissions/ }).click();
+    await details.getByLabel('Reason', { exact: true }).fill('Save recall settings while task execution stays paused.');
+    await details.getByRole('button', { name: 'Save recall permission', exact: true }).click();
+    await expect(details).toContainText('Recall permission saved.');
+    await details.getByRole('button', { name: 'Close details', exact: true }).click();
+    await stopNode(); await startNode(); await page.reload();
+    await expect(page.getByLabel('Task execution')).toHaveText('Task decisions paused');
+    await delay(500); assert.equal(calls, before, 'settings or restart bypassed the task pause');
+    assert.equal((await get('/records/' + run.id)).data.status, 'paused');
+  });
+  await step('amend scope resumes eligible work and preserves the original request', async () => {
     await page.getByRole('button', { name: 'Amend task', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Amend task', exact: true });
+    await expect(form).toContainText('clear the task pause');
+    await expect(form).toContainText('including individually paused participation');
     await form.getByLabel('Title', { exact: true }).fill('Amended browser task');
     await form.getByLabel('Clarifications and updated instructions').fill('A second explicit requirement.');
     await form.getByLabel('Expected result').fill('Amended synthetic outcome');
@@ -311,9 +373,14 @@ try {
     await expect(editors.getByRole('checkbox')).not.toBeChecked();
     await form.getByRole('button', { name: 'Remove outcome', exact: true }).last().click();
     await expect(form.getByLabel('Clarifications and updated instructions')).toHaveValue('A second explicit requirement.');
-    await form.getByRole('button', { name: 'Adopt amendment', exact: true }).click(); await expect(form).toHaveCount(0);
+    await form.getByRole('button', { name: 'Save and resume', exact: true }).click(); await expect(form).toHaveCount(0);
+    await expect(page.getByLabel('Task control result')).toContainText('Amendment saved.');
+    await expect(page.getByLabel('Task control result')).toContainText('Queued for a decision');
+    await expect(page.getByLabel('Task execution')).toHaveText('Task pause is off');
     await expect(page.getByRole('heading', { name: 'Amended browser task', exact: true })).toBeVisible();
     const current = await get('/records/' + work.id);
+    assert.equal(current.data.execution_paused, false);
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'participant resumes after amendment');
     assert.equal(current.data.brief, 'Original synthetic request remains intact.');
     const mandate = await get('/records/' + current.data.mandate.id);
     assert.equal(mandate.data.mandate.outcomes[0].description, 'Amended synthetic outcome');
@@ -329,7 +396,7 @@ try {
     const current = await get('/records/' + work.id), mandate = await get('/records/' + current.data.mandate.id);
     await op('work.amend', { work: work.id, revision: current.revision, title: current.data.title, mandate: mandate.data.mandate });
     await expect(form).toContainText('This task changed while you were editing.');
-    await expect(form.getByRole('button', { name: 'Adopt amendment', exact: true })).toBeDisabled();
+    await expect(form.getByRole('button', { name: 'Save and resume', exact: true })).toBeDisabled();
     await form.getByRole('button', { name: 'Close form', exact: true }).click();
   });
   await step('send scoped participant message and answer a request through UI', async () => {
@@ -367,6 +434,19 @@ try {
     await details.getByRole('button', { name: 'Close details', exact: true }).click();
     await page.getByRole('button', { name: 'Work', exact: true }).click();
     await page.getByRole('button', { name: 'Amended browser task', exact: true }).click();
+  });
+  await step('Resume work remains available for individually paused and naturally waiting participation', async () => {
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'participant settles before individual pause');
+    await op('run.pause', { id: run.id });
+    assert.equal((await get('/records/' + work.id)).data.execution_paused, false);
+    await expect(page.getByLabel('Task execution')).toHaveText('Task pause is off');
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true }).click();
+    await expect(page.getByLabel('Task control result')).toContainText('Queued for a decision');
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'individually paused participant resumes');
+    const before = calls;
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true }).click();
+    await expect(page.getByLabel('Task control result')).toContainText('Queued for a decision');
+    await until(async () => calls > before && (await get('/records/' + run.id)).data.status === 'waiting', 'waiting participant resumes');
   });
   await step('work funding edits retain spending, protected reserves and paused participation', async () => {
     await op('run.pause', { id: run.id });
@@ -406,6 +486,19 @@ try {
     await op('resource.root.amend', { root: current.id, revision: current.revision,
       limits: { ...current.data.limits, calls: before.calls.charged + before.closeout_calls },
       closeout_calls: before.closeout_calls, bounds: current.data.bounds, reason: 'Synthetic fixture: no remaining production calls' });
+    const callsBeforeBlockedResume = calls;
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true }).click();
+    await expect(page.getByLabel('Task control result')).toContainText('Blocked');
+    assert.equal(calls, callsBeforeBlockedResume, 'Resume work overrode exhausted funding');
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Amend task', exact: true }).click();
+    const amend = page.getByRole('dialog', { name: 'Amend task', exact: true });
+    await amend.getByRole('button', { name: 'Save and resume', exact: true }).click();
+    await expect(amend).toHaveCount(0);
+    await expect(page.getByLabel('Task control result')).toContainText('Amendment saved.');
+    await expect(page.getByLabel('Task control result')).toContainText('Blocked');
+    assert.equal(calls, callsBeforeBlockedResume, 'an amendment overrode exhausted funding');
+    // A blocked task resume preserves the individual pause. Exercise the separate
+    // run retry here to retain the existing waiting-message/funding scenario.
     await op('run.resume', { id: run.id });
     await until(async () => (await get('/records/' + run.id)).data.note?.includes('RESOURCE_EXHAUSTED'), 'funding blocker');
     await page.getByRole('button', { name: 'Personas', exact: true }).click();
@@ -514,6 +607,7 @@ try {
     const graph = page.getByRole('region', { name: 'Fragment graph', exact: true });
     const method = graph.locator('.memory-card').filter({ has: page.getByRole('heading', { name: 'Graph fixture method', exact: true }) });
     await method.getByRole('button', { name: 'Explore connections', exact: true }).click();
+    await graph.getByRole('group', { name: 'Fragment display', exact: true }).getByRole('button', { name: 'Cards', exact: true }).click();
     await expect(graph.getByRole('heading', { name: 'Graph fixture method', exact: true })).toBeVisible();
     await expect(graph.getByRole('heading', { name: 'Graph fixture correction', exact: true })).toBeVisible();
     const connections = graph.getByRole('region', { name: 'Authored connections', exact: true });
@@ -594,6 +688,9 @@ try {
     await form.getByLabel('Reason', { exact: true }).fill('Operator chose to stop synthetic work');
     await form.getByRole('button', { name: 'Cancel participation and archive', exact: true }).click(); await expect(form).toHaveCount(0);
     await expect(page.getByLabel('Task controls')).toContainText('Archived.');
+    await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Pause work', exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Task controls').getByRole('button', { name: 'Amend task', exact: true })).toHaveCount(0);
     assert.equal((await get('/records/' + run.id)).data.status, 'cancelled');
     assert.equal((await op('run.resume', { id: run.id }, '', '', false)).state, 'failed');
     const after = await get('/resources/' + allowance.id); assert(after.calls.charged >= before.calls.charged); assert.equal(after.births.consumed, before.births.consumed);

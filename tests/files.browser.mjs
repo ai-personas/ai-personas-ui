@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { decisionOutput, offeredActions } from './decision-fixture.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'personas-files-'));
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence');
@@ -17,10 +18,12 @@ await mkdir(evidence, { recursive: true });
 let app, browser, page, url, token = '', checks = 0, providerCalls = 0;
 const errors = [], assets = [], files = new Map();
 const provider = createServer(async (req, res) => {
-  for await (const _ of req) { /* Drain the synthetic call. */ }
+  let body = ''; for await (const chunk of req) body += chunk;
+  const input = JSON.parse(body);
   providerCalls++;
+  const actions = offeredActions(input, [{ kind: 'wait', args: { reason: 'Viewer verification uses supplied files.' } }]);
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ id: 'file-fixture', status: 'completed', model: 'file-fixture', output: [{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: JSON.stringify({ continuity: { focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'File viewer fixture', reply: null, actions: [{ kind: 'wait', args: { reason: 'Viewer verification uses supplied files.' } }] }) }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }));
+  res.end(JSON.stringify({ id: 'file-fixture', status: 'completed', model: 'file-fixture', output: [decisionOutput(input, JSON.stringify({ continuity: { next: 'continue', focus: 'Continue the fixture', disposition: 'no_change', change_reason: 'Synthetic contract fixture; no experience claimed.', changes: [], memory: { active: [], focus: null, after: null }, records: [], actions: [], retrieval_query: '', handoff: '' }, summary: 'File viewer fixture', reply: null, actions }), 'file-decision-' + providerCalls)], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }));
 });
 async function until(fn) { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise(r => setTimeout(r, 100)); } throw Error('Fixture node did not start.'); }
 async function get(path) { const r = await fetch(url + '/api' + path, { headers: { Authorization: 'Bearer ' + token } }); assert(r.ok); return r.json(); }

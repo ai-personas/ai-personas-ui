@@ -418,9 +418,27 @@ Adopt a new immutable mandate using operator authority. Preserves the original b
 | `revision` | integer | Required |  |
 | `mandate` | Mandate | Required |  |
 
+### `work.pause`
+
+Operator pauses all eligible work decisions. Existing jobs and late receipts continue; execution remains paused across restart and new participation until work.resume or work.amend.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `work` | string | Required |  |
+| `revision` | integer | Required |  |
+
+### `work.resume`
+
+Operator clears the work pause and queues every eligible paused or waiting participant under existing funding, consent and permissions. Returns each participant's disposition.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `work` | string | Required |  |
+| `revision` | integer | Required |  |
+
 ### `work.amend`
 
-Operator amends the title and adopts an exact new mandate. Original instructions, prior criteria and historical evidence remain inspectable; stale decisions must observe the new scope.
+Operator amends the title and adopts an exact new mandate, clears the work pause and queues eligible participants atomically. Original instructions, prior criteria and historical evidence remain inspectable; stale decisions are fenced. Blocked participants retain their existing authority and funding.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

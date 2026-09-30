@@ -17,10 +17,19 @@ export function decisionContext(input) {
 
 /** Discover contracts from the actual response schema, not a diagnostic copy. */
 export function offeredActions(input, actions) {
-  const schema = input.text.format.schema;
+  const schema = input.tools?.find(tool => tool.type === 'function' && tool.name === 'submit_decision')?.parameters || input.text?.format?.schema;
+  if (!schema) throw new Error('The provider request did not include a decision contract.');
   const resolve = value => value?.$ref ? resolve(schema.$defs[value.$ref.slice('#/$defs/'.length)]) : value;
   const variants = resolve(resolve(schema.properties.actions).items).anyOf;
   const loaded = variants.map(variant => resolve(resolve(variant).properties.kind).enum[0]);
   const missing = [...new Set(actions.map(action => action.kind).filter(kind => !loaded.includes(kind)))];
   return missing.length ? missing.map(operation => ({ kind: 'operation.describe', args: { operation } })) : actions;
+}
+
+/** Match the actual submission transport requested by the runtime. */
+export function decisionOutput(input, argumentsJSON, id = 'fixture-decision') {
+  const submission = input.tools?.find(tool => tool.type === 'function' && tool.name === 'submit_decision');
+  return submission
+    ? { type: 'function_call', id, call_id: id + '-call', name: submission.name, status: 'completed', arguments: argumentsJSON }
+    : { type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: argumentsJSON }] };
 }
