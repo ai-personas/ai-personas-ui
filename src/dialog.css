@@ -1,0 +1,26 @@
+/* Shared production dialogs: a stable reading surface, including short screens. */
+dialog.modal-root { --dialog-padding: 28px; }
+dialog.modal-root > :is(.create-panel, .viewer) {
+  padding: var(--dialog-padding);
+  overscroll-behavior: contain;
+  scroll-padding-block-start: 8rem;
+  isolation: isolate;
+}
+dialog.modal-root > :is(.create-panel, .viewer) > header {
+  position: sticky;
+  top: calc(-1 * var(--dialog-padding));
+  z-index: 2;
+  margin: calc(-1 * var(--dialog-padding)) calc(-1 * var(--dialog-padding)) 20px;
+  padding: 20px var(--dialog-padding);
+  border-bottom: 1px solid var(--line, #dce4da);
+  background: #fafbf7;
+}
+dialog.modal-root > :is(.create-panel, .viewer) > header h2 { margin-bottom: 4px; }
+dialog.modal-root > :is(.create-panel, .viewer, .drawer) > header > button {
+  min-width: 44px;
+  min-height: 44px;
+}
+@media (max-width: 800px) {
+  dialog.modal-root { --dialog-padding: 18px; }
+  dialog.modal-root > :is(.create-panel, .viewer) > header { padding-block: 16px; }
+}

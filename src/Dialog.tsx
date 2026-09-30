@@ -1,18 +1,23 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect, useRef } from 'preact/hooks';
+import { lockDialogScroll } from './dialog-scroll';
+import './dialog.css';
 
 /** Native top-layer modal: inert background, nested dialogs, Escape and focus return. */
 export default function Dialog({ label, close, children, drawer = false }: {
   label: string; close: () => void; children: ComponentChildren; drawer?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current!;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.showModal();
+    const unlock = lockDialogScroll(dialog.ownerDocument);
+    try { dialog.showModal(); }
+    catch (error) { unlock(); throw error; }
     return () => {
       dialog.close();
-      if (previous?.isConnected) previous.focus();
+      unlock();
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   return <dialog ref={ref} class={`modal-root ${drawer ? 'modal-drawer' : ''}`}
