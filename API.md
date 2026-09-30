@@ -186,7 +186,7 @@ Accept or decline your exact invitation; commitment acceptance remains a separat
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `id` | string | Required |  |
+| `id` | string | Required | Exact 32-hex invitation ID; received-context aliases are not supported here. |
 | `revision` | integer | Required |  |
 | `accept` | boolean | Required |  |
 | `reason` | string | Required |  |

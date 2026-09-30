@@ -781,7 +781,9 @@
                 "type": "object",
                 "properties": {
                   "id": {
-                    "type": "string"
+                    "description": "Exact 32-hex invitation ID; received-context aliases are not supported here.",
+                    "type": "string",
+                    "pattern": "^[a-fA-F0-9]{32}$"
                   },
                   "revision": {
                     "type": "integer",
@@ -9673,7 +9675,9 @@
             "type": "object",
             "properties": {
               "id": {
-                "type": "string"
+                "description": "Exact 32-hex invitation ID; received-context aliases are not supported here.",
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{32}$"
               },
               "revision": {
                 "type": "integer",

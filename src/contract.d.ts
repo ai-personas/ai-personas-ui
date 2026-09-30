@@ -111,6 +111,9 @@ export type Command =
   | {
       kind: "invitation.respond";
       args: {
+        /**
+         * Exact 32-hex invitation ID; received-context aliases are not supported here.
+         */
         id: string;
         revision: number;
         accept: boolean;
