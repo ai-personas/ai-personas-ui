@@ -5,6 +5,7 @@ const object = (value: unknown): ObjectValue => value !== null && typeof value =
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const list = (value: unknown): unknown[] | undefined => Array.isArray(value) && value.length <= 512 ? value : undefined;
 export type EvidenceReference = { id: string; revision: number };
+export type InputMediaEvidence = { artifact: string; digest: string; bytes: number; mediaType: string; detail: string };
 export type StoppedActionReference = { id: string; call: string; run: string; actor: string };
 export function stoppedActionReference(value: unknown): StoppedActionReference | undefined {
   const call = object(value), d = object(call.data);
@@ -55,6 +56,35 @@ export function measuredUsage(value: unknown) {
   return usage.known === true && input !== undefined && output !== undefined && cached !== undefined
     && cached <= input && Number.isSafeInteger(input + output) ? { input, output, cached } : undefined;
 }
+function inputMedia(value: unknown): InputMediaEvidence[] | undefined {
+  if (!Array.isArray(value) || value.length > 4) return undefined;
+  const result: InputMediaEvidence[] = [];
+  for (const item of value) {
+    const v = object(item), bytes = count(v.bytes);
+    if (typeof v.artifact !== 'string' || !/^[a-fA-F0-9]{32}$/.test(v.artifact)
+      || typeof v.digest !== 'string' || !/^[a-fA-F0-9]{64}$/.test(v.digest)
+      || bytes === undefined || bytes === 0
+      || !['image/png', 'image/jpeg', 'image/webp'].includes(String(v.media_type))
+      || !['low', 'high', 'auto'].includes(String(v.detail))) return undefined;
+    result.push({ artifact: v.artifact, digest: v.digest, bytes, mediaType: String(v.media_type), detail: String(v.detail) });
+  }
+  return result;
+}
+function exploration(value: unknown) {
+  const v = object(value), offered = count(v.offered), bytes = count(v.preview_bytes), window = count(v.call_window);
+  return v.schema === 'fragment-exploration/1' && v.full_text_selected === false
+    && v.selection === 'least_admitted_previews_then_seeded_order'
+    && typeof v.seed === 'string' && v.seed.length > 0 && v.seed.length <= 64
+    && offered !== undefined && offered <= 2 && bytes !== undefined && bytes <= 4096
+    && window !== undefined && window <= 128
+    ? { seed: v.seed, offered, bytes, window, limited: v.node_window_limited === true } : undefined;
+}
+function finishing(value: unknown) {
+  const v = object(value), commitment = reference(v.commitment), root = reference({ id: v.root, revision: v.root_revision });
+  const opportunity = count(v.opportunity);
+  return v.schema === 'resource-finishing-receipt/1' && v.pool === 'closeout' && commitment && root
+    && opportunity !== undefined && opportunity > 0 ? { commitment, root, opportunity } : undefined;
+}
 export function inferenceEvidence(value: unknown) {
   const d = object(value), recovery = receipt(d.context_recovery, 'context-recovery/1');
   const discovery = receipt(d.discovery_context, 'discovery-context/1');
@@ -70,6 +100,11 @@ export function inferenceEvidence(value: unknown) {
     ? { input: count(admission.input_exposure_upper_tokens), output: count(admission.output_exposure_upper_tokens), bytes: count(admission.request_bytes) } : undefined;
   const measured = measuredUsage(d.usage);
   const providerTransport = transport(d.provider_observation, d);
+  const media = providerTransport ? inputMedia(object(d.provider_observation).input_media) : undefined;
+  const models = providerTransport ? {
+    requested: String(d.requested_model),
+    reported: typeof d.actual_model === 'string' && d.actual_model.length > 0 && d.actual_model.length <= 256 ? d.actual_model : undefined,
+  } : undefined;
   const imageCapability = object(d.image_capability);
   const imageBilling = ['api', 'subscription'].includes(String(imageCapability.billing)) ? imageCapability.billing as 'api' | 'subscription' : undefined;
   const controllerUsage = imageBilling && providerTransport ? measuredUsage(object(d.provider_observation).controller_usage) : undefined;
@@ -84,7 +119,7 @@ export function inferenceEvidence(value: unknown) {
     ['Unread inputs', 'unread_inputs'], ['Media descriptions', 'media_descriptors'],
   ].map(([label, key]) => ({ label, bytes: count(breakdown[key]) })).filter(part => part.bytes !== undefined) : undefined;
   return {
-    transport: providerTransport, imageBilling, controllerUsage,
+    transport: providerTransport, imageBilling, controllerUsage, inputMedia: media, models, finishing: finishing(d.finishing_receipt),
     contextParts, maintenance: d.decision_mode === 'context_maintenance',
     state: typeof d.status === 'string' ? d.status.slice(0, 96) : 'Not recorded',
     contextBytes: count(d.context_bytes) ?? exposure?.bytes, measured, exposure,
@@ -98,7 +133,7 @@ export function inferenceEvidence(value: unknown) {
     } : undefined,
     memory: memory ? { offered: memoryOffered,
       previewsSuspended: memory.preview_status === 'suspended_by_persona' && memory.preview_limit === 0 && memoryOffered?.length === 0 } : undefined,
-    discovery: discovery ? { offered } : undefined,
+    discovery: discovery ? { offered, exploration: exploration(object(discovery.fragment_recall).exploration) } : undefined,
     learning: learning ? { active, corrections } : undefined,
     questions: questions ? { references: questionRefs, replies: replyCount !== undefined && Number.isSafeInteger(replyCount) ? replyCount : undefined } : undefined,
   };

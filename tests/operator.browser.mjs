@@ -548,6 +548,10 @@ try {
     const callsBefore = calls;
     await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
+    await details.getByRole('button', { name: 'Check next decision funding', exact: true }).click();
+    await expect(details.getByLabel('Decision funding preview')).toContainText('This participation remains stopped.');
+    assert.equal(calls, callsBefore);
+    assert.equal((await get('/records/' + run.id)).data.status, 'paused');
     await details.getByRole('button', { name: 'Reduce active context', exact: true }).click();
     await details.getByLabel('Handoff note').fill('Operator handoff: prior synthetic output stays retained; inspect saved evidence before continuing.');
     await details.getByRole('button', { name: 'Save smaller context', exact: true }).click();
@@ -564,6 +568,22 @@ try {
   await expect(page.getByLabel('Current obligations')).toContainText('No accepted owner');
   await expect(page.getByLabel('Persona activity')).toContainText('Synthetic operator decision');
   await expect(page.getByLabel('Allowance usage').first()).not.toContainText('Loading allowance');
+  await step('automatic finishing policy can change without spending or resuming paused work', async () => {
+    const before = await get('/resources/' + allowance.id), callsBefore = calls;
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Funding', exact: true }).click();
+    const panel = page.getByLabel('Automatic finishing').first();
+    await panel.getByRole('button', { name: 'Enable automatic finishing', exact: true }).click();
+    await expect(panel.getByRole('button', { name: 'Disable automatic finishing', exact: true })).toBeEnabled();
+    assert.equal((await get('/records/' + allowance.id)).data.finishing_policy.enabled, true);
+    await panel.getByRole('button', { name: 'Disable automatic finishing', exact: true }).click();
+    await expect(panel.getByRole('button', { name: 'Enable automatic finishing', exact: true })).toBeEnabled();
+    assert.equal((await get('/records/' + run.id)).data.status, 'paused');
+    assert.equal(calls, callsBefore);
+    const after = await get('/resources/' + allowance.id);
+    assert.equal(after.calls.charged, before.calls.charged);
+    assert.equal(after.exposure.accounted.tokens, before.exposure.accounted.tokens);
+    await page.getByLabel('Task controls').getByRole('button', { name: 'Funding', exact: true }).click();
+  });
   await page.screenshot({ path: join(evidence, 'operator-desktop.png'), fullPage: true });
   await step('mobile controls fit and archive retains history without refund or resume', async () => {
     await page.setViewportSize({ width: 390, height: 844 });

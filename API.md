@@ -6,6 +6,8 @@ Default loopback listeners allow the same-origin local operator workspace withou
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/research/snapshots/{id}/bytes` | Exact immutable native JSON bytes behind a research stage snapshot digest; operator evidence, no acceptance verdict |
+| GET | `/api/work/{id}/settlement` | Consistent execution settlement, actionable continuations, unresolved effects and research audit blockers with an exact fingerprint; no quality or acceptance verdict |
 | GET | `/api/work/{id}/readiness` | Bounded observed component configuration, last recall status, funding and published output counts; no inference or quality verdict |
 | GET | `/api/personas/{id}/memory/activity?after=0&limit=12` | Paginated learning choices, committed changes, deferrals and failed updates; no inference payloads |
 | GET | `/api/personas/{id}/memory/usage/{fragment}` | Exact selected participation and admitted-call counts for one owned fragment; admission is not proof of benefit |
@@ -332,6 +334,38 @@ Operator assigns protected capacity to a current accepted responsibility. Member
 | `run` | string | Required |  |
 | `revision` | integer | Required |  |
 | `commitment` | VersionRef | Required |  |
+| `reason` | string | Required |  |
+
+### `resource.finishing.configure`
+
+Operator preauthorizes protected funding for existing self-accepted responsibilities when production admission is exhausted. Does not create responsibilities or resume stopped work.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `root` | string | Required |  |
+| `revision` | integer | Required |  |
+| `enabled` | boolean | Required |  |
+| `reason` | string | Required |  |
+
+### `resource.admission.preview`
+
+Operator observes the current assembled decision quote and funding feasibility without dispatching or reserving inference.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `run` | string | Required |  |
+
+### `research.stage.seal`
+
+Seal a settled experimental stage against its immutable protocol and exact observation. Normal work remains reviewable; no acceptance verdict is created.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `work` | string | Required |  |
+| `revision` | integer | Required |  |
+| `fingerprint` | string | Required |  |
+| `stage` | string | Required |  |
+| `protocol_digest` | string | Required |  |
 | `reason` | string | Required |  |
 
 ### `resource.reallocate`

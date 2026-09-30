@@ -120,16 +120,35 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
   </form></Dialog>;
 }
 
+function FinishingPolicy({ id, act }: { id: string; act: Act }) {
+  const { value: root, error: readError } = useResource<Entity>('/records/' + id, e => matchesAllowance(e, id));
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const enabled = root && data(root).finishing_policy?.enabled === true;
+  return <section aria-label="Automatic finishing"><h3>Automatic finishing</h3>
+    <p>{enabled ? 'Authorized' : 'Not authorized'}: runnable participants can use protected capacity when ordinary calls or tokens run out, for responsibilities they already accepted.</p>
+    <p class="micro">This does not assign responsibilities, increase limits, or resume paused or cancelled work. Every finishing call still needs sufficient capacity.</p>
+    {(error || readError) && <p role="alert">{error || readError}</p>}
+    <button class="secondary" disabled={busy || !root || !!readError} onClick={async () => {
+      if (!root || busy) return; setBusy(true); setError('');
+      try {
+        await act('resource.finishing.configure', { root: id, revision: root.revision, enabled: !enabled,
+          reason: `Operator ${enabled ? 'disabled' : 'authorized'} automatic protected funding for existing accepted responsibilities.` });
+      } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    }}>{busy ? 'Saving…' : enabled ? 'Disable automatic finishing' : 'Enable automatic finishing'}</button>
+  </section>;
+}
+
 export function AllowanceSummary({ id, act }: { id: string; act?: Act }) {
   const { value, error } = useResource<any>('/resources/' + id, e => matchesAllowance(e, id));
   return <section aria-label="Allowance usage">{error && <p role="alert">{error}</p>}{value ? <>
     <div class="operator-grid"><p><strong>{value.calls.production_remaining}</strong> production calls remaining</p><p><strong>{value.calls.closeout_remaining}</strong> finishing calls remaining</p><p><strong>{value.calls.uncertain}</strong> calls with uncertain usage</p></div>
     <p class="micro">{value.calls.consumed ?? 0} consumed · {value.calls.reserved ?? 0} running reservations · {value.calls.initialization_reserved ?? 0} reserved for persona initialization. Total call limit: {value.limits?.calls ?? 'not reported'}.</p>
     <p class="micro">The total includes {value.closeout_calls ?? 0} calls reserved for review and finishing. Increasing the total does not make those protected calls available for production.</p>
-    {value.calls.production_remaining === 0 && <p class="notice">Production calls are exhausted. A persona's unused initialization reservation can fund its first call; further decisions need more production capacity. Finishing calls remain protected until explicitly reassigned.</p>}
+    {value.calls.production_remaining === 0 && <p class="notice">Production calls are exhausted. A persona's unused initialization reservation can fund its first call. Protected finishing requires an accepted responsibility and either an authorized automatic transition or an explicit operator assignment.</p>}
     {value.exposure?.bounds && <><p class="micro">{value.exposure.accounted?.tokens?.toLocaleString() ?? 'Unknown'} tokens charged or reserved of {value.exposure.bounds.tokens?.toLocaleString()} · expires {value.exposure.bounds.expires}.</p><p class="micro">This total includes measured usage and tokens held for running or uncertain calls. Reservations settle when usage is known. All tasks and personas sharing this allowance draw from these limits.</p></>}
     {value.exposure?.accounting_status === 'unavailable' && <p role="alert">Accounting is incomplete. Inspect retained charge evidence before changing limits.</p>}
     {act && value.status === 'active' && value.exposure?.bounds && <EditAllowance id={id} act={act}/>}
+    {act && value.status === 'active' && value.exposure?.bounds && <FinishingPolicy id={id} act={act}/>}
     <details><summary>Limits, reservations, and measured usage</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>
   </> : !error && <p role="status">Loading allowance…</p>}</section>;
 }

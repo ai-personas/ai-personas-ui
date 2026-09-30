@@ -238,6 +238,32 @@ export type Command =
       };
     }
   | {
+      kind: "resource.finishing.configure";
+      args: {
+        root: string;
+        revision: number;
+        enabled: boolean;
+        reason: string;
+      };
+    }
+  | {
+      kind: "resource.admission.preview";
+      args: {
+        run: string;
+      };
+    }
+  | {
+      kind: "research.stage.seal";
+      args: {
+        work: string;
+        revision: number;
+        fingerprint: string;
+        stage: string;
+        protocol_digest: string;
+        reason: string;
+      };
+    }
+  | {
       kind: "resource.reallocate";
       args: {
         root: string;
@@ -1717,6 +1743,10 @@ export interface Selection2 {
    */
   preview_limit?: number | null;
   /**
+   * Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.
+   */
+  exploration?: PreviewExploration | null;
+  /**
    * Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.
    *
    * @minItems 1
@@ -1736,6 +1766,11 @@ export interface Selection2 {
    * Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.
    */
   delegation?: Delegation | null;
+}
+export interface PreviewExploration {
+  seed: string;
+  max_previews: number;
+  max_bytes: number;
 }
 /**
  * Your bounded retrieval choice: choose the expiry and size limits yourself.

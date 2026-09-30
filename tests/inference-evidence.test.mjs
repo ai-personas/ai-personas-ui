@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { actionBelongsToCall, inferenceEvidence, learningKind, stoppedActionReference } from '../src/inference-evidence.ts';
 const ref = { id: 'a'.repeat(32), revision: 2 };
+test('exploratory previews and finishing funding retain bounded provenance', () => {
+  const exploratory = { schema: 'fragment-exploration/1', seed: 'case-17', offered: 2, preview_bytes: 1800,
+    call_window: 128, node_window_limited: true, full_text_selected: false, selection: 'least_admitted_previews_then_seeded_order' };
+  const discovery = { schema: 'discovery-context/1', stage: 'admitted_request', transport_boundary: 'pre_dispatch', offered: [], fragment_recall: { exploration: exploratory } };
+  const funding = { schema: 'resource-finishing-receipt/1', pool: 'closeout', commitment: ref, root: 'b'.repeat(32), root_revision: 3, opportunity: 1 };
+  const facts = inferenceEvidence({ discovery_context: discovery, finishing_receipt: funding });
+  assert.deepEqual(facts.discovery.exploration, { seed: 'case-17', offered: 2, bytes: 1800, window: 128, limited: true });
+  assert.deepEqual(facts.finishing, { commitment: ref, root: { id: 'b'.repeat(32), revision: 3 }, opportunity: 1 });
+  for (const change of [{ offered: 3 }, { seed: 'x'.repeat(65) }, { full_text_selected: true }, { preview_bytes: 4097 }, { call_window: 129 }]) {
+    assert.equal(inferenceEvidence({ discovery_context: { ...discovery, fragment_recall: { exploration: { ...exploratory, ...change } } } }).discovery.exploration, undefined);
+  }
+  for (const change of [{ pool: 'production' }, { opportunity: 0 }, { root_revision: null }, { commitment: { ...ref, revision: 0 } }]) {
+    assert.equal(inferenceEvidence({ finishing_receipt: { ...funding, ...change } }).finishing, undefined);
+  }
+});
 test('missing receipts and measurements are unknown rather than zero', () => {
   for (const value of [null, undefined, 3, [], {}]) {
     const facts = inferenceEvidence(value);
@@ -108,4 +123,22 @@ test('subscription images keep partial controller usage separate from unknown ag
   }
   assert.equal(inferenceEvidence({...value,provider_observation:{...value.provider_observation,provider:'other'}}).controllerUsage, undefined);
   assert.equal(inferenceEvidence({...value,image_capability:{billing:'unknown'}}).imageBilling, undefined);
+});
+
+test('image input evidence binds verified media to the matching transport without treating selection as dispatch', () => {
+  const media = {artifact:'a'.repeat(32),digest:'b'.repeat(64),bytes:1200,media_type:'image/png',detail:'high',path:'PRIVATE_PATH',data:'PRIVATE_BYTES'};
+  const call = {provider:'fixture',requested_model:'vision',actual_model:'reported-vision',status:'completed',
+    provider_observation:{schema:'provider-observation/1',source:'adapter_transport_receipt',raw_payload_retained:false,
+      provider:'fixture',requested_model:'vision',dispatched:true,outcome:'completed',input_media:[media]}};
+  const facts = inferenceEvidence(call);
+  assert.deepEqual(facts.inputMedia,[{artifact:media.artifact,digest:media.digest,bytes:1200,mediaType:'image/png',detail:'high'}]);
+  assert.deepEqual(facts.models,{requested:'vision',reported:'reported-vision'});
+  assert(!JSON.stringify(facts).includes('PRIVATE_'));
+  assert.equal(inferenceEvidence({images:[media]}).inputMedia,undefined);
+  assert.equal(inferenceEvidence({...call,provider_observation:{...call.provider_observation,provider:'different'}}).inputMedia,undefined);
+  for (const input_media of [[{...media,artifact:'../private'}],[{...media,digest:'invalid'}],[{...media,bytes:-1}],[{...media,media_type:'image/svg+xml'}],[{...media,detail:'untrusted'}],Array(5).fill(media),[media,{...media,bytes:null}]]) {
+    assert.equal(inferenceEvidence({...call,provider_observation:{...call.provider_observation,input_media}}).inputMedia,undefined);
+  }
+  const prepared = inferenceEvidence({...call,actual_model:'',provider_observation:{...call.provider_observation,dispatched:false,outcome:'not_dispatched'}});
+  assert.equal(prepared.inputMedia.length,1); assert.equal(prepared.transport.dispatched,false); assert.equal(prepared.models.reported,undefined);
 });

@@ -1349,6 +1349,123 @@
             "additionalProperties": false
           },
           {
+            "description": "Operator preauthorizes protected funding for existing self-accepted responsibilities when production admission is exhausted. Does not create responsibilities or resume stopped work.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.finishing.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "root",
+                  "revision",
+                  "enabled",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Operator observes the current assembled decision quote and funding feasibility without dispatching or reserving inference.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "resource.admission.preview"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "run": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "run"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Seal a settled experimental stage against its immutable protocol and exact observation. Normal work remains reviewable; no acceptance verdict is created.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "research.stage.seal"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "work": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "fingerprint": {
+                    "type": "string"
+                  },
+                  "stage": {
+                    "type": "string"
+                  },
+                  "protocol_digest": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "work",
+                  "revision",
+                  "fingerprint",
+                  "stage",
+                  "protocol_digest",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Operator moves unspent capacity between production and closeout inside the unchanged total ceiling. Reservations and unknown exposure cannot be refunded.",
             "type": "object",
             "properties": {
@@ -6863,6 +6980,18 @@
             "maximum": 24,
             "default": null
           },
+          "exploration": {
+            "description": "Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewExploration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "current_self": {
             "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
             "type": [
@@ -6892,6 +7021,34 @@
         "additionalProperties": false,
         "required": [
           "active"
+        ]
+      },
+      "PreviewExploration": {
+        "type": "object",
+        "properties": {
+          "seed": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "max_previews": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 256,
+            "maximum": 4096
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "seed",
+          "max_previews",
+          "max_bytes"
         ]
       },
       "Delegation": {
@@ -8335,6 +8492,16 @@
   "routes": [
     [
       "GET",
+      "/api/research/snapshots/{id}/bytes",
+      "Exact immutable native JSON bytes behind a research stage snapshot digest; operator evidence, no acceptance verdict"
+    ],
+    [
+      "GET",
+      "/api/work/{id}/settlement",
+      "Consistent execution settlement, actionable continuations, unresolved effects and research audit blockers with an exact fingerprint; no quality or acceptance verdict"
+    ],
+    [
+      "GET",
       "/api/work/{id}/readiness",
       "Bounded observed component configuration, last recall status, funding and published output counts; no inference or quality verdict"
     ],
@@ -8625,6 +8792,18 @@
     [
       "resource.closeout.assign",
       "Operator assigns protected capacity to a current accepted responsibility. Membership, a review request and an unaccepted offer are insufficient."
+    ],
+    [
+      "resource.finishing.configure",
+      "Operator preauthorizes protected funding for existing self-accepted responsibilities when production admission is exhausted. Does not create responsibilities or resume stopped work."
+    ],
+    [
+      "resource.admission.preview",
+      "Operator observes the current assembled decision quote and funding feasibility without dispatching or reserving inference."
+    ],
+    [
+      "research.stage.seal",
+      "Seal a settled experimental stage against its immutable protocol and exact observation. Normal work remains reviewable; no acceptance verdict is created."
     ],
     [
       "resource.reallocate",
@@ -10051,6 +10230,123 @@
               "run",
               "revision",
               "commitment",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator preauthorizes protected funding for existing self-accepted responsibilities when production admission is exhausted. Does not create responsibilities or resume stopped work.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.finishing.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "root",
+              "revision",
+              "enabled",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator observes the current assembled decision quote and funding feasibility without dispatching or reserving inference.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "resource.admission.preview"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "run": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "run"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Seal a settled experimental stage against its immutable protocol and exact observation. Normal work remains reviewable; no acceptance verdict is created.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "research.stage.seal"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "work": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "fingerprint": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "protocol_digest": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "work",
+              "revision",
+              "fingerprint",
+              "stage",
+              "protocol_digest",
               "reason"
             ]
           }
@@ -15594,6 +15890,18 @@
             "maximum": 24,
             "default": null
           },
+          "exploration": {
+            "description": "Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewExploration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "current_self": {
             "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
             "type": [
@@ -15623,6 +15931,34 @@
         "additionalProperties": false,
         "required": [
           "active"
+        ]
+      },
+      "PreviewExploration": {
+        "type": "object",
+        "properties": {
+          "seed": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "max_previews": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 256,
+            "maximum": 4096
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "seed",
+          "max_previews",
+          "max_bytes"
         ]
       },
       "Delegation": {
