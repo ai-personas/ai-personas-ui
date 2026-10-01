@@ -291,8 +291,10 @@ try {
       assert.equal(finished.state, 'succeeded', JSON.stringify(finished));
       assert.equal(downloads, 1);
       const directory = join((await get('/records/' + environment.id)).data.directory, 'runs', run.id);
+      assert.equal(finished.result.directory, directory, 'completed receipt retains the effective execution directory');
       assert.equal(readFileSync(join(directory, 'host-tool-output.svg'), 'utf8'), artifactText);
       const artifact = await op('artifact.publish', { path: 'host-tool-output.svg', name: 'host-tool-output.svg', media_type: 'image/svg+xml' }, persona.id, run.id);
+      assert.equal(artifact.result.publication.resolved_path, join(directory, 'host-tool-output.svg'));
       assert.equal(artifact.result.data.digest, createHash('sha256').update(artifactText).digest('hex'));
       const registered = await op('tool.register', { name: 'Downloaded fixture tool', command, description: 'Local test tool download and execution', acquisition: 'Synthetic HTTP source owned by this test' }, persona.id, run.id);
       const acquired = await op('capability.acquire', { id: registered.result.id, revision: registered.result.revision, check: launched.request.id, limitations: 'Fixture verifies installation mechanics only' }, persona.id, run.id);
@@ -644,9 +646,13 @@ try {
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: 'Check next decision funding', exact: true }).click();
     const prerequisites = details.getByLabel('Decision funding preview').getByLabel('Protected finishing prerequisites');
-    await expect(prerequisites).toContainText('Current accepted responsibility: not recorded');
+    // This quotes the real assembled request; allow it to finish under shared
+    // compiler/browser load before checking the resulting read-only snapshot.
+    await expect(prerequisites).toContainText('Current accepted responsibility: not recorded', { timeout: 30000 });
     await expect(prerequisites).toContainText('Unknown billing stays conservatively charged');
-    await expect(prerequisites).toContainText('No current responsibility accepted');
+    await expect(prerequisites).toContainText('No retained current responsibility has been accepted');
+    await expect(prerequisites).toContainText('Ordinary capacity remaining:');
+    await expect(prerequisites).toContainText('Remote capacity remaining:');
     await expect(details.getByLabel('Decision funding preview')).toContainText('This participation remains stopped.');
     assert.equal(calls, callsBefore);
     assert.equal((await get('/records/' + run.id)).data.status, 'paused');

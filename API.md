@@ -127,13 +127,13 @@ Move unspent token/cost capacity between production and closeout without increas
 
 ### `information.policy`
 
-Replace the policy: readers must be existing persona IDs, not user/operator, work, environment or allowance IDs. Replacement clears implicit seed, response and work audiences; explicitly preserve any intended persona readers. Operator access needs no reader entry. Source restrictions still propagate to derivatives; no automatic sharing or export permission is implied.
+Replace named persona readers, export permission and optional expiry. Clears implicit seed, response and work audiences. Only exact persona IDs or current @persona aliases are readers; subject/revision stay exact. Ancestor restrictions still apply.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `subject` | string | Required |  |
 | `revision` | integer | Required |  |
-| `readers` | string[] | Required |  |
+| `readers` | InformationReader[] | Required |  |
 | `allow_export` | boolean | Required |  |
 | `expires` | string or null | Optional |  |
 | `reason` | string | Required |  |

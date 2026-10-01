@@ -22,11 +22,13 @@ export default function ActionReader({ action, open }: { action: Action; open: (
     <Story value={narrative}/><Story title="Reason" value={args.reason}/><Story title="Instructions" value={args.instructions}/>
     {(kind.startsWith('browser.') || kind === 'model.invoke' && result.capability === 'knowledge') && <Suspense fallback={<p>Loading research…</p>}><ResearchEvidence kind={kind} args={args} result={result}/></Suspense>}
     {kind === 'exec' && <><Story title="Command" value={args.command}/>{typeof result.exit_code === 'number' && <p>{result.exit_code === 0 ? 'The command finished without reporting an error.' : `The command reported exit code ${result.exit_code}.`}</p>}</>}
+    {kind === 'exec' && <Story title="Execution directory" value={result.directory}/>}
+    {kind === 'artifact.publish' && <Story title="Published file" value={fields(result.publication).resolved_path}/>}
     {kind === 'model.choose' && text(args.model) && <p>Selected model: <strong>{text(args.model)}</strong></p>}
     {kind === 'record.list' && text(args.query) && <p>Search: {text(args.query)}</p>}
     {text(args.name || args.title) && <p class="action-name">{text(args.name || args.title)}</p>}
     {action.error && <p role="alert">{action.error}</p>}
-    <DeliveryRecovery value={result.recovery} open={open}/>
+    <DeliveryRecovery value={result.recovery || fields(result.peer_delivery).recovery || fields(fields(result.data).peer_delivery).recovery} open={open}/>
     <Story title="Result" value={result.summary || result.message || result.conclusion || result.note}/>
     {result.schema === 'wait-receipt/1' && <p>Recorded participation status: {humanLabel(text(result.status))}. Waiting does not establish completion or acceptance.</p>}
     {result.schema === 'invitation-response/1' && <p>Recorded membership: {humanLabel(text(result.membership))}.{result.commitment === 'not_accepted' && ' Responsibility has not been accepted by this invitation response.'}</p>}

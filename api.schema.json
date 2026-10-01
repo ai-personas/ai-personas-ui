@@ -560,7 +560,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Replace the policy: readers must be existing persona IDs, not user/operator, work, environment or allowance IDs. Replacement clears implicit seed, response and work audiences; explicitly preserve any intended persona readers. Operator access needs no reader entry. Source restrictions still propagate to derivatives; no automatic sharing or export permission is implied.",
+            "description": "Replace named persona readers, export permission and optional expiry. Clears implicit seed, response and work audiences. Only exact persona IDs or current @persona aliases are readers; subject/revision stay exact. Ancestor restrictions still apply.",
             "type": "object",
             "properties": {
               "kind": {
@@ -581,7 +581,7 @@
                   "readers": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/InformationReader"
                     }
                   },
                   "allow_export": {
@@ -5530,6 +5530,11 @@
           "evidence"
         ]
       },
+      "InformationReader": {
+        "description": "An exact persona ID or current-call @persona alias. This identity does not\nauthorize reading the persona's private profile. Work IDs and record/action\naliases are not readers.",
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{32}|@persona:[0-9a-f]{12}:[1-9][0-9]*)$"
+      },
       "InitialApproach": {
         "type": "object",
         "properties": {
@@ -9072,7 +9077,7 @@
     ],
     [
       "information.policy",
-      "Replace the policy: readers must be existing persona IDs, not user/operator, work, environment or allowance IDs. Replacement clears implicit seed, response and work audiences; explicitly preserve any intended persona readers. Operator access needs no reader entry. Source restrictions still propagate to derivatives; no automatic sharing or export permission is implied."
+      "Replace named persona readers, export permission and optional expiry. Clears implicit seed, response and work audiences. Only exact persona IDs or current @persona aliases are readers; subject/revision stay exact. Ancestor restrictions still apply."
     ],
     [
       "information.withdraw",
@@ -9817,7 +9822,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Replace the policy: readers must be existing persona IDs, not user/operator, work, environment or allowance IDs. Replacement clears implicit seed, response and work audiences; explicitly preserve any intended persona readers. Operator access needs no reader entry. Source restrictions still propagate to derivatives; no automatic sharing or export permission is implied.",
+        "description": "Replace named persona readers, export permission and optional expiry. Clears implicit seed, response and work audiences. Only exact persona IDs or current @persona aliases are readers; subject/revision stay exact. Ancestor restrictions still apply.",
         "type": "object",
         "properties": {
           "kind": {
@@ -9838,7 +9843,7 @@
               "readers": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/InformationReader"
                 }
               },
               "allow_export": {
@@ -14804,6 +14809,11 @@
           "output_units_per_million",
           "evidence"
         ]
+      },
+      "InformationReader": {
+        "description": "An exact persona ID or current-call @persona alias. This identity does not\nauthorize reading the persona's private profile. Work IDs and record/action\naliases are not readers.",
+        "type": "string",
+        "pattern": "^([0-9a-fA-F]{32}|@persona:[0-9a-f]{12}:[1-9][0-9]*)$"
       },
       "InitialApproach": {
         "type": "object",

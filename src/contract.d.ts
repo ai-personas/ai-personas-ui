@@ -65,7 +65,7 @@ export type Command =
       args: {
         subject: string;
         revision: number;
-        readers: string[];
+        readers: InformationReader[];
         allow_export: boolean;
         expires?: string | null;
         reason: string;
@@ -1095,6 +1095,12 @@ export type Command =
       };
     };
 export type Capability = "persona_decision" | "choice" | "knowledge";
+/**
+ * An exact persona ID or current-call @persona alias. This identity does not
+ * authorize reading the persona's private profile. Work IDs and record/action
+ * aliases are not readers.
+ */
+export type InformationReader = string;
 export type OrientationDisposition = "adopted" | "deferred";
 export type EvidenceRequirement = "reviewed" | "user_judgment";
 export type FragmentDraft =
