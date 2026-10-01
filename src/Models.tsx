@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { changes, request } from './api';
-import type { ApiTypes } from './contract';
+import type { ApiTypes, Model } from './contract';
+import { fields, text } from './workspace';
 
 type Catalog = ApiTypes['inference'];
 export { modelKey, primaryModels, fundingModels } from './model-catalog';
@@ -32,4 +33,13 @@ export function ModelStatus({ catalog, models, loading, error, refresh }: Return
       : !unavailable.length && <p>No inference provider is enabled. Add a connection in Funding → Settings, then refresh.</p>}
     {!loading && unavailable.map(p => <p class="provider-notice" key={p.provider}><strong>{p.provider}</strong>: {p.message}</p>)}
   </div><button type="button" class="text-button" disabled={loading} onClick={refresh}>Refresh models</button></div>;
+}
+
+export function ModelImageInput({ model }: { model?: Model }) {
+  const readiness = fields(fields(model?.capabilities).image_input_readiness);
+  const state = text(readiness.state);
+  if (!state) return null;
+  const label = state === 'ready' ? 'Image input ready' : state === 'disabled_by_configuration' ? 'Image input supported · Disabled by configuration'
+    : state === 'incompatible_bound' ? 'Image input supported · Reservation exceeds model capacity' : 'Image input unsupported';
+  return <p class="micro">{label}{state === 'ready' && typeof readiness.image_token_upper_bound === 'number' && ` · ${readiness.image_token_upper_bound.toLocaleString()} tokens reserved per image`}{readiness.reason && <>. {text(readiness.reason)}</>}</p>;
 }

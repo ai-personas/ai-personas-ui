@@ -917,6 +917,26 @@ export type Command =
       };
     }
   | {
+      kind: "model.selection.preview";
+      args: {
+        provider: string;
+        model: string;
+        effort?: string | null;
+        /**
+         * The allowance to inspect before creating a persona. Mutually exclusive with run.
+         */
+        resource_root?: string | null;
+        /**
+         * Participation whose owner, model policy and current funding govern the selection.
+         */
+        run?: string | null;
+        /**
+         * Existing persona whose model policy applies. A run already identifies its owner.
+         */
+        persona?: string | null;
+      };
+    }
+  | {
       kind: "tool.register";
       args: {
         name: string;
@@ -1277,6 +1297,11 @@ export type Route =
 export type SettingsChange =
   | {
       revision: string;
+      image_token_upper_bound?: number | null;
+      action: "save_codex_image_input";
+    }
+  | {
+      revision: string;
       connection: Connection;
       api_key?: string | null;
       action: "save";
@@ -1309,6 +1334,7 @@ export interface ApiTypes {
   event: Event;
   model: Model;
   inference: InferenceCatalog;
+  model_selection_readiness: ModelSelectionReadiness;
   provider_settings: ProviderSettings;
   provider_settings_change: SettingsChange;
   message_delivery: Page4;
@@ -1618,11 +1644,11 @@ export interface Continuity {
    */
   learning_resolutions?: LearningResolution[];
   /**
-   * Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.
+   * Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.
    */
-  next?: "continue" | "wait";
+  next: "continue" | "wait";
   /**
-   * Your next intended outcome or uncertainty, not a claim of completion.
+   * Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.
    */
   focus: string;
   /**
@@ -2050,8 +2076,60 @@ export interface ProviderStatus {
   message: string;
   [k: string]: unknown;
 }
+export interface ModelSelectionReadiness {
+  schema: string;
+  selection: Selection;
+  scope: SelectionScope;
+  ready: boolean;
+  checks: SelectionChecks;
+  price?: SelectionPrice | null;
+  price_required: boolean;
+  blocker?: SelectionBlocker | null;
+  inference_dispatched: boolean;
+  reservation_created: boolean;
+  future_request_fit_guaranteed: boolean;
+  [k: string]: unknown;
+}
+export interface SelectionScope {
+  resource_root?: string | null;
+  revision?: number | null;
+  run?: string | null;
+  persona?: string | null;
+  affected_resource_roots: string[];
+  [k: string]: unknown;
+}
+export interface SelectionChecks {
+  provider_configured: boolean;
+  model_discovered: boolean;
+  persona_decision: boolean;
+  effort_supported: boolean;
+  model_policy: boolean;
+  exact_price: boolean;
+  funding: boolean;
+  [k: string]: unknown;
+}
+export interface SelectionPrice {
+  provider: string;
+  model: string;
+  input_units_per_million: number;
+  output_units_per_million: number;
+  evidence: string;
+  currency: string;
+  [k: string]: unknown;
+}
+export interface SelectionBlocker {
+  code: string;
+  message: string;
+  remediation: string;
+  [k: string]: unknown;
+}
 export interface ProviderSettings {
   revision: string;
+  /**
+   * Saved per-image reservation for the host Codex adapter. Null disables
+   * image input; provider-native image support is checked separately.
+   */
+  codex_image_token_upper_bound?: number | null;
   connections: SavedConnection[];
   /**
    * Connections supplied by the node launcher cannot be overwritten here.

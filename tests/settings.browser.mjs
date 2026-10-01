@@ -125,12 +125,28 @@ try {
     await expect(dialog).toHaveCount(0); await expect(card).toContainText('1 available model');
     assert(captured.some(h => h.authorization === 'Bearer ' + keys[1]));
   });
+  await step('Codex image input stays disabled until an explicit conservative reservation is saved', async () => {
+    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, null);
+    const card = page.locator('.provider-card').filter({ has: page.getByRole('heading', { name: 'Codex image input', exact: true }) });
+    await expect(card).toContainText('Disabled by configuration');
+    await card.getByRole('button', { name: 'Configure Codex image input', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Configure Codex image input', exact: true });
+    await expect(dialog.getByLabel('Image input reservation')).toHaveValue('disabled');
+    await dialog.getByLabel('Image input reservation').selectOption('conservative');
+    await expect(dialog).toContainText('not measured usage');
+    await dialog.getByRole('button', { name: 'Save image input setting' }).click();
+    await expect(dialog).toHaveCount(0); await expect(card).toContainText('32,768 tokens per image');
+    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, 32768);
+    assert.equal(inferences, 0);
+  });
   await step('save survives node restart and browser reload without exposing the key', async () => {
     await stop(); await start(); await page.reload(); await funding();
     await expect(page.getByRole('button', { name: 'Edit fixture-responses' })).toBeVisible();
     await page.getByRole('button', { name: 'Edit fixture-responses' }).click();
     const dialog = page.getByRole('dialog', { name: 'Edit provider connection' }); await expect(dialog.getByLabel('Replace API key')).toHaveValue('');
     await dialog.getByRole('button', { name: 'Close form' }).click();
+    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, 32768);
+    await expect(page.locator('.provider-card').filter({ has: page.getByRole('heading', { name: 'Codex image input', exact: true }) })).toContainText('32,768 tokens per image');
     assert(await page.evaluate(() => !JSON.stringify(localStorage).includes('fixture-key') && !JSON.stringify(sessionStorage).includes('fixture-key')));
   });
   await step('native Claude and Gemini model discovery use their own API authentication', async () => {

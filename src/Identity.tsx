@@ -11,13 +11,14 @@ import type { Act } from './main';
 const IdentityHistory = lazy(() => import('./IdentityHistory'));
 const ProfileEditor = lazy(() => import('./ProfileEditor'));
 const Development = lazy(() => import('./Development'));
+const ModelChoice = lazy(() => import('./ModelChoice'));
 import { Story, RelatedItems } from './RecordReader';
 import './identity.css';
 
 export default function Identity({ persona, open, act }: { persona: Entity; act: Act; open: (id: string) => void }) {
   const d = data(persona), creation = fields(d.creation), milestones = fields(d.milestones), sponsor = text(creation.sponsor);
-  const [copied, setCopied] = useState(false), [history, setHistory] = useState(false), [copyError, setCopyError] = useState(''), [editing, setEditing] = useState(false), [starting, setStarting] = useState(false), [development, setDevelopment] = useState(false);
-  useEffect(() => { setCopied(false); setCopyError(''); setHistory(false); setEditing(false); setStarting(false); setDevelopment(false); }, [persona.id]);
+  const [copied, setCopied] = useState(false), [history, setHistory] = useState(false), [copyError, setCopyError] = useState(''), [editing, setEditing] = useState(false), [starting, setStarting] = useState(false), [development, setDevelopment] = useState(false), [changingModel, setChangingModel] = useState(false);
+  useEffect(() => { setCopied(false); setCopyError(''); setHistory(false); setEditing(false); setStarting(false); setDevelopment(false); setChangingModel(false); }, [persona.id]);
   return <section class="identity-profile" aria-label="Persona identity">
     <header><h3>Identity</h3><span class="identity-lifecycle">{text(d.lifecycle, 'Lifecycle not recorded')}</span></header>
     <p class="micro">A continuing identity across work and model changes. Current revision {persona.revision}.</p>
@@ -50,6 +51,9 @@ export default function Identity({ persona, open, act }: { persona: Entity; act:
     {history && <Suspense fallback={<p>Loading evolution history…</p>}><IdentityHistory key={persona.id} persona={persona} open={open}/></Suspense>}
     <button class="identity-history-toggle" aria-expanded={development} onClick={() => setDevelopment(!development)}>{development ? 'Hide experience and exploration' : 'Show experience and exploration'}</button>
     {development && <Suspense fallback={<p>Loading development…</p>}><Development persona={persona} open={open} act={act}/></Suspense>}
-    <details><summary>Inference configuration</summary><p>{text(d.provider, 'Not recorded')} / {text(d.model, 'Not recorded')}</p>{text(d.effort) && <p>Effort: {d.effort}</p>}</details>
+    <details><summary>Inference configuration</summary><p>{text(d.provider, 'Not recorded')} / {text(d.model, 'Not recorded')}</p>{text(d.effort) && <p>Effort: {d.effort}</p>}
+      <button type="button" class="secondary" aria-expanded={changingModel} onClick={() => setChangingModel(!changingModel)}>{changingModel ? 'Close model change' : 'Change model'}</button>
+      {changingModel && <Suspense fallback={<p>Loading models…</p>}><ModelChoice key={persona.id} persona={persona} act={act} close={() => setChangingModel(false)}/></Suspense>}
+    </details>
   </section>;
 }

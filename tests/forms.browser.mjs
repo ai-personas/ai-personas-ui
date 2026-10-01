@@ -4,13 +4,15 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
-import { resolve, extname } from 'node:path';
+import { resolve, extname, join } from 'node:path';
 
 const id = n => n.toString(16).padStart(32, '0');
+const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || '.qa';
 const record = (n, kind, data) => ({ id: id(n), kind, scope: '', revision: 1, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', data });
-const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] } } }));
+const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] }, allowed_reasoning_efforts: ['low', 'high'], image_input_readiness: { state: name === 'alpha' ? 'disabled_by_configuration' : 'unsupported', image_token_upper_bound: null, reason: name === 'alpha' ? 'Save a reservation in Funding settings.' : 'This model does not support image input.' } } }));
 let catalog = { models, providers: [{ provider: 'codex', available: true, models: 2, message: 'Ready' }], checked: '2026-01-01T00:00:00Z' };
-const roots = [], writes = [], reads = [], clients = new Set();
+const roots = [], personas = [], writes = [], reads = [], clients = new Set();
+let readinessBlocker = null, unpricedModel = 'beta', wrongPersonaScope = false;
 let sequence = 0, checks = 0, browser;
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
@@ -25,16 +27,28 @@ const server = createServer(async (req, res) => {
   if (u.pathname === '/api/records') {
     reads.push(u.pathname + u.search);
     const kind = u.searchParams.get('kind');
-    return json({ items: kind === 'resource_root' ? roots : kind === 'work' ? Array.from({ length: 24 }, (_, i) => record(i + 100, 'work', { title: 'Fixture work ' + i, brief: 'Retained context '.repeat(100), personas: [], status: 'active' })) : [], sequence, next: null });
+    return json({ items: kind === 'resource_root' ? roots : kind === 'persona' ? personas : kind === 'work' ? Array.from({ length: 24 }, (_, i) => record(i + 100, 'work', { title: 'Fixture work ' + i, brief: 'Retained context '.repeat(100), personas: [], status: 'active' })) : [], sequence, next: null });
   }
   if (u.pathname.startsWith('/api/resources/')) {
     const root = roots.find(r => r.id === u.pathname.split('/').at(-1));
     return json({ status: 'active', limits: root?.data.limits, exposure: { bounds: root?.data.bounds }, calls: { production_remaining: 80, closeout_remaining: 20, uncertain: 0 } });
   }
-  if (u.pathname.startsWith('/api/records/')) return json(roots.find(r => r.id === u.pathname.split('/').at(-1)));
+  if (u.pathname.startsWith('/api/records/')) return json([...roots, ...personas].find(r => r.id === u.pathname.split('/').at(-1)));
   if (u.pathname === '/api/operations') {
     let body = ''; for await (const chunk of req) body += chunk;
     const op = JSON.parse(body); writes.push(op);
+    if (op.kind === 'model.selection.preview') {
+      const blocker = readinessBlocker || (op.args.model === unpricedModel ? { code: 'MODEL_PRICE_REQUIRED', message: 'This allowance has no exact price for codex / beta.', remediation: 'Add an exact provider/model price to this allowance, then preview again.' } : null);
+      return json({ request: op, state: 'succeeded', result: { schema: 'model-selection-readiness/1', selection: { provider: op.args.provider, model: op.args.model, effort: op.args.effort || null }, scope: { resource_root: op.args.resource_root || null, revision: 1, persona: wrongPersonaScope ? id(999) : op.args.persona || null, run: null, affected_resource_roots: op.args.resource_root ? [op.args.resource_root] : [] }, ready: !blocker, price_required: true, checks: { provider_configured: true, model_discovered: true, persona_decision: true, effort_supported: true, model_policy: true, exact_price: !blocker, funding: !readinessBlocker }, price: blocker ? null : { provider: op.args.provider, model: op.args.model, input_units_per_million: 0, output_units_per_million: 0, evidence: 'Explicit synthetic subscription policy', currency: 'USD' }, blocker, inference_dispatched: false, reservation_created: false, future_request_fit_guaranteed: false } });
+    }
+    if (op.kind === 'persona.create') {
+      const persona = record(500 + personas.length, 'persona', { provider: op.args.provider, model: op.args.model, effort: op.args.effort, resource_root: op.args.resource_root, name: 'Readiness fixture', character: op.args.profile_seed.character, character_initialization: { status: 'ready' }, lifecycle: 'active' }); personas.push(persona);
+      return json({ request: op, state: 'succeeded', result: { id: persona.id } });
+    }
+    if (op.kind === 'model.choose') {
+      const persona = personas.find(r => r.id === op.actor); assert(persona); persona.revision++; Object.assign(persona.data, op.args);
+      return json({ request: op, state: 'succeeded', result: persona });
+    }
     const root = op.kind === 'resource.root.create'
       ? record(roots.length + 1, 'resource_root', { status: 'active', reason: op.args.reason, limits: op.args.limits, closeout_calls: op.args.closeout_calls, bounds_configured: true })
       : roots.find(r => r.id === op.args.root);
@@ -53,7 +67,7 @@ const server = createServer(async (req, res) => {
 const emit = () => { const event = { sequence: ++sequence, kind: 'resource_root', entity: id(999), data: { scope: '', owner: '', revision: sequence, status: 'active' } }; for (const client of clients) client.write('data: ' + JSON.stringify(event) + '\n\n'); };
 async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name); }
 try {
-  await mkdir('.qa', { recursive: true }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  await mkdir(evidence, { recursive: true }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch();
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
@@ -78,7 +92,7 @@ try {
       await expect(form.getByRole('button', { name: 'Create allowance', exact: true })).toBeInViewport();
       assert(await form.locator('.form-body').evaluate(e => e.scrollHeight > e.clientHeight));
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.screenshot({ path: `.qa/funding-${viewport.width}.png` });
+      await page.screenshot({ path: join(evidence, `funding-${viewport.width}.png`) });
     });
     await step(`${viewport.width}: typing stays responsive with CPU throttling and activity events`, async () => {
       const cdp = await page.context().newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
@@ -167,6 +181,53 @@ try {
       assert.equal(amendment.args.bounds.prices[1].input_units_per_million, 0);
       assert.match(amendment.args.bounds.prices[1].evidence, /Operator chose included/);
       assert.equal(amendment.args.reason, text.trim()); assert.deepEqual(errors, []);
+    });
+    if (viewport.width === 390) await step('model readiness blocks unpriced initialization, rechecks submission and recovers an existing identity', async () => {
+      await page.getByRole('button', { name: 'Personas', exact: true }).click();
+      await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
+      const create = page.getByRole('dialog', { name: 'Create', exact: true });
+      const submit = create.getByRole('button', { name: 'Create', exact: true });
+      await expect(submit).toBeDisabled();
+      await create.getByLabel('Funding allowance', { exact: true }).selectOption(roots.at(-1).id);
+      await expect(create).toContainText('Model selection checks passed for this allowance.');
+      await expect(create).toContainText('Image input supported · Disabled by configuration');
+      await create.getByLabel('Starting model').selectOption(JSON.stringify(['codex', 'beta']));
+      await expect(create).toContainText('This allowance has no exact price'); await expect(submit).toBeDisabled();
+      await expect(create).toContainText('Image input unsupported');
+      await create.getByRole('region', { name: 'Model and funding readiness' }).screenshot({ path: join(evidence, 'unpriced-initialization-mobile.png') });
+      const before = writes.filter(op => op.kind === 'persona.create').length;
+      await create.getByLabel('Character', { exact: true }).fill('My supplied character skips generation.');
+      await expect(create).toContainText('Funded decisions remain unavailable'); await expect(submit).toBeEnabled();
+      await create.getByLabel('Character', { exact: true }).fill(''); await expect(submit).toBeDisabled();
+      await create.getByLabel('Starting model').selectOption(JSON.stringify(['codex', 'alpha']));
+      await create.getByLabel('Reasoning effort').selectOption('high'); await expect(submit).toBeEnabled();
+      assert.equal(writes.filter(op => op.kind === 'model.selection.preview').at(-1).args.effort, 'high');
+      readinessBlocker = { code: 'MODEL_FUNDING_EXHAUSTED', message: 'Production capacity is exhausted.', remediation: 'Amend this allowance before selecting the model.' };
+      await submit.click(); await expect(create.getByRole('alert')).toContainText('Production capacity is exhausted.');
+      assert.equal(writes.filter(op => op.kind === 'persona.create').length, before, 'fresh preflight must stop creation');
+      readinessBlocker = null; await create.getByRole('button', { name: 'Refresh readiness' }).click();
+      await expect(submit).toBeEnabled(); await create.getByLabel('Character', { exact: true }).fill('A retained identity for model recovery.');
+      await submit.click(); await expect(create).toHaveCount(0);
+      assert.equal(writes.filter(op => op.kind === 'persona.create').length, before + 1);
+      assert.equal(writes.at(-2).kind, 'model.selection.preview');
+      await page.getByRole('button', { name: 'Open details', exact: true }).click();
+      const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
+      await detail.getByText('Inference configuration', { exact: true }).click();
+      await detail.getByRole('button', { name: 'Change model', exact: true }).click();
+      const choice = detail.getByRole('form', { name: 'Change persona model' });
+      await choice.getByLabel('Persona model').selectOption(JSON.stringify(['codex', 'beta']));
+      await expect(choice).toContainText('This allowance has no exact price'); await expect(choice.getByRole('button', { name: 'Save model choice' })).toBeDisabled();
+      await choice.screenshot({ path: join(evidence, 'model-recovery-mobile.png') });
+      const personaId = personas[0].id; unpricedModel = null;
+      wrongPersonaScope = true; await choice.getByRole('button', { name: 'Refresh readiness' }).click();
+      await expect(choice).toContainText('Unrecognized model readiness response.'); await expect(choice.getByRole('button', { name: 'Save model choice' })).toBeDisabled();
+      wrongPersonaScope = false;
+      await choice.getByRole('button', { name: 'Refresh readiness' }).click();
+      await expect(choice.getByRole('button', { name: 'Save model choice' })).toBeEnabled();
+      await choice.getByRole('button', { name: 'Save model choice' }).click(); await expect(choice).toHaveCount(0);
+      assert.equal(writes.at(-1).kind, 'model.choose'); assert.equal(writes.at(-1).actor, personaId); assert.equal(writes.at(-1).args.model, 'beta');
+      assert.equal(personas[0].id, personaId); assert.equal(writes.at(-2).kind, 'model.selection.preview');
+      assert.equal(writes.at(-2).args.persona, personaId); assert.deepEqual(errors, []);
     });
     await page.close();
   }

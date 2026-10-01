@@ -9,7 +9,8 @@ import Dialog from './Dialog';
 import { ToolChoices } from './EnvironmentTools';
 import SearchInput from './SearchInput';
 import ProfileFields, { profileInput } from './ProfileFields';
-import { modelKey, primaryModels, ModelStatus, useModels } from './Models';
+import { modelKey, primaryModels, ModelStatus, ModelImageInput, useModels } from './Models';
+import { ModelReadiness, useModelReadiness } from './ModelReadiness';
 export function Pick({ kind, multiple, value, onChange, exclude = [], disabled = false }: { kind: string; multiple?: boolean; value: string[]; onChange: (ids: string[]) => void; exclude?: string[]; disabled?: boolean }) {
   const [query, setQuery] = useState(''), [cursors, setCursors] = useState([0]);
   const settled = query;
@@ -34,12 +35,20 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
   useEffect(() => { if (!selectedModel && models.length) setSelectedModel(modelKey(models[0])); }, [models, selectedModel]);
   const availableModel = models.find(m => modelKey(m) === selectedModel);
   const efforts = strings(fields(availableModel?.capabilities).allowed_reasoning_efforts);
+  const [effort, setEffort] = useState(''), [authoredCharacter, setAuthoredCharacter] = useState(false);
+  const readiness = useModelReadiness({ provider: availableModel?.provider || '', model: availableModel?.id || '', effort: effort || null, resource_root: root || null }, act,
+    kind === 'Personas' && !!availableModel && !modelState.loading && !!deployment && (deployment.funding_required === false || !!root), modelState.catalog);
   const [people, setPeople] = useState<string[]>([]), [env, setEnv] = useState<string[]>([]), [busy, setBusy] = useState(false), [error, setError] = useState('');
   async function save(form: HTMLFormElement) {
     if (busy) return; setBusy(true); setError('');
     try {
       const f = new FormData(form);
-      if (kind === 'Personas') { const model = models.find(m => modelKey(m) === f.get('model')); if (!model) throw new Error('Choose an available model.'); await act('persona.create', { provider: model.provider, model: model.id, ...(f.get('effort') ? { effort: String(f.get('effort')) } : {}), profile_seed: profileInput(f, true), self_authorship: f.has('self_authorship'), ...(root ? { resource_root: root } : {}) }); }
+      if (kind === 'Personas') {
+        const model = models.find(m => modelKey(m) === f.get('model')); if (!model) throw new Error('Choose an available model.');
+        const checked = await readiness.check(), suppliedCharacter = String(f.get('character') || '').trim();
+        if (!checked.ready && !(suppliedCharacter && checked.blocker?.code === 'MODEL_PRICE_REQUIRED')) throw new Error(checked.blocker?.message || 'This model and allowance are not ready.');
+        await act('persona.create', { provider: model.provider, model: model.id, ...(f.get('effort') ? { effort: String(f.get('effort')) } : {}), profile_seed: profileInput(f, true), self_authorship: f.has('self_authorship'), ...(root ? { resource_root: root } : {}) });
+      }
       else if (kind === 'Environments') await act('environment.create', { tools });
       else if (kind === 'Network') {
         const descriptor = String(f.get('descriptor')).trim();
@@ -55,8 +64,8 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
       close();
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <Dialog label="Create" close={close}><form class="create-panel" onSubmit={e => { e.preventDefault(); void save(e.currentTarget); }}><header><h2>{kind === 'Network' ? 'Connect or receive' : 'Create ' + kind.toLowerCase()}</h2><button type="button" class="quiet" onClick={close}>Close form</button></header>{error && <p role="alert">{error}</p>}
-    {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => setSelectedModel(e.currentTarget.value)} disabled={modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label>{efforts.length > 0 && <label>Reasoning effort<select key={selectedModel} name="effort" defaultValue=""><option value="">Model default</option>{efforts.map(e => <option value={e} key={e}>{e}</option>)}</select></label>}<p>Creating starts a funded call to write a distinctive character from these traits. Identical traits can produce different characters. Providing your own character skips generation. The persona becomes available for work when its character is ready.</p><ModelStatus {...modelState} models={models}/><ProfileFields creation/></>
+  return <Dialog label="Create" close={close}><form class="create-panel" onInputCapture={e => { const target = e.target as HTMLInputElement; if (target.name === 'character') setAuthoredCharacter(!!target.value.trim()); }} onSubmit={e => { e.preventDefault(); void save(e.currentTarget); }}><header><h2>{kind === 'Network' ? 'Connect or receive' : 'Create ' + kind.toLowerCase()}</h2><button type="button" class="quiet" onClick={close}>Close form</button></header>{error && <p role="alert">{error}</p>}
+    {kind === 'Personas' ? <><label>Starting model<select name="model" required value={selectedModel} onChange={e => { setSelectedModel(e.currentTarget.value); setEffort(''); }} disabled={busy || modelState.loading || !models.length}>{!availableModel && <option value={selectedModel}>{selectedModel ? 'Selected model unavailable — choose another' : 'No models available'}</option>}{models.map(m => <option key={modelKey(m)} value={modelKey(m)}>{m.provider} / {m.name || m.id}</option>)}</select><small>The persona can make subsequent permitted model choices.</small></label>{efforts.length > 0 && <label>Reasoning effort<select name="effort" value={effort} disabled={busy} onChange={e => setEffort(e.currentTarget.value)}><option value="">Model default</option>{efforts.map(e => <option value={e} key={e}>{e}</option>)}</select></label>}<ModelImageInput model={availableModel}/><p>Creating starts a funded call to write a distinctive character from these traits. Identical traits can produce different characters. Providing your own character skips generation. The persona becomes available for work when its character is ready.</p><ModelStatus {...modelState} models={models}/><ProfileFields creation/></>
       : kind === 'Environments' ? <p>Create a shared place for work. Participating personas can choose its name and description when work begins. An image appears only after an actual artifact is published.</p>
       : kind === 'Network' ? <><label>Peer address<input name="address" placeholder="/ip4/…/tcp/…/p2p/…"/></label><label>Or shared artifact details<textarea name="descriptor" rows={5}/></label><p>Both nodes must trust one another to exchange artifacts. Receiving bytes does not grant execution authority.</p></>
       : <><label>Short title<input name="title" required defaultValue={brief ? 'Learning together' : ''}/></label><label>Your instructions<textarea name="brief" required rows={6} defaultValue={brief}/></label><label>Acceptance criterion<input name="criterion" required defaultValue="Meets the request and stated constraints"/></label>{!brief && <Pick kind="environment" value={env} onChange={setEnv}/>}{env[0] && <EnvironmentPersonas id={env[0]} choose={setPeople}/>}<Pick kind="persona" multiple value={people} onChange={setPeople}/><p class="micro">Selecting a roster does not prove accepted commitments. No roles or workflow are assigned by the UI.</p></>}
@@ -64,6 +73,7 @@ export default function Create({ kind, brief, close, act }: { kind: string; brie
     {createsEnvironment && <ToolChoices value={tools} onChange={setTools}/>}
     {kind === 'Work' && <><label class="check"><input type="checkbox" name="start_paused"/>Start paused</label><p class="micro">Configure recall permissions and review each participant’s settings before any task decisions start. Select Resume work in the task controls when ready.</p></>}
     {['Personas', 'Work'].includes(kind) && <FundingChoice value={root} onChange={setRoot} required={deployment?.funding_required !== false}/>}
-    <button disabled={busy || createsEnvironment && tools === undefined || kind === 'Personas' && (!availableModel || modelState.loading)}>{busy ? 'Saving…' : 'Create'}</button>
+    {kind === 'Personas' && <ModelReadiness {...readiness} authoredCharacter={authoredCharacter}/>}
+    <button disabled={busy || createsEnvironment && tools === undefined || kind === 'Personas' && (!availableModel || modelState.loading || readiness.loading || !readiness.value || !readiness.value.ready && !(authoredCharacter && readiness.value.blocker?.code === 'MODEL_PRICE_REQUIRED'))}>{busy ? 'Saving…' : 'Create'}</button>
   </form></Dialog>;
 }

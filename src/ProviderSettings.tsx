@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { changed, changes, request } from './api';
 import type { ApiTypes, Connection, HttpModel } from './contract';
-import { useModels } from './Models';
+import { ModelImageInput, useModels } from './Models';
 import Dialog from './Dialog';
 import JevBudget from './JevBudget';
 
@@ -13,7 +13,7 @@ export function ProviderSettings() {
   const [settings, setSettings] = useState<Settings>(), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [attempt, setAttempt] = useState(0), [editing, setEditing] = useState<{ connection: Connection; exists: boolean; custom: boolean }>();
   const [removing, setRemoving] = useState(''), [busy, setBusy] = useState(false);
-  const [typesafe, setTypesafe] = useState(false);
+  const [typesafe, setTypesafe] = useState(false), [codexImages, setCodexImages] = useState(false);
   const models = useModels();
   useEffect(() => {
     const refreshBudget = (event: Event) => { if (['provider_budget','budget_charge'].includes((event as CustomEvent).detail?.kind)) setAttempt(n => n + 1); };
@@ -29,7 +29,7 @@ export function ProviderSettings() {
   async function save(change: Change) {
     const next = await request<Settings>('/settings/providers', { method: 'POST', body: JSON.stringify(change) });
     setSettings(next); setError(''); setRemoving('');
-    setNotice(change.action === 'remove' || change.action === 'remove_typesafe' ? 'Connection removed. New decisions cannot use this saved key.' : change.action === 'save_typesafe' ? 'JEV API key saved on this node.' : 'Connection saved on this node.');
+    setNotice(change.action === 'remove' || change.action === 'remove_typesafe' ? 'Connection removed. New decisions cannot use this saved key.' : change.action === 'save_typesafe' ? 'JEV API key saved on this node.' : change.action === 'save_codex_image_input' ? 'Codex image input setting saved on this node.' : 'Connection saved on this node.');
     models.refresh(); changed({ kind: 'provider_settings' });
   }
   if (!settings) return <section class="provider-settings"><h2>Provider connections</h2><p role={error ? 'alert' : 'status'}>{error || 'Loading provider settings…'}</p>{error && <button onClick={() => setAttempt(n => n + 1)}>Retry settings</button>}</section>;
@@ -48,7 +48,7 @@ export function ProviderSettings() {
         return <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">API key saved <span aria-hidden="true">••••••••</span></span></div>
           <p class="provider-endpoint">{connection.config.endpoint}</p>
           <p role="status">{models.loading ? 'Checking connection…' : status?.available ? `${available.length} available ${available.length === 1 ? 'model' : 'models'}` : status?.message || 'Refresh models to check this connection.'}</p>
-          {available.length > 0 && <details><summary>Available models</summary><ul>{available.map(m => <li key={m.id}>{m.name || m.id}{(m.capabilities as any)?.avatar_generation && ' · Avatar generation'}</li>)}</ul></details>}
+          {available.length > 0 && <details><summary>Available models</summary><ul>{available.map(m => <li key={m.id}>{m.name || m.id}{(m.capabilities as any)?.avatar_generation && ' · Avatar generation'}<ModelImageInput model={m}/></li>)}</ul></details>}
           <p class="micro">Saved {new Date(updated).toLocaleString()}</p>
           <div class="button-row"><button class="secondary" onClick={() => open(connection, true, !settings.templates.some(t => t.provider === id))}>Edit {title(id)}</button><button class="quiet" onClick={() => setRemoving(id)}>Remove {title(id)}</button></div>
           {removing === id && <div class="notice"><p>Remove this saved connection and key? Calls already in progress may finish. Existing personas, allowances, and recorded work stay available.</p><div class="button-row"><button disabled={busy} onClick={async () => { setBusy(true); try { await save({ action: 'remove', revision: settings.revision, provider: id }); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>Remove connection</button><button class="quiet" disabled={busy} onClick={() => setRemoving('')}>Keep connection</button></div></div>}
@@ -61,13 +61,43 @@ export function ProviderSettings() {
       <div class="button-row"><button class="secondary" onClick={() => setTypesafe(true)}>{settings.typesafe ? 'Replace JEV API key' : 'Connect TypeSafe JEV'}</button>{settings.typesafe && <button class="quiet" onClick={() => setRemoving('typesafe')}>Remove JEV key</button>}</div>
       {removing === 'typesafe' && <div class="notice"><p>Remove the saved JEV key? Recorded decisions and grants remain; further requests using this key will fail until reconnected.</p><button disabled={busy} onClick={async () => { setBusy(true); try { await save({ action: 'remove_typesafe', revision: settings.revision }); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>Remove connection</button><button class="quiet" disabled={busy} onClick={() => setRemoving('')}>Keep connection</button></div>}
     </article>
-      {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p></article>)}
+      {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p>
+        {models.models.some(m => m.provider === id) && <details><summary>Available models</summary><ul>{models.models.filter(m => m.provider === id).map(m => <li key={m.id}>{m.name || m.id}<ModelImageInput model={m}/></li>)}</ul></details>}
+      </article>)}
+      <article class="operator-card provider-card"><div><h3>Codex image input</h3><span class="micro">{settings.codex_image_token_upper_bound == null ? 'Disabled by configuration' : `Saved reservation: ${Number(settings.codex_image_token_upper_bound).toLocaleString()} tokens per image`}</span></div>
+        <p>Supported Codex models can inspect images after you save a per-image token reservation. Image input starts disabled.</p>
+        <p class="micro">The reservation is an accounting upper bound. Model support, context capacity and funding are checked separately.</p>
+        <button class="secondary" onClick={() => setCodexImages(true)}>Configure Codex image input</button>
+      </article>
     </div>
     <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
     <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. Responses connections can generate persona avatars through configured image routes. Add each model’s price and allowance before using it.</p>
     {editing && <ConnectionEditor key={editing.connection.provider + editing.exists} initial={editing.connection} exists={editing.exists} custom={editing.custom} revision={settings.revision} save={save} close={() => setEditing(undefined)}/>}
     {typesafe && <TypesafeKey revision={settings.revision} save={save} close={() => setTypesafe(false)}/>}
+    {codexImages && <CodexImageInput revision={settings.revision} value={settings.codex_image_token_upper_bound} save={save} close={() => setCodexImages(false)}/>}
   </section>;
+}
+
+function CodexImageInput({ revision, value, save, close }: { revision: string; value: Settings['codex_image_token_upper_bound']; save: (change: Change) => Promise<void>; close: () => void }) {
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [base] = useState(revision);
+  const [choice, setChoice] = useState(value == null ? 'disabled' : value === 32768 ? 'conservative' : 'custom');
+  return <Dialog label="Configure Codex image input" close={() => { if (!busy) close(); }}><form class="operator-form" onSubmit={async e => {
+    e.preventDefault(); if (busy || base !== revision) return; setBusy(true); setError('');
+    try {
+      const bound = choice === 'disabled' ? null : choice === 'conservative' ? 32768 : whole(new FormData(e.currentTarget), 'image_bound');
+      if (bound != null && bound > 1000000) throw Error('Use a reservation of at most 1,000,000 tokens per image.');
+      await save({ action: 'save_codex_image_input', revision: base, image_token_upper_bound: bound }); close();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }}><header><h2>Codex image input</h2><button type="button" class="quiet" disabled={busy} onClick={close}>Close form</button></header>
+    <label>Image input reservation<select aria-label="Image input reservation" value={choice} onChange={e => setChoice(e.currentTarget.value)}>
+      <option value="disabled">Disabled</option><option value="conservative">Conservative reservation — 32,768 tokens per image</option><option value="custom">Custom reservation</option>
+    </select></label>
+    {choice === 'custom' && <label>Tokens reserved per image<input name="image_bound" type="number" min={1} max={1000000} step={1} required defaultValue={typeof value === 'number' ? value : ''}/></label>}
+    <p>The offered 32,768-token bound is a conservative reservation, not measured usage or a tokenizer estimate. Choose a custom bound only when you have a justified upper limit.</p>
+    <p class="micro">Saving this setting makes no inference call. Unsupported models remain unable to receive images; each request must still fit the model and its allowance.</p>
+    {error && <p role="alert">{error}</p>}{base !== revision && <p role="alert">Settings changed. Close this form and reopen it before saving.</p>}
+    <button disabled={busy || base !== revision}>{busy ? 'Saving…' : 'Save image input setting'}</button>
+  </form></Dialog>;
 }
 
 function TypesafeKey({ revision, save, close }: { revision: string; save: (change: Change) => Promise<void>; close: () => void }) {

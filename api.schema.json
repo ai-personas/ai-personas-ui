@@ -45,6 +45,9 @@
       "inference": {
         "$ref": "#/$defs/InferenceCatalog"
       },
+      "model_selection_readiness": {
+        "$ref": "#/$defs/ModelSelectionReadiness"
+      },
       "provider_settings": {
         "$ref": "#/$defs/ProviderSettings"
       },
@@ -86,6 +89,7 @@
       "event",
       "model",
       "inference",
+      "model_selection_readiness",
       "provider_settings",
       "provider_settings_change",
       "message_delivery",
@@ -4413,6 +4417,64 @@
             "additionalProperties": false
           },
           {
+            "description": "Inspect a proposed primary provider/model/effort against an allowance or participation without inference or reservations. A successful snapshot never guarantees that a future assembled request fits.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "model.selection.preview"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "resource_root": {
+                    "description": "The allowance to inspect before creating a persona. Mutually exclusive with run.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "run": {
+                    "description": "Participation whose owner, model policy and current funding govern the selection.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "persona": {
+                    "description": "Existing persona whose model policy applies. A run already identifies its owner.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Retain an owned tool or skill and acquisition provenance. Registration never gates host execution.",
             "type": "object",
             "properties": {
@@ -6415,12 +6477,11 @@
             "default": []
           },
           "next": {
-            "description": "Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.",
-            "$ref": "#/$defs/NextDecision",
-            "default": "wait"
+            "description": "Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.",
+            "$ref": "#/$defs/NextDecision"
           },
           "focus": {
-            "description": "Your next intended outcome or uncertainty, not a claim of completion.",
+            "description": "Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.",
             "type": "string"
           },
           "disposition": {
@@ -6498,6 +6559,7 @@
         },
         "additionalProperties": false,
         "required": [
+          "next",
           "focus",
           "disposition",
           "change_reason",
@@ -7691,11 +7753,212 @@
           "message"
         ]
       },
+      "ModelSelectionReadiness": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string"
+          },
+          "selection": {
+            "$ref": "#/$defs/Selection"
+          },
+          "scope": {
+            "$ref": "#/$defs/SelectionScope"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "checks": {
+            "$ref": "#/$defs/SelectionChecks"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SelectionPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_required": {
+            "type": "boolean"
+          },
+          "blocker": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SelectionBlocker"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inference_dispatched": {
+            "type": "boolean"
+          },
+          "reservation_created": {
+            "type": "boolean"
+          },
+          "future_request_fit_guaranteed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema",
+          "selection",
+          "scope",
+          "ready",
+          "checks",
+          "price_required",
+          "inference_dispatched",
+          "reservation_created",
+          "future_request_fit_guaranteed"
+        ]
+      },
+      "SelectionScope": {
+        "type": "object",
+        "properties": {
+          "resource_root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
+          },
+          "run": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "affected_resource_roots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "affected_resource_roots"
+        ]
+      },
+      "SelectionChecks": {
+        "type": "object",
+        "properties": {
+          "provider_configured": {
+            "type": "boolean"
+          },
+          "model_discovered": {
+            "type": "boolean"
+          },
+          "persona_decision": {
+            "type": "boolean"
+          },
+          "effort_supported": {
+            "type": "boolean"
+          },
+          "model_policy": {
+            "type": "boolean"
+          },
+          "exact_price": {
+            "type": "boolean"
+          },
+          "funding": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider_configured",
+          "model_discovered",
+          "persona_decision",
+          "effort_supported",
+          "model_policy",
+          "exact_price",
+          "funding"
+        ]
+      },
+      "SelectionPrice": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "input_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "output_units_per_million": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "input_units_per_million",
+          "output_units_per_million",
+          "evidence",
+          "currency"
+        ]
+      },
+      "SelectionBlocker": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "remediation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "remediation"
+        ]
+      },
       "ProviderSettings": {
         "type": "object",
         "properties": {
           "revision": {
             "type": "string"
+          },
+          "codex_image_token_upper_bound": {
+            "description": "Saved per-image reservation for the host Codex adapter. Null disables\nimage input; provider-native image support is checked separately.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0
           },
           "connections": {
             "type": "array",
@@ -8109,6 +8372,31 @@
       "SettingsChange": {
         "description": "This body is write-only and must never enter the action journal or logs.",
         "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string"
+              },
+              "image_token_upper_bound": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0
+              },
+              "action": {
+                "type": "string",
+                "const": "save_codex_image_input"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "revision"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -9165,6 +9453,10 @@
     [
       "model.choose",
       "Choose an advertised provider and model for subsequent decisions."
+    ],
+    [
+      "model.selection.preview",
+      "Inspect a proposed primary provider/model/effort against an allowance or participation without inference or reservations. A successful snapshot never guarantees that a future assembled request fits."
     ],
     [
       "tool.register",
@@ -13382,6 +13674,64 @@
         "additionalProperties": false
       },
       {
+        "description": "Inspect a proposed primary provider/model/effort against an allowance or participation without inference or reservations. A successful snapshot never guarantees that a future assembled request fits.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "model.selection.preview"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "resource_root": {
+                "description": "The allowance to inspect before creating a persona. Mutually exclusive with run.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "run": {
+                "description": "Participation whose owner, model policy and current funding govern the selection.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "persona": {
+                "description": "Existing persona whose model policy applies. A run already identifies its owner.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "model"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
         "description": "Retain an owned tool or skill and acquisition provenance. Registration never gates host execution.",
         "type": "object",
         "properties": {
@@ -15402,12 +15752,11 @@
             "default": []
           },
           "next": {
-            "description": "Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch.",
-            "$ref": "#/$defs/NextDecision",
-            "default": "wait"
+            "description": "Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.",
+            "$ref": "#/$defs/NextDecision"
           },
           "focus": {
-            "description": "Your next intended outcome or uncertainty, not a claim of completion.",
+            "description": "Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.",
             "type": "string"
           },
           "disposition": {
@@ -15485,6 +15834,7 @@
         },
         "additionalProperties": false,
         "required": [
+          "next",
           "focus",
           "disposition",
           "change_reason",

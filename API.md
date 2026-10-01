@@ -1117,6 +1117,19 @@ Choose an advertised provider and model for subsequent decisions.
 | `model` | string | Required |  |
 | `effort` | string or null | Optional |  |
 
+### `model.selection.preview`
+
+Inspect a proposed primary provider/model/effort against an allowance or participation without inference or reservations. A successful snapshot never guarantees that a future assembled request fits.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `provider` | string | Required |  |
+| `model` | string | Required |  |
+| `effort` | string or null | Optional |  |
+| `resource_root` | string or null | Optional | The allowance to inspect before creating a persona. Mutually exclusive with run. |
+| `run` | string or null | Optional | Participation whose owner, model policy and current funding govern the selection. |
+| `persona` | string or null | Optional | Existing persona whose model policy applies. A run already identifies its owner. |
+
 ### `tool.register`
 
 Retain an owned tool or skill and acquisition provenance. Registration never gates host execution.
