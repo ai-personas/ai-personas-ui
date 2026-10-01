@@ -87,3 +87,22 @@ export function matchesWorkFilter(data: unknown, filter: WorkFilter): boolean {
   return !!activity && typeof activity === 'object' && !Array.isArray(activity)
     && positive((activity as Record<string, unknown>).running);
 }
+
+/** Read-only native prerequisites; never infer consent or capacity from a stop. */
+export function finishingView(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (v.schema !== 'finishing-readiness/1' || v.read_only !== true) return null;
+  const count = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : null;
+  const ref = v.responsibility && typeof v.responsibility === 'object' ? v.responsibility as Record<string, unknown> : {};
+  return {
+    preauthorized: typeof v.preauthorized === 'boolean' ? v.preauthorized : null,
+    responsibility: isRecordID(ref.id) && count(ref.revision) !== null && Number(ref.revision) > 0 ? ref.id as string : null,
+    billingOnly: count(v.billing_only_calls), unresolvedCharges: count(v.unresolved_charge_records), unresolvedActions: count(v.unresolved_actions),
+    error: typeof v.error === 'string' ? v.error : '',
+    blockers: Array.isArray(v.blockers) ? v.blockers.flatMap(item => {
+      if (!item || typeof item !== 'object' || typeof item.code !== 'string' || typeof item.detail !== 'string') return [];
+      return [{ code: item.code as string, detail: item.detail as string }];
+    }) : null,
+  };
+}

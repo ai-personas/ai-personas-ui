@@ -127,7 +127,7 @@ Move unspent token/cost capacity between production and closeout without increas
 
 ### `information.policy`
 
-Set named readers, export permission and optional access expiry. Source restrictions propagate to derivatives; erasure is an explicit disposition.
+Replace the policy: readers must be existing persona IDs, not user/operator, work, environment or allowance IDs. Replacement clears implicit seed, response and work audiences; explicitly preserve any intended persona readers. Operator access needs no reader entry. Source restrictions still propagate to derivatives; no automatic sharing or export permission is implied.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1155,7 +1155,7 @@ Deliver durable correspondence. Use to="user" to reply to the human, a persona I
 
 ### `artifact.publish`
 
-Preserve exact file bytes and digest.
+Preserve exact existing file bytes and digest, not correctness or acceptance. Relative paths resolve against this participation's execution workspace, not the last exec.directory; use the resolved absolute path for files elsewhere. Publication returns an artifact ID; explicitly attach it with submit. Host execution must be authorized; use artifact.capture for isolated job output.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

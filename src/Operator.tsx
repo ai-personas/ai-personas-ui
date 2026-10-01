@@ -12,6 +12,7 @@ import { fields, isRecordID, matchesAllowance, recordIDs, text } from './workspa
 import { ProviderSettings } from './ProviderSettings';
 import { FeedbackConditions } from './RecordReader';
 import ToolAccess from './ToolAccess';
+import FinishingReadiness from './FinishingReadiness';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -260,6 +261,7 @@ function ExecutionReceipt({ action, open }: { action: Action; open: (id: string)
     <p><strong>{action.request.kind === 'work.amend' ? 'Amendment saved.' : action.request.kind === 'work.pause' ? 'Work paused.' : 'Work resume processed.'}</strong> {runs ? 'Participant outcomes from this operation:' : 'Participant outcomes were not reported. Inspect the action receipt.'}</p>
     {runs && (runs.length ? <ul>{runs.map((run, i) => <li key={text(run.run, String(i))}>
       {isRecordID(run.run) && <button class="text-button" onClick={() => open(text(run.run))}>Participant {run.run.slice(0, 8)}</button>}{' · '}{dispositions[text(run.disposition)] || text(run.disposition, 'Outcome unavailable')}{text(run.reason) && `: ${run.reason}`}
+      <FinishingReadiness value={run.finishing}/>
     </li>)}</ul> : <p>No participant outcomes were reported.</p>)}
     {action.request.kind !== 'work.pause' && <p class="micro">Queued participation still needs an execution slot and successful admission. These outcomes do not confirm a completed decision.</p>}
     <details><summary>Inspect action receipt</summary><pre>{JSON.stringify(action, null, 2)}</pre></details>

@@ -643,6 +643,10 @@ try {
     await page.getByLabel('Persona activity').getByRole('button', { name: 'View details', exact: true }).click();
     const details = page.getByRole('dialog', { name: 'Record details', exact: true });
     await details.getByRole('button', { name: 'Check next decision funding', exact: true }).click();
+    const prerequisites = details.getByLabel('Decision funding preview').getByLabel('Protected finishing prerequisites');
+    await expect(prerequisites).toContainText('Current accepted responsibility: not recorded');
+    await expect(prerequisites).toContainText('Unknown billing stays conservatively charged');
+    await expect(prerequisites).toContainText('No current responsibility accepted');
     await expect(details.getByLabel('Decision funding preview')).toContainText('This participation remains stopped.');
     assert.equal(calls, callsBefore);
     assert.equal((await get('/records/' + run.id)).data.status, 'paused');

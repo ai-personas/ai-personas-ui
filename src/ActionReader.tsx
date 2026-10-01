@@ -1,4 +1,5 @@
 import ContinuityView from './ContinuityView';
+import DeliveryRecovery from './DeliveryRecovery';
 import { lazy, Suspense } from 'preact/compat';
 import { type Action } from './api';
 import { fields, isRecordID, text } from './workspace';
@@ -25,6 +26,7 @@ export default function ActionReader({ action, open }: { action: Action; open: (
     {kind === 'record.list' && text(args.query) && <p>Search: {text(args.query)}</p>}
     {text(args.name || args.title) && <p class="action-name">{text(args.name || args.title)}</p>}
     {action.error && <p role="alert">{action.error}</p>}
+    <DeliveryRecovery value={result.recovery} open={open}/>
     <Story title="Result" value={result.summary || result.message || result.conclusion || result.note}/>
     {result.schema === 'wait-receipt/1' && <p>Recorded participation status: {humanLabel(text(result.status))}. Waiting does not establish completion or acceptance.</p>}
     {result.schema === 'invitation-response/1' && <p>Recorded membership: {humanLabel(text(result.membership))}.{result.commitment === 'not_accepted' && ' Responsibility has not been accepted by this invitation response.'}</p>}

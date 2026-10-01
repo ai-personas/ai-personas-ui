@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, readNavigation, navigationHash } from '../src/presentation.ts';
+import { PAGES, VIEW_META, WORK_FILTERS, matchesWorkFilter, readNavigation, navigationHash, finishingView } from '../src/presentation.ts';
 
 test('canonical navigation keeps Tools first-class and Network advanced', () => {
   assert.deepEqual(PAGES, ['Work', 'Personas', 'Environments', 'Learning', 'Tools']);
@@ -56,4 +56,26 @@ test('missing or malformed records do not acquire activity or decision claims', 
     assert.equal(matchesWorkFilter(value, 'needs-input'), false);
     assert.equal(matchesWorkFilter(value, 'all'), true);
   }
+});
+
+test('finishing prerequisites keep missing consent, execution and retained billing independent', () => {
+  const value = { schema: 'finishing-readiness/1', read_only: true, preauthorized: true, responsibility: null,
+    billing_only_calls: 1, unresolved_charge_records: 2, unresolved_actions: 1,
+    blockers: [{code:'RESOURCE_RESPONSIBILITY_REQUIRED',detail:'No current accepted responsibility.'}, {code:'RESOURCE_UNCERTAIN',detail:'Unresolved execution.'}] };
+  const view = finishingView(value);
+  assert.equal(view.preauthorized, true);
+  assert.equal(view.responsibility, null);
+  assert.equal(view.billingOnly, 1);
+  assert.equal(view.unresolvedCharges, 2);
+  assert.equal(view.unresolvedActions, 1);
+  assert.deepEqual(view.blockers.map(b => b.code), ['RESOURCE_RESPONSIBILITY_REQUIRED', 'RESOURCE_UNCERTAIN']);
+  assert.equal(finishingView({...value, responsibility:{id:'a'.repeat(32),revision:2}}).responsibility, 'a'.repeat(32));
+  for (const n of [undefined, null, -1, 0.5, '0', NaN, Infinity]) {
+    assert.equal(finishingView({...value,billing_only_calls:n}).billingOnly, null);
+  }
+  for (const malformed of [null, {}, {...value,read_only:false}, {...value,schema:'other'}]) assert.equal(finishingView(malformed), null);
+  const unavailable = finishingView({schema:value.schema,read_only:true,error:'Evidence unavailable'});
+  assert.equal(unavailable.preauthorized, null);
+  assert.equal(unavailable.blockers, null);
+  assert.equal(unavailable.billingOnly, null);
 });
