@@ -1,0 +1,51 @@
+name: Validate exact recovery UI candidate
+on:
+  push:
+    branches: [repair/recovery-candidate-20261001]
+permissions:
+  contents: write
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply the reviewed patch to its exact parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -dc .repair/ui.patch.gz > "$RUNNER_TEMP/recovery.patch"
+          echo 'b761dc8488e8eca61ba5a24429bfd02576e2e1c2bbf2c8f5c377c994e86c22e9  '"$RUNNER_TEMP/recovery.patch" | sha256sum -c -
+          git fetch --depth=1 origin 17715ae250f3340463b7e47e99b38cc644df7198
+          git checkout --detach 17715ae250f3340463b7e47e99b38cc644df7198
+          git apply --index "$RUNNER_TEMP/recovery.patch"
+          git diff --cached --check
+          test "$(git write-tree)" = fa8f45bb54a80bcdbd01bcfbd9e79c73d4c903e0
+      - name: Validate production UI with no inference
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+      - name: Publish a clean candidate commit, not the helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          tree=$(git write-tree)
+          test "$tree" = fa8f45bb54a80bcdbd01bcfbd9e79c73d4c903e0
+          git config user.name 'ai-personas'
+          git config user.email '5106694+ai-personas@users.noreply.github.com'
+          commit=$(printf '%s\n' 'Expose independent finishing prerequisites and safe delivery recovery' | git commit-tree "$tree" -p 17715ae250f3340463b7e47e99b38cc644df7198)
+          git push origin "$commit:refs/heads/repair/recovery-ready-20261001"
+          mkdir -p "$RUNNER_TEMP/receipt"
+          printf '%s\n' "$commit" > "$RUNNER_TEMP/receipt/commit.txt"
+          printf '%s\n' "$tree" > "$RUNNER_TEMP/receipt/tree.txt"
+          printf '%s\n' 'Production UI build and unit tests passed; no live inference.' > "$RUNNER_TEMP/receipt/validation.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-ui-candidate-receipt
+          path: ${{ runner.temp }}/receipt/
+          retention-days: 7
