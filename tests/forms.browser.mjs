@@ -66,24 +66,59 @@ const server = createServer(async (req, res) => {
 });
 const emit = () => { const event = { sequence: ++sequence, kind: 'resource_root', entity: id(999), data: { scope: '', owner: '', revision: sequence, status: 'active' } }; for (const client of clients) client.write('data: ' + JSON.stringify(event) + '\n\n'); };
 async function step(name, fn) { await fn(); checks++; console.log('PASS ' + name); }
+async function checkSearchDebounce(url, viewport) {
+  // An overloaded host can pause between keys longer than the debounce. Control
+  // time here, then use a separate native-clock page for frame latency below.
+  const page = await browser.newPage({ viewport }), errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  try {
+    await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+    await page.goto(url);
+    const collection = page.locator('.work-collection'), input = page.getByLabel('Search records');
+    await expect(page.locator('.work-row')).toHaveCount(24);
+    await expect(collection).toHaveAttribute('aria-busy', 'false');
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    await page.clock.runFor(40); // Flush the initial Preact paint/effects before observing.
+    await expect(collection).toHaveAttribute('aria-busy', 'false');
+    await page.evaluate(() => { window.mutations = 0; new MutationObserver(list => window.mutations += list.length).observe(document.querySelector('.work-collection'), { childList: true, subtree: true, characterData: true, attributes: true }); });
+    const workReads = () => reads.filter(path => new URL(path, url).pathname === '/api/records' && new URL(path, url).searchParams.get('kind') === 'work');
+    const before = workReads().length;
+    const assertUnsettled = async () => {
+      assert.equal(await page.evaluate(() => window.mutations), 0, 'keystrokes mutated the collection before debounce');
+      assert.equal(workReads().length, before, 'keystrokes requested records before debounce');
+    };
+    const prefix = 'A continuous input', text = prefix + ' with enough retained work to test rendering';
+    await input.pressSequentially(prefix, { delay: 5 });
+    await page.clock.runFor(40); // Run the draft effect that schedules the trailing timer.
+    await page.clock.runFor(150);
+    await assertUnsettled();
+    await input.pressSequentially(text.slice(prefix.length), { delay: 5 });
+    await page.clock.runFor(40);
+    await page.clock.runFor(200);
+    // The first draft's deadline has passed, but the latest draft is still under 250 ms.
+    await assertUnsettled();
+    const settledRead = page.waitForResponse(response => {
+      const request = new URL(response.url());
+      return request.pathname === '/api/records' && request.searchParams.get('kind') === 'work' && request.searchParams.get('query') === text;
+    });
+    await page.clock.runFor(100);
+    await settledRead;
+    await page.clock.runFor(40);
+    await expect(collection).toHaveAttribute('aria-busy', 'false');
+    await page.clock.runFor(500);
+    assert.equal(workReads().length - before, 1, 'one settled query should make one request');
+    assert.equal(new URL(workReads().at(-1), url).searchParams.get('query'), text, 'the request must use the final draft');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+}
 try {
   await mkdir(evidence, { recursive: true }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch();
   for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await step(`${viewport.width}: search waits for the latest draft and reads the collection once`, () => checkSearchDebounce(url, viewport));
     const page = await browser.newPage({ viewport }); const errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.goto(url); await expect(page.getByRole('heading', { name: 'Work', exact: true })).toBeVisible();
-    await step(`${viewport.width}: search typing does not repeatedly render or read the collection`, async () => {
-      await expect(page.locator('.work-row')).toHaveCount(24);
-      await page.waitForTimeout(300);
-      await page.evaluate(() => { window.mutations = 0; new MutationObserver(list => window.mutations += list.length).observe(document.querySelector('.work-collection'), { childList: true, subtree: true, characterData: true, attributes: true }); });
-      const before = reads.length;
-      await page.getByLabel('Search records').pressSequentially('A continuous input with enough retained work to test rendering', { delay: 5 });
-      assert.equal(await page.evaluate(() => window.mutations), 0, 'keystrokes mutated the collection before debounce');
-      assert.equal(reads.length, before, 'keystrokes requested records before debounce');
-      await page.waitForTimeout(400);
-      assert.equal(reads.length - before, 1, 'one settled query should make one request');
-    });
     await page.getByRole('button', { name: 'Funding', exact: true }).click(); await page.getByRole('button', { name: 'New allowance' }).click();
     const form = page.getByRole('dialog', { name: 'Create funding allowance' });
     await expect(form).toContainText('2 available models');
