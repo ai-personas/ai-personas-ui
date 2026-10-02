@@ -1194,7 +1194,7 @@ Preserve your explained judgment of the explicit exact submission version in sub
 | `subject` | VersionRef | Required |  |
 | `verdict` | Verdict | Required |  |
 | `findings` | string | Required |  |
-| `checks` | array or null | Optional |  |
+| `checks` | array or null | Optional | Up to 128 unique exact retained action IDs (32 hex characters) from your current participation, not prose descriptions or record IDs. Explain their relevance and actual state in findings; failed, pending or uncertain actions may be cited without claiming success. Omit, null or [] when no action citation is needed; no minimum count. |
 
 ### `request.create`
 
