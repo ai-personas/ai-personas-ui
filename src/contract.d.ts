@@ -1137,7 +1137,7 @@ export type FragmentDraft =
        */
       short_description: string;
       /**
-       * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
+       * A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.
        */
       content: string;
       applicability: string;
@@ -1167,7 +1167,7 @@ export type FragmentDraft =
        */
       short_description: string;
       /**
-       * A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.
+       * A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.
        */
       content: string;
       applicability: string;

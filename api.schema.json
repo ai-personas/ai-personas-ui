@@ -5817,7 +5817,7 @@
                 "type": "string"
               },
               "content": {
-                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "description": "A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.",
                 "type": "string"
               },
               "applicability": {
@@ -5883,7 +5883,7 @@
                 "type": "string"
               },
               "content": {
-                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "description": "A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.",
                 "type": "string"
               },
               "applicability": {
@@ -14925,7 +14925,7 @@
                 "type": "string"
               },
               "content": {
-                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "description": "A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.",
                 "type": "string"
               },
               "applicability": {
@@ -14991,7 +14991,7 @@
                 "type": "string"
               },
               "content": {
-                "description": "A reusable prompt part in this persona's own voice, informed by current character and observed experience. Preserve factual accuracy and uncertainty.",
+                "description": "A prompt part in this persona's own voice, informed by current character and any relevant received experience. Useful recall may be scoped to an experience, relationship interpretation, concern or future intention; broad generalizability is not required. State applicability and limitations, preserving factual accuracy and uncertainty. No-change or deferral remains valid.",
                 "type": "string"
               },
               "applicability": {
