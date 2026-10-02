@@ -275,7 +275,8 @@ export function WorkControls({ work, act, open, stale = false, refreshing = fals
   const { value: seals, error: sealError, loading: sealLoading } = useRecords('research_stage_seal', work.id);
   const d = data(work), archived = d.status === 'archived', paused = d.execution_paused === true, sealed = !!seals?.items.length;
   // A background read must not swallow a click already in progress. Execution
-  // uses the displayed exact revision; the node still rejects stale authority.
+  // and opening an amendment use the displayed exact revision; an open form
+  // still waits for reads and rejects a changed revision before saving.
   // Missing initial observations, errors and known barriers remain blocking.
   const unavailable = busy || stale || (sealLoading && !seals) || !!sealError || archived || sealed;
   const editingUnavailable = unavailable || refreshing || sealLoading;
@@ -286,7 +287,7 @@ export function WorkControls({ work, act, open, stale = false, refreshing = fals
     catch (e) { setError((e as Error).message); } finally { setBusy(false); setExecuting(''); }
   }
   return <section class="operator-controls" aria-label="Task controls"><div class="button-row">
-    {!archived && <><button class="secondary" disabled={unavailable || paused} onClick={() => void execution('work.pause')}>{executing === 'work.pause' ? 'Pausing…' : 'Pause work'}</button><button disabled={unavailable} onClick={() => void execution('work.resume')}>{executing === 'work.resume' ? 'Resuming…' : 'Resume work'}</button><button class="secondary" disabled={editingUnavailable} onClick={() => { setError(''); setMode('amend'); }}>Amend task</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" disabled={busy} onClick={() => setMode('tools')}>Tool access</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" disabled={busy || stale || refreshing} onClick={() => setMode('archive')}>Archive task</button></>}
+    {!archived && <><button class="secondary" disabled={unavailable || paused} onClick={() => void execution('work.pause')}>{executing === 'work.pause' ? 'Pausing…' : 'Pause work'}</button><button disabled={unavailable} onClick={() => void execution('work.resume')}>{executing === 'work.resume' ? 'Resuming…' : 'Resume work'}</button><button class="secondary" disabled={unavailable} onClick={() => { setError(''); setMode('amend'); }}>Amend task</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'fund' ? '' : 'fund')}>Funding</button><button class="secondary" disabled={busy} onClick={() => setMode('tools')}>Tool access</button><button class="secondary" disabled={busy} onClick={() => setMode(mode === 'message' ? '' : 'message')}>Message participants</button><button class="quiet" disabled={busy || stale || refreshing} onClick={() => setMode('archive')}>Archive task</button></>}
     {archived && <p role="status">Archived. Participation was cancelled; historical results, spending, and late effects remain inspectable. Open a document, artifact, or message to erase a selected payload.</p>}
   </div><p aria-label="Task execution"><strong>{paused ? 'Task decisions paused' : 'Task pause is off'}</strong></p>
     <p class="micro">Pause work stops model decisions. Existing tool jobs may finish. Resume work includes eligible individually paused and waiting participants; funding and other blockers still apply.</p>

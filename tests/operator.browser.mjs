@@ -390,10 +390,35 @@ try {
     assert.deepEqual(mandate.data.mandate.assembly_editors, [], 'operator can revoke assembly permission without changing the roster');
     assert.equal((await op('work.amend', { work: work.id, revision: work.revision, title: 'Stale', mandate: mandate.data.mandate }, '', '', false)).state, 'failed');
   });
-  await step('an open amendment cannot silently overwrite a concurrent scope change', async () => {
-    await page.getByRole('button', { name: 'Amend task', exact: true }).click();
+  await step('Amend opens across an activity refresh and cannot overwrite a concurrent scope change', async () => {
+    await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'participant settles before opening amendment');
+    const amend = page.getByRole('button', { name: 'Amend task', exact: true });
+    await expect(amend).toBeEnabled();
+    // Keep a real activity-driven read pending between pointer down and up.
+    // Opening uses the displayed scope; saving still requires current evidence.
+    let releaseRead, readCaptured = false;
+    const readGate = new Promise(resolve => { releaseRead = resolve; });
+    const holdRead = async route => { readCaptured = true; await readGate; await route.continue(); };
+    const workPath = '**/api/records/' + work.id;
+    await page.route(workPath, holdRead);
+    try {
+      await amend.scrollIntoViewIfNeeded();
+      const box = await amend.boundingBox(), target = await amend.elementHandle(); assert(box && target);
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await op('run.pause', { id: run.id });
+      await until(() => readCaptured, 'activity update refreshes the work while opening amendment');
+      await expect(page.getByText('Refreshing work state. Displayed values are not a new confirmation.', { exact: true })).toBeVisible();
+      assert.equal(await target.evaluate(element => element.isConnected), true, 'refresh replaced the pressed amendment control');
+      await expect(amend).toBeEnabled();
+      await page.mouse.up();
+      const opening = page.getByRole('dialog', { name: 'Amend task', exact: true });
+      await expect(opening.getByLabel('Evidence', { exact: true })).toHaveValue('reviewed');
+      await expect(opening.getByRole('button', { name: 'Save and resume', exact: true })).toBeDisabled();
+    } finally { releaseRead(); await page.mouse.up(); await page.unroute(workPath, holdRead); }
     const form = page.getByRole('dialog', { name: 'Amend task', exact: true });
     await expect(form.getByLabel('Evidence', { exact: true })).toHaveValue('reviewed');
+    await expect(form.getByRole('button', { name: 'Save and resume', exact: true })).toBeEnabled();
     await form.getByLabel('Expected result').fill('Unsaved draft must not win');
     const current = await get('/records/' + work.id), mandate = await get('/records/' + current.data.mandate.id);
     await op('work.amend', { work: work.id, revision: current.revision, title: current.data.title, mandate: mandate.data.mandate });
