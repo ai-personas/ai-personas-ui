@@ -13,7 +13,7 @@ export function ProviderSettings() {
   const [settings, setSettings] = useState<Settings>(), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [attempt, setAttempt] = useState(0), [editing, setEditing] = useState<{ connection: Connection; exists: boolean; custom: boolean }>();
   const [removing, setRemoving] = useState(''), [busy, setBusy] = useState(false);
-  const [typesafe, setTypesafe] = useState(false), [codexImages, setCodexImages] = useState(false);
+  const [typesafe, setTypesafe] = useState(false);
   const models = useModels();
   useEffect(() => {
     const refreshBudget = (event: Event) => { if (['provider_budget','budget_charge'].includes((event as CustomEvent).detail?.kind)) setAttempt(n => n + 1); };
@@ -29,7 +29,7 @@ export function ProviderSettings() {
   async function save(change: Change) {
     const next = await request<Settings>('/settings/providers', { method: 'POST', body: JSON.stringify(change) });
     setSettings(next); setError(''); setRemoving('');
-    setNotice(change.action === 'remove' || change.action === 'remove_typesafe' ? 'Connection removed. New decisions cannot use this saved key.' : change.action === 'save_typesafe' ? 'JEV API key saved on this node.' : change.action === 'save_codex_image_input' ? 'Codex image input setting saved on this node.' : 'Connection saved on this node.');
+    setNotice(change.action === 'remove' || change.action === 'remove_typesafe' ? 'Connection removed. New decisions cannot use this saved key.' : change.action === 'save_typesafe' ? 'JEV API key saved on this node.' : 'Connection saved on this node.');
     models.refresh(); changed({ kind: 'provider_settings' });
   }
   if (!settings) return <section class="provider-settings"><h2>Provider connections</h2><p role={error ? 'alert' : 'status'}>{error || 'Loading provider settings…'}</p>{error && <button onClick={() => setAttempt(n => n + 1)}>Retry settings</button>}</section>;
@@ -64,40 +64,12 @@ export function ProviderSettings() {
       {settings.host_providers.map(id => <article class="operator-card provider-card" key={id}><div><h3>{title(id)}</h3><span class="micro">Managed on the node host</span></div><p>{id === 'codex' ? 'Uses the existing Codex login on this computer. No API key is needed here.' : 'Configured by the node launcher. Its credentials are managed on the host.'}</p><p>{models.catalog?.providers.find(p => p.provider === id)?.message || 'Checking connection…'}</p>
         {models.models.some(m => m.provider === id) && <details><summary>Available models</summary><ul>{models.models.filter(m => m.provider === id).map(m => <li key={m.id}>{m.name || m.id}<ModelImageInput model={m}/></li>)}</ul></details>}
       </article>)}
-      <article class="operator-card provider-card"><div><h3>Codex image input</h3><span class="micro">{settings.codex_image_token_upper_bound == null ? 'Disabled by configuration' : `Saved reservation: ${Number(settings.codex_image_token_upper_bound).toLocaleString()} tokens per image`}</span></div>
-        <p>Supported Codex models can inspect images after you save a per-image token reservation. Image input starts disabled.</p>
-        <p class="micro">The reservation is an accounting upper bound. Model support, context capacity and funding are checked separately.</p>
-        <button class="secondary" onClick={() => setCodexImages(true)}>Configure Codex image input</button>
-      </article>
     </div>
     <div class="model-status"><p role={models.error ? 'alert' : 'status'}>{models.loading ? 'Checking available models…' : models.error || `${models.models.length} available models.`}</p><button class="text-button" disabled={models.loading} onClick={models.refresh}>Refresh models</button></div>
     <p class="micro">Claude uses the Anthropic Messages API; Gemini uses the Google Gemini API. Responses connections can generate persona avatars through configured image routes. Add each model’s price and allowance before using it.</p>
     {editing && <ConnectionEditor key={editing.connection.provider + editing.exists} initial={editing.connection} exists={editing.exists} custom={editing.custom} revision={settings.revision} save={save} close={() => setEditing(undefined)}/>}
     {typesafe && <TypesafeKey revision={settings.revision} save={save} close={() => setTypesafe(false)}/>}
-    {codexImages && <CodexImageInput revision={settings.revision} value={settings.codex_image_token_upper_bound} save={save} close={() => setCodexImages(false)}/>}
   </section>;
-}
-
-function CodexImageInput({ revision, value, save, close }: { revision: string; value: Settings['codex_image_token_upper_bound']; save: (change: Change) => Promise<void>; close: () => void }) {
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [base] = useState(revision);
-  const [choice, setChoice] = useState(value == null ? 'disabled' : value === 32768 ? 'conservative' : 'custom');
-  return <Dialog label="Configure Codex image input" close={() => { if (!busy) close(); }}><form class="operator-form" onSubmit={async e => {
-    e.preventDefault(); if (busy || base !== revision) return; setBusy(true); setError('');
-    try {
-      const bound = choice === 'disabled' ? null : choice === 'conservative' ? 32768 : whole(new FormData(e.currentTarget), 'image_bound');
-      if (bound != null && bound > 1000000) throw Error('Use a reservation of at most 1,000,000 tokens per image.');
-      await save({ action: 'save_codex_image_input', revision: base, image_token_upper_bound: bound }); close();
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-  }}><header><h2>Codex image input</h2><button type="button" class="quiet" disabled={busy} onClick={close}>Close form</button></header>
-    <label>Image input reservation<select aria-label="Image input reservation" value={choice} onChange={e => setChoice(e.currentTarget.value)}>
-      <option value="disabled">Disabled</option><option value="conservative">Conservative reservation — 32,768 tokens per image</option><option value="custom">Custom reservation</option>
-    </select></label>
-    {choice === 'custom' && <label>Tokens reserved per image<input name="image_bound" type="number" min={1} max={1000000} step={1} required defaultValue={typeof value === 'number' ? value : ''}/></label>}
-    <p>The offered 32,768-token bound is a conservative reservation, not measured usage or a tokenizer estimate. Choose a custom bound only when you have a justified upper limit.</p>
-    <p class="micro">Saving this setting makes no inference call. Unsupported models remain unable to receive images; each request must still fit the model and its allowance.</p>
-    {error && <p role="alert">{error}</p>}{base !== revision && <p role="alert">Settings changed. Close this form and reopen it before saving.</p>}
-    <button disabled={busy || base !== revision}>{busy ? 'Saving…' : 'Save image input setting'}</button>
-  </form></Dialog>;
 }
 
 function TypesafeKey({ revision, save, close }: { revision: string; save: (change: Change) => Promise<void>; close: () => void }) {
@@ -127,7 +99,7 @@ function ConnectionEditor({ initial, exists, custom, revision, save, close }: {
   const next = useRef(initial.config.models.length);
   const [protocol, setProtocol] = useState(initial.protocol);
   const [rows, setRows] = useState(() => initial.config.models.map((model, id) => ({ id, model })));
-  const add = () => setRows(rows => [...rows, { id: next.current++, model: { id: '', context_window_tokens: 0, max_output_tokens: 0, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 4096, vision: false, image_token_upper_bound: null, allowed_reasoning_efforts: [] } }]);
+  const add = () => setRows(rows => [...rows, { id: next.current++, model: { id: '', context_window_tokens: 0, max_output_tokens: 0, input_tokens_per_utf8_byte_upper_bound: 1, framing_token_allowance: 4096, vision: false, allowed_reasoning_efforts: [] } }]);
   const nextImage = useRef(initial.images?.length || 0);
   const [images, setImages] = useState(() => (initial.images || []).map((image, id) => ({ id, image })));
   const addImage = () => setImages(rows => [...rows, { id: nextImage.current++, image: initial.images?.[0] || {

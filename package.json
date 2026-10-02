@@ -18,6 +18,7 @@
     "test:forms": "node tests/forms.browser.mjs",
     "test:participants": "node tests/participants.browser.mjs",
     "test:reliability": "node tests/reliability.browser.mjs && node tests/dialog.browser.mjs",
+    "test:stop-delivery": "node tests/stop-delivery.browser.mjs",
     "test:development": "node tests/development.browser.mjs",
     "test:memory": "node tests/memory.browser.mjs && node tests/memory-details.browser.mjs && node tests/resource-sharing.browser.mjs && node tests/persona-navigation.browser.mjs && node tests/memory-tree-navigation.browser.mjs",
     "test:navigation": "node --experimental-strip-types --test tests/persona-navigation.test.mjs tests/memory-tree-navigation.test.mjs && node tests/persona-navigation.browser.mjs && node tests/memory-tree-navigation.browser.mjs",

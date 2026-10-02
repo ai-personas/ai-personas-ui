@@ -564,7 +564,7 @@ Propose exact working terms to named participants. Agreements never mint authori
 |---|---|---|---|
 | `work` | string | Required |  |
 | `terms` | string | Required |  |
-| `parties` | string[] | Required |  |
+| `parties` | string[] | Required | Exact participant persona IDs or current-call @persona aliases. Include yourself with persona.id when appropriate. User/operator labels and work IDs are not parties. Each named party chooses whether to endorse the exact terms. |
 | `supersedes` | VersionRef or null | Optional |  |
 
 ### `agreement.endorse`
@@ -617,7 +617,7 @@ The owner or operator proposes a successor while retaining prior responsibility 
 |---|---|---|---|
 | `id` | string | Required |  |
 | `revision` | integer | Required |  |
-| `to` | string | Required |  |
+| `to` | string | Required | Exact successor persona ID or current-call @persona alias. The successor must be available in this work and explicitly accept; user/operator labels and work IDs are not personas. |
 | `reason` | string | Required |  |
 
 ### `commitment.handoff.respond`
@@ -837,7 +837,7 @@ Cancel pending creation inference. A dispatched call may still incur usage.
 
 ### `persona.avatar.retry`
 
-Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.
+Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Uses the persona's selected model when its image-output capability is available and funded. Earlier spending remains accounted.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1170,9 +1170,9 @@ Preserve exact evidence chosen by the persona. documents takes saved document ve
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `summary` | string | Required |  |
-| `artifacts` | string[] | Required |  |
-| `documents` | string[] | Required |  |
-| `drafts` | array or null | Optional |  |
+| `artifacts` | string[] | Required | Saved artifact IDs returned by artifact.publish or artifact.capture, or current-call @record aliases for those artifacts. Action IDs and document IDs cannot attach artifacts. |
+| `documents` | string[] | Required | Exact saved document version IDs (document.write result.id), or their current-call @record aliases. document_group and action IDs are not document versions. |
+| `drafts` | array or null | Optional | Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind. |
 | `message` | string or null | Optional |  |
 
 ### `review.start`
@@ -1182,15 +1182,16 @@ Request a perspective on an exact submission, or focus it for yourself in the cu
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `submission` | string | Required |  |
-| `persona` | string | Required |  |
+| `persona` | string | Required | Exact persona ID or current-call @persona alias. Use persona.id for self-reflection. User/operator labels and work IDs are not personas. Requesting a perspective does not create consent or accepted responsibility. |
 | `instructions` | string | Required |  |
 
 ### `assess`
 
-Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.
+Preserve your explained judgment of the explicit exact submission version in subject. A review run or context selection is not required and never chooses the subject. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
+| `subject` | VersionRef | Required |  |
 | `verdict` | Verdict | Required |  |
 | `findings` | string | Required |  |
 | `checks` | array or null | Optional |  |

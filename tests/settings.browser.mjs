@@ -15,7 +15,7 @@ const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || join(root, 'evidence')
 const binary = process.env.PERSONAS_BIN || resolve('../ai-personas/target/debug/personas');
 const keys = ['fixture-key-one', 'fixture-key-two', 'fixture-jev-key'];
 let app, browser, page, port, url, checks = 0, discovery = 0, inferences = 0;
-const errors = [], captured = [];
+const errors = [], captured = [], inferenceRoutes = [];
 // Synthetic textured pixels exercise realistic file size and the real portrait
 // path, not image quality. Blank pixels hid the old 512 KB preview cutoff.
 function pngChunk(type, data) {
@@ -32,8 +32,26 @@ for (let row = 0; row < 1024; row++) for (let column = 1; column <= 1024 * 3; co
 const avatarPNG = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk('IHDR', dimensions), pngChunk('IDAT', deflateSync(avatarPixels)), pngChunk('IEND', Buffer.alloc(0))]);
 assert(avatarPNG.length > 512_000 && avatarPNG.length < 8 * 1024 * 1024);
 const provider = createServer(async (req, res) => {
+  if (req.url === '/responses') {
+    inferences++; inferenceRoutes.push(req.url);
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks));
+    assert.equal(input.model, 'fixture-model'); assert(input.input.includes('synthetic avatar integration'));
+    assert.deepEqual(input.tool_choice, { type: 'image_generation' });
+    assert.equal(input.max_tool_calls, 1); assert.equal(input.parallel_tool_calls, false);
+    assert.equal(input.max_output_tokens, 256); assert.equal(input.store, false);
+    assert.equal(input.tools.length, 1);
+    assert.equal(input.tools[0].type, 'image_generation'); assert.equal(input.tools[0].model, 'arbitrary-tool-image');
+    assert.equal(input.tools[0].quality, 'low'); assert.equal(input.tools[0].size, '1024x1024');
+    res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({
+      model: 'fixture-model', status: 'completed',
+      usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
+      output: [{ type: 'image_generation_call', status: 'completed', model: 'arbitrary-tool-image', result: avatarPNG.toString('base64'),
+        usage: { input_tokens: 100, output_tokens: 272, total_tokens: 372, input_tokens_details: { text_tokens: 100, image_tokens: 0 } } }]
+    })); return;
+  }
   if (req.url === '/images/generations') {
-    inferences++; const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    inferences++; inferenceRoutes.push(req.url); const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks)); assert.equal(input.model, 'fixture-avatar-model'); assert.equal(input.quality, 'low'); assert.equal(input.size, '1024x1024');
     assert(input.prompt.includes('synthetic avatar integration'));
     res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ data: [{ b64_json: avatarPNG.toString('base64') }], usage: { input_tokens: 100, output_tokens: 272, total_tokens: 372, input_tokens_details: { text_tokens: 100, image_tokens: 0 } } })); return;
@@ -125,28 +143,12 @@ try {
     await expect(dialog).toHaveCount(0); await expect(card).toContainText('1 available model');
     assert(captured.some(h => h.authorization === 'Bearer ' + keys[1]));
   });
-  await step('Codex image input stays disabled until an explicit conservative reservation is saved', async () => {
-    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, null);
-    const card = page.locator('.provider-card').filter({ has: page.getByRole('heading', { name: 'Codex image input', exact: true }) });
-    await expect(card).toContainText('Disabled by configuration');
-    await card.getByRole('button', { name: 'Configure Codex image input', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Configure Codex image input', exact: true });
-    await expect(dialog.getByLabel('Image input reservation')).toHaveValue('disabled');
-    await dialog.getByLabel('Image input reservation').selectOption('conservative');
-    await expect(dialog).toContainText('not measured usage');
-    await dialog.getByRole('button', { name: 'Save image input setting' }).click();
-    await expect(dialog).toHaveCount(0); await expect(card).toContainText('32,768 tokens per image');
-    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, 32768);
-    assert.equal(inferences, 0);
-  });
   await step('save survives node restart and browser reload without exposing the key', async () => {
     await stop(); await start(); await page.reload(); await funding();
     await expect(page.getByRole('button', { name: 'Edit fixture-responses' })).toBeVisible();
     await page.getByRole('button', { name: 'Edit fixture-responses' }).click();
     const dialog = page.getByRole('dialog', { name: 'Edit provider connection' }); await expect(dialog.getByLabel('Replace API key')).toHaveValue('');
     await dialog.getByRole('button', { name: 'Close form' }).click();
-    assert.equal((await get('/settings/providers')).codex_image_token_upper_bound, 32768);
-    await expect(page.locator('.provider-card').filter({ has: page.getByRole('heading', { name: 'Codex image input', exact: true }) })).toContainText('32,768 tokens per image');
     assert(await page.evaluate(() => !JSON.stringify(localStorage).includes('fixture-key') && !JSON.stringify(sessionStorage).includes('fixture-key')));
   });
   await step('native Claude and Gemini model discovery use their own API authentication', async () => {
@@ -266,27 +268,34 @@ try {
     const root = await op('resource.root.create', { limits: { calls: 10, births: 2, max_depth: 1, concurrent_calls: 2 }, closeout_calls: 1, reason: 'Synthetic avatar integration' });
     await op('resource.bounds.configure', { root: root.id, revision: root.revision, bounds: {
       expires: new Date(Date.now() + 86400000).toISOString(), tokens: 1000000, closeout_tokens: 1000, cost_units: 1000000, closeout_cost_units: 100, currency: 'USD',
-      prices: [{ provider: 'fixture-images', model: 'fixture-avatar-model', input_units_per_million: 2000000, output_units_per_million: 8000000, evidence: 'Synthetic image usage at documented rates' }],
+      prices: [{ provider: 'fixture-both', model: 'fixture-model', input_units_per_million: 3000000, output_units_per_million: 9000000, evidence: 'Synthetic combined controller and image usage at configured rates' }],
       remote_calls: 2, retained_payload_bytes: 10000000, cpu_seconds: 20, effect_operations: 0, concurrent_memory_bytes: 10000000, births_per_window: 2, birth_window_seconds: 60, reason: 'Synthetic avatar integration'
     } });
     await page.getByRole('button', { name: 'Personas', exact: true }).click();
     await page.locator('.page-heading').getByRole('button', { name: '+ New persona', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Create', exact: true });
     assert((await form.getByLabel('Starting model').locator('option').allTextContents()).every(label => !label.includes('gpt-image')));
+    await form.getByLabel('Starting model').selectOption(JSON.stringify(['fixture-both', 'fixture-model']));
     await form.getByLabel('Funding allowance', { exact: true }).selectOption(root.id);
     await form.getByLabel('Character', { exact: true }).fill('I support this synthetic avatar integration with careful comparisons.');
     await form.getByRole('button', { name: 'Create', exact: true }).click(); await expect(form).toHaveCount(0);
     let persona;
     await until(async () => { const summary = (await get('/records?kind=persona')).items[0]; persona = summary && await get('/records/' + summary.id); return persona?.data.avatar_initialization?.status === 'ready'; });
     assert.equal(persona.data.character_initialization.status, 'ready'); assert.equal(inferences, 1);
+    assert.equal(persona.data.provider, 'fixture-both'); assert.equal(persona.data.model, 'fixture-model');
+    assert.equal(persona.data.avatar_initialization.provider, 'fixture-both'); assert.equal(persona.data.avatar_initialization.model, 'fixture-model');
+    assert.deepEqual(inferenceRoutes, ['/responses']);
     await page.getByRole('button', { name: 'Open details', exact: true }).click();
     const detail = page.getByRole('dialog', { name: 'Record details', exact: true });
     await expect(detail.getByRole('region', { name: 'Avatar generation', exact: true })).toContainText('Generated avatar');
     const portrait = detail.locator('img.portrait'); await expect(portrait).toHaveCount(1);
     await expect(portrait).toHaveJSProperty('naturalWidth', 1024);
     const call = await get('/records/' + persona.data.avatar_initialization.call);
-    assert.equal(call.data.requested_model, 'fixture-avatar-model'); assert.equal(call.data.usage.known, true); assert.equal(call.data.artifact, persona.data.portrait);
-    const charge = await get('/records/' + call.data.budget_charge); assert.equal(charge.data.accounted.cost, 2376);
+    assert.equal(call.data.provider, 'fixture-both'); assert.equal(call.data.requested_model, 'fixture-model'); assert.equal(call.data.actual_model, 'fixture-model');
+    assert.equal(call.data.image_model, 'arbitrary-tool-image'); assert.equal(call.data.image_route, 'responses_image_tool');
+    assert.equal(call.data.usage.known, true); assert.equal(call.data.usage.input, 120); assert.equal(call.data.usage.output, 282);
+    assert.equal(call.data.artifact, persona.data.portrait);
+    const charge = await get('/records/' + call.data.budget_charge); assert.equal(charge.data.accounted.cost, 2898);
     assert.equal((await get('/records?kind=call')).items.length, 1); assert.deepEqual(errors, []);
     await page.screenshot({ path: join(evidence, 'generated-avatar-mobile.png'), fullPage: true });
   });

@@ -20,7 +20,7 @@ export default function AvatarInitialization({ persona, act, open }: { persona: 
     {ready && result.billing === 'subscription' && <p class="notice">Subscription image generation: $0 incremental API charge. Subscription limits and possible credit consumption are unknown and are not priced by this allowance.</p>}
     {ready && init.usage_known === false && <p class="notice">Complete image usage is unknown. The full admitted reservation remains accounted.</p>}
     {ready && measuredUsage(result.controller_usage) && <p class="micro">A partial controller usage receipt is available in the image generation call. It excludes image generation usage and does not establish total consumption.</p>}
-    {!ready && state !== 'supplied' && <><p class="micro">Uses the lowest reserved cost among enabled, available image models priced in this persona’s allowance. Character creation and work can continue without an avatar. A new attempt uses a new funded call.</p>
+    {!ready && state !== 'supplied' && <><p class="micro">Uses the persona’s selected model when it supports image output. Character creation and work can continue without an avatar. A new attempt uses a new funded call.</p>
       <div class="button-row"><button class="secondary" disabled={busy} onClick={async () => {
         if (busy) return; setBusy(true); setError('');
         try { await act(pending ? 'persona.avatar.cancel' : 'persona.avatar.retry', { id: persona.id, revision: persona.revision }); }

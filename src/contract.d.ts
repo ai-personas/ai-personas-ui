@@ -423,6 +423,9 @@ export type Command =
       args: {
         work: string;
         terms: string;
+        /**
+         * Exact participant persona IDs or current-call @persona aliases. Include yourself with persona.id when appropriate. User/operator labels and work IDs are not parties. Each named party chooses whether to endorse the exact terms.
+         */
         parties: string[];
         supersedes?: VersionRef | null;
       };
@@ -466,6 +469,9 @@ export type Command =
       args: {
         id: string;
         revision: number;
+        /**
+         * Exact successor persona ID or current-call @persona alias. The successor must be available in this work and explicitly accept; user/operator labels and work IDs are not personas.
+         */
         to: string;
         reason: string;
       };
@@ -970,8 +976,17 @@ export type Command =
       kind: "submit";
       args: {
         summary: string;
+        /**
+         * Saved artifact IDs returned by artifact.publish or artifact.capture, or current-call @record aliases for those artifacts. Action IDs and document IDs cannot attach artifacts.
+         */
         artifacts: string[];
+        /**
+         * Exact saved document version IDs (document.write result.id), or their current-call @record aliases. document_group and action IDs are not document versions.
+         */
         documents: string[];
+        /**
+         * Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind.
+         */
         drafts?: SubmissionDocument[] | null;
         message?: string | null;
       };
@@ -980,6 +995,9 @@ export type Command =
       kind: "review.start";
       args: {
         submission: string;
+        /**
+         * Exact persona ID or current-call @persona alias. Use persona.id for self-reflection. User/operator labels and work IDs are not personas. Requesting a perspective does not create consent or accepted responsibility.
+         */
         persona: string;
         instructions: string;
       };
@@ -987,6 +1005,7 @@ export type Command =
   | {
       kind: "assess";
       args: {
+        subject: VersionRef;
         verdict: Verdict;
         findings: string;
         checks?: string[] | null;
@@ -1303,11 +1322,6 @@ export type Route =
 export type SettingsChange =
   | {
       revision: string;
-      image_token_upper_bound?: number | null;
-      action: "save_codex_image_input";
-    }
-  | {
-      revision: string;
       connection: Connection;
       api_key?: string | null;
       action: "save";
@@ -1564,8 +1578,17 @@ export interface EntryDraft {
   reconsider_if?: string;
 }
 export interface CommitmentDraft {
+  /**
+   * Exact persona ID or current-call @persona alias. Choose persona.id for yourself; user/operator labels and work IDs are not personas. This is an offer, and only the named persona's explicit commitment.respond can accept it.
+   */
   offered_to: string;
+  /**
+   * Authored outcome key in the adopted mandate, or null for a continuation responsibility. This is not a record ID.
+   */
   outcome?: string | null;
+  /**
+   * True offers continuation responsibility. It grants no ownership until the named persona explicitly accepts.
+   */
   continuation: boolean;
   description: string;
   criterion: string;
@@ -1982,7 +2005,13 @@ export interface Delegation {
   semantic: boolean;
 }
 export interface SubmissionDocument {
+  /**
+   * Nonempty title of the document saved and submitted by this call.
+   */
   title: string;
+  /**
+   * Nonempty authored document text saved verbatim. No document.write or evidence.bind prerequisite is needed.
+   */
   content: string;
 }
 /**
@@ -2131,11 +2160,6 @@ export interface SelectionBlocker {
 }
 export interface ProviderSettings {
   revision: string;
-  /**
-   * Saved per-image reservation for the host Codex adapter. Null disables
-   * image input; provider-native image support is checked separately.
-   */
-  codex_image_token_upper_bound?: number | null;
   connections: SavedConnection[];
   /**
    * Connections supplied by the node launcher cannot be overwritten here.
@@ -2199,11 +2223,6 @@ export interface HttpModel {
    */
   framing_token_allowance: number;
   vision?: boolean;
-  /**
-   * Required for vision; a conservative per-image charge, not inferred from
-   * the model name, media byte length, or a hard-coded vendor tier.
-   */
-  image_token_upper_bound?: number | null;
   allowed_reasoning_efforts?: string[];
 }
 export interface HttpConfig2 {

@@ -39,7 +39,6 @@ export function ModelImageInput({ model }: { model?: Model }) {
   const readiness = fields(fields(model?.capabilities).image_input_readiness);
   const state = text(readiness.state);
   if (!state) return null;
-  const label = state === 'ready' ? 'Image input ready' : state === 'disabled_by_configuration' ? 'Image input supported · Disabled by configuration'
-    : state === 'incompatible_bound' ? 'Image input supported · Reservation exceeds model capacity' : 'Image input unsupported';
-  return <p class="micro">{label}{state === 'ready' && typeof readiness.image_token_upper_bound === 'number' && ` · ${readiness.image_token_upper_bound.toLocaleString()} tokens reserved per image`}{readiness.reason && <>. {text(readiness.reason)}</>}</p>;
+  const label = state === 'ready' ? 'Supports image input' : 'Image input unsupported';
+  return <p class="micro">{label}{readiness.reason && <>. {text(readiness.reason)}</>}</p>;
 }

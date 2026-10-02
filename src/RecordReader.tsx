@@ -1,5 +1,6 @@
 import Icon from './Icon';
 import QuestionDelivery from './QuestionDelivery';
+import DeliveryRecovery from './DeliveryRecovery';
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { lazy, Suspense } from 'preact/compat';
@@ -122,7 +123,7 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     </>;
     case 'request_resolution': return <><Story title="Conclusion" value={fields(d.resolution).conclusion}/><Story title="Reason" value={fields(d.resolution).reason}/><RelatedItems title="Question" value={d.request} open={open}/><RelatedItems title="Replies considered" value={fields(d.resolution).evidence} open={open}/></>;
     case 'response': return <><p class="field-label">{({answer:'Answer',assumption:'Assumed scenario',evidence:'Evidence or observation',challenge:'Challenge or alternative'} as Record<string,string>)[text(d.basis)] || 'Reply'}</p><p class="reader-byline">Answer from <Person id={d.from} open={open} user/></p><Story title="Answer" value={d.text}/><p class="record-caveat">An attributed reply is not automatic confirmation, permission or question resolution.</p></>;
-    case 'submission': return <><QuestionDelivery value={d.peer_delivery} status={d.status}/><Story title="What was submitted" value={d.summary}/></>;
+    case 'submission': return <><QuestionDelivery value={d.peer_delivery} status={d.status}/>{Number(fields(d.peer_delivery).restricted_peers) > 0 && <DeliveryRecovery value={fields(d.peer_delivery).recovery} open={open}/>}<Story title="What was submitted" value={d.summary}/></>;
     case 'work_mandate': return <><Story title="Original request" value={d.original_need}/><ScopeStory value={d.mandate}/></>;
     case 'commitment': return <>
       <Story title="Responsibility" value={draft.description || d.description || d.outcome}/><Story title="What success looks like" value={draft.criterion || d.criterion}/>

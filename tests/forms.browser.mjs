@@ -9,7 +9,7 @@ import { resolve, extname, join } from 'node:path';
 const id = n => n.toString(16).padStart(32, '0');
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || '.qa';
 const record = (n, kind, data) => ({ id: id(n), kind, scope: '', revision: 1, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', data });
-const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] }, allowed_reasoning_efforts: ['low', 'high'], image_input_readiness: { state: name === 'alpha' ? 'disabled_by_configuration' : 'unsupported', image_token_upper_bound: null, reason: name === 'alpha' ? 'Save a reservation in Funding settings.' : 'This model does not support image input.' } } }));
+const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] }, allowed_reasoning_efforts: ['low', 'high'], image_input_readiness: { state: name === 'alpha' ? 'ready' : 'unsupported', reason: name === 'alpha' ? 'The selected model supports image input.' : 'This model does not support image input.' } } }));
 let catalog = { models, providers: [{ provider: 'codex', available: true, models: 2, message: 'Ready' }], checked: '2026-01-01T00:00:00Z' };
 const roots = [], personas = [], writes = [], reads = [], clients = new Set();
 let readinessBlocker = null, unpricedModel = 'beta', wrongPersonaScope = false;
@@ -190,7 +190,7 @@ try {
       await expect(submit).toBeDisabled();
       await create.getByLabel('Funding allowance', { exact: true }).selectOption(roots.at(-1).id);
       await expect(create).toContainText('Model selection checks passed for this allowance.');
-      await expect(create).toContainText('Image input supported · Disabled by configuration');
+      await expect(create).toContainText('Supports image input');
       await create.getByLabel('Starting model').selectOption(JSON.stringify(['codex', 'beta']));
       await expect(create).toContainText('This allowance has no exact price'); await expect(submit).toBeDisabled();
       await expect(create).toContainText('Image input unsupported');

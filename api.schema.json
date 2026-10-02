@@ -2199,6 +2199,7 @@
                     "type": "string"
                   },
                   "parties": {
+                    "description": "Exact participant persona IDs or current-call @persona aliases. Include yourself with persona.id when appropriate. User/operator labels and work IDs are not parties. Each named party chooses whether to endorse the exact terms.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -2404,6 +2405,7 @@
                     "minimum": 0
                   },
                   "to": {
+                    "description": "Exact successor persona ID or current-call @persona alias. The successor must be available in this work and explicitly accept; user/operator labels and work IDs are not personas.",
                     "type": "string"
                   },
                   "reason": {
@@ -3276,7 +3278,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.",
+            "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Uses the persona's selected model when its image-output capability is available and funded. Earlier spending remains accounted.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4617,18 +4619,21 @@
                     "type": "string"
                   },
                   "artifacts": {
+                    "description": "Saved artifact IDs returned by artifact.publish or artifact.capture, or current-call @record aliases for those artifacts. Action IDs and document IDs cannot attach artifacts.",
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "documents": {
+                    "description": "Exact saved document version IDs (document.write result.id), or their current-call @record aliases. document_group and action IDs are not document versions.",
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "drafts": {
+                    "description": "Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind.",
                     "type": [
                       "array",
                       "null"
@@ -4673,6 +4678,7 @@
                     "type": "string"
                   },
                   "persona": {
+                    "description": "Exact persona ID or current-call @persona alias. Use persona.id for self-reflection. User/operator labels and work IDs are not personas. Requesting a perspective does not create consent or accepted responsibility.",
                     "type": "string"
                   },
                   "instructions": {
@@ -4694,7 +4700,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
+            "description": "Preserve your explained judgment of the explicit exact submission version in subject. A review run or context selection is not required and never chooses the subject. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4704,6 +4710,9 @@
               "args": {
                 "type": "object",
                 "properties": {
+                  "subject": {
+                    "$ref": "#/$defs/VersionRef"
+                  },
                   "verdict": {
                     "$ref": "#/$defs/Verdict"
                   },
@@ -4723,6 +4732,7 @@
                 },
                 "additionalProperties": false,
                 "required": [
+                  "subject",
                   "verdict",
                   "findings"
                 ]
@@ -6057,15 +6067,18 @@
         "type": "object",
         "properties": {
           "offered_to": {
+            "description": "Exact persona ID or current-call @persona alias. Choose persona.id for yourself; user/operator labels and work IDs are not personas. This is an offer, and only the named persona's explicit commitment.respond can accept it.",
             "type": "string"
           },
           "outcome": {
+            "description": "Authored outcome key in the adopted mandate, or null for a continuation responsibility. This is not a record ID.",
             "type": [
               "string",
               "null"
             ]
           },
           "continuation": {
+            "description": "True offers continuation responsibility. It grants no ownership until the named persona explicitly accepts.",
             "type": "boolean"
           },
           "description": {
@@ -7241,9 +7254,11 @@
         "type": "object",
         "properties": {
           "title": {
+            "description": "Nonempty title of the document saved and submitted by this call.",
             "type": "string"
           },
           "content": {
+            "description": "Nonempty authored document text saved verbatim. No document.write or evidence.bind prerequisite is needed.",
             "type": "string"
           }
         },
@@ -7956,15 +7971,6 @@
           "revision": {
             "type": "string"
           },
-          "codex_image_token_upper_bound": {
-            "description": "Saved per-image reservation for the host Codex adapter. Null disables\nimage input; provider-native image support is checked separately.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0
-          },
           "connections": {
             "type": "array",
             "items": {
@@ -8161,15 +8167,6 @@
           "vision": {
             "type": "boolean",
             "default": false
-          },
-          "image_token_upper_bound": {
-            "description": "Required for vision; a conservative per-image charge, not inferred from\nthe model name, media byte length, or a hard-coded vendor tier.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0
           },
           "allowed_reasoning_efforts": {
             "type": "array",
@@ -8377,31 +8374,6 @@
       "SettingsChange": {
         "description": "This body is write-only and must never enter the action journal or logs.",
         "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "revision": {
-                "type": "string"
-              },
-              "image_token_upper_bound": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "uint64",
-                "minimum": 0
-              },
-              "action": {
-                "type": "string",
-                "const": "save_codex_image_input"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "action",
-              "revision"
-            ]
-          },
           {
             "type": "object",
             "properties": {
@@ -9349,7 +9321,7 @@
     ],
     [
       "persona.avatar.retry",
-      "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted."
+      "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Uses the persona's selected model when its image-output capability is available and funded. Earlier spending remains accounted."
     ],
     [
       "persona.avatar.cancel",
@@ -9485,7 +9457,7 @@
     ],
     [
       "assess",
-      "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict."
+      "Preserve your explained judgment of the explicit exact submission version in subject. A review run or context selection is not required and never chooses the subject. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict."
     ],
     [
       "request.create",
@@ -11461,6 +11433,7 @@
                 "type": "string"
               },
               "parties": {
+                "description": "Exact participant persona IDs or current-call @persona aliases. Include yourself with persona.id when appropriate. User/operator labels and work IDs are not parties. Each named party chooses whether to endorse the exact terms.",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -11666,6 +11639,7 @@
                 "minimum": 0
               },
               "to": {
+                "description": "Exact successor persona ID or current-call @persona alias. The successor must be available in this work and explicitly accept; user/operator labels and work IDs are not personas.",
                 "type": "string"
               },
               "reason": {
@@ -12538,7 +12512,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Chooses the lowest reserved cost among configured, discovered and explicitly priced image models. Earlier spending remains accounted.",
+        "description": "Explicitly retry an unavailable, failed, cancelled or interrupted avatar. Uses the persona's selected model when its image-output capability is available and funded. Earlier spending remains accounted.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13879,18 +13853,21 @@
                 "type": "string"
               },
               "artifacts": {
+                "description": "Saved artifact IDs returned by artifact.publish or artifact.capture, or current-call @record aliases for those artifacts. Action IDs and document IDs cannot attach artifacts.",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "documents": {
+                "description": "Exact saved document version IDs (document.write result.id), or their current-call @record aliases. document_group and action IDs are not document versions.",
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
               },
               "drafts": {
+                "description": "Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind.",
                 "type": [
                   "array",
                   "null"
@@ -13935,6 +13912,7 @@
                 "type": "string"
               },
               "persona": {
+                "description": "Exact persona ID or current-call @persona alias. Use persona.id for self-reflection. User/operator labels and work IDs are not personas. Requesting a perspective does not create consent or accepted responsibility.",
                 "type": "string"
               },
               "instructions": {
@@ -13956,7 +13934,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve your explained judgment of this exact submission. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
+        "description": "Preserve your explained judgment of the explicit exact submission version in subject. A review run or context selection is not required and never chooses the subject. Optional checks cite observations from your current participation, including reads, failed, pending or uncertain actions, without changing their meaning. No command quota determines the verdict.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13966,6 +13944,9 @@
           "args": {
             "type": "object",
             "properties": {
+              "subject": {
+                "$ref": "#/$defs/VersionRef"
+              },
               "verdict": {
                 "$ref": "#/$defs/Verdict"
               },
@@ -13985,6 +13966,7 @@
             },
             "additionalProperties": false,
             "required": [
+              "subject",
               "verdict",
               "findings"
             ]
@@ -15337,15 +15319,18 @@
         "type": "object",
         "properties": {
           "offered_to": {
+            "description": "Exact persona ID or current-call @persona alias. Choose persona.id for yourself; user/operator labels and work IDs are not personas. This is an offer, and only the named persona's explicit commitment.respond can accept it.",
             "type": "string"
           },
           "outcome": {
+            "description": "Authored outcome key in the adopted mandate, or null for a continuation responsibility. This is not a record ID.",
             "type": [
               "string",
               "null"
             ]
           },
           "continuation": {
+            "description": "True offers continuation responsibility. It grants no ownership until the named persona explicitly accepts.",
             "type": "boolean"
           },
           "description": {
@@ -16521,9 +16506,11 @@
         "type": "object",
         "properties": {
           "title": {
+            "description": "Nonempty title of the document saved and submitted by this call.",
             "type": "string"
           },
           "content": {
+            "description": "Nonempty authored document text saved verbatim. No document.write or evidence.bind prerequisite is needed.",
             "type": "string"
           }
         },
