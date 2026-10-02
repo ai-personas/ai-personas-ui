@@ -6624,7 +6624,7 @@
             "type": "string"
           },
           "disposition": {
-            "$ref": "#/$defs/LearningDisposition"
+            "$ref": "#/$defs/LearningResolutionDisposition"
           },
           "reason": {
             "type": "string"
@@ -6637,6 +6637,22 @@
           "reason"
         ]
       },
+      "LearningResolutionDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "organize",
+          "no_change"
+        ]
+      },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
+        ]
+      },
       "LearningDisposition": {
         "type": "string",
         "enum": [
@@ -6645,13 +6661,6 @@
           "organize",
           "no_change",
           "defer"
-        ]
-      },
-      "NextDecision": {
-        "type": "string",
-        "enum": [
-          "continue",
-          "wait"
         ]
       },
       "DeferredLearning": {
@@ -15732,7 +15741,7 @@
             "type": "string"
           },
           "disposition": {
-            "$ref": "#/$defs/LearningDisposition"
+            "$ref": "#/$defs/LearningResolutionDisposition"
           },
           "reason": {
             "type": "string"
@@ -15745,6 +15754,22 @@
           "reason"
         ]
       },
+      "LearningResolutionDisposition": {
+        "type": "string",
+        "enum": [
+          "retain",
+          "revise",
+          "organize",
+          "no_change"
+        ]
+      },
+      "NextDecision": {
+        "type": "string",
+        "enum": [
+          "continue",
+          "wait"
+        ]
+      },
       "LearningDisposition": {
         "type": "string",
         "enum": [
@@ -15753,13 +15778,6 @@
           "organize",
           "no_change",
           "defer"
-        ]
-      },
-      "NextDecision": {
-        "type": "string",
-        "enum": [
-          "continue",
-          "wait"
         ]
       },
       "DeferredLearning": {

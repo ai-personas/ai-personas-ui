@@ -1208,7 +1208,7 @@ export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" |
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type Fallback = "deterministic" | "block";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
-export type LearningDisposition = "retain" | "revise" | "organize" | "no_change" | "defer";
+export type LearningResolutionDisposition = "retain" | "revise" | "organize" | "no_change";
 export type Condition =
   | {
       kind: "always";
@@ -1718,7 +1718,7 @@ export interface Intent {
  */
 export interface LearningResolution {
   id: string;
-  disposition: LearningDisposition;
+  disposition: LearningResolutionDisposition;
   reason: string;
 }
 export interface DeferredLearning {
