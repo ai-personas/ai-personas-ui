@@ -8050,15 +8050,7 @@
             "$ref": "#/$defs/Protocol"
           },
           "config": {
-            "$ref": "#/$defs/HttpConfig"
-          },
-          "images": {
-            "description": "Explicit image generation permission on the same API connection.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/HttpConfig2"
-            },
-            "default": []
+            "$ref": "#/$defs/ConnectionConfig"
           }
         },
         "additionalProperties": false,
@@ -8076,11 +8068,11 @@
           "gemini"
         ]
       },
-      "HttpConfig": {
+      "ConnectionConfig": {
         "type": "object",
         "properties": {
           "endpoint": {
-            "description": "Exact /responses endpoint. No URL is supplied by a model decision.",
+            "description": "Exact endpoint for the selected protocol. Model decisions cannot supply a URL.",
             "type": "string"
           },
           "api_key_env": {
@@ -8096,7 +8088,7 @@
           "models": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/HttpModel"
+              "$ref": "#/$defs/ModelLimits"
             }
           },
           "timeout_ms": {
@@ -8112,7 +8104,7 @@
             "default": 8388608
           },
           "max_response_bytes": {
-            "description": "Decoded response and individual SSE frame limit. Streaming wire bytes\nhave a separate 64x allowance, capped at 128 MiB, and are not buffered.",
+            "description": "Bounds a decoded response and each complete or unfinished streaming frame.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -8123,12 +8115,6 @@
             "format": "uint",
             "minimum": 0,
             "default": 64
-          },
-          "max_images": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "default": 4
           }
         },
         "additionalProperties": false,
@@ -8137,7 +8123,8 @@
           "models"
         ]
       },
-      "HttpModel": {
+      "ModelLimits": {
+        "description": "Operator-editable accounting limits. Supported modalities belong to the\nadapter's metadata for this exact model, never to saved settings.",
         "type": "object",
         "properties": {
           "id": {
@@ -8154,20 +8141,16 @@
             "minimum": 0
           },
           "input_tokens_per_utf8_byte_upper_bound": {
-            "description": "Operator-supplied upper bound for the selected tokenizer. This is not\ntokenizer discovery. Use a documented byte-level tokenizer bound.",
+            "description": "Upper bound for the selected tokenizer, not tokenizer discovery.\nUse a documented byte-level tokenizer bound.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
           },
           "framing_token_allowance": {
-            "description": "Accounts for framing/tokenizer overhead not represented by text bytes.",
+            "description": "Framing/tokenizer overhead not represented by text bytes.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
-          },
-          "vision": {
-            "type": "boolean",
-            "default": false
           },
           "allowed_reasoning_efforts": {
             "type": "array",
@@ -8184,134 +8167,6 @@
           "max_output_tokens",
           "input_tokens_per_utf8_byte_upper_bound",
           "framing_token_allowance"
-        ]
-      },
-      "HttpConfig2": {
-        "type": "object",
-        "properties": {
-          "model": {
-            "$ref": "#/$defs/ModelSpec"
-          },
-          "route": {
-            "$ref": "#/$defs/Route"
-          },
-          "size": {
-            "type": "string"
-          },
-          "quality": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "model",
-          "route",
-          "size"
-        ]
-      },
-      "ModelSpec": {
-        "description": "An adapter-owned offer, not a global registry of image model names. Pricing\nis a conservative USD micro-unit rate for all usage in this route; Responses\noffers include both controller and image output. Subscription zero API charge\nnever claims zero included-limit or credit consumption.",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "billing": {
-            "$ref": "#/$defs/Billing"
-          },
-          "input_units_per_million": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "output_units_per_million": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "input_framing_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "output_tokens": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "timeout_ms": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "evidence": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "billing",
-          "input_units_per_million",
-          "output_units_per_million",
-          "input_framing_tokens",
-          "output_tokens",
-          "timeout_ms",
-          "evidence"
-        ]
-      },
-      "Billing": {
-        "type": "string",
-        "enum": [
-          "api",
-          "subscription"
-        ]
-      },
-      "Route": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "endpoint": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "native_images"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "endpoint"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "image_model": {
-                "type": "string"
-              },
-              "max_text_output_tokens": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0
-              },
-              "kind": {
-                "type": "string",
-                "const": "responses_tool"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "image_model",
-              "max_text_output_tokens"
-            ]
-          }
         ]
       },
       "KeyStatus": {

@@ -1308,17 +1308,6 @@ export type StopDisposition =
 export type Blockage = "resource" | "tool" | "runtime";
 export type Outcome2 = "succeeded" | "failed" | "unknown";
 export type Protocol = "responses" | "anthropic" | "gemini";
-export type Billing = "api" | "subscription";
-export type Route =
-  | {
-      endpoint: string;
-      kind: "native_images";
-    }
-  | {
-      image_model: string;
-      max_text_output_tokens: number;
-      kind: "responses_tool";
-    };
 /**
  * This body is write-only and must never enter the action journal or logs.
  */
@@ -2188,67 +2177,42 @@ export interface SavedConnection {
 export interface Connection {
   provider: string;
   protocol: Protocol;
-  config: HttpConfig;
-  /**
-   * Explicit image generation permission on the same API connection.
-   */
-  images?: HttpConfig2[];
+  config: ConnectionConfig;
 }
-export interface HttpConfig {
+export interface ConnectionConfig {
   /**
-   * Exact /responses endpoint. No URL is supplied by a model decision.
+   * Exact endpoint for the selected protocol. Model decisions cannot supply a URL.
    */
   endpoint: string;
   api_key_env?: string | null;
   trust_loopback_http?: boolean;
-  models: HttpModel[];
+  models: ModelLimits[];
   timeout_ms?: number;
   max_request_bytes?: number;
   /**
-   * Decoded response and individual SSE frame limit. Streaming wire bytes
-   * have a separate 64x allowance, capped at 128 MiB, and are not buffered.
+   * Bounds a decoded response and each complete or unfinished streaming frame.
    */
   max_response_bytes?: number;
   max_actions?: number;
-  max_images?: number;
 }
-export interface HttpModel {
+/**
+ * Operator-editable accounting limits. Supported modalities belong to the
+ * adapter's metadata for this exact model, never to saved settings.
+ */
+export interface ModelLimits {
   id: string;
   context_window_tokens: number;
   max_output_tokens: number;
   /**
-   * Operator-supplied upper bound for the selected tokenizer. This is not
-   * tokenizer discovery. Use a documented byte-level tokenizer bound.
+   * Upper bound for the selected tokenizer, not tokenizer discovery.
+   * Use a documented byte-level tokenizer bound.
    */
   input_tokens_per_utf8_byte_upper_bound: number;
   /**
-   * Accounts for framing/tokenizer overhead not represented by text bytes.
+   * Framing/tokenizer overhead not represented by text bytes.
    */
   framing_token_allowance: number;
-  vision?: boolean;
   allowed_reasoning_efforts?: string[];
-}
-export interface HttpConfig2 {
-  model: ModelSpec;
-  route: Route;
-  size: string;
-  quality?: string | null;
-}
-/**
- * An adapter-owned offer, not a global registry of image model names. Pricing
- * is a conservative USD micro-unit rate for all usage in this route; Responses
- * offers include both controller and image output. Subscription zero API charge
- * never claims zero included-limit or credit consumption.
- */
-export interface ModelSpec {
-  id: string;
-  billing: Billing;
-  input_units_per_million: number;
-  output_units_per_million: number;
-  input_framing_tokens: number;
-  output_tokens: number;
-  timeout_ms: number;
-  evidence: string;
 }
 export interface KeyStatus {
   key_saved: boolean;
