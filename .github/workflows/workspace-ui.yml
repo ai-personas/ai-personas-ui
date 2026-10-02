@@ -44,6 +44,8 @@ jobs:
         run: node tests/review-continuity.browser.mjs
       - name: Reviewer judgment (synthetic fixture only)
         run: node tests/review-judgment.browser.mjs
+      - name: Current stop and delivery observations (synthetic fixture only)
+        run: npm run test:stop-delivery
       - uses: actions/upload-artifact@v4
         if: always()
         with:
