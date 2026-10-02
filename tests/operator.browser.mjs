@@ -439,10 +439,27 @@ try {
   });
   await step('Resume work remains available for individually paused and naturally waiting participation', async () => {
     await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'participant settles before individual pause');
-    await op('run.pause', { id: run.id });
-    assert.equal((await get('/records/' + work.id)).data.execution_paused, false);
+    const resume = page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true });
+    await expect(resume).toBeEnabled();
+    // Deliver an actual activity update between pointer down and pointer up.
+    // Hold only the following read; the operation still reaches the Rust node.
+    let releaseRead, readCaptured = false;
+    const readGate = new Promise(resolve => { releaseRead = resolve; });
+    const holdRead = async route => { readCaptured = true; await readGate; await route.continue(); };
+    const workPath = '**/api/records/' + work.id;
+    await page.route(workPath, holdRead);
+    try {
+      await resume.scrollIntoViewIfNeeded();
+      const box = await resume.boundingBox(); assert(box);
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await op('run.pause', { id: run.id });
+      assert.equal((await get('/records/' + work.id)).data.execution_paused, false);
+      await until(() => readCaptured, 'activity update refreshes the work during pointer interaction');
+      await expect(page.getByText('Refreshing work state. Displayed values are not a new confirmation.', { exact: true })).toBeVisible();
+      await page.mouse.up();
+    } finally { releaseRead(); await page.mouse.up(); await page.unroute(workPath, holdRead); }
     await expect(page.getByLabel('Task execution')).toHaveText('Task pause is off');
-    await page.getByLabel('Task controls').getByRole('button', { name: 'Resume work', exact: true }).click();
     await expect(page.getByLabel('Task control result')).toContainText('Queued for a decision');
     await until(async () => (await get('/records/' + run.id)).data.status === 'waiting', 'individually paused participant resumes');
     const before = calls;

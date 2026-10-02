@@ -142,8 +142,8 @@ export default function Workspace({ id, tab, setTab, open, artifact, back, act }
   return <div class="workspace">
     <div class="workspace-trail"><button class="text-button" onClick={back}>← All work</button><span>Workspace</span><button class="text-button" onClick={() => open(id)}>Work details & activity <Icon name="Open"/></button></div>
     <header class="workspace-heading"><div><p class="eyebrow">ONE NEED. DIFFERENT PERSPECTIVES.</p><h1>{label(work)}</h1><p class="workspace-subtitle">Individual priorities. Negotiated commitments. Inspectable evidence.</p></div><span class="revision-tag">Work revision {work.revision}</span></header>
+    <WorkControls key={id} work={work} act={act} open={open} stale={!!error} refreshing={loading}/>
     {(loading || error) && <p class="notice" role={error ? 'alert' : 'status'}>{error ? `Refresh failed: ${error}. Displayed data may be stale.` : 'Refreshing work state. Displayed values are not a new confirmation.'}</p>}
-    <WorkControls key={id} work={work} act={act} open={open} stale={loading || !!error}/>
     <InputNotice record={work} open={open}/>
     <div class="status-axes" aria-label="Independent work status">
       <div><span>Activity</span><strong>{summary.activity}</strong><small>Execution is not accomplishment</small></div>
