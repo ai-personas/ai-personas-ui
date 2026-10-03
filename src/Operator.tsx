@@ -122,15 +122,15 @@ function AllowanceForm({ act, close, initial }: { act: Act; close: () => void; i
 }
 
 function FinishingPolicy({ id, act }: { id: string; act: Act }) {
-  const { value: root, error: readError } = useResource<Entity>('/records/' + id, e => matchesAllowance(e, id));
+  const { value: root, error: readError, loading } = useResource<Entity>('/records/' + id, e => matchesAllowance(e, id));
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const enabled = root && data(root).finishing_policy?.enabled === true;
-  return <section aria-label="Automatic finishing"><h3>Automatic finishing</h3>
+  return <section aria-label="Automatic finishing" aria-busy={loading}><h3>Automatic finishing</h3>
     <p>{enabled ? 'Authorized' : 'Not authorized'}: runnable participants can use protected capacity when ordinary calls or tokens run out, for responsibilities they already accepted.</p>
     <p class="micro">This does not assign responsibilities, increase limits, or resume paused or cancelled work. Every finishing call still needs sufficient capacity.</p>
     {(error || readError) && <p role="alert">{error || readError}</p>}
-    <button class="secondary" disabled={busy || !root || !!readError} onClick={async () => {
-      if (!root || busy) return; setBusy(true); setError('');
+    <button class="secondary" disabled={busy || loading || !root || !!readError} onClick={async () => {
+      if (!root || busy || loading || readError) return; setBusy(true); setError('');
       try {
         await act('resource.finishing.configure', { root: id, revision: root.revision, enabled: !enabled,
           reason: `Operator ${enabled ? 'disabled' : 'authorized'} automatic protected funding for existing accepted responsibilities.` });

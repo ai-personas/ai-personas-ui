@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { data, type Entity } from './api';
 import type { Bounds, Limits, Price } from './contract';
 import { useResource } from './hooks';
-import { modelKey, fundingModels, ModelStatus, useModels } from './Models';
+import { modelKey, fundingModels, primaryModels, ModelStatus, useModels } from './Models';
 import type { Act } from './main';
 import Dialog from './Dialog';
 
@@ -70,7 +70,8 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
   const available = models.filter(m => !prices.some(p => p.provider === m.provider && p.model === m.id));
   const chosen = available.find(m => modelKey(m) === selected);
   const subscription = (chosen?.capabilities as any)?.billing === 'chatgpt_subscription';
-  const imagePrice = (chosen?.capabilities as any)?.avatar_generation;
+  const noTokenCharge = subscription && included;
+  const imagePrice = chosen && !primaryModels([chosen]).length ? (chosen.capabilities as any)?.avatar_generation : undefined;
   if (!bounds || d.status !== 'active') return <div class="operator-form"><h2>Allowance cannot be edited</h2><p role="alert">{!bounds ? 'Configure the initial limits before editing this allowance.' : 'This allowance is closed. Its history and spending remain retained.'}</p><button onClick={close}>Close form</button></div>;
   return <form class="operator-form allowance-form" onInvalidCapture={e => {
     const details = (e.target as HTMLElement).closest('details'); if (details) details.open = true;
@@ -123,8 +124,8 @@ function AllowanceDraft({ base, act, close, stale, reload, readError }: {
         <button type="button" class="secondary" disabled={!chosen} onClick={() => {
           if (!chosen) return;
           // Existing fields remain mounted; adding a row preserves their draft.
-          setPrices(p => [...p, { provider: chosen.provider, model: chosen.id, input_units_per_million: imagePrice?.input_units_per_million ?? 0, output_units_per_million: imagePrice?.output_units_per_million ?? 0,
-            evidence: imagePrice?.evidence || (subscription && included ? `Operator chose included subscription usage on ${new Date().toISOString().slice(0,10)}. Plan limits still apply.` : '') }]);
+          setPrices(p => [...p, { provider: chosen.provider, model: chosen.id, input_units_per_million: noTokenCharge ? 0 : imagePrice?.input_units_per_million ?? 0, output_units_per_million: noTokenCharge ? 0 : imagePrice?.output_units_per_million ?? 0,
+            evidence: noTokenCharge ? `Operator chose included subscription usage on ${new Date().toISOString().slice(0,10)}. Plan limits still apply.` : imagePrice?.evidence || '' }]);
           setSelected(''); setIncluded(false);
         }}>Add model policy</button>
       </fieldset>

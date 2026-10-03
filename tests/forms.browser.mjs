@@ -10,10 +10,15 @@ const id = n => n.toString(16).padStart(32, '0');
 const evidence = process.env.PERSONAS_BROWSER_EVIDENCE || '.qa';
 const record = (n, kind, data) => ({ id: id(n), kind, scope: '', revision: 1, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', data });
 const models = ['alpha', 'beta'].map(name => ({ provider: 'codex', id: name, name: `Fixture ${name}`, capabilities: { billing: 'chatgpt_subscription', inference: { operations: ['persona_decision'] }, allowed_reasoning_efforts: ['low', 'high'], image_input_readiness: { state: name === 'alpha' ? 'ready' : 'unsupported', reason: name === 'alpha' ? 'The selected model supports image input.' : 'This model does not support image input.' } } }));
+// A primary model's native image capability is not a separate image-only policy.
+models[1].capabilities.avatar_generation = { input_units_per_million: 9000000, output_units_per_million: 12000000, evidence: 'Synthetic native image reservation policy' };
+const imageModel = { provider: 'images', id: 'picture', name: 'Fixture image-only model', capabilities: { avatar_generation: { input_units_per_million: 8000000, output_units_per_million: 32000000, evidence: 'Synthetic separate image provider price' } } };
 let catalog = { models, providers: [{ provider: 'codex', available: true, models: 2, message: 'Ready' }], checked: '2026-01-01T00:00:00Z' };
 const roots = [], personas = [], writes = [], reads = [], clients = new Set();
 let readinessBlocker = null, unpricedModel = 'beta', wrongPersonaScope = false;
 let sequence = 0, checks = 0, browser;
+let delayedRootId = '';
+const pendingRootReads = [];
 const server = createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
   if (u.pathname === '/api/events') {
@@ -33,7 +38,11 @@ const server = createServer(async (req, res) => {
     const root = roots.find(r => r.id === u.pathname.split('/').at(-1));
     return json({ status: 'active', limits: root?.data.limits, exposure: { bounds: root?.data.bounds }, calls: { production_remaining: 80, closeout_remaining: 20, uncertain: 0 } });
   }
-  if (u.pathname.startsWith('/api/records/')) return json([...roots, ...personas].find(r => r.id === u.pathname.split('/').at(-1)));
+  if (u.pathname.startsWith('/api/records/')) {
+    const rootId = u.pathname.split('/').at(-1), value = [...roots, ...personas].find(r => r.id === rootId);
+    if (rootId === delayedRootId) { pendingRootReads.push(() => json(value)); return; }
+    return json(value);
+  }
   if (u.pathname === '/api/operations') {
     let body = ''; for await (const chunk of req) body += chunk;
     const op = JSON.parse(body); writes.push(op);
@@ -53,6 +62,11 @@ const server = createServer(async (req, res) => {
       ? record(roots.length + 1, 'resource_root', { status: 'active', reason: op.args.reason, limits: op.args.limits, closeout_calls: op.args.closeout_calls, bounds_configured: true })
       : roots.find(r => r.id === op.args.root);
     if (op.kind === 'resource.root.create') roots.push(root);
+    else if (op.kind === 'resource.finishing.configure') {
+      assert(root);
+      if (op.args.revision !== root.revision) return json({ request: op, state: 'failed', error: 'REVISION_CONFLICT: resource decision is stale' });
+      root.revision++; root.data.finishing_policy = { enabled: op.args.enabled };
+    }
     else if (root) { root.revision++; root.data.bounds = op.args.bounds; if (op.kind === 'resource.root.amend') { root.data.limits = op.args.limits; root.data.closeout_calls = op.args.closeout_calls; } }
     return json({ request: op, state: 'succeeded', result: root });
   }
@@ -199,14 +213,18 @@ try {
       await editor.getByLabel('Total model calls', { exact: true }).fill('125');
       await editor.getByLabel('Input price per million tokens — alpha', { exact: true }).fill('0.5');
       await editor.getByLabel('Add price policy for model').selectOption(JSON.stringify(['codex', 'beta']));
+      await expect(editor.getByText(/Avatar image model\./)).toHaveCount(0);
       await editor.getByLabel('Use included subscription usage for this model', { exact: true }).check();
       await editor.getByRole('button', { name: 'Add model policy', exact: true }).click();
+      await expect(editor.getByLabel('Input price per million tokens — beta', { exact: true })).toHaveValue('0');
+      await expect(editor.getByLabel('Output price per million tokens — beta', { exact: true })).toHaveValue('0');
       await expect(editor.getByLabel('Input price per million tokens — alpha', { exact: true })).toHaveValue('0.5');
       await expect(input).toHaveValue(text);
       await editor.getByLabel('Total budget (USD)', { exact: true }).fill('1');
       await editor.getByText('Execution and growth limits', { exact: true }).click();
       const storage = editor.getByLabel('Optional content storage allowance (bytes)');
       await storage.fill('268435456'); await storage.fill('');
+      delayedRootId = roots.at(-1).id;
       await editor.getByRole('button', { name: 'Save funding changes' }).click(); await expect(editor).toHaveCount(0);
       const amendment = writes.at(-1); assert.equal(amendment.kind, 'resource.root.amend');
       assert.equal(amendment.args.limits.calls, 125);
@@ -216,6 +234,35 @@ try {
       assert.equal(amendment.args.bounds.prices[1].input_units_per_million, 0);
       assert.match(amendment.args.bounds.prices[1].evidence, /Operator chose included/);
       assert.equal(amendment.args.reason, text.trim()); assert.deepEqual(errors, []);
+    });
+    await step(`${viewport.width}: finishing waits for the amended revision and sends one toggle`, async () => {
+      const policy = page.getByRole('region', { name: 'Automatic finishing' }).last();
+      const toggle = policy.getByRole('button', { name: 'Enable automatic finishing', exact: true });
+      await expect(policy).toHaveAttribute('aria-busy', 'true'); await expect(toggle).toBeDisabled();
+      await expect.poll(() => pendingRootReads.length).toBeGreaterThan(0);
+      const before = writes.filter(op => op.kind === 'resource.finishing.configure').length;
+      const revision = roots.at(-1).revision;
+      delayedRootId = ''; for (const finish of pendingRootReads.splice(0)) finish();
+      await expect(policy).toHaveAttribute('aria-busy', 'false'); await expect(toggle).toBeEnabled();
+      await toggle.click();
+      await expect(policy.getByRole('button', { name: 'Disable automatic finishing', exact: true })).toBeEnabled();
+      const toggles = writes.filter(op => op.kind === 'resource.finishing.configure');
+      assert.equal(toggles.length, before + 1, 'one explicit click must send one operation');
+      assert.equal(toggles.at(-1).args.revision, revision); assert.equal(toggles.at(-1).args.enabled, true);
+      await expect(policy.getByRole('alert')).toHaveCount(0);
+    });
+    await step(`${viewport.width}: a separate image-only row keeps its reviewed prices and notice`, async () => {
+      catalog = { ...catalog, decision_models: [imageModel] };
+      await page.getByRole('button', { name: 'Edit allowance', exact: true }).last().click();
+      const editor = page.getByRole('dialog', { name: 'Edit funding allowance' });
+      await editor.getByLabel('Add price policy for model').selectOption(JSON.stringify(['images', 'picture']));
+      await expect(editor.getByText(/Avatar image model\./)).toBeVisible();
+      await editor.getByRole('button', { name: 'Add model policy', exact: true }).click();
+      await expect(editor.getByLabel('Input price per million tokens — picture', { exact: true })).toHaveValue('8');
+      await expect(editor.getByLabel('Output price per million tokens — picture', { exact: true })).toHaveValue('32');
+      await expect(editor.getByLabel('Price source and date — picture', { exact: true })).toHaveValue(imageModel.capabilities.avatar_generation.evidence);
+      await page.keyboard.press('Escape'); await expect(editor).toHaveCount(0);
+      catalog = { ...catalog, decision_models: [] };
     });
     if (viewport.width === 390) await step('model readiness blocks unpriced initialization, rechecks submission and recovers an existing identity', async () => {
       await page.getByRole('button', { name: 'Personas', exact: true }).click();
