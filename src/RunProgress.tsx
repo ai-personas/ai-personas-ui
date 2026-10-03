@@ -26,6 +26,16 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
   useEffect(() => setReply(false), [run.id]);
   const d = data(run), call = fields(d.latest_call), latest = fields(call.data);
   const input = fields(d.latest_user_input), inputRecord = fields(input.record);
+  const stop = fields(d.stop_disposition), authoredStop = fields(stop.authored);
+  const stopKind = text(authoredStop.kind || stop.classification);
+  const stopContext = fields(d.stop_context), completion = fields(stopContext.completion);
+  const release = fields(authoredStop.release), checkedRelease = fields(completion.release);
+  const currentCompletion = stopContext.schema === 'stop-context/1' && completion.applicability === 'current'
+    && isRecordID(release.id) && Number.isSafeInteger(release.revision) && Number(release.revision) > 0
+    && release.id === checkedRelease.id && release.revision === checkedRelease.revision;
+  const stopLabel = stopKind === 'completion'
+    ? currentCompletion ? 'Checked delivery recorded' : completion.applicability === 'stale' ? 'Earlier completion needs another check' : 'Earlier completion recorded; current check unavailable'
+    : ({outside_dependency:'Awaiting an outside observation',peer_dependency:'Awaiting an accepted peer contribution',scheduled:'Personal exploration scheduled',voluntary_yield:'Persona chose to yield',partial_delivery:'Partial delivery with remaining gaps',blocked:'A limitation stopped this decision'} as Record<string,string>)[stopKind] || 'Current stop reason';
   const active = ['queued', 'running'].includes(text(d.status));
   const execution = ({ queued: 'Ready for a decision; waiting for an execution slot.', running: 'Participation active.', paused: 'Participation paused.', waiting: 'Participation waiting for a trigger.', cancelled: 'Participation cancelled.' } as Record<string, string>)[text(d.status)] || `Participation status: ${text(d.status) || 'unavailable'}.`;
   const canReply = isRecordID(d.persona) && isRecordID(run.scope) && d.historical !== true && d.imported_history !== true
@@ -37,7 +47,7 @@ export function RunProgress({ run, open, act }: { run: Entity; open: (id: string
     </div>}
     <ProviderRecovery value={d.provider_recovery}/>
     <p role="status">{execution}{latest.status === 'running' && ' Model call in progress.'}</p>
-    {!active && !fields(d.provider_recovery).status && text(d.note) && <div class="current-wait"><p class="field-label">{({outside_dependency:'Awaiting an outside observation',peer_dependency:'Awaiting an accepted peer contribution',scheduled:'Personal exploration scheduled',voluntary_yield:'Persona chose to yield',partial_delivery:'Partial delivery with remaining gaps',completion:'Checked delivery recorded',blocked:'A limitation stopped this decision'} as Record<string,string>)[text((d.stop_disposition as any)?.authored?.kind || (d.stop_disposition as any)?.classification)] || 'Current stop reason'} · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
+    {!active && !fields(d.provider_recovery).status && text(d.note) && <div class="current-wait"><p class="field-label">{stopLabel} · <time dateTime={run.updated}>{timestamp(run.updated)}</time></p><p class="notice">{d.note}</p></div>}
     {!active && <><StopGaps value={d.stop_context}/><FinishingReadiness value={fields(d.stop_disposition).finishing}/></>}
     {fields(d.information_recovery).status === 'recovering_permissions' && <p class="notice" role="status">Recovering access to context. Other participants can continue with information available to them.</p>}
     {fields(d.information_recovery).status === 'waiting_on_permissions' && <p class="notice">Waiting for a sharing decision. The source owner can change access; unrelated work can continue.</p>}

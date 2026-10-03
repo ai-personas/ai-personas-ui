@@ -59,11 +59,41 @@ try {
   await expect(page.getByText(run.data.note, { exact: true })).toBeVisible();
   await expect(recovery).toHaveCount(0);
   await expect(page.getByText('Checked delivery recorded', { exact: false })).toHaveCount(0);
+  const release = { id: 'f'.repeat(32), revision: 2 };
+  run.data.note = 'The exact accepted release ended this decision.';
+  run.data.stop_disposition = { authored: { kind: 'completion', release }, ownership_unchanged: true, automatic_acceptance: false };
+  run.data.stop_context.completion = { release, applicability: 'current' };
+  await page.evaluate(({ run, submission }) => window.mount(run, submission), { run, submission });
+  await expect(page.getByText('Checked delivery recorded', { exact: false })).toBeVisible();
+  await expect(page.getByText(run.data.note, { exact: true })).toBeVisible();
+  run.data.stop_context.completion = { release, applicability: 'stale' };
+  await page.evaluate(({ run, submission }) => window.mount(run, submission), { run, submission });
+  await expect(page.getByText('Checked delivery recorded', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('Earlier completion needs another check', { exact: false })).toBeVisible();
+  await expect(page.getByText(run.data.note, { exact: true })).toBeVisible();
+  // A later release, another revision, absent projection, or an unknown
+  // projection schema cannot grant the historical stop a current check.
+  for (const completion of [
+    { release: { id: '1'.repeat(32), revision: 2 }, applicability: 'current' },
+    { release: { ...release, revision: 3 }, applicability: 'current' },
+    undefined,
+  ]) {
+    run.data.stop_context.completion = completion;
+    await page.evaluate(({ run, submission }) => window.mount(run, submission), { run, submission });
+    await expect(page.getByText('Checked delivery recorded', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('Earlier completion recorded; current check unavailable', { exact: false })).toBeVisible();
+  }
+  run.data.stop_context.completion = { release, applicability: 'current' };
+  run.data.stop_context.schema = 'unknown';
+  await page.evaluate(({ run, submission }) => window.mount(run, submission), { run, submission });
+  await expect(page.getByText('Checked delivery recorded', { exact: false })).toHaveCount(0);
+  await expect(page.getByText('Participation paused.', { exact: true })).toBeVisible();
+  await expect(page.getByText(run.data.note, { exact: true })).toBeVisible();
   assert.deepEqual(await page.evaluate(() => window.actions), []);
   assert.ok(methods.every(method => method === 'GET'), 'rendering must only read');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'mobile layout fits');
   assert.deepEqual(errors, []);
-  console.log('Stop and delivery browser checks passed: authored stop, changing recorded gaps, current sharing restrictions, bounded recovery, no mutation or quality verdict, mobile fit.');
+  console.log('Stop and delivery browser checks passed: exact completion applicability, preserved historical stop, changing recorded gaps, current sharing restrictions, bounded recovery, no mutation or quality verdict, mobile fit.');
 } finally {
   await browser?.close();
   await server?.close();
