@@ -4605,7 +4605,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
+            "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to its explicitly chosen audience only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4643,9 +4643,14 @@
                     }
                   },
                   "message": {
-                    "type": [
-                      "string",
-                      "null"
+                    "description": "Optional submission notice with explicit text and visibility. Choose work for the user and permitted participants in this work, or private for the user alone. Null creates no notice. Audience choice preserves source restrictions and does not change earlier correspondence.",
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/DecisionReply"
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   }
                 },
@@ -6589,21 +6594,26 @@
         "type": "object",
         "properties": {
           "outcome": {
+            "description": "Your proposed useful result for this work, not a replacement for the original request or adopted obligations.",
             "type": "string"
           },
           "fidelity": {
+            "description": "Your chosen level of detail and applicability limits. This label does not establish that the actual result realizes its claimed properties or meets the request.",
             "type": "string"
           },
           "unknowns": {
+            "description": "Consequential unresolved questions about the result, method or outside conditions. Missing facts limit the claims and steps that depend on them; useful conditional development and internal checking may remain possible.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "next_evidence": {
+            "description": "The next observation that could reduce uncertainty or substantively check the requested result. A proposed check is not an observation, and this field neither schedules work nor prescribes a tool.",
             "type": "string"
           },
           "collaboration": {
+            "description": "Your intended cooperation, assessment or independent progress; not an assignment, another participant's acceptance, or evidence of agreement.",
             "type": "string"
           }
         },
@@ -7276,6 +7286,31 @@
         "required": [
           "title",
           "content"
+        ]
+      },
+      "DecisionReply": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536
+          },
+          "visibility": {
+            "$ref": "#/$defs/ReplyVisibility"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "visibility"
+        ]
+      },
+      "ReplyVisibility": {
+        "type": "string",
+        "enum": [
+          "private",
+          "work"
         ]
       },
       "Verdict": {
@@ -9314,7 +9349,7 @@
     ],
     [
       "submit",
-      "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility."
+      "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to its explicitly chosen audience only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility."
     ],
     [
       "review.start",
@@ -13704,7 +13739,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
+        "description": "Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to its explicitly chosen audience only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13742,9 +13777,14 @@
                 }
               },
               "message": {
-                "type": [
-                  "string",
-                  "null"
+                "description": "Optional submission notice with explicit text and visibility. Choose work for the user and permitted participants in this work, or private for the user alone. Null creates no notice. Audience choice preserves source restrictions and does not change earlier correspondence.",
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DecisionReply"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               }
             },
@@ -15706,21 +15746,26 @@
         "type": "object",
         "properties": {
           "outcome": {
+            "description": "Your proposed useful result for this work, not a replacement for the original request or adopted obligations.",
             "type": "string"
           },
           "fidelity": {
+            "description": "Your chosen level of detail and applicability limits. This label does not establish that the actual result realizes its claimed properties or meets the request.",
             "type": "string"
           },
           "unknowns": {
+            "description": "Consequential unresolved questions about the result, method or outside conditions. Missing facts limit the claims and steps that depend on them; useful conditional development and internal checking may remain possible.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "next_evidence": {
+            "description": "The next observation that could reduce uncertainty or substantively check the requested result. A proposed check is not an observation, and this field neither schedules work nor prescribes a tool.",
             "type": "string"
           },
           "collaboration": {
+            "description": "Your intended cooperation, assessment or independent progress; not an assignment, another participant's acceptance, or evidence of agreement.",
             "type": "string"
           }
         },
@@ -16393,6 +16438,31 @@
         "required": [
           "title",
           "content"
+        ]
+      },
+      "DecisionReply": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536
+          },
+          "visibility": {
+            "$ref": "#/$defs/ReplyVisibility"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "visibility"
+        ]
+      },
+      "ReplyVisibility": {
+        "type": "string",
+        "enum": [
+          "private",
+          "work"
         ]
       },
       "Verdict": {

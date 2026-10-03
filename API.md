@@ -1165,7 +1165,7 @@ Preserve exact existing file bytes and digest, not correctness or acceptance. Re
 
 ### `submit`
 
-Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to the user only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.
+Preserve exact evidence chosen by the persona. documents takes saved document version IDs, never document_group or action IDs. Optional drafts saves and submits newly authored text atomically; optional message delivers your notice to its explicitly chosen audience only if the whole submission succeeds. You can wait in the same batch. This records content and delivery, not correctness, page fit, acceptance or completed responsibility.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1173,7 +1173,7 @@ Preserve exact evidence chosen by the persona. documents takes saved document ve
 | `artifacts` | string[] | Required | Saved artifact IDs returned by artifact.publish or artifact.capture, or current-call @record aliases for those artifacts. Action IDs and document IDs cannot attach artifacts. |
 | `documents` | string[] | Required | Exact saved document version IDs (document.write result.id), or their current-call @record aliases. document_group and action IDs are not document versions. |
 | `drafts` | array or null | Optional | Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind. |
-| `message` | string or null | Optional |  |
+| `message` | DecisionReply or null | Optional | Optional submission notice with explicit text and visibility. Choose work for the user and permitted participants in this work, or private for the user alone. Null creates no notice. Audience choice preserves source restrictions and does not change earlier correspondence. |
 
 ### `review.start`
 

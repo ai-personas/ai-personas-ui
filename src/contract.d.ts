@@ -988,7 +988,10 @@ export type Command =
          * Optional newly authored documents saved and submitted atomically as title/content. Use this for new text without a preliminary document.write or evidence.bind.
          */
         drafts?: SubmissionDocument[] | null;
-        message?: string | null;
+        /**
+         * Optional submission notice with explicit text and visibility. Choose work for the user and permitted participants in this work, or private for the user alone. Null creates no notice. Audience choice preserves source restrictions and does not change earlier correspondence.
+         */
+        message?: DecisionReply | null;
       };
     }
   | {
@@ -1263,6 +1266,7 @@ export type Predicate =
     };
 export type Relation = "association" | "correction" | "prerequisite" | "contradiction";
 export type Treatment = "preview" | "full";
+export type ReplyVisibility = "private" | "work";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
 export type QuestionVisibility = "work" | "private";
@@ -1707,10 +1711,25 @@ export interface Continuity {
   handoff?: string | null;
 }
 export interface Intent {
+  /**
+   * Your proposed useful result for this work, not a replacement for the original request or adopted obligations.
+   */
   outcome: string;
+  /**
+   * Your chosen level of detail and applicability limits. This label does not establish that the actual result realizes its claimed properties or meets the request.
+   */
   fidelity: string;
+  /**
+   * Consequential unresolved questions about the result, method or outside conditions. Missing facts limit the claims and steps that depend on them; useful conditional development and internal checking may remain possible.
+   */
   unknowns: string[];
+  /**
+   * The next observation that could reduce uncertainty or substantively check the requested result. A proposed check is not an observation, and this field neither schedules work nor prescribes a tool.
+   */
   next_evidence: string;
+  /**
+   * Your intended cooperation, assessment or independent progress; not an assignment, another participant's acceptance, or evidence of agreement.
+   */
   collaboration: string;
 }
 /**
@@ -2005,6 +2024,10 @@ export interface SubmissionDocument {
    * Nonempty authored document text saved verbatim. No document.write or evidence.bind prerequisite is needed.
    */
   content: string;
+}
+export interface DecisionReply {
+  text: string;
+  visibility: ReplyVisibility;
 }
 /**
  * Cursor pages are bounded transport, not a persona memory policy.
