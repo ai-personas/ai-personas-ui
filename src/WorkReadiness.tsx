@@ -19,7 +19,7 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
       <p>JEV node limit: <strong>{amount(budget.limit_micro_usd)}</strong> · Accounted: {amount(budget.accounted_micro_usd)} · Remaining: {amount(budget.remaining_micro_usd)}</p>
       {Boolean(budget.error) && <p role="alert">JEV spending could not be verified.</p>}
       <div class="work-records">{people.map(p => {
-        const selection = fields(p.file_selection), maintenance = fields(p.maintenance);
+        const selection = fields(p.file_selection), maintenance = fields(fields(p.maintenance).maintenance);
         const fragments = Array.isArray(selection.fragments) ? selection.fragments.length : 0;
         const assets = Array.isArray(selection.assets) ? selection.assets.length : 0;
         const activity = fields(p.activity);
