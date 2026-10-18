@@ -366,6 +366,7 @@ Operator observes the current assembled decision quote and funding feasibility w
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `run` | string | Required |  |
+| `include_repair_inventory` | boolean | Optional | Also inspect a prospective restricted-repair inventory and complete context quote. This makes no call, creates no overflow condition and grants no repair admission. |
 
 ### `research.stage.seal`
 

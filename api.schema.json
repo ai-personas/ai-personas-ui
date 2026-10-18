@@ -1455,6 +1455,11 @@
                 "properties": {
                   "run": {
                     "type": "string"
+                  },
+                  "include_repair_inventory": {
+                    "description": "Also inspect a prospective restricted-repair inventory and complete context quote. This makes no call, creates no overflow condition and grants no repair admission.",
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "additionalProperties": false,
@@ -10448,6 +10453,11 @@
             "properties": {
               "run": {
                 "type": "string"
+              },
+              "include_repair_inventory": {
+                "description": "Also inspect a prospective restricted-repair inventory and complete context quote. This makes no call, creates no overflow condition and grants no repair admission.",
+                "type": "boolean",
+                "default": false
               }
             },
             "additionalProperties": false,

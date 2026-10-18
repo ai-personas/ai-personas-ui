@@ -265,6 +265,10 @@ export type Command =
       kind: "resource.admission.preview";
       args: {
         run: string;
+        /**
+         * Also inspect a prospective restricted-repair inventory and complete context quote. This makes no call, creates no overflow condition and grants no repair admission.
+         */
+        include_repair_inventory?: boolean;
       };
     }
   | {
