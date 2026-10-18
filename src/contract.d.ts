@@ -864,6 +864,18 @@ export type Command =
       };
     }
   | {
+      kind: "file.search";
+      args: {
+        query: Search;
+      };
+    }
+  | {
+      kind: "file.read";
+      args: {
+        reference: VersionRef;
+      };
+    }
+  | {
       kind: "context.advance";
       args: {
         continuity: Continuity;
@@ -1115,7 +1127,7 @@ export type Command =
       kind: "action.resolve";
       args: {
         id: string;
-        outcome: Outcome2;
+        outcome: Outcome3;
         evidence: string;
       };
     };
@@ -1211,61 +1223,12 @@ export type FeedbackDisposition = "repair_proposed" | "disputed" | "escalated" |
 export type ReleaseDisposition = "delivered" | "delivered_with_conditions" | "partial_delivered";
 export type Fallback = "deterministic" | "block";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
-export type LearningResolutionDisposition = "retain" | "revise" | "organize" | "no_change";
-export type Condition =
-  | {
-      kind: "always";
-    }
-  | {
-      id: string;
-      kind: "work";
-    }
-  | {
-      id: string;
-      kind: "sender";
-    }
-  | {
-      reference: VersionRef;
-      kind: "received";
-    }
-  | {
-      situation: string;
-      kind: "semantic";
-    }
-  | {
-      conditions: Predicate[];
-      kind: "all";
-    }
-  | {
-      conditions: Predicate[];
-      kind: "any";
-    }
-  | {
-      condition: Predicate;
-      kind: "not";
-    };
-export type Predicate =
-  | {
-      kind: "always";
-    }
-  | {
-      id: string;
-      kind: "work";
-    }
-  | {
-      id: string;
-      kind: "sender";
-    }
-  | {
-      reference: VersionRef;
-      kind: "received";
-    }
-  | {
-      situation: string;
-      kind: "semantic";
-    };
-export type Relation = "association" | "correction" | "prerequisite" | "contradiction";
-export type Treatment = "preview" | "full";
+export type Role = "characteristic" | "supporting";
+export type MatchMode = "listing" | "literal" | "regex";
+export type SearchField = "path" | "content" | "cues";
+export type Disposition = "change" | "no_change" | "blocked" | "defer";
+export type EditKind = "create" | "revise" | "retire";
+export type Choice = "preserve" | "clear" | "replace" | "blocked";
 export type ReplyVisibility = "private" | "work";
 export type Verdict = "accepted" | "rejected" | "incomplete";
 export type RequestAudience = "work" | "user";
@@ -1310,7 +1273,7 @@ export type StopDisposition =
       kind: "blocked";
     };
 export type Blockage = "resource" | "tool" | "runtime";
-export type Outcome2 = "succeeded" | "failed" | "unknown";
+export type Outcome3 = "succeeded" | "failed" | "unknown";
 export type Protocol = "responses" | "anthropic" | "gemini";
 /**
  * This body is write-only and must never enter the action journal or logs.
@@ -1659,15 +1622,24 @@ export interface Vad {
   arousal?: number | null;
   dominance?: number | null;
 }
+export interface Search {
+  role: Role;
+  mode: MatchMode;
+  pattern: string;
+  fields: SearchField[];
+  case_sensitive: boolean;
+  /**
+   * Live record-row cursor, not an exhaustive or snapshot-bound traversal.
+   */
+  after: number;
+  limit: number;
+}
 export interface Continuity {
+  files: Plan;
   /**
    * Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.
    */
   intent?: Intent | null;
-  /**
-   * Resolve and remove prior pending opportunities. An empty array keeps them pending; omitted opportunity IDs stay pending. retain/revise/organize require corresponding committed changes; no_change dismisses with a reason. To update a pending cue without resolving it, use deferred with its same ID.
-   */
-  learning_resolutions?: LearningResolution[];
   /**
    * Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.
    */
@@ -1676,27 +1648,6 @@ export interface Continuity {
    * Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.
    */
   focus: string;
-  /**
-   * Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.
-   */
-  disposition: "retain" | "revise" | "organize" | "no_change" | "defer";
-  /**
-   * Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.
-   */
-  change_reason: string;
-  /**
-   * Add or update pending opportunities without resolving them. Reuse the supplied pending ID to update a cue; use null or omit the ID when adding a cue. Omission preserves earlier opportunities. Use learning_resolutions only to resolve and remove an opportunity.
-   */
-  deferred?: DeferredLearning[];
-  changes: Change[];
-  /**
-   * Null preserves the current graph selection and recall delegation. An object replaces them.
-   */
-  memory?: Selection2 | null;
-  /**
-   * Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.
-   */
-  records?: string[] | null;
   /**
    * Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.
    */
@@ -1709,6 +1660,70 @@ export interface Continuity {
    * Null preserves the handoff; a string replaces it. Does not remove obligations or source restrictions.
    */
   handoff?: string | null;
+}
+/**
+ * Required primary-authored maintenance and next-context choices for both scopes.
+ */
+export interface Plan {
+  maintenance: Maintenance;
+  edits: Edit[];
+  current_account: Selection2;
+  next_context: NextContext;
+}
+export interface Maintenance {
+  fragments: Outcome2;
+  assets: Outcome2;
+}
+export interface Outcome2 {
+  disposition: Disposition;
+  reason: string;
+  /**
+   * For blocked/deferred concerns, identify what is affected, its missing prerequisite,
+   * dependent work, and an existing opportunity or honest continuation gap. Empty for no concern.
+   */
+  concern: string;
+}
+export interface Edit {
+  handle: string;
+  operation: EditKind;
+  role: Role;
+  path: string;
+  base?: VersionRef | null;
+  /**
+   * Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.
+   */
+  content?: string | null;
+  search_cues: string[];
+  sources: EvidenceRef[];
+  /**
+   * Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.
+   */
+  required: VersionRef[];
+}
+/**
+ * One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.
+ */
+export interface Selection2 {
+  disposition: Choice;
+  /**
+   * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
+   * Replace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.
+   */
+  references: VersionRef[];
+  reason: string;
+}
+export interface NextContext {
+  fragments: Selection21;
+  assets: Selection21;
+}
+export interface Selection21 {
+  disposition: Choice;
+  /**
+   * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
+   * Replace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.
+   */
+  references: VersionRef[];
+  reason: string;
 }
 export interface Intent {
   /**
@@ -1731,289 +1746,6 @@ export interface Intent {
    * Your intended cooperation, assessment or independent progress; not an assignment, another participant's acceptance, or evidence of agreement.
    */
   collaboration: string;
-}
-/**
- * retain requires a committed new fragment; revise requires a committed fragment revision; organize requires a committed graph-only change. no_change dismisses the opportunity with a reason. defer is not a resolution; keep the cue pending by omitting its resolution or updating it through deferred.
- */
-export interface LearningResolution {
-  id: string;
-  disposition: LearningResolutionDisposition;
-  reason: string;
-}
-export interface DeferredLearning {
-  /**
-   * Reuse the supplied pending opportunity ID to update that cue without resolving it; use null or omit the ID when adding a cue.
-   */
-  id?: string | null;
-  cue: string;
-  reason: string;
-  reconsider_when: string;
-  sources?: EvidenceRef[];
-}
-export interface Change {
-  /**
-   * Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.
-   */
-  handle: string;
-  /**
-   * Exact node version to revise/reorganize/retire; null creates a node.
-   */
-  node?: VersionRef | null;
-  /**
-   * Your new prompt part, or null to keep this node's current immutable fragment.
-   */
-  draft?: FragmentDraft | null;
-  /**
-   * Replace directed associations to other nodes. Use IDs or "$rule" for local handle "rule"; cycles are valid and links do not select content.
-   */
-  related: string[];
-  /**
-   * Replace authored conditions. Null preserves them on organization-only edits.
-   */
-  connections?: ConnectionDraft[] | null;
-  retire: boolean;
-  /**
-   * Replace the optional retrieval utility; null removes it. Versioned with this node.
-   */
-  locator?: Locator | null;
-}
-export interface ConnectionDraft {
-  /**
-   * Received node ID, @memory alias, or a $handle in this transaction.
-   */
-  target: string;
-  explanation: string;
-  condition: Condition;
-  relation: Relation;
-  treatment: Treatment;
-  /**
-   * Null permits any work in which the source is independently readable.
-   */
-  work?: string | null;
-  expires?: string | null;
-}
-export interface Locator {
-  description: string;
-  /**
-   * Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.
-   */
-  script: string;
-  /**
-   * Exact required string arguments chosen by the calling persona.
-   */
-  parameters: Parameter[];
-}
-export interface Parameter {
-  name: string;
-  description: string;
-}
-export interface Selection2 {
-  /**
-   * Replace the next call's full prompt parts with stable node IDs or local references: handle "rule" is referenced as "$rule".
-   */
-  active: string[];
-  /**
-   * Optional graph focus for the next decision. Without focus, query or after, indexed discovery supplies task-relevant previews.
-   */
-  focus?: string | null;
-  /**
-   * Visible offset for an explicit graph page; zero requests the first page, including all owned nodes when focus/query are null.
-   */
-  after?: number | null;
-  /**
-   * Graph-page search requires every word in the same title/description (AND), not full text. Null query with after:0 browses owned cards. Also cues indexed discovery; neither route selects full text.
-   */
-  query?: string | null;
-  /**
-   * Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.
-   */
-  preview_limit?: number | null;
-  /**
-   * Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.
-   */
-  exploration?: PreviewExploration | null;
-  /**
-   * Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.
-   *
-   * @minItems 1
-   * @maxItems 8
-   */
-  current_self?:
-    | [string]
-    | [string, string]
-    | [string, string, string]
-    | [string, string, string, string]
-    | [string, string, string, string, string]
-    | [string, string, string, string, string, string]
-    | [string, string, string, string, string, string, string]
-    | [string, string, string, string, string, string, string, string]
-    | null;
-  /**
-   * Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.
-   */
-  delegation?: Delegation | null;
-}
-export interface PreviewExploration {
-  seed: string;
-  max_previews: number;
-  max_bytes: number;
-}
-/**
- * Your bounded retrieval choice: choose the expiry and size limits yourself.
- * Invitations establish participation; they do not supply hidden delegation
- * parameters. Current processing/export permission and funding are separate
- * runtime checks. This choice cannot extend those permissions or resources.
- */
-export interface Delegation {
-  /**
-   * Exact received source nodes whose conditional connections may select full text.
-   * Received node cards suffice; reading their full fragments first is not required.
-   * For a source created OR edited in this transaction, use its $handle with
-   * revision 0 to bind the committed version, not its old ID or @memory alias.
-   *
-   * @minItems 0
-   * @maxItems 16
-   */
-  sources:
-    | []
-    | [VersionRef]
-    | [VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
-    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ]
-    | [
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef,
-        VersionRef
-      ];
-  /**
-   * Explicitly permit relevance-only selection from indexed owned fragments,
-   * using only the selector's approved need/observations/focus. Off by default.
-   * Needs semantic:true; sources may be empty. Preview suspension is separate.
-   */
-  direct_search?: boolean;
-  /**
-   * Your chosen future RFC3339 expiry for this recall choice. Permission and
-   * funding expiration still apply independently.
-   */
-  expires: string;
-  /**
-   * Your maximum full-fragment count, including required corrections and
-   * prerequisites. Whole required bundles must fit; they are never truncated.
-   */
-  max_fragments: number;
-  /**
-   * Your maximum serialized full-fragment bytes in this preparation.
-   */
-  max_bytes: number;
-  /**
-   * Permit the configured selector to assess unknown semantic conditions.
-   */
-  semantic: boolean;
 }
 export interface SubmissionDocument {
   /**

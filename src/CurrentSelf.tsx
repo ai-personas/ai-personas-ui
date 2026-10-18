@@ -16,7 +16,7 @@ export default function CurrentSelf({ persona, open }: { persona: Entity; open: 
       <p class="record-prose">{current.value.character}</p>
       <p class="micro">Derived from {current.value.parts.length} exact self-fragment{current.value.parts.length === 1 ? '' : 's'} · designation revision {current.value.revision}.</p>
       <button class="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Hide self-fragment sources' : 'Inspect self-fragment sources'}</button>
-      {expanded && current.value.parts.map(part => <article key={part.node.id + ':' + part.node.revision} class="development-card"><h4>{part.title}</h4><p class="micro">Graph node revision {part.node.revision} · fragment revision {part.fragment.revision}</p><Suspense fallback={<p>Loading self-fragment…</p>}><Fragment id={part.fragment.id} revision={part.fragment.revision} owner={persona.id} open={open}/></Suspense></article>)}
+      {expanded && current.value.parts.map(part => <article key={part.node.id + ':' + part.node.revision} class="development-card"><h4>{part.title}</h4><p class="micro">File revision {part.fragment.revision}</p>{current.value?.files ? <><p class="record-prose">{part.content}</p><button class="text-button" onClick={() => open(part.fragment.id)}>Inspect file provenance</button></> : <Suspense fallback={<p>Loading self-fragment…</p>}><Fragment id={part.fragment.id} revision={part.fragment.revision} owner={persona.id} open={open}/></Suspense>}</article>)}
     </>}
   </section>;
 }

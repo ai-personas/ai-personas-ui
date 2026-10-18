@@ -2,7 +2,7 @@
 
 Contract: `ai-personas/fragment-graph-1`
 
-Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits. The unrestricted test profile is separate.
+Default loopback listeners allow the same-origin local operator workspace without a token. Local writes include X-Personas-Client: workspace. The listener, actual peer, Host and browser Origin are checked; unrelated origins are rejected. Nonloopback listeners and --require-token require bearer authentication. Bearer-authenticated browser sessions can authorize file reads with an HttpOnly cookie. Local sessions issue no browser secret. Persona authority, information permissions and resource limits remain enforced independently. The node records its execution settings. Operator-enabled host execution permits installation, networking, subprocesses and file writes while retaining application access checks and inference accounting. Isolated execution requires scoped grants and enforced limits.
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -1068,9 +1068,25 @@ Read an exact immutable document version using document.write result.id, never i
 |---|---|---|---|
 | `version_id` | string | Required |  |
 
-### `context.advance`
+### `file.search`
 
 Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.
+Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `query` | Search | Required |  |
+
+### `file.read`
+
+Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `reference` | VersionRef | Required |  |
+
+### `context.advance`
+
 Atomically author learning and select the next context. Does not change authority for actions in the current decision.
 
 | Argument | Type | Presence | Meaning |
@@ -1323,7 +1339,7 @@ Append evidence about an uncertain action without re-executing it. Unknown outco
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `id` | string | Required |  |
-| `outcome` | Outcome2 | Required |  |
+| `outcome` | Outcome3 | Required |  |
 | `evidence` | string | Required |  |
 
 The machine schema includes OCEAN ranges [0,1], VAD ranges [-1,1], nullable unauthored values and extensible attributes. Server validation applies the same Rust Command definition.

@@ -141,7 +141,21 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'exploration_opportunity': return <><Story title="Question to investigate" value={d.question}/><Story title="Stopping condition" value={d.stopping_condition}/><p>{d.status === 'scheduled' ? `Scheduled no earlier than ${timestamp(d.not_before)}` : `Episode ${text(d.status, 'status not recorded')}`}</p><Story title="Outcome or limitation" value={d.reason}/><RelatedItems title="Observations" value={d.observations} open={open}/>{isRecordID(d.work) && <p>Episode work <RecordReference id={d.work} open={open}/></p>}</>;
     case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
     case 'memory_node': return <><p>This graph node binds an exact retained fragment.</p><RelatedItems title="Prompt fragment" value={d.fragment} open={open}/><RelatedItems title="Directed associations" value={d.related} open={open}/></>;
-    case 'fragment': return <>
+    case 'persona_asset': return <>
+      <p class="field-label">Supporting asset · {text(fields(d.file).path)}</p>
+      <Story value={d.content}/><Story title="Search cues" value={d.search_cues}/>
+      <RelatedItems title="Required accompaniment" value={d.required_context} open={open}/>
+      <RelatedItems title="Sources" value={fields(d.authorship).sources} open={open}/>
+    </>;
+    case 'fragment': if (typeof d.content === 'string' && fields(d.file).path) return <>
+      <p class="field-label">Characteristic file · {text(fields(d.file).path)}</p>
+      <Story value={d.content}/><Story title="Search cues" value={d.search_cues}/>
+      <p>{fields(d.authorship).origin === 'creation_inference' ? 'Authored at initialization; this is a starting character account, not prior experience.' : 'Authored by the persona during its work.'}</p>
+      <RelatedItems title="Required accompaniment" value={d.required_context} open={open}/>
+      <RelatedItems title="Sources" value={fields(d.authorship).sources} open={open}/>
+      <p class="record-caveat">A saved characteristic file does not by itself establish later use or improvement.</p>
+    </>;
+    return <>
       <p class="field-label">{{tentative: 'Idea to test — not yet validated', observed: 'Based on received observations', reported: 'Based on attributed reports'}[text(draft.basis, 'tentative')]}</p>
       <p class="record-caveat">A lesson fragment is an authored interpretation. Its presence does not prove correctness, active selection, later application or improvement.</p>
       {fields(d.authorship).origin === 'persona_decision' && <><p>Written by this persona using its character at the time.</p><RelatedItems title="Character when written" value={fields(d.authorship).character_profile} open={open}/></>}

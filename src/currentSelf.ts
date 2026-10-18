@@ -11,8 +11,21 @@ export async function readCurrentSelf(persona: Entity, signal: AbortSignal) {
       || new Set(value.map(r => r.id)).size !== value.length) return fail();
     return value;
   };
-  if (!model || !Number.isSafeInteger(model.revision) || model.revision < 1 || model.revision > persona.revision) return fail();
-  const nodes = refs(model.nodes), fragments = refs(model.fragments);
+  if (!model || (model.format !== 'accepted-files/1' && (!Number.isSafeInteger(model.revision) || model.revision < 1 || model.revision > persona.revision))) return fail();
+  const fragments = refs(model.fragments);
+  if (model.format === 'accepted-files/1') {
+    const parts = await Promise.all(fragments.map(async fragment => {
+      const record = await resourceRequest<Entity>('/records/' + fragment.id, signal), value = data(record);
+      if (record.id !== fragment.id || record.revision !== fragment.revision || record.kind !== 'fragment'
+        || value.owner !== persona.id || value.status !== 'retained' || value.erased || value.discredited
+        || typeof value.content !== 'string' || typeof value.file?.path !== 'string') return fail();
+      return { node: fragment, fragment, content: value.content as string, title: value.file.path as string };
+    }));
+    const character = parts.map(p => p.content).join('\n\n');
+    if (character !== d.character) return fail();
+    return { revision: persona.revision, character, parts, files: true };
+  }
+  const nodes = refs(model.nodes);
   if (nodes.length !== fragments.length) return fail();
   const parts = await Promise.all(nodes.map(async (node, i) => {
     const fragment = fragments[i];
@@ -25,5 +38,5 @@ export async function readCurrentSelf(persona: Entity, signal: AbortSignal) {
   }));
   const character = parts.map(p => p.content).join('\n\n');
   if (character !== d.character) return fail();
-  return { revision: model.revision as number, character, parts };
+  return { revision: model.revision as number, character, parts, files: false };
 }

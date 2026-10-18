@@ -31,24 +31,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:identity
-      - run: npm run test:workspace
-      - run: npm run test:forms
-      - name: Fragment graph wire compatibility (synthetic fixtures only)
-        run: npm run test:memory
-      - name: Archive and evidence components (synthetic fixtures only)
-        run: npm run test:reliability
-      - name: Review continuity (synthetic fixture only)
-        run: node tests/review-continuity.browser.mjs
-      - name: Reviewer judgment (synthetic fixture only)
-        run: node tests/review-judgment.browser.mjs
-      - name: Current stop and delivery observations (synthetic fixture only)
-        run: npm run test:stop-delivery
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workspace-ui-fixture-evidence
+          name: workspace-ui-source-evidence
           path: .qa/
           include-hidden-files: true

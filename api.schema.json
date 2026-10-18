@@ -4226,7 +4226,61 @@
             "additionalProperties": false
           },
           {
-            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision.",
+            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "file.search"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "$ref": "#/$defs/Search"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "query"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "file.read"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "$ref": "#/$defs/VersionRef"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reference"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Atomically author learning and select the next context. Does not change authority for actions in the current decision.",
             "type": "object",
             "properties": {
               "kind": {
@@ -5223,7 +5277,7 @@
                     "type": "string"
                   },
                   "outcome": {
-                    "$ref": "#/$defs/Outcome2"
+                    "$ref": "#/$defs/Outcome3"
                   },
                   "evidence": {
                     "type": "string"
@@ -6477,9 +6531,80 @@
           }
         ]
       },
+      "Search": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "$ref": "#/$defs/Role"
+          },
+          "mode": {
+            "$ref": "#/$defs/MatchMode"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SearchField"
+            }
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "after": {
+            "description": "Live record-row cursor, not an exhaustive or snapshot-bound traversal.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "mode",
+          "pattern",
+          "fields",
+          "case_sensitive",
+          "after",
+          "limit"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "characteristic",
+          "supporting"
+        ]
+      },
+      "MatchMode": {
+        "type": "string",
+        "enum": [
+          "listing",
+          "literal",
+          "regex"
+        ]
+      },
+      "SearchField": {
+        "type": "string",
+        "enum": [
+          "path",
+          "content",
+          "cues"
+        ]
+      },
       "Continuity": {
         "type": "object",
         "properties": {
+          "files": {
+            "description": "Required primary-authored maintenance and next-context choices for both scopes.",
+            "$ref": "#/$defs/Plan"
+          },
           "intent": {
             "description": "Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.",
             "anyOf": [
@@ -6492,14 +6617,6 @@
             ],
             "default": null
           },
-          "learning_resolutions": {
-            "description": "Resolve and remove prior pending opportunities. An empty array keeps them pending; omitted opportunity IDs stay pending. retain/revise/organize require corresponding committed changes; no_change dismisses with a reason. To update a pending cue without resolving it, use deferred with its same ID.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/LearningResolution"
-            },
-            "default": []
-          },
           "next": {
             "description": "Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.",
             "$ref": "#/$defs/NextDecision"
@@ -6507,51 +6624,6 @@
           "focus": {
             "description": "Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.",
             "type": "string"
-          },
-          "disposition": {
-            "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
-            "$ref": "#/$defs/LearningDisposition"
-          },
-          "change_reason": {
-            "description": "Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.",
-            "type": "string"
-          },
-          "deferred": {
-            "description": "Add or update pending opportunities without resolving them. Reuse the supplied pending ID to update a cue; use null or omit the ID when adding a cue. Omission preserves earlier opportunities. Use learning_resolutions only to resolve and remove an opportunity.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/DeferredLearning"
-            },
-            "default": []
-          },
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Change"
-            }
-          },
-          "memory": {
-            "description": "Null preserves the current graph selection and recall delegation. An object replaces them.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Selection2"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "records": {
-            "description": "Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "default": null
           },
           "actions": {
             "description": "Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.",
@@ -6583,11 +6655,203 @@
         },
         "additionalProperties": false,
         "required": [
+          "files",
           "next",
-          "focus",
+          "focus"
+        ]
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "maintenance": {
+            "$ref": "#/$defs/Maintenance"
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Edit"
+            }
+          },
+          "current_account": {
+            "description": "One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.",
+            "$ref": "#/$defs/Selection2"
+          },
+          "next_context": {
+            "$ref": "#/$defs/NextContext"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "maintenance",
+          "edits",
+          "current_account",
+          "next_context"
+        ]
+      },
+      "Maintenance": {
+        "type": "object",
+        "properties": {
+          "fragments": {
+            "$ref": "#/$defs/Outcome2"
+          },
+          "assets": {
+            "$ref": "#/$defs/Outcome2"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "fragments",
+          "assets"
+        ]
+      },
+      "Outcome2": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "$ref": "#/$defs/Disposition"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "concern": {
+            "description": "For blocked/deferred concerns, identify what is affected, its missing prerequisite,\ndependent work, and an existing opportunity or honest continuation gap. Empty for no concern.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
           "disposition",
-          "change_reason",
-          "changes"
+          "reason",
+          "concern"
+        ]
+      },
+      "Disposition": {
+        "type": "string",
+        "enum": [
+          "change",
+          "no_change",
+          "blocked",
+          "defer"
+        ]
+      },
+      "Edit": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/$defs/EditKind"
+          },
+          "role": {
+            "$ref": "#/$defs/Role"
+          },
+          "path": {
+            "type": "string"
+          },
+          "base": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "description": "Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search_cues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            }
+          },
+          "required": {
+            "description": "Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "handle",
+          "operation",
+          "role",
+          "path",
+          "search_cues",
+          "sources",
+          "required"
+        ]
+      },
+      "EditKind": {
+        "type": "string",
+        "enum": [
+          "create",
+          "revise",
+          "retire"
+        ]
+      },
+      "Selection2": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "$ref": "#/$defs/Choice"
+          },
+          "references": {
+            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "disposition",
+          "references",
+          "reason"
+        ]
+      },
+      "Choice": {
+        "type": "string",
+        "enum": [
+          "preserve",
+          "clear",
+          "replace",
+          "blocked"
+        ]
+      },
+      "NextContext": {
+        "type": "object",
+        "properties": {
+          "fragments": {
+            "$ref": "#/$defs/Selection2"
+          },
+          "assets": {
+            "$ref": "#/$defs/Selection2"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "fragments",
+          "assets"
         ]
       },
       "Intent": {
@@ -6626,648 +6890,11 @@
           "collaboration"
         ]
       },
-      "LearningResolution": {
-        "description": "retain requires a committed new fragment; revise requires a committed fragment revision; organize requires a committed graph-only change. no_change dismisses the opportunity with a reason. defer is not a resolution; keep the cue pending by omitting its resolution or updating it through deferred.",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "disposition": {
-            "$ref": "#/$defs/LearningResolutionDisposition"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "disposition",
-          "reason"
-        ]
-      },
-      "LearningResolutionDisposition": {
-        "type": "string",
-        "enum": [
-          "retain",
-          "revise",
-          "organize",
-          "no_change"
-        ]
-      },
       "NextDecision": {
         "type": "string",
         "enum": [
           "continue",
           "wait"
-        ]
-      },
-      "LearningDisposition": {
-        "type": "string",
-        "enum": [
-          "retain",
-          "revise",
-          "organize",
-          "no_change",
-          "defer"
-        ]
-      },
-      "DeferredLearning": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "description": "Reuse the supplied pending opportunity ID to update that cue without resolving it; use null or omit the ID when adding a cue.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "cue": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "reconsider_when": {
-            "type": "string"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "cue",
-          "reason",
-          "reconsider_when"
-        ]
-      },
-      "Change": {
-        "type": "object",
-        "properties": {
-          "handle": {
-            "description": "Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.",
-            "type": "string",
-            "pattern": "^[A-Za-z0-9_-]{1,48}$"
-          },
-          "node": {
-            "description": "Exact node version to revise/reorganize/retire; null creates a node.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/VersionRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "draft": {
-            "description": "Your new prompt part, or null to keep this node's current immutable fragment.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/FragmentDraft"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "related": {
-            "description": "Replace directed associations to other nodes. Use IDs or \"$rule\" for local handle \"rule\"; cycles are valid and links do not select content.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "connections": {
-            "description": "Replace authored conditions. Null preserves them on organization-only edits.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/$defs/ConnectionDraft"
-            },
-            "default": null
-          },
-          "retire": {
-            "type": "boolean"
-          },
-          "locator": {
-            "description": "Replace the optional retrieval utility; null removes it. Versioned with this node.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Locator"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "handle",
-          "related",
-          "retire"
-        ]
-      },
-      "ConnectionDraft": {
-        "type": "object",
-        "properties": {
-          "target": {
-            "description": "Received node ID, @memory alias, or a $handle in this transaction.",
-            "type": "string"
-          },
-          "explanation": {
-            "type": "string"
-          },
-          "condition": {
-            "$ref": "#/$defs/Condition"
-          },
-          "relation": {
-            "$ref": "#/$defs/Relation"
-          },
-          "treatment": {
-            "$ref": "#/$defs/Treatment"
-          },
-          "work": {
-            "description": "Null permits any work in which the source is independently readable.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "expires": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "target",
-          "explanation",
-          "condition",
-          "relation",
-          "treatment"
-        ]
-      },
-      "Condition": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "always"
-              }
-            },
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "work"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "sender"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "reference": {
-                "$ref": "#/$defs/VersionRef"
-              },
-              "kind": {
-                "type": "string",
-                "const": "received"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "reference"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "situation": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "semantic"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "situation"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "conditions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/Predicate"
-                }
-              },
-              "kind": {
-                "type": "string",
-                "const": "all"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "conditions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "conditions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/Predicate"
-                }
-              },
-              "kind": {
-                "type": "string",
-                "const": "any"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "conditions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "condition": {
-                "$ref": "#/$defs/Predicate"
-              },
-              "kind": {
-                "type": "string",
-                "const": "not"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "condition"
-            ]
-          }
-        ]
-      },
-      "Predicate": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "always"
-              }
-            },
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "work"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "sender"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "reference": {
-                "$ref": "#/$defs/VersionRef"
-              },
-              "kind": {
-                "type": "string",
-                "const": "received"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "reference"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "situation": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "semantic"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "situation"
-            ]
-          }
-        ]
-      },
-      "Relation": {
-        "type": "string",
-        "enum": [
-          "association",
-          "correction",
-          "prerequisite",
-          "contradiction"
-        ]
-      },
-      "Treatment": {
-        "type": "string",
-        "enum": [
-          "preview",
-          "full"
-        ]
-      },
-      "Locator": {
-        "type": "object",
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "script": {
-            "description": "Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.",
-            "type": "string"
-          },
-          "parameters": {
-            "description": "Exact required string arguments chosen by the calling persona.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Parameter"
-            }
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "description",
-          "script",
-          "parameters"
-        ]
-      },
-      "Parameter": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "name",
-          "description"
-        ]
-      },
-      "Selection2": {
-        "type": "object",
-        "properties": {
-          "active": {
-            "description": "Replace the next call's full prompt parts with stable node IDs or local references: handle \"rule\" is referenced as \"$rule\".",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "focus": {
-            "description": "Optional graph focus for the next decision. Without focus, query or after, indexed discovery supplies task-relevant previews.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "after": {
-            "description": "Visible offset for an explicit graph page; zero requests the first page, including all owned nodes when focus/query are null.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0
-          },
-          "query": {
-            "description": "Graph-page search requires every word in the same title/description (AND), not full text. Null query with after:0 browses owned cards. Also cues indexed discovery; neither route selects full text.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "preview_limit": {
-            "description": "Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0,
-            "maximum": 24,
-            "default": null
-          },
-          "exploration": {
-            "description": "Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/PreviewExploration"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "current_self": {
-            "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "maxItems": 8,
-            "default": null
-          },
-          "delegation": {
-            "description": "Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Delegation"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "active"
-        ]
-      },
-      "PreviewExploration": {
-        "type": "object",
-        "properties": {
-          "seed": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "max_previews": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 1,
-            "maximum": 2
-          },
-          "max_bytes": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 256,
-            "maximum": 4096
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "seed",
-          "max_previews",
-          "max_bytes"
-        ]
-      },
-      "Delegation": {
-        "description": "Your bounded retrieval choice: choose the expiry and size limits yourself.\nInvitations establish participation; they do not supply hidden delegation\nparameters. Current processing/export permission and funding are separate\nruntime checks. This choice cannot extend those permissions or resources.",
-        "type": "object",
-        "properties": {
-          "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.\nReceived node cards suffice; reading their full fragments first is not required.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/VersionRef"
-            },
-            "minItems": 0,
-            "maxItems": 16
-          },
-          "direct_search": {
-            "description": "Explicitly permit relevance-only selection from indexed owned fragments,\nusing only the selector's approved need/observations/focus. Off by default.\nNeeds semantic:true; sources may be empty. Preview suspension is separate.",
-            "type": "boolean",
-            "default": false
-          },
-          "expires": {
-            "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",
-            "type": "string"
-          },
-          "max_fragments": {
-            "description": "Your maximum full-fragment count, including required corrections and\nprerequisites. Whole required bundles must fit; they are never truncated.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "maximum": 32
-          },
-          "max_bytes": {
-            "description": "Your maximum serialized full-fragment bytes in this preparation.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "maximum": 65536
-          },
-          "semantic": {
-            "description": "Permit the configured selector to assess unknown semantic conditions.",
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "sources",
-          "expires",
-          "max_fragments",
-          "max_bytes",
-          "semantic"
         ]
       },
       "SubmissionDocument": {
@@ -7513,7 +7140,7 @@
           "runtime"
         ]
       },
-      "Outcome2": {
+      "Outcome3": {
         "type": "string",
         "enum": [
           "succeeded",
@@ -9312,8 +8939,16 @@
       "Read an exact immutable document version using document.write result.id, never its document_group or action request ID."
     ],
     [
+      "file.search",
+      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection."
+    ],
+    [
+      "file.read",
+      "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes."
+    ],
+    [
       "context.advance",
-      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision."
+      "Atomically author learning and select the next context. Does not change authority for actions in the current decision."
     ],
     [
       "context.select",
@@ -13360,7 +12995,61 @@
         "additionalProperties": false
       },
       {
-        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nAtomically author learning and select the next context. Does not change authority for actions in the current decision.",
+        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "file.search"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "$ref": "#/$defs/Search"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "query"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "file.read"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/VersionRef"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reference"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Atomically author learning and select the next context. Does not change authority for actions in the current decision.",
         "type": "object",
         "properties": {
           "kind": {
@@ -14357,7 +14046,7 @@
                 "type": "string"
               },
               "outcome": {
-                "$ref": "#/$defs/Outcome2"
+                "$ref": "#/$defs/Outcome3"
               },
               "evidence": {
                 "type": "string"
@@ -15629,9 +15318,80 @@
           }
         ]
       },
+      "Search": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "$ref": "#/$defs/Role"
+          },
+          "mode": {
+            "$ref": "#/$defs/MatchMode"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SearchField"
+            }
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "after": {
+            "description": "Live record-row cursor, not an exhaustive or snapshot-bound traversal.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "mode",
+          "pattern",
+          "fields",
+          "case_sensitive",
+          "after",
+          "limit"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "characteristic",
+          "supporting"
+        ]
+      },
+      "MatchMode": {
+        "type": "string",
+        "enum": [
+          "listing",
+          "literal",
+          "regex"
+        ]
+      },
+      "SearchField": {
+        "type": "string",
+        "enum": [
+          "path",
+          "content",
+          "cues"
+        ]
+      },
       "Continuity": {
         "type": "object",
         "properties": {
+          "files": {
+            "description": "Required primary-authored maintenance and next-context choices for both scopes.",
+            "$ref": "#/$defs/Plan"
+          },
           "intent": {
             "description": "Update your working intention when it changes. Null preserves it; this is not an adopted scope change or peer assignment.",
             "anyOf": [
@@ -15644,14 +15404,6 @@
             ],
             "default": null
           },
-          "learning_resolutions": {
-            "description": "Resolve and remove prior pending opportunities. An empty array keeps them pending; omitted opportunity IDs stay pending. retain/revise/organize require corresponding committed changes; no_change dismisses with a reason. To update a pending cue without resolving it, use deferred with its same ID.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/LearningResolution"
-            },
-            "default": []
-          },
           "next": {
             "description": "Explicit work-scheduling choice, independent of the learning disposition. Continue requests another funded decision. Wait yields after all synchronous actions succeed, including empty batches. Failures and execution barriers require fresh observation; explicit wait ends the batch. Omission is invalid, never an authored wait or permission to spend.",
             "$ref": "#/$defs/NextDecision"
@@ -15659,51 +15411,6 @@
           "focus": {
             "description": "Brief next useful outcome, or why yielding is appropriate and what remains. This is not proof of completion or a scheduled trigger.",
             "type": "string"
-          },
-          "disposition": {
-            "description": "Your intention. The recorded outcome is derived from committed changes; this label cannot manufacture learning or invalidate useful changes.",
-            "$ref": "#/$defs/LearningDisposition"
-          },
-          "change_reason": {
-            "description": "Why you changed or preserved the graph. This explanation is not a memory; put reusable knowledge in changes[].draft.",
-            "type": "string"
-          },
-          "deferred": {
-            "description": "Add or update pending opportunities without resolving them. Reuse the supplied pending ID to update a cue; use null or omit the ID when adding a cue. Omission preserves earlier opportunities. Use learning_resolutions only to resolve and remove an opportunity.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/DeferredLearning"
-            },
-            "default": []
-          },
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Change"
-            }
-          },
-          "memory": {
-            "description": "Null preserves the current graph selection and recall delegation. An object replaces them.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Selection2"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "records": {
-            "description": "Null preserves ordinary record selection; an array replaces it. Use current @record aliases, never fragment IDs.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "default": null
           },
           "actions": {
             "description": "Null preserves received receipt selection; an array replaces it using @action aliases or exact action IDs.",
@@ -15735,11 +15442,203 @@
         },
         "additionalProperties": false,
         "required": [
+          "files",
           "next",
-          "focus",
+          "focus"
+        ]
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "maintenance": {
+            "$ref": "#/$defs/Maintenance"
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Edit"
+            }
+          },
+          "current_account": {
+            "description": "One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.",
+            "$ref": "#/$defs/Selection2"
+          },
+          "next_context": {
+            "$ref": "#/$defs/NextContext"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "maintenance",
+          "edits",
+          "current_account",
+          "next_context"
+        ]
+      },
+      "Maintenance": {
+        "type": "object",
+        "properties": {
+          "fragments": {
+            "$ref": "#/$defs/Outcome2"
+          },
+          "assets": {
+            "$ref": "#/$defs/Outcome2"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "fragments",
+          "assets"
+        ]
+      },
+      "Outcome2": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "$ref": "#/$defs/Disposition"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "concern": {
+            "description": "For blocked/deferred concerns, identify what is affected, its missing prerequisite,\ndependent work, and an existing opportunity or honest continuation gap. Empty for no concern.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
           "disposition",
-          "change_reason",
-          "changes"
+          "reason",
+          "concern"
+        ]
+      },
+      "Disposition": {
+        "type": "string",
+        "enum": [
+          "change",
+          "no_change",
+          "blocked",
+          "defer"
+        ]
+      },
+      "Edit": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/$defs/EditKind"
+          },
+          "role": {
+            "$ref": "#/$defs/Role"
+          },
+          "path": {
+            "type": "string"
+          },
+          "base": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "description": "Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "search_cues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            }
+          },
+          "required": {
+            "description": "Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "handle",
+          "operation",
+          "role",
+          "path",
+          "search_cues",
+          "sources",
+          "required"
+        ]
+      },
+      "EditKind": {
+        "type": "string",
+        "enum": [
+          "create",
+          "revise",
+          "retire"
+        ]
+      },
+      "Selection2": {
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "$ref": "#/$defs/Choice"
+          },
+          "references": {
+            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VersionRef"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "disposition",
+          "references",
+          "reason"
+        ]
+      },
+      "Choice": {
+        "type": "string",
+        "enum": [
+          "preserve",
+          "clear",
+          "replace",
+          "blocked"
+        ]
+      },
+      "NextContext": {
+        "type": "object",
+        "properties": {
+          "fragments": {
+            "$ref": "#/$defs/Selection2"
+          },
+          "assets": {
+            "$ref": "#/$defs/Selection2"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "fragments",
+          "assets"
         ]
       },
       "Intent": {
@@ -15778,648 +15677,11 @@
           "collaboration"
         ]
       },
-      "LearningResolution": {
-        "description": "retain requires a committed new fragment; revise requires a committed fragment revision; organize requires a committed graph-only change. no_change dismisses the opportunity with a reason. defer is not a resolution; keep the cue pending by omitting its resolution or updating it through deferred.",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "disposition": {
-            "$ref": "#/$defs/LearningResolutionDisposition"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "disposition",
-          "reason"
-        ]
-      },
-      "LearningResolutionDisposition": {
-        "type": "string",
-        "enum": [
-          "retain",
-          "revise",
-          "organize",
-          "no_change"
-        ]
-      },
       "NextDecision": {
         "type": "string",
         "enum": [
           "continue",
           "wait"
-        ]
-      },
-      "LearningDisposition": {
-        "type": "string",
-        "enum": [
-          "retain",
-          "revise",
-          "organize",
-          "no_change",
-          "defer"
-        ]
-      },
-      "DeferredLearning": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "description": "Reuse the supplied pending opportunity ID to update that cue without resolving it; use null or omit the ID when adding a cue.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "cue": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "reconsider_when": {
-            "type": "string"
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/EvidenceRef"
-            },
-            "default": []
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "cue",
-          "reason",
-          "reconsider_when"
-        ]
-      },
-      "Change": {
-        "type": "object",
-        "properties": {
-          "handle": {
-            "description": "Unique local name (letters, digits, underscores or hyphens), referenced as $name in this transaction.",
-            "type": "string",
-            "pattern": "^[A-Za-z0-9_-]{1,48}$"
-          },
-          "node": {
-            "description": "Exact node version to revise/reorganize/retire; null creates a node.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/VersionRef"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "draft": {
-            "description": "Your new prompt part, or null to keep this node's current immutable fragment.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/FragmentDraft"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "related": {
-            "description": "Replace directed associations to other nodes. Use IDs or \"$rule\" for local handle \"rule\"; cycles are valid and links do not select content.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "connections": {
-            "description": "Replace authored conditions. Null preserves them on organization-only edits.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/$defs/ConnectionDraft"
-            },
-            "default": null
-          },
-          "retire": {
-            "type": "boolean"
-          },
-          "locator": {
-            "description": "Replace the optional retrieval utility; null removes it. Versioned with this node.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Locator"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "handle",
-          "related",
-          "retire"
-        ]
-      },
-      "ConnectionDraft": {
-        "type": "object",
-        "properties": {
-          "target": {
-            "description": "Received node ID, @memory alias, or a $handle in this transaction.",
-            "type": "string"
-          },
-          "explanation": {
-            "type": "string"
-          },
-          "condition": {
-            "$ref": "#/$defs/Condition"
-          },
-          "relation": {
-            "$ref": "#/$defs/Relation"
-          },
-          "treatment": {
-            "$ref": "#/$defs/Treatment"
-          },
-          "work": {
-            "description": "Null permits any work in which the source is independently readable.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "expires": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "target",
-          "explanation",
-          "condition",
-          "relation",
-          "treatment"
-        ]
-      },
-      "Condition": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "always"
-              }
-            },
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "work"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "sender"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "reference": {
-                "$ref": "#/$defs/VersionRef"
-              },
-              "kind": {
-                "type": "string",
-                "const": "received"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "reference"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "situation": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "semantic"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "situation"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "conditions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/Predicate"
-                }
-              },
-              "kind": {
-                "type": "string",
-                "const": "all"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "conditions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "conditions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/Predicate"
-                }
-              },
-              "kind": {
-                "type": "string",
-                "const": "any"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "conditions"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "condition": {
-                "$ref": "#/$defs/Predicate"
-              },
-              "kind": {
-                "type": "string",
-                "const": "not"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "condition"
-            ]
-          }
-        ]
-      },
-      "Predicate": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "kind": {
-                "type": "string",
-                "const": "always"
-              }
-            },
-            "required": [
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "work"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "sender"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "id"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "reference": {
-                "$ref": "#/$defs/VersionRef"
-              },
-              "kind": {
-                "type": "string",
-                "const": "received"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "reference"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "situation": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "const": "semantic"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "kind",
-              "situation"
-            ]
-          }
-        ]
-      },
-      "Relation": {
-        "type": "string",
-        "enum": [
-          "association",
-          "correction",
-          "prerequisite",
-          "contradiction"
-        ]
-      },
-      "Treatment": {
-        "type": "string",
-        "enum": [
-          "preview",
-          "full"
-        ]
-      },
-      "Locator": {
-        "type": "object",
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "script": {
-            "description": "Python source defining locate(arguments, nodes). Returns only existing node version references; no generated fragment content.",
-            "type": "string"
-          },
-          "parameters": {
-            "description": "Exact required string arguments chosen by the calling persona.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/Parameter"
-            }
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "description",
-          "script",
-          "parameters"
-        ]
-      },
-      "Parameter": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "name",
-          "description"
-        ]
-      },
-      "Selection2": {
-        "type": "object",
-        "properties": {
-          "active": {
-            "description": "Replace the next call's full prompt parts with stable node IDs or local references: handle \"rule\" is referenced as \"$rule\".",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "focus": {
-            "description": "Optional graph focus for the next decision. Without focus, query or after, indexed discovery supplies task-relevant previews.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "after": {
-            "description": "Visible offset for an explicit graph page; zero requests the first page, including all owned nodes when focus/query are null.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0
-          },
-          "query": {
-            "description": "Graph-page search requires every word in the same title/description (AND), not full text. Null query with after:0 browses owned cards. Also cues indexed discovery; neither route selects full text.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "preview_limit": {
-            "description": "Maximum automatic graph-page and recall previews per view (0–24; null uses default bounds). Zero suspends previews, not explicit browsing or full selected/required fragments.",
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "uint64",
-            "minimum": 0,
-            "maximum": 24,
-            "default": null
-          },
-          "exploration": {
-            "description": "Optional seeded discovery of underexposed eligible cards. Never selects full text or displaces required context. Null disables it.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/PreviewExploration"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          },
-          "current_self": {
-            "description": "Null preserves the current self-model; a nonempty list designates exact ordinary self-fragments.",
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "maxItems": 8,
-            "default": null
-          },
-          "delegation": {
-            "description": "Optional bounded recall authority from received node cards; may be authored during invitation response for use after acceptance. Null disables it.",
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Delegation"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "active"
-        ]
-      },
-      "PreviewExploration": {
-        "type": "object",
-        "properties": {
-          "seed": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "max_previews": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 1,
-            "maximum": 2
-          },
-          "max_bytes": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 256,
-            "maximum": 4096
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "seed",
-          "max_previews",
-          "max_bytes"
-        ]
-      },
-      "Delegation": {
-        "description": "Your bounded retrieval choice: choose the expiry and size limits yourself.\nInvitations establish participation; they do not supply hidden delegation\nparameters. Current processing/export permission and funding are separate\nruntime checks. This choice cannot extend those permissions or resources.",
-        "type": "object",
-        "properties": {
-          "sources": {
-            "description": "Exact received source nodes whose conditional connections may select full text.\nReceived node cards suffice; reading their full fragments first is not required.\nFor a source created OR edited in this transaction, use its $handle with\nrevision 0 to bind the committed version, not its old ID or @memory alias.",
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/VersionRef"
-            },
-            "minItems": 0,
-            "maxItems": 16
-          },
-          "direct_search": {
-            "description": "Explicitly permit relevance-only selection from indexed owned fragments,\nusing only the selector's approved need/observations/focus. Off by default.\nNeeds semantic:true; sources may be empty. Preview suspension is separate.",
-            "type": "boolean",
-            "default": false
-          },
-          "expires": {
-            "description": "Your chosen future RFC3339 expiry for this recall choice. Permission and\nfunding expiration still apply independently.",
-            "type": "string"
-          },
-          "max_fragments": {
-            "description": "Your maximum full-fragment count, including required corrections and\nprerequisites. Whole required bundles must fit; they are never truncated.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "maximum": 32
-          },
-          "max_bytes": {
-            "description": "Your maximum serialized full-fragment bytes in this preparation.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "maximum": 65536
-          },
-          "semantic": {
-            "description": "Permit the configured selector to assess unknown semantic conditions.",
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "sources",
-          "expires",
-          "max_fragments",
-          "max_bytes",
-          "semantic"
         ]
       },
       "SubmissionDocument": {
@@ -16665,7 +15927,7 @@
           "runtime"
         ]
       },
-      "Outcome2": {
+      "Outcome3": {
         "type": "string",
         "enum": [
           "succeeded",

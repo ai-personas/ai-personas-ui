@@ -4,7 +4,7 @@ import { timestamp } from './identity';
 
 /** Observed component state, separate from outcome quality or future admission. */
 export default function WorkReadiness({ work, open }: { work: string; open: (id: string) => void }) {
-  const { value, error, loading, retry } = useResource<Record<string, unknown>>(`/work/${work}/readiness`, e => ['run', 'call', 'persona', 'recall_policy', 'information_policy', 'work', 'resource_root', 'budget_charge', 'memory_node', 'action'].includes(e.kind));
+  const { value, error, loading, retry } = useResource<Record<string, unknown>>(`/work/${work}/readiness`, e => ['run', 'call', 'persona', 'recall_policy', 'information_policy', 'work', 'resource_root', 'budget_charge', 'fragment', 'persona_asset', 'action'].includes(e.kind));
   const people = Array.isArray(value?.participants) ? value.participants.map(fields) : [];
   const budget = fields(value?.jev_budget), funding = fields(value?.funding), tokens = fields(funding.observed_tokens);
   const workUsage = fields(value?.work_usage), workTokens = fields(workUsage.observed_tokens);
@@ -19,36 +19,23 @@ export default function WorkReadiness({ work, open }: { work: string; open: (id:
       <p>JEV node limit: <strong>{amount(budget.limit_micro_usd)}</strong> · Accounted: {amount(budget.accounted_micro_usd)} · Remaining: {amount(budget.remaining_micro_usd)}</p>
       {Boolean(budget.error) && <p role="alert">JEV spending could not be verified.</p>}
       <div class="work-records">{people.map(p => {
-        const latest = fields(p.last_selector), selected = fields(latest.result), delegation = fields(p.delegation);
-        const diagnostic = fields(selected.diagnostic), quoted = fields(diagnostic.quoted_tokens), approved = fields(diagnostic.approved_tokens);
-        const counts = fields(selected.counts), completion = fields(selected.completion);
+        const selection = fields(p.file_selection), maintenance = fields(p.maintenance);
+        const fragments = Array.isArray(selection.fragments) ? selection.fragments.length : 0;
+        const assets = Array.isArray(selection.assets) ? selection.assets.length : 0;
         const activity = fields(p.activity);
         const activityLabel = activity.state === 'model_call' ? `Model call in progress${p.status && p.status !== 'running' ? ` · participation ${text(p.status)}` : ''}`
           : activity.state === 'waiting_capacity' ? 'Waiting for shared capacity · no model call active'
           : activity.state === 'between_calls' ? 'Working between model calls'
           : text(activity.state, text(p.status, 'Activity not reported')).replaceAll('_', ' ');
-        const selector = p.selector_policy === 'enabled' ? (delegation.semantic === true && p.delegation_current === true ? 'Enabled; current persona semantic delegation' : delegation.semantic === true ? 'Enabled; persona delegation expired or unverified' : 'Enabled; no current semantic delegation') : p.selector_policy === 'expired' ? 'Expired for this work' : 'Disabled for this work';
         return <article class="work-record" key={text(p.run)}>
           <h3>{text(p.name, 'Unnamed persona')}</h3>
           <p>{text(p.model, 'No model recorded')} · {p.model_discovered ? 'Model discovered' : p.provider_configured ? 'Model availability not confirmed' : 'Provider unavailable'} · {activityLabel}</p>
           <p>Character: {p.character_ready ? 'Ready' : text(p.character_initialization, 'Pending')} · Avatar: {text(p.avatar, p.character_ready ? 'Not requested' : 'Waiting for character').replaceAll('_', ' ')}</p>
           <p>{typeof p.self_fragments === 'number' ? p.self_fragments : 'Unknown'} current self fragments · {typeof p.retained_fragments === 'number' ? p.retained_fragments : 'Unknown'} retained fragments</p>
-          <p>Recall selector: <strong>{selector}</strong></p>
-          {delegation.direct_search === true && <p>Recall scope includes indexed owned fragments. Processing permission, expiry and limits still apply.</p>}
-          {typeof counts.match === 'number' && <p>Latest selector assessment: {String(counts.match)} match · {String(counts.no_match)} no match · {String(counts.unknown)} unknown. Matches recommend recall candidates; the persona can also select fragments directly.</p>}
-          {completion.assessment_finished === true && completion.followup_pending === false && <p>Assessment finished. No follow-up result is pending; unknown judgments are completed assessments.</p>}
-          {typeof completion.full_fragments_added === 'number' && typeof completion.bundle_omissions === 'number' && <p>Recall added {completion.full_fragments_added} full fragments · {completion.bundle_omissions} required bundles omitted. Other selected fragments are counted separately.</p>}
-          {typeof completion.remaining_total_attempts === 'number' && <p>{completion.remaining_total_attempts} new selector attempts remain under this policy. Exact cached input may still be reused.{completion.remaining_total_attempts === 0 && completion.fallback === 'block' && ' An uncached assessment blocks further model calls until the persona changes its recall choice or the policy changes.'}</p>}
-          {typeof selected.omitted_candidates === 'number' && selected.omitted_candidates > 0 && <p>{selected.omitted_candidates} recall candidates were not assessed because of the candidate count or request size limit. No follow-up selector call is pending for them.</p>}
-          {p.selector_policy === 'enabled' && <p>Original task source: {p.work_export_allowed === true ? 'May be exported; processing permission also required' : 'Export not permitted; excluded from selector context'}</p>}
-          <p>Last observed recall: {text(selected.status, 'No decision recorded').replaceAll('_', ' ')}{isRecordID(latest.call) && <> · <button class="text-button" onClick={() => open(latest.call as string)}>Inspect recall receipt</button></>}</p>
-          {selected.status === 'deterministic_fallback' && diagnostic.stage === 'exposure_check' && <p class="notice">Selector was not called: deployment needs {String(quoted.input)} input + {String(quoted.output)} output token reservations; this permission allows {String(approved.input)} + {String(approved.output)}. Update recall settings to permit an attempt.</p>}
-          {diagnostic.stage === 'primary_quote' && <p class="notice">Selector was not called because the assigned persona model could not prepare a bounded decision. Inspect its model availability and context limits.</p>}
-          {diagnostic.stage === 'primary_headroom' && <p class="notice">Selector was not called because its reservation would leave insufficient allowance for the persona decision with the candidate fragments and their required corrections and prerequisites. Existing spending and finishing reserves remain accounted.</p>}
-          {selected.status === 'not_adopted' && <p class="notice">The assessment is retained, but its optional fragment additions could not fit the current persona context or allowance. Deterministic recall remains available. Recorded spending is retained; no further selector call is pending.</p>}
-          {isRecordID(diagnostic.preparation_call ?? selected.assessment_call) && <button class="text-button" onClick={() => open(String(diagnostic.preparation_call ?? selected.assessment_call))}>Inspect selector attempt</button>}
+          <p>Next context: {fragments} characteristic files · {assets} supporting resources. The persona chooses the material it needs.</p>
+          <p>Fragment maintenance: {text(fields(maintenance.fragments).disposition, 'No recorded outcome')} · Asset maintenance: {text(fields(maintenance.assets).disposition, 'No recorded outcome')}</p>
           <p>{typeof p.publications === 'number' ? p.publications : 'Unknown'} published versions · {typeof p.submissions === 'number' ? p.submissions : 'Unknown'} submissions. Publication and activity do not establish completion.</p>
-          {isRecordID(p.run) && <button class="text-button" onClick={() => open(p.run as string)}>Participation and recall settings</button>}
+          {isRecordID(p.run) && <button class="text-button" onClick={() => open(p.run as string)}>Participation and context</button>}
         </article>;
       })}</div>
       {!people.length && <p>No participations recorded.</p>}
