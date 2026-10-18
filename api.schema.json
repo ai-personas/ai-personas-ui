@@ -7002,13 +7002,28 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "description": "Exact supplied concern ID from this scope of run.data.file_maintenance_pending, not a file, feedback or action ID.",
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{32}$"
           },
           "disposition": {
+            "description": "Addressed means the concern was handled by this scope's proposed change or by exact received evidence supplied below. Dismissed records a reasoned decision not to pursue it. Neither resolves an applicability warning.",
             "$ref": "#/$defs/ResolutionKind"
           },
           "reason": {
-            "type": "string"
+            "description": "Nonempty authored explanation, at most 2048 UTF-8 bytes.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "evidence": {
+            "description": "Exact received records or settled owned receipts supporting this judgment, at most sixteen. Required for addressed without a new change in this scope; earlier accepted work can suffice, so do not make a redundant edit merely to close a concern. This records your judgment, not independent proof of adequacy.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            "maxItems": 16,
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -16237,13 +16252,28 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "description": "Exact supplied concern ID from this scope of run.data.file_maintenance_pending, not a file, feedback or action ID.",
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{32}$"
           },
           "disposition": {
+            "description": "Addressed means the concern was handled by this scope's proposed change or by exact received evidence supplied below. Dismissed records a reasoned decision not to pursue it. Neither resolves an applicability warning.",
             "$ref": "#/$defs/ResolutionKind"
           },
           "reason": {
-            "type": "string"
+            "description": "Nonempty authored explanation, at most 2048 UTF-8 bytes.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "evidence": {
+            "description": "Exact received records or settled owned receipts supporting this judgment, at most sixteen. Required for addressed without a new change in this scope; earlier accepted work can suffice, so do not make a redundant edit merely to close a concern. This records your judgment, not independent proof of adequacy.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            "maxItems": 16,
+            "default": []
           }
         },
         "additionalProperties": false,

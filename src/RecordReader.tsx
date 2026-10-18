@@ -192,6 +192,13 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'invitation': case 'membership': return <><p class="reader-byline">For <Person id={d.to || d.persona} open={open}/></p><Story value={d.preview || d.reason || d.note}/>{typeof d.orientation_calls_remaining === 'number' && <p>{d.orientation_calls_remaining} orientation attempts remaining. Joining and accepting responsibility are separate decisions.</p>}</>;
     case 'work_feedback': case 'feedback': return <><Story title="Feedback" value={d.message || d.text || draft.text || d.summary}/><Story title="Response" value={d.response || d.reason}/><RelatedItems title="Changes made" value={d.repair_refs} open={open}/></>;
     case 'work_notice': return <>{d.status === 'source_disposition_required' ? <><h3>Feedback needs a sharing decision</h3><p class="notice">A participant cannot read this feedback because its sources are private. The author needs to decide how to make the finding available. Its access restrictions and unresolved status still apply.</p>{isRecordID(d.blocked_participant) && <p>Waiting for access: <Person id={d.blocked_participant} open={open}/></p>}</> : <Story value={d.message}/>}<RelatedItems title="Related work record" value={d.subject} open={open}/></>;
+    case 'work_assembly': return <>
+      <p>This records an adopted candidate and its exact inputs. Review and acceptance are separate; the work's current state determines whether this candidate still applies.</p>
+      <RelatedItems title="Adopted scope" value={d.mandate} open={open}/>
+      <RelatedItems title="Candidate submission" value={d.submission} open={open}/>
+      <RelatedItems title="Exact candidate inputs" value={d.inputs} open={open}/>
+      <RelatedItems title="Governing assumptions" value={d.assumptions} open={open}/>
+    </>;
     case 'work_release': case 'release': return <><Story title="Released work" value={d.summary}/><Story title="Limitations" value={d.limitations || draft.limitations}/><FeedbackConditions value={d} open={open} historical/><RelatedItems title="Submitted work" value={d.submission} open={open}/></>;
     case 'resource_root': return <Story title="Purpose" value={d.reason}/>;
     default: return <>

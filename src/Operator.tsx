@@ -190,6 +190,7 @@ export function CurrentMandate({ id, open }: { id: string; open: (id: string) =>
   </>}</section>;
 }
 export function WorkState({ value, open }: { value: any; open: (id: string) => void }) {
+  const candidate = fields(value?.latest_candidate), assembly = fields(candidate.assembly), submission = fields(candidate.submission);
   return <section class="workspace-section" aria-label="Current obligations"><h2>Current obligations</h2>
     {!value && <p>No current scope projection was supplied. Inspect the exact work record.</p>}
     {value?.binding === 'not_adopted' && <p>No scope has been adopted. Use Amend task to record the required results.</p>}
@@ -198,6 +199,11 @@ export function WorkState({ value, open }: { value: any; open: (id: string) => v
       <ul>{value.coverage.outcomes.map((o: any) => <li key={o.key}><strong>{o.key}</strong> · {o.required ? 'Required' : 'Optional'} · {o.unowned ? 'No accepted owner' : 'Accepted owner recorded'} · Evidence: {o.evidence.replaceAll('_', ' ')} · Outside validation: {o.outside_validation.replaceAll('_', ' ')}</li>)}</ul>
       <p>{value.coverage.meaning}</p>
       <p>Scope review: {value.coverage.scope_review_current ? 'Current review recorded' : value.coverage.scope_review_required ? 'Required, not yet current' : 'Not required by this scope'}</p>
+      {isRecordID(assembly.id) ? <section class="reader-section"><h3>Adopted candidate</h3>
+        <p>{candidate.applicability === 'current' ? 'Current recorded candidate' : candidate.applicability === 'stale' ? 'This candidate needs another check against the current work' : 'Current applicability is not reported'}. Adoption is separate from review and acceptance.</p>
+        <button class="text-button" onClick={() => open(text(assembly.id))}>Inspect adopted candidate · revision {String(assembly.revision)}</button>
+        {isRecordID(submission.id) && <button class="text-button" onClick={() => open(text(submission.id))}>Inspect its submission · revision {String(submission.revision)}</button>}
+      </section> : <p>No adopted candidate is recorded.</p>}
       <p>Acceptance: {value.acceptance ? `${value.acceptance.disposition.replaceAll('_', ' ')} · ${value.acceptance.applicability}` : 'Not established'}</p>
       {value.acceptance?.release?.id && <button class="text-button" onClick={() => open(value.acceptance.release.id)}>Inspect exact release</button>}
       {value.blocking_feedback.length > 0 && <p>{value.blocking_feedback.length} unresolved blocking feedback records</p>}

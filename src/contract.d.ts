@@ -1271,7 +1271,6 @@ export type Role = "characteristic" | "supporting";
 export type MatchMode = "listing" | "literal" | "regex";
 export type SearchField = "path" | "content" | "cues" | "raw";
 export type Disposition = "change" | "no_change" | "blocked" | "defer";
-export type ResolutionKind = "addressed" | "dismissed";
 export type EditKind = "create" | "revise" | "retire";
 export type WarningChange =
   | {
@@ -1986,9 +1985,149 @@ export interface Outcome2 {
       ];
 }
 export interface Resolution {
+  /**
+   * Exact supplied concern ID from this scope of run.data.file_maintenance_pending, not a file, feedback or action ID.
+   */
   id: string;
-  disposition: ResolutionKind;
+  /**
+   * Addressed means the concern was handled by this scope's proposed change or by exact received evidence supplied below. Dismissed records a reasoned decision not to pursue it. Neither resolves an applicability warning.
+   */
+  disposition: "addressed" | "dismissed";
+  /**
+   * Nonempty authored explanation, at most 2048 UTF-8 bytes.
+   */
   reason: string;
+  /**
+   * Exact received records or settled owned receipts supporting this judgment, at most sixteen. Required for addressed without a new change in this scope; earlier accepted work can suffice, so do not make a redundant edit merely to close a concern. This records your judgment, not independent proof of adequacy.
+   *
+   * @maxItems 16
+   */
+  evidence?:
+    | []
+    | [EvidenceRef]
+    | [EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ];
 }
 export interface Edit {
   /**
