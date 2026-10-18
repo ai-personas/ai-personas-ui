@@ -577,6 +577,23 @@ export type Command =
       };
     }
   | {
+      kind: "operation.search";
+      args: {
+        /**
+         * Up to 16 whitespace-delimited literal words and 512 UTF-8 bytes. Every word must occur in the command name or description after Unicode lowercase conversion. Empty string lists the currently permitted registry; no regex or semantic ranking.
+         */
+        query: string;
+        /**
+         * Visible-match offset returned by this same query; null starts at zero. Live availability can change between pages. Maximum 4096.
+         */
+        after?: number | null;
+        /**
+         * Maximum whole description cards (1–12); null defaults to 8. A page has a 16 KiB result bound and consumes the shared navigation allowance. Search does not load the described contracts.
+         */
+        limit?: number | null;
+      };
+    }
+  | {
       kind: "operation.describe";
       args: {
         operation: string;
@@ -901,7 +918,7 @@ export type Command =
       kind: "context.select";
       args: {
         /**
-         * Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.
+         * Legacy operator record selection. Primary responses select exact characteristic and supporting revisions through continuity.files.next_context.
          */
         records: string[];
         /**
@@ -909,7 +926,7 @@ export type Command =
          */
         actions: string[];
         /**
-         * Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.
+         * Retained search cue. Null clears it; it dispatches no search and selects no results.
          */
         retrieval_query?: string | null;
       };
@@ -919,11 +936,11 @@ export type Command =
       args: {
         summary: string;
         /**
-         * An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.
+         * An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; selection-only changes belong in continuity.files.next_context and continuity.actions.
          */
         through: string;
         /**
-         * Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.
+         * Use [] to preserve this response's accepted file selection. Nonempty IDs must already belong to that accepted selection; they cannot add or drop files. Choose exact characteristic and supporting revisions through continuity.files.next_context before compaction.
          */
         records: string[];
         /**
@@ -931,7 +948,7 @@ export type Command =
          */
         actions: string[];
         /**
-         * Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.
+         * Retained search cue. Null clears it; no automatic retrieval follows. Choose an explicit file.search or operation.search when discovery is needed.
          */
         retrieval_query?: string | null;
       };

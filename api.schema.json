@@ -2882,7 +2882,56 @@
             "additionalProperties": false
           },
           {
-            "description": "Read the complete exact argument schema for one currently available operation.",
+            "description": "Find a bounded page of available command names and descriptions by literal words. Empty query lists names in lexical order. Search loads no contract, selects no files and grants no authority.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "operation.search"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "description": "Up to 16 whitespace-delimited literal words and 512 UTF-8 bytes. Every word must occur in the command name or description after Unicode lowercase conversion. Empty string lists the currently permitted registry; no regex or semantic ranking.",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "after": {
+                    "description": "Visible-match offset returned by this same query; null starts at zero. Live availability can change between pages. Maximum 4096.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0,
+                    "maximum": 4096
+                  },
+                  "limit": {
+                    "description": "Maximum whole description cards (1–12); null defaults to 8. A page has a 16 KiB result bound and consumes the shared navigation allowance. Search does not load the described contracts.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 1,
+                    "maximum": 12
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "query"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Read the complete exact argument schema for one known currently available operation; use operation.search when its name is unknown. A successful description loads that contract for a later decision, without granting authority.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4278,7 +4327,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+            "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4359,6 +4408,7 @@
             "additionalProperties": false
           },
           {
+            "description": "Legacy operator context selection. Primary responses use continuity.files.next_context and continuity.actions.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4369,7 +4419,7 @@
                 "type": "object",
                 "properties": {
                   "records": {
-                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
+                    "description": "Legacy operator record selection. Primary responses select exact characteristic and supporting revisions through continuity.files.next_context.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -4383,7 +4433,7 @@
                     }
                   },
                   "retrieval_query": {
-                    "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.",
+                    "description": "Retained search cue. Null clears it; it dispatches no search and selects no results.",
                     "type": [
                       "string",
                       "null"
@@ -4404,7 +4454,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
+            "description": "Replace active history through a newer own action with your concise work handoff. run.data.history_window shows journal position before older selected receipts are appended. Preserve the exact files chosen through continuity.files.next_context; compaction changes neither their revisions nor their eligibility. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4418,11 +4468,11 @@
                     "type": "string"
                   },
                   "through": {
-                    "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.",
+                    "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; selection-only changes belong in continuity.files.next_context and continuity.actions.",
                     "type": "string"
                   },
                   "records": {
-                    "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
+                    "description": "Use [] to preserve this response's accepted file selection. Nonempty IDs must already belong to that accepted selection; they cannot add or drop files. Choose exact characteristic and supporting revisions through continuity.files.next_context before compaction.",
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -4436,7 +4486,7 @@
                     }
                   },
                   "retrieval_query": {
-                    "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.",
+                    "description": "Retained search cue. Null clears it; no automatic retrieval follows. Choose an explicit file.search or operation.search when discovery is needed.",
                     "type": [
                       "string",
                       "null"
@@ -9054,8 +9104,12 @@
       "Discover a bounded page of record summaries. Use the returned cursor for the next page."
     ],
     [
+      "operation.search",
+      "Find a bounded page of available command names and descriptions by literal words. Empty query lists names in lexical order. Search loads no contract, selects no files and grants no authority."
+    ],
+    [
       "operation.describe",
-      "Read the complete exact argument schema for one currently available operation."
+      "Read the complete exact argument schema for one known currently available operation; use operation.search when its name is unknown. A successful description loads that contract for a later decision, without granting authority."
     ],
     [
       "memory.locate",
@@ -9191,7 +9245,7 @@
     ],
     [
       "file.search",
-      "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection."
+      "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection."
     ],
     [
       "file.read",
@@ -9203,11 +9257,11 @@
     ],
     [
       "context.select",
-      ""
+      "Legacy operator context selection. Primary responses use continuity.files.next_context and continuity.actions."
     ],
     [
       "context.compact",
-      "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule."
+      "Replace active history through a newer own action with your concise work handoff. run.data.history_window shows journal position before older selected receipts are appended. Preserve the exact files chosen through continuity.files.next_context; compaction changes neither their revisions nor their eligibility. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule."
     ],
     [
       "input.acknowledge",
@@ -11902,7 +11956,56 @@
         "additionalProperties": false
       },
       {
-        "description": "Read the complete exact argument schema for one currently available operation.",
+        "description": "Find a bounded page of available command names and descriptions by literal words. Empty query lists names in lexical order. Search loads no contract, selects no files and grants no authority.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "operation.search"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "description": "Up to 16 whitespace-delimited literal words and 512 UTF-8 bytes. Every word must occur in the command name or description after Unicode lowercase conversion. Empty string lists the currently permitted registry; no regex or semantic ranking.",
+                "type": "string",
+                "maxLength": 512
+              },
+              "after": {
+                "description": "Visible-match offset returned by this same query; null starts at zero. Live availability can change between pages. Maximum 4096.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0,
+                "maximum": 4096
+              },
+              "limit": {
+                "description": "Maximum whole description cards (1–12); null defaults to 8. A page has a 16 KiB result bound and consumes the shared navigation allowance. Search does not load the described contracts.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 1,
+                "maximum": 12
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "query"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Read the complete exact argument schema for one known currently available operation; use operation.search when its name is unknown. A successful description loads that contract for a later decision, without granting authority.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13298,7 +13401,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.\nBounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+        "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13379,6 +13482,7 @@
         "additionalProperties": false
       },
       {
+        "description": "Legacy operator context selection. Primary responses use continuity.files.next_context and continuity.actions.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13389,7 +13493,7 @@
             "type": "object",
             "properties": {
               "records": {
-                "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
+                "description": "Legacy operator record selection. Primary responses select exact characteristic and supporting revisions through continuity.files.next_context.",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -13403,7 +13507,7 @@
                 }
               },
               "retrieval_query": {
-                "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results.",
+                "description": "Retained search cue. Null clears it; it dispatches no search and selects no results.",
                 "type": [
                   "string",
                   "null"
@@ -13424,7 +13528,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
+        "description": "Replace active history through a newer own action with your concise work handoff. run.data.history_window shows journal position before older selected receipts are appended. Preserve the exact files chosen through continuity.files.next_context; compaction changes neither their revisions nor their eligibility. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13438,11 +13542,11 @@
                 "type": "string"
               },
               "through": {
-                "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes.",
+                "description": "An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; selection-only changes belong in continuity.files.next_context and continuity.actions.",
                 "type": "string"
               },
               "records": {
-                "description": "Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here.",
+                "description": "Use [] to preserve this response's accepted file selection. Nonempty IDs must already belong to that accepted selection; they cannot add or drop files. Choose exact characteristic and supporting revisions through continuity.files.next_context before compaction.",
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -13456,7 +13560,7 @@
                 }
               },
               "retrieval_query": {
-                "description": "Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery.",
+                "description": "Retained search cue. Null clears it; no automatic retrieval follows. Choose an explicit file.search or operation.search when discovery is needed.",
                 "type": [
                   "string",
                   "null"

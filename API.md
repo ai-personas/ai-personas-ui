@@ -737,9 +737,19 @@ Discover a bounded page of record summaries. Use the returned cursor for the nex
 | `after` | integer or null | Optional |  |
 | `limit` | integer or null | Optional |  |
 
+### `operation.search`
+
+Find a bounded page of available command names and descriptions by literal words. Empty query lists names in lexical order. Search loads no contract, selects no files and grants no authority.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `query` | string | Required | Up to 16 whitespace-delimited literal words and 512 UTF-8 bytes. Every word must occur in the command name or description after Unicode lowercase conversion. Empty string lists the currently permitted registry; no regex or semantic ranking. |
+| `after` | integer or null | Optional | Visible-match offset returned by this same query; null starts at zero. Live availability can change between pages. Maximum 4096. |
+| `limit` | integer or null | Optional | Maximum whole description cards (1–12); null defaults to 8. A page has a 16 KiB result bound and consumes the shared navigation allowance. Search does not load the described contracts. |
+
 ### `operation.describe`
 
-Read the complete exact argument schema for one currently available operation.
+Read the complete exact argument schema for one known currently available operation; use operation.search when its name is unknown. A successful description loads that contract for a later decision, without granting authority.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1083,7 +1093,6 @@ Read an exact immutable document version using document.write result.id, never i
 
 ### `file.search`
 
-Choose exact retained records and action results for future context. Replaces selection; originals remain discoverable. Images must be observation record IDs.
 Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.
 
 | Argument | Type | Presence | Meaning |
@@ -1108,25 +1117,25 @@ Atomically author learning and select the next context. Does not change authorit
 
 ### `context.select`
 
-undefined
+Legacy operator context selection. Primary responses use continuity.files.next_context and continuity.actions.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here. |
+| `records` | string[] | Required | Legacy operator record selection. Primary responses select exact characteristic and supporting revisions through continuity.files.next_context. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
-| `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; it does not select search results. |
+| `retrieval_query` | string or null | Optional | Retained search cue. Null clears it; it dispatches no search and selects no results. |
 
 ### `context.compact`
 
-Replace active history through a newer own action with your account and selection. run.data.history_window shows journal position before older selected receipts are appended. The same response's continuity.memory selection is preserved. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.
+Replace active history through a newer own action with your concise work handoff. run.data.history_window shows journal position before older selected receipts are appended. Preserve the exact files chosen through continuity.files.next_context; compaction changes neither their revisions nor their eligibility. Originals, adverse facts and unresolved effects remain retrievable. No imposed schedule.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
 | `summary` | string | Required |  |
-| `through` | string | Required | An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; use context.select for selection-only changes. |
-| `records` | string[] | Required | Retained record IDs, such as messages, documents, submissions and artifacts. In a model response, learned fragments remain selected by continuity.memory.active; do not include them here. |
+| `through` | string | Required | An executed operation's history.request.id from this run, newer than history_window.through and covered by your handoff. Reusing or regressing the boundary fails; selection-only changes belong in continuity.files.next_context and continuity.actions. |
+| `records` | string[] | Required | Use [] to preserve this response's accepted file selection. Nonempty IDs must already belong to that accepted selection; they cannot add or drop files. Choose exact characteristic and supporting revisions through continuity.files.next_context before compaction. |
 | `actions` | string[] | Required | IDs of your own executed operations from history.request.id. Never record IDs. Keeping large receipts selected keeps them in context; use [] when exact receipts are no longer needed. |
-| `retrieval_query` | string or null | Optional | Your search cue for the next context's fragment/tool previews. Null clears the cue; the summary and active lessons also inform discovery. |
+| `retrieval_query` | string or null | Optional | Retained search cue. Null clears it; no automatic retrieval follows. Choose an explicit file.search or operation.search when discovery is needed. |
 
 ### `input.acknowledge`
 
