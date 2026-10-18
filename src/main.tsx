@@ -225,7 +225,7 @@ function RecordList({ view, open, openWork, artifact, act, start, navigate }: {
           <InputNotice record={r} open={open}/>
           {r.kind === 'persona' && <><CharacterInitialization persona={r}/><p class="record-caveat">Authored character, not a claim of demonstrated expertise.</p><details class="model-disclosure"><summary>Model details</summary><p class="micro">Current model: {text(d.provider, 'not recorded')} / {text(d.model, 'not recorded')}</p></details></>}
           {r.kind === 'document' && <p class="micro">Authored document · not automatically learned knowledge</p>}
-          {r.kind === 'fragment' && <p class="micro">Retained interpretation · later usefulness needs evidence</p>}
+          {r.kind === 'fragment' && <p class="micro">Characteristic prompt file · later usefulness needs evidence</p>}
           {['tool', 'capability'].includes(r.kind) && <p class="micro">Availability and registration do not establish competence</p>}
           {r.kind === 'transfer' && <><progress aria-label="Recorded transfer bytes" value={d.bytes} max={d.total || 1}/><p class="micro">{d.bytes?.toLocaleString()} / {d.total?.toLocaleString()} bytes</p>{d.status === 'running' && <button class="quiet" onClick={() => act('transfer.cancel', { id: r.id }).catch(e => setFailure(e.message))}>Cancel transfer</button>}{isRecordID(d.received_artifact) && <button onClick={() => artifact(d.received_artifact)}>Open artifact</button>}</>}
         </div><button class="text-button card-open" onClick={() => open(r.id)}>Open details <Icon name="Open"/></button>
