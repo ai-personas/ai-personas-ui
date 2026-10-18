@@ -7258,7 +7258,7 @@
             "$ref": "#/$defs/Choice"
           },
           "references": {
-            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
+            "description": "Exact received 32-hex record IDs or complete supplied @record aliases with their listed positive revisions, or {id:\"$handle\",revision:0} for this response's accepted edit. Bare numbers and context_values indexes are not record identities.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -16508,7 +16508,7 @@
             "$ref": "#/$defs/Choice"
           },
           "references": {
-            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
+            "description": "Exact received 32-hex record IDs or complete supplied @record aliases with their listed positive revisions, or {id:\"$handle\",revision:0} for this response's accepted edit. Bare numbers and context_values indexes are not record identities.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"

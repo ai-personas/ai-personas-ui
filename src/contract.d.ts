@@ -2453,7 +2453,7 @@ export interface VersionRef3 {
 export interface Selection2 {
   disposition: Choice;
   /**
-   * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
+   * Exact received 32-hex record IDs or complete supplied @record aliases with their listed positive revisions, or {id:"$handle",revision:0} for this response's accepted edit. Bare numbers and context_values indexes are not record identities.
    * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
    *
    * @maxItems 64
@@ -2471,7 +2471,7 @@ export interface NextContext {
 export interface Selection21 {
   disposition: Choice;
   /**
-   * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
+   * Exact received 32-hex record IDs or complete supplied @record aliases with their listed positive revisions, or {id:"$handle",revision:0} for this response's accepted edit. Bare numbers and context_values indexes are not record identities.
    * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
    *
    * @maxItems 64
