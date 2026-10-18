@@ -12,6 +12,7 @@ type Storage = {
   filesystem: { regular_files: number; logical_bytes: number; allocated_bytes: number; scan_complete: boolean; gaps: string[]; consistency: string };
   total_managed_bound_verified: boolean;
   uncovered: string[];
+  file_search?: { available: boolean; restart_required: boolean; blocker: string | null };
   file_admission?: { available: false; blocker: string } | {
     available: true; limit: number; protected_bytes: number; retained_unreserved_charged_bytes: number;
     reserved_upper_bytes: number; active_reservations: number; admitted_upper_bytes: number;
@@ -40,6 +41,8 @@ export default function StorageSettings({ act }: { act: Act }) {
       <p>Database: {bytes(value.database.page_bytes)} of {bytes(value.database.limit)}. Ordinary capacity remaining: {bytes(value.database.ordinary_remaining)}.</p>
       <p class="micro">Database usage includes histories, revisions, indexes and allocated free pages. {value.database.reclamation}</p>
       {!value.database.within_limit && <p role="alert">Existing database allocation exceeds the configured limit. Optional writes are blocked; an explicit capacity or retention decision is needed.</p>}
+      {value.file_search?.available === true && <p>File search indexes are ready. Source access and navigation limits still apply.</p>}
+      {value.file_search?.available === false && <p role="alert">File search is unavailable: {value.file_search.blocker}</p>}
       <p>Observed node files: {bytes(value.filesystem.logical_bytes)} logical, {bytes(value.filesystem.allocated_bytes)} allocated, across {value.filesystem.regular_files.toLocaleString()} regular files.</p>
       {value.file_admission?.available === true && <>
         <p>Managed file admission: {bytes(value.file_admission.admitted_upper_bytes)} of {bytes(value.file_admission.limit)}, including {bytes(value.file_admission.reserved_upper_bytes)} reserved across {value.file_admission.active_reservations} active writes. Ordinary capacity remaining: {bytes(value.file_admission.ordinary_remaining)}.</p>
@@ -83,7 +86,7 @@ export default function StorageSettings({ act }: { act: Act }) {
           <button>{busy ? 'Saving…' : 'Save storage limits'}</button>
         </fieldset>
       </form>
-      {saved && <p role="status">Storage limits saved.</p>}
+      {saved && <p role="status">Storage limits saved.{value.file_search?.restart_required && ' Restart the node to retry installing file search indexes.'}</p>}
     </>}
   </section>;
 }
