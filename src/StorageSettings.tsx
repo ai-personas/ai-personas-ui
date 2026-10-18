@@ -43,7 +43,7 @@ export default function StorageSettings({ act }: { act: Act }) {
       <p>Observed node files: {bytes(value.filesystem.logical_bytes)} logical, {bytes(value.filesystem.allocated_bytes)} allocated, across {value.filesystem.regular_files.toLocaleString()} regular files.</p>
       {value.file_admission?.available === true && <>
         <p>Managed file admission: {bytes(value.file_admission.admitted_upper_bytes)} of {bytes(value.file_admission.limit)}, including {bytes(value.file_admission.reserved_upper_bytes)} reserved across {value.file_admission.active_reservations} active writes. Ordinary capacity remaining: {bytes(value.file_admission.ordinary_remaining)}.</p>
-        <p class="micro">Artifact publication, uploads and peer-transfer staging reserve their peak copy space before writing. Accounting uses logical bytes plus {bytes(value.file_admission.per_entry_charge)} per filesystem entry; SQLite backing is separate. This is not a complete disk quota.</p>
+        <p class="micro">Artifacts, uploads, peer transfers and persona continuity archives reserve space before staging and copying files. Accounting uses logical bytes plus {bytes(value.file_admission.per_entry_charge)} per filesystem entry; SQLite backing is separate. This is not a complete disk quota.</p>
         {!value.file_admission.within_limit && <p role="alert">Observed managed files exceed the admission limit. Further covered writes are blocked pending a capacity or retention decision.</p>}
       </>}
       {value.file_admission?.available === false && <p role="alert">Managed file capacity could not be established: {value.file_admission.blocker}</p>}
