@@ -1713,7 +1713,7 @@ export interface Vad {
 export interface Search {
   role: Role;
   /**
-   * Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.
+   * Optional exact supporting record kind, such as persona_asset, document, tool or work_mandate. Null scans all supporting kinds, including call records, within the same allowance. Characteristic scope accepts only fragment. At most 128 UTF-8 bytes; no control characters.
    */
   kind?: string | null;
   /**
@@ -1725,13 +1725,29 @@ export interface Search {
    */
   scope?: string | null;
   mode: MatchMode;
+  /**
+   * Empty for listing; nonempty for literal or regex. At most 512 UTF-8 bytes.
+   */
   pattern: string;
-  fields: SearchField[];
+  /**
+   * Choose one to four distinct surfaces. Listing still requires at least one surface.
+   *
+   * @minItems 1
+   * @maxItems 4
+   */
+  fields:
+    | [SearchField]
+    | [SearchField, SearchField]
+    | [SearchField, SearchField, SearchField]
+    | [SearchField, SearchField, SearchField, SearchField];
   case_sensitive: boolean;
   /**
    * Zero starts a live scan; continue only with its returned opaque next token. Changing any query field requires zero. Old numeric positions are unavailable.
    */
   after: number | string;
+  /**
+   * Maximum results in this page, from 1 through 24. A bounded page may contain fewer or no matches and still return a next token.
+   */
   limit: number;
 }
 export interface Continuity {

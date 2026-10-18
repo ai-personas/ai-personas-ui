@@ -6698,11 +6698,12 @@
             "$ref": "#/$defs/Role"
           },
           "kind": {
-            "description": "Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.",
+            "description": "Optional exact supporting record kind, such as persona_asset, document, tool or work_mandate. Null scans all supporting kinds, including call records, within the same allowance. Characteristic scope accepts only fragment. At most 128 UTF-8 bytes; no control characters.",
             "type": [
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "owner": {
@@ -6711,6 +6712,7 @@
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "scope": {
@@ -6719,19 +6721,25 @@
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "mode": {
             "$ref": "#/$defs/MatchMode"
           },
           "pattern": {
-            "type": "string"
+            "description": "Empty for listing; nonempty for literal or regex. At most 512 UTF-8 bytes.",
+            "type": "string",
+            "maxLength": 512
           },
           "fields": {
+            "description": "Choose one to four distinct surfaces. Listing still requires at least one surface.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/SearchField"
-            }
+            },
+            "minItems": 1,
+            "maxItems": 4
           },
           "case_sensitive": {
             "type": "boolean"
@@ -6741,9 +6749,11 @@
             "$ref": "#/$defs/After"
           },
           "limit": {
+            "description": "Maximum results in this page, from 1 through 24. A bounded page may contain fewer or no matches and still return a next token.",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 24
           }
         },
         "additionalProperties": false,
@@ -6765,11 +6775,22 @@
         ]
       },
       "MatchMode": {
-        "type": "string",
-        "enum": [
-          "listing",
-          "literal",
-          "regex"
+        "oneOf": [
+          {
+            "description": "List permitted files. Pattern must be the empty string.",
+            "type": "string",
+            "const": "listing"
+          },
+          {
+            "description": "Find a nonempty literal string, without regex interpretation.",
+            "type": "string",
+            "const": "literal"
+          },
+          {
+            "description": "Find a nonempty Rust regex; backreferences and lookaround are unsupported.",
+            "type": "string",
+            "const": "regex"
+          }
         ]
       },
       "SearchField": {
@@ -15882,11 +15903,12 @@
             "$ref": "#/$defs/Role"
           },
           "kind": {
-            "description": "Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.",
+            "description": "Optional exact supporting record kind, such as persona_asset, document, tool or work_mandate. Null scans all supporting kinds, including call records, within the same allowance. Characteristic scope accepts only fragment. At most 128 UTF-8 bytes; no control characters.",
             "type": [
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "owner": {
@@ -15895,6 +15917,7 @@
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "scope": {
@@ -15903,19 +15926,25 @@
               "string",
               "null"
             ],
+            "maxLength": 128,
             "default": null
           },
           "mode": {
             "$ref": "#/$defs/MatchMode"
           },
           "pattern": {
-            "type": "string"
+            "description": "Empty for listing; nonempty for literal or regex. At most 512 UTF-8 bytes.",
+            "type": "string",
+            "maxLength": 512
           },
           "fields": {
+            "description": "Choose one to four distinct surfaces. Listing still requires at least one surface.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/SearchField"
-            }
+            },
+            "minItems": 1,
+            "maxItems": 4
           },
           "case_sensitive": {
             "type": "boolean"
@@ -15925,9 +15954,11 @@
             "$ref": "#/$defs/After"
           },
           "limit": {
+            "description": "Maximum results in this page, from 1 through 24. A bounded page may contain fewer or no matches and still return a next token.",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 1,
+            "maximum": 24
           }
         },
         "additionalProperties": false,
@@ -15949,11 +15980,22 @@
         ]
       },
       "MatchMode": {
-        "type": "string",
-        "enum": [
-          "listing",
-          "literal",
-          "regex"
+        "oneOf": [
+          {
+            "description": "List permitted files. Pattern must be the empty string.",
+            "type": "string",
+            "const": "listing"
+          },
+          {
+            "description": "Find a nonempty literal string, without regex interpretation.",
+            "type": "string",
+            "const": "literal"
+          },
+          {
+            "description": "Find a nonempty Rust regex; backreferences and lookaround are unsupported.",
+            "type": "string",
+            "const": "regex"
+          }
         ]
       },
       "SearchField": {
