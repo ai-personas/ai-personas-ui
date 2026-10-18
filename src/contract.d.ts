@@ -1782,11 +1782,53 @@ export interface Continuity {
  */
 export interface Plan {
   maintenance: Maintenance;
-  edits: Edit[];
+  /**
+   * At most sixteen edits with unique handles; at most 131072 UTF-8 content bytes combined.
+   *
+   * @maxItems 16
+   */
+  edits:
+    | []
+    | [Edit]
+    | [Edit, Edit]
+    | [Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit]
+    | [Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit, Edit];
   /**
    * Independent durable applicability judgments. Resolving a maintenance concern never resolves a warning.
+   *
+   * @maxItems 8
    */
-  warnings?: WarningChange[];
+  warnings?:
+    | []
+    | [WarningChange]
+    | [WarningChange, WarningChange]
+    | [WarningChange, WarningChange, WarningChange]
+    | [WarningChange, WarningChange, WarningChange, WarningChange]
+    | [WarningChange, WarningChange, WarningChange, WarningChange, WarningChange]
+    | [WarningChange, WarningChange, WarningChange, WarningChange, WarningChange, WarningChange]
+    | [WarningChange, WarningChange, WarningChange, WarningChange, WarningChange, WarningChange, WarningChange]
+    | [
+        WarningChange,
+        WarningChange,
+        WarningChange,
+        WarningChange,
+        WarningChange,
+        WarningChange,
+        WarningChange,
+        WarningChange
+      ];
   current_account: Selection2;
   next_context: NextContext;
 }
@@ -1796,16 +1838,136 @@ export interface Maintenance {
 }
 export interface Outcome2 {
   disposition: Disposition;
+  /**
+   * Nonempty authored reason, at most 2048 UTF-8 bytes.
+   */
   reason: string;
   /**
    * For blocked/deferred concerns, identify what is affected, its missing prerequisite,
-   * dependent work, and an existing opportunity or honest continuation gap. Empty for no concern.
+   * dependent work, and an existing opportunity or honest continuation gap. Empty for no concern. At most 4096 UTF-8 bytes.
    */
   concern: string;
   /**
    * Explicitly close supplied pending concern IDs. Omitted concerns remain pending, including on no_change.
+   *
+   * @maxItems 16
    */
-  resolutions?: Resolution[];
+  resolutions?:
+    | []
+    | [Resolution]
+    | [Resolution, Resolution]
+    | [Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution]
+    | [Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution, Resolution]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ]
+    | [
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution,
+        Resolution
+      ];
 }
 export interface Resolution {
   id: string;
@@ -1813,25 +1975,295 @@ export interface Resolution {
   reason: string;
 }
 export interface Edit {
+  /**
+   * Unique within this response: 1..64 ASCII letters, digits, underscores or hyphens. Write the bare handle here, for example review_aid; only references use the $ prefix.
+   */
   handle: string;
   operation: EditKind;
   role: Role;
+  /**
+   * Relative UTF-8 file path, at most 512 bytes, with no empty, dot or parent segments, backslashes or control characters.
+   */
   path: string;
+  /**
+   * Null for create; exact received current revision for revise or retire.
+   */
   base?: VersionRef | null;
   /**
-   * Complete UTF-8 source for create/revise; null for retirement. With json set, preserve raw JSON here and explicitly declare its prompt/cue pointers. Original receipts and imported sources cannot be rewritten here.
+   * Complete nonempty UTF-8 source, at most 65536 bytes, for create/revise; null for retirement. With json set, preserve raw JSON here and explicitly declare its prompt/cue pointers. Original receipts and imported sources cannot be rewritten here.
    */
   content?: string | null;
   /**
    * Optional JSON serialization with authored prompt/cue pointers. Omit/null for plain text. Restate on revision; never inferred from a filename.
    */
   json?: JsonText | null;
-  search_cues: string[];
-  sources: EvidenceRef[];
+  /**
+   * At most eight nonempty authored cues, each at most 256 UTF-8 bytes.
+   *
+   * @maxItems 8
+   */
+  search_cues:
+    | []
+    | [string]
+    | [string, string]
+    | [string, string, string]
+    | [string, string, string, string]
+    | [string, string, string, string, string]
+    | [string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string];
+  /**
+   * At most sixteen exact observed sources.
+   *
+   * @maxItems 16
+   */
+  sources:
+    | []
+    | [EvidenceRef]
+    | [EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef, EvidenceRef]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ]
+    | [
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef,
+        EvidenceRef
+      ];
   /**
    * Exact mandatory accompaniment, distinct from optional search cues. Use {id:"$handle",revision:0} for a create/revise in this same response, in any edit order. Old references never follow a changed head. Complete transitive bundles must fit.
+   *
+   * @maxItems 16
    */
-  required: VersionRef[];
+  required:
+    | []
+    | [VersionRef]
+    | [VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef, VersionRef]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ]
+    | [
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef,
+        VersionRef
+      ];
 }
 export interface JsonText {
   /**
@@ -1868,8 +2300,13 @@ export interface Selection2 {
   /**
    * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
    * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
+   *
+   * @maxItems 64
    */
   references: VersionRef[];
+  /**
+   * Nonempty reason, at most 2048 UTF-8 bytes.
+   */
   reason: string;
 }
 export interface NextContext {
@@ -1881,8 +2318,13 @@ export interface Selection21 {
   /**
    * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
    * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
+   *
+   * @maxItems 64
    */
   references: VersionRef[];
+  /**
+   * Nonempty reason, at most 2048 UTF-8 bytes.
+   */
   reason: string;
 }
 export interface Intent {
