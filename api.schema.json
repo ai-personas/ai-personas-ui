@@ -5438,6 +5438,18 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "managed_file_bytes": {
+            "description": "Shared managed-file admission capacity, excluding SQLite backing files.\nCharged as logical file bytes plus 4096 bytes per filesystem entry.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "protected_file_bytes": {
+            "description": "Part of managed-file admission capacity reserved for authorized finishing.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         },
         "additionalProperties": false,
@@ -5445,7 +5457,9 @@
           "characteristic_bytes",
           "supporting_bytes",
           "database_page_bytes",
-          "protected_database_bytes"
+          "protected_database_bytes",
+          "managed_file_bytes",
+          "protected_file_bytes"
         ]
       },
       "GrantDraft": {
@@ -14436,6 +14450,18 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "managed_file_bytes": {
+            "description": "Shared managed-file admission capacity, excluding SQLite backing files.\nCharged as logical file bytes plus 4096 bytes per filesystem entry.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "protected_file_bytes": {
+            "description": "Part of managed-file admission capacity reserved for authorized finishing.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         },
         "additionalProperties": false,
@@ -14443,7 +14469,9 @@
           "characteristic_bytes",
           "supporting_bytes",
           "database_page_bytes",
-          "protected_database_bytes"
+          "protected_database_bytes",
+          "managed_file_bytes",
+          "protected_file_bytes"
         ]
       },
       "GrantDraft": {

@@ -12,6 +12,11 @@ type Storage = {
   filesystem: { regular_files: number; logical_bytes: number; allocated_bytes: number; scan_complete: boolean; gaps: string[]; consistency: string };
   total_managed_bound_verified: boolean;
   uncovered: string[];
+  file_admission?: { available: false; blocker: string } | {
+    available: true; limit: number; protected_bytes: number; retained_unreserved_charged_bytes: number;
+    reserved_upper_bytes: number; active_reservations: number; admitted_upper_bytes: number;
+    ordinary_remaining: number; within_limit: boolean; per_entry_charge: number; scope: string; meaning: string;
+  };
 };
 const bytes = (n: number) => `${n.toLocaleString()} bytes`;
 const fields: { key: keyof Policy; label: string; min: number }[] = [
@@ -19,6 +24,8 @@ const fields: { key: keyof Policy; label: string; min: number }[] = [
   { key: 'supporting_bytes', label: 'Supporting files per persona', min: 65536 },
   { key: 'database_page_bytes', label: 'Total database pages', min: 16777216 },
   { key: 'protected_database_bytes', label: 'Database capacity reserved for warnings and finishing', min: 1048576 },
+  { key: 'managed_file_bytes', label: 'Managed file admission capacity', min: 16777216 },
+  { key: 'protected_file_bytes', label: 'File capacity reserved for authorized finishing', min: 1048576 },
 ];
 
 export default function StorageSettings({ act }: { act: Act }) {
@@ -34,6 +41,12 @@ export default function StorageSettings({ act }: { act: Act }) {
       <p class="micro">Database usage includes histories, revisions, indexes and allocated free pages. {value.database.reclamation}</p>
       {!value.database.within_limit && <p role="alert">Existing database allocation exceeds the configured limit. Optional writes are blocked; an explicit capacity or retention decision is needed.</p>}
       <p>Observed node files: {bytes(value.filesystem.logical_bytes)} logical, {bytes(value.filesystem.allocated_bytes)} allocated, across {value.filesystem.regular_files.toLocaleString()} regular files.</p>
+      {value.file_admission?.available === true && <>
+        <p>Managed file admission: {bytes(value.file_admission.admitted_upper_bytes)} of {bytes(value.file_admission.limit)}, including {bytes(value.file_admission.reserved_upper_bytes)} reserved across {value.file_admission.active_reservations} active writes. Ordinary capacity remaining: {bytes(value.file_admission.ordinary_remaining)}.</p>
+        <p class="micro">Artifact publication, uploads and peer-transfer staging reserve their peak copy space before writing. Accounting uses logical bytes plus {bytes(value.file_admission.per_entry_charge)} per filesystem entry; SQLite backing is separate. This is not a complete disk quota.</p>
+        {!value.file_admission.within_limit && <p role="alert">Observed managed files exceed the admission limit. Further covered writes are blocked pending a capacity or retention decision.</p>}
+      </>}
+      {value.file_admission?.available === false && <p role="alert">Managed file capacity could not be established: {value.file_admission.blocker}</p>}
       {!value.total_managed_bound_verified && <p class="notice">A complete storage quota is not enforced. {value.uncovered.join('. ')}.</p>}
       {!value.filesystem.scan_complete && <p role="alert">The filesystem observation is incomplete: {value.filesystem.gaps.join('. ')}.</p>}
       <p class="micro">Usage is a snapshot; refresh to see later writes. Retiring a file removes it from the current corpus but does not reclaim its historical versions.</p>
@@ -56,6 +69,7 @@ export default function StorageSettings({ act }: { act: Act }) {
             policy[field.key] = n;
           }
           if (policy.protected_database_bytes >= policy.database_page_bytes) throw new Error('Reserved capacity must be smaller than the total database limit.');
+          if (policy.protected_file_bytes >= policy.managed_file_bytes) throw new Error('Reserved file capacity must be smaller than the managed file admission limit.');
           const reason = String(form.get('reason') || '').trim();
           if (!reason) throw new Error('Explain the capacity change.');
           await act('storage.configure', { revision: value.policy.revision, policy, reason });
@@ -65,7 +79,7 @@ export default function StorageSettings({ act }: { act: Act }) {
         <fieldset disabled={busy || loading || !!readError}><legend>Limits in bytes</legend><div class="operator-grid">
           {fields.map(field => <label key={field.key}>{field.label}<input name={field.key} type="number" min={field.min} max={Number.MAX_SAFE_INTEGER} step="1" required defaultValue={value.policy.policy[field.key]}/></label>)}
         </div><label>Reason for change<input name="reason" required maxLength={4000}/></label>
-          <p class="micro">The runtime rejects limits below current occupancy and the required reserve. Saving limits does not resume work or change model funding.</p>
+          <p class="micro">The runtime rejects limits below current occupancy, active copy reservations and the required reserve. Saving limits does not resume work or change model funding.</p>
           <button>{busy ? 'Saving…' : 'Save storage limits'}</button>
         </fieldset>
       </form>

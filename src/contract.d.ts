@@ -1445,6 +1445,15 @@ export interface Policy {
    * Part of the database page limit protected from optional mutations and ordinary inference.
    */
   protected_database_bytes: number;
+  /**
+   * Shared managed-file admission capacity, excluding SQLite backing files.
+   * Charged as logical file bytes plus 4096 bytes per filesystem entry.
+   */
+  managed_file_bytes: number;
+  /**
+   * Part of managed-file admission capacity reserved for authorized finishing.
+   */
+  protected_file_bytes: number;
 }
 export interface GrantDraft {
   actor: string;
