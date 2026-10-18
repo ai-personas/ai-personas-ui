@@ -677,7 +677,7 @@ Atomically adopt an exact submission/input/assumption vector under the mandate's
 | `work` | string | Required |  |
 | `revision` | integer | Required |  |
 | `submission` | VersionRef | Required |  |
-| `inputs` | VersionRef[] | Required |  |
+| `inputs` | VersionRef[] | Required | Exact current retained work inputs. Participant-owned supporting assets, documents and artifacts can be inputs; characteristic fragments are not supporting assets. Submitted document/artifact versions are also frozen automatically. Scope never grants read or delivery permission. |
 | `assumptions` | VersionRef[] | Required |  |
 
 ### `evidence.bind`
