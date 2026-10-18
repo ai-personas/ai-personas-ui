@@ -10,7 +10,7 @@ export default function PersonaFileSharing({ file, act, open }: { file: Entity; 
   const [saved, setSaved] = useState(false);
   const { value, loading, error, retry } = useObservation(`file-sharing:${file.id}:${file.revision}`, async signal => {
     const current = await resourceRequest<Entity>(`/records/${file.id}`, signal);
-    if (current.id !== file.id || !['fragment', 'persona_asset'].includes(current.kind) || !data(current).file?.path) throw new Error('This record is not an accepted persona file.');
+    if (current.id !== file.id || !(['fragment', 'persona_asset'].includes(current.kind) && data(current).file?.path || current.kind === 'file_warning' && data(current).target)) throw new Error('This record is not an accepted persona file or applicability warning.');
     const page = await resourceRequest<Page<Entity>>('/records?' + new URLSearchParams({ kind: 'information_policy', scope: file.id, limit: '2' }), signal);
     if (page.items.length > 1 || page.next != null) throw new Error('The current sharing policy could not be identified.');
     const policy = page.items[0] ? await resourceRequest<Entity>(`/records/${page.items[0].id}`, signal) : null;
@@ -18,18 +18,18 @@ export default function PersonaFileSharing({ file, act, open }: { file: Entity; 
     return { current, policy };
   }, e => e.entity === file.id || e.kind === 'information_policy');
   const p = value?.policy ? data(value.policy) : {};
-  const unavailable = value && (data(value.current).erased === true || data(value.current).discredited === true || data(value.current).status !== 'retained');
+  const unavailable = value && (data(value.current).erased === true || data(value.current).discredited === true || !['retained', 'active', 'resolved'].includes(data(value.current).status));
   const special = value?.policy && (p.status !== 'active' || ['seed_readers', 'response_readers', 'work_readers'].some(k => recordIDs(p[k]).length));
   return <section class="development-card" aria-busy={loading}>
-    <h3>File sharing</h3>
-    <p>Choose which personas may read this file. Work derived from it also depends on these permissions. Restrictions from its sources still apply.</p>
+    <h3>{file.kind === 'file_warning' ? 'Warning sharing' : 'File sharing'}</h3>
+    <p>Choose which personas may read this material. Work derived from it also depends on these permissions. Restrictions from its sources still apply.</p>
     {error && <p role="alert">{error} <button type="button" onClick={retry}>Refresh sharing</button></p>}
     {loading && <p role="status">Reading current sharing settings…</p>}
     {value && <>
       {value.policy && <button class="text-button" onClick={() => open(value.policy!.id)}>Read current sharing policy</button>}
       {unavailable || special ? <p>This file has a retirement, withdrawal or special sharing disposition. Inspect its records before replacing that policy.</p> : <SharingForm key={`${value.current.revision}:${value.policy?.revision ?? 0}`} file={value.current} policy={value.policy} act={act} stale={loading || !!error} onSaved={() => { setSaved(true); retry(); }} onEdit={() => setSaved(false)}/>}
     </>}
-    {saved && <p role="status">Sharing settings saved. Accepted file text was preserved.</p>}
+    {saved && <p role="status">Sharing settings saved. Accepted text was preserved.</p>}
   </section>;
 }
 
@@ -63,7 +63,7 @@ function SharingForm({ file, policy, act, stale, onSaved, onEdit }: { file: Enti
       <label class="check"><input name="export" type="checkbox" defaultChecked={p.allow_export === true}/>Allow export by permitted readers</label>
       <label>Expiry in your local time (optional)<input name="expires" type="datetime-local" step="1" defaultValue={localTime(p.expires)}/></label>
       <label>Reason for this sharing change<textarea name="reason" required rows={2}/></label>
-      <button>{busy ? 'Saving…' : 'Save file sharing'}</button>
+      <button>{busy ? 'Saving…' : 'Save sharing'}</button>
     </fieldset>
     {error && <p role="alert">{error}</p>}
   </form>;

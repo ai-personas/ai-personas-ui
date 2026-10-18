@@ -579,7 +579,7 @@
                     "minimum": 0
                   },
                   "policy_revision": {
-                    "description": "For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.",
+                    "description": "For accepted persona files and applicability warnings, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the subject ID. Policy changes do not revise accepted text.",
                     "type": [
                       "integer",
                       "null"
@@ -6682,6 +6682,14 @@
               "$ref": "#/$defs/Edit"
             }
           },
+          "warnings": {
+            "description": "Independent durable applicability judgments. Resolving a maintenance concern never resolves a warning.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/WarningChange"
+            },
+            "default": []
+          },
           "current_account": {
             "description": "One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.",
             "$ref": "#/$defs/Selection2"
@@ -6848,6 +6856,95 @@
           "create",
           "revise",
           "retire"
+        ]
+      },
+      "WarningChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "$ref": "#/$defs/Role"
+              },
+              "target": {
+                "description": "Exact received affected revision, or this response's $edit handle.",
+                "$ref": "#/$defs/VersionRef"
+              },
+              "effect": {
+                "$ref": "#/$defs/WarningEffect"
+              },
+              "content": {
+                "description": "Your bounded applicability judgment and reason. Required context accompanies it intact.",
+                "type": "string"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              },
+              "required": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "const": "add"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "role",
+              "target",
+              "effect",
+              "content",
+              "sources",
+              "required"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "$ref": "#/$defs/Role"
+              },
+              "warning": {
+                "description": "Exact received active warning, not its target file or a deferred concern ID.",
+                "$ref": "#/$defs/VersionRef"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "const": "resolve"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "role",
+              "warning",
+              "reason",
+              "sources"
+            ]
+          }
+        ]
+      },
+      "WarningEffect": {
+        "type": "string",
+        "enum": [
+          "qualified",
+          "ineligible"
         ]
       },
       "Selection2": {
@@ -9393,7 +9490,7 @@
                 "minimum": 0
               },
               "policy_revision": {
-                "description": "For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.",
+                "description": "For accepted persona files and applicability warnings, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the subject ID. Policy changes do not revise accepted text.",
                 "type": [
                   "integer",
                   "null"
@@ -15514,6 +15611,14 @@
               "$ref": "#/$defs/Edit"
             }
           },
+          "warnings": {
+            "description": "Independent durable applicability judgments. Resolving a maintenance concern never resolves a warning.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/WarningChange"
+            },
+            "default": []
+          },
           "current_account": {
             "description": "One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.",
             "$ref": "#/$defs/Selection2"
@@ -15680,6 +15785,95 @@
           "create",
           "revise",
           "retire"
+        ]
+      },
+      "WarningChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "$ref": "#/$defs/Role"
+              },
+              "target": {
+                "description": "Exact received affected revision, or this response's $edit handle.",
+                "$ref": "#/$defs/VersionRef"
+              },
+              "effect": {
+                "$ref": "#/$defs/WarningEffect"
+              },
+              "content": {
+                "description": "Your bounded applicability judgment and reason. Required context accompanies it intact.",
+                "type": "string"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              },
+              "required": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/VersionRef"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "const": "add"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "role",
+              "target",
+              "effect",
+              "content",
+              "sources",
+              "required"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "$ref": "#/$defs/Role"
+              },
+              "warning": {
+                "description": "Exact received active warning, not its target file or a deferred concern ID.",
+                "$ref": "#/$defs/VersionRef"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/EvidenceRef"
+                }
+              },
+              "operation": {
+                "type": "string",
+                "const": "resolve"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "role",
+              "warning",
+              "reason",
+              "sources"
+            ]
+          }
+        ]
+      },
+      "WarningEffect": {
+        "type": "string",
+        "enum": [
+          "qualified",
+          "ineligible"
         ]
       },
       "Selection2": {

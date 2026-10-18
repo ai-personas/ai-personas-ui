@@ -31,6 +31,12 @@ export default function InferenceEvidence({ value, open }: { value: unknown; ope
       </div>; })}
       <References value={accepted as EvidenceReference[]} open={open}/>
       {outcome.character_changed === true && <p>The current character changed. Subsequent work requires a fresh decision with that accepted character.</p>}
+      {outcome.applicability_changed === true && <section><h4>Applicability changed</h4>
+        <p>Subsequent actions require a fresh decision with the accepted qualifications.</p>
+        <p>Accepted warnings</p><References value={fields(outcome.warnings).accepted as EvidenceReference[]} open={open}/>
+        <p>Resolved warnings</p><References value={fields(outcome.warnings).resolved as EvidenceReference[]} open={open}/>
+        {fields(outcome.warnings).next_admission === 'blocked_by_applicability' && <p role="alert">The selected context contains guidance marked ineligible. Further admission is blocked until eligible context or an authorized resolution is accepted.</p>}
+      </section>}
     </section>}
     {included.length > 0 && <section><h4>Exact files supplied to this decision</h4>
       <References value={included.map(item => fields(item).reference) as EvidenceReference[]} open={open}/>

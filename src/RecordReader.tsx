@@ -141,6 +141,15 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     case 'exploration_opportunity': return <><Story title="Question to investigate" value={d.question}/><Story title="Stopping condition" value={d.stopping_condition}/><p>{d.status === 'scheduled' ? `Scheduled no earlier than ${timestamp(d.not_before)}` : `Episode ${text(d.status, 'status not recorded')}`}</p><Story title="Outcome or limitation" value={d.reason}/><RelatedItems title="Observations" value={d.observations} open={open}/>{isRecordID(d.work) && <p>Episode work <RecordReference id={d.work} open={open}/></p>}</>;
     case 'exploration_policy': return <><p>Personal exploration is {d.enabled === true ? 'enabled' : 'disabled'}.</p><p>Up to {d.calls_per_episode} calls per episode, {Number(d.seconds_per_episode)/60} minutes per episode, and {d.max_episodes} total episodes. Permission expires {timestamp(d.expires)}.</p><Story title="Your reason" value={d.reason}/><RelatedItems title="Environment and funding" value={[d.environment,d.resource_root]} open={open}/></>;
     case 'memory_node': return <><p>This graph node binds an exact retained fragment.</p><RelatedItems title="Prompt fragment" value={d.fragment} open={open}/><RelatedItems title="Directed associations" value={d.related} open={open}/></>;
+    case 'file_warning': return <>
+      <p class="field-label">{d.status === 'resolved' ? 'Resolved applicability warning' : d.effect === 'ineligible' ? 'Affected guidance is ineligible for use' : 'Required qualification on guidance'}</p>
+      <Story title="Persona’s applicability judgment" value={d.content}/>
+      <RelatedItems title="Exact affected revision" value={d.target} open={open}/>
+      <RelatedItems title="Required accompaniment" value={d.required_context} open={open}/>
+      <RelatedItems title="Authored basis" value={fields(d.authorship).sources} open={open}/>
+      {d.status === 'resolved' && <><Story title="Reason for resolution" value={fields(d.resolution).reason}/><RelatedItems title="Resolution basis" value={fields(d.resolution).sources} open={open}/></>}
+      <p class="record-caveat">A warning remains independent of deferred maintenance or work completion. Acceptance records the persona’s judgment; it does not prove correctness or a completed correction.</p>
+    </>;
     case 'persona_asset': return <>
       <p class="field-label">Supporting asset · {text(fields(d.file).path)}</p>
       <Story value={d.content}/><Story title="Search cues" value={d.search_cues}/>

@@ -66,7 +66,7 @@ export type Command =
         subject: string;
         revision: number;
         /**
-         * For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.
+         * For accepted persona files and applicability warnings, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the subject ID. Policy changes do not revise accepted text.
          */
         policy_revision?: number | null;
         readers: InformationReader[];
@@ -1233,6 +1233,27 @@ export type SearchField = "path" | "content" | "cues";
 export type Disposition = "change" | "no_change" | "blocked" | "defer";
 export type ResolutionKind = "addressed" | "dismissed";
 export type EditKind = "create" | "revise" | "retire";
+export type WarningChange =
+  | {
+      role: Role;
+      target: VersionRef1;
+      effect: WarningEffect;
+      /**
+       * Your bounded applicability judgment and reason. Required context accompanies it intact.
+       */
+      content: string;
+      sources: EvidenceRef[];
+      required: VersionRef[];
+      operation: "add";
+    }
+  | {
+      role: Role;
+      warning: VersionRef2;
+      reason: string;
+      sources: EvidenceRef[];
+      operation: "resolve";
+    };
+export type WarningEffect = "qualified" | "ineligible";
 export type Choice = "preserve" | "clear" | "replace" | "blocked";
 export type ReplyVisibility = "private" | "work";
 export type Verdict = "accepted" | "rejected" | "incomplete";
@@ -1672,6 +1693,10 @@ export interface Continuity {
 export interface Plan {
   maintenance: Maintenance;
   edits: Edit[];
+  /**
+   * Independent durable applicability judgments. Resolving a maintenance concern never resolves a warning.
+   */
+  warnings?: WarningChange[];
   current_account: Selection2;
   next_context: NextContext;
 }
@@ -1713,6 +1738,20 @@ export interface Edit {
    * Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.
    */
   required: VersionRef[];
+}
+/**
+ * Exact received affected revision, or this response's $edit handle.
+ */
+export interface VersionRef1 {
+  id: string;
+  revision: number;
+}
+/**
+ * Exact received active warning, not its target file or a deferred concern ID.
+ */
+export interface VersionRef2 {
+  id: string;
+  revision: number;
 }
 /**
  * One coherent current-character designation. Preserve is usual; replace requires self-authorship and a fresh decision before further work.

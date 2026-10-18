@@ -133,7 +133,7 @@ Replace named persona readers, export permission and optional expiry. Clears imp
 |---|---|---|---|
 | `subject` | string | Required |  |
 | `revision` | integer | Required |  |
-| `policy_revision` | integer or null | Optional | For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text. |
+| `policy_revision` | integer or null | Optional | For accepted persona files and applicability warnings, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the subject ID. Policy changes do not revise accepted text. |
 | `readers` | InformationReader[] | Required |  |
 | `allow_export` | boolean | Required |  |
 | `expires` | string or null | Optional |  |
