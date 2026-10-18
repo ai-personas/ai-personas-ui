@@ -201,8 +201,8 @@ export function WorkState({ value, open }: { value: any; open: (id: string) => v
       <p>Scope review: {value.coverage.scope_review_current ? 'Current review recorded' : value.coverage.scope_review_required ? 'Required, not yet current' : 'Not required by this scope'}</p>
       {isRecordID(assembly.id) ? <section class="reader-section"><h3>Adopted candidate</h3>
         <p>{candidate.applicability === 'current' ? 'Current recorded candidate' : candidate.applicability === 'stale' ? 'This candidate needs another check against the current work' : 'Current applicability is not reported'}. Adoption is separate from review and acceptance.</p>
-        <button class="text-button" onClick={() => open(text(assembly.id))}>Inspect adopted candidate · revision {String(assembly.revision)}</button>
-        {isRecordID(submission.id) && <button class="text-button" onClick={() => open(text(submission.id))}>Inspect its submission · revision {String(submission.revision)}</button>}
+        <div class="button-row"><button class="text-button" onClick={() => open(text(assembly.id))}>Inspect adopted candidate · revision {String(assembly.revision)}</button>
+        {isRecordID(submission.id) && <button class="text-button" onClick={() => open(text(submission.id))}>Inspect its submission · revision {String(submission.revision)}</button>}</div>
       </section> : <p>No adopted candidate is recorded.</p>}
       <p>Acceptance: {value.acceptance ? `${value.acceptance.disposition.replaceAll('_', ' ')} · ${value.acceptance.applicability}` : 'Not established'}</p>
       {value.acceptance?.release?.id && <button class="text-button" onClick={() => open(value.acceptance.release.id)}>Inspect exact release</button>}
