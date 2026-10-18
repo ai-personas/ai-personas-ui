@@ -65,6 +65,10 @@ export type Command =
       args: {
         subject: string;
         revision: number;
+        /**
+         * For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.
+         */
+        policy_revision?: number | null;
         readers: InformationReader[];
         allow_export: boolean;
         expires?: string | null;

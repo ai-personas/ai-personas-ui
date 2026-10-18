@@ -578,6 +578,16 @@
                     "format": "uint64",
                     "minimum": 0
                   },
+                  "policy_revision": {
+                    "description": "For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.",
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "uint64",
+                    "minimum": 0,
+                    "default": null
+                  },
                   "readers": {
                     "type": "array",
                     "items": {
@@ -9381,6 +9391,16 @@
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0
+              },
+              "policy_revision": {
+                "description": "For accepted persona files, supply the current information_policy revision (zero/null before the first policy). Read it through record.list with kind information_policy and scope equal to the file ID. Policy changes do not revise file text.",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0,
+                "default": null
               },
               "readers": {
                 "type": "array",

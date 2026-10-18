@@ -22,6 +22,7 @@ import RichText from './RichText';
 import ContextRecovery from './ContextRecovery';
 import AdmissionPreview from './AdmissionPreview';
 const MemoryGraph = lazy(() => import('./MemoryGraph'));
+const PersonaFileSharing = lazy(() => import('./PersonaFileSharing'));
 const RecallControls = lazy(() => import('./RecallControls'));
 const EnvironmentTools = lazy(() => import('./EnvironmentTools'));
 const Upload = lazy(() => import('./Upload'));
@@ -38,6 +39,7 @@ export default function Detail({ id, open, artifact, close, act }: { id: string;
     {(error || failure) && <p role="alert">{error || failure}</p>}{r && <>
       {r.kind === 'request' ? <InputBadge record={r}/> : <InputNotice record={r} open={open}/>}
       {r.kind !== 'persona' && <RecordReader record={r} open={open}/>}
+      {['fragment', 'persona_asset'].includes(r.kind) && d.file?.path && <Expand title="Sharing settings">{() => <Suspense fallback={<p>Loading sharing settings…</p>}><PersonaFileSharing key={id} file={r} act={actSafe} open={open}/></Suspense>}</Expand>}
       {r.kind === 'environment_tool' && isRecordID(d.last_action) && <Expand title="Last tool observation">{() => <ActionRecord id={d.last_action} act={actSafe} open={open}/>}</Expand>}
       {r.kind === 'run' && <RunProgress run={r} open={open} act={actSafe}/>} {text(d.error) && <p role="alert">{d.error}</p>}
       {['persona', 'environment'].includes(r.kind) && <><Portrait id={d.portrait || d.image} name={label(r)}/>{isRecordID(d.portrait || d.image) && <button class="text-button" onClick={() => artifact(d.portrait || d.image)}>Inspect original image</button>}</>}
