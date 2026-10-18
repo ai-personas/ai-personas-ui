@@ -674,9 +674,9 @@ Atomically adopt an exact submission/input/assumption vector under the mandate's
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
-| `work` | string | Required |  |
-| `revision` | integer | Required |  |
-| `submission` | VersionRef | Required |  |
+| `work` | string | Required | Current work.id, not an environment, participation or document ID. |
+| `revision` | integer | Required | Current work.revision. Re-read work after an authority or candidate change; this is not the submission or document revision. |
+| `submission` | VersionRef | Required | Exact current record of kind submission in this work, returned by successful submit or record.read. A document, asset, action or work ID is not a submission ID. |
 | `inputs` | VersionRef[] | Required | Exact current retained work inputs. Participant-owned supporting assets, documents and artifacts can be inputs; characteristic fragments are not supporting assets. Submitted document/artifact versions are also frozen automatically. Scope never grants read or delivery permission. |
 | `assumptions` | VersionRef[] | Required |  |
 

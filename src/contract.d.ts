@@ -524,9 +524,15 @@ export type Command =
   | {
       kind: "assembly.adopt";
       args: {
+        /**
+         * Current work.id, not an environment, participation or document ID.
+         */
         work: string;
+        /**
+         * Current work.revision. Re-read work after an authority or candidate change; this is not the submission or document revision.
+         */
         revision: number;
-        submission: VersionRef;
+        submission: VersionRef1;
         /**
          * Exact current retained work inputs. Participant-owned supporting assets, documents and artifacts can be inputs; characteristic fragments are not supporting assets. Submitted document/artifact versions are also frozen automatically. Scope never grants read or delivery permission.
          */
@@ -1270,7 +1276,7 @@ export type EditKind = "create" | "revise" | "retire";
 export type WarningChange =
   | {
       role: Role;
-      target: VersionRef1;
+      target: VersionRef2;
       effect: WarningEffect;
       /**
        * Your bounded applicability judgment and reason. Required context accompanies it intact.
@@ -1285,7 +1291,7 @@ export type WarningChange =
     }
   | {
       role: Role;
-      warning: VersionRef2;
+      warning: VersionRef3;
       reason: string;
       sources: EvidenceRef[];
       operation: "resolve";
@@ -1652,6 +1658,13 @@ export interface Dependency {
    * Required for provisional input; permission to explore is not final truth.
    */
   limitations: string;
+}
+/**
+ * Exact current record of kind submission in this work, returned by successful submit or record.read. A document, asset, action or work ID is not a submission ID.
+ */
+export interface VersionRef1 {
+  id: string;
+  revision: number;
 }
 export interface EvidenceDraft {
   assembly: VersionRef;
@@ -2284,14 +2297,14 @@ export interface JsonText {
 /**
  * Exact received affected revision, or this response's $edit handle.
  */
-export interface VersionRef1 {
+export interface VersionRef2 {
   id: string;
   revision: number;
 }
 /**
  * Exact received active warning, not its target file or a deferred concern ID.
  */
-export interface VersionRef2 {
+export interface VersionRef3 {
   id: string;
   revision: number;
 }

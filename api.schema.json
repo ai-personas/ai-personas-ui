@@ -2625,14 +2625,17 @@
                 "type": "object",
                 "properties": {
                   "work": {
+                    "description": "Current work.id, not an environment, participation or document ID.",
                     "type": "string"
                   },
                   "revision": {
+                    "description": "Current work.revision. Re-read work after an authority or candidate change; this is not the submission or document revision.",
                     "type": "integer",
                     "format": "uint64",
                     "minimum": 0
                   },
                   "submission": {
+                    "description": "Exact current record of kind submission in this work, returned by successful submit or record.read. A document, asset, action or work ID is not a submission ID.",
                     "$ref": "#/$defs/VersionRef"
                   },
                   "inputs": {
@@ -11839,14 +11842,17 @@
             "type": "object",
             "properties": {
               "work": {
+                "description": "Current work.id, not an environment, participation or document ID.",
                 "type": "string"
               },
               "revision": {
+                "description": "Current work.revision. Re-read work after an authority or candidate change; this is not the submission or document revision.",
                 "type": "integer",
                 "format": "uint64",
                 "minimum": 0
               },
               "submission": {
+                "description": "Exact current record of kind submission in this work, returned by successful submit or record.read. A document, asset, action or work ID is not a submission ID.",
                 "$ref": "#/$defs/VersionRef"
               },
               "inputs": {
