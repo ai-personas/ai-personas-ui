@@ -37,7 +37,7 @@ which prepares structured requests and interprets the returned decisions.
   and model prices without resetting spending or reservations.
 - **Work:** create a funded task, amend its scope, message participants, inspect
   missing owners and evidence, or archive it. Original instructions remain in history.
-  Select **Start paused** to configure recall permissions before the first task
+  Select **Start paused** to configure source-sharing permissions before the first task
   decision. Open each participant’s activity details and select **Resume** when ready.
 - **Conversation:** see user messages, persona replies and shared questions in
   the work overview. **Reply to persona** beside waiting activity defaults to
@@ -99,7 +99,7 @@ which prepares structured requests and interprets the returned decisions.
   these are browser memory safeguards, not storage or work allowances.
 - **Individual approaches:** See each persona's recorded focus and working
   intention for this work. Interests and relationship interpretations belong to
-  the persona's fragment graph. These authored views do not establish accepted
+  the persona's characteristic files. These authored views do not establish accepted
   responsibility or completed work. Manage participants from **People & agreements**.
 - **Delivery conditions:** Deferred or waived blocking findings remain visible
   conditions. Earlier resolutions with stale supporting evidence are shown as
@@ -135,57 +135,16 @@ Use Node.js 22+ and the matching Rust binary:
 npm ci
 PERSONAS_BIN=../ai-personas/target/debug/personas npm run contract
 npm run build
-npm test
-npx playwright install chromium
-npm run test:workspace
-npm run test:forms
-npm run test:participants
-PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:operator
-PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:activity
-PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:settings
-PERSONAS_BIN=../ai-personas/target/debug/personas npm run test:files
 ```
 
-`test:workspace` uses synthetic HTTP records. `test:forms` checks the production
-bundle at desktop/mobile sizes, including typing under CPU throttling and SSE
-activity, model refresh, draft retention, and explicit subscription accounting.
-Its provider and records are synthetic. `test:operator` starts a real,
-restricted Rust node and a synthetic HTTP inference provider, then exercises the
-production UI. It makes no paid model calls and writes evidence to a temporary
-directory, or `PERSONAS_BROWSER_EVIDENCE` when specified. `test:activity` checks
-streaming, names, identity, draft retention, and tool output on a disposable
-node with synthetic inference and one harmless local shell command.
-`test:settings` uses synthetic API keys and local model catalogues against a real
-restricted node to check persistence, restart, replacement/removal, native
-authentication, responsive typing, and mobile settings. These checks do not
-establish live model quality or engineering acceptance. `test:memory` checks
-graph navigation and authored connections with synthetic API pages; the operator
-suite also checks the graph against the real runtime. The obsolete flat-document
-Learning load campaign was removed. Its historical timing and heap measurements
-do not qualify the current graph UI. The old image-only `test:live` harness was
-removed: its required environment imagery, fixed navigation and preview limits
-do not describe current acceptance. Live observations use declared work cases
-and exact installed revisions, separately from synthetic browser checks.
-Graph unit checks share `tests/memory-graph.fixture.mjs`. The main graph suite
-owns connection identity and display semantics; the boundary suite covers exact
-versions, qualification text and byte limits without duplicating those cases.
-`test:participants` uses a disposable restricted node and synthetic inference to
-check roster changes, re-invitations, request highlights, private and group replies,
-peer answers to shared questions, visible replies to the user, mobile layouts,
-and restart persistence. It leaves the real workspace untouched.
-`test:files` uses the production bundle and real Rust artifact API on a disposable
-node with explicit test admission, supplied file fixtures and a local synthetic
-provider. It checks authenticated reads, type-specific rendering, ZIP navigation,
-corrupt/encrypted entries, lazy asset requests, mobile layout and resource cleanup.
-Tampered and interrupted downloads are explicitly injected browser network faults.
-No model calls or changes to the real workspace are required.
+Test suites, synthetic providers, fixtures and test runners were removed at the
+user's request. Validate changes with contract generation, TypeScript/Vite builds,
+and separately attributed observations against the actual runtime. Build success
+does not establish persona maturation or useful task performance.
 
-Synthetic browser providers decode exact-value context sharing and read offered
-commands from the response schema through `tests/decision-fixture.mjs`. Multi-step
-fixtures explicitly request continuation; they must not depend on retired wire
-metadata or implicit extra calls. File contributions use their actual persona
-and work run. Decorative navigation arrows are SVGs and are excluded from
-accessible button names, so interaction checks use the visible action labels.
+The persona views show characteristic files separately from supporting assets,
+with accepted revisions, maintenance outcomes and exact later context inclusion.
+These observations do not by themselves establish behavioral improvement.
 
 For hot reload, `npm run dev` proxies API requests to the node on port 19000.
 For a source launch using this checkout, run
