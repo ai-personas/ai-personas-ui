@@ -1260,7 +1260,7 @@ export type Fallback = "deterministic" | "block";
 export type BrowserSearchEngine = ("bing" | "duckduckgo") | "configured";
 export type Role = "characteristic" | "supporting";
 export type MatchMode = "listing" | "literal" | "regex";
-export type SearchField = "path" | "content" | "cues";
+export type SearchField = "path" | "content" | "cues" | "raw";
 export type Disposition = "change" | "no_change" | "blocked" | "defer";
 export type ResolutionKind = "addressed" | "dismissed";
 export type EditKind = "create" | "revise" | "retire";
@@ -1788,15 +1788,32 @@ export interface Edit {
   path: string;
   base?: VersionRef | null;
   /**
-   * Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.
+   * Complete UTF-8 source for create/revise; null for retirement. With json set, preserve raw JSON here and explicitly declare its prompt/cue pointers. Original receipts and imported sources cannot be rewritten here.
    */
   content?: string | null;
+  /**
+   * Optional JSON serialization with authored prompt/cue pointers. Omit/null for plain text. Restate on revision; never inferred from a filename.
+   */
+  json?: JsonText | null;
   search_cues: string[];
   sources: EvidenceRef[];
   /**
    * Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.
    */
   required: VersionRef[];
+}
+export interface JsonText {
+  /**
+   * Up to sixteen distinct JSON Pointers to prompt strings, in authored order.
+   * Characteristic files require at least one; supporting JSON data may use none.
+   * Empty pointer selects a root string. No prescribed member names or layout.
+   */
+  prompt: string[];
+  /**
+   * Zero to eight distinct JSON Pointers to cue strings (each at most 256 UTF-8 bytes).
+   * Cues are lexical search data, never executed or followed automatically.
+   */
+  cues: string[];
 }
 /**
  * Exact received affected revision, or this response's $edit handle.

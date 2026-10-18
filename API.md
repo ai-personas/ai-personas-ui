@@ -1093,7 +1093,7 @@ Read an exact immutable document version using document.write result.id, never i
 
 ### `file.search`
 
-Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.
+Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|
@@ -1101,7 +1101,7 @@ Bounded primary-chosen listing or literal/regex search of owned characteristic f
 
 ### `file.read`
 
-Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.
+Read an exact accessible file revision with its complete mandatory accompaniment. Source identifies original file bytes or a permitted structured record; decoded_file labels declared JSON prompt/cue strings. A stale reference never reads newer bytes.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

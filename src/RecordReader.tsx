@@ -35,6 +35,19 @@ export function Story({ title, value }: { title?: string; value: unknown }) {
   </section>;
 }
 
+function FileStory({ value }: { value: unknown }) {
+  const d = fields(value), decoded = fields(d.decoded_file);
+  if (fields(d.file).format !== 'json') return <><Story value={d.content}/><Story title="Search cues" value={d.search_cues}/></>;
+  const prompt = Array.isArray(decoded.prompt) ? decoded.prompt.map(fields) : [];
+  const cues = Array.isArray(decoded.cues) ? decoded.cues.map(field => fields(field).text) : [];
+  return <>
+    {prompt.length > 0 ? <section class="reader-section"><h3>Prompt text</h3>
+      {prompt.map((field, i) => <Story key={i} value={field.text}/>)}</section> : <p>No decoded prompt strings are recorded.</p>}
+    <Story title="Search cues" value={[...strings(d.search_cues), ...strings(cues)]}/>
+    <details class="reader-section"><summary>Original JSON source</summary><pre>{text(d.content)}</pre></details>
+  </>;
+}
+
 function Person({ id, open, user = false }: { id: unknown; open: Open; user?: boolean }) {
   return isRecordID(id) ? <RecordReference id={id} open={open} fallback="Persona"/> : user && (id === '' || id === 'user') ? <span>You</span> : null;
 }
@@ -152,13 +165,13 @@ function Content({ record, open, historical }: { record: Entity; open: Open; his
     </>;
     case 'persona_asset': return <>
       <p class="field-label">Supporting asset · {text(fields(d.file).path)}</p>
-      <Story value={d.content}/><Story title="Search cues" value={d.search_cues}/>
+      <FileStory value={d}/>
       <RelatedItems title="Required accompaniment" value={d.required_context} open={open}/>
       <RelatedItems title="Sources" value={fields(d.authorship).sources} open={open}/>
     </>;
     case 'fragment': if (typeof d.content === 'string' && fields(d.file).path) return <>
       <p class="field-label">Characteristic file · {text(fields(d.file).path)}</p>
-      <Story value={d.content}/><Story title="Search cues" value={d.search_cues}/>
+      <FileStory value={d}/>
       <p>{fields(d.authorship).origin === 'creation_inference' ? 'Authored at initialization; this is a starting character account, not prior experience.' : 'Authored by the persona during its work.'}</p>
       <RelatedItems title="Required accompaniment" value={d.required_context} open={open}/>
       <RelatedItems title="Sources" value={fields(d.authorship).sources} open={open}/>

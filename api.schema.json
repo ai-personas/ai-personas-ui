@@ -4327,7 +4327,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+            "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
             "type": "object",
             "properties": {
               "kind": {
@@ -4354,7 +4354,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.",
+            "description": "Read an exact accessible file revision with its complete mandatory accompaniment. Source identifies original file bytes or a permitted structured record; decoded_file labels declared JSON prompt/cue strings. A stale reference never reads newer bytes.",
             "type": "object",
             "properties": {
               "kind": {
@@ -6751,11 +6751,27 @@
         ]
       },
       "SearchField": {
-        "type": "string",
-        "enum": [
-          "path",
-          "content",
-          "cues"
+        "oneOf": [
+          {
+            "description": "Authored path or explicit generated record locator.",
+            "type": "string",
+            "const": "path"
+          },
+          {
+            "description": "Separate declared decoded JSON prompt strings, plain content, or explicitly labeled compact record-data JSON.",
+            "type": "string",
+            "const": "content"
+          },
+          {
+            "description": "Individual decoded authored cue strings; never serialized-array punctuation or cross-cue matches.",
+            "type": "string",
+            "const": "cues"
+          },
+          {
+            "description": "Exact UTF-8 accepted-file source, including JSON escapes. Virtual records use labeled content projections, not raw private storage envelopes.",
+            "type": "string",
+            "const": "raw"
+          }
         ]
       },
       "Continuity": {
@@ -6963,11 +6979,23 @@
             ]
           },
           "content": {
-            "description": "Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.",
+            "description": "Complete UTF-8 source for create/revise; null for retirement. With json set, preserve raw JSON here and explicitly declare its prompt/cue pointers. Original receipts and imported sources cannot be rewritten here.",
             "type": [
               "string",
               "null"
             ]
+          },
+          "json": {
+            "description": "Optional JSON serialization with authored prompt/cue pointers. Omit/null for plain text. Restate on revision; never inferred from a filename.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "search_cues": {
             "type": "array",
@@ -7006,6 +7034,30 @@
           "create",
           "revise",
           "retire"
+        ]
+      },
+      "JsonText": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "description": "Up to sixteen distinct JSON Pointers to prompt strings, in authored order.\nCharacteristic files require at least one; supporting JSON data may use none.\nEmpty pointer selects a root string. No prescribed member names or layout.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cues": {
+            "description": "Zero to eight distinct JSON Pointers to cue strings (each at most 256 UTF-8 bytes).\nCues are lexical search data, never executed or followed automatically.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "prompt",
+          "cues"
         ]
       },
       "WarningChange": {
@@ -9245,11 +9297,11 @@
     ],
     [
       "file.search",
-      "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection."
+      "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically."
     ],
     [
       "file.read",
-      "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes."
+      "Read an exact accessible file revision with its complete mandatory accompaniment. Source identifies original file bytes or a permitted structured record; decoded_file labels declared JSON prompt/cue strings. A stale reference never reads newer bytes."
     ],
     [
       "context.advance",
@@ -13401,7 +13453,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Results are exact candidate metadata, never an automatic context selection.",
+        "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
         "type": "object",
         "properties": {
           "kind": {
@@ -13428,7 +13480,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Read an exact accessible file revision with its complete mandatory accompaniment. A stale reference never reads newer bytes.",
+        "description": "Read an exact accessible file revision with its complete mandatory accompaniment. Source identifies original file bytes or a permitted structured record; decoded_file labels declared JSON prompt/cue strings. A stale reference never reads newer bytes.",
         "type": "object",
         "properties": {
           "kind": {
@@ -15843,11 +15895,27 @@
         ]
       },
       "SearchField": {
-        "type": "string",
-        "enum": [
-          "path",
-          "content",
-          "cues"
+        "oneOf": [
+          {
+            "description": "Authored path or explicit generated record locator.",
+            "type": "string",
+            "const": "path"
+          },
+          {
+            "description": "Separate declared decoded JSON prompt strings, plain content, or explicitly labeled compact record-data JSON.",
+            "type": "string",
+            "const": "content"
+          },
+          {
+            "description": "Individual decoded authored cue strings; never serialized-array punctuation or cross-cue matches.",
+            "type": "string",
+            "const": "cues"
+          },
+          {
+            "description": "Exact UTF-8 accepted-file source, including JSON escapes. Virtual records use labeled content projections, not raw private storage envelopes.",
+            "type": "string",
+            "const": "raw"
+          }
         ]
       },
       "Continuity": {
@@ -16055,11 +16123,23 @@
             ]
           },
           "content": {
-            "description": "Complete UTF-8 text for create/revise; null for retirement. Original receipts and imported sources cannot be rewritten here.",
+            "description": "Complete UTF-8 source for create/revise; null for retirement. With json set, preserve raw JSON here and explicitly declare its prompt/cue pointers. Original receipts and imported sources cannot be rewritten here.",
             "type": [
               "string",
               "null"
             ]
+          },
+          "json": {
+            "description": "Optional JSON serialization with authored prompt/cue pointers. Omit/null for plain text. Restate on revision; never inferred from a filename.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "search_cues": {
             "type": "array",
@@ -16098,6 +16178,30 @@
           "create",
           "revise",
           "retire"
+        ]
+      },
+      "JsonText": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "description": "Up to sixteen distinct JSON Pointers to prompt strings, in authored order.\nCharacteristic files require at least one; supporting JSON data may use none.\nEmpty pointer selects a root string. No prescribed member names or layout.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cues": {
+            "description": "Zero to eight distinct JSON Pointers to cue strings (each at most 256 UTF-8 bytes).\nCues are lexical search data, never executed or followed automatically.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "prompt",
+          "cues"
         ]
       },
       "WarningChange": {
