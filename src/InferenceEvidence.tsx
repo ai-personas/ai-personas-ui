@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { inferenceEvidence, type EvidenceReference } from './inference-evidence';
+import { fields, text } from './workspace';
 const number = (value: number | undefined) => value === undefined ? 'Not recorded' : value.toLocaleString();
 
 function References({ value, open }: { value: EvidenceReference[] | undefined; open: (id: string) => void }) {
@@ -15,8 +16,26 @@ function References({ value, open }: { value: EvidenceReference[] | undefined; o
 }
 export default function InferenceEvidence({ value, open }: { value: unknown; open: (id: string) => void }) {
   const facts = inferenceEvidence(value);
+  const call = fields(value), outcome = fields(call.maintenance_outcome), initial = fields(call.initialization_outcome);
+  const maintenance = fields(outcome.maintenance || fields(outcome.files).maintenance || initial.maintenance);
+  const next = fields(outcome.next_context || fields(outcome.files).next_context);
+  const accepted = Array.isArray(outcome.accepted_changes) ? outcome.accepted_changes : Array.isArray(initial.accepted_files) ? initial.accepted_files : [];
+  const included = Array.isArray(fields(call.file_context).included) ? fields(call.file_context).included as unknown[] : [];
   return <section class="reader-section" aria-label="Inference evidence"><h3>Inference evidence</h3>
     <p>Call status: {facts.state.replaceAll('_', ' ')}. Status is not a verdict on the work.</p>
+    {Object.keys(maintenance).length > 0 && <section><h4>{initial.status === 'accepted' ? 'Initial character accepted' : 'Maintenance outcome'}</h4>
+      {['fragments', 'assets'].map(scope => { const m = fields(maintenance[scope]), n = fields(next[scope]); return <div key={scope}>
+        <p><strong>{scope === 'fragments' ? 'Characteristic files' : 'Supporting assets'}: {text(m.disposition, 'Not recorded').replaceAll('_', ' ')}</strong></p>
+        <p>{text(m.reason)}</p>{m.concern && <p>{text(m.concern)}</p>}
+        {n.disposition && <p>Next context: {text(n.disposition)}. {text(n.reason)}</p>}
+      </div>; })}
+      <References value={accepted as EvidenceReference[]} open={open}/>
+      {outcome.character_changed === true && <p>The current character changed. Subsequent work requires a fresh decision with that accepted character.</p>}
+    </section>}
+    {included.length > 0 && <section><h4>Exact files supplied to this decision</h4>
+      <References value={included.map(item => fields(item).reference) as EvidenceReference[]} open={open}/>
+      <p class="reader-muted">Inclusion is evidence that the text was supplied. Later behavior must show whether it helped.</p>
+    </section>}
     {facts.transport ? <section aria-label="Provider transport"><h4>Provider transport</h4><dl>
       <dt>Request dispatch</dt><dd>{facts.transport.dispatched === true ? 'Attempted' : facts.transport.dispatched === false ? 'Not dispatched' : 'Not recorded'}</dd>
       <dt>HTTP status</dt><dd>{facts.transport.status ?? 'Not recorded'}</dd>
