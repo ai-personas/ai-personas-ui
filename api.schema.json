@@ -5242,7 +5242,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.",
+            "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded. An operator with no actor must name the persona explicitly. A persona can only export itself. Current source export permissions still apply.",
             "type": "object",
             "properties": {
               "kind": {
@@ -5251,6 +5251,14 @@
               },
               "args": {
                 "type": "object",
+                "properties": {
+                  "persona": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
                 "additionalProperties": false
               }
             },
@@ -9279,7 +9287,7 @@
     ],
     [
       "continuity.export",
-      "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded."
+      "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded. An operator with no actor must name the persona explicitly. A persona can only export itself. Current source export permissions still apply."
     ],
     [
       "continuity.import",
@@ -14254,7 +14262,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.",
+        "description": "Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded. An operator with no actor must name the persona explicitly. A persona can only export itself. Current source export permissions still apply.",
         "type": "object",
         "properties": {
           "kind": {
@@ -14263,6 +14271,14 @@
           },
           "args": {
             "type": "object",
+            "properties": {
+              "persona": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
             "additionalProperties": false
           }
         },

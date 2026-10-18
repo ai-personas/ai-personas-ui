@@ -1125,7 +1125,9 @@ export type Command =
     }
   | {
       kind: "continuity.export";
-      args: {};
+      args: {
+        persona?: string | null;
+      };
     }
   | {
       kind: "continuity.import";

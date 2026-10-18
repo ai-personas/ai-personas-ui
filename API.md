@@ -1325,9 +1325,11 @@ Send a durable deduplicated message over libp2p.
 
 ### `continuity.export`
 
-Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded.
+Pause this persona and export its records, inbox, selected context and referenced files. Finish or cancel active host actions and peer transfers first; interrupted outcomes remain recorded. An operator with no actor must name the persona explicitly. A persona can only export itself. Current source export permissions still apply.
 
-No arguments.
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `persona` | string or null | Optional |  |
 
 ### `continuity.import`
 
