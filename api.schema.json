@@ -6716,6 +6716,14 @@
           "concern": {
             "description": "For blocked/deferred concerns, identify what is affected, its missing prerequisite,\ndependent work, and an existing opportunity or honest continuation gap. Empty for no concern.",
             "type": "string"
+          },
+          "resolutions": {
+            "description": "Explicitly close supplied pending concern IDs. Omitted concerns remain pending, including on no_change.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Resolution"
+            },
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -6732,6 +6740,33 @@
           "no_change",
           "blocked",
           "defer"
+        ]
+      },
+      "Resolution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/ResolutionKind"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "disposition",
+          "reason"
+        ]
+      },
+      "ResolutionKind": {
+        "type": "string",
+        "enum": [
+          "addressed",
+          "dismissed"
         ]
       },
       "Edit": {
@@ -6812,7 +6847,7 @@
             "$ref": "#/$defs/Choice"
           },
           "references": {
-            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.",
+            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -15503,6 +15538,14 @@
           "concern": {
             "description": "For blocked/deferred concerns, identify what is affected, its missing prerequisite,\ndependent work, and an existing opportunity or honest continuation gap. Empty for no concern.",
             "type": "string"
+          },
+          "resolutions": {
+            "description": "Explicitly close supplied pending concern IDs. Omitted concerns remain pending, including on no_change.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Resolution"
+            },
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -15519,6 +15562,33 @@
           "no_change",
           "blocked",
           "defer"
+        ]
+      },
+      "Resolution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/$defs/ResolutionKind"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "disposition",
+          "reason"
+        ]
+      },
+      "ResolutionKind": {
+        "type": "string",
+        "enum": [
+          "addressed",
+          "dismissed"
         ]
       },
       "Edit": {
@@ -15599,7 +15669,7 @@
             "$ref": "#/$defs/Choice"
           },
           "references": {
-            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.",
+            "description": "Exact received revisions, or {id:\"$handle\",revision:0} for this response's accepted edit.\nReplace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"

@@ -1227,6 +1227,7 @@ export type Role = "characteristic" | "supporting";
 export type MatchMode = "listing" | "literal" | "regex";
 export type SearchField = "path" | "content" | "cues";
 export type Disposition = "change" | "no_change" | "blocked" | "defer";
+export type ResolutionKind = "addressed" | "dismissed";
 export type EditKind = "create" | "revise" | "retire";
 export type Choice = "preserve" | "clear" | "replace" | "blocked";
 export type ReplyVisibility = "private" | "work";
@@ -1682,6 +1683,15 @@ export interface Outcome2 {
    * dependent work, and an existing opportunity or honest continuation gap. Empty for no concern.
    */
   concern: string;
+  /**
+   * Explicitly close supplied pending concern IDs. Omitted concerns remain pending, including on no_change.
+   */
+  resolutions?: Resolution[];
+}
+export interface Resolution {
+  id: string;
+  disposition: ResolutionKind;
+  reason: string;
 }
 export interface Edit {
   handle: string;
@@ -1707,7 +1717,7 @@ export interface Selection2 {
   disposition: Choice;
   /**
    * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
-   * Replace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.
+   * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
    */
   references: VersionRef[];
   reason: string;
@@ -1720,7 +1730,7 @@ export interface Selection21 {
   disposition: Choice;
   /**
    * Exact received revisions, or {id:"$handle",revision:0} for this response's accepted edit.
-   * Replace selects these revisions. Preserve may restate its exact accepted references or use an empty array; it never refreshes stale bytes.
+   * Replace selects these revisions. Preserve may restate its exact accepted references (including the mandatory current account for characteristic context) or use an empty array; it never refreshes stale bytes.
    */
   references: VersionRef[];
   reason: string;
