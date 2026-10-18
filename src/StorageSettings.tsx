@@ -24,7 +24,7 @@ const fields: { key: keyof Policy; label: string; min: number }[] = [
 export default function StorageSettings({ act }: { act: Act }) {
   const { value, error: readError, loading, retry } = useResource<Storage>('/storage', () => false);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
-  return <section aria-label="Storage limits" aria-busy={loading || busy}>
+  return <section class="storage-settings" aria-label="Storage limits" aria-busy={loading || busy}>
     <header class="page-heading"><div><h2>Storage limits</h2><p>Limit persona files and database growth while reserving room for warnings and finishing.</p></div>
       <button class="secondary" disabled={loading || busy} onClick={retry}>Refresh usage</button></header>
     {(readError || error) && <p role="alert">{readError || error}</p>}

@@ -29,7 +29,7 @@
 .provider-notice { padding: .75rem 1rem; background: var(--tint); border-radius: 8px; font-size: .85rem; }
 .provider-settings { max-width: 1120px; }
 .provider-settings .page-heading { margin-top: 1.5rem; }
-.provider-settings .page-heading .secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.provider-settings .page-heading .secondary, .storage-settings .page-heading .secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
 .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; margin: 1.5rem 0; }
 .provider-grid .provider-card { min-width: 0; margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: .8rem; background: var(--paper); border-color: var(--line); }
 .provider-card h3, .provider-card p { margin: 0; }
