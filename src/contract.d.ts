@@ -1274,6 +1274,9 @@ export type WarningChange =
        */
       content: string;
       sources: EvidenceRef[];
+      /**
+       * Exact received qualifications, or {id:"$handle",revision:0} for this response's create/revise. Never name a retirement.
+       */
       required: VersionRef[];
       operation: "add";
     }
@@ -1810,7 +1813,7 @@ export interface Edit {
   search_cues: string[];
   sources: EvidenceRef[];
   /**
-   * Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.
+   * Exact mandatory accompaniment, distinct from optional search cues. Use {id:"$handle",revision:0} for a create/revise in this same response, in any edit order. Old references never follow a changed head. Complete transitive bundles must fit.
    */
   required: VersionRef[];
 }

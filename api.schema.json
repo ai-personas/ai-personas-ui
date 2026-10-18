@@ -7049,7 +7049,7 @@
             }
           },
           "required": {
-            "description": "Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.",
+            "description": "Exact mandatory accompaniment, distinct from optional search cues. Use {id:\"$handle\",revision:0} for a create/revise in this same response, in any edit order. Old references never follow a changed head. Complete transitive bundles must fit.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -7125,6 +7125,7 @@
                 }
               },
               "required": {
+                "description": "Exact received qualifications, or {id:\"$handle\",revision:0} for this response's create/revise. Never name a retirement.",
                 "type": "array",
                 "items": {
                   "$ref": "#/$defs/VersionRef"
@@ -16232,7 +16233,7 @@
             }
           },
           "required": {
-            "description": "Exact mandatory accompaniment, distinct from optional search cues. Transitive bundles are loaded intact or blocked.",
+            "description": "Exact mandatory accompaniment, distinct from optional search cues. Use {id:\"$handle\",revision:0} for a create/revise in this same response, in any edit order. Old references never follow a changed head. Complete transitive bundles must fit.",
             "type": "array",
             "items": {
               "$ref": "#/$defs/VersionRef"
@@ -16308,6 +16309,7 @@
                 }
               },
               "required": {
+                "description": "Exact received qualifications, or {id:\"$handle\",revision:0} for this response's create/revise. Never name a retirement.",
                 "type": "array",
                 "items": {
                   "$ref": "#/$defs/VersionRef"
