@@ -22,6 +22,14 @@ export type Command =
       args: {};
     }
   | {
+      kind: "storage.configure";
+      args: {
+        revision: number;
+        policy: Policy;
+        reason: string;
+      };
+    }
+  | {
       kind: "deployment.configure";
       args: {
         host_execution: boolean;
@@ -591,7 +599,7 @@ export type Command =
         persona: string;
         work: string;
         revision: number;
-        policy?: Policy | null;
+        policy?: Policy2 | null;
         reason: string;
       };
     }
@@ -1415,6 +1423,25 @@ export interface Selection {
   model: string;
   effort?: string | null;
 }
+export interface Policy {
+  /**
+   * Current retained characteristic records, including paths, cues and metadata, per persona.
+   */
+  characteristic_bytes: number;
+  /**
+   * Current retained persona-owned supporting file records, per persona.
+   */
+  supporting_bytes: number;
+  /**
+   * All main-database pages, including revisions, histories, indexes and free pages.
+   * WAL, shared memory and other files are measured separately, not covered by this limit.
+   */
+  database_page_bytes: number;
+  /**
+   * Part of the database page limit protected from optional mutations and ordinary inference.
+   */
+  protected_database_bytes: number;
+}
 export interface GrantDraft {
   actor: string;
   work: string;
@@ -1606,7 +1633,7 @@ export interface ReleaseDraft {
   disposition: ReleaseDisposition;
   limitations: string;
 }
-export interface Policy {
+export interface Policy2 {
   provider: string;
   model: string;
   expires: string;

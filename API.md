@@ -6,6 +6,7 @@ Default loopback listeners allow the same-origin local operator workspace withou
 
 | Method | Path | Behavior |
 |---|---|---|
+| GET | `/api/storage` | Current corpus/database limits and observed node filesystem footprint; reports uncovered external backing separately |
 | GET | `/api/research/snapshots/{id}/bytes` | Exact immutable native JSON bytes behind a research stage snapshot digest; operator evidence, no acceptance verdict |
 | GET | `/api/work/{id}/settlement` | Consistent execution settlement, actionable continuations, unresolved effects and research audit blockers with an exact fingerprint; no quality or acceptance verdict |
 | GET | `/api/work/{id}/readiness` | Bounded observed component configuration, last recall status, funding and published output counts; no inference or quality verdict |
@@ -75,6 +76,16 @@ Invoke an explicitly selected non-chat model through its adapter and ordinary ca
 Inspect current host tool access, execution mode, funding and deployment capabilities.
 
 No arguments.
+
+### `storage.configure`
+
+Operator replaces finite persona corpus and database-page limits at their exact current policy revision. This does not set a host filesystem quota or change inference funding.
+
+| Argument | Type | Presence | Meaning |
+|---|---|---|---|
+| `revision` | integer | Required |  |
+| `policy` | Policy | Required |  |
+| `reason` | string | Required |  |
 
 ### `deployment.configure`
 
@@ -761,7 +772,7 @@ Operator approves or disables a read-only selector for this persona and work. Re
 | `persona` | string | Required |  |
 | `work` | string | Required |  |
 | `revision` | integer | Required |  |
-| `policy` | Policy or null | Optional |  |
+| `policy` | Policy2 or null | Optional |  |
 | `reason` | string | Required |  |
 
 ### `memory.browse`

@@ -379,6 +379,43 @@
             "additionalProperties": false
           },
           {
+            "description": "Operator replaces finite persona corpus and database-page limits at their exact current policy revision. This does not set a host filesystem quota or change inference funding.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "storage.configure"
+              },
+              "args": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  },
+                  "policy": {
+                    "$ref": "#/$defs/Policy"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "revision",
+                  "policy",
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          {
             "description": "Operator setting for persistent host tool access. Host commands use the app account with network, subprocesses and writes; no per-tool execution grant is required. Does not resume work or change inference funding.",
             "type": "object",
             "properties": {
@@ -2961,7 +2998,7 @@
                   "policy": {
                     "anyOf": [
                       {
-                        "$ref": "#/$defs/Policy"
+                        "$ref": "#/$defs/Policy2"
                       },
                       {
                         "type": "null"
@@ -5370,6 +5407,42 @@
           "knowledge"
         ]
       },
+      "Policy": {
+        "type": "object",
+        "properties": {
+          "characteristic_bytes": {
+            "description": "Current retained characteristic records, including paths, cues and metadata, per persona.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "supporting_bytes": {
+            "description": "Current retained persona-owned supporting file records, per persona.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "database_page_bytes": {
+            "description": "All main-database pages, including revisions, histories, indexes and free pages.\nWAL, shared memory and other files are measured separately, not covered by this limit.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "protected_database_bytes": {
+            "description": "Part of the database page limit protected from optional mutations and ordinary inference.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "characteristic_bytes",
+          "supporting_bytes",
+          "database_page_bytes",
+          "protected_database_bytes"
+        ]
+      },
       "GrantDraft": {
         "type": "object",
         "properties": {
@@ -6310,7 +6383,7 @@
           "partial_delivered"
         ]
       },
-      "Policy": {
+      "Policy2": {
         "type": "object",
         "properties": {
           "provider": {
@@ -8495,6 +8568,11 @@
   "routes": [
     [
       "GET",
+      "/api/storage",
+      "Current corpus/database limits and observed node filesystem footprint; reports uncovered external backing separately"
+    ],
+    [
+      "GET",
       "/api/research/snapshots/{id}/bytes",
       "Exact immutable native JSON bytes behind a research stage snapshot digest; operator evidence, no acceptance verdict"
     ],
@@ -8695,6 +8773,10 @@
     [
       "deployment.read",
       "Inspect current host tool access, execution mode, funding and deployment capabilities."
+    ],
+    [
+      "storage.configure",
+      "Operator replaces finite persona corpus and database-page limits at their exact current policy revision. This does not set a host filesystem quota or change inference funding."
     ],
     [
       "deployment.configure",
@@ -9281,6 +9363,43 @@
           "args": {
             "type": "object",
             "additionalProperties": false
+          }
+        },
+        "required": [
+          "kind",
+          "args"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "description": "Operator replaces finite persona corpus and database-page limits at their exact current policy revision. This does not set a host filesystem quota or change inference funding.",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "storage.configure"
+          },
+          "args": {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "policy": {
+                "$ref": "#/$defs/Policy"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "policy",
+              "reason"
+            ]
           }
         },
         "required": [
@@ -11872,7 +11991,7 @@
               "policy": {
                 "anyOf": [
                   {
-                    "$ref": "#/$defs/Policy"
+                    "$ref": "#/$defs/Policy2"
                   },
                   {
                     "type": "null"
@@ -14281,6 +14400,42 @@
           "knowledge"
         ]
       },
+      "Policy": {
+        "type": "object",
+        "properties": {
+          "characteristic_bytes": {
+            "description": "Current retained characteristic records, including paths, cues and metadata, per persona.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "supporting_bytes": {
+            "description": "Current retained persona-owned supporting file records, per persona.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "database_page_bytes": {
+            "description": "All main-database pages, including revisions, histories, indexes and free pages.\nWAL, shared memory and other files are measured separately, not covered by this limit.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "protected_database_bytes": {
+            "description": "Part of the database page limit protected from optional mutations and ordinary inference.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "characteristic_bytes",
+          "supporting_bytes",
+          "database_page_bytes",
+          "protected_database_bytes"
+        ]
+      },
       "GrantDraft": {
         "type": "object",
         "properties": {
@@ -15239,7 +15394,7 @@
           "partial_delivered"
         ]
       },
-      "Policy": {
+      "Policy2": {
         "type": "object",
         "properties": {
           "provider": {

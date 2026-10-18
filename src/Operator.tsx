@@ -13,6 +13,7 @@ import { ProviderSettings } from './ProviderSettings';
 import { FeedbackConditions } from './RecordReader';
 import ToolAccess from './ToolAccess';
 import FinishingReadiness from './FinishingReadiness';
+import StorageSettings from './StorageSettings';
 
 export function FundingChoice({ value, onChange, required = true }: { value: string; onChange: (id: string) => void; required?: boolean }) {
   const [cursor, setCursor] = useState([0]);
@@ -162,7 +163,7 @@ export function Funding({ act }: { act: Act }) {
       setTab(next); document.getElementById('funding-tab-' + next)?.focus();
     }}>{['allowances', 'settings'].map(value => <button key={value} id={'funding-tab-' + value} role="tab" aria-selected={tab === value} aria-controls={'funding-panel-' + value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)}>{value === 'allowances' ? 'Allowances' : 'Settings'}</button>)}</div>
     <div id={'funding-panel-' + tab} role="tabpanel" aria-labelledby={'funding-tab-' + tab}>
-      {tab === 'settings' ? <ProviderSettings/> : <Allowances act={act}/>}
+      {tab === 'settings' ? <><ProviderSettings/><StorageSettings act={act}/></> : <Allowances act={act}/>}
     </div></section>;
 }
 function Allowances({ act }: { act: Act }) {
