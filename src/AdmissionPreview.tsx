@@ -19,6 +19,7 @@ export default function AdmissionPreview({ run, act }: { run: string; act: Act }
     {error && <p role="alert">{error}</p>}
     {value && <div role="status"><p>{decision?.prospective_admissible === true ? 'At the last check, the request fit the available capacity.' : 'At the last check, the request could not be admitted.'}{value.runnable === false && ' This participation remains stopped.'}</p>
       {(decision?.blocker || value.execution_blocker || quote?.blocker) && <p>{String(decision?.blocker || value.execution_blocker || quote?.blocker)}</p>}
+      {value.ordinary_context && <p>Complete ordinary context: {value.ordinary_context.admissible === true ? 'fits the selected model at this check' : 'not currently admissible'}. {value.ordinary_context.blocker ? String(value.ordinary_context.blocker) : 'This includes mandatory state, full selections, qualifications, observations, history and provider formatting. Funding and pause status are checked separately.'}</p>}
       {quote && <p>{decision.pool === 'closeout' ? 'Protected finishing' : 'Production'} capacity: {amount(quote.input_upper_tokens)} input and {amount(quote.output_upper_tokens)} output tokens required for this request. This preview reserves nothing; these bounds are not measured usage.</p>}
       <FinishingReadiness value={value.finishing}/>
       {value.quotes && <details><summary>Compare ordinary and protected request bounds</summary>{(['production', 'closeout'] as const).map(pool => {
@@ -26,7 +27,7 @@ export default function AdmissionPreview({ run, act }: { run: string; act: Act }
         return <p key={pool}>{pool === 'production' ? 'Ordinary production' : 'Protected finishing'}: {amount(q?.tokens)} tokens required by this quote. {q?.blocker ? String(q.blocker) : 'A fitting quote alone does not establish eligibility.'}</p>;
       })}</details>}
       {value.snapshot_changed && <p>State changed during this check. Check again before relying on this observation.</p>}
-      <p class="micro">This check makes no model call and reserves no capacity. Optional selector evaluation and its added context are excluded. Admission checks the latest request and funding when a decision starts.</p>
+      <p class="micro">This check makes no model call and reserves no capacity. Context fit does not resume work or guarantee that later observations will fit. Admission checks the latest complete request, authority and funding when a decision starts.</p>
     </div>}
   </section>;
 }
