@@ -1093,7 +1093,7 @@ Read an exact immutable document version using document.write result.id, never i
 
 ### `file.search`
 
-Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.
+Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Optional kind/owner/scope filters narrow indexed candidates. Start after:0; continue only with the opaque next token and identical query. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.
 
 | Argument | Type | Presence | Meaning |
 |---|---|---|---|

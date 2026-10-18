@@ -4327,7 +4327,7 @@
             "additionalProperties": false
           },
           {
-            "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
+            "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Optional kind/owner/scope filters narrow indexed candidates. Start after:0; continue only with the opaque next token and identical query. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
             "type": "object",
             "properties": {
               "kind": {
@@ -6697,6 +6697,30 @@
           "role": {
             "$ref": "#/$defs/Role"
           },
+          "kind": {
+            "description": "Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "owner": {
+            "description": "Optional exact stored owner. Empty string means ownerless. Characteristic scope is always this persona.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "scope": {
+            "description": "Optional exact record-envelope scope (work, environment or owner scope as appropriate). This is a filter, never a grant.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "mode": {
             "$ref": "#/$defs/MatchMode"
           },
@@ -6713,10 +6737,8 @@
             "type": "boolean"
           },
           "after": {
-            "description": "Live record-row cursor, not an exhaustive or snapshot-bound traversal.",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            "description": "Zero starts a live scan; continue only with its returned opaque next token. Changing any query field requires zero. Old numeric positions are unavailable.",
+            "$ref": "#/$defs/After"
           },
           "limit": {
             "type": "integer",
@@ -6771,6 +6793,23 @@
             "description": "Exact UTF-8 accepted-file source, including JSON escapes. Virtual records use labeled content projections, not raw private storage envelopes.",
             "type": "string",
             "const": "raw"
+          }
+        ]
+      },
+      "After": {
+        "anyOf": [
+          {
+            "description": "Start a new live scan with zero. Nonzero legacy storage positions are rejected.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "maximum": 0
+          },
+          {
+            "description": "Opaque next token from the same persona/work and identical query (including limit).",
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36
           }
         ]
       },
@@ -9297,7 +9336,7 @@
     ],
     [
       "file.search",
-      "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically."
+      "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Optional kind/owner/scope filters narrow indexed candidates. Start after:0; continue only with the opaque next token and identical query. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically."
     ],
     [
       "file.read",
@@ -13453,7 +13492,7 @@
         "additionalProperties": false
       },
       {
-        "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
+        "description": "Bounded primary-chosen listing or literal/regex search of owned characteristic files or permitted supporting resources. Optional kind/owner/scope filters narrow indexed candidates. Start after:0; continue only with the opaque next token and identical query. Choose path, separate decoded content/cues, or raw source. Results label the exact revision, representation and UTF-8 match range; they never select context automatically.",
         "type": "object",
         "properties": {
           "kind": {
@@ -15841,6 +15880,30 @@
           "role": {
             "$ref": "#/$defs/Role"
           },
+          "kind": {
+            "description": "Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "owner": {
+            "description": "Optional exact stored owner. Empty string means ownerless. Characteristic scope is always this persona.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "scope": {
+            "description": "Optional exact record-envelope scope (work, environment or owner scope as appropriate). This is a filter, never a grant.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "mode": {
             "$ref": "#/$defs/MatchMode"
           },
@@ -15857,10 +15920,8 @@
             "type": "boolean"
           },
           "after": {
-            "description": "Live record-row cursor, not an exhaustive or snapshot-bound traversal.",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            "description": "Zero starts a live scan; continue only with its returned opaque next token. Changing any query field requires zero. Old numeric positions are unavailable.",
+            "$ref": "#/$defs/After"
           },
           "limit": {
             "type": "integer",
@@ -15915,6 +15976,23 @@
             "description": "Exact UTF-8 accepted-file source, including JSON escapes. Virtual records use labeled content projections, not raw private storage envelopes.",
             "type": "string",
             "const": "raw"
+          }
+        ]
+      },
+      "After": {
+        "anyOf": [
+          {
+            "description": "Start a new live scan with zero. Nonzero legacy storage positions are rejected.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "maximum": 0
+          },
+          {
+            "description": "Opaque next token from the same persona/work and identical query (including limit).",
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 36
           }
         ]
       },

@@ -1709,14 +1709,26 @@ export interface Vad {
 }
 export interface Search {
   role: Role;
+  /**
+   * Optional exact supporting record kind, such as document, tool or work_mandate. Characteristic scope accepts only fragment.
+   */
+  kind?: string | null;
+  /**
+   * Optional exact stored owner. Empty string means ownerless. Characteristic scope is always this persona.
+   */
+  owner?: string | null;
+  /**
+   * Optional exact record-envelope scope (work, environment or owner scope as appropriate). This is a filter, never a grant.
+   */
+  scope?: string | null;
   mode: MatchMode;
   pattern: string;
   fields: SearchField[];
   case_sensitive: boolean;
   /**
-   * Live record-row cursor, not an exhaustive or snapshot-bound traversal.
+   * Zero starts a live scan; continue only with its returned opaque next token. Changing any query field requires zero. Old numeric positions are unavailable.
    */
-  after: number;
+  after: number | string;
   limit: number;
 }
 export interface Continuity {
